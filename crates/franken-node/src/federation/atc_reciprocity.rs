@@ -35,9 +35,13 @@ use std::collections::BTreeMap;
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
-        items.drain(0..overflow);
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow.min(items.len()));
     }
     items.push(item);
 }
@@ -432,13 +436,14 @@ impl ReciprocityEngine {
             let decision = self.evaluate_access(metrics, timestamp);
 
             let tier_key = format!("{:?}", decision.tier);
-            *tier_dist.entry(tier_key).or_default() += 1;
+            let tier_count = tier_dist.entry(tier_key).or_default();
+            *tier_count = (*tier_count).saturating_add(1);
 
             if decision.tier == AccessTier::Blocked {
-                freeriders_blocked += 1;
+                freeriders_blocked = freeriders_blocked.saturating_add(1);
             }
             if decision.exception_applied {
-                exceptions_active += 1;
+                exceptions_active = exceptions_active.saturating_add(1);
             }
 
             entries.push(ReciprocityMatrixEntry {
@@ -864,5 +869,1237 @@ mod tests {
 
         assert!(decision.tier >= AccessTier::Standard || decision.tier == AccessTier::Limited);
         assert!(decision.granted);
+    }
+
+    #[test]
+    fn non_finite_quality_blocks_otherwise_full_contributor() {
+        let mut engine = ReciprocityEngine::default();
+        let mut metrics = make_high_contributor("nan-quality");
+        metrics.contribution_quality = f64::NAN;
+
+        let decision = engine.evaluate_access(&metrics, "2026-02-20T00:00:00Z");
+
+        assert_eq!(metrics.quality_adjusted_ratio(), 0.0);
+        assert_eq!(decision.tier, AccessTier::Blocked);
+        assert!(!decision.granted);
+        assert!(decision.reason.contains("below minimum threshold"));
+    }
+
+    #[test]
+    fn negative_quality_is_clamped_to_zero_and_blocks_access() {
+        let mut engine = ReciprocityEngine::default();
+        let mut metrics = make_high_contributor("negative-quality");
+        metrics.contribution_quality = -0.25;
+
+        let decision = engine.evaluate_access(&metrics, "2026-02-20T00:00:00Z");
+
+        assert_eq!(metrics.quality_adjusted_ratio(), 0.0);
+        assert_eq!(decision.tier, AccessTier::Blocked);
+        assert!(decision.accessible_feeds.is_empty());
+    }
+
+    #[test]
+    fn zero_quality_blocks_high_volume_contributor_after_grace() {
+        let mut engine = ReciprocityEngine::default();
+        let mut metrics = make_high_contributor("zero-quality");
+        metrics.contribution_quality = 0.0;
+        metrics.membership_age_seconds = ReciprocityConfig::default().grace_period_seconds;
+
+        let decision = engine.evaluate_access(&metrics, "2026-02-20T00:00:00Z");
+
+        assert_eq!(decision.quality_adjusted_ratio, 0.0);
+        assert_eq!(decision.tier, AccessTier::Blocked);
+        assert!(!decision.grace_period_active);
+    }
+
+    #[test]
+    fn grace_period_boundary_is_not_active_at_exact_limit() {
+        let mut engine = ReciprocityEngine::default();
+        let mut metrics = make_new_participant("grace-boundary");
+        metrics.membership_age_seconds = ReciprocityConfig::default().grace_period_seconds;
+
+        let decision = engine.evaluate_access(&metrics, "2026-02-20T00:00:00Z");
+
+        assert!(!decision.grace_period_active);
+        assert_eq!(decision.tier, AccessTier::Blocked);
+        assert!(!decision.granted);
+    }
+
+    #[test]
+    fn zero_contribution_stays_blocked_without_quality_adjustment() {
+        let mut engine = ReciprocityEngine::new(ReciprocityConfig {
+            use_quality_adjustment: false,
+            ..ReciprocityConfig::default()
+        });
+        let mut metrics = make_new_participant("no-quality-adjustment-zero");
+        metrics.membership_age_seconds = 86400 * 30;
+        metrics.intelligence_consumed = 50;
+
+        let decision = engine.evaluate_access(&metrics, "2026-02-20T00:00:00Z");
+
+        assert_eq!(decision.contribution_ratio, 0.0);
+        assert_eq!(decision.tier, AccessTier::Blocked);
+        assert!(!decision.granted);
+    }
+
+    #[test]
+    fn blocked_decision_logs_access_denied_event() {
+        let mut engine = ReciprocityEngine::default();
+        let metrics = make_freerider("denied-log");
+
+        let decision = engine.evaluate_access(&metrics, "2026-02-20T00:00:00Z");
+
+        assert_eq!(decision.tier, AccessTier::Blocked);
+        assert_eq!(engine.audit_log().len(), 1);
+        assert_eq!(engine.audit_log()[0].event_code, event_codes::ACCESS_DENIED);
+        assert_eq!(engine.audit_log()[0].decision, decision);
+    }
+
+    #[test]
+    fn blocked_decision_has_no_accessible_feeds() {
+        let mut engine = ReciprocityEngine::default();
+        let metrics = make_freerider("blocked-feeds");
+
+        let decision = engine.evaluate_access(&metrics, "2026-02-20T00:00:00Z");
+
+        assert_eq!(decision.tier, AccessTier::Blocked);
+        assert!(decision.accessible_feeds.is_empty());
+    }
+
+    #[test]
+    fn empty_batch_matrix_has_no_access_or_audit_side_effects() {
+        let mut engine = ReciprocityEngine::default();
+
+        let matrix = engine.evaluate_batch(&[], "empty-snap", "2026-02-20T00:00:00Z");
+
+        assert_eq!(matrix.total_participants, 0);
+        assert!(matrix.entries.is_empty());
+        assert!(matrix.tier_distribution.is_empty());
+        assert_eq!(matrix.freeriders_blocked, 0);
+        assert_eq!(matrix.exceptions_active, 0);
+        assert!(engine.audit_log().is_empty());
+    }
+
+    #[test]
+    fn infinite_quality_blocks_otherwise_full_contributor() {
+        let mut engine = ReciprocityEngine::default();
+        let mut metrics = make_high_contributor("infinite-quality");
+        metrics.contribution_quality = f64::INFINITY;
+
+        let decision = engine.evaluate_access(&metrics, "2026-02-20T00:00:00Z");
+
+        assert_eq!(metrics.quality_adjusted_ratio(), 0.0);
+        assert_eq!(decision.tier, AccessTier::Blocked);
+        assert!(!decision.granted);
+        assert!(decision.accessible_feeds.is_empty());
+    }
+
+    #[test]
+    fn oversized_quality_does_not_amplify_low_contribution_ratio() {
+        let mut engine = ReciprocityEngine::default();
+        let mut metrics = make_freerider("oversized-quality");
+        metrics.contribution_quality = 50.0;
+
+        let decision = engine.evaluate_access(&metrics, "2026-02-20T00:00:00Z");
+
+        assert!(decision.quality_adjusted_ratio < AccessTier::Limited.min_ratio());
+        assert_eq!(decision.tier, AccessTier::Blocked);
+        assert!(!decision.granted);
+    }
+
+    #[test]
+    fn zero_grace_period_does_not_grant_new_participant_access() {
+        let mut engine = ReciprocityEngine::new(ReciprocityConfig {
+            grace_period_seconds: 0,
+            ..ReciprocityConfig::default()
+        });
+        let metrics = make_new_participant("zero-grace");
+
+        let decision = engine.evaluate_access(&metrics, "2026-02-20T00:00:00Z");
+
+        assert!(!decision.grace_period_active);
+        assert_eq!(decision.tier, AccessTier::Blocked);
+        assert!(!decision.granted);
+    }
+
+    #[test]
+    fn exception_with_missing_reason_does_not_grant_raw_signal_feed() {
+        let mut engine = ReciprocityEngine::default();
+        let mut metrics = make_excepted_participant("exception-no-reason");
+        metrics.exception_reason = None;
+
+        let decision = engine.evaluate_access(&metrics, "2026-02-20T00:00:00Z");
+
+        assert!(decision.exception_applied);
+        assert_eq!(decision.tier, AccessTier::Standard);
+        assert!(
+            !decision
+                .accessible_feeds
+                .iter()
+                .any(|feed| feed.as_str() == "raw_signals")
+        );
+        assert_eq!(decision.reason, "exception: approved");
+    }
+
+    #[test]
+    fn exception_with_bad_quality_still_avoids_full_access() {
+        let mut engine = ReciprocityEngine::default();
+        let mut metrics = make_excepted_participant("exception-bad-quality");
+        metrics.contribution_quality = f64::NEG_INFINITY;
+
+        let decision = engine.evaluate_access(&metrics, "2026-02-20T00:00:00Z");
+
+        assert!(decision.exception_applied);
+        assert_eq!(decision.quality_adjusted_ratio, 0.0);
+        assert_eq!(decision.tier, AccessTier::Standard);
+        assert!(
+            !decision
+                .accessible_feeds
+                .iter()
+                .any(|feed| feed.as_str() == "raw_signals")
+        );
+    }
+
+    #[test]
+    fn batch_with_only_blocked_participants_reports_no_active_exceptions() {
+        let mut engine = ReciprocityEngine::default();
+        let participants = vec![
+            make_freerider("blocked-a"),
+            make_freerider("blocked-b"),
+            make_freerider("blocked-c"),
+        ];
+
+        let matrix = engine.evaluate_batch(&participants, "blocked-snap", "2026-02-20T00:00:00Z");
+
+        assert_eq!(matrix.freeriders_blocked, participants.len());
+        assert_eq!(matrix.exceptions_active, 0);
+        assert_eq!(
+            matrix.tier_distribution.get("Blocked").copied(),
+            Some(participants.len())
+        );
+        assert!(
+            matrix
+                .entries
+                .iter()
+                .all(|entry| entry.tier == AccessTier::Blocked)
+        );
+    }
+
+    #[test]
+    fn export_empty_audit_log_returns_empty_jsonl() {
+        let engine = ReciprocityEngine::default();
+
+        let jsonl = engine
+            .export_audit_jsonl()
+            .expect("empty export should serialize");
+
+        assert!(jsonl.is_empty());
+        assert_eq!(jsonl.lines().count(), 0);
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_discards_existing_and_new_items() {
+        let mut items = vec![1usize, 2, 3];
+
+        push_bounded(&mut items, 4, 0);
+
+        assert!(items.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod atc_reciprocity_negative_path_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn negative_unicode_injection_participant_id_preserves_exact_bytes() {
+        let mut engine = ReciprocityEngine::default();
+        let injection_patterns = [
+            "participant\u{202E}spoofed",    // Right-to-left override
+            "participant\u{200B}invisible", // Zero-width space
+            "participant\u{FEFF}bom",       // Byte order mark
+            "participant\x00null",          // Null byte
+            "participant\r\ninjection",     // CRLF injection
+            "participant\u{1F4A9}emoji",    // Pile of poo emoji
+            "participant\t\x08control",     // Tab and backspace
+            "\u{202E}\u{202D}\u{200E}directional", // Bidirectional overrides
+        ];
+
+        for pattern in &injection_patterns {
+            let metrics = ContributionMetrics {
+                participant_id: pattern.to_string(),
+                contributions_made: 50,
+                intelligence_consumed: 50,
+                contribution_quality: 0.8,
+                membership_age_seconds: 86400 * 30,
+                has_exception: false,
+                exception_reason: None,
+                exception_expires_at: None,
+            };
+
+            let decision = engine.evaluate_access(&metrics, "2026-04-17T00:00:00Z");
+
+            // Unicode should be preserved exactly in decision
+            assert_eq!(decision.participant_id, *pattern);
+
+            // JSON serialization should handle injection safely
+            let json = serde_json::to_string(&decision)
+                .expect("unicode injection should serialize safely");
+            assert!(!json.contains(&pattern.replace('\\', "")),
+                   "Raw injection pattern should be escaped in JSON");
+
+            // Deserialization should preserve exact pattern
+            let parsed: AccessDecision = serde_json::from_str(&json)
+                .expect("should deserialize without corruption");
+            assert_eq!(parsed.participant_id, *pattern);
+
+            // Audit log should handle injection
+            assert!(engine.audit_log().iter().any(|entry|
+                entry.participant_id == *pattern));
+        }
+    }
+
+    #[test]
+    fn negative_arithmetic_boundary_contributions_saturated_safely() {
+        let mut engine = ReciprocityEngine::default();
+        let boundary_values = [
+            (u64::MAX - 1, u64::MAX),     // Near overflow
+            (u64::MAX, u64::MAX - 1),     // Reverse near overflow
+            (u64::MAX, u64::MAX),         // Both at max
+            (0, u64::MAX),                // Zero contributions, max consumption
+            (u64::MAX, 0),                // Max contributions, zero consumption
+        ];
+
+        for (contributions, consumed) in boundary_values {
+            let metrics = ContributionMetrics {
+                participant_id: format!("boundary_{}__{}", contributions, consumed),
+                contributions_made: contributions,
+                intelligence_consumed: consumed,
+                contribution_quality: 0.9,
+                membership_age_seconds: 86400 * 30,
+                has_exception: false,
+                exception_reason: None,
+                exception_expires_at: None,
+            };
+
+            // Computation should not overflow
+            let ratio = metrics.contribution_ratio();
+            assert!(ratio >= 0.0 && ratio <= 1.0, "Ratio should be bounded: {}", ratio);
+            assert!(ratio.is_finite(), "Ratio should be finite");
+
+            // Quality adjustment should not overflow
+            let quality_ratio = metrics.quality_adjusted_ratio();
+            assert!(quality_ratio >= 0.0 && quality_ratio <= 1.0,
+                   "Quality ratio should be bounded: {}", quality_ratio);
+            assert!(quality_ratio.is_finite(), "Quality ratio should be finite");
+
+            // Engine evaluation should handle boundary values
+            let decision = engine.evaluate_access(&metrics, "2026-04-17T00:00:00Z");
+            assert!(decision.contribution_ratio >= 0.0);
+            assert!(decision.contribution_ratio <= 1.0);
+            assert!(decision.quality_adjusted_ratio >= 0.0);
+            assert!(decision.quality_adjusted_ratio <= 1.0);
+
+            // JSON round-trip should preserve boundary values
+            let json = serde_json::to_string(&metrics).expect("boundary values should serialize");
+            let parsed: ContributionMetrics = serde_json::from_str(&json)
+                .expect("boundary values should deserialize");
+            assert_eq!(parsed.contributions_made, contributions);
+            assert_eq!(parsed.intelligence_consumed, consumed);
+        }
+    }
+
+    #[test]
+    fn negative_floating_point_edge_cases_in_contribution_quality() {
+        let mut engine = ReciprocityEngine::default();
+        let edge_cases = [
+            f64::NAN,                    // Not a number
+            f64::INFINITY,               // Positive infinity
+            f64::NEG_INFINITY,           // Negative infinity
+            f64::EPSILON,                // Smallest positive value
+            f64::MIN_POSITIVE,           // Smallest normalized positive value
+            f64::MAX,                    // Largest finite value
+            -f64::MAX,                   // Largest negative value
+            1.7976931348623157e+308,     // Near overflow
+            -1.7976931348623157e+308,    // Near underflow
+            0.0,                         // Zero
+            -0.0,                        // Negative zero
+        ];
+
+        for (i, quality) in edge_cases.iter().enumerate() {
+            let metrics = ContributionMetrics {
+                participant_id: format!("quality_edge_{}", i),
+                contributions_made: 100,
+                intelligence_consumed: 100,
+                contribution_quality: *quality,
+                membership_age_seconds: 86400 * 30,
+                has_exception: false,
+                exception_reason: None,
+                exception_expires_at: None,
+            };
+
+            // Quality adjustment should handle edge cases gracefully
+            let quality_ratio = metrics.quality_adjusted_ratio();
+            assert!(quality_ratio.is_finite(), "Quality ratio must be finite for quality {}", quality);
+            assert!(quality_ratio >= 0.0, "Quality ratio must be non-negative");
+            assert!(quality_ratio <= 1.0, "Quality ratio must not exceed 1.0");
+
+            // Engine evaluation should not panic on edge cases
+            let decision = engine.evaluate_access(&metrics, "2026-04-17T00:00:00Z");
+            assert!(decision.quality_adjusted_ratio.is_finite());
+            assert!(decision.quality_adjusted_ratio >= 0.0);
+            assert!(decision.quality_adjusted_ratio <= 1.0);
+
+            // JSON serialization should handle edge cases
+            match serde_json::to_string(&metrics) {
+                Ok(json) => {
+                    // Should deserialize back to equivalent value
+                    if let Ok(parsed) = serde_json::from_str::<ContributionMetrics>(&json) {
+                        let parsed_quality_ratio = parsed.quality_adjusted_ratio();
+                        assert!(parsed_quality_ratio.is_finite());
+                        assert!(parsed_quality_ratio >= 0.0);
+                        assert!(parsed_quality_ratio <= 1.0);
+                    }
+                }
+                Err(_) => {
+                    // Some edge cases may not serialize, which is acceptable
+                    // as long as we don't panic
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_exception_reason_massive_payload_memory_stress() {
+        let mut engine = ReciprocityEngine::default();
+
+        // Test various large payload sizes
+        let payload_sizes = [1000, 10_000, 100_000, 1_000_000];
+
+        for size in payload_sizes {
+            let massive_reason = "A".repeat(size);
+            let metrics = ContributionMetrics {
+                participant_id: format!("massive_reason_{}", size),
+                contributions_made: 0,
+                intelligence_consumed: 100,
+                contribution_quality: 0.0,
+                membership_age_seconds: 86400 * 30,
+                has_exception: true,
+                exception_reason: Some(massive_reason.clone()),
+                exception_expires_at: Some("2027-01-01T00:00:00Z".to_string()),
+            };
+
+            // Should handle large payloads without crashes
+            let decision = engine.evaluate_access(&metrics, "2026-04-17T00:00:00Z");
+            assert!(decision.exception_applied);
+            assert!(decision.reason.contains(&massive_reason[..100])); // Should contain at least part
+
+            // JSON operations should work with large payloads
+            match serde_json::to_string(&decision) {
+                Ok(json) => {
+                    assert!(json.len() > size); // Should contain the large payload
+
+                    // Deserialization should work
+                    match serde_json::from_str::<AccessDecision>(&json) {
+                        Ok(parsed) => {
+                            assert_eq!(parsed.participant_id, format!("massive_reason_{}", size));
+                            assert!(parsed.reason.contains(&massive_reason[..100]));
+                        }
+                        Err(_) => {
+                            // Very large payloads might fail to deserialize, which is acceptable
+                            // as long as we don't panic
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Very large payloads might not serialize, which is acceptable
+                    // as long as we don't panic
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_content_hash_collision_resistance_verification() {
+        let mut engine = ReciprocityEngine::default();
+
+        // Create decisions with crafted content designed to test hash collision resistance
+        let collision_attempts = [
+            // Same data, different participant IDs
+            ("participant_a", 50, 50),
+            ("participant_b", 50, 50),
+
+            // Different contribution patterns that could hash similarly
+            ("hash_test_1", 100, 200),
+            ("hash_test_2", 200, 100),
+
+            // Byte boundary cases
+            ("hash_boundary", 255, 256),
+            ("hash_boundary", 256, 255),
+        ];
+
+        let mut observed_hashes = BTreeSet::new();
+        let mut decisions = Vec::new();
+
+        for (participant_id, contributions, consumed) in collision_attempts {
+            let metrics = ContributionMetrics {
+                participant_id: participant_id.to_string(),
+                contributions_made: contributions,
+                intelligence_consumed: consumed,
+                contribution_quality: 0.8,
+                membership_age_seconds: 86400 * 30,
+                has_exception: false,
+                exception_reason: None,
+                exception_expires_at: None,
+            };
+
+            let decision = engine.evaluate_access(&metrics, "2026-04-17T00:00:00Z");
+            decisions.push(decision);
+        }
+
+        // Collect hashes from audit log
+        for entry in engine.audit_log() {
+            observed_hashes.insert(entry.content_hash.clone());
+
+            // Hashes should be proper hex strings
+            assert_eq!(entry.content_hash.len(), 64);
+            assert!(entry.content_hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+            // Hash should be deterministic for same content
+            let recomputed_hash = AccessAuditEntry::compute_hash(&entry.decision);
+            assert_eq!(entry.content_hash, recomputed_hash);
+        }
+
+        // All different decisions should produce different hashes (no collisions)
+        assert_eq!(observed_hashes.len(), decisions.len(),
+                  "Hash collision detected: {} unique hashes for {} decisions",
+                  observed_hashes.len(), decisions.len());
+    }
+
+    #[test]
+    fn negative_timestamp_injection_and_format_validation() {
+        let mut engine = ReciprocityEngine::default();
+        let malicious_timestamps = [
+            // JSON injection attempts
+            "2026-04-17T00:00:00Z\",\"injected\":true,\"data\":\"",
+            "null}\"evil\":\"payload\",\"timestamp\":\"2026-04-17T00:00:00Z",
+
+            // Control character injection
+            "2026-04-17T00:00:00Z\x00\r\n",
+            "2026-04-17\x1b[31mT00:00:00Z",
+
+            // Unicode injection
+            "2026-04-17T00:00:00Z\u{202E}injection",
+            "2026-04-17T00:00:00Z\u{FEFF}bom",
+
+            // Extremely long timestamp
+            &"2026-04-17T00:00:00Z".repeat(1000),
+
+            // Empty and whitespace
+            "",
+            "   ",
+            "\t\n\r",
+
+            // Invalid ISO format
+            "not-a-timestamp",
+            "2026-13-45T25:70:80Z", // Invalid date/time
+        ];
+
+        for timestamp in &malicious_timestamps {
+            let metrics = ContributionMetrics {
+                participant_id: "timestamp_test".to_string(),
+                contributions_made: 50,
+                intelligence_consumed: 50,
+                contribution_quality: 0.8,
+                membership_age_seconds: 86400 * 30,
+                has_exception: false,
+                exception_reason: None,
+                exception_expires_at: None,
+            };
+
+            // Should handle malicious timestamps without corruption
+            let decision = engine.evaluate_access(&metrics, timestamp);
+            assert_eq!(decision.participant_id, "timestamp_test");
+
+            // Audit log should preserve timestamp exactly
+            let audit_entry = engine.audit_log().last().expect("should have audit entry");
+            assert_eq!(audit_entry.timestamp, *timestamp);
+
+            // JSON serialization should escape injection attempts
+            let json = serde_json::to_string(audit_entry)
+                .expect("should serialize audit entry with malicious timestamp");
+
+            // Raw injection patterns should not appear unescaped
+            if timestamp.contains('"') || timestamp.contains('{') || timestamp.contains('}') {
+                assert!(!json.contains(&timestamp.replace('\\', "")),
+                       "Dangerous timestamp should be escaped in JSON: {}", timestamp.escape_debug());
+            }
+
+            // Deserialization should recover exact timestamp
+            let parsed: AccessAuditEntry = serde_json::from_str(&json)
+                .expect("should deserialize audit entry");
+            assert_eq!(parsed.timestamp, *timestamp);
+        }
+    }
+
+    #[test]
+    fn negative_configuration_extreme_boundary_values() {
+        // Test configurations with extreme or contradictory values
+        let extreme_configs = [
+            // Zero thresholds
+            ReciprocityConfig {
+                full_tier_min_ratio: 0.0,
+                standard_tier_min_ratio: 0.0,
+                limited_tier_min_ratio: 0.0,
+                grace_period_seconds: 0,
+                grace_period_tier: AccessTier::Blocked,
+                use_quality_adjustment: true,
+            },
+
+            // Inverted thresholds (higher tier requires lower ratio)
+            ReciprocityConfig {
+                full_tier_min_ratio: 0.1,
+                standard_tier_min_ratio: 0.5,
+                limited_tier_min_ratio: 0.9,
+                grace_period_seconds: 86400,
+                grace_period_tier: AccessTier::Standard,
+                use_quality_adjustment: true,
+            },
+
+            // Extreme values
+            ReciprocityConfig {
+                full_tier_min_ratio: f64::MAX,
+                standard_tier_min_ratio: f64::INFINITY,
+                limited_tier_min_ratio: f64::NAN,
+                grace_period_seconds: u64::MAX,
+                grace_period_tier: AccessTier::Full,
+                use_quality_adjustment: false,
+            },
+
+            // Negative ratios
+            ReciprocityConfig {
+                full_tier_min_ratio: -1.0,
+                standard_tier_min_ratio: -0.5,
+                limited_tier_min_ratio: -0.1,
+                grace_period_seconds: 86400,
+                grace_period_tier: AccessTier::Limited,
+                use_quality_adjustment: true,
+            },
+        ];
+
+        for (i, config) in extreme_configs.iter().enumerate() {
+            let mut engine = ReciprocityEngine::new(config.clone());
+
+            let test_metrics = ContributionMetrics {
+                participant_id: format!("extreme_config_test_{}", i),
+                contributions_made: 50,
+                intelligence_consumed: 100,
+                contribution_quality: 0.8,
+                membership_age_seconds: 86400,
+                has_exception: false,
+                exception_reason: None,
+                exception_expires_at: None,
+            };
+
+            // Engine should handle extreme configurations without panicking
+            let decision = engine.evaluate_access(&test_metrics, "2026-04-17T00:00:00Z");
+            assert_eq!(decision.participant_id, format!("extreme_config_test_{}", i));
+
+            // Decision ratios should remain bounded despite extreme config
+            assert!(decision.contribution_ratio >= 0.0);
+            assert!(decision.contribution_ratio <= 1.0);
+            assert!(decision.quality_adjusted_ratio >= 0.0);
+            assert!(decision.quality_adjusted_ratio <= 1.0);
+
+            // Classification should produce valid tier
+            let effective_ratio = if config.use_quality_adjustment {
+                decision.quality_adjusted_ratio
+            } else {
+                decision.contribution_ratio
+            };
+            let tier = engine.classify_tier(effective_ratio);
+            assert!(matches!(tier, AccessTier::Blocked | AccessTier::Limited |
+                                  AccessTier::Standard | AccessTier::Full));
+
+            // JSON serialization of extreme config should work
+            let config_json = serde_json::to_string(config);
+            match config_json {
+                Ok(json) => {
+                    // Should deserialize back
+                    if let Ok(parsed_config) = serde_json::from_str::<ReciprocityConfig>(&json) {
+                        // Extreme values should be preserved or safely handled
+                        assert!(parsed_config.grace_period_seconds <= config.grace_period_seconds);
+                    }
+                }
+                Err(_) => {
+                    // Some extreme values might not serialize, which is acceptable
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_audit_log_overflow_and_sequence_consistency() {
+        let mut engine = ReciprocityEngine::default();
+
+        // Generate more audit entries than the maximum capacity
+        let overflow_count = MAX_AUDIT_LOG_ENTRIES * 2;
+        let mut all_entry_ids = Vec::new();
+
+        for i in 0..overflow_count {
+            let metrics = ContributionMetrics {
+                participant_id: format!("overflow_test_{}", i),
+                contributions_made: i % 100,
+                intelligence_consumed: (i % 100) + 1,
+                contribution_quality: 0.8,
+                membership_age_seconds: 86400 * 30,
+                has_exception: false,
+                exception_reason: None,
+                exception_expires_at: None,
+            };
+
+            engine.evaluate_access(&metrics, "2026-04-17T00:00:00Z");
+
+            // Track all generated entry IDs
+            if let Some(last_entry) = engine.audit_log().last() {
+                all_entry_ids.push(last_entry.entry_id.clone());
+            }
+        }
+
+        // Audit log should be bounded to MAX_AUDIT_LOG_ENTRIES
+        assert_eq!(engine.audit_log().len(), MAX_AUDIT_LOG_ENTRIES);
+
+        // All remaining entry IDs should be unique
+        let remaining_ids: BTreeSet<String> = engine.audit_log()
+            .iter()
+            .map(|entry| entry.entry_id.clone())
+            .collect();
+        assert_eq!(remaining_ids.len(), engine.audit_log().len());
+
+        // Entry IDs should maintain sequence consistency (no duplicates in full history)
+        let unique_all_ids: BTreeSet<String> = all_entry_ids.into_iter().collect();
+        assert_eq!(unique_all_ids.len(), overflow_count,
+                  "Sequence numbering should prevent ID reuse");
+
+        // Epoch and sequence should handle overflow gracefully
+        for entry in engine.audit_log() {
+            assert!(entry.entry_id.starts_with("audit-"));
+            assert_eq!(entry.entry_id.len(), "audit-".len() + 16 + 1 + 16); // epoch-sequence format
+        }
+    }
+
+    #[test]
+    fn negative_reciprocity_matrix_with_massive_participant_batch() {
+        let mut engine = ReciprocityEngine::default();
+
+        // Create very large batch to stress memory and processing
+        let large_batch_size = 10_000;
+        let mut participants = Vec::with_capacity(large_batch_size);
+
+        for i in 0..large_batch_size {
+            participants.push(ContributionMetrics {
+                participant_id: format!("batch_participant_{:06}", i),
+                contributions_made: (i % 1000) as u64,
+                intelligence_consumed: ((i % 500) + 1) as u64,
+                contribution_quality: (i as f64 / large_batch_size as f64).min(1.0),
+                membership_age_seconds: 86400 * ((i % 365) + 1) as u64,
+                has_exception: i % 100 == 0, // 1% exceptions
+                exception_reason: if i % 100 == 0 { Some("bulk test".to_string()) } else { None },
+                exception_expires_at: None,
+            });
+        }
+
+        // Should handle large batch without memory issues or crashes
+        let start_time = std::time::Instant::now();
+        let matrix = engine.evaluate_batch(&participants, "massive_batch", "2026-04-17T00:00:00Z");
+        let processing_time = start_time.elapsed();
+
+        // Should complete in reasonable time
+        assert!(processing_time.as_secs() < 30,
+               "Large batch processing took too long: {:?}", processing_time);
+
+        // Matrix should have correct structure
+        assert_eq!(matrix.total_participants, large_batch_size);
+        assert_eq!(matrix.entries.len(), large_batch_size);
+
+        // Tier distribution should sum to total
+        let tier_sum: usize = matrix.tier_distribution.values().sum();
+        assert_eq!(tier_sum, matrix.total_participants);
+
+        // Should track exceptions correctly
+        assert_eq!(matrix.exceptions_active, large_batch_size / 100); // 1% exceptions
+
+        // Content hash should be consistent
+        assert_eq!(matrix.content_hash.len(), 64);
+        assert!(matrix.content_hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+        // JSON serialization should handle large matrix
+        match serde_json::to_string(&matrix) {
+            Ok(json) => {
+                assert!(json.len() > 1_000_000); // Should be substantial
+
+                // Deserialization should work
+                match serde_json::from_str::<ReciprocityMatrix>(&json) {
+                    Ok(parsed_matrix) => {
+                        assert_eq!(parsed_matrix.total_participants, large_batch_size);
+                        assert_eq!(parsed_matrix.content_hash, matrix.content_hash);
+                    }
+                    Err(_) => {
+                        // Very large matrices might fail to deserialize due to memory limits
+                        // This is acceptable as long as we don't panic
+                    }
+                }
+            }
+            Err(_) => {
+                // Very large matrices might not serialize due to memory limits
+                // This is acceptable as long as we don't panic
+            }
+        }
+    }
+
+    #[test]
+    fn negative_concurrent_access_pattern_simulation() {
+        // Simulate concurrent access patterns that might reveal race conditions
+        use std::sync::{Arc, Mutex};
+        use std::thread;
+
+        let engine = Arc::new(Mutex::new(ReciprocityEngine::default()));
+        let results = Arc::new(Mutex::new(Vec::new()));
+
+        let thread_count = 8;
+        let operations_per_thread = 100;
+        let mut handles = Vec::new();
+
+        for thread_id in 0..thread_count {
+            let engine = Arc::clone(&engine);
+            let results = Arc::clone(&results);
+
+            let handle = thread::spawn(move || {
+                let mut thread_results = Vec::new();
+
+                for operation in 0..operations_per_thread {
+                    let metrics = ContributionMetrics {
+                        participant_id: format!("concurrent_t{}_o{}", thread_id, operation),
+                        contributions_made: (thread_id * operations_per_thread + operation) as u64,
+                        intelligence_consumed: ((thread_id * operations_per_thread + operation) + 1) as u64,
+                        contribution_quality: 0.8,
+                        membership_age_seconds: 86400 * 30,
+                        has_exception: operation % 10 == 0,
+                        exception_reason: if operation % 10 == 0 {
+                            Some(format!("concurrent_exception_t{}_o{}", thread_id, operation))
+                        } else {
+                            None
+                        },
+                        exception_expires_at: None,
+                    };
+
+                    // Each thread performs access evaluation
+                    let decision = {
+                        let mut engine_guard = engine.lock().unwrap();
+                        engine_guard.evaluate_access(&metrics, "2026-04-17T00:00:00Z")
+                    };
+
+                    thread_results.push((thread_id, operation, decision.tier, decision.granted));
+                }
+
+                // Merge results
+                {
+                    let mut shared_results = results.lock().unwrap();
+                    shared_results.extend(thread_results);
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        // Wait for all threads to complete
+        for handle in handles {
+            handle.join().expect("Thread should complete without panics");
+        }
+
+        let final_results = results.lock().unwrap();
+
+        // Should have processed all operations
+        assert_eq!(final_results.len(), thread_count * operations_per_thread);
+
+        // Check final engine state consistency
+        let final_engine = engine.lock().unwrap();
+
+        // Audit log should contain entries from all threads
+        assert!(final_engine.audit_log().len() > 0);
+        assert!(final_engine.audit_log().len() <= MAX_AUDIT_LOG_ENTRIES);
+
+        // All audit entry IDs should be unique (no race condition duplicates)
+        let audit_ids: BTreeSet<String> = final_engine.audit_log()
+            .iter()
+            .map(|entry| entry.entry_id.clone())
+            .collect();
+        assert_eq!(audit_ids.len(), final_engine.audit_log().len(),
+                  "Race conditions may have caused duplicate audit entry IDs");
+
+        // Results should show reasonable distribution of outcomes
+        let granted_count = final_results.iter().filter(|(_, _, _, granted)| *granted).count();
+        assert!(granted_count > 0, "At least some access should have been granted");
+        assert!(granted_count < final_results.len(), "Not all access should have been granted");
+    }
+
+    #[test]
+    fn negative_deep_json_nesting_stack_overflow_protection() {
+        // Test deeply nested JSON structures that could cause stack overflow
+        let mut engine = ReciprocityEngine::default();
+
+        // Create decision with nested data
+        let metrics = ContributionMetrics {
+            participant_id: "deep_nesting_test".to_string(),
+            contributions_made: 50,
+            intelligence_consumed: 50,
+            contribution_quality: 0.8,
+            membership_age_seconds: 86400 * 30,
+            has_exception: true,
+            exception_reason: Some({
+                // Create deeply nested JSON-like string
+                let mut nested = String::new();
+                nested.push_str(r#"{"level0":{"#);
+                for i in 1..1000 {
+                    nested.push_str(&format!(r#""level{}":"{{"#, i));
+                }
+                nested.push_str(r#""deep":"value""#);
+                for _ in 0..1000 {
+                    nested.push_str("}}");
+                }
+                nested
+            }),
+            exception_expires_at: None,
+        };
+
+        // Should handle deeply nested content without stack overflow
+        let result = std::panic::catch_unwind(|| {
+            engine.evaluate_access(&metrics, "2026-04-17T00:00:00Z")
+        });
+
+        match result {
+            Ok(decision) => {
+                // Successfully handled deep nesting
+                assert!(decision.exception_applied);
+                assert_eq!(decision.participant_id, "deep_nesting_test");
+
+                // JSON serialization should handle or safely reject deep nesting
+                match serde_json::to_string(&decision) {
+                    Ok(json) => {
+                        // If serialization succeeds, deserialization should too
+                        match serde_json::from_str::<AccessDecision>(&json) {
+                            Ok(parsed) => {
+                                assert_eq!(parsed.participant_id, "deep_nesting_test");
+                            }
+                            Err(_) => {
+                                // Deserialization failure acceptable for extremely nested data
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // Serialization failure acceptable for extremely nested data
+                    }
+                }
+            }
+            Err(_) => {
+                // If panic occurs, need better stack protection
+                panic!("Deep nesting caused panic - need stack overflow protection");
+            }
+        }
+    }
+
+    #[test]
+    fn negative_exception_expiry_timestamp_manipulation_attacks() {
+        let mut engine = ReciprocityEngine::default();
+
+        let malicious_timestamps = [
+            // Far future dates (year 9999, etc.)
+            "9999-12-31T23:59:59Z",
+            "3000-01-01T00:00:00Z",
+
+            // Epoch edge cases
+            "1970-01-01T00:00:00Z",
+            "1969-12-31T23:59:59Z",
+
+            // Invalid but parseable-looking dates
+            "2026-02-30T25:00:00Z",  // February 30th, 25 o'clock
+            "2026-13-45T00:00:00Z",  // Month 13, day 45
+
+            // JSON/XML injection attempts
+            "2026-04-17T00:00:00Z\"><script>alert('xss')</script>",
+            "2026-04-17T00:00:00Z&amp;malicious=true",
+
+            // Unicode and control character injection
+            "2026-04-17T00:00:00Z\u{202E}injection",
+            "2026-04-17T00:00:00Z\x00\x01\x02",
+
+            // Extremely long timestamps
+            &"2026-04-17T00:00:00Z".repeat(10000),
+        ];
+
+        for (i, timestamp) in malicious_timestamps.iter().enumerate() {
+            let metrics = ContributionMetrics {
+                participant_id: format!("timestamp_attack_{}", i),
+                contributions_made: 0,
+                intelligence_consumed: 100,
+                contribution_quality: 0.0,
+                membership_age_seconds: 86400 * 30,
+                has_exception: true,
+                exception_reason: Some("timestamp manipulation test".to_string()),
+                exception_expires_at: Some(timestamp.to_string()),
+            };
+
+            // Should handle malicious timestamps without corruption or crashes
+            let decision = engine.evaluate_access(&metrics, "2026-04-17T00:00:00Z");
+            assert!(decision.exception_applied, "Exception should still be applied");
+            assert_eq!(decision.participant_id, format!("timestamp_attack_{}", i));
+
+            // JSON round-trip should preserve exact timestamp
+            let json = serde_json::to_string(&metrics)
+                .expect("malicious timestamp should serialize");
+
+            // Injection patterns should be escaped in JSON
+            if timestamp.contains('"') || timestamp.contains('<') || timestamp.contains('&') {
+                assert!(!json.contains(&timestamp.replace('\\', "")),
+                       "Malicious timestamp should be escaped in JSON");
+            }
+
+            // Deserialization should recover exact timestamp
+            let parsed: ContributionMetrics = serde_json::from_str(&json)
+                .expect("should deserialize malicious timestamp");
+            assert_eq!(parsed.exception_expires_at.as_deref(), Some(timestamp.as_str()));
+        }
+    }
+
+    #[test]
+    fn negative_push_bounded_edge_cases_and_memory_consistency() {
+        // Test edge cases in push_bounded function
+
+        // Test with various capacity values
+        let test_cases = [
+            (vec![1, 2, 3], 4, 0),           // Zero capacity
+            (vec![], 5, 1),                  // Empty vec, capacity 1
+            (vec![1, 2, 3], 4, 1),          // Overflow by much more than capacity
+            (vec![1, 2, 3], 4, 3),          // Exactly at capacity
+            (vec![1, 2, 3], 4, 10),         // Much higher capacity
+            (vec![1; 1000], 1001, 500),     // Large vec, medium capacity
+            (vec![1; 10], 11, usize::MAX),  // Extreme capacity value
+        ];
+
+        for (mut initial_vec, new_item, capacity) in test_cases {
+            let initial_len = initial_vec.len();
+            let expected_final_len = if capacity == 0 {
+                0
+            } else {
+                (initial_len + 1).min(capacity)
+            };
+
+            push_bounded(&mut initial_vec, new_item, capacity);
+
+            // Length should be bounded by capacity
+            assert_eq!(initial_vec.len(), expected_final_len);
+
+            // If capacity > 0, new item should be present (at the end)
+            if capacity > 0 {
+                assert_eq!(initial_vec.last().copied(), Some(new_item));
+            }
+
+            // Vector should not exceed capacity
+            assert!(initial_vec.len() <= capacity || capacity == usize::MAX);
+
+            // If we had overflow, oldest items should be removed
+            if initial_len >= capacity && capacity > 0 {
+                // The vec should start with newer items
+                let mut test_vec = vec![1; initial_len];
+                push_bounded(&mut test_vec, 999, capacity);
+                if capacity > 0 {
+                    assert_eq!(test_vec.last().copied(), Some(999));
+                }
+            }
+        }
+
+        // Test memory consistency with repeated pushes
+        let mut audit_log = Vec::new();
+        for i in 0..1000 {
+            push_bounded(&mut audit_log, format!("entry_{}", i), 100);
+
+            // Should never exceed capacity
+            assert!(audit_log.len() <= 100);
+
+            // Most recent item should always be present
+            assert_eq!(audit_log.last(), Some(&format!("entry_{}", i)));
+        }
+
+        // Final state should have correct size and most recent entries
+        assert_eq!(audit_log.len(), 100);
+        assert_eq!(audit_log[99], "entry_999");
+        assert_eq!(audit_log[0], "entry_900"); // Should start from entry 900
+    }
+
+    #[test]
+    fn negative_access_tier_enum_manipulation_and_serialization_attacks() {
+        use serde_json::json;
+
+        // Test serialization/deserialization with malicious values
+        let malicious_tier_values = [
+            json!("blocked"),      // Lowercase (should fail)
+            json!("FULL"),         // Uppercase (should fail)
+            json!("limited_access"), // Non-existent variant
+            json!("admin"),        // Privileged-sounding variant
+            json!(""),             // Empty string
+            json!(null),           // Null value
+            json!(42),             // Number instead of string
+            json!(true),           // Boolean instead of string
+            json!(["full"]),       // Array instead of string
+            json!({"tier": "full"}), // Object instead of string
+            json!("full\u{0000}"), // Null byte injection
+            json!("full\"><script>alert('xss')</script>"), // XSS attempt
+        ];
+
+        for (i, malicious_value) in malicious_tier_values.iter().enumerate() {
+            // Attempt to deserialize malicious tier value
+            let tier_result = serde_json::from_value::<AccessTier>(malicious_value.clone());
+
+            // Should safely reject malicious values
+            assert!(tier_result.is_err(),
+                   "Malicious tier value {} should be rejected: {:?}", i, malicious_value);
+
+            // Test in context of decision structure
+            let malicious_decision = json!({
+                "participant_id": format!("attack_{}", i),
+                "tier": malicious_value,
+                "contribution_ratio": 0.5,
+                "quality_adjusted_ratio": 0.4,
+                "granted": true,
+                "reason": "test",
+                "exception_applied": false,
+                "grace_period_active": false,
+                "accessible_feeds": []
+            });
+
+            let decision_result = serde_json::from_value::<AccessDecision>(malicious_decision);
+            assert!(decision_result.is_err(),
+                   "AccessDecision with malicious tier {} should be rejected", i);
+        }
+
+        // Test valid tiers serialize/deserialize correctly
+        let valid_tiers = [AccessTier::Blocked, AccessTier::Limited, AccessTier::Standard, AccessTier::Full];
+
+        for tier in &valid_tiers {
+            // Should serialize to expected string
+            let serialized = serde_json::to_string(tier).expect("valid tier should serialize");
+            let expected = format!("\"{}\"", match tier {
+                AccessTier::Blocked => "blocked",
+                AccessTier::Limited => "limited",
+                AccessTier::Standard => "standard",
+                AccessTier::Full => "full",
+            });
+            assert_eq!(serialized, expected);
+
+            // Should deserialize back to same tier
+            let deserialized: AccessTier = serde_json::from_str(&serialized)
+                .expect("valid serialized tier should deserialize");
+            assert_eq!(deserialized, *tier);
+        }
+    }
+
+    #[test]
+    fn negative_batch_evaluation_with_contradictory_participant_states() {
+        let mut engine = ReciprocityEngine::default();
+
+        // Create batch with contradictory or extreme participant states
+        let contradictory_participants = vec![
+            // Participant with exception but past grace period and zero contributions
+            ContributionMetrics {
+                participant_id: "contradiction_1".to_string(),
+                contributions_made: 0,
+                intelligence_consumed: 1000,
+                contribution_quality: f64::NAN,
+                membership_age_seconds: 86400 * 365, // Well past grace period
+                has_exception: true,
+                exception_reason: Some("contradiction test".to_string()),
+                exception_expires_at: Some("1999-01-01T00:00:00Z".to_string()), // Expired exception
+            },
+
+            // New participant with massive consumption but in grace period
+            ContributionMetrics {
+                participant_id: "contradiction_2".to_string(),
+                contributions_made: 0,
+                intelligence_consumed: u64::MAX,
+                contribution_quality: 0.0,
+                membership_age_seconds: 1, // Very new
+                has_exception: false,
+                exception_reason: None,
+                exception_expires_at: None,
+            },
+
+            // High contributor with zero consumption (infinite ratio case)
+            ContributionMetrics {
+                participant_id: "contradiction_3".to_string(),
+                contributions_made: u64::MAX,
+                intelligence_consumed: 0,
+                contribution_quality: f64::INFINITY,
+                membership_age_seconds: 86400 * 30,
+                has_exception: false,
+                exception_reason: None,
+                exception_expires_at: None,
+            },
+
+            // Participant with negative quality and exception
+            ContributionMetrics {
+                participant_id: "contradiction_4".to_string(),
+                contributions_made: 100,
+                intelligence_consumed: 50,
+                contribution_quality: f64::NEG_INFINITY,
+                membership_age_seconds: 86400 * 30,
+                has_exception: true,
+                exception_reason: Some("negative quality test".to_string()),
+                exception_expires_at: Some("2027-12-31T23:59:59Z".to_string()),
+            },
+        ];
+
+        // Should handle contradictory states without panics or infinite loops
+        let matrix = engine.evaluate_batch(&contradictory_participants, "contradiction_test", "2026-04-17T00:00:00Z");
+
+        // Matrix should have correct participant count
+        assert_eq!(matrix.total_participants, contradictory_participants.len());
+        assert_eq!(matrix.entries.len(), contradictory_participants.len());
+
+        // Each participant should have a valid tier assignment
+        for entry in &matrix.entries {
+            assert!(matches!(entry.tier, AccessTier::Blocked | AccessTier::Limited |
+                                       AccessTier::Standard | AccessTier::Full));
+
+            // Ratios should be bounded and finite
+            assert!(entry.contribution_ratio >= 0.0);
+            assert!(entry.contribution_ratio <= 1.0);
+            assert!(entry.contribution_ratio.is_finite());
+
+            assert!(entry.quality_adjusted_ratio >= 0.0);
+            assert!(entry.quality_adjusted_ratio <= 1.0);
+            assert!(entry.quality_adjusted_ratio.is_finite());
+        }
+
+        // Tier distribution should be consistent
+        let tier_sum: usize = matrix.tier_distribution.values().sum();
+        assert_eq!(tier_sum, matrix.total_participants);
+
+        // Should count exceptions correctly (participants with has_exception=true)
+        let expected_exceptions = contradictory_participants.iter()
+            .filter(|p| p.has_exception)
+            .count();
+
+        // Matrix might not count all exceptions if some are processed differently
+        // but should not exceed the number of participants with has_exception=true
+        assert!(matrix.exceptions_active <= expected_exceptions);
+
+        // Content hash should be deterministic despite contradictory inputs
+        assert_eq!(matrix.content_hash.len(), 64);
+        assert!(matrix.content_hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+        // Re-evaluating same batch should produce same hash
+        let matrix2 = engine.evaluate_batch(&contradictory_participants, "contradiction_test", "2026-04-17T00:00:00Z");
+        assert_eq!(matrix.content_hash, matrix2.content_hash);
     }
 }

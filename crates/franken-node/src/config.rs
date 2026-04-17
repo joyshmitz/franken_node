@@ -3046,6 +3046,435 @@ state_dir = ""
     }
 
     #[test]
+    fn parse_env_bool_rejects_blank_string() {
+        let err = parse_env_bool("FRANKEN_NODE_TEST_BOOL", "   ").unwrap_err();
+
+        assert!(matches!(
+            err,
+            ConfigError::EnvParseFailed { ref key, .. } if key == "FRANKEN_NODE_TEST_BOOL"
+        ));
+    }
+
+    #[test]
+    fn parse_env_u8_rejects_overflowing_value() {
+        let err = parse_env_u8("FRANKEN_NODE_ASSURANCE", "256").unwrap_err();
+
+        assert!(matches!(
+            err,
+            ConfigError::EnvParseFailed { ref key, .. } if key == "FRANKEN_NODE_ASSURANCE"
+        ));
+    }
+
+    #[test]
+    fn parse_env_u64_rejects_negative_value() {
+        let err = parse_env_u64("FRANKEN_NODE_TIMEOUT", "-1").unwrap_err();
+
+        assert!(matches!(
+            err,
+            ConfigError::EnvParseFailed { ref key, .. } if key == "FRANKEN_NODE_TIMEOUT"
+        ));
+    }
+
+    #[test]
+    fn parse_env_f64_rejects_nan_and_infinity() {
+        for raw in ["NaN", "inf", "-inf"] {
+            let err = parse_env_f64("FRANKEN_NODE_SCORE", raw).unwrap_err();
+            assert!(
+                err.to_string().contains("value must be finite"),
+                "{raw} should be rejected as non-finite"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_env_bool_rejects_numeric_and_decorated_values() {
+        for raw in ["2", "truthy", "true,false", "on/off"] {
+            let err = parse_env_bool("FRANKEN_NODE_TEST_BOOL", raw).unwrap_err();
+            assert!(matches!(
+                err,
+                ConfigError::EnvParseFailed { ref key, .. } if key == "FRANKEN_NODE_TEST_BOOL"
+            ));
+        }
+    }
+
+    #[test]
+    fn parse_env_u8_rejects_fractional_and_nonnumeric_values() {
+        for raw in ["1.0", "ten", "0xff"] {
+            let err = parse_env_u8("FRANKEN_NODE_ASSURANCE", raw).unwrap_err();
+            assert!(matches!(
+                err,
+                ConfigError::EnvParseFailed { ref key, .. } if key == "FRANKEN_NODE_ASSURANCE"
+            ));
+        }
+    }
+
+    #[test]
+    fn parse_env_usize_rejects_negative_fractional_and_unit_suffixed_values() {
+        for raw in ["-1", "1.5", "100ms"] {
+            let err = parse_env_usize("FRANKEN_NODE_LIMIT", raw).unwrap_err();
+            assert!(matches!(
+                err,
+                ConfigError::EnvParseFailed { ref key, .. } if key == "FRANKEN_NODE_LIMIT"
+            ));
+        }
+    }
+
+    #[test]
+    fn parse_env_f64_rejects_empty_hex_and_unit_suffixed_values() {
+        for raw in ["", "0x1", "0.5s"] {
+            let err = parse_env_f64("FRANKEN_NODE_SCORE", raw).unwrap_err();
+            assert!(matches!(
+                err,
+                ConfigError::EnvParseFailed { ref key, .. } if key == "FRANKEN_NODE_SCORE"
+            ));
+        }
+    }
+
+    #[test]
+    fn profile_parser_rejects_path_like_and_decorated_values() {
+        for raw in [
+            "../strict",
+            "strict/balanced",
+            "strict:balanced",
+            "balanced\0",
+        ] {
+            assert!(
+                raw.parse::<Profile>().is_err(),
+                "decorated profile unexpectedly parsed: {raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn compatibility_mode_parser_rejects_decorated_values() {
+        for raw in [
+            "mode=strict",
+            "balanced#default",
+            "legacy-risky/latest",
+            "strict\0",
+        ] {
+            assert!(
+                raw.parse::<CompatibilityMode>().is_err(),
+                "decorated compatibility mode unexpectedly parsed: {raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn preferred_runtime_parser_rejects_path_like_and_tagged_values() {
+        for raw in ["node/bun", "franken-engine:latest", "auto#default", "bun\0"] {
+            assert!(
+                raw.parse::<PreferredRuntime>().is_err(),
+                "decorated runtime unexpectedly parsed: {raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validation_rejects_zero_fleet_convergence_timeout() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        config.fleet.convergence_timeout_seconds = 0;
+
+        let err = config.validate().unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("fleet.convergence_timeout_seconds")
+        );
+    }
+
+    #[test]
+    fn validation_rejects_zero_runtime_bulkhead_retry_after() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        config.runtime.bulkhead_retry_after_ms = 0;
+
+        let err = config.validate().unwrap_err();
+
+        assert!(err.to_string().contains("runtime.bulkhead_retry_after_ms"));
+    }
+
+    #[test]
+    fn validation_rejects_zero_runtime_lane_enqueue_timeout() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        let lane = config
+            .runtime
+            .lanes
+            .get_mut("background")
+            .expect("background lane exists");
+        lane.enqueue_timeout_ms = 0;
+
+        let err = config.validate().unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("runtime.lanes.background.enqueue_timeout_ms")
+        );
+    }
+
+    #[test]
+    fn validate_score_and_percentage_reject_out_of_range_values() {
+        assert!(validate_opt_score("trust.min_trust_score", Some(-0.01)).is_err());
+        assert!(validate_opt_score("trust.min_trust_score", Some(1.01)).is_err());
+        assert!(validate_opt_pct("thresholds.max_variance_pct", Some(-0.01)).is_err());
+        assert!(validate_opt_pct("thresholds.max_variance_pct", Some(100.01)).is_err());
+    }
+
+    #[test]
+    fn validation_rejects_empty_observability_namespace() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        config.observability.namespace = "   ".to_string();
+
+        let err = config.validate().unwrap_err();
+
+        assert!(err.to_string().contains("observability.namespace"));
+    }
+
+    #[test]
+    fn validation_rejects_zero_runtime_bulkhead_capacity() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        config.runtime.remote_max_in_flight = 0;
+
+        let err = config.validate().unwrap_err();
+
+        assert!(err.to_string().contains("runtime.remote_max_in_flight"));
+    }
+
+    #[test]
+    fn validation_rejects_zero_runtime_lane_limits() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        let lane = config
+            .runtime
+            .lanes
+            .get_mut("cancel")
+            .expect("cancel lane exists");
+        lane.queue_limit = 0;
+
+        let err = config.validate().unwrap_err();
+
+        assert!(err.to_string().contains("runtime.lanes.cancel.queue_limit"));
+    }
+
+    #[test]
+    fn validation_rejects_zero_compatibility_receipt_ttl() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        config.compatibility.default_receipt_ttl_secs = 0;
+
+        let err = config.validate().unwrap_err();
+
+        assert!(err.to_string().contains("default_receipt_ttl_secs"));
+    }
+
+    #[test]
+    fn validation_rejects_zero_replay_capsule_freshness() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        config.replay.max_replay_capsule_freshness_secs = 0;
+
+        let err = config.validate().unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("max_replay_capsule_freshness_secs")
+        );
+    }
+
+    #[test]
+    fn validation_rejects_blank_replay_bundle_version() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        config.replay.bundle_version = "\t ".to_string();
+
+        let err = config.validate().unwrap_err();
+
+        assert!(err.to_string().contains("replay.bundle_version"));
+    }
+
+    #[test]
+    fn validation_rejects_zero_observability_receipt_cap() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        config.observability.max_receipts = Some(0);
+
+        let err = config.validate().unwrap_err();
+
+        assert!(err.to_string().contains("observability.max_receipts"));
+    }
+
+    #[test]
+    fn validation_rejects_zero_security_degraded_duration() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        config.security.max_degraded_duration_secs = 0;
+
+        let err = config.validate().unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("security.max_degraded_duration_secs")
+        );
+    }
+
+    #[test]
+    fn validation_rejects_invalid_fleet_node_id() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        config.fleet.node_id = Some("../node".to_string());
+
+        let err = config.validate().unwrap_err();
+
+        assert!(err.to_string().contains("fleet.node_id"));
+    }
+
+    #[test]
+    fn validation_rejects_zero_fleet_poll_interval() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        config.fleet.poll_interval_seconds = Some(0);
+
+        let err = config.validate().unwrap_err();
+
+        assert!(err.to_string().contains("fleet.poll_interval_seconds"));
+    }
+
+    #[test]
+    fn validation_rejects_zero_runtime_lane_max_concurrent() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        let lane = config
+            .runtime
+            .lanes
+            .get_mut("timed")
+            .expect("timed lane exists");
+        lane.max_concurrent = 0;
+
+        let err = config.validate().unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("runtime.lanes.timed.max_concurrent")
+        );
+    }
+
+    #[test]
+    fn validation_rejects_zero_runtime_lane_priority_weight() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        let lane = config
+            .runtime
+            .lanes
+            .get_mut("realtime")
+            .expect("realtime lane exists");
+        lane.priority_weight = 0;
+
+        let err = config.validate().unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("runtime.lanes.realtime.priority_weight")
+        );
+    }
+
+    #[test]
+    fn lane_overflow_policy_deserialize_rejects_snake_case_variant() {
+        let raw = r#"
+max_concurrent = 1
+priority_weight = 1
+queue_limit = 1
+enqueue_timeout_ms = 1
+overflow_policy = "enqueue_with_timeout"
+"#;
+
+        let result: Result<RuntimeLaneConfig, _> = toml::from_str(raw);
+
+        assert!(result.is_err(), "overflow policy must use kebab-case");
+    }
+
+    #[test]
+    fn network_allowlist_entry_deserialize_rejects_missing_reason() {
+        let raw = r#"
+host = "metadata.internal"
+"#;
+
+        let result: Result<NetworkAllowlistEntry, _> = toml::from_str(raw);
+
+        assert!(
+            result.is_err(),
+            "allowlist entries must carry audit reasons"
+        );
+    }
+
+    #[test]
+    fn network_allowlist_entry_deserialize_rejects_port_overflow() {
+        let raw = r#"
+host = "metadata.internal"
+port = 70000
+reason = "test fixture"
+"#;
+
+        let result: Result<NetworkAllowlistEntry, _> = toml::from_str(raw);
+
+        assert!(result.is_err(), "allowlist ports must fit in u16");
+    }
+
+    #[test]
+    fn network_policy_deserialize_rejects_unknown_ssrf_enforcement() {
+        let raw = r#"
+ssrf_enforcement = "audit"
+"#;
+
+        let result: Result<NetworkPolicyConfig, _> = toml::from_str(raw);
+
+        assert!(result.is_err(), "unknown SSRF enforcement mode must fail");
+    }
+
+    #[test]
+    fn security_config_deserialize_rejects_scalar_api_keys() {
+        let raw = r#"
+max_degraded_duration_secs = 3600
+authorized_api_keys = "single-key"
+"#;
+
+        let result: Result<SecurityConfig, _> = toml::from_str(raw);
+
+        assert!(result.is_err(), "authorized API keys must be a string set");
+    }
+
+    #[test]
+    fn runtime_config_deserialize_rejects_lanes_array() {
+        let raw = r#"
+preferred = "auto"
+remote_max_in_flight = 8
+bulkhead_retry_after_ms = 50
+lanes = []
+"#;
+
+        let result: Result<RuntimeConfig, _> = toml::from_str(raw);
+
+        assert!(result.is_err(), "runtime lanes must be a table map");
+    }
+
+    #[test]
+    fn runtime_lane_config_deserialize_rejects_negative_queue_limit() {
+        let raw = r#"
+max_concurrent = 1
+priority_weight = 1
+queue_limit = -1
+enqueue_timeout_ms = 1
+overflow_policy = "reject"
+"#;
+
+        let result: Result<RuntimeLaneConfig, _> = toml::from_str(raw);
+
+        assert!(
+            result.is_err(),
+            "queue_limit must not accept negative values"
+        );
+    }
+
+    #[test]
+    fn thresholds_config_deserialize_rejects_string_quality_score() {
+        let raw = r#"
+min_quality_score = "0.8"
+"#;
+
+        let result: Result<ThresholdsConfig, _> = toml::from_str(raw);
+
+        assert!(result.is_err(), "thresholds must remain numeric");
+    }
+
+    #[test]
     fn config_degraded_mode_policy_factory_applies_security_ttl() {
         let mut config = Config::for_profile(Profile::Balanced);
         config.security.max_degraded_duration_secs = 91;

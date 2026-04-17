@@ -21,9 +21,14 @@ use std::fmt;
 const MAX_BUMP_RECORDS: usize = 4096;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
+
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
-        items.drain(0..overflow);
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow.min(items.len()));
     }
     items.push(item);
 }
@@ -171,9 +176,9 @@ impl ScheduleConfig {
         hasher.update(b"deterministic_seed_config_v1:");
         hasher.update(self.version.to_le_bytes());
         for (k, v) in &self.parameters {
-            hasher.update((k.len() as u64).to_le_bytes());
+            hasher.update(u64::try_from(k.len()).unwrap_or(u64::MAX).to_le_bytes());
             hasher.update(k.as_bytes());
-            hasher.update((v.len() as u64).to_le_bytes());
+            hasher.update(u64::try_from(v.len()).unwrap_or(u64::MAX).to_le_bytes());
             hasher.update(v.as_bytes());
         }
         hasher.finalize().into()
@@ -988,6 +993,182 @@ mod tests {
         }
     }
 
+    mod fuzz_inspired_encoding_tests {
+        use super::*;
+
+        #[test]
+        fn config_hash_length_prefixes_prevent_key_value_concatenation_collision() {
+            let content_hash = test_content_hash();
+            let cfg_left = ScheduleConfig::new(1).with_param("ab", "c");
+            let cfg_right = ScheduleConfig::new(1).with_param("a", "bc");
+
+            assert_ne!(cfg_left.config_hash(), cfg_right.config_hash());
+            assert_ne!(
+                derive_seed(&DomainTag::Encoding, &content_hash, &cfg_left).bytes,
+                derive_seed(&DomainTag::Encoding, &content_hash, &cfg_right).bytes
+            );
+        }
+
+        #[test]
+        fn config_hash_distinguishes_empty_key_from_empty_value() {
+            let content_hash = test_content_hash();
+            let cfg_empty_key = ScheduleConfig::new(1).with_param("", "abc");
+            let cfg_empty_value = ScheduleConfig::new(1).with_param("abc", "");
+
+            assert_ne!(cfg_empty_key.config_hash(), cfg_empty_value.config_hash());
+            assert_ne!(
+                derive_seed(&DomainTag::Repair, &content_hash, &cfg_empty_key).bytes,
+                derive_seed(&DomainTag::Repair, &content_hash, &cfg_empty_value).bytes
+            );
+        }
+
+        #[test]
+        fn duplicate_param_insertion_is_deterministic_last_write_wins() {
+            let content_hash = test_content_hash();
+            let duplicate_write = ScheduleConfig::new(7)
+                .with_param("fanout", "first")
+                .with_param("fanout", "second");
+            let direct_write = ScheduleConfig::new(7).with_param("fanout", "second");
+
+            assert_eq!(duplicate_write.config_hash(), direct_write.config_hash());
+            assert_eq!(
+                derive_seed(&DomainTag::Scheduling, &content_hash, &duplicate_write).bytes,
+                derive_seed(&DomainTag::Scheduling, &content_hash, &direct_write).bytes
+            );
+        }
+
+        #[test]
+        fn unusual_ascii_control_params_roundtrip_without_seed_drift() {
+            let content_hash = ContentHash([0x5a; 32]);
+            let config = ScheduleConfig::new(42)
+                .with_param("lane\0name", "realtime\ncancel\tbulkhead")
+                .with_param("separator:key", "value:with:delimiters");
+            let seed_before = derive_seed(&DomainTag::Placement, &content_hash, &config);
+
+            let encoded = serde_json::to_string(&config).expect("config JSON should serialize");
+            let decoded: ScheduleConfig =
+                serde_json::from_str(&encoded).expect("config JSON should deserialize");
+            let seed_after = derive_seed(&DomainTag::Placement, &content_hash, &decoded);
+
+            assert_eq!(config, decoded);
+            assert_eq!(seed_before.bytes, seed_after.bytes);
+        }
+
+        #[test]
+        fn content_hash_uppercase_hex_is_accepted_and_normalized() {
+            let raw = "AA".repeat(32);
+            let parsed = ContentHash::from_hex(&raw).expect("uppercase hex should parse");
+
+            assert_eq!(parsed.0, [0xaa; 32]);
+            assert_eq!(parsed.to_hex(), "aa".repeat(32));
+        }
+
+        #[test]
+        fn content_hash_hex_rejects_fuzzed_delimiters_and_whitespace() {
+            let invalid_inputs = [
+                format!("0x{}", "aa".repeat(32)),
+                format!("{} {}", "aa".repeat(16), "aa".repeat(16)),
+                format!("{}\n{}", "aa".repeat(16), "aa".repeat(16)),
+                format!("aa\0{}", "aa".repeat(31)),
+                "a".repeat(63),
+                "a".repeat(65),
+            ];
+
+            for raw in invalid_inputs {
+                assert!(
+                    ContentHash::from_hex(&raw).is_err(),
+                    "fuzzed hash input should be rejected: {raw:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn deterministic_seed_deserialize_rejects_short_hex_bytes() {
+            let payload = serde_json::json!({
+                "bytes": "aa",
+                "domain": "Encoding",
+                "config_version": 1
+            });
+
+            assert!(serde_json::from_value::<DeterministicSeed>(payload).is_err());
+        }
+
+        #[test]
+        fn deterministic_seed_deserialize_rejects_non_hex_bytes() {
+            let payload = serde_json::json!({
+                "bytes": "zz".repeat(32),
+                "domain": "Encoding",
+                "config_version": 1
+            });
+
+            assert!(serde_json::from_value::<DeterministicSeed>(payload).is_err());
+        }
+
+        #[test]
+        fn deterministic_seed_deserialize_accepts_uppercase_hex_and_normalizes_output() {
+            let payload = serde_json::json!({
+                "bytes": "AB".repeat(32),
+                "domain": "Verification",
+                "config_version": 9
+            });
+
+            let seed: DeterministicSeed =
+                serde_json::from_value(payload).expect("uppercase seed bytes should parse");
+
+            assert_eq!(seed.bytes, [0xab; 32]);
+            assert_eq!(seed.domain, DomainTag::Verification);
+            assert_eq!(seed.config_version, 9);
+            assert_eq!(seed.to_hex(), "ab".repeat(32));
+        }
+
+        #[test]
+        fn bump_record_buffer_stays_bounded_under_mutation_corpus() {
+            let mut deriver = DeterministicSeedDeriver::new();
+            let content_hash = ContentHash([0x7d; 32]);
+
+            for version in 1..=(MAX_BUMP_RECORDS + 8) {
+                let config = ScheduleConfig::new(
+                    u32::try_from(version).expect("test version should fit in u32"),
+                )
+                .with_param("salt", format!("mutation-{version:04}"));
+                deriver.derive_seed(&DomainTag::Encoding, &content_hash, &config);
+            }
+
+            let records = deriver.bump_records();
+            assert_eq!(records.len(), MAX_BUMP_RECORDS);
+            assert!(
+                records
+                    .first()
+                    .expect("bounded buffer should retain records")
+                    .new_version
+                    > 2
+            );
+            assert_eq!(
+                records
+                    .last()
+                    .expect("bounded buffer should retain the newest record")
+                    .new_version,
+                u32::try_from(MAX_BUMP_RECORDS + 8).expect("test cap should fit in u32")
+            );
+        }
+
+        #[test]
+        fn push_bounded_zero_capacity_discards_without_panic() {
+            let mut items = vec![1, 2, 3];
+            push_bounded(&mut items, 4, 0);
+
+            assert!(items.is_empty());
+        }
+
+        #[test]
+        fn push_bounded_retains_recent_window_when_over_capacity() {
+            let mut items = vec![10, 20, 30, 40, 50];
+            push_bounded(&mut items, 60, 3);
+
+            assert_eq!(items, vec![40, 50, 60]);
+        }
+    }
+
     // -- DomainTag Display --------------------------------------------------
 
     #[test]
@@ -1002,5 +1183,218 @@ mod tests {
     fn test_event_codes_defined() {
         assert_eq!(EVENT_SEED_DERIVED, "SEED_DERIVED");
         assert_eq!(EVENT_SEED_VERSION_BUMP, "SEED_VERSION_BUMP");
+    }
+}
+
+#[cfg(test)]
+mod additional_negative_path_tests {
+    use super::*;
+
+    fn content_hash() -> ContentHash {
+        ContentHash([0x2a; 32])
+    }
+
+    #[test]
+    fn content_hash_rejects_sha256_prefixed_hex() {
+        let prefixed = format!("sha256:{}", "aa".repeat(32));
+
+        let err = ContentHash::from_hex(&prefixed)
+            .expect_err("domain-prefixed content hash must fail closed");
+
+        assert_eq!(err, SeedError::InvalidContentHash);
+    }
+
+    #[test]
+    fn content_hash_rejects_valid_hex_with_trailing_space() {
+        let mut raw = "aa".repeat(32);
+        raw.push(' ');
+
+        let err = ContentHash::from_hex(&raw)
+            .expect_err("content hash parsing must not trim trailing whitespace");
+
+        assert_eq!(err, SeedError::InvalidContentHash);
+    }
+
+    #[test]
+    fn content_hash_deserialize_rejects_non_string_bytes() {
+        let payload = serde_json::json!([0, 1, 2, 3]);
+
+        let result: Result<ContentHash, _> = serde_json::from_value(payload);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn content_hash_deserialize_rejects_31_byte_hex() {
+        let payload = serde_json::json!("aa".repeat(31));
+
+        let result: Result<ContentHash, _> = serde_json::from_value(payload);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn domain_tag_deserialize_rejects_lowercase_label() {
+        let result: Result<DomainTag, _> = serde_json::from_str(r#""encoding""#);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn domain_tag_deserialize_rejects_unknown_variant() {
+        let result: Result<DomainTag, _> = serde_json::from_str(r#""Quarantine""#);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn seed_deserialize_rejects_unknown_domain_even_with_valid_bytes() {
+        let payload = serde_json::json!({
+            "bytes": "11".repeat(32),
+            "domain": "Quarantine",
+            "config_version": 1
+        });
+
+        let result: Result<DeterministicSeed, _> = serde_json::from_value(payload);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn config_mutation_without_version_bump_still_emits_bump_record() {
+        let mut deriver = DeterministicSeedDeriver::new();
+        let first = ScheduleConfig::new(7).with_param("chunk_size", "65536");
+        let mutated_same_version = ScheduleConfig::new(7).with_param("chunk_size", "131072");
+        deriver.derive_seed(&DomainTag::Encoding, &content_hash(), &first);
+
+        let (_, bump) =
+            deriver.derive_seed(&DomainTag::Encoding, &content_hash(), &mutated_same_version);
+        let bump = bump.expect("config hash drift must be recorded even if version is reused");
+
+        assert_eq!(bump.old_version, 7);
+        assert_eq!(bump.new_version, 7);
+        assert_ne!(bump.old_config_hash, bump.new_config_hash);
+        assert_ne!(bump.old_seed_hex, bump.new_seed_hex);
+    }
+
+    #[test]
+    fn clearing_bump_records_does_not_reset_tracked_config_state() {
+        let mut deriver = DeterministicSeedDeriver::new();
+        let first = ScheduleConfig::new(1).with_param("salt", "a");
+        let second = ScheduleConfig::new(2).with_param("salt", "b");
+        deriver.derive_seed(&DomainTag::Repair, &content_hash(), &first);
+        deriver.derive_seed(&DomainTag::Repair, &content_hash(), &second);
+        deriver.clear_bump_records();
+
+        let (_, bump) = deriver.derive_seed(&DomainTag::Repair, &content_hash(), &first);
+
+        assert!(
+            bump.is_some(),
+            "clearing records must not erase the tracked last config hash"
+        );
+        assert_eq!(deriver.tracked_domains(), 1);
+    }
+
+    #[test]
+    fn schedule_config_deserialize_rejects_missing_version() {
+        let payload = serde_json::json!({
+            "parameters": {
+                "chunk_size": "65536"
+            }
+        });
+
+        let result = serde_json::from_value::<ScheduleConfig>(payload);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn schedule_config_deserialize_rejects_parameters_array() {
+        let payload = serde_json::json!({
+            "version": 1,
+            "parameters": [["chunk_size", "65536"]]
+        });
+
+        let result = serde_json::from_value::<ScheduleConfig>(payload);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn schedule_config_deserialize_rejects_non_string_parameter_value() {
+        let payload = serde_json::json!({
+            "version": 1,
+            "parameters": {
+                "chunk_size": 65536
+            }
+        });
+
+        let result = serde_json::from_value::<ScheduleConfig>(payload);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deterministic_seed_deserialize_rejects_missing_config_version() {
+        let payload = serde_json::json!({
+            "bytes": "22".repeat(32),
+            "domain": "Encoding"
+        });
+
+        let result = serde_json::from_value::<DeterministicSeed>(payload);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deterministic_seed_deserialize_rejects_negative_config_version() {
+        let payload = serde_json::json!({
+            "bytes": "22".repeat(32),
+            "domain": "Encoding",
+            "config_version": -1
+        });
+
+        let result = serde_json::from_value::<DeterministicSeed>(payload);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn version_bump_record_deserialize_rejects_missing_reason() {
+        let payload = serde_json::json!({
+            "domain": "Repair",
+            "content_hash_hex": "33".repeat(32),
+            "old_config_hash": "44".repeat(32),
+            "new_config_hash": "55".repeat(32),
+            "old_seed_hex": "66".repeat(32),
+            "new_seed_hex": "77".repeat(32),
+            "old_version": 1,
+            "new_version": 2,
+            "timestamp": "2026-01-01T00:00:00Z"
+        });
+
+        let result = serde_json::from_value::<VersionBumpRecord>(payload);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn version_bump_record_deserialize_rejects_numeric_seed_hex() {
+        let payload = serde_json::json!({
+            "domain": "Repair",
+            "content_hash_hex": "33".repeat(32),
+            "old_config_hash": "44".repeat(32),
+            "new_config_hash": "55".repeat(32),
+            "old_seed_hex": 66,
+            "new_seed_hex": "77".repeat(32),
+            "old_version": 1,
+            "new_version": 2,
+            "bump_reason": "config changed",
+            "timestamp": "2026-01-01T00:00:00Z"
+        });
+
+        let result = serde_json::from_value::<VersionBumpRecord>(payload);
+
+        assert!(result.is_err());
     }
 }

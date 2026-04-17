@@ -34,9 +34,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
-        items.drain(0..overflow);
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow.min(items.len()));
     }
     items.push(item);
 }
@@ -306,27 +310,27 @@ impl ParticipationWeightEngine {
         let defaults = WeightingConfig::default();
         let safe_config = WeightingConfig {
             attestation_weight: if config.attestation_weight.is_finite() {
-                config.attestation_weight
+                config.attestation_weight.clamp(0.0, 1.0)
             } else {
                 defaults.attestation_weight
             },
             stake_weight: if config.stake_weight.is_finite() {
-                config.stake_weight
+                config.stake_weight.clamp(0.0, 1.0)
             } else {
                 defaults.stake_weight
             },
             reputation_weight: if config.reputation_weight.is_finite() {
-                config.reputation_weight
+                config.reputation_weight.clamp(0.0, 1.0)
             } else {
                 defaults.reputation_weight
             },
             new_participant_cap_fraction: if config.new_participant_cap_fraction.is_finite() {
-                config.new_participant_cap_fraction
+                config.new_participant_cap_fraction.clamp(0.0, 1.0)
             } else {
                 defaults.new_participant_cap_fraction
             },
             sybil_attenuation_factor: if config.sybil_attenuation_factor.is_finite() {
-                config.sybil_attenuation_factor
+                config.sybil_attenuation_factor.clamp(0.0, 1.0)
             } else {
                 defaults.sybil_attenuation_factor
             },
@@ -473,7 +477,7 @@ impl ParticipationWeightEngine {
                     0.0
                 };
                 let base = (amount.ln_1p() / 10.0).clamp(0.0, 1.0);
-                let lock_bonus = if stake.locked {
+                let lock_bonus = if stake.locked && amount > 0.0 {
                     (stake.lock_duration_seconds as f64 / (86400.0 * 365.0)).min(0.5)
                 } else {
                     0.0
@@ -858,6 +862,136 @@ mod tests {
         assert!(record.weights[0].stake_component < record.weights[1].stake_component);
     }
 
+    #[test]
+    fn negative_stake_amount_contributes_zero_stake_component() {
+        let engine = ParticipationWeightEngine::default();
+        let mut participant = make_established_participant("negative-stake");
+        participant.stake = Some(StakeEvidence {
+            amount: -10_000.0,
+            deposited_at: "2026-01-01T00:00:00Z".to_string(),
+            lock_duration_seconds: 0,
+            locked: false,
+        });
+
+        let weight = engine.compute_single_weight(&participant);
+
+        assert!((weight.stake_component - 0.0).abs() < f64::EPSILON);
+        assert!(weight.final_weight.is_finite());
+        assert!(weight.final_weight >= 0.0);
+    }
+
+    #[test]
+    fn nan_stake_amount_contributes_zero_stake_component() {
+        let engine = ParticipationWeightEngine::default();
+        let mut participant = make_established_participant("nan-stake");
+        participant.stake = Some(StakeEvidence {
+            amount: f64::NAN,
+            deposited_at: "2026-01-01T00:00:00Z".to_string(),
+            lock_duration_seconds: 0,
+            locked: false,
+        });
+
+        let weight = engine.compute_single_weight(&participant);
+
+        assert!((weight.stake_component - 0.0).abs() < f64::EPSILON);
+        assert!(weight.raw_weight.is_finite());
+        assert!(weight.final_weight.is_finite());
+    }
+
+    #[test]
+    fn negative_reputation_score_cannot_create_negative_component() {
+        let engine = ParticipationWeightEngine::default();
+        let mut participant = make_established_participant("negative-reputation");
+        participant.reputation = Some(ReputationEvidence {
+            score: -0.5,
+            interaction_count: 1,
+            tenure_seconds: 0,
+            contributions_accepted: 0,
+            contributions_rejected: 10,
+        });
+
+        let weight = engine.compute_single_weight(&participant);
+
+        assert!((weight.reputation_component - 0.0).abs() < f64::EPSILON);
+        assert!(weight.final_weight >= 0.0);
+    }
+
+    #[test]
+    fn nan_reputation_component_handles_nan_score() {
+        let engine = ParticipationWeightEngine::default();
+        let mut participant = make_established_participant("nan-reputation");
+        participant.reputation = Some(ReputationEvidence {
+            score: f64::NAN,
+            interaction_count: 500,
+            tenure_seconds: 86400 * 365,
+            contributions_accepted: 450,
+            contributions_rejected: 10,
+        });
+
+        let weight = engine.compute_single_weight(&participant);
+
+        assert!(weight.reputation_component.is_finite());
+        assert!(weight.raw_weight.is_finite());
+        assert!(weight.final_weight.is_finite());
+    }
+
+    #[test]
+    fn missing_attestation_rejects_even_with_large_stake_and_reputation() {
+        let mut engine = ParticipationWeightEngine::default();
+        let mut participant = make_zero_attestation_participant("inflated-no-attestation");
+        participant.stake = Some(StakeEvidence {
+            amount: 1_000_000_000.0,
+            deposited_at: "2026-01-01T00:00:00Z".to_string(),
+            lock_duration_seconds: 86400 * 365 * 10,
+            locked: true,
+        });
+        participant.reputation = Some(ReputationEvidence {
+            score: 1.0,
+            interaction_count: 1_000_000,
+            tenure_seconds: 86400 * 365 * 10,
+            contributions_accepted: 1_000_000,
+            contributions_rejected: 0,
+        });
+
+        let record = engine.compute_weights(&[participant], "missing-att", "2026-02-20T00:00:00Z");
+        let weight = &record.weights[0];
+
+        assert!(weight.rejected);
+        assert_eq!(
+            weight.rejection_reason.as_deref(),
+            Some("no attestation evidence")
+        );
+        assert!((weight.raw_weight - 0.0).abs() < f64::EPSILON);
+        assert!((weight.final_weight - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn cluster_below_minimum_size_is_not_attenuated() {
+        let mut engine = ParticipationWeightEngine::default();
+        let participants = make_sybil_participants(2, "below-minimum-cluster");
+
+        let record = engine.compute_weights(&participants, "below-min", "2026-02-20T00:00:00Z");
+
+        assert_eq!(record.sybil_clusters_detected, 0);
+        assert!(record.weights.iter().all(|w| w.sybil_penalty == 0.0));
+    }
+
+    #[test]
+    fn zero_attenuation_factor_forces_cluster_weight_to_zero() {
+        let mut engine = ParticipationWeightEngine::new(WeightingConfig {
+            sybil_attenuation_factor: 0.0,
+            ..WeightingConfig::default()
+        });
+        let participants = make_sybil_participants(3, "zeroed-cluster");
+
+        let record = engine.compute_weights(&participants, "zero-cluster", "2026-02-20T00:00:00Z");
+
+        assert_eq!(record.sybil_clusters_detected, 1);
+        assert!(record.weights.iter().all(|w| w.sybil_penalty == 1.0));
+        assert!(record.weights.iter().all(|w| w.final_weight == 0.0));
+        assert!((record.total_weight - 0.0).abs() < f64::EPSILON);
+    }
+
     // === Determinism (INV-ATC-WEIGHT-DETERMINISM) ===
 
     #[test]
@@ -1045,6 +1179,1535 @@ mod tests {
         for w in &record.weights {
             assert!(w.final_weight.is_finite(), "final_weight should be finite");
             assert!(w.raw_weight.is_finite(), "raw_weight should be finite");
+        }
+    }
+
+    #[test]
+    fn negative_unlocked_stake_amount_contributes_zero() {
+        let engine = ParticipationWeightEngine::default();
+        let mut participant = make_established_participant("negative-stake");
+        participant.stake = Some(StakeEvidence {
+            amount: -100.0,
+            deposited_at: "2026-01-01T00:00:00Z".to_string(),
+            lock_duration_seconds: 86400 * 365,
+            locked: false,
+        });
+
+        let component = engine.compute_stake_component(&participant);
+
+        assert!((component - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn nan_unlocked_stake_amount_contributes_zero() {
+        let engine = ParticipationWeightEngine::default();
+        let mut participant = make_established_participant("nan-stake");
+        participant.stake = Some(StakeEvidence {
+            amount: f64::NAN,
+            deposited_at: "2026-01-01T00:00:00Z".to_string(),
+            lock_duration_seconds: 86400 * 365,
+            locked: false,
+        });
+
+        let component = engine.compute_stake_component(&participant);
+
+        assert!(component.is_finite());
+        assert!((component - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn nan_reputation_score_does_not_poison_weight() {
+        let engine = ParticipationWeightEngine::default();
+        let mut participant = make_established_participant("nan-reputation");
+        participant.reputation = Some(ReputationEvidence {
+            score: f64::NAN,
+            interaction_count: 500,
+            tenure_seconds: 86400 * 365,
+            contributions_accepted: 100,
+            contributions_rejected: 0,
+        });
+
+        let component = engine.compute_reputation_component(&participant);
+
+        assert!(component.is_finite());
+        assert!(component >= 0.0);
+        assert!(component <= 1.0);
+    }
+
+    #[test]
+    fn rejected_contributions_only_do_not_receive_interaction_credit() {
+        let engine = ParticipationWeightEngine::default();
+        let mut participant = make_established_participant("rejected-only");
+        participant.reputation = Some(ReputationEvidence {
+            score: 1.0,
+            interaction_count: 500,
+            tenure_seconds: 86400 * 365,
+            contributions_accepted: 0,
+            contributions_rejected: 50,
+        });
+
+        let component = engine.compute_reputation_component(&participant);
+
+        assert!(component < 1.0);
+        assert!((component - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn shared_cluster_hint_below_min_size_is_not_attenuated() {
+        let mut engine = ParticipationWeightEngine::default();
+        let participants = make_sybil_participants(2, "below-threshold");
+
+        let record = engine.compute_weights(&participants, "below-min", "2026-02-20T00:00:00Z");
+
+        assert_eq!(record.sybil_clusters_detected, 0);
+        assert!(record.weights.iter().all(|weight| {
+            (weight.sybil_penalty - 0.0).abs() < f64::EPSILON && !weight.rejected
+        }));
+    }
+
+    #[test]
+    fn zero_attestation_cluster_member_stays_rejected() {
+        let mut engine = ParticipationWeightEngine::default();
+        let mut rejected = make_zero_attestation_participant("cluster-rejected");
+        rejected.cluster_hint = Some("mixed-cluster".to_string());
+        let mut participants = vec![rejected];
+        participants.extend(make_sybil_participants(2, "mixed-cluster"));
+
+        let record = engine.compute_weights(&participants, "mixed-reject", "2026-02-20T00:00:00Z");
+
+        assert_eq!(record.sybil_clusters_detected, 1);
+        assert_eq!(record.participants_rejected, 1);
+        assert!(record.weights[0].rejected);
+        assert_eq!(
+            record.weights[0].rejection_reason.as_deref(),
+            Some("no attestation evidence")
+        );
+        assert!((record.weights[0].final_weight - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn median_established_weight_ignores_non_finite_values() {
+        let engine = ParticipationWeightEngine::default();
+        let participants = vec![make_established_participant("finite-established")];
+        let weights = vec![ParticipationWeight {
+            participant_id: "finite-established".to_string(),
+            raw_weight: f64::NAN,
+            attestation_component: 1.0,
+            stake_component: 1.0,
+            reputation_component: 1.0,
+            sybil_penalty: 0.0,
+            final_weight: f64::NAN,
+            capped: false,
+            rejected: false,
+            rejection_reason: None,
+        }];
+
+        let median = engine.compute_median_established_weight(&weights, &participants);
+
+        assert!((median - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn negative_locked_stake_amount_contributes_zero() {
+        let engine = ParticipationWeightEngine::default();
+        let mut participant = make_established_participant("negative-locked-stake");
+        participant.stake = Some(StakeEvidence {
+            amount: -100.0,
+            deposited_at: "2026-01-01T00:00:00Z".to_string(),
+            lock_duration_seconds: 86400 * 365,
+            locked: true,
+        });
+
+        let component = engine.compute_stake_component(&participant);
+
+        assert!((component - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn nan_locked_stake_amount_contributes_zero() {
+        let engine = ParticipationWeightEngine::default();
+        let mut participant = make_established_participant("nan-locked-stake");
+        participant.stake = Some(StakeEvidence {
+            amount: f64::NAN,
+            deposited_at: "2026-01-01T00:00:00Z".to_string(),
+            lock_duration_seconds: 86400 * 365,
+            locked: true,
+        });
+
+        let component = engine.compute_stake_component(&participant);
+
+        assert!(component.is_finite());
+        assert!((component - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn negative_config_component_weights_do_not_create_negative_total() {
+        let mut engine = ParticipationWeightEngine::new(WeightingConfig {
+            attestation_weight: -1.0,
+            stake_weight: -1.0,
+            reputation_weight: -1.0,
+            ..WeightingConfig::default()
+        });
+        let participants = vec![make_established_participant("negative-config")];
+
+        let record =
+            engine.compute_weights(&participants, "negative-config", "2026-02-20T00:00:00Z");
+
+        assert!(record.total_weight.is_finite());
+        assert!(record.total_weight >= 0.0);
+        assert!(
+            record
+                .weights
+                .iter()
+                .all(|weight| weight.final_weight >= 0.0)
+        );
+    }
+
+    #[test]
+    fn overlarge_config_component_weights_remain_finite() {
+        let mut engine = ParticipationWeightEngine::new(WeightingConfig {
+            attestation_weight: f64::MAX,
+            stake_weight: f64::MAX,
+            reputation_weight: f64::MAX,
+            ..WeightingConfig::default()
+        });
+        let participants = vec![make_established_participant("overlarge-config")];
+
+        let record =
+            engine.compute_weights(&participants, "overlarge-config", "2026-02-20T00:00:00Z");
+
+        assert!(record.total_weight.is_finite());
+        assert!(
+            record
+                .weights
+                .iter()
+                .all(|weight| weight.raw_weight.is_finite())
+        );
+    }
+
+    #[test]
+    fn negative_sybil_attenuation_does_not_create_negative_cluster_weight() {
+        let mut engine = ParticipationWeightEngine::new(WeightingConfig {
+            sybil_attenuation_factor: -0.5,
+            ..WeightingConfig::default()
+        });
+        let mut participants: Vec<ParticipantIdentity> = (0..3)
+            .map(|idx| make_established_participant(&format!("neg-sybil-{idx}")))
+            .collect();
+        for participant in &mut participants {
+            participant.cluster_hint = Some("negative-factor-cluster".to_string());
+        }
+
+        let record = engine.compute_weights(
+            &participants,
+            "negative-sybil-factor",
+            "2026-02-20T00:00:00Z",
+        );
+
+        assert_eq!(record.sybil_clusters_detected, 1);
+        assert!(record.weights.iter().all(|weight| {
+            (weight.final_weight - 0.0).abs() < f64::EPSILON
+                && (weight.sybil_penalty - 1.0).abs() < f64::EPSILON
+        }));
+    }
+
+    #[test]
+    fn overlarge_sybil_attenuation_does_not_amplify_cluster_weight() {
+        let mut engine = ParticipationWeightEngine::new(WeightingConfig {
+            sybil_attenuation_factor: 2.0,
+            ..WeightingConfig::default()
+        });
+        let mut participants: Vec<ParticipantIdentity> = (0..3)
+            .map(|idx| make_established_participant(&format!("large-sybil-{idx}")))
+            .collect();
+        for participant in &mut participants {
+            participant.cluster_hint = Some("large-factor-cluster".to_string());
+        }
+
+        let record = engine.compute_weights(
+            &participants,
+            "overlarge-sybil-factor",
+            "2026-02-20T00:00:00Z",
+        );
+
+        assert_eq!(record.sybil_clusters_detected, 1);
+        assert!(record.weights.iter().all(|weight| {
+            weight.final_weight <= weight.raw_weight
+                && (weight.sybil_penalty - 0.0).abs() < f64::EPSILON
+        }));
+    }
+
+    #[test]
+    fn negative_new_participant_cap_fraction_never_creates_negative_weight() {
+        let mut engine = ParticipationWeightEngine::new(WeightingConfig {
+            new_participant_cap_fraction: -1.0,
+            ..WeightingConfig::default()
+        });
+        let participants = vec![
+            make_established_participant("cap-established"),
+            make_new_participant("cap-new"),
+        ];
+
+        let record = engine.compute_weights(
+            &participants,
+            "negative-cap-fraction",
+            "2026-02-20T00:00:00Z",
+        );
+
+        assert_eq!(record.participants_capped, 0);
+        assert!(
+            record
+                .weights
+                .iter()
+                .all(|weight| weight.final_weight >= 0.0)
+        );
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_discards_existing_and_new_records() {
+        let mut records = vec![WeightAuditRecord {
+            batch_id: "old".to_string(),
+            timestamp: "2026-02-20T00:00:00Z".to_string(),
+            participant_count: 0,
+            sybil_clusters_detected: 0,
+            participants_rejected: 0,
+            participants_capped: 0,
+            total_weight: 0.0,
+            weights: Vec::new(),
+            content_hash: "old-hash".to_string(),
+        }];
+
+        push_bounded(
+            &mut records,
+            WeightAuditRecord {
+                batch_id: "new".to_string(),
+                timestamp: "2026-02-20T00:00:01Z".to_string(),
+                participant_count: 0,
+                sybil_clusters_detected: 0,
+                participants_rejected: 0,
+                participants_capped: 0,
+                total_weight: 0.0,
+                weights: Vec::new(),
+                content_hash: "new-hash".to_string(),
+            },
+            0,
+        );
+
+        assert!(records.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod atc_participation_weighting_negative_path_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn negative_unicode_injection_participant_id_preserves_exact_bytes() {
+        let mut engine = ParticipationWeightEngine::default();
+        let injection_patterns = [
+            "participant\u{202E}spoofed",    // Right-to-left override
+            "participant\u{200B}invisible", // Zero-width space
+            "participant\u{FEFF}bom",       // Byte order mark
+            "participant\x00null",          // Null byte
+            "participant\r\ninjection",     // CRLF injection
+            "participant\u{1F4A9}emoji",    // Pile of poo emoji
+            "participant\t\x08control",     // Tab and backspace
+            "\u{202E}\u{202D}\u{200E}directional", // Bidirectional overrides
+        ];
+
+        for pattern in &injection_patterns {
+            let participant = ParticipantIdentity {
+                participant_id: pattern.to_string(),
+                display_name: format!("Display {}", pattern),
+                attestations: vec![AttestationEvidence {
+                    attestation_id: format!("att-{}", pattern),
+                    issuer: "test-issuer".to_string(),
+                    level: AttestationLevel::VerifierBacked,
+                    issued_at: "2026-04-17T00:00:00Z".to_string(),
+                    expires_at: "2027-04-17T00:00:00Z".to_string(),
+                    signature_hex: "deadbeef".to_string(),
+                }],
+                stake: Some(StakeEvidence {
+                    amount: 100.0,
+                    deposited_at: "2026-04-17T00:00:00Z".to_string(),
+                    lock_duration_seconds: 86400 * 30,
+                    locked: true,
+                }),
+                reputation: Some(ReputationEvidence {
+                    score: 0.8,
+                    interaction_count: 50,
+                    tenure_seconds: 86400 * 30,
+                    contributions_accepted: 45,
+                    contributions_rejected: 5,
+                }),
+                cluster_hint: None,
+            };
+
+            let record = engine.compute_weights(&[participant], "unicode_test", "2026-04-17T00:00:00Z");
+
+            // Unicode should be preserved exactly
+            assert_eq!(record.weights[0].participant_id, *pattern);
+
+            // JSON serialization should handle injection safely
+            let json = serde_json::to_string(&record)
+                .expect("unicode injection should serialize safely");
+            assert!(!json.contains(&pattern.replace('\\', "")),
+                   "Raw injection pattern should be escaped in JSON");
+
+            // Deserialization should preserve exact pattern
+            let parsed: WeightAuditRecord = serde_json::from_str(&json)
+                .expect("should deserialize without corruption");
+            assert_eq!(parsed.weights[0].participant_id, *pattern);
+        }
+    }
+
+    #[test]
+    fn negative_arithmetic_boundary_stake_amounts_saturated_safely() {
+        let mut engine = ParticipationWeightEngine::default();
+        let boundary_values = [
+            f64::MAX,                       // Maximum finite value
+            f64::MIN,                       // Minimum finite value
+            1.7976931348623157e+308,       // Near overflow
+            -1.7976931348623157e+308,      // Near underflow
+            f64::EPSILON,                  // Smallest positive value
+            -f64::EPSILON,                 // Smallest negative value
+            0.0,                           // Zero
+            -0.0,                          // Negative zero
+            1e100,                         // Very large
+            1e-100,                        // Very small
+        ];
+
+        for (i, stake_amount) in boundary_values.iter().enumerate() {
+            let participant = ParticipantIdentity {
+                participant_id: format!("boundary_stake_{}", i),
+                display_name: format!("Boundary Test {}", i),
+                attestations: vec![AttestationEvidence {
+                    attestation_id: format!("att-{}", i),
+                    issuer: "test".to_string(),
+                    level: AttestationLevel::VerifierBacked,
+                    issued_at: "2026-04-17T00:00:00Z".to_string(),
+                    expires_at: "2027-04-17T00:00:00Z".to_string(),
+                    signature_hex: "deadbeef".to_string(),
+                }],
+                stake: Some(StakeEvidence {
+                    amount: *stake_amount,
+                    deposited_at: "2026-04-17T00:00:00Z".to_string(),
+                    lock_duration_seconds: 86400 * 365,
+                    locked: true,
+                }),
+                reputation: Some(ReputationEvidence {
+                    score: 0.8,
+                    interaction_count: 100,
+                    tenure_seconds: 86400 * 365,
+                    contributions_accepted: 90,
+                    contributions_rejected: 10,
+                }),
+                cluster_hint: None,
+            };
+
+            // Weight computation should not panic or produce invalid values
+            let weight = engine.compute_single_weight(&participant);
+            assert!(weight.stake_component.is_finite(), "Stake component must be finite");
+            assert!(weight.stake_component >= 0.0, "Stake component must be non-negative");
+            assert!(weight.stake_component <= 1.0, "Stake component must be <= 1.0");
+
+            assert!(weight.raw_weight.is_finite(), "Raw weight must be finite");
+            assert!(weight.raw_weight >= 0.0, "Raw weight must be non-negative");
+
+            assert!(weight.final_weight.is_finite(), "Final weight must be finite");
+            assert!(weight.final_weight >= 0.0, "Final weight must be non-negative");
+
+            // JSON round-trip should handle boundary values
+            match serde_json::to_string(&weight) {
+                Ok(json) => {
+                    match serde_json::from_str::<ParticipationWeight>(&json) {
+                        Ok(parsed) => {
+                            assert!(parsed.stake_component.is_finite());
+                            assert!(parsed.raw_weight.is_finite());
+                            assert!(parsed.final_weight.is_finite());
+                        }
+                        Err(_) => {
+                            // Some boundary values might not deserialize cleanly
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Some boundary values might not serialize cleanly
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_floating_point_edge_cases_in_reputation_score() {
+        let mut engine = ParticipationWeightEngine::default();
+        let edge_cases = [
+            f64::NAN,                    // Not a number
+            f64::INFINITY,               // Positive infinity
+            f64::NEG_INFINITY,           // Negative infinity
+            f64::EPSILON,                // Smallest positive value
+            f64::MIN_POSITIVE,           // Smallest normalized positive value
+            f64::MAX,                    // Largest finite value
+            -f64::MAX,                   // Largest negative value
+            1.0000000000000002,          // Precision edge case
+            0.9999999999999999,          // Precision edge case
+            2.2250738585072014e-308,     // Subnormal value
+        ];
+
+        for (i, score) in edge_cases.iter().enumerate() {
+            let participant = ParticipantIdentity {
+                participant_id: format!("reputation_edge_{}", i),
+                display_name: format!("Edge Test {}", i),
+                attestations: vec![AttestationEvidence {
+                    attestation_id: format!("att-{}", i),
+                    issuer: "test".to_string(),
+                    level: AttestationLevel::VerifierBacked,
+                    issued_at: "2026-04-17T00:00:00Z".to_string(),
+                    expires_at: "2027-04-17T00:00:00Z".to_string(),
+                    signature_hex: "deadbeef".to_string(),
+                }],
+                stake: Some(StakeEvidence {
+                    amount: 100.0,
+                    deposited_at: "2026-04-17T00:00:00Z".to_string(),
+                    lock_duration_seconds: 86400 * 30,
+                    locked: true,
+                }),
+                reputation: Some(ReputationEvidence {
+                    score: *score,
+                    interaction_count: 100,
+                    tenure_seconds: 86400 * 365,
+                    contributions_accepted: 90,
+                    contributions_rejected: 10,
+                }),
+                cluster_hint: None,
+            };
+
+            // Reputation computation should handle edge cases gracefully
+            let reputation_component = engine.compute_reputation_component(&participant);
+            assert!(reputation_component.is_finite(), "Reputation component must be finite");
+            assert!(reputation_component >= 0.0, "Reputation component must be non-negative");
+            assert!(reputation_component <= 1.0, "Reputation component must be <= 1.0");
+
+            // Overall weight computation should not panic
+            let weight = engine.compute_single_weight(&participant);
+            assert!(weight.reputation_component.is_finite());
+            assert!(weight.reputation_component >= 0.0);
+            assert!(weight.reputation_component <= 1.0);
+
+            assert!(weight.raw_weight.is_finite());
+            assert!(weight.final_weight.is_finite());
+
+            // Record-level computation should handle edge cases
+            let record = engine.compute_weights(&[participant], "edge_test", "2026-04-17T00:00:00Z");
+            assert!(record.total_weight.is_finite());
+            assert!(record.weights[0].reputation_component.is_finite());
+        }
+    }
+
+    #[test]
+    fn negative_massive_attestation_chain_memory_stress_test() {
+        let mut engine = ParticipationWeightEngine::default();
+
+        // Test with increasingly large attestation chains
+        let chain_sizes = [100, 1000, 10_000];
+
+        for size in chain_sizes {
+            let mut attestations = Vec::with_capacity(size);
+            for i in 0..size {
+                attestations.push(AttestationEvidence {
+                    attestation_id: format!("massive_att_{}", i),
+                    issuer: format!("issuer_{}", i % 10), // Some variety
+                    level: match i % 4 {
+                        0 => AttestationLevel::SelfSigned,
+                        1 => AttestationLevel::PeerVerified,
+                        2 => AttestationLevel::VerifierBacked,
+                        3 => AttestationLevel::AuthorityCertified,
+                        _ => unreachable!(),
+                    },
+                    issued_at: "2026-04-17T00:00:00Z".to_string(),
+                    expires_at: "2027-04-17T00:00:00Z".to_string(),
+                    signature_hex: format!("{:x}", i),
+                });
+            }
+
+            let participant = ParticipantIdentity {
+                participant_id: format!("massive_chain_{}", size),
+                display_name: format!("Massive Chain {}", size),
+                attestations,
+                stake: Some(StakeEvidence {
+                    amount: 1000.0,
+                    deposited_at: "2026-04-17T00:00:00Z".to_string(),
+                    lock_duration_seconds: 86400 * 365,
+                    locked: true,
+                }),
+                reputation: Some(ReputationEvidence {
+                    score: 0.9,
+                    interaction_count: 500,
+                    tenure_seconds: 86400 * 365,
+                    contributions_accepted: 450,
+                    contributions_rejected: 50,
+                }),
+                cluster_hint: None,
+            };
+
+            // Should handle large attestation chains without memory issues
+            let start_time = std::time::Instant::now();
+            let weight = engine.compute_single_weight(&participant);
+            let duration = start_time.elapsed();
+
+            assert!(duration.as_millis() < 1000,
+                   "Large attestation chain took too long: {:?} for {} attestations",
+                   duration, size);
+
+            assert!(weight.attestation_component.is_finite());
+            assert!(weight.attestation_component >= 0.0);
+            assert!(weight.attestation_component <= 1.0);
+
+            // Should find the strongest attestation correctly
+            assert_eq!(participant.strongest_attestation(), Some(AttestationLevel::AuthorityCertified));
+            assert!(participant.has_attestation());
+
+            // JSON serialization should handle large chains
+            match serde_json::to_string(&participant) {
+                Ok(json) => {
+                    assert!(json.len() > size * 50); // Should contain substantial data
+
+                    // Deserialization should work
+                    match serde_json::from_str::<ParticipantIdentity>(&json) {
+                        Ok(parsed) => {
+                            assert_eq!(parsed.attestations.len(), size);
+                            assert_eq!(parsed.strongest_attestation(), Some(AttestationLevel::AuthorityCertified));
+                        }
+                        Err(_) => {
+                            // Very large chains might fail to deserialize due to memory limits
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Very large chains might not serialize due to memory limits
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_cluster_hint_injection_and_collision_attacks() {
+        let mut engine = ParticipationWeightEngine::default();
+        let malicious_hints = [
+            // Hash-like strings that could confuse clustering
+            "a".repeat(64), // Valid hex length
+            "0123456789abcdef".repeat(4), // Valid hex pattern
+            format!("cluster:{}", "b".repeat(32)), // Prefixed hash
+
+            // JSON injection attempts
+            "hint\",\"injected\":true,\"cluster\":\"",
+            "null}\"evil\":\"payload\",\"cluster\":\"normal",
+
+            // Control character injection
+            "cluster\x00null\r\n",
+            "cluster\x1b[31mred\x1b[0m",
+
+            // Unicode injection
+            "cluster\u{202E}injection",
+            "cluster\u{FEFF}bom",
+
+            // Path-like strings that could cause issues
+            "../../../etc/passwd",
+            "..\\..\\windows\\system32",
+
+            // Extremely long hint
+            "long_cluster_hint_".repeat(10000),
+
+            // Empty and whitespace
+            "",
+            "   ",
+            "\t\n\r",
+        ];
+
+        let mut participants = Vec::new();
+        for (i, hint) in malicious_hints.iter().enumerate() {
+            participants.push(ParticipantIdentity {
+                participant_id: format!("cluster_injection_{}", i),
+                display_name: format!("Injection Test {}", i),
+                attestations: vec![AttestationEvidence {
+                    attestation_id: format!("att-{}", i),
+                    issuer: "test".to_string(),
+                    level: AttestationLevel::SelfSigned,
+                    issued_at: "2026-04-17T00:00:00Z".to_string(),
+                    expires_at: "2027-04-17T00:00:00Z".to_string(),
+                    signature_hex: format!("{:x}", i),
+                }],
+                stake: None,
+                reputation: Some(ReputationEvidence {
+                    score: 0.1,
+                    interaction_count: 10,
+                    tenure_seconds: 86400,
+                    contributions_accepted: 5,
+                    contributions_rejected: 5,
+                }),
+                cluster_hint: Some(hint.to_string()),
+            });
+        }
+
+        // Should handle malicious cluster hints without corruption or crashes
+        let record = engine.compute_weights(&participants, "cluster_injection", "2026-04-17T00:00:00Z");
+
+        assert_eq!(record.weights.len(), participants.len());
+
+        // Cluster detection should work despite malicious hints
+        let clusters = engine.detect_sybil_clusters(&participants);
+
+        // Should detect clusters based on exact hint matching
+        for cluster in &clusters {
+            assert!(!cluster.cluster_id.is_empty());
+            assert!(cluster.member_ids.len() >= engine.config.sybil_cluster_min_size);
+
+            // Detection signal should be safe
+            assert!(cluster.detection_signal.contains("shared_cluster_hint:"));
+
+            // Attenuation factor should be valid
+            assert!(cluster.attenuation_factor >= 0.0);
+            assert!(cluster.attenuation_factor <= 1.0);
+        }
+
+        // JSON serialization should handle injection attempts safely
+        let json = serde_json::to_string(&record)
+            .expect("should serialize despite malicious cluster hints");
+
+        // Injection patterns should be escaped
+        for hint in &malicious_hints {
+            if hint.contains('"') || hint.contains('{') || hint.contains('}') {
+                assert!(!json.contains(&hint.replace('\\', "")),
+                       "Dangerous cluster hint should be escaped in JSON");
+            }
+        }
+
+        // Deserialization should preserve exact hints
+        let parsed: WeightAuditRecord = serde_json::from_str(&json)
+            .expect("should deserialize without corruption");
+        assert_eq!(parsed.weights.len(), participants.len());
+    }
+
+    #[test]
+    fn negative_content_hash_collision_resistance_verification() {
+        let mut engine = ParticipationWeightEngine::default();
+
+        // Create weight computations with crafted content designed to test hash collision resistance
+        let collision_attempts = [
+            // Same participant data with slight variations
+            ("collision_test_1", 100, 50),
+            ("collision_test_2", 50, 100),
+
+            // Different attestation levels with same overall structure
+            ("hash_boundary_1", 200, 100),
+            ("hash_boundary_2", 100, 200),
+
+            // Byte boundary cases that might collide
+            ("boundary_255", 255, 256),
+            ("boundary_256", 256, 255),
+        ];
+
+        let mut observed_hashes = BTreeSet::new();
+        let mut all_records = Vec::new();
+
+        for (participant_id, contributions_accepted, contributions_rejected) in collision_attempts {
+            let participant = ParticipantIdentity {
+                participant_id: participant_id.to_string(),
+                display_name: format!("Hash Test {}", participant_id),
+                attestations: vec![AttestationEvidence {
+                    attestation_id: format!("att-{}", participant_id),
+                    issuer: "hash-test-issuer".to_string(),
+                    level: AttestationLevel::VerifierBacked,
+                    issued_at: "2026-04-17T00:00:00Z".to_string(),
+                    expires_at: "2027-04-17T00:00:00Z".to_string(),
+                    signature_hex: "deadbeef".to_string(),
+                }],
+                stake: Some(StakeEvidence {
+                    amount: 1000.0,
+                    deposited_at: "2026-04-17T00:00:00Z".to_string(),
+                    lock_duration_seconds: 86400 * 365,
+                    locked: true,
+                }),
+                reputation: Some(ReputationEvidence {
+                    score: 0.8,
+                    interaction_count: contributions_accepted + contributions_rejected,
+                    tenure_seconds: 86400 * 365,
+                    contributions_accepted,
+                    contributions_rejected,
+                }),
+                cluster_hint: None,
+            };
+
+            let record = engine.compute_weights(&[participant], participant_id, "2026-04-17T00:00:00Z");
+            all_records.push(record);
+        }
+
+        // Collect all content hashes
+        for record in &all_records {
+            observed_hashes.insert(record.content_hash.clone());
+
+            // Hash should be proper hex string
+            assert_eq!(record.content_hash.len(), 64);
+            assert!(record.content_hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+            // Hash should be deterministic
+            let recomputed_hash = WeightAuditRecord::compute_hash(&record.weights);
+            assert_eq!(record.content_hash, recomputed_hash);
+        }
+
+        // All different weight computations should produce different hashes (no collisions)
+        assert_eq!(observed_hashes.len(), all_records.len(),
+                  "Hash collision detected: {} unique hashes for {} records",
+                  observed_hashes.len(), all_records.len());
+    }
+
+    #[test]
+    fn negative_extreme_contribution_counts_with_overflow_protection() {
+        let engine = ParticipationWeightEngine::default();
+        let extreme_values = [
+            (u64::MAX, 1),              // Max accepted contributions
+            (1, u64::MAX),              // Max rejected contributions
+            (u64::MAX, u64::MAX),       // Both at maximum
+            (u64::MAX - 1, u64::MAX),   // Near overflow boundary
+            (0, 0),                     // Both zero
+        ];
+
+        for (accepted, rejected) in extreme_values {
+            let participant = ParticipantIdentity {
+                participant_id: format!("extreme_{}_{}", accepted, rejected),
+                display_name: "Extreme Contributions Test".to_string(),
+                attestations: vec![AttestationEvidence {
+                    attestation_id: "extreme-att".to_string(),
+                    issuer: "test".to_string(),
+                    level: AttestationLevel::VerifierBacked,
+                    issued_at: "2026-04-17T00:00:00Z".to_string(),
+                    expires_at: "2027-04-17T00:00:00Z".to_string(),
+                    signature_hex: "deadbeef".to_string(),
+                }],
+                stake: Some(StakeEvidence {
+                    amount: 1000.0,
+                    deposited_at: "2026-04-17T00:00:00Z".to_string(),
+                    lock_duration_seconds: 86400 * 365,
+                    locked: true,
+                }),
+                reputation: Some(ReputationEvidence {
+                    score: 0.8,
+                    interaction_count: accepted.saturating_add(rejected).min(1000), // Prevent overflow
+                    tenure_seconds: 86400 * 365,
+                    contributions_accepted: accepted,
+                    contributions_rejected: rejected,
+                }),
+                cluster_hint: None,
+            };
+
+            // Should handle extreme values without overflow or invalid results
+            let weight = engine.compute_single_weight(&participant);
+            assert!(weight.reputation_component.is_finite());
+            assert!(weight.reputation_component >= 0.0);
+            assert!(weight.reputation_component <= 1.0);
+
+            assert!(weight.raw_weight.is_finite());
+            assert!(weight.final_weight.is_finite());
+            assert!(weight.final_weight >= 0.0);
+
+            // Interaction ratio calculation should not overflow
+            let total_contributions = accepted.saturating_add(rejected);
+            if total_contributions > 0 {
+                let interaction_ratio = accepted as f64 / total_contributions as f64;
+                assert!(interaction_ratio >= 0.0);
+                assert!(interaction_ratio <= 1.0);
+                assert!(interaction_ratio.is_finite());
+            }
+        }
+    }
+
+    #[test]
+    fn negative_massive_participant_batch_memory_and_performance_stress() {
+        let mut engine = ParticipationWeightEngine::default();
+
+        // Test with progressively larger batches to stress memory and processing
+        let batch_sizes = [1000, 5000, 10_000];
+
+        for batch_size in batch_sizes {
+            let mut participants = Vec::with_capacity(batch_size);
+
+            // Create variety of participant types to stress different code paths
+            for i in 0..batch_size {
+                let participant = ParticipantIdentity {
+                    participant_id: format!("batch_participant_{:06}", i),
+                    display_name: format!("Batch Test {}", i),
+                    attestations: vec![AttestationEvidence {
+                        attestation_id: format!("att-{}", i),
+                        issuer: format!("issuer-{}", i % 100), // Some variety
+                        level: match i % 4 {
+                            0 => AttestationLevel::SelfSigned,
+                            1 => AttestationLevel::PeerVerified,
+                            2 => AttestationLevel::VerifierBacked,
+                            3 => AttestationLevel::AuthorityCertified,
+                            _ => unreachable!(),
+                        },
+                        issued_at: "2026-04-17T00:00:00Z".to_string(),
+                        expires_at: "2027-04-17T00:00:00Z".to_string(),
+                        signature_hex: format!("{:x}", i),
+                    }],
+                    stake: if i % 3 == 0 {
+                        Some(StakeEvidence {
+                            amount: (i % 10000) as f64,
+                            deposited_at: "2026-04-17T00:00:00Z".to_string(),
+                            lock_duration_seconds: (i % 365) as u64 * 86400,
+                            locked: i % 2 == 0,
+                        })
+                    } else {
+                        None
+                    },
+                    reputation: if i % 5 != 0 {
+                        Some(ReputationEvidence {
+                            score: (i as f64 / batch_size as f64).clamp(0.0, 1.0),
+                            interaction_count: (i % 1000) as u64,
+                            tenure_seconds: (i % 365) as u64 * 86400,
+                            contributions_accepted: (i % 500) as u64,
+                            contributions_rejected: (i % 50) as u64,
+                        })
+                    } else {
+                        None
+                    },
+                    cluster_hint: if i % 10 == 0 {
+                        Some(format!("cluster_{}", i / 100)) // Create some clusters
+                    } else {
+                        None
+                    },
+                };
+
+                participants.push(participant);
+            }
+
+            // Should handle large batches without memory issues or performance degradation
+            let start_time = std::time::Instant::now();
+            let record = engine.compute_weights(&participants, &format!("massive_batch_{}", batch_size), "2026-04-17T00:00:00Z");
+            let processing_time = start_time.elapsed();
+
+            // Should complete in reasonable time
+            assert!(processing_time.as_secs() < 60,
+                   "Large batch processing took too long: {:?} for {} participants",
+                   processing_time, batch_size);
+
+            // Record should have correct structure
+            assert_eq!(record.participant_count, batch_size);
+            assert_eq!(record.weights.len(), batch_size);
+
+            // Total weight should be finite and reasonable
+            assert!(record.total_weight.is_finite());
+            assert!(record.total_weight >= 0.0);
+
+            // Should detect some clusters
+            assert!(record.sybil_clusters_detected > 0, "Should detect clusters in large batch");
+
+            // Content hash should be consistent
+            assert_eq!(record.content_hash.len(), 64);
+            assert!(record.content_hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+            // Memory cleanup test - processing another batch should not degrade
+            let participants2 = vec![participants[0].clone()];
+            let start_time2 = std::time::Instant::now();
+            let _record2 = engine.compute_weights(&participants2, "cleanup_test", "2026-04-17T00:00:00Z");
+            let processing_time2 = start_time2.elapsed();
+
+            assert!(processing_time2.as_millis() < 100,
+                   "Memory cleanup may have failed - subsequent processing too slow");
+        }
+    }
+
+    #[test]
+    fn negative_concurrent_weight_computation_simulation() {
+        // Simulate concurrent weight computation that might reveal race conditions
+        use std::sync::{Arc, Mutex};
+        use std::thread;
+
+        let engine = Arc::new(Mutex::new(ParticipationWeightEngine::default()));
+        let results = Arc::new(Mutex::new(Vec::new()));
+
+        let thread_count = 8;
+        let operations_per_thread = 50;
+        let mut handles = Vec::new();
+
+        for thread_id in 0..thread_count {
+            let engine = Arc::clone(&engine);
+            let results = Arc::clone(&results);
+
+            let handle = thread::spawn(move || {
+                let mut thread_results = Vec::new();
+
+                for operation in 0..operations_per_thread {
+                    let participant = ParticipantIdentity {
+                        participant_id: format!("concurrent_t{}_o{}", thread_id, operation),
+                        display_name: format!("Concurrent Test T{} O{}", thread_id, operation),
+                        attestations: vec![AttestationEvidence {
+                            attestation_id: format!("att-t{}-o{}", thread_id, operation),
+                            issuer: "concurrent-test".to_string(),
+                            level: AttestationLevel::VerifierBacked,
+                            issued_at: "2026-04-17T00:00:00Z".to_string(),
+                            expires_at: "2027-04-17T00:00:00Z".to_string(),
+                            signature_hex: format!("{:x}{:x}", thread_id, operation),
+                        }],
+                        stake: Some(StakeEvidence {
+                            amount: (thread_id * operations_per_thread + operation) as f64,
+                            deposited_at: "2026-04-17T00:00:00Z".to_string(),
+                            lock_duration_seconds: 86400 * 30,
+                            locked: operation % 2 == 0,
+                        }),
+                        reputation: Some(ReputationEvidence {
+                            score: 0.8,
+                            interaction_count: (operation + 10) as u64,
+                            tenure_seconds: 86400 * 30,
+                            contributions_accepted: (operation + 5) as u64,
+                            contributions_rejected: (operation % 3) as u64,
+                        }),
+                        cluster_hint: if operation % 5 == 0 {
+                            Some(format!("concurrent_cluster_t{}", thread_id))
+                        } else {
+                            None
+                        },
+                    };
+
+                    // Each thread performs weight computation
+                    let record = {
+                        let mut engine_guard = engine.lock().unwrap();
+                        engine_guard.compute_weights(
+                            &[participant],
+                            &format!("concurrent_t{}_o{}", thread_id, operation),
+                            "2026-04-17T00:00:00Z"
+                        )
+                    };
+
+                    thread_results.push((thread_id, operation, record.total_weight, record.weights[0].final_weight));
+                }
+
+                // Merge results
+                {
+                    let mut shared_results = results.lock().unwrap();
+                    shared_results.extend(thread_results);
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        // Wait for all threads to complete
+        for handle in handles {
+            handle.join().expect("Thread should complete without panics");
+        }
+
+        let final_results = results.lock().unwrap();
+
+        // Should have processed all operations
+        assert_eq!(final_results.len(), thread_count * operations_per_thread);
+
+        // Check final engine state consistency
+        let final_engine = engine.lock().unwrap();
+
+        // All weights should be valid
+        for (thread_id, operation, total_weight, final_weight) in &*final_results {
+            assert!(total_weight.is_finite(), "Total weight should be finite for t{} o{}", thread_id, operation);
+            assert!(final_weight.is_finite(), "Final weight should be finite for t{} o{}", thread_id, operation);
+            assert!(*total_weight >= 0.0, "Total weight should be non-negative");
+            assert!(*final_weight >= 0.0, "Final weight should be non-negative");
+        }
+
+        // Results should show reasonable variety
+        let weights: Vec<f64> = final_results.iter().map(|(_, _, _, w)| *w).collect();
+        let unique_weights: BTreeSet<String> = weights.iter()
+            .map(|w| format!("{:.10}", w))
+            .collect();
+
+        // Should have reasonable variety in weights (not all identical)
+        assert!(unique_weights.len() > 1, "Should have variety in computed weights");
+
+        // Audit log should contain entries (may be bounded by capacity)
+        assert!(final_engine.audit_log().len() > 0);
+    }
+
+    #[test]
+    fn negative_deep_json_nesting_stack_overflow_protection() {
+        let mut engine = ParticipationWeightEngine::default();
+
+        // Create participant with deeply nested JSON-like content in display name
+        let participant = ParticipantIdentity {
+            participant_id: "deep_nesting_test".to_string(),
+            display_name: {
+                // Create deeply nested JSON-like string
+                let mut nested = String::new();
+                nested.push_str(r#"{"level0":{"#);
+                for i in 1..1000 {
+                    nested.push_str(&format!(r#""level{}":"{{"#, i));
+                }
+                nested.push_str(r#""deep":"value""#);
+                for _ in 0..1000 {
+                    nested.push_str("}}");
+                }
+                nested
+            },
+            attestations: vec![AttestationEvidence {
+                attestation_id: "deep-att".to_string(),
+                issuer: "deep-test".to_string(),
+                level: AttestationLevel::VerifierBacked,
+                issued_at: "2026-04-17T00:00:00Z".to_string(),
+                expires_at: "2027-04-17T00:00:00Z".to_string(),
+                signature_hex: "deadbeef".to_string(),
+            }],
+            stake: None,
+            reputation: None,
+            cluster_hint: None,
+        };
+
+        // Should handle deeply nested content without stack overflow
+        let result = std::panic::catch_unwind(|| {
+            engine.compute_weights(&[participant], "deep_test", "2026-04-17T00:00:00Z")
+        });
+
+        match result {
+            Ok(record) => {
+                // Successfully handled deep nesting
+                assert_eq!(record.participant_count, 1);
+                assert_eq!(record.weights[0].participant_id, "deep_nesting_test");
+
+                // JSON serialization should handle or safely reject deep nesting
+                match serde_json::to_string(&record) {
+                    Ok(json) => {
+                        // If serialization succeeds, deserialization should too
+                        match serde_json::from_str::<WeightAuditRecord>(&json) {
+                            Ok(parsed) => {
+                                assert_eq!(parsed.participant_count, 1);
+                                assert_eq!(parsed.weights[0].participant_id, "deep_nesting_test");
+                            }
+                            Err(_) => {
+                                // Deserialization failure acceptable for extremely nested data
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // Serialization failure acceptable for extremely nested data
+                    }
+                }
+            }
+            Err(_) => {
+                // If panic occurs, need better stack protection
+                panic!("Deep nesting caused panic - need stack overflow protection");
+            }
+        }
+    }
+
+    #[test]
+    fn negative_attestation_level_enum_manipulation_and_serialization_attacks() {
+        use serde_json::json;
+
+        // Test serialization/deserialization with malicious values
+        let malicious_level_values = [
+            json!("self_signed"),      // Valid but lowercase underscore (should work)
+            json!("AUTHORITY_CERTIFIED"), // Valid but uppercase (should fail)
+            json!("admin"),            // Privileged-sounding variant
+            json!("root"),             // System-like variant
+            json!("super_certified"),  // Non-existent higher level
+            json!(""),                 // Empty string
+            json!(null),               // Null value
+            json!(42),                 // Number instead of string
+            json!(true),               // Boolean instead of string
+            json!(["authority_certified"]), // Array instead of string
+            json!({"level": "authority_certified"}), // Object instead of string
+            json!("authority_certified\u{0000}"), // Null byte injection
+            json!("authority_certified\"><script>alert('xss')</script>"), // XSS attempt
+        ];
+
+        for (i, malicious_value) in malicious_level_values.iter().enumerate() {
+            // Attempt to deserialize malicious level value
+            let level_result = serde_json::from_value::<AttestationLevel>(malicious_value.clone());
+
+            // Check result - some valid variations should work, malicious ones should fail
+            match malicious_value {
+                // These should succeed (valid format)
+                v if v == &json!("self_signed") => {
+                    assert!(level_result.is_ok(), "Valid self_signed should deserialize");
+                }
+                // These should fail (malicious/invalid)
+                _ => {
+                    if level_result.is_err() {
+                        // Expected - malicious value rejected
+                    } else {
+                        // Some edge cases might deserialize - verify they're safe
+                        let level = level_result.unwrap();
+                        assert!(matches!(level, AttestationLevel::SelfSigned |
+                                              AttestationLevel::PeerVerified |
+                                              AttestationLevel::VerifierBacked |
+                                              AttestationLevel::AuthorityCertified));
+                    }
+                }
+            }
+
+            // Test in context of attestation evidence structure
+            let malicious_attestation = json!({
+                "attestation_id": format!("attack_{}", i),
+                "issuer": "test",
+                "level": malicious_value,
+                "issued_at": "2026-04-17T00:00:00Z",
+                "expires_at": "2027-04-17T00:00:00Z",
+                "signature_hex": "deadbeef"
+            });
+
+            let attestation_result = serde_json::from_value::<AttestationEvidence>(malicious_attestation);
+
+            // Should handle malicious levels in attestation context
+            match attestation_result {
+                Ok(attestation) => {
+                    // If parsed successfully, should have valid level
+                    assert!(matches!(attestation.level, AttestationLevel::SelfSigned |
+                                                       AttestationLevel::PeerVerified |
+                                                       AttestationLevel::VerifierBacked |
+                                                       AttestationLevel::AuthorityCertified));
+
+                    // Multiplier should be valid
+                    let multiplier = attestation.level.multiplier();
+                    assert!(multiplier >= 0.0);
+                    assert!(multiplier <= 1.0);
+                    assert!(multiplier.is_finite());
+                }
+                Err(_) => {
+                    // Rejection of malicious attestation levels is acceptable
+                }
+            }
+        }
+
+        // Test valid levels serialize/deserialize correctly
+        let valid_levels = [
+            AttestationLevel::SelfSigned,
+            AttestationLevel::PeerVerified,
+            AttestationLevel::VerifierBacked,
+            AttestationLevel::AuthorityCertified,
+        ];
+
+        for level in &valid_levels {
+            // Should serialize correctly
+            let serialized = serde_json::to_string(level).expect("valid level should serialize");
+
+            // Should deserialize back to same level
+            let deserialized: AttestationLevel = serde_json::from_str(&serialized)
+                .expect("valid serialized level should deserialize");
+            assert_eq!(deserialized, *level);
+
+            // Multiplier should be consistent
+            assert_eq!(level.multiplier(), deserialized.multiplier());
+        }
+    }
+
+    #[test]
+    fn negative_sybil_cluster_detection_with_crafted_collision_hints() {
+        let mut engine = ParticipationWeightEngine::default();
+
+        // Create participants with carefully crafted cluster hints designed to test collision resistance
+        let collision_hints = [
+            // Hash-like strings that might collide
+            "a".repeat(32),
+            "b".repeat(32),
+
+            // Similar but different strings
+            "cluster_group_alpha",
+            "cluster_group_beta",
+
+            // Strings that could hash to similar values
+            "subnet_192_168_1",
+            "subnet_192_168_2",
+
+            // Unicode variations that look similar
+            "café_network",
+            "cafe\u{0301}_network",
+        ];
+
+        let mut participants = Vec::new();
+
+        // Create 4 participants per hint (to ensure cluster detection triggers)
+        for hint in &collision_hints {
+            for i in 0..4 {
+                participants.push(ParticipantIdentity {
+                    participant_id: format!("collision_{}_{}", hint.chars().take(8).collect::<String>(), i),
+                    display_name: format!("Collision Test {}", i),
+                    attestations: vec![AttestationEvidence {
+                        attestation_id: format!("att-{}-{}", hint.chars().take(8).collect::<String>(), i),
+                        issuer: "collision-test".to_string(),
+                        level: AttestationLevel::SelfSigned,
+                        issued_at: "2026-04-17T00:00:00Z".to_string(),
+                        expires_at: "2027-04-17T00:00:00Z".to_string(),
+                        signature_hex: format!("{:x}", i),
+                    }],
+                    stake: None,
+                    reputation: Some(ReputationEvidence {
+                        score: 0.1,
+                        interaction_count: 10,
+                        tenure_seconds: 86400,
+                        contributions_accepted: 5,
+                        contributions_rejected: 5,
+                    }),
+                    cluster_hint: Some(hint.to_string()),
+                });
+            }
+        }
+
+        // Should detect separate clusters for each hint
+        let clusters = engine.detect_sybil_clusters(&participants);
+
+        // Should detect one cluster per hint (since each has 4 participants)
+        assert_eq!(clusters.len(), collision_hints.len(),
+                  "Should detect {} clusters for {} different hints",
+                  collision_hints.len(), collision_hints.len());
+
+        // Each cluster should have exactly 4 members
+        for cluster in &clusters {
+            assert_eq!(cluster.member_ids.len(), 4,
+                      "Each cluster should have 4 members");
+
+            // Cluster ID should be unique
+            assert!(!cluster.cluster_id.is_empty());
+            assert!(cluster.cluster_id.starts_with("SYBIL-"));
+
+            // Detection signal should identify the specific hint
+            assert!(cluster.detection_signal.starts_with("shared_cluster_hint:"));
+
+            // All members should be distinct
+            let unique_members: BTreeSet<String> = cluster.member_ids.iter().cloned().collect();
+            assert_eq!(unique_members.len(), cluster.member_ids.len());
+        }
+
+        // All cluster IDs should be unique
+        let cluster_ids: BTreeSet<String> = clusters.iter()
+            .map(|c| c.cluster_id.clone())
+            .collect();
+        assert_eq!(cluster_ids.len(), clusters.len(), "All cluster IDs should be unique");
+
+        // Compute weights and verify cluster attenuation
+        let record = engine.compute_weights(&participants, "collision_test", "2026-04-17T00:00:00Z");
+
+        assert_eq!(record.sybil_clusters_detected, collision_hints.len());
+        assert!(record.weights.iter().all(|w| w.sybil_penalty > 0.0),
+               "All participants should have sybil penalty applied");
+    }
+
+    #[test]
+    fn negative_weighting_config_extreme_boundary_validation() {
+        // Test configurations with extreme or contradictory values
+        let extreme_configs = [
+            // All weights zero
+            WeightingConfig {
+                attestation_weight: 0.0,
+                stake_weight: 0.0,
+                reputation_weight: 0.0,
+                new_participant_cap_fraction: 0.0,
+                established_tenure_seconds: 0,
+                established_interaction_count: 0,
+                sybil_attenuation_factor: 0.0,
+                sybil_cluster_min_size: 0,
+            },
+
+            // All weights at maximum
+            WeightingConfig {
+                attestation_weight: f64::MAX,
+                stake_weight: f64::MAX,
+                reputation_weight: f64::MAX,
+                new_participant_cap_fraction: f64::MAX,
+                established_tenure_seconds: u64::MAX,
+                established_interaction_count: u64::MAX,
+                sybil_attenuation_factor: f64::MAX,
+                sybil_cluster_min_size: usize::MAX,
+            },
+
+            // All weights negative
+            WeightingConfig {
+                attestation_weight: -1.0,
+                stake_weight: -1.0,
+                reputation_weight: -1.0,
+                new_participant_cap_fraction: -1.0,
+                established_tenure_seconds: 86400,
+                established_interaction_count: 100,
+                sybil_attenuation_factor: -1.0,
+                sybil_cluster_min_size: 3,
+            },
+
+            // Invalid floating point values
+            WeightingConfig {
+                attestation_weight: f64::NAN,
+                stake_weight: f64::INFINITY,
+                reputation_weight: f64::NEG_INFINITY,
+                new_participant_cap_fraction: f64::NAN,
+                established_tenure_seconds: 86400,
+                established_interaction_count: 100,
+                sybil_attenuation_factor: f64::INFINITY,
+                sybil_cluster_min_size: 3,
+            },
+        ];
+
+        for (i, config) in extreme_configs.iter().enumerate() {
+            // Engine should handle extreme configurations without panicking
+            let engine = ParticipationWeightEngine::new(config.clone());
+
+            // Config should be sanitized to safe values
+            let safe_config = &engine.config;
+
+            // All weight factors should be finite and bounded
+            assert!(safe_config.attestation_weight.is_finite());
+            assert!(safe_config.attestation_weight >= 0.0);
+            assert!(safe_config.attestation_weight <= 1.0);
+
+            assert!(safe_config.stake_weight.is_finite());
+            assert!(safe_config.stake_weight >= 0.0);
+            assert!(safe_config.stake_weight <= 1.0);
+
+            assert!(safe_config.reputation_weight.is_finite());
+            assert!(safe_config.reputation_weight >= 0.0);
+            assert!(safe_config.reputation_weight <= 1.0);
+
+            assert!(safe_config.new_participant_cap_fraction.is_finite());
+            assert!(safe_config.new_participant_cap_fraction >= 0.0);
+            assert!(safe_config.new_participant_cap_fraction <= 1.0);
+
+            assert!(safe_config.sybil_attenuation_factor.is_finite());
+            assert!(safe_config.sybil_attenuation_factor >= 0.0);
+            assert!(safe_config.sybil_attenuation_factor <= 1.0);
+
+            // Test weight computation with extreme config
+            let test_participant = ParticipantIdentity {
+                participant_id: format!("extreme_config_test_{}", i),
+                display_name: format!("Extreme Config Test {}", i),
+                attestations: vec![AttestationEvidence {
+                    attestation_id: format!("att-extreme-{}", i),
+                    issuer: "extreme-test".to_string(),
+                    level: AttestationLevel::VerifierBacked,
+                    issued_at: "2026-04-17T00:00:00Z".to_string(),
+                    expires_at: "2027-04-17T00:00:00Z".to_string(),
+                    signature_hex: "deadbeef".to_string(),
+                }],
+                stake: Some(StakeEvidence {
+                    amount: 1000.0,
+                    deposited_at: "2026-04-17T00:00:00Z".to_string(),
+                    lock_duration_seconds: 86400 * 365,
+                    locked: true,
+                }),
+                reputation: Some(ReputationEvidence {
+                    score: 0.8,
+                    interaction_count: 100,
+                    tenure_seconds: 86400 * 365,
+                    contributions_accepted: 90,
+                    contributions_rejected: 10,
+                }),
+                cluster_hint: None,
+            };
+
+            let weight = engine.compute_single_weight(&test_participant);
+
+            // Weight computation should produce finite, non-negative results
+            assert!(weight.raw_weight.is_finite(), "Raw weight should be finite for config {}", i);
+            assert!(weight.raw_weight >= 0.0, "Raw weight should be non-negative for config {}", i);
+
+            assert!(weight.final_weight.is_finite(), "Final weight should be finite for config {}", i);
+            assert!(weight.final_weight >= 0.0, "Final weight should be non-negative for config {}", i);
+
+            assert!(weight.attestation_component.is_finite());
+            assert!(weight.attestation_component >= 0.0);
+            assert!(weight.attestation_component <= 1.0);
+
+            assert!(weight.stake_component.is_finite());
+            assert!(weight.stake_component >= 0.0);
+            assert!(weight.stake_component <= 1.0);
+
+            assert!(weight.reputation_component.is_finite());
+            assert!(weight.reputation_component >= 0.0);
+            assert!(weight.reputation_component <= 1.0);
+
+            // JSON serialization should handle extreme config values
+            let config_json = serde_json::to_string(config);
+            match config_json {
+                Ok(json) => {
+                    // Should deserialize back (though values may be different due to sanitization)
+                    if let Ok(_parsed_config) = serde_json::from_str::<WeightingConfig>(&json) {
+                        // Parsing succeeded - values should be safe
+                    }
+                }
+                Err(_) => {
+                    // Some extreme values might not serialize, which is acceptable
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_audit_log_memory_exhaustion_protection() {
+        let mut engine = ParticipationWeightEngine::default();
+
+        // Generate far more audit records than the maximum capacity
+        let overflow_count = MAX_AUDIT_LOG_ENTRIES * 3;
+
+        for i in 0..overflow_count {
+            let participant = ParticipantIdentity {
+                participant_id: format!("overflow_participant_{:06}", i),
+                display_name: format!("Overflow Test {}", i),
+                attestations: vec![AttestationEvidence {
+                    attestation_id: format!("att-{}", i),
+                    issuer: "overflow-test".to_string(),
+                    level: AttestationLevel::SelfSigned,
+                    issued_at: "2026-04-17T00:00:00Z".to_string(),
+                    expires_at: "2027-04-17T00:00:00Z".to_string(),
+                    signature_hex: format!("{:x}", i),
+                }],
+                stake: None,
+                reputation: Some(ReputationEvidence {
+                    score: 0.1,
+                    interaction_count: 10,
+                    tenure_seconds: 86400,
+                    contributions_accepted: 5,
+                    contributions_rejected: 5,
+                }),
+                cluster_hint: None,
+            };
+
+            engine.compute_weights(&[participant], &format!("overflow_{}", i), "2026-04-17T00:00:00Z");
+
+            // Memory usage should remain bounded
+            assert!(engine.audit_log().len() <= MAX_AUDIT_LOG_ENTRIES,
+                   "Audit log should not exceed maximum capacity");
+        }
+
+        // Final audit log should be at capacity
+        assert_eq!(engine.audit_log().len(), MAX_AUDIT_LOG_ENTRIES);
+
+        // All remaining records should have unique batch IDs (no corruption)
+        let batch_ids: BTreeSet<String> = engine.audit_log()
+            .iter()
+            .map(|record| record.batch_id.clone())
+            .collect();
+        assert_eq!(batch_ids.len(), engine.audit_log().len(),
+                  "All audit records should have unique batch IDs");
+
+        // All records should have valid structure
+        for record in engine.audit_log() {
+            assert!(!record.batch_id.is_empty());
+            assert!(!record.timestamp.is_empty());
+            assert!(record.total_weight.is_finite());
+            assert!(record.total_weight >= 0.0);
+            assert_eq!(record.content_hash.len(), 64);
+            assert!(record.content_hash.chars().all(|c| c.is_ascii_hexdigit()));
+        }
+
+        // JSON export should work with full audit log
+        let json_result = engine.export_audit_json();
+        assert!(json_result.is_ok(), "Should export full audit log as JSON");
+
+        if let Ok(json) = json_result {
+            // Should be substantial content
+            assert!(json.len() > 10000);
+
+            // Should deserialize back to audit records
+            let parsed_result: Result<Vec<WeightAuditRecord>, _> = serde_json::from_str(&json);
+            assert!(parsed_result.is_ok(), "Exported audit JSON should deserialize");
+
+            if let Ok(parsed_records) = parsed_result {
+                assert_eq!(parsed_records.len(), MAX_AUDIT_LOG_ENTRIES);
+            }
         }
     }
 }

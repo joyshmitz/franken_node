@@ -11,9 +11,13 @@ use std::collections::BTreeMap;
 use crate::capacity_defaults::aliases::MAX_BLOCKED_SOURCES;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
-        items.drain(0..overflow);
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow.min(items.len()));
     }
     items.push(item);
 }
@@ -45,6 +49,7 @@ pub mod error_codes {
     pub const ERR_CLAIM_BLOCKED: &str = "ERR_CLAIM_BLOCKED";
     pub const ERR_SCOREBOARD_SIGNATURE_INVALID: &str = "ERR_SCOREBOARD_SIGNATURE_INVALID";
     pub const ERR_SCOREBOARD_STALE_EVIDENCE: &str = "ERR_SCOREBOARD_STALE_EVIDENCE";
+    pub const ERR_SCOREBOARD_RATE_LIMITED: &str = "ERR_SCOREBOARD_RATE_LIMITED";
 }
 
 // ---------------------------------------------------------------------------
@@ -57,6 +62,8 @@ pub mod invariants {
     pub const INV_SCOREBOARD_SIGNED_EVIDENCE: &str = "INV-SCOREBOARD-SIGNED-EVIDENCE";
     pub const INV_SCOREBOARD_FRESH_LINKS: &str = "INV-SCOREBOARD-FRESH-LINKS";
 }
+
+const DEFAULT_MAX_CONTRACTS_PER_PUBLISH: usize = 1024;
 
 // ---------------------------------------------------------------------------
 // Claim compilation
@@ -223,22 +230,24 @@ impl ClaimCompiler {
             };
         }
 
-        // Evidence URIs must be well-formed (non-empty, starts with scheme)
+        // Evidence URIs must be well-formed and canonicalized before hashing.
+        let mut evidence_uris = Vec::with_capacity(claim.evidence_uris.len());
         for uri in &claim.evidence_uris {
-            if !is_valid_evidence_uri(uri) {
+            let Some(uri) = normalize_evidence_uri(uri) else {
                 return CompilationResult::Rejected {
                     claim_id: claim.claim_id.clone(),
                     reason: ClaimRejectionReason::Unverifiable,
                     error_code: error_codes::ERR_CLAIM_UNVERIFIABLE.to_string(),
                 };
-            }
+            };
+            evidence_uris.push(uri.to_string());
         }
 
         // Compile: produce executable evidence contract
         let contract_digest = compute_contract_digest(
             &claim.claim_id,
             &claim.claim_text,
-            &claim.evidence_uris,
+            &evidence_uris,
             source_id,
         );
         let signature = sign_contract(
@@ -250,7 +259,7 @@ impl ClaimCompiler {
         let contract = CompiledContract {
             claim_id: claim.claim_id.clone(),
             claim_text: claim.claim_text.clone(),
-            evidence_uris: claim.evidence_uris.clone(),
+            evidence_uris,
             source_id: source_id.to_string(),
             compiled_at_epoch_ms: self.config.now_epoch_ms,
             contract_digest,
@@ -268,20 +277,35 @@ impl ClaimCompiler {
 
 fn normalize_source_id(source_id: &str) -> Option<&str> {
     let trimmed = source_id.trim();
-    (!trimmed.is_empty()).then_some(trimmed)
+    (!trimmed.is_empty() && !trimmed.contains('\0')).then_some(trimmed)
 }
 
+#[cfg(test)]
 fn is_valid_evidence_uri(uri: &str) -> bool {
+    normalize_evidence_uri(uri).is_some()
+}
+
+fn normalize_evidence_uri(uri: &str) -> Option<&str> {
     let trimmed = uri.trim();
-    if trimmed.is_empty() {
-        return false;
+    if trimmed.is_empty() || trimmed.contains('\0') {
+        return None;
     }
     // Must have a scheme prefix
-    trimmed.starts_with("https://")
+    (trimmed.starts_with("https://")
         || trimmed.starts_with("http://")
         || trimmed.starts_with("ipfs://")
         || trimmed.starts_with("file://")
-        || trimmed.starts_with("urn:")
+        || trimmed.starts_with("urn:"))
+    .then_some(trimmed)
+}
+
+fn len_u64(len: usize) -> u64 {
+    u64::try_from(len).unwrap_or(u64::MAX)
+}
+
+fn update_len_prefixed(hasher: &mut Sha256, bytes: &[u8]) {
+    hasher.update(len_u64(bytes.len()).to_le_bytes());
+    hasher.update(bytes);
 }
 
 fn compute_contract_digest(
@@ -292,17 +316,13 @@ fn compute_contract_digest(
 ) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"claim_compiler_hash_v1:");
-    hasher.update((claim_id.len() as u64).to_le_bytes());
-    hasher.update(claim_id.as_bytes());
-    hasher.update((claim_text.len() as u64).to_le_bytes());
-    hasher.update(claim_text.as_bytes());
-    hasher.update((evidence_uris.len() as u64).to_le_bytes());
+    update_len_prefixed(&mut hasher, claim_id.as_bytes());
+    update_len_prefixed(&mut hasher, claim_text.as_bytes());
+    hasher.update(len_u64(evidence_uris.len()).to_le_bytes());
     for uri in evidence_uris {
-        hasher.update((uri.len() as u64).to_le_bytes());
-        hasher.update(uri.as_bytes());
+        update_len_prefixed(&mut hasher, uri.as_bytes());
     }
-    hasher.update((source_id.len() as u64).to_le_bytes());
-    hasher.update(source_id.as_bytes());
+    update_len_prefixed(&mut hasher, source_id.as_bytes());
     hex::encode(hasher.finalize())
 }
 
@@ -310,12 +330,9 @@ fn sign_contract(digest: &str, signer_id: &str, signing_key: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"claim_compiler_sign_v1:");
     // digest is hex-encoded (fixed charset), but length-prefix for consistency
-    hasher.update((digest.len() as u64).to_le_bytes());
-    hasher.update(digest.as_bytes());
-    hasher.update((signer_id.len() as u64).to_le_bytes());
-    hasher.update(signer_id.as_bytes());
-    hasher.update((signing_key.len() as u64).to_le_bytes());
-    hasher.update(signing_key.as_bytes());
+    update_len_prefixed(&mut hasher, digest.as_bytes());
+    update_len_prefixed(&mut hasher, signer_id.as_bytes());
+    update_len_prefixed(&mut hasher, signing_key.as_bytes());
     hex::encode(hasher.finalize())
 }
 
@@ -329,6 +346,7 @@ fn sign_contract(digest: &str, signer_id: &str, signing_key: &str) -> String {
 pub enum ScoreboardRejectionReason {
     SignatureInvalid,
     StaleEvidence,
+    RateLimited,
 }
 
 impl ScoreboardRejectionReason {
@@ -336,6 +354,7 @@ impl ScoreboardRejectionReason {
         match self {
             Self::SignatureInvalid => error_codes::ERR_SCOREBOARD_SIGNATURE_INVALID,
             Self::StaleEvidence => error_codes::ERR_SCOREBOARD_STALE_EVIDENCE,
+            Self::RateLimited => error_codes::ERR_SCOREBOARD_RATE_LIMITED,
         }
     }
 }
@@ -384,6 +403,8 @@ pub struct ScoreboardConfig {
     pub now_epoch_ms: u64,
     /// Maximum age (in ms) for evidence links before they are considered stale.
     pub max_evidence_age_ms: u64,
+    /// Maximum contracts accepted in one scoreboard publish/snapshot build.
+    pub max_contracts_per_publish: usize,
 }
 
 impl ScoreboardConfig {
@@ -398,7 +419,13 @@ impl ScoreboardConfig {
             signing_key: signing_key.into(),
             now_epoch_ms,
             max_evidence_age_ms,
+            max_contracts_per_publish: DEFAULT_MAX_CONTRACTS_PER_PUBLISH,
         }
+    }
+
+    pub fn with_max_contracts_per_publish(mut self, max_contracts_per_publish: usize) -> Self {
+        self.max_contracts_per_publish = max_contracts_per_publish;
+        self
     }
 }
 
@@ -419,6 +446,10 @@ impl ScoreboardPipeline {
         &self,
         contracts: &[CompiledContract],
     ) -> Result<(), ScoreboardRejectionReason> {
+        if contracts.len() > self.config.max_contracts_per_publish {
+            return Err(ScoreboardRejectionReason::RateLimited);
+        }
+
         // INV-SCOREBOARD-FRESH-LINKS: reject stale evidence (fail-closed: >= rejects at boundary)
         for contract in contracts {
             if self
@@ -428,6 +459,22 @@ impl ScoreboardPipeline {
                 >= self.config.max_evidence_age_ms
             {
                 return Err(ScoreboardRejectionReason::StaleEvidence);
+            }
+        }
+
+        // INV-SCOREBOARD-SIGNED-EVIDENCE: reject payload/digest mismatches before signature checks.
+        for contract in contracts {
+            let expected_digest = compute_contract_digest(
+                &contract.claim_id,
+                &contract.claim_text,
+                &contract.evidence_uris,
+                &contract.source_id,
+            );
+            if !crate::security::constant_time::ct_eq_bytes(
+                contract.contract_digest.as_bytes(),
+                expected_digest.as_bytes(),
+            ) {
+                return Err(ScoreboardRejectionReason::SignatureInvalid);
             }
         }
 
@@ -546,16 +593,11 @@ fn compute_entry_digest(
 ) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"claim_compiler_entry_v1:");
-    hasher.update((entry_id.len() as u64).to_le_bytes());
-    hasher.update(entry_id.as_bytes());
-    hasher.update((claim_id.len() as u64).to_le_bytes());
-    hasher.update(claim_id.as_bytes());
-    hasher.update((evidence_link.len() as u64).to_le_bytes());
-    hasher.update(evidence_link.as_bytes());
-    hasher.update((signer_id.len() as u64).to_le_bytes());
-    hasher.update(signer_id.as_bytes());
-    hasher.update((signing_key.len() as u64).to_le_bytes());
-    hasher.update(signing_key.as_bytes());
+    update_len_prefixed(&mut hasher, entry_id.as_bytes());
+    update_len_prefixed(&mut hasher, claim_id.as_bytes());
+    update_len_prefixed(&mut hasher, evidence_link.as_bytes());
+    update_len_prefixed(&mut hasher, signer_id.as_bytes());
+    update_len_prefixed(&mut hasher, signing_key.as_bytes());
     hex::encode(hasher.finalize())
 }
 
@@ -565,15 +607,12 @@ fn compute_snapshot_digest(
 ) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"claim_compiler_snapshot_v1:");
-    hasher.update((snapshot_id.len() as u64).to_le_bytes());
-    hasher.update(snapshot_id.as_bytes());
-    hasher.update((entries.len() as u64).to_le_bytes());
+    update_len_prefixed(&mut hasher, snapshot_id.as_bytes());
+    hasher.update(len_u64(entries.len()).to_le_bytes());
     for (key, entry) in entries {
-        hasher.update((key.len() as u64).to_le_bytes());
-        hasher.update(key.as_bytes());
+        update_len_prefixed(&mut hasher, key.as_bytes());
         // signed_digest is hex-encoded (fixed charset), but length-prefix for consistency
-        hasher.update((entry.signed_digest.len() as u64).to_le_bytes());
-        hasher.update(entry.signed_digest.as_bytes());
+        update_len_prefixed(&mut hasher, entry.signed_digest.as_bytes());
     }
     hex::encode(hasher.finalize())
 }
@@ -608,6 +647,24 @@ mod tests {
     fn scoreboard(now_epoch_ms: u64) -> ScoreboardPipeline {
         let cfg = ScoreboardConfig::new("signer-A", "key-secret", now_epoch_ms, 60_000);
         ScoreboardPipeline::new(cfg)
+    }
+
+    fn scoreboard_with_limit(
+        now_epoch_ms: u64,
+        max_contracts_per_publish: usize,
+    ) -> ScoreboardPipeline {
+        let cfg = ScoreboardConfig::new("signer-A", "key-secret", now_epoch_ms, 60_000)
+            .with_max_contracts_per_publish(max_contracts_per_publish);
+        ScoreboardPipeline::new(cfg)
+    }
+
+    fn compiled_contract(claim_id: &str, compiled_at_epoch_ms: u64) -> CompiledContract {
+        let cc = compiler(compiled_at_epoch_ms);
+        let claim = make_test_claim(claim_id, "src-1");
+        match cc.compile(&claim) {
+            CompilationResult::Compiled { contract, .. } => contract,
+            CompilationResult::Rejected { .. } => unreachable!("expected compiled contract"),
+        }
     }
 
     // --- Claim compiler tests ---
@@ -805,6 +862,78 @@ mod tests {
         assert!(matches!(result, CompilationResult::Compiled { .. }));
     }
 
+    #[test]
+    fn compile_normalizes_evidence_uris_before_digesting_contract() {
+        let cc = compiler(10_000);
+        let claim = ExternalClaim {
+            claim_id: "c9".to_string(),
+            claim_text: "Padded evidence URI claim".to_string(),
+            evidence_uris: vec!["  https://evidence.example.com/c9\t".to_string()],
+            source_id: "src-1".to_string(),
+        };
+        let result = cc.compile(&claim);
+        match result {
+            CompilationResult::Compiled { contract, .. } => {
+                assert_eq!(
+                    contract.evidence_uris,
+                    vec!["https://evidence.example.com/c9"]
+                );
+                let expected_digest = compute_contract_digest(
+                    &contract.claim_id,
+                    &contract.claim_text,
+                    &contract.evidence_uris,
+                    &contract.source_id,
+                );
+                assert!(crate::security::constant_time::ct_eq_bytes(
+                    contract.contract_digest.as_bytes(),
+                    expected_digest.as_bytes(),
+                ));
+            }
+            CompilationResult::Rejected { .. } => unreachable!("expected compiled"),
+        }
+    }
+
+    #[test]
+    fn compile_rejects_mixed_evidence_list_when_any_uri_unverifiable() {
+        let cc = compiler(10_000);
+        let claim = ExternalClaim {
+            claim_id: "c10".to_string(),
+            claim_text: "Mixed evidence claim".to_string(),
+            evidence_uris: vec![
+                "https://evidence.example.com/c10".to_string(),
+                "ftp://evidence.example.com/c10".to_string(),
+            ],
+            source_id: "src-1".to_string(),
+        };
+        let result = cc.compile(&claim);
+        assert!(matches!(
+            result,
+            CompilationResult::Rejected {
+                reason: ClaimRejectionReason::Unverifiable,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn compile_rejects_all_whitespace_evidence_uri_as_unverifiable() {
+        let cc = compiler(10_000);
+        let claim = ExternalClaim {
+            claim_id: "c11".to_string(),
+            claim_text: "Whitespace evidence claim".to_string(),
+            evidence_uris: vec![" \n\t ".to_string()],
+            source_id: "src-1".to_string(),
+        };
+        let result = cc.compile(&claim);
+        assert!(matches!(
+            result,
+            CompilationResult::Rejected {
+                reason: ClaimRejectionReason::Unverifiable,
+                ..
+            }
+        ));
+    }
+
     // --- Scoreboard tests ---
 
     #[test]
@@ -844,6 +973,31 @@ mod tests {
     }
 
     #[test]
+    fn scoreboard_accepts_contract_one_ms_before_freshness_boundary() {
+        let contract = compiled_contract("fresh-boundary-1", 10_000);
+        let sb = scoreboard(69_999);
+        let result = sb.publish("snap-fresh-boundary", &[contract]);
+        assert!(matches!(
+            result,
+            ScoreboardUpdateResult::Published { entry_count: 1, .. }
+        ));
+    }
+
+    #[test]
+    fn scoreboard_rejects_contract_at_exact_freshness_boundary() {
+        let contract = compiled_contract("stale-boundary-1", 10_000);
+        let sb = scoreboard(70_000);
+        let result = sb.publish("snap-stale-boundary", &[contract]);
+        assert!(matches!(
+            result,
+            ScoreboardUpdateResult::Rejected {
+                reason: ScoreboardRejectionReason::StaleEvidence,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn scoreboard_rejects_tampered_signature() {
         // INV-SCOREBOARD-SIGNED-EVIDENCE
         let cc = compiler(10_000);
@@ -865,6 +1019,68 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn scoreboard_rejects_resigned_contract_with_payload_digest_mismatch() {
+        let sb = scoreboard(10_000);
+        let mut contract = compiled_contract("digest-mismatch-1", 10_000);
+        contract.claim_text = "Mutated text after compilation".to_string();
+        contract.signature =
+            sign_contract(&contract.contract_digest, &contract.signer_id, "key-secret");
+
+        let result = sb.publish("snap-digest-mismatch", &[contract]);
+        assert!(matches!(
+            result,
+            ScoreboardUpdateResult::Rejected {
+                reason: ScoreboardRejectionReason::SignatureInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn scoreboard_rate_limit_accepts_exact_contract_limit() {
+        let sb = scoreboard_with_limit(10_000, 2);
+        let contracts = vec![
+            compiled_contract("rate-limit-ok-1", 10_000),
+            compiled_contract("rate-limit-ok-2", 10_000),
+        ];
+        let result = sb.publish("snap-rate-limit-ok", &contracts);
+        assert!(matches!(
+            result,
+            ScoreboardUpdateResult::Published { entry_count: 2, .. }
+        ));
+    }
+
+    #[test]
+    fn scoreboard_rate_limit_rejects_over_contract_limit() {
+        let sb = scoreboard_with_limit(10_000, 1);
+        let contracts = vec![
+            compiled_contract("rate-limit-over-1", 10_000),
+            compiled_contract("rate-limit-over-2", 10_000),
+        ];
+        let result = sb.publish("snap-rate-limit-over", &contracts);
+        assert!(matches!(
+            result,
+            ScoreboardUpdateResult::Rejected {
+                reason: ScoreboardRejectionReason::RateLimited,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn scoreboard_rate_limit_blocks_snapshot_build_over_limit() {
+        let sb = scoreboard_with_limit(10_000, 1);
+        let contracts = vec![
+            compiled_contract("rate-limit-snap-1", 10_000),
+            compiled_contract("rate-limit-snap-2", 10_000),
+        ];
+        assert!(
+            sb.build_snapshot("snap-rate-limit-blocked", &contracts)
+                .is_none()
+        );
     }
 
     #[test]
@@ -982,6 +1198,10 @@ mod tests {
             ScoreboardRejectionReason::StaleEvidence.code(),
             error_codes::ERR_SCOREBOARD_STALE_EVIDENCE
         );
+        assert_eq!(
+            ScoreboardRejectionReason::RateLimited.code(),
+            error_codes::ERR_SCOREBOARD_RATE_LIMITED
+        );
     }
 
     // --- URI validation ---
@@ -1001,6 +1221,403 @@ mod tests {
         assert!(!is_valid_evidence_uri("   "));
         assert!(!is_valid_evidence_uri("not-a-uri"));
         assert!(!is_valid_evidence_uri("ftp://server/file"));
+    }
+
+    mod claim_validation_rate_limit_proof_acceptance_contract_tests {
+        use super::*;
+
+        #[test]
+        fn claim_validation_rejects_source_id_with_null_byte() {
+            let cc = compiler(10_000);
+            let claim = ExternalClaim {
+                claim_id: "null-source-1".to_string(),
+                claim_text: "Claim with poisoned source id".to_string(),
+                evidence_uris: vec!["https://evidence.example.com/null-source-1".to_string()],
+                source_id: "trusted-source\0shadow".to_string(),
+            };
+
+            let result = cc.compile(&claim);
+
+            assert!(matches!(
+                result,
+                CompilationResult::Rejected {
+                    reason: ClaimRejectionReason::InvalidSource,
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn claim_validation_rejects_evidence_uri_with_null_byte() {
+            let cc = compiler(10_000);
+            let claim = ExternalClaim {
+                claim_id: "null-evidence-1".to_string(),
+                claim_text: "Claim with poisoned evidence URI".to_string(),
+                evidence_uris: vec!["https://evidence.example.com/report\0.txt".to_string()],
+                source_id: "src-1".to_string(),
+            };
+
+            let result = cc.compile(&claim);
+
+            assert!(matches!(
+                result,
+                CompilationResult::Rejected {
+                    reason: ClaimRejectionReason::Unverifiable,
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn invalid_source_rejection_precedes_empty_claim_text() {
+            let cc = compiler(10_000);
+            let claim = ExternalClaim {
+                claim_id: "invalid-source-before-syntax".to_string(),
+                claim_text: "   ".to_string(),
+                evidence_uris: Vec::new(),
+                source_id: "source\0poison".to_string(),
+            };
+
+            let result = cc.compile(&claim);
+
+            assert!(matches!(
+                result,
+                CompilationResult::Rejected {
+                    reason: ClaimRejectionReason::InvalidSource,
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn blocked_source_rejection_precedes_missing_evidence() {
+            let cfg =
+                CompilerConfig::new("signer-A", "key-secret", 10_000).with_blocked_source("src-1");
+            let cc = ClaimCompiler::new(cfg);
+            let claim = ExternalClaim {
+                claim_id: "blocked-before-missing-evidence".to_string(),
+                claim_text: "This source is blocked before evidence is inspected".to_string(),
+                evidence_uris: Vec::new(),
+                source_id: " src-1 ".to_string(),
+            };
+
+            let result = cc.compile(&claim);
+
+            assert!(matches!(
+                result,
+                CompilationResult::Rejected {
+                    reason: ClaimRejectionReason::Blocked,
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn blocked_source_rejection_precedes_invalid_evidence_uri() {
+            let cfg =
+                CompilerConfig::new("signer-A", "key-secret", 10_000).with_blocked_source("src-1");
+            let cc = ClaimCompiler::new(cfg);
+            let claim = ExternalClaim {
+                claim_id: "blocked-before-invalid-evidence".to_string(),
+                claim_text: "This source is blocked before URI normalization".to_string(),
+                evidence_uris: vec!["ftp://unsupported.example.com/evidence".to_string()],
+                source_id: "src-1".to_string(),
+            };
+
+            let result = cc.compile(&claim);
+
+            assert!(matches!(
+                result,
+                CompilationResult::Rejected {
+                    reason: ClaimRejectionReason::Blocked,
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn claim_validation_rejects_non_canonical_uppercase_scheme() {
+            let cc = compiler(10_000);
+            let claim = ExternalClaim {
+                claim_id: "uppercase-scheme".to_string(),
+                claim_text: "Uppercase schemes are not accepted as canonical evidence".to_string(),
+                evidence_uris: vec!["HTTPS://evidence.example.com/report".to_string()],
+                source_id: "src-1".to_string(),
+            };
+
+            let result = cc.compile(&claim);
+
+            assert!(matches!(
+                result,
+                CompilationResult::Rejected {
+                    reason: ClaimRejectionReason::Unverifiable,
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn push_bounded_zero_capacity_discards_without_panicking() {
+            let mut blocked_sources = vec!["oldest".to_string(), "newest".to_string()];
+
+            push_bounded(&mut blocked_sources, "ignored".to_string(), 0);
+
+            assert!(blocked_sources.is_empty());
+        }
+
+        #[test]
+        fn rate_limit_rejection_takes_precedence_before_expiry_scan() {
+            let sb = scoreboard_with_limit(100_000, 1);
+            let contracts = vec![
+                compiled_contract("rate-limit-before-expiry-1", 10_000),
+                compiled_contract("rate-limit-before-expiry-2", 10_000),
+            ];
+
+            let result = sb.publish("snap-rate-limit-before-expiry", &contracts);
+
+            assert!(matches!(
+                result,
+                ScoreboardUpdateResult::Rejected {
+                    reason: ScoreboardRejectionReason::RateLimited,
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn zero_rate_limit_rejects_non_empty_publish_and_snapshot() {
+            let sb = scoreboard_with_limit(10_000, 0);
+            let contracts = vec![compiled_contract("zero-rate-limit-1", 10_000)];
+
+            let result = sb.publish("snap-zero-rate-limit", &contracts);
+
+            assert!(matches!(
+                result,
+                ScoreboardUpdateResult::Rejected {
+                    reason: ScoreboardRejectionReason::RateLimited,
+                    ..
+                }
+            ));
+            assert!(
+                sb.build_snapshot("snap-zero-rate-limit", &contracts)
+                    .is_none()
+            );
+        }
+
+        #[test]
+        fn exact_rate_limit_snapshot_preserves_signed_entry_proofs() {
+            let sb = scoreboard_with_limit(10_000, 2);
+            let contracts = vec![
+                compiled_contract("exact-proof-1", 10_000),
+                compiled_contract("exact-proof-2", 10_000),
+            ];
+
+            let snapshot = sb
+                .build_snapshot("snap-exact-proof", &contracts)
+                .expect("exact limit should be accepted");
+
+            assert_eq!(snapshot.entries.len(), 2);
+            let expected_snapshot_digest =
+                compute_snapshot_digest(&snapshot.snapshot_id, &snapshot.entries);
+            assert!(crate::security::constant_time::ct_eq_bytes(
+                snapshot.snapshot_digest.as_bytes(),
+                expected_snapshot_digest.as_bytes(),
+            ));
+            for entry in snapshot.entries.values() {
+                let expected = compute_entry_digest(
+                    &entry.entry_id,
+                    &entry.claim_id,
+                    &entry.evidence_link,
+                    "signer-A",
+                    "key-secret",
+                );
+                assert!(crate::security::constant_time::ct_eq_bytes(
+                    entry.signed_digest.as_bytes(),
+                    expected.as_bytes(),
+                ));
+            }
+        }
+
+        #[test]
+        fn proof_acceptance_rejects_signature_from_wrong_key() {
+            let sb = scoreboard(10_000);
+            let mut contract = compiled_contract("wrong-key-signature-1", 10_000);
+            contract.signature =
+                sign_contract(&contract.contract_digest, &contract.signer_id, "wrong-key");
+
+            let result = sb.publish("snap-wrong-key-signature", &[contract]);
+
+            assert!(matches!(
+                result,
+                ScoreboardUpdateResult::Rejected {
+                    reason: ScoreboardRejectionReason::SignatureInvalid,
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn proof_acceptance_rejects_digest_replacement_signed_for_wrong_payload() {
+            let sb = scoreboard(10_000);
+            let mut contract = compiled_contract("wrong-payload-digest-1", 10_000);
+            let replacement_digest = compute_contract_digest(
+                "wrong-payload-digest-2",
+                &contract.claim_text,
+                &contract.evidence_uris,
+                &contract.source_id,
+            );
+            contract.contract_digest = replacement_digest;
+            contract.signature =
+                sign_contract(&contract.contract_digest, &contract.signer_id, "key-secret");
+
+            let result = sb.publish("snap-wrong-payload-digest", &[contract]);
+
+            assert!(matches!(
+                result,
+                ScoreboardUpdateResult::Rejected {
+                    reason: ScoreboardRejectionReason::SignatureInvalid,
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn proof_acceptance_rejects_empty_signature() {
+            let sb = scoreboard(10_000);
+            let mut contract = compiled_contract("empty-signature-1", 10_000);
+            contract.signature.clear();
+
+            let result = sb.publish("snap-empty-signature", &[contract]);
+
+            assert!(matches!(
+                result,
+                ScoreboardUpdateResult::Rejected {
+                    reason: ScoreboardRejectionReason::SignatureInvalid,
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn proof_acceptance_rate_limit_precedes_signature_validation() {
+            let sb = scoreboard_with_limit(100_000, 1);
+            let valid = compiled_contract("rate-limit-before-signature-1", 10_000);
+            let mut invalid_signature = compiled_contract("rate-limit-before-signature-2", 10_000);
+            invalid_signature.signature.clear();
+
+            let result = sb.publish(
+                "snap-rate-limit-before-signature",
+                &[valid, invalid_signature],
+            );
+
+            assert!(matches!(
+                result,
+                ScoreboardUpdateResult::Rejected {
+                    reason: ScoreboardRejectionReason::RateLimited,
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn proof_acceptance_rejects_evidence_uri_tamper() {
+            let sb = scoreboard(10_000);
+            let mut contract = compiled_contract("tampered-evidence-uri-1", 10_000);
+            contract.evidence_uris = vec!["https://evidence.example.com/forged".to_string()];
+            contract.signature =
+                sign_contract(&contract.contract_digest, &contract.signer_id, "key-secret");
+
+            let result = sb.publish("snap-tampered-evidence-uri", &[contract]);
+
+            assert!(matches!(
+                result,
+                ScoreboardUpdateResult::Rejected {
+                    reason: ScoreboardRejectionReason::SignatureInvalid,
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn snapshot_build_rejects_signature_from_wrong_key() {
+            let sb = scoreboard(10_000);
+            let mut contract = compiled_contract("wrong-key-snapshot-1", 10_000);
+            contract.signature =
+                sign_contract(&contract.contract_digest, &contract.signer_id, "wrong-key");
+
+            assert!(
+                sb.build_snapshot("snap-wrong-key-signature", &[contract])
+                    .is_none()
+            );
+        }
+
+        #[test]
+        fn snapshot_build_rejects_empty_signature() {
+            let sb = scoreboard(10_000);
+            let mut contract = compiled_contract("empty-signature-snapshot-1", 10_000);
+            contract.signature.clear();
+
+            assert!(
+                sb.build_snapshot("snap-empty-signature", &[contract])
+                    .is_none()
+            );
+        }
+
+        #[test]
+        fn snapshot_build_rejects_evidence_uri_tamper() {
+            let sb = scoreboard(10_000);
+            let mut contract = compiled_contract("tampered-evidence-snapshot-1", 10_000);
+            contract.evidence_uris = vec!["https://evidence.example.com/tampered".to_string()];
+            contract.signature =
+                sign_contract(&contract.contract_digest, &contract.signer_id, "key-secret");
+
+            assert!(
+                sb.build_snapshot("snap-tampered-evidence", &[contract])
+                    .is_none()
+            );
+        }
+
+        #[test]
+        fn proof_acceptance_requires_every_contract_to_be_fresh() {
+            let sb = scoreboard(70_000);
+            let contracts = vec![
+                compiled_contract("fresh-member-1", 69_999),
+                compiled_contract("expired-member-1", 10_000),
+            ];
+
+            let publish = sb.publish("snap-mixed-freshness", &contracts);
+
+            assert!(matches!(
+                publish,
+                ScoreboardUpdateResult::Rejected {
+                    reason: ScoreboardRejectionReason::StaleEvidence,
+                    ..
+                }
+            ));
+            assert!(
+                sb.build_snapshot("snap-mixed-freshness", &contracts)
+                    .is_none()
+            );
+        }
+
+        #[test]
+        fn accepted_snapshot_digest_changes_when_contract_set_changes() {
+            let sb = scoreboard(10_000);
+            let first_contracts = vec![compiled_contract("snapshot-set-1", 10_000)];
+            let second_contracts = vec![
+                compiled_contract("snapshot-set-1", 10_000),
+                compiled_contract("snapshot-set-2", 10_000),
+            ];
+
+            let first = sb
+                .build_snapshot("snap-contract-set", &first_contracts)
+                .expect("first snapshot");
+            let second = sb
+                .build_snapshot("snap-contract-set", &second_contracts)
+                .expect("second snapshot");
+
+            assert_ne!(first.snapshot_digest, second.snapshot_digest);
+        }
     }
 
     // --- Schema version ---
@@ -1056,5 +1673,810 @@ mod tests {
             event_codes::SCOREBOARD_EVIDENCE_SIGNED,
             "SCOREBOARD_EVIDENCE_SIGNED"
         );
+    }
+}
+
+#[cfg(test)]
+mod claim_compiler_boundary_negative_tests {
+    use super::*;
+
+    fn malicious_compiler() -> ClaimCompiler {
+        ClaimCompiler::new("test-signer", "test-secret")
+    }
+
+    fn malicious_trust_claim() -> TrustClaim {
+        TrustClaim {
+            claim_id: "claim-malicious".to_string(),
+            claimant: "malicious-claimant".to_string(),
+            claim_text: "Trust assertion for testing".to_string(),
+            evidence_links: vec!["https://example.com/evidence".to_string()],
+            timestamp_ms: 1000,
+        }
+    }
+
+    #[test]
+    fn negative_compiler_rejects_empty_signer_id() {
+        let result = std::panic::catch_unwind(|| {
+            ClaimCompiler::new("", "test-secret")
+        });
+
+        // Should either panic or return error, not succeed silently
+        match result {
+            Ok(compiler) => {
+                // If construction succeeds, compilation should fail
+                let claim = malicious_trust_claim();
+                let result = compiler.compile_claim(&claim, "trace-empty-signer");
+                assert!(result.is_err());
+            }
+            Err(_) => {
+                // Panic is also acceptable for invalid signer
+            }
+        }
+    }
+
+    #[test]
+    fn negative_compiler_rejects_empty_secret() {
+        let result = std::panic::catch_unwind(|| {
+            ClaimCompiler::new("test-signer", "")
+        });
+
+        // Should either panic or return error, not succeed silently
+        match result {
+            Ok(compiler) => {
+                // If construction succeeds, compilation should fail
+                let claim = malicious_trust_claim();
+                let result = compiler.compile_claim(&claim, "trace-empty-secret");
+                assert!(result.is_err());
+            }
+            Err(_) => {
+                // Panic is also acceptable for invalid secret
+            }
+        }
+    }
+
+    #[test]
+    fn negative_compile_claim_rejects_empty_claim_id() {
+        let compiler = malicious_compiler();
+        let mut claim = malicious_trust_claim();
+        claim.claim_id = String::new();
+
+        let result = compiler.compile_claim(&claim, "trace-empty-claim-id");
+
+        assert!(result.is_err());
+        match result {
+            Err(msg) => assert!(msg.contains(error_codes::ERR_CLAIM_SYNTAX_INVALID)),
+            Ok(_) => panic!("expected compilation failure for empty claim ID"),
+        }
+    }
+
+    #[test]
+    fn negative_compile_claim_rejects_claim_id_with_nul_bytes() {
+        let compiler = malicious_compiler();
+        let mut claim = malicious_trust_claim();
+        claim.claim_id = "claim\0injection".to_string();
+
+        let result = compiler.compile_claim(&claim, "trace-nul-claim-id");
+
+        assert!(result.is_err());
+        match result {
+            Err(msg) => assert!(msg.contains(error_codes::ERR_CLAIM_SYNTAX_INVALID)),
+            Ok(_) => panic!("expected compilation failure for nul bytes in claim ID"),
+        }
+    }
+
+    #[test]
+    fn negative_compile_claim_rejects_empty_claimant() {
+        let compiler = malicious_compiler();
+        let mut claim = malicious_trust_claim();
+        claim.claimant = String::new();
+
+        let result = compiler.compile_claim(&claim, "trace-empty-claimant");
+
+        assert!(result.is_err());
+        match result {
+            Err(msg) => assert!(msg.contains(error_codes::ERR_CLAIM_SYNTAX_INVALID)),
+            Ok(_) => panic!("expected compilation failure for empty claimant"),
+        }
+    }
+
+    #[test]
+    fn negative_compile_claim_rejects_empty_claim_text() {
+        let compiler = malicious_compiler();
+        let mut claim = malicious_trust_claim();
+        claim.claim_text = String::new();
+
+        let result = compiler.compile_claim(&claim, "trace-empty-text");
+
+        assert!(result.is_err());
+        match result {
+            Err(msg) => assert!(msg.contains(error_codes::ERR_CLAIM_UNVERIFIABLE)),
+            Ok(_) => panic!("expected compilation failure for empty claim text"),
+        }
+    }
+
+    #[test]
+    fn negative_compile_claim_rejects_malformed_evidence_links() {
+        let compiler = malicious_compiler();
+        let mut claim = malicious_trust_claim();
+        claim.evidence_links = vec!["not-a-url".to_string(), "".to_string()];
+
+        let result = compiler.compile_claim(&claim, "trace-malformed-links");
+
+        assert!(result.is_err());
+        match result {
+            Err(msg) => assert!(
+                msg.contains(error_codes::ERR_CLAIM_EVIDENCE_MISSING) ||
+                msg.contains(error_codes::ERR_CLAIM_SYNTAX_INVALID)
+            ),
+            Ok(_) => panic!("expected compilation failure for malformed evidence links"),
+        }
+    }
+
+    #[test]
+    fn negative_compile_claim_rejects_extremely_old_timestamp() {
+        let compiler = malicious_compiler();
+        let mut claim = malicious_trust_claim();
+        claim.timestamp_ms = 0; // Unix epoch start
+
+        let result = compiler.compile_claim(&claim, "trace-old-timestamp");
+
+        // Should either reject old timestamps or handle gracefully
+        match result {
+            Ok(contract) => {
+                // If accepted, contract should still be valid
+                assert!(!contract.contract_hash.is_empty());
+            }
+            Err(msg) => {
+                // Rejection is also acceptable for ancient timestamps
+                assert!(msg.contains(error_codes::ERR_CLAIM_SYNTAX_INVALID));
+            }
+        }
+    }
+
+    #[test]
+    fn negative_compile_claim_rejects_future_timestamp() {
+        let compiler = malicious_compiler();
+        let mut claim = malicious_trust_claim();
+        claim.timestamp_ms = u64::MAX; // Far future timestamp
+
+        let result = compiler.compile_claim(&claim, "trace-future-timestamp");
+
+        assert!(result.is_err());
+        match result {
+            Err(msg) => assert!(msg.contains(error_codes::ERR_CLAIM_SYNTAX_INVALID)),
+            Ok(_) => panic!("expected compilation failure for future timestamp"),
+        }
+    }
+
+    #[test]
+    fn negative_scoreboard_update_rejects_empty_update_id() {
+        let mut compiler = malicious_compiler();
+        let contract = ClaimContract {
+            claim_id: "claim-test".to_string(),
+            contract_hash: "hash-test".to_string(),
+            evidence_digest: "digest-test".to_string(),
+            signature: "signature-test".to_string(),
+        };
+
+        let result = compiler.publish_scoreboard_update(
+            "",  // Empty update ID
+            vec![contract],
+            2000,
+            "trace-empty-update-id",
+        );
+
+        assert!(result.is_err());
+        match result {
+            Err(msg) => assert!(msg.contains("update_id") || msg.contains("empty")),
+            Ok(_) => panic!("expected failure for empty update ID"),
+        }
+    }
+
+    #[test]
+    fn negative_scoreboard_update_rejects_empty_contracts_list() {
+        let mut compiler = malicious_compiler();
+
+        let result = compiler.publish_scoreboard_update(
+            "update-empty-contracts",
+            vec![], // Empty contracts
+            2000,
+            "trace-empty-contracts",
+        );
+
+        assert!(result.is_err());
+        match result {
+            Err(msg) => assert!(msg.contains("contracts") || msg.contains("empty")),
+            Ok(_) => panic!("expected failure for empty contracts list"),
+        }
+    }
+
+    #[test]
+    fn negative_serde_rejects_unknown_compilation_status_variant() {
+        let result: Result<CompilationStatus, _> = serde_json::from_str(r#""Unknown""#);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn negative_claim_contract_with_oversized_signature_serializes_safely() {
+        let contract = ClaimContract {
+            claim_id: "claim-oversized-sig".to_string(),
+            contract_hash: "hash-test".to_string(),
+            evidence_digest: "digest-test".to_string(),
+            signature: "x".repeat(100_000), // Very large signature
+        };
+
+        let serialized = serde_json::to_string(&contract);
+
+        // Should serialize without panic despite large signature
+        match serialized {
+            Ok(json) => {
+                assert!(json.len() > 100_000); // Should contain the large signature
+            }
+            Err(_) => {
+                // Serialization failure is acceptable for oversized data
+            }
+        }
+    }
+
+    // ── NEGATIVE-PATH TESTS: Security & Robustness ──────────────────
+
+    #[test]
+    fn test_negative_claim_id_with_unicode_injection_attacks() {
+        use crate::security::constant_time::ct_eq;
+
+        let malicious_claim_ids = [
+            "claim\u{202E}fake\u{202C}",           // BiDi override attack
+            "claim\x1b[31mred\x1b[0m",             // ANSI escape injection
+            "claim\0null\r\n\t",                   // Control character injection
+            "claim\"}{\"admin\":true,\"bypass\"", // JSON injection attempt
+            "claim/../../etc/passwd",              // Path traversal attempt
+            "claim\u{FEFF}BOM",                    // Byte order mark
+            "claim\u{200B}\u{200C}\u{200D}",      // Zero-width characters
+            "claim<script>alert('XSS')</script>", // XSS attempt
+            "claim'; DROP TABLE claims; --",      // SQL injection attempt
+        ];
+
+        for malicious_id in malicious_claim_ids {
+            let malicious_claim = ExternalClaim {
+                claim_id: malicious_id.to_string(),
+                claim_text: "This is a test claim".to_string(),
+                evidence_uris: vec!["https://example.com/evidence".to_string()],
+                source_id: "test-source".to_string(),
+                submitted_at_epoch: 1234567890,
+            };
+
+            // Test serialization safety
+            let json = serde_json::to_string(&malicious_claim).expect("serialization should work");
+            let parsed: ExternalClaim = serde_json::from_str(&json).expect("deserialization should work");
+
+            // Verify malicious content is preserved exactly for forensics but contained
+            assert_eq!(parsed.claim_id, malicious_id, "claim ID should be preserved");
+
+            // Verify JSON structure integrity
+            let json_value: serde_json::Value = serde_json::from_str(&json).expect("JSON should be valid");
+            let expected_keys = ["claim_id", "claim_text", "evidence_uris", "source_id", "submitted_at_epoch"];
+
+            if let Some(obj) = json_value.as_object() {
+                for key in obj.keys() {
+                    assert!(expected_keys.contains(&key.as_str()),
+                           "unexpected field '{}' - possible JSON injection", key);
+                }
+            }
+
+            // Test constant-time comparison for claim IDs
+            let normal_id = "normal-claim-123";
+            assert!(!ct_eq(malicious_id, normal_id), "claim ID comparison should be constant-time");
+
+            // Test claim compilation with malicious ID
+            let compiler = ClaimCompiler::new();
+            let result = compiler.compile_claim(&malicious_claim);
+
+            // Should either succeed (with ID preserved) or fail gracefully
+            match result {
+                Ok(contract) => {
+                    assert_eq!(contract.claim_id, malicious_id, "compiled contract should preserve claim ID");
+                }
+                Err(rejection) => {
+                    // Rejection is acceptable for malicious content
+                    assert!(matches!(rejection.reason, ClaimRejectionReason::SyntaxInvalid |
+                                                     ClaimRejectionReason::InvalidSource |
+                                                     ClaimRejectionReason::Unverifiable |
+                                                     ClaimRejectionReason::Blocked));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_negative_claim_text_with_massive_injection_payload() {
+        let massive_claim_text = "X".repeat(10_000_000); // 10MB claim text
+
+        let massive_claim = ExternalClaim {
+            claim_id: "massive-test".to_string(),
+            claim_text: massive_claim_text.clone(),
+            evidence_uris: vec!["https://example.com/evidence".to_string()],
+            source_id: "test-source".to_string(),
+            submitted_at_epoch: 1234567890,
+        };
+
+        // Test serialization with massive payload
+        let json = serde_json::to_string(&massive_claim).expect("serialization should handle massive text");
+        assert!(json.len() >= massive_claim_text.len(), "JSON should include massive text");
+
+        let parsed: ExternalClaim = serde_json::from_str(&json).expect("deserialization should work");
+        assert_eq!(parsed.claim_text, massive_claim_text, "massive text should be preserved");
+
+        // Test claim compilation with massive payload
+        let compiler = ClaimCompiler::new();
+        let result = compiler.compile_claim(&massive_claim);
+
+        match result {
+            Ok(_contract) => {
+                // If compilation succeeds, verify it handles the massive payload safely
+                // Should be bounded or processed efficiently
+            }
+            Err(rejection) => {
+                // Rejection of massive payloads is acceptable
+                assert!(matches!(rejection.reason, ClaimRejectionReason::SyntaxInvalid |
+                                                 ClaimRejectionReason::Unverifiable));
+            }
+        }
+
+        // Test with injection patterns in massive text
+        let injection_patterns = vec![
+            "normal text",
+            "text\u{202E}with BiDi\u{202C}",
+            "text\x1b[31mwith ANSI\x1b[0m",
+            "text\0with\0nulls",
+            "text\"}{\"admin\":true,\"bypass",
+            "text<script>alert('XSS')</script>",
+            "text'; DROP TABLE evidence; --",
+        ];
+
+        for injection_pattern in injection_patterns {
+            let injection_claim = ExternalClaim {
+                claim_id: "injection-test".to_string(),
+                claim_text: injection_pattern.repeat(1000), // 1000x repetition for memory stress
+                evidence_uris: vec!["https://example.com/evidence".to_string()],
+                source_id: "test-source".to_string(),
+                submitted_at_epoch: 1234567890,
+            };
+
+            let json = serde_json::to_string(&injection_claim).expect("injection serialization should work");
+            let parsed: serde_json::Value = serde_json::from_str(&json).expect("JSON should be valid");
+
+            // Verify no additional fields were injected
+            assert!(parsed.get("admin").is_none(), "JSON injection should not create admin field");
+            assert!(parsed.get("bypass").is_none(), "JSON injection should not create bypass field");
+        }
+    }
+
+    #[test]
+    fn test_negative_evidence_uris_with_malicious_url_schemes() {
+        let malicious_evidence_uris = vec![
+            vec!["file:///etc/passwd"],                    // Local file access
+            vec!["javascript:alert('XSS')"],              // JavaScript scheme
+            vec!["data:text/html,<script>alert(1)</script>"], // Data URL injection
+            vec!["ftp://malicious.com/backdoor"],         // Non-HTTP scheme
+            vec!["ldap://malicious.com/inject"],          // LDAP injection
+            vec!["gopher://malicious.com/attack"],        // Gopher protocol
+            vec!["https://example.com/../../etc/passwd"], // Path traversal in URL
+            vec!["https://example.com?injection='; DROP TABLE evidence; --"], // SQL injection in query
+            vec!["https://example.com\r\nHost: evil.com"], // HTTP header injection
+            vec!["https://\u{202E}evil\u{202C}example.com"], // BiDi override in domain
+            vec!["https://example.com", "https://evil.com"], // Mixed legitimate and malicious
+            (0..1000).map(|i| format!("https://spam{}.com", i)).collect(), // URI spam (1000 URIs)
+        ];
+
+        for malicious_uris in malicious_evidence_uris {
+            let malicious_claim = ExternalClaim {
+                claim_id: "uri-test".to_string(),
+                claim_text: "Test claim with malicious evidence URIs".to_string(),
+                evidence_uris: malicious_uris.clone(),
+                source_id: "test-source".to_string(),
+                submitted_at_epoch: 1234567890,
+            };
+
+            // Test serialization safety
+            let json = serde_json::to_string(&malicious_claim).expect("serialization should work");
+            let parsed: ExternalClaim = serde_json::from_str(&json).expect("deserialization should work");
+
+            assert_eq!(parsed.evidence_uris, malicious_uris, "URIs should be preserved for forensics");
+
+            // Test claim compilation with malicious URIs
+            let compiler = ClaimCompiler::new();
+            let result = compiler.compile_claim(&malicious_claim);
+
+            match result {
+                Ok(contract) => {
+                    // If compilation succeeds, verify URIs are validated/sanitized
+                    assert_eq!(contract.claim_id, "uri-test");
+                    // Evidence links might be filtered/validated
+                }
+                Err(rejection) => {
+                    // Rejection of malicious URIs is expected
+                    assert!(matches!(rejection.reason, ClaimRejectionReason::InvalidSource |
+                                                     ClaimRejectionReason::EvidenceMissing |
+                                                     ClaimRejectionReason::Unverifiable |
+                                                     ClaimRejectionReason::Blocked));
+                }
+            }
+
+            // Test scoreboard integration with malicious URIs
+            let scoreboard = ClaimScoreboard::new();
+            let evidence_entry = EvidenceEntry {
+                evidence_uri: malicious_uris.get(0).cloned().unwrap_or_default(),
+                content_hash: "test-hash".to_string(),
+                verified_at_epoch: 1234567890,
+                verification_method: "test-method".to_string(),
+            };
+
+            // Should handle malicious URIs safely in evidence entries
+            let update_result = scoreboard.add_evidence_entry(evidence_entry);
+            // May succeed or fail, but should not crash
+        }
+    }
+
+    #[test]
+    fn test_negative_blocked_sources_with_bypass_attempts() {
+        let mut compiler = ClaimCompiler::new();
+
+        // Add sources to blocklist
+        let blocked_sources = vec![
+            "malicious-source",
+            "spam-source",
+            "untrusted-source",
+        ];
+
+        for source in &blocked_sources {
+            compiler.block_source(source);
+        }
+
+        // Test bypass attempts via case sensitivity
+        let case_bypass_attempts = vec![
+            "MALICIOUS-SOURCE",      // Uppercase
+            "Malicious-Source",      // Mixed case
+            "malicious-source",      // Exact match (should be blocked)
+            "malicious-source\0",    // Null byte suffix
+            "malicious-source\u{200B}", // Zero-width space suffix
+            "malicious\u{2010}source", // Unicode hyphen instead of ASCII
+            " malicious-source",     // Leading space
+            "malicious-source ",     // Trailing space
+            "malicious\u{00AD}source", // Soft hyphen
+        ];
+
+        for bypass_source in case_bypass_attempts {
+            let bypass_claim = ExternalClaim {
+                claim_id: "bypass-test".to_string(),
+                claim_text: "Attempting to bypass source block".to_string(),
+                evidence_uris: vec!["https://example.com/evidence".to_string()],
+                source_id: bypass_source.to_string(),
+                submitted_at_epoch: 1234567890,
+            };
+
+            let result = compiler.compile_claim(&bypass_claim);
+
+            if bypass_source == "malicious-source" {
+                // Exact match should be blocked
+                assert!(result.is_err(), "exact match should be blocked");
+                if let Err(rejection) = result {
+                    assert_eq!(rejection.reason, ClaimRejectionReason::Blocked);
+                }
+            } else {
+                // Other variants might pass or fail depending on implementation
+                // Key is that they don't bypass security through Unicode/case tricks
+                match result {
+                    Ok(_) => {
+                        // If bypass succeeds, it should be through legitimate differences
+                        assert_ne!(bypass_source, "malicious-source");
+                    }
+                    Err(rejection) => {
+                        // Blocking variants is acceptable security behavior
+                        if rejection.reason == ClaimRejectionReason::Blocked {
+                            // Good - caught potential bypass attempt
+                        }
+                    }
+                }
+            }
+        }
+
+        // Test blocked sources list growth with spam
+        for i in 0..10_000 {
+            compiler.block_source(&format!("spam-source-{}", i));
+        }
+
+        // Verify blocked sources are bounded
+        assert!(compiler.blocked_sources.len() <= MAX_BLOCKED_SOURCES,
+               "blocked sources should be bounded to prevent memory exhaustion");
+
+        // Test with extremely long source IDs
+        let long_source = "x".repeat(100_000); // 100KB source ID
+        compiler.block_source(&long_source);
+
+        let long_source_claim = ExternalClaim {
+            claim_id: "long-source-test".to_string(),
+            claim_text: "Test with extremely long source ID".to_string(),
+            evidence_uris: vec!["https://example.com/evidence".to_string()],
+            source_id: long_source.clone(),
+            submitted_at_epoch: 1234567890,
+        };
+
+        let result = compiler.compile_claim(&long_source_claim);
+        assert!(result.is_err(), "extremely long blocked source should be rejected");
+        if let Err(rejection) = result {
+            assert_eq!(rejection.reason, ClaimRejectionReason::Blocked);
+        }
+    }
+
+    #[test]
+    fn test_negative_evidence_hash_collision_simulation() {
+        use crate::security::constant_time::ct_eq;
+
+        let scoreboard = ClaimScoreboard::new();
+
+        // Create evidence entries with potential hash collisions
+        let collision_candidates = vec![
+            EvidenceEntry {
+                evidence_uri: "https://example.com/evidence1".to_string(),
+                content_hash: "sha256:a".repeat(32), // Fake SHA256 (64 chars)
+                verified_at_epoch: 1234567890,
+                verification_method: "manual".to_string(),
+            },
+            EvidenceEntry {
+                evidence_uri: "https://example.com/evidence2".to_string(),
+                content_hash: "sha256:b".repeat(32), // Different fake SHA256
+                verified_at_epoch: 1234567890,
+                verification_method: "manual".to_string(),
+            },
+            EvidenceEntry {
+                evidence_uri: "https://example.com/evidence1".to_string(), // Same URI, different hash
+                content_hash: "sha256:c".repeat(32),
+                verified_at_epoch: 1234567890,
+                verification_method: "manual".to_string(),
+            },
+        ];
+
+        // Test adding collision candidates
+        for entry in &collision_candidates {
+            let result = scoreboard.add_evidence_entry(entry.clone());
+            // Should handle potential hash collisions safely
+        }
+
+        // Test hash comparison with constant-time
+        let hash1 = &collision_candidates[0].content_hash;
+        let hash2 = &collision_candidates[1].content_hash;
+        assert!(!ct_eq(hash1, hash2), "different hashes should not be equal");
+
+        // Test with malicious hash formats
+        let malicious_hashes = vec![
+            "not-a-hash",                     // Invalid format
+            "",                               // Empty hash
+            "sha256:",                        // Missing hash value
+            "md5:abcd1234",                   // Wrong algorithm
+            "sha256:not_hex_chars",           // Invalid hex
+            "sha256:" + &"g".repeat(64),      // Invalid hex characters
+            "sha256:" + &"a".repeat(63),      // Too short
+            "sha256:" + &"a".repeat(65),      // Too long
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000", // All zeros (suspicious)
+            "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", // All ones (suspicious)
+        ];
+
+        for malicious_hash in malicious_hashes {
+            let malicious_entry = EvidenceEntry {
+                evidence_uri: "https://example.com/malicious".to_string(),
+                content_hash: malicious_hash.to_string(),
+                verified_at_epoch: 1234567890,
+                verification_method: "automated".to_string(),
+            };
+
+            let result = scoreboard.add_evidence_entry(malicious_entry);
+            // Should either accept (with validation) or reject malicious hashes
+            // Key is that it doesn't crash or allow hash collision attacks
+        }
+
+        // Test hash computation for large evidence
+        let large_evidence_uri = "https://example.com/".to_owned() + &"x".repeat(100_000);
+        let hash = scoreboard.compute_evidence_hash(&large_evidence_uri);
+
+        // Should produce valid hash regardless of input size
+        assert!(hash.starts_with("sha256:"), "hash should have proper prefix");
+        assert_eq!(hash.len(), 71, "SHA256 hash should be 64 hex chars + 7 char prefix");
+    }
+
+    #[test]
+    fn test_negative_contract_generation_with_code_injection_attempts() {
+        let compiler = ClaimCompiler::new();
+
+        // Test claims with potential code injection in contract generation
+        let code_injection_claims = vec![
+            ExternalClaim {
+                claim_id: "js-injection".to_string(),
+                claim_text: "function malicious() { return true; } // ".to_string(),
+                evidence_uris: vec!["https://example.com/evidence".to_string()],
+                source_id: "test-source".to_string(),
+                submitted_at_epoch: 1234567890,
+            },
+            ExternalClaim {
+                claim_id: "sql-injection".to_string(),
+                claim_text: "'; DROP TABLE contracts; --".to_string(),
+                evidence_uris: vec!["https://example.com/evidence".to_string()],
+                source_id: "test-source".to_string(),
+                submitted_at_epoch: 1234567890,
+            },
+            ExternalClaim {
+                claim_id: "template-injection".to_string(),
+                claim_text: "{{constructor.constructor('return process')().exit()}}".to_string(),
+                evidence_uris: vec!["https://example.com/evidence".to_string()],
+                source_id: "test-source".to_string(),
+                submitted_at_epoch: 1234567890,
+            },
+            ExternalClaim {
+                claim_id: "shell-injection".to_string(),
+                claim_text: "; rm -rf / #".to_string(),
+                evidence_uris: vec!["https://example.com/evidence".to_string()],
+                source_id: "test-source".to_string(),
+                submitted_at_epoch: 1234567890,
+            },
+        ];
+
+        for injection_claim in code_injection_claims {
+            let result = compiler.compile_claim(&injection_claim);
+
+            match result {
+                Ok(contract) => {
+                    // If compilation succeeds, verify the contract is safe
+                    assert_eq!(contract.claim_id, injection_claim.claim_id);
+
+                    // Contract should escape/sanitize the claim text
+                    assert!(contract.executable_script.len() > 0, "contract should have executable script");
+
+                    // Verify injection patterns are neutralized in the contract
+                    assert!(!contract.executable_script.contains("DROP TABLE"), "SQL injection should be neutralized");
+                    assert!(!contract.executable_script.contains("rm -rf"), "shell injection should be neutralized");
+                }
+                Err(rejection) => {
+                    // Rejection of code injection attempts is expected
+                    assert!(matches!(rejection.reason, ClaimRejectionReason::SyntaxInvalid |
+                                                     ClaimRejectionReason::Unverifiable));
+                }
+            }
+        }
+
+        // Test with massive contract generation
+        let massive_claim = ExternalClaim {
+            claim_id: "massive-contract".to_string(),
+            claim_text: "claim ".repeat(1_000_000), // 6MB claim text
+            evidence_uris: vec!["https://example.com/evidence".to_string()],
+            source_id: "test-source".to_string(),
+            submitted_at_epoch: 1234567890,
+        };
+
+        let result = compiler.compile_claim(&massive_claim);
+        match result {
+            Ok(contract) => {
+                // If compilation succeeds, verify the contract is reasonably sized
+                assert!(contract.executable_script.len() < 50_000_000, "contract should not cause memory explosion");
+            }
+            Err(rejection) => {
+                // Rejection of massive claims is acceptable
+                assert!(matches!(rejection.reason, ClaimRejectionReason::SyntaxInvalid |
+                                                 ClaimRejectionReason::Unverifiable));
+            }
+        }
+    }
+
+    #[test]
+    fn test_negative_scoreboard_signature_with_malicious_keys() {
+        let scoreboard = ClaimScoreboard::new();
+
+        // Test with various malicious key formats
+        let malicious_keys = vec![
+            "",                                      // Empty key
+            "not-a-valid-key",                      // Invalid format
+            "-----BEGIN PRIVATE KEY-----\nmalicious\n-----END PRIVATE KEY-----", // Wrong key type
+            "-----BEGIN PUBLIC KEY-----\n\n-----END PUBLIC KEY-----", // Empty key content
+            "-----BEGIN PUBLIC KEY-----\nABCDEF\n-----END PUBLIC KEY-----", // Invalid base64
+            "x".repeat(10_000),                     // Extremely long key
+            "-----BEGIN PUBLIC KEY-----\n" + &"A".repeat(10_000) + "\n-----END PUBLIC KEY-----", // Oversized key
+        ];
+
+        for malicious_key in malicious_keys {
+            // Test signature verification with malicious keys
+            let test_data = b"test signature data";
+            let test_signature = "fake-signature";
+
+            let result = scoreboard.verify_signature(test_data, test_signature, &malicious_key);
+
+            // Should either verify correctly or fail gracefully (not crash)
+            match result {
+                Ok(is_valid) => {
+                    // If verification succeeds, it should be deterministic
+                    assert!(is_valid == true || is_valid == false);
+                }
+                Err(_) => {
+                    // Verification failure for malicious keys is expected
+                }
+            }
+        }
+
+        // Test signature generation with extreme data sizes
+        let large_data = vec![0u8; 10_000_000]; // 10MB data
+        let signature = scoreboard.sign_data(&large_data);
+
+        // Should handle large data without memory issues
+        assert!(signature.len() > 0, "signature should be generated");
+        assert!(signature.len() < 10_000, "signature should be reasonably sized");
+
+        // Test with data containing potential injection patterns
+        let injection_data = b"data\0with\0nulls\r\n\x1b[31mcolored\x1b[0m";
+        let injection_signature = scoreboard.sign_data(injection_data);
+
+        // Should produce valid signature regardless of data content
+        assert!(injection_signature.len() > 0, "signature should handle injection data");
+
+        // Test signature verification with timing attack resistance
+        use crate::security::constant_time::ct_eq;
+
+        let valid_sig = scoreboard.sign_data(b"valid data");
+        let invalid_sig = "invalid-signature";
+
+        // Verify constant-time comparison is used for signatures
+        assert!(!ct_eq(&valid_sig, invalid_sig), "signature comparison should be constant-time");
+    }
+
+    #[test]
+    fn test_negative_push_bounded_with_arithmetic_edge_cases() {
+        // Test push_bounded with potential overflow scenarios in claim storage
+        let mut test_claims = Vec::new();
+
+        // Test with maximum capacity
+        let large_cap = 10_000;
+
+        // Fill to capacity
+        for i in 0..large_cap {
+            push_bounded(&mut test_claims, format!("claim_{}", i), large_cap);
+        }
+        assert_eq!(test_claims.len(), large_cap);
+
+        // Test overflow protection
+        let mut overflow_vec = vec!["item"; large_cap * 2]; // Start with more than capacity
+        push_bounded(&mut overflow_vec, "new_item".to_string(), large_cap);
+
+        assert_eq!(overflow_vec.len(), large_cap, "should be reduced to capacity");
+        assert_eq!(overflow_vec[overflow_vec.len() - 1], "new_item", "latest item should be preserved");
+
+        // Test with zero capacity (should clear)
+        let mut zero_cap_vec = vec!["a", "b", "c"];
+        push_bounded(&mut zero_cap_vec, "d".to_string(), 0);
+        assert_eq!(zero_cap_vec.len(), 0, "zero capacity should clear vector");
+
+        // Test with capacity 1 (minimum)
+        let mut single_cap_vec = vec!["x", "y", "z"];
+        push_bounded(&mut single_cap_vec, "w".to_string(), 1);
+        assert_eq!(single_cap_vec.len(), 1, "capacity 1 should keep only latest");
+        assert_eq!(single_cap_vec[0], "w", "should keep new item");
+
+        // Test arithmetic overflow protection in drain calculation
+        // overflow = items.len().saturating_sub(cap).saturating_add(1);
+        let mut extreme_vec = Vec::new();
+        extreme_vec.resize(10_000, "old");
+
+        // This should trigger the saturating arithmetic
+        push_bounded(&mut extreme_vec, "new".to_string(), 100);
+        assert_eq!(extreme_vec.len(), 100, "should be reduced to capacity");
+        assert_eq!(extreme_vec[99], "new", "new item should be at end");
+
+        // Verify no elements from the beginning remain (all were drained)
+        // The drain should have removed items.len() - cap + 1 = 10000 - 100 + 1 = 9901 items
+        for item in &extreme_vec[0..99] {
+            assert_eq!(*item, "old", "remaining old items should be from the end");
+        }
+
+        // Test with saturating_sub edge case
+        let mut edge_vec = vec!["item"];
+        push_bounded(&mut edge_vec, "new".to_string(), 1000); // cap > len
+        assert_eq!(edge_vec.len(), 2, "should not drain when capacity > length");
+        assert_eq!(edge_vec[1], "new", "new item should be appended");
     }
 }

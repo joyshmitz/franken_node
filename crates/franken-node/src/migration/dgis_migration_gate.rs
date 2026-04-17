@@ -727,6 +727,217 @@ mod tests {
     }
 
     #[test]
+    fn cascade_risk_delta_just_over_threshold_blocks_admission() {
+        let thresholds = MigrationGateThresholds {
+            max_cascade_risk_delta: 0.10,
+            max_new_fragility_findings: 99,
+            max_new_articulation_points: 99,
+        };
+        let projected = GraphHealthSnapshot {
+            cascade_risk: baseline().cascade_risk + 0.100_001,
+            fragility_findings: baseline().fragility_findings,
+            articulation_points: baseline().articulation_points,
+        };
+
+        let evaluation =
+            evaluate_admission("trace-risk-epsilon", baseline(), projected, thresholds, &[]);
+
+        assert_eq!(evaluation.verdict, GateVerdict::Block);
+        assert_eq!(evaluation.rejection_reasons.len(), 1);
+        assert_eq!(
+            evaluation.rejection_reasons[0].code,
+            "DGIS-MIGRATE-RISK-DELTA"
+        );
+    }
+
+    #[test]
+    fn fragility_delta_blocks_when_only_fragility_exceeds_budget() {
+        let thresholds = MigrationGateThresholds {
+            max_cascade_risk_delta: 1.0,
+            max_new_fragility_findings: 1,
+            max_new_articulation_points: 99,
+        };
+        let projected = GraphHealthSnapshot {
+            cascade_risk: baseline().cascade_risk,
+            fragility_findings: baseline().fragility_findings + 2,
+            articulation_points: baseline().articulation_points,
+        };
+
+        let evaluation = evaluate_admission(
+            "trace-fragility-only",
+            baseline(),
+            projected,
+            thresholds,
+            &[],
+        );
+
+        assert_eq!(evaluation.verdict, GateVerdict::Block);
+        assert_eq!(evaluation.rejection_reasons.len(), 1);
+        assert_eq!(
+            evaluation.rejection_reasons[0].code,
+            "DGIS-MIGRATE-FRAGILITY-DELTA"
+        );
+    }
+
+    #[test]
+    fn articulation_delta_blocks_when_only_articulation_exceeds_budget() {
+        let thresholds = MigrationGateThresholds {
+            max_cascade_risk_delta: 1.0,
+            max_new_fragility_findings: 99,
+            max_new_articulation_points: 0,
+        };
+        let projected = GraphHealthSnapshot {
+            cascade_risk: baseline().cascade_risk,
+            fragility_findings: baseline().fragility_findings,
+            articulation_points: baseline().articulation_points + 1,
+        };
+
+        let evaluation = evaluate_admission(
+            "trace-articulation-only",
+            baseline(),
+            projected,
+            thresholds,
+            &[],
+        );
+
+        assert_eq!(evaluation.verdict, GateVerdict::Block);
+        assert_eq!(evaluation.rejection_reasons.len(), 1);
+        assert_eq!(
+            evaluation.rejection_reasons[0].code,
+            "DGIS-MIGRATE-ARTICULATION-DELTA"
+        );
+    }
+
+    #[test]
+    fn threshold_blocked_progression_phase_uses_phase_blocked_event() {
+        let evaluation = evaluate_progression_phase(
+            "trace-phase-blocked",
+            "phase-cutover",
+            baseline(),
+            GraphHealthSnapshot {
+                cascade_risk: 0.50,
+                fragility_findings: 12,
+                articulation_points: 6,
+            },
+            MigrationGateThresholds::default(),
+            &[],
+        );
+
+        assert_eq!(evaluation.verdict, GateVerdict::Block);
+        assert!(
+            evaluation
+                .events
+                .iter()
+                .any(|event| event.code == event_codes::PHASE_BLOCKED)
+        );
+        assert!(
+            evaluation
+                .events
+                .iter()
+                .all(|event| event.code != event_codes::ADMISSION_BLOCKED)
+        );
+    }
+
+    #[test]
+    fn replan_suggestions_exclude_equal_or_worse_candidates() {
+        let blocked_delta = HealthDelta {
+            cascade_risk_delta: 0.20,
+            new_fragility_findings: 4,
+            new_articulation_points: 2,
+        };
+        let candidates = vec![
+            MigrationPathCandidate {
+                path_id: "equal-risk".to_string(),
+                projected: GraphHealthSnapshot {
+                    cascade_risk: baseline().cascade_risk + 0.20,
+                    fragility_findings: baseline().fragility_findings + 4,
+                    articulation_points: baseline().articulation_points + 2,
+                },
+                notes: "same as blocked plan".to_string(),
+            },
+            MigrationPathCandidate {
+                path_id: "worse-risk".to_string(),
+                projected: GraphHealthSnapshot {
+                    cascade_risk: baseline().cascade_risk + 0.25,
+                    fragility_findings: baseline().fragility_findings + 5,
+                    articulation_points: baseline().articulation_points + 3,
+                },
+                notes: "strictly worse than blocked plan".to_string(),
+            },
+        ];
+
+        let suggestions = suggest_replans(
+            baseline(),
+            blocked_delta,
+            &candidates,
+            MigrationGateThresholds::default(),
+        );
+
+        assert!(suggestions.is_empty());
+    }
+
+    #[test]
+    fn multiple_violations_are_reported_in_policy_order() {
+        let evaluation = evaluate_admission(
+            "trace-policy-order",
+            baseline(),
+            GraphHealthSnapshot {
+                cascade_risk: 0.70,
+                fragility_findings: 20,
+                articulation_points: 10,
+            },
+            MigrationGateThresholds::default(),
+            &[],
+        );
+        let codes: Vec<&str> = evaluation
+            .rejection_reasons
+            .iter()
+            .map(|reason| reason.code.as_str())
+            .collect();
+
+        assert_eq!(
+            codes,
+            vec![
+                "DGIS-MIGRATE-RISK-DELTA",
+                "DGIS-MIGRATE-FRAGILITY-DELTA",
+                "DGIS-MIGRATE-ARTICULATION-DELTA",
+            ]
+        );
+    }
+
+    #[test]
+    fn replan_suggestions_are_limited_to_three_lowest_risk_candidates() {
+        let blocked_delta = HealthDelta {
+            cascade_risk_delta: 0.50,
+            new_fragility_findings: 10,
+            new_articulation_points: 6,
+        };
+        let candidates: Vec<MigrationPathCandidate> = (0..5)
+            .map(|idx| MigrationPathCandidate {
+                path_id: format!("path-{idx}"),
+                projected: GraphHealthSnapshot {
+                    cascade_risk: baseline().cascade_risk + 0.01 * f64::from(idx),
+                    fragility_findings: baseline().fragility_findings,
+                    articulation_points: baseline().articulation_points,
+                },
+                notes: format!("candidate {idx}"),
+            })
+            .collect();
+
+        let suggestions = suggest_replans(
+            baseline(),
+            blocked_delta,
+            &candidates,
+            MigrationGateThresholds::default(),
+        );
+
+        assert_eq!(suggestions.len(), 3);
+        assert_eq!(suggestions[0].path_id, "path-0");
+        assert_eq!(suggestions[1].path_id, "path-1");
+        assert_eq!(suggestions[2].path_id, "path-2");
+    }
+
+    #[test]
     fn health_report_wraps_evaluation() {
         let evaluation = evaluate_admission(
             "trace-report",
@@ -742,5 +953,255 @@ mod tests {
         let report = build_migration_health_report("plan-42", evaluation.clone());
         assert_eq!(report.plan_id, "plan-42");
         assert_eq!(report.evaluation, evaluation);
+    }
+}
+
+#[cfg(test)]
+mod dgis_migration_gate_boundary_negative_tests {
+    use super::*;
+
+    fn malicious_thresholds() -> MigrationGateThresholds {
+        MigrationGateThresholds {
+            max_cascade_risk_delta: 0.15,
+            max_new_fragility_findings: 2,
+            max_new_articulation_points: 1,
+        }
+    }
+
+    fn malicious_baseline() -> GraphHealthSnapshot {
+        GraphHealthSnapshot {
+            cascade_risk: 0.1,
+            fragility_findings: 3,
+            articulation_points: 2,
+        }
+    }
+
+    #[test]
+    fn negative_evaluate_admission_rejects_nan_cascade_risk_in_baseline() {
+        let baseline = GraphHealthSnapshot {
+            cascade_risk: f64::NAN,
+            fragility_findings: 3,
+            articulation_points: 2,
+        };
+        let projected = malicious_baseline();
+
+        let evaluation = evaluate_admission(
+            "trace-nan-baseline",
+            baseline,
+            projected,
+            malicious_thresholds(),
+            &[],
+        );
+
+        assert!(!evaluation.admitted);
+        assert!(evaluation.blocking_reasons.iter().any(|reason| {
+            reason.contains("invalid") || reason.contains("NaN")
+        }));
+    }
+
+    #[test]
+    fn negative_evaluate_admission_rejects_infinite_cascade_risk_in_projected() {
+        let baseline = malicious_baseline();
+        let projected = GraphHealthSnapshot {
+            cascade_risk: f64::INFINITY,
+            fragility_findings: 3,
+            articulation_points: 2,
+        };
+
+        let evaluation = evaluate_admission(
+            "trace-inf-projected",
+            baseline,
+            projected,
+            malicious_thresholds(),
+            &[],
+        );
+
+        assert!(!evaluation.admitted);
+        assert!(evaluation.blocking_reasons.iter().any(|reason| {
+            reason.contains("invalid") || reason.contains("infinite")
+        }));
+    }
+
+    #[test]
+    fn negative_evaluate_admission_rejects_negative_cascade_risk_values() {
+        let baseline = malicious_baseline();
+        let projected = GraphHealthSnapshot {
+            cascade_risk: -0.5,
+            fragility_findings: 3,
+            articulation_points: 2,
+        };
+
+        let evaluation = evaluate_admission(
+            "trace-negative-cascade",
+            baseline,
+            projected,
+            malicious_thresholds(),
+            &[],
+        );
+
+        assert!(!evaluation.admitted);
+        assert!(evaluation.blocking_reasons.iter().any(|reason| {
+            reason.contains("negative") || reason.contains("invalid")
+        }));
+    }
+
+    #[test]
+    fn negative_evaluate_admission_rejects_cascade_risk_above_upper_bound() {
+        let baseline = malicious_baseline();
+        let projected = GraphHealthSnapshot {
+            cascade_risk: 2.0, // Above 1.0 upper bound
+            fragility_findings: 3,
+            articulation_points: 2,
+        };
+
+        let evaluation = evaluate_admission(
+            "trace-cascade-above-bound",
+            baseline,
+            projected,
+            malicious_thresholds(),
+            &[],
+        );
+
+        assert!(!evaluation.admitted);
+        assert!(evaluation.blocking_reasons.iter().any(|reason| {
+            reason.contains("exceeds") || reason.contains("bound")
+        }));
+    }
+
+    #[test]
+    fn negative_evaluate_admission_rejects_empty_trace_id() {
+        let baseline = malicious_baseline();
+        let projected = malicious_baseline();
+
+        let evaluation = evaluate_admission(
+            "", // Empty trace ID
+            baseline,
+            projected,
+            malicious_thresholds(),
+            &[],
+        );
+
+        assert!(!evaluation.admitted);
+        assert!(evaluation.blocking_reasons.iter().any(|reason| {
+            reason.contains("trace") || reason.contains("empty")
+        }));
+    }
+
+    #[test]
+    fn negative_evaluate_admission_rejects_trace_id_with_nul_bytes() {
+        let baseline = malicious_baseline();
+        let projected = malicious_baseline();
+
+        let evaluation = evaluate_admission(
+            "trace\0injection",
+            baseline,
+            projected,
+            malicious_thresholds(),
+            &[],
+        );
+
+        assert!(!evaluation.admitted);
+        assert!(evaluation.blocking_reasons.iter().any(|reason| {
+            reason.contains("invalid") || reason.contains("trace")
+        }));
+    }
+
+    #[test]
+    fn negative_migration_gate_thresholds_rejects_nan_max_cascade_risk_delta() {
+        let thresholds = MigrationGateThresholds {
+            max_cascade_risk_delta: f64::NAN,
+            max_new_fragility_findings: 2,
+            max_new_articulation_points: 1,
+        };
+
+        let validation = thresholds.validate();
+
+        assert!(validation.is_err());
+        match validation {
+            Err(msg) => assert!(msg.contains("NaN") || msg.contains("invalid")),
+            Ok(_) => panic!("expected validation failure for NaN threshold"),
+        }
+    }
+
+    #[test]
+    fn negative_migration_gate_thresholds_rejects_negative_max_fragility_findings() {
+        let thresholds = MigrationGateThresholds {
+            max_cascade_risk_delta: 0.15,
+            max_new_fragility_findings: -1,
+            max_new_articulation_points: 1,
+        };
+
+        let validation = thresholds.validate();
+
+        assert!(validation.is_err());
+        match validation {
+            Err(msg) => assert!(msg.contains("negative") || msg.contains("fragility")),
+            Ok(_) => panic!("expected validation failure for negative fragility threshold"),
+        }
+    }
+
+    #[test]
+    fn negative_health_delta_between_handles_integer_overflow_gracefully() {
+        let baseline = GraphHealthSnapshot {
+            cascade_risk: 0.1,
+            fragility_findings: u32::MAX,
+            articulation_points: u32::MAX,
+        };
+        let projected = GraphHealthSnapshot {
+            cascade_risk: 0.2,
+            fragility_findings: 0,
+            articulation_points: 0,
+        };
+
+        let delta = HealthDelta::between(baseline, projected);
+
+        // Should handle overflow gracefully without panic
+        assert!(delta.cascade_risk_delta > 0.0);
+        assert!(delta.new_fragility_findings < 0); // Decreased findings
+        assert!(delta.new_articulation_points < 0); // Decreased points
+    }
+
+    #[test]
+    fn negative_build_migration_health_report_rejects_empty_plan_id() {
+        let evaluation = MigrationGateEvaluation {
+            admitted: true,
+            blocking_reasons: vec![],
+            health_delta: HealthDelta {
+                cascade_risk_delta: 0.05,
+                new_fragility_findings: 1,
+                new_articulation_points: 0,
+            },
+            trace_id: "trace-empty-plan".to_string(),
+        };
+
+        let report = build_migration_health_report("", evaluation);
+
+        // Should handle empty plan ID but mark it as problematic
+        assert!(report.plan_id.is_empty());
+        // Implementation should add validation warnings
+    }
+
+    #[test]
+    fn negative_serde_rejects_unknown_admission_decision_variant() {
+        let result: Result<AdmissionDecision, _> = serde_json::from_str(r#""Unknown""#);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn negative_health_snapshot_with_extremely_large_counts_serializes_safely() {
+        let snapshot = GraphHealthSnapshot {
+            cascade_risk: 0.5,
+            fragility_findings: u32::MAX,
+            articulation_points: u32::MAX,
+        };
+
+        let serialized = serde_json::to_string(&snapshot);
+
+        // Should serialize without overflow or panic
+        assert!(serialized.is_ok());
+        if let Ok(json) = serialized {
+            assert!(json.contains(&u32::MAX.to_string()));
+        }
     }
 }

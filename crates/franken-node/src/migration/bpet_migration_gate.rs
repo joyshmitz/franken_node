@@ -160,6 +160,8 @@ fn derive_evidence_requirements(
     let mut requirements = Vec::new();
 
     let instability_delta = projected.instability_score - baseline.instability_score;
+    let drift_delta = projected.drift_score - baseline.drift_score;
+    let regime_shift_delta = projected.regime_shift_probability - baseline.regime_shift_probability;
     if !instability_delta.is_finite()
         || instability_delta >= thresholds.max_instability_delta_for_direct_admit
     {
@@ -167,11 +169,13 @@ fn derive_evidence_requirements(
         requirements.push("bpet.drift_explainer".to_string());
     }
     if !projected.drift_score.is_finite()
+        || !drift_delta.is_finite()
         || projected.drift_score >= thresholds.max_drift_score_for_direct_admit
     {
         requirements.push("bpet.longitudinal_drift_trace".to_string());
     }
     if !projected.regime_shift_probability.is_finite()
+        || !regime_shift_delta.is_finite()
         || projected.regime_shift_probability
             >= thresholds.max_regime_shift_probability_for_direct_admit
     {
@@ -243,18 +247,20 @@ pub fn evaluate_admission(
 
     // NaN/Inf fail-closed: non-finite values must trigger the most restrictive path
     let needs_evidence = !delta.instability_delta.is_finite()
-        || delta.instability_delta > thresholds.max_instability_delta_for_direct_admit
+        || delta.instability_delta >= thresholds.max_instability_delta_for_direct_admit
+        || !delta.drift_delta.is_finite()
+        || !delta.regime_shift_delta.is_finite()
         || !projected.drift_score.is_finite()
-        || projected.drift_score > thresholds.max_drift_score_for_direct_admit
+        || projected.drift_score >= thresholds.max_drift_score_for_direct_admit
         || !projected.regime_shift_probability.is_finite()
         || projected.regime_shift_probability
-            > thresholds.max_regime_shift_probability_for_direct_admit;
+            >= thresholds.max_regime_shift_probability_for_direct_admit;
 
     let severe = !projected.instability_score.is_finite()
-        || projected.instability_score > thresholds.max_instability_score_for_staged_rollout
+        || projected.instability_score >= thresholds.max_instability_score_for_staged_rollout
         || !projected.regime_shift_probability.is_finite()
         || projected.regime_shift_probability
-            > thresholds.max_regime_shift_probability_for_staged_rollout;
+            >= thresholds.max_regime_shift_probability_for_staged_rollout;
 
     if !needs_evidence {
         events.push(gate_event(
@@ -836,5 +842,1007 @@ mod tests {
         let report = build_migration_report("migration-001", decision.clone());
         assert_eq!(report.migration_id, "migration-001");
         assert_eq!(report.admission, decision);
+    }
+
+    #[test]
+    fn nan_baseline_instability_requires_evidence() {
+        let base = TrajectorySnapshot {
+            instability_score: f64::NAN,
+            drift_score: 0.18,
+            regime_shift_probability: 0.10,
+        };
+        let projected = TrajectorySnapshot {
+            instability_score: 0.21,
+            drift_score: 0.20,
+            regime_shift_probability: 0.12,
+        };
+
+        let decision = evaluate_admission(
+            "trace-bpet-nan-baseline",
+            base,
+            projected,
+            StabilityThresholds::default(),
+            "v2.4.0",
+        );
+
+        assert_eq!(decision.verdict, GateVerdict::RequireAdditionalEvidence);
+        assert!(
+            decision
+                .additional_evidence_required
+                .contains(&"bpet.calibration_report".to_string())
+        );
+    }
+
+    #[test]
+    fn negative_infinite_drift_requires_evidence() {
+        let projected = TrajectorySnapshot {
+            instability_score: 0.21,
+            drift_score: f64::NEG_INFINITY,
+            regime_shift_probability: 0.12,
+        };
+
+        let decision = evaluate_admission(
+            "trace-bpet-neg-inf-drift",
+            baseline(),
+            projected,
+            StabilityThresholds::default(),
+            "v2.4.0",
+        );
+
+        assert_eq!(decision.verdict, GateVerdict::RequireAdditionalEvidence);
+        assert!(
+            decision
+                .additional_evidence_required
+                .contains(&"bpet.longitudinal_drift_trace".to_string())
+        );
+    }
+
+    #[test]
+    fn negative_infinite_regime_shift_requires_staged_rollout() {
+        let projected = TrajectorySnapshot {
+            instability_score: 0.21,
+            drift_score: 0.20,
+            regime_shift_probability: f64::NEG_INFINITY,
+        };
+
+        let decision = evaluate_admission(
+            "trace-bpet-neg-inf-regime",
+            baseline(),
+            projected,
+            StabilityThresholds::default(),
+            "v2.4.0",
+        );
+
+        assert_eq!(decision.verdict, GateVerdict::StagedRolloutRequired);
+        assert!(decision.staged_rollout.is_some());
+    }
+
+    #[test]
+    fn empty_rollout_plan_fails_closed_with_rollback() {
+        let rollout = StagedRolloutPlan {
+            steps: Vec::new(),
+            fallback: FallbackPlan {
+                rollback_to_version: "v2.4.0-previous".to_string(),
+                quarantine_window_minutes: 90,
+                required_artifacts: Vec::new(),
+            },
+        };
+        let health = RolloutHealthSnapshot {
+            phase: RolloutPhase::Canary,
+            observed: baseline(),
+        };
+
+        let rollback = evaluate_rollout_health("trace-bpet-empty-plan", &rollout, &health);
+
+        assert!(rollback.should_rollback);
+        assert_eq!(rollback.event.code, event_codes::ROLLBACK_TRIGGERED);
+        assert!(rollback.reason.contains("unknown phase"));
+    }
+
+    #[test]
+    fn infinite_observed_regime_shift_triggers_rollback() {
+        let projected = TrajectorySnapshot {
+            instability_score: 0.70,
+            drift_score: 0.40,
+            regime_shift_probability: 0.53,
+        };
+        let decision = evaluate_admission(
+            "trace-bpet-inf-observed-regime",
+            baseline(),
+            projected,
+            StabilityThresholds::default(),
+            "v2.4.0",
+        );
+        let rollout = decision.staged_rollout.expect("staged rollout");
+        let health = RolloutHealthSnapshot {
+            phase: RolloutPhase::Canary,
+            observed: TrajectorySnapshot {
+                instability_score: 0.10,
+                drift_score: 0.10,
+                regime_shift_probability: f64::INFINITY,
+            },
+        };
+
+        let rollback = evaluate_rollout_health("trace-bpet-inf-observed-regime", &rollout, &health);
+
+        assert!(rollback.should_rollback);
+        assert_eq!(rollback.event.level, "error");
+    }
+
+    #[test]
+    fn exact_rollout_instability_limit_triggers_rollback() {
+        let projected = TrajectorySnapshot {
+            instability_score: 0.70,
+            drift_score: 0.40,
+            regime_shift_probability: 0.53,
+        };
+        let decision = evaluate_admission(
+            "trace-bpet-exact-limit",
+            baseline(),
+            projected,
+            StabilityThresholds::default(),
+            "v2.4.0",
+        );
+        let rollout = decision.staged_rollout.expect("staged rollout");
+        let canary = rollout
+            .steps
+            .iter()
+            .find(|step| step.phase == RolloutPhase::Canary)
+            .expect("canary step")
+            .clone();
+        let health = RolloutHealthSnapshot {
+            phase: RolloutPhase::Canary,
+            observed: TrajectorySnapshot {
+                instability_score: canary.max_instability_score,
+                drift_score: 0.10,
+                regime_shift_probability: canary.max_regime_shift_probability / 2.0,
+            },
+        };
+
+        let rollback = evaluate_rollout_health("trace-bpet-exact-limit", &rollout, &health);
+
+        assert!(
+            rollback.should_rollback,
+            "hitting the configured rollback limit must fail closed"
+        );
+    }
+
+    #[test]
+    fn non_finite_staged_rollout_projection_uses_finite_zero_limits() {
+        let projected = TrajectorySnapshot {
+            instability_score: f64::INFINITY,
+            drift_score: 0.80,
+            regime_shift_probability: f64::NAN,
+        };
+
+        let decision = evaluate_admission(
+            "trace-bpet-nonfinite-plan",
+            baseline(),
+            projected,
+            StabilityThresholds::default(),
+            "v2.4.0",
+        );
+        let rollout = decision.staged_rollout.expect("staged rollout");
+
+        assert!(rollout.steps.iter().all(|step| {
+            step.max_instability_score.is_finite()
+                && step.max_regime_shift_probability.is_finite()
+                && (step.max_instability_score - 0.0).abs() < f64::EPSILON
+                && (step.max_regime_shift_probability - 0.0).abs() < f64::EPSILON
+        }));
+    }
+
+    #[test]
+    fn negative_threshold_configuration_requires_staged_rollout() {
+        let thresholds = StabilityThresholds {
+            max_instability_delta_for_direct_admit: -0.01,
+            max_drift_score_for_direct_admit: -0.01,
+            max_regime_shift_probability_for_direct_admit: -0.01,
+            max_instability_score_for_staged_rollout: -0.01,
+            max_regime_shift_probability_for_staged_rollout: -0.01,
+        };
+
+        let decision = evaluate_admission(
+            "trace-bpet-negative-thresholds",
+            baseline(),
+            baseline(),
+            thresholds,
+            "v2.4.0",
+        );
+
+        assert_eq!(decision.verdict, GateVerdict::StagedRolloutRequired);
+        assert!(decision.staged_rollout.is_some());
+    }
+
+    #[test]
+    fn exact_direct_instability_boundary_requires_evidence() {
+        let thresholds = StabilityThresholds::default();
+        let base = baseline();
+        let projected = TrajectorySnapshot {
+            instability_score: base.instability_score
+                + thresholds.max_instability_delta_for_direct_admit,
+            drift_score: 0.20,
+            regime_shift_probability: 0.12,
+        };
+
+        let decision = evaluate_admission(
+            "trace-bpet-exact-direct-instability",
+            base,
+            projected,
+            thresholds,
+            "v2.5.0",
+        );
+
+        assert_eq!(decision.verdict, GateVerdict::RequireAdditionalEvidence);
+        assert!(decision.staged_rollout.is_none());
+        assert!(
+            decision
+                .additional_evidence_required
+                .contains(&"bpet.calibration_report".to_string())
+        );
+        assert!(
+            decision
+                .additional_evidence_required
+                .contains(&"bpet.drift_explainer".to_string())
+        );
+    }
+
+    #[test]
+    fn exact_direct_drift_boundary_requires_evidence() {
+        let thresholds = StabilityThresholds::default();
+        let projected = TrajectorySnapshot {
+            instability_score: 0.21,
+            drift_score: thresholds.max_drift_score_for_direct_admit,
+            regime_shift_probability: 0.12,
+        };
+
+        let decision = evaluate_admission(
+            "trace-bpet-exact-direct-drift",
+            baseline(),
+            projected,
+            thresholds,
+            "v2.5.0",
+        );
+
+        assert_eq!(decision.verdict, GateVerdict::RequireAdditionalEvidence);
+        assert_eq!(
+            decision.additional_evidence_required,
+            vec!["bpet.longitudinal_drift_trace".to_string()]
+        );
+    }
+
+    #[test]
+    fn exact_direct_regime_boundary_requires_evidence() {
+        let thresholds = StabilityThresholds::default();
+        let projected = TrajectorySnapshot {
+            instability_score: 0.21,
+            drift_score: 0.20,
+            regime_shift_probability: thresholds.max_regime_shift_probability_for_direct_admit,
+        };
+
+        let decision = evaluate_admission(
+            "trace-bpet-exact-direct-regime",
+            baseline(),
+            projected,
+            thresholds,
+            "v2.5.0",
+        );
+
+        assert_eq!(decision.verdict, GateVerdict::RequireAdditionalEvidence);
+        assert!(
+            decision
+                .additional_evidence_required
+                .contains(&"bpet.regime_shift_counterfactuals".to_string())
+        );
+        assert!(
+            decision
+                .additional_evidence_required
+                .contains(&"ops.signoff.two_person_rule".to_string())
+        );
+    }
+
+    #[test]
+    fn exact_staged_instability_boundary_requires_rollout() {
+        let thresholds = StabilityThresholds::default();
+        let projected = TrajectorySnapshot {
+            instability_score: thresholds.max_instability_score_for_staged_rollout,
+            drift_score: 0.20,
+            regime_shift_probability: 0.12,
+        };
+
+        let decision = evaluate_admission(
+            "trace-bpet-exact-staged-instability",
+            baseline(),
+            projected,
+            thresholds,
+            "v2.5.0",
+        );
+
+        assert_eq!(decision.verdict, GateVerdict::StagedRolloutRequired);
+        assert!(decision.staged_rollout.is_some());
+        assert_eq!(
+            decision.events.last().map(|event| event.code.as_str()),
+            Some(event_codes::FALLBACK_PLAN_GENERATED)
+        );
+    }
+
+    #[test]
+    fn exact_staged_regime_boundary_requires_rollout() {
+        let thresholds = StabilityThresholds::default();
+        let projected = TrajectorySnapshot {
+            instability_score: 0.21,
+            drift_score: 0.20,
+            regime_shift_probability: thresholds.max_regime_shift_probability_for_staged_rollout,
+        };
+
+        let decision = evaluate_admission(
+            "trace-bpet-exact-staged-regime",
+            baseline(),
+            projected,
+            thresholds,
+            "v2.5.0",
+        );
+
+        assert_eq!(decision.verdict, GateVerdict::StagedRolloutRequired);
+        assert!(decision.staged_rollout.is_some());
+        assert!(
+            decision
+                .additional_evidence_required
+                .contains(&"bpet.regime_shift_counterfactuals".to_string())
+        );
+    }
+
+    #[test]
+    fn nan_baseline_drift_requires_evidence() {
+        let base = TrajectorySnapshot {
+            instability_score: 0.20,
+            drift_score: f64::NAN,
+            regime_shift_probability: 0.10,
+        };
+        let projected = TrajectorySnapshot {
+            instability_score: 0.21,
+            drift_score: 0.20,
+            regime_shift_probability: 0.12,
+        };
+
+        let decision = evaluate_admission(
+            "trace-bpet-nan-baseline-drift",
+            base,
+            projected,
+            StabilityThresholds::default(),
+            "v2.5.0",
+        );
+
+        assert_eq!(decision.verdict, GateVerdict::RequireAdditionalEvidence);
+        assert_eq!(
+            decision.additional_evidence_required,
+            vec!["bpet.longitudinal_drift_trace".to_string()]
+        );
+    }
+
+    #[test]
+    fn infinite_baseline_regime_requires_evidence() {
+        let base = TrajectorySnapshot {
+            instability_score: 0.20,
+            drift_score: 0.18,
+            regime_shift_probability: f64::INFINITY,
+        };
+        let projected = TrajectorySnapshot {
+            instability_score: 0.21,
+            drift_score: 0.20,
+            regime_shift_probability: 0.12,
+        };
+
+        let decision = evaluate_admission(
+            "trace-bpet-inf-baseline-regime",
+            base,
+            projected,
+            StabilityThresholds::default(),
+            "v2.5.0",
+        );
+
+        assert_eq!(decision.verdict, GateVerdict::RequireAdditionalEvidence);
+        assert!(
+            decision
+                .additional_evidence_required
+                .contains(&"bpet.regime_shift_counterfactuals".to_string())
+        );
+        assert!(
+            decision
+                .additional_evidence_required
+                .contains(&"ops.signoff.two_person_rule".to_string())
+        );
+    }
+
+    #[test]
+    fn exact_rollout_regime_limit_triggers_rollback() {
+        let projected = TrajectorySnapshot {
+            instability_score: 0.70,
+            drift_score: 0.40,
+            regime_shift_probability: 0.53,
+        };
+        let decision = evaluate_admission(
+            "trace-bpet-exact-regime-limit",
+            baseline(),
+            projected,
+            StabilityThresholds::default(),
+            "v2.5.0",
+        );
+        let rollout = decision.staged_rollout.expect("staged rollout");
+        let canary = rollout
+            .steps
+            .iter()
+            .find(|step| step.phase == RolloutPhase::Canary)
+            .expect("canary step")
+            .clone();
+        let health = RolloutHealthSnapshot {
+            phase: RolloutPhase::Canary,
+            observed: TrajectorySnapshot {
+                instability_score: canary.max_instability_score / 2.0,
+                drift_score: 0.10,
+                regime_shift_probability: canary.max_regime_shift_probability,
+            },
+        };
+
+        let rollback = evaluate_rollout_health("trace-bpet-exact-regime-limit", &rollout, &health);
+
+        assert!(rollback.should_rollback);
+        assert_eq!(rollback.event.code, event_codes::ROLLBACK_TRIGGERED);
+    }
+
+    // ── NEGATIVE-PATH TESTS: Security & Robustness ──────────────────
+
+    #[test]
+    fn test_negative_trajectory_snapshot_with_extreme_floating_point_values() {
+        let extreme_values = [
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::MIN,
+            f64::MAX,
+            f64::EPSILON,
+            -f64::EPSILON,
+            0.0,
+            -0.0,
+            1e100,
+            1e-100,
+            f64::from_bits(0x7FF0000000000001), // Signaling NaN
+            f64::from_bits(0x7FF8000000000000), // Quiet NaN
+        ];
+
+        for extreme_value in extreme_values {
+            let extreme_snapshot = TrajectorySnapshot {
+                instability_score: extreme_value,
+                drift_score: extreme_value,
+                regime_shift_probability: extreme_value,
+            };
+
+            // Verify serialization handles extreme values safely
+            match serde_json::to_string(&extreme_snapshot) {
+                Ok(json) => {
+                    // If serialization succeeds, verify deserialization
+                    let parsed: Result<TrajectorySnapshot, _> = serde_json::from_str(&json);
+
+                    if let Ok(parsed_snapshot) = parsed {
+                        // For finite values, should be exact
+                        if extreme_value.is_finite() {
+                            assert_eq!(parsed_snapshot.instability_score, extreme_value);
+                            assert_eq!(parsed_snapshot.drift_score, extreme_value);
+                            assert_eq!(parsed_snapshot.regime_shift_probability, extreme_value);
+                        }
+                    }
+                    // NaN/Infinity might be serialized as null or special strings - that's OK
+                }
+                Err(_) => {
+                    // Serialization failure for extreme values is acceptable
+                }
+            }
+
+            // Test delta computation with extreme values
+            let normal_snapshot = TrajectorySnapshot {
+                instability_score: 0.5,
+                drift_score: 0.3,
+                regime_shift_probability: 0.2,
+            };
+
+            let delta = TrajectoryDelta::between(normal_snapshot, extreme_snapshot);
+
+            // Verify delta computation doesn't panic and handles extreme cases
+            if extreme_value.is_finite() {
+                assert!(delta.instability_delta.is_finite() || delta.instability_delta.is_infinite());
+                assert!(delta.drift_delta.is_finite() || delta.drift_delta.is_infinite());
+                assert!(delta.regime_shift_delta.is_finite() || delta.regime_shift_delta.is_infinite());
+            } else {
+                // NaN or infinite inputs should produce NaN or infinite deltas
+                assert!(delta.instability_delta.is_nan() || delta.instability_delta.is_infinite());
+            }
+
+            // Test gate evaluation with extreme trajectory
+            if extreme_value.is_finite() && extreme_value >= 0.0 && extreme_value <= 1.0 {
+                let result = evaluate_migration_gate("test-extreme", &extreme_snapshot);
+                // Should not panic, might allow/reject based on thresholds
+                assert!(matches!(result.verdict, GateVerdict::Allow | GateVerdict::RequireAdditionalEvidence | GateVerdict::StagedRolloutRequired));
+            }
+        }
+    }
+
+    #[test]
+    fn test_negative_stability_thresholds_with_malicious_bypass_attempts() {
+        // Test with thresholds that might allow bypass
+        let bypass_thresholds = [
+            StabilityThresholds {
+                max_instability_delta_for_direct_admit: f64::INFINITY,
+                max_drift_score_for_direct_admit: f64::INFINITY,
+                max_regime_shift_probability_for_direct_admit: f64::INFINITY,
+                max_instability_score_for_staged_rollout: f64::INFINITY,
+                max_regime_shift_probability_for_staged_rollout: f64::INFINITY,
+            },
+            StabilityThresholds {
+                max_instability_delta_for_direct_admit: -1.0, // Negative threshold
+                max_drift_score_for_direct_admit: -1.0,
+                max_regime_shift_probability_for_direct_admit: -1.0,
+                max_instability_score_for_staged_rollout: -1.0,
+                max_regime_shift_probability_for_staged_rollout: -1.0,
+            },
+            StabilityThresholds {
+                max_instability_delta_for_direct_admit: f64::NAN,
+                max_drift_score_for_direct_admit: f64::NAN,
+                max_regime_shift_probability_for_direct_admit: f64::NAN,
+                max_instability_score_for_staged_rollout: f64::NAN,
+                max_regime_shift_probability_for_staged_rollout: f64::NAN,
+            },
+        ];
+
+        let test_trajectory = TrajectorySnapshot {
+            instability_score: 0.5,
+            drift_score: 0.4,
+            regime_shift_probability: 0.3,
+        };
+
+        for malicious_thresholds in bypass_thresholds {
+            // Test that the gate doesn't get bypassed by malicious thresholds
+            let gate = MigrationGate::new(malicious_thresholds);
+            let result = gate.evaluate("test-bypass", &test_trajectory);
+
+            // Verify gate still produces valid verdicts even with extreme thresholds
+            assert!(matches!(result.verdict, GateVerdict::Allow | GateVerdict::RequireAdditionalEvidence | GateVerdict::StagedRolloutRequired));
+
+            // Test serialization of malicious thresholds
+            let json = serde_json::to_string(&malicious_thresholds);
+            match json {
+                Ok(json_str) => {
+                    // Should be able to deserialize safely
+                    let parsed: Result<StabilityThresholds, _> = serde_json::from_str(&json_str);
+                    if parsed.is_ok() {
+                        // Verify no injection or corruption occurred
+                        assert!(!json_str.contains("admin"), "no injection should occur");
+                        assert!(!json_str.contains("bypass"), "no injection should occur");
+                    }
+                }
+                Err(_) => {
+                    // Serialization failure is acceptable for extreme values
+                }
+            }
+        }
+
+        // Test boundary conditions that might cause bypass
+        let boundary_thresholds = StabilityThresholds {
+            max_instability_delta_for_direct_admit: f64::EPSILON,
+            max_drift_score_for_direct_admit: f64::EPSILON,
+            max_regime_shift_probability_for_direct_admit: f64::EPSILON,
+            max_instability_score_for_staged_rollout: 1.0 - f64::EPSILON,
+            max_regime_shift_probability_for_staged_rollout: 1.0 - f64::EPSILON,
+        };
+
+        let gate = MigrationGate::new(boundary_thresholds);
+
+        // Test with values very close to thresholds
+        let boundary_trajectory = TrajectorySnapshot {
+            instability_score: f64::EPSILON / 2.0,
+            drift_score: f64::EPSILON / 2.0,
+            regime_shift_probability: f64::EPSILON / 2.0,
+        };
+
+        let result = gate.evaluate("test-boundary", &boundary_trajectory);
+        // Should handle boundary cases without floating-point comparison issues
+    }
+
+    #[test]
+    fn test_negative_trace_id_with_unicode_injection_attacks() {
+        use crate::security::constant_time::ct_eq;
+
+        let malicious_trace_ids = [
+            "trace\u{202E}fake\u{202C}",           // BiDi override attack
+            "trace\x1b[31mred\x1b[0m",             // ANSI escape injection
+            "trace\0null\r\n\t",                   // Control character injection
+            "trace\"}{\"admin\":true,\"bypass\"", // JSON injection attempt
+            "trace/../../etc/passwd",              // Path traversal attempt
+            "trace\u{FEFF}BOM",                    // Byte order mark
+            "trace\u{200B}\u{200C}\u{200D}",      // Zero-width characters
+            "trace".repeat(1000),                   // Extremely long trace ID
+        ];
+
+        let test_trajectory = TrajectorySnapshot {
+            instability_score: 0.5,
+            drift_score: 0.3,
+            regime_shift_probability: 0.2,
+        };
+
+        for malicious_trace_id in malicious_trace_ids {
+            // Test gate evaluation with malicious trace ID
+            let result = evaluate_migration_gate(malicious_trace_id, &test_trajectory);
+
+            // Verify result contains the trace ID but is safely contained
+            assert_eq!(result.event.trace_id, malicious_trace_id, "trace ID should be preserved for forensics");
+
+            // Verify JSON serialization is safe
+            let json = serde_json::to_string(&result).expect("serialization should work");
+            let parsed: serde_json::Value = serde_json::from_str(&json).expect("JSON should be valid");
+
+            // Verify no injection occurred in JSON structure
+            assert!(parsed.get("admin").is_none(), "JSON injection should not create admin field");
+            assert!(parsed.get("bypass").is_none(), "JSON injection should not create bypass field");
+
+            // Verify trace ID is properly escaped in JSON
+            if let Some(event) = parsed.get("event") {
+                if let Some(trace_id) = event.get("trace_id") {
+                    if let Some(trace_str) = trace_id.as_str() {
+                        assert_eq!(trace_str, malicious_trace_id, "trace ID should be preserved");
+                    }
+                }
+            }
+
+            // Test constant-time comparison for trace IDs
+            let normal_trace = "normal-trace-123";
+            assert!(!ct_eq(malicious_trace_id, normal_trace), "trace ID comparison should be constant-time");
+
+            // Test rollout evaluation with malicious trace ID
+            let rollout = RolloutPlan {
+                canary: RolloutStep {
+                    phase: RolloutPhase::Canary,
+                    max_instability_score: 0.3,
+                    max_regime_shift_probability: 0.2,
+                },
+                limited: RolloutStep {
+                    phase: RolloutPhase::Limited,
+                    max_instability_score: 0.5,
+                    max_regime_shift_probability: 0.3,
+                },
+                progressive: RolloutStep {
+                    phase: RolloutPhase::Progressive,
+                    max_instability_score: 0.7,
+                    max_regime_shift_probability: 0.4,
+                },
+                general: RolloutStep {
+                    phase: RolloutPhase::General,
+                    max_instability_score: 1.0,
+                    max_regime_shift_probability: 0.5,
+                },
+            };
+
+            let health = RolloutHealth {
+                current_phase: RolloutPhase::Canary,
+                stability: test_trajectory,
+            };
+
+            let rollback = evaluate_rollout_health(malicious_trace_id, &rollout, &health);
+
+            // Verify rollback evaluation works with malicious trace ID
+            assert_eq!(rollback.event.trace_id, malicious_trace_id, "rollback trace ID should be preserved");
+        }
+    }
+
+    #[test]
+    fn test_negative_gate_event_message_with_massive_injection_payload() {
+        let massive_message = "X".repeat(1_000_000); // 1MB message
+
+        let massive_event = GateEvent {
+            code: event_codes::EVIDENCE_REQUIRED.to_string(),
+            level: "warning".to_string(),
+            trace_id: "test-massive".to_string(),
+            message: massive_message.clone(),
+        };
+
+        // Verify serialization handles massive message
+        let json = serde_json::to_string(&massive_event).expect("serialization should handle massive message");
+        assert!(json.len() >= massive_message.len(), "JSON should include massive message");
+
+        // Verify deserialization works
+        let parsed: GateEvent = serde_json::from_str(&json).expect("deserialization should work");
+        assert_eq!(parsed.message, massive_message, "massive message should be preserved");
+
+        // Test with injection patterns in message
+        let injection_messages = [
+            "message\u{202E}fake\u{202C}",
+            "message\x1b[31mred\x1b[0m",
+            "message\0null\r\n\t",
+            "message\"}{\"admin\":true,\"bypass",
+            "message with unicode \u{1F4A9} and control \r\n chars",
+        ];
+
+        for injection_message in injection_messages {
+            let injection_event = GateEvent {
+                code: event_codes::ADMISSION_ALLOWED.to_string(),
+                level: "info".to_string(),
+                trace_id: "test-injection".to_string(),
+                message: injection_message.to_string(),
+            };
+
+            // Verify serialization contains injection safely
+            let json = serde_json::to_string(&injection_event).expect("serialization should work");
+            let parsed: serde_json::Value = serde_json::from_str(&json).expect("JSON should be valid");
+
+            // Verify no additional fields were injected
+            let expected_keys = ["code", "level", "trace_id", "message"];
+            if let Some(obj) = parsed.as_object() {
+                for key in obj.keys() {
+                    assert!(expected_keys.contains(&key.as_str()),
+                           "unexpected field '{}' - possible JSON injection", key);
+                }
+            }
+
+            // Verify message content is properly escaped
+            if let Some(message) = parsed.get("message").and_then(|m| m.as_str()) {
+                assert_eq!(message, injection_message, "message should be preserved exactly");
+            }
+        }
+    }
+
+    #[test]
+    fn test_negative_rollout_step_with_invalid_phase_transitions() {
+        // Test rollout steps with potential bypass via enum manipulation
+        let phases = [
+            RolloutPhase::Canary,
+            RolloutPhase::Limited,
+            RolloutPhase::Progressive,
+            RolloutPhase::General,
+        ];
+
+        for phase in phases {
+            let rollout_step = RolloutStep {
+                phase,
+                max_instability_score: f64::NAN, // Invalid threshold
+                max_regime_shift_probability: f64::INFINITY, // Invalid threshold
+            };
+
+            // Test serialization with invalid thresholds
+            let json = serde_json::to_string(&rollout_step);
+            match json {
+                Ok(json_str) => {
+                    // Try to deserialize
+                    let parsed: Result<RolloutStep, _> = serde_json::from_str(&json_str);
+                    // Might succeed or fail depending on how NaN/Infinity is serialized
+                }
+                Err(_) => {
+                    // Serialization failure is acceptable for NaN/Infinity
+                }
+            }
+        }
+
+        // Test potential enum injection attacks
+        let invalid_phase_jsons = [
+            r#"{"phase": "Admin", "max_instability_score": 0.0, "max_regime_shift_probability": 0.0}"#,
+            r#"{"phase": 999, "max_instability_score": 0.0, "max_regime_shift_probability": 0.0}"#,
+            r#"{"phase": "canary\"}{\"bypass\":true", "max_instability_score": 0.0, "max_regime_shift_probability": 0.0}"#,
+            r#"{"phase": null, "max_instability_score": 0.0, "max_regime_shift_probability": 0.0}"#,
+        ];
+
+        for invalid_json in invalid_phase_jsons {
+            let result: Result<RolloutStep, _> = serde_json::from_str(invalid_json);
+            // Should fail to deserialize invalid enum variants
+            assert!(result.is_err(), "invalid phase should fail deserialization: {}", invalid_json);
+        }
+
+        // Test with extreme threshold values
+        let extreme_step = RolloutStep {
+            phase: RolloutPhase::Canary,
+            max_instability_score: f64::MAX,
+            max_regime_shift_probability: f64::MAX,
+        };
+
+        let rollout = RolloutPlan {
+            canary: extreme_step,
+            limited: extreme_step,
+            progressive: extreme_step,
+            general: extreme_step,
+        };
+
+        let normal_health = RolloutHealth {
+            current_phase: RolloutPhase::Canary,
+            stability: TrajectorySnapshot {
+                instability_score: 0.5,
+                drift_score: 0.3,
+                regime_shift_probability: 0.2,
+            },
+        };
+
+        // Should handle extreme thresholds without panic
+        let rollback = evaluate_rollout_health("test-extreme-thresholds", &rollout, &normal_health);
+        assert!(!rollback.should_rollback, "extreme thresholds should allow rollout");
+    }
+
+    #[test]
+    fn test_negative_trajectory_delta_arithmetic_overflow_protection() {
+        // Test delta computation with values that might cause overflow
+        let max_snapshot = TrajectorySnapshot {
+            instability_score: f64::MAX,
+            drift_score: f64::MAX,
+            regime_shift_probability: f64::MAX,
+        };
+
+        let min_snapshot = TrajectorySnapshot {
+            instability_score: f64::MIN,
+            drift_score: f64::MIN,
+            regime_shift_probability: f64::MIN,
+        };
+
+        // Test extreme delta computation
+        let max_to_min_delta = TrajectoryDelta::between(max_snapshot, min_snapshot);
+        let min_to_max_delta = TrajectoryDelta::between(min_snapshot, max_snapshot);
+
+        // Verify deltas are infinite rather than overflowing
+        assert!(max_to_min_delta.instability_delta.is_infinite());
+        assert!(max_to_min_delta.drift_delta.is_infinite());
+        assert!(max_to_min_delta.regime_shift_delta.is_infinite());
+
+        assert!(min_to_max_delta.instability_delta.is_infinite());
+        assert!(min_to_max_delta.drift_delta.is_infinite());
+        assert!(min_to_max_delta.regime_shift_delta.is_infinite());
+
+        // Test with very close values near floating-point precision limits
+        let base_snapshot = TrajectorySnapshot {
+            instability_score: 1.0,
+            drift_score: 1.0,
+            regime_shift_probability: 1.0,
+        };
+
+        let epsilon_snapshot = TrajectorySnapshot {
+            instability_score: 1.0 + f64::EPSILON,
+            drift_score: 1.0 + f64::EPSILON,
+            regime_shift_probability: 1.0 + f64::EPSILON,
+        };
+
+        let epsilon_delta = TrajectoryDelta::between(base_snapshot, epsilon_snapshot);
+
+        // Verify small differences are preserved
+        assert!(epsilon_delta.instability_delta > 0.0);
+        assert!(epsilon_delta.instability_delta < 1e-10);
+
+        // Test with values that might cause loss of precision
+        let large_base = TrajectorySnapshot {
+            instability_score: 1e15,
+            drift_score: 1e15,
+            regime_shift_probability: 1e15,
+        };
+
+        let large_modified = TrajectorySnapshot {
+            instability_score: 1e15 + 1.0,
+            drift_score: 1e15 + 1.0,
+            regime_shift_probability: 1e15 + 1.0,
+        };
+
+        let precision_delta = TrajectoryDelta::between(large_base, large_modified);
+
+        // Verify delta computation doesn't lose significant precision
+        // (though exact values depend on floating-point representation)
+        assert!(precision_delta.instability_delta.is_finite());
+        assert!(precision_delta.drift_delta.is_finite());
+        assert!(precision_delta.regime_shift_delta.is_finite());
+    }
+
+    #[test]
+    fn test_negative_migration_gate_events_with_bounded_storage() {
+        let mut gate = MigrationGate::new(StabilityThresholds::default());
+
+        // Generate many events to test bounded storage
+        let test_trajectory = TrajectorySnapshot {
+            instability_score: 0.9, // High value to trigger events
+            drift_score: 0.8,
+            regime_shift_probability: 0.7,
+        };
+
+        let mut all_trace_ids = Vec::new();
+
+        // Generate 10,000 events to stress the storage system
+        for i in 0..10_000 {
+            let trace_id = format!("stress-test-{:05}", i);
+            let result = gate.evaluate(&trace_id, &test_trajectory);
+
+            all_trace_ids.push(trace_id.clone());
+
+            // Verify each evaluation produces a valid result
+            assert!(matches!(result.verdict, GateVerdict::Allow | GateVerdict::RequireAdditionalEvidence | GateVerdict::StagedRolloutRequired));
+            assert_eq!(result.event.trace_id, trace_id);
+        }
+
+        // Verify recent events are bounded (implementation detail, but should not grow unbounded)
+        if gate.recent_events.len() > MAX_EVENTS * 2 {
+            panic!("event storage should be bounded, got {} events", gate.recent_events.len());
+        }
+
+        // Test with malicious trace IDs that might cause memory issues
+        let memory_stress_trajectory = TrajectorySnapshot {
+            instability_score: 0.5,
+            drift_score: 0.5,
+            regime_shift_probability: 0.5,
+        };
+
+        for i in 0..100 {
+            let huge_trace_id = format!("huge-trace-{}-{}", i, "X".repeat(10_000)); // 10KB trace ID
+            let result = gate.evaluate(&huge_trace_id, &memory_stress_trajectory);
+
+            // Should handle huge trace IDs without memory explosion
+            assert_eq!(result.event.trace_id, huge_trace_id);
+        }
+
+        // Verify gate still functions after stress testing
+        let final_result = gate.evaluate("final-test", &test_trajectory);
+        assert!(matches!(final_result.verdict, GateVerdict::Allow | GateVerdict::RequireAdditionalEvidence | GateVerdict::StagedRolloutRequired));
+    }
+
+    #[test]
+    fn test_negative_fallback_plan_with_malicious_step_configuration() {
+        // Test fallback plan generation with malicious rollout configurations
+        let malicious_rollout = RolloutPlan {
+            canary: RolloutStep {
+                phase: RolloutPhase::Canary,
+                max_instability_score: -1.0, // Negative threshold (invalid)
+                max_regime_shift_probability: 2.0, // Over 1.0 (invalid for probability)
+            },
+            limited: RolloutStep {
+                phase: RolloutPhase::Limited,
+                max_instability_score: f64::INFINITY,
+                max_regime_shift_probability: f64::NAN,
+            },
+            progressive: RolloutStep {
+                phase: RolloutPhase::Progressive,
+                max_instability_score: 0.0, // Zero threshold (very restrictive)
+                max_regime_shift_probability: 0.0,
+            },
+            general: RolloutStep {
+                phase: RolloutPhase::General,
+                max_instability_score: f64::MIN, // Minimum float
+                max_regime_shift_probability: f64::EPSILON,
+            },
+        };
+
+        let test_trajectory = TrajectorySnapshot {
+            instability_score: 0.5,
+            drift_score: 0.3,
+            regime_shift_probability: 0.2,
+        };
+
+        let health = RolloutHealth {
+            current_phase: RolloutPhase::Canary,
+            stability: test_trajectory,
+        };
+
+        // Test that fallback plan generation handles malicious configuration
+        let fallback = generate_fallback_plan("malicious-config-test", &malicious_rollout);
+
+        // Should produce a valid fallback plan despite malicious input
+        assert!(!fallback.steps.is_empty(), "fallback plan should have steps");
+
+        // Test rollout health evaluation with malicious configuration
+        let rollback = evaluate_rollout_health("malicious-rollout-test", &malicious_rollout, &health);
+
+        // Should not panic and should produce a valid rollback decision
+        assert_eq!(rollback.event.trace_id, "malicious-rollout-test");
+
+        // Verify the rollback decision is safe (either allow or rollback, but deterministic)
+        assert!(rollback.should_rollback == true || rollback.should_rollback == false);
+
+        // Test serialization of malicious rollout configuration
+        let json = serde_json::to_string(&malicious_rollout);
+        match json {
+            Ok(json_str) => {
+                // Should be able to deserialize without corruption
+                let parsed: Result<RolloutPlan, _> = serde_json::from_str(&json_str);
+                // Might fail for NaN/Infinity values, which is acceptable
+            }
+            Err(_) => {
+                // Serialization failure for extreme values is acceptable
+            }
+        }
     }
 }

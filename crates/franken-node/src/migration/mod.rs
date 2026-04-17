@@ -235,7 +235,7 @@ pub fn run_audit(project_path: &Path) -> anyhow::Result<MigrationAuditReport> {
     let mut engine_gaps = 0_usize;
 
     for path in files {
-        summary.files_scanned += 1;
+        summary.files_scanned = summary.files_scanned.saturating_add(1);
         let relative_path = relative_display(project_path, &path);
 
         if let Some(name) = path.file_name().and_then(std::ffi::OsStr::to_str) {
@@ -243,7 +243,7 @@ pub fn run_audit(project_path: &Path) -> anyhow::Result<MigrationAuditReport> {
                 lockfiles.insert(relative_path.clone());
             }
             if name == "package.json" {
-                summary.package_manifests += 1;
+                summary.package_manifests = summary.package_manifests.saturating_add(1);
                 inspect_package_manifest(
                     &path,
                     &relative_path,
@@ -256,8 +256,10 @@ pub fn run_audit(project_path: &Path) -> anyhow::Result<MigrationAuditReport> {
 
         if let Some(ext) = path.extension().and_then(std::ffi::OsStr::to_str) {
             match ext.to_ascii_lowercase().as_str() {
-                "js" | "cjs" | "mjs" | "jsx" => summary.js_files += 1,
-                "ts" | "tsx" => summary.ts_files += 1,
+                "js" | "cjs" | "mjs" | "jsx" => {
+                    summary.js_files = summary.js_files.saturating_add(1)
+                }
+                "ts" | "tsx" => summary.ts_files = summary.ts_files.saturating_add(1),
                 _ => {}
             }
         }
@@ -309,12 +311,12 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
             continue;
         }
 
-        package_manifests_scanned += 1;
+        package_manifests_scanned = package_manifests_scanned.saturating_add(1);
         let relative_path = relative_display(project_path, &path);
         let raw = match std::fs::read_to_string(&path) {
             Ok(content) => content,
             Err(err) => {
-                manual_review_items += 1;
+                manual_review_items = manual_review_items.saturating_add(1);
                 entries.push(MigrationRewriteEntry {
                     id: String::new(),
                     path: Some(relative_path),
@@ -329,7 +331,7 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
         let mut manifest = match serde_json::from_str::<serde_json::Value>(&raw) {
             Ok(value) => value,
             Err(err) => {
-                manual_review_items += 1;
+                manual_review_items = manual_review_items.saturating_add(1);
                 entries.push(MigrationRewriteEntry {
                     id: String::new(),
                     path: Some(relative_path),
@@ -342,7 +344,7 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
         };
 
         for script_name in collect_risky_script_names(&manifest) {
-            manual_review_items += 1;
+            manual_review_items = manual_review_items.saturating_add(1);
             entries.push(MigrationRewriteEntry {
                 id: String::new(),
                 path: Some(relative_path.clone()),
@@ -353,7 +355,7 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
         }
 
         if ensure_node_engine_pin(&mut manifest) {
-            rewrites_planned += 1;
+            rewrites_planned = rewrites_planned.saturating_add(1);
             let rewritten = serde_json::to_string_pretty(&manifest)
                 .map(|rendered| format!("{rendered}\n"))
                 .map_err(|err| {
@@ -370,7 +372,7 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
                         path.display()
                     )
                 })?;
-                rewrites_applied += 1;
+                rewrites_applied = rewrites_applied.saturating_add(1);
             }
 
             entries.push(MigrationRewriteEntry {
@@ -390,7 +392,7 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
     }
 
     if package_manifests_scanned == 0 {
-        manual_review_items += 1;
+        manual_review_items = manual_review_items.saturating_add(1);
         entries.push(MigrationRewriteEntry {
             id: String::new(),
             path: None,
@@ -716,7 +718,7 @@ fn inspect_package_manifest(
         .and_then(|engines| engines.get("node"))
         .is_none()
     {
-        *engine_gaps += 1;
+        *engine_gaps = engine_gaps.saturating_add(1);
         push_capped_script_finding(
             findings,
             ScriptFindingKind::MissingNodeEngine,
@@ -731,7 +733,7 @@ fn inspect_package_manifest(
                 continue;
             };
             if is_risky_script(script_name, command) {
-                *scripts_flagged += 1;
+                *scripts_flagged = scripts_flagged.saturating_add(1);
                 push_capped_script_finding(
                     findings,
                     ScriptFindingKind::Risky,
@@ -1076,6 +1078,31 @@ fn render_sarif(report: &MigrationAuditReport) -> anyhow::Result<String> {
 mod tests {
     use super::*;
 
+    fn write_project_file(project: &Path, relative_path: &str, content: &str) {
+        let path = project.join(relative_path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create parent dir");
+        }
+        std::fs::write(path, content).expect("write project file");
+    }
+
+    fn write_hardened_manifest(project: &Path) {
+        write_project_file(
+            project,
+            "package.json",
+            r#"{
+              "name":"demo",
+              "version":"1.0.0",
+              "engines":{"node":">=20 <23"},
+              "scripts":{"test":"node test.js"}
+            }"#,
+        );
+    }
+
+    fn write_lockfile(project: &Path) {
+        write_project_file(project, "package-lock.json", "{}\n");
+    }
+
     #[test]
     fn parse_audit_output_format_is_case_insensitive() {
         assert_eq!(
@@ -1190,6 +1217,159 @@ mod tests {
             .as_array()
             .map_or(0, std::vec::Vec::len);
         assert_eq!(result_count, 1);
+    }
+
+    #[test]
+    fn run_rewrite_apply_is_idempotent_after_first_engine_pin() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+
+        write_project_file(project, "index.js", "console.log('hello');");
+        write_project_file(
+            project,
+            "package.json",
+            r#"{"name":"demo","version":"1.0.0","scripts":{"test":"node test.js"}}"#,
+        );
+
+        let first = run_rewrite(project, true).expect("first rewrite");
+        let after_first =
+            std::fs::read_to_string(project.join("package.json")).expect("read rewritten package");
+        let second = run_rewrite(project, true).expect("second rewrite");
+        let after_second =
+            std::fs::read_to_string(project.join("package.json")).expect("read package again");
+
+        assert_eq!(first.rewrites_planned, 1);
+        assert_eq!(first.rewrites_applied, 1);
+        assert_eq!(first.rollback_entries.len(), 1);
+        assert_eq!(second.rewrites_planned, 0);
+        assert_eq!(second.rewrites_applied, 0);
+        assert!(second.rollback_entries.is_empty());
+        assert_eq!(after_second, after_first);
+    }
+
+    #[test]
+    fn run_rewrite_dry_run_is_idempotent_and_does_not_mutate_manifest() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+        let original = r#"{"name":"demo","version":"1.0.0","scripts":{"test":"node test.js"}}"#;
+
+        write_project_file(project, "package.json", original);
+
+        let first = run_rewrite(project, false).expect("first dry run");
+        let after_first =
+            std::fs::read_to_string(project.join("package.json")).expect("read package");
+        let second = run_rewrite(project, false).expect("second dry run");
+        let after_second =
+            std::fs::read_to_string(project.join("package.json")).expect("read package again");
+
+        assert_eq!(first.rewrites_planned, 1);
+        assert_eq!(first.rewrites_applied, 0);
+        assert_eq!(second.rewrites_planned, 1);
+        assert_eq!(second.rewrites_applied, 0);
+        assert_eq!(after_first, original);
+        assert_eq!(after_second, original);
+        assert_eq!(
+            first.rollback_entries[0].rewritten_content,
+            second.rollback_entries[0].rewritten_content
+        );
+    }
+
+    #[test]
+    fn run_rewrite_preserves_existing_node_engine_without_rollback_entry() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+        let original = r#"{
+          "name":"demo",
+          "version":"1.0.0",
+          "engines":{"node":"22.x"},
+          "scripts":{"test":"node test.js"}
+        }"#;
+
+        write_project_file(project, "package.json", original);
+
+        let report = run_rewrite(project, true).expect("rewrite no-op");
+        let after = std::fs::read_to_string(project.join("package.json")).expect("read package");
+
+        assert_eq!(report.rewrites_planned, 0);
+        assert_eq!(report.rewrites_applied, 0);
+        assert!(report.rollback_entries.is_empty());
+        assert_eq!(after, original);
+    }
+
+    #[test]
+    fn build_rollback_plan_emits_serializable_original_and_rewritten_manifest() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+        let original = r#"{"name":"demo","version":"1.0.0","scripts":{"test":"node test.js"}}"#;
+
+        write_project_file(project, "package.json", original);
+
+        let report = run_rewrite(project, false).expect("dry-run rewrite");
+        let plan = build_rollback_plan(&report);
+        let serialized = serde_json::to_value(&plan).expect("rollback plan serializes");
+
+        assert_eq!(plan.schema_version, "1.0.0");
+        assert!(!plan.apply_mode);
+        assert_eq!(plan.entry_count, 1);
+        assert_eq!(plan.entries[0].path, "package.json");
+        assert_eq!(plan.entries[0].original_content, original);
+        assert!(plan.entries[0].rewritten_content.contains("\"engines\""));
+        assert!(
+            plan.entries[0]
+                .rewritten_content
+                .contains("\"node\": \">=20 <23\"")
+        );
+        assert_eq!(serialized["schema_version"], "1.0.0");
+        assert_eq!(serialized["apply_mode"], serde_json::Value::Bool(false));
+        assert_eq!(serialized["entry_count"].as_u64(), Some(1));
+    }
+
+    #[test]
+    fn build_rollback_plan_records_multiple_manifest_entries_in_path_order() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+
+        write_project_file(
+            project,
+            "package.json",
+            r#"{"name":"root","version":"1.0.0","scripts":{"test":"node test.js"}}"#,
+        );
+        write_project_file(
+            project,
+            "packages/app/package.json",
+            r#"{"name":"app","version":"1.0.0","scripts":{"test":"node test.js"}}"#,
+        );
+
+        let report = run_rewrite(project, false).expect("dry-run rewrite");
+        let plan = build_rollback_plan(&report);
+        let paths = plan
+            .entries
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(plan.entry_count, 2);
+        assert_eq!(paths, vec!["package.json", "packages/app/package.json"]);
+        assert!(plan.entries.iter().all(|entry| {
+            entry.original_content.contains("\"scripts\"")
+                && entry.rewritten_content.contains("\"node\": \">=20 <23\"")
+        }));
+    }
+
+    #[test]
+    fn build_rollback_plan_for_noop_rewrite_emits_empty_artifact() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+
+        write_hardened_manifest(project);
+
+        let report = run_rewrite(project, false).expect("dry-run rewrite");
+        let plan = build_rollback_plan(&report);
+
+        assert_eq!(report.package_manifests_scanned, 1);
+        assert_eq!(report.rewrites_planned, 0);
+        assert_eq!(plan.entry_count, 0);
+        assert!(plan.entries.is_empty());
     }
 
     #[test]
@@ -1356,5 +1536,203 @@ mod tests {
         assert!(report.is_pass());
         assert!(report.blocking_findings.is_empty());
         assert!(report.checks.iter().all(|check| check.passed));
+    }
+
+    #[test]
+    fn run_validate_surfaces_lockstep_warning_for_js_only_project() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+
+        write_project_file(project, "index.js", "console.log('hello');");
+        write_hardened_manifest(project);
+        write_lockfile(project);
+
+        let report = run_validate(project).expect("validate report");
+
+        assert!(report.is_pass());
+        assert!(report.blocking_findings.is_empty());
+        assert!(report.warning_findings.iter().any(|finding| {
+            finding.category == MigrationCategory::Runtime
+                && finding
+                    .message
+                    .contains("JavaScript files and no TypeScript files")
+                && finding
+                    .recommendation
+                    .as_deref()
+                    .is_some_and(|text| text.contains("lockstep validation coverage"))
+        }));
+    }
+
+    #[test]
+    fn run_validate_does_not_emit_lockstep_warning_when_typescript_is_present() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+
+        write_project_file(project, "index.js", "console.log('hello');");
+        write_project_file(project, "index.ts", "export const answer: number = 42;");
+        write_hardened_manifest(project);
+        write_lockfile(project);
+
+        let report = run_validate(project).expect("validate report");
+        let has_lockstep_warning = report.warning_findings.iter().any(|finding| {
+            finding
+                .recommendation
+                .as_deref()
+                .is_some_and(|text| text.contains("lockstep validation coverage"))
+        });
+
+        assert!(report.is_pass());
+        assert!(!has_lockstep_warning);
+    }
+
+    #[test]
+    fn run_validate_lockstep_gate_blocks_invalid_manifest_json() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+
+        write_project_file(project, "index.ts", "export const answer = 42;");
+        write_project_file(project, "package.json", r#"{"name":"demo","#);
+        write_lockfile(project);
+
+        let report = run_validate(project).expect("validate report");
+
+        assert!(!report.is_pass());
+        assert!(report.checks.iter().any(|check| {
+            check.id == "mig-validate-004"
+                && !check.passed
+                && check.message == "high-severity audit findings: 1"
+        }));
+        assert!(report.blocking_findings.iter().any(|finding| {
+            finding.category == MigrationCategory::Project
+                && finding.message.contains("invalid package.json JSON")
+        }));
+    }
+
+    #[test]
+    fn run_validate_lockstep_gate_blocks_missing_manifest_even_with_lockfile() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+
+        write_project_file(project, "index.ts", "export const answer = 42;");
+        write_lockfile(project);
+
+        let report = run_validate(project).expect("validate report");
+
+        assert!(!report.is_pass());
+        assert!(report.checks.iter().any(|check| {
+            check.id == "mig-validate-001"
+                && !check.passed
+                && check.message == "package manifests detected: 0"
+        }));
+        assert!(report.checks.iter().any(|check| {
+            check.id == "mig-validate-004"
+                && !check.passed
+                && check.message == "high-severity audit findings: 1"
+        }));
+        assert!(report.blocking_findings.iter().any(|finding| {
+            finding.category == MigrationCategory::Project
+                && finding.message.contains("no package.json files found")
+        }));
+    }
+
+    #[test]
+    fn parse_audit_output_format_rejects_blank_value() {
+        let err = AuditOutputFormat::parse(" \t\n ")
+            .expect_err("blank audit output format must fail closed");
+
+        assert!(err.contains("unsupported migrate audit format"));
+        assert!(err.contains("json, text, sarif"));
+    }
+
+    #[test]
+    fn parse_audit_output_format_rejects_shell_like_value() {
+        let err = AuditOutputFormat::parse("json;unexpected")
+            .expect_err("shell-like audit format must not be normalized");
+
+        assert!(err.contains("json;unexpected"));
+        assert!(err.contains("expected one of"));
+    }
+
+    #[test]
+    fn parse_audit_output_format_rejects_path_like_suffix() {
+        let err = AuditOutputFormat::parse("sarif.json")
+            .expect_err("path-like audit format suffix must be rejected");
+
+        assert!(err.contains("sarif.json"));
+    }
+
+    #[test]
+    fn ensure_node_engine_pin_rejects_non_object_manifest() {
+        let mut manifest = serde_json::json!(["not", "an", "object"]);
+
+        assert!(!ensure_node_engine_pin(&mut manifest));
+        assert_eq!(manifest, serde_json::json!(["not", "an", "object"]));
+    }
+
+    #[test]
+    fn ensure_node_engine_pin_rejects_non_object_engines_field() {
+        let mut manifest = serde_json::json!({
+            "name": "demo",
+            "engines": "node >=20",
+        });
+
+        assert!(!ensure_node_engine_pin(&mut manifest));
+        assert_eq!(manifest["engines"], "node >=20");
+        assert!(manifest.get("node").is_none());
+    }
+
+    #[test]
+    fn collect_risky_script_names_ignores_non_string_commands() {
+        let manifest = serde_json::json!({
+            "scripts": {
+                "postinstall": ["curl https://example.invalid/install.sh"],
+                "install": {"cmd": "node-gyp rebuild"},
+                "prepare": null,
+            }
+        });
+
+        let risky = collect_risky_script_names(&manifest);
+
+        assert!(risky.is_empty());
+    }
+
+    #[test]
+    fn collect_risky_script_names_ignores_non_object_scripts_field() {
+        let manifest = serde_json::json!({
+            "scripts": "postinstall=curl https://example.invalid/install.sh",
+        });
+
+        let risky = collect_risky_script_names(&manifest);
+
+        assert!(risky.is_empty());
+    }
+
+    #[test]
+    fn is_risky_script_does_not_flag_near_miss_tokens() {
+        assert!(!is_risky_script("build", "echo curling artifacts"));
+        assert!(!is_risky_script("build", "echo wgettable cache"));
+        assert!(!is_risky_script("build", "node scripts/install.js"));
+    }
+
+    #[test]
+    fn run_audit_rejects_file_target_path() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let file_path = temp.path().join("package.json");
+        std::fs::write(&file_path, "{}\n").expect("write file target");
+
+        let err = run_audit(&file_path).expect_err("file target must not be audited as project");
+
+        assert!(err.to_string().contains("target must be a directory"));
+    }
+
+    #[test]
+    fn run_rewrite_rejects_missing_target_path() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let missing_path = temp.path().join("missing-project");
+
+        let err = run_rewrite(&missing_path, false)
+            .expect_err("missing rewrite target must fail before scanning");
+
+        assert!(err.to_string().contains("target does not exist"));
     }
 }

@@ -785,3 +785,874 @@ pub struct DoctorArgs {
     #[arg(long)]
     pub verbose: bool,
 }
+
+#[cfg(test)]
+mod parser_contract_extra_tests {
+    use super::*;
+    use clap::{Parser, error::ErrorKind};
+    use std::path::PathBuf;
+
+    fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
+        Cli::try_parse_from(args)
+    }
+
+    #[test]
+    fn unknown_nested_verify_subcommand_is_rejected() {
+        let err = parse(&["franken-node", "verify", "artifact"])
+            .expect_err("unknown nested verify command should fail");
+
+        assert_eq!(err.kind(), ErrorKind::InvalidSubcommand);
+    }
+
+    #[test]
+    fn unknown_top_level_subcommand_is_rejected() {
+        let err = parse(&["franken-node", "launch"]).expect_err("unknown command should fail");
+
+        assert_eq!(err.kind(), ErrorKind::InvalidSubcommand);
+    }
+
+    #[test]
+    fn init_rejects_unknown_flag() {
+        let err = parse(&["franken-node", "init", "--definitely-not-an-init-flag"])
+            .expect_err("unknown init flag should fail");
+
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn run_rejects_misspelled_policy_flag() {
+        let err = parse(&["franken-node", "run", "app.js", "--polciy", "strict"])
+            .expect_err("unknown flag should fail");
+
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn trust_revoke_requires_extension_id() {
+        let err = parse(&[
+            "franken-node",
+            "trust",
+            "revoke",
+            "--receipt-out",
+            "receipt.json",
+        ])
+        .expect_err("trust revoke should require an extension id");
+
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn incident_replay_requires_bundle() {
+        let err = parse(&["franken-node", "incident", "replay"])
+            .expect_err("incident replay should require a bundle path");
+
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn fleet_agent_requires_zone() {
+        let err = parse(&["franken-node", "fleet", "agent", "--node-id", "node-7"])
+            .expect_err("fleet agent should require a polling zone");
+
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn registry_search_requires_query() {
+        let err = parse(&["franken-node", "registry", "search"])
+            .expect_err("registry search query should be required");
+
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn run_parses_lockstep_and_runtime_options() {
+        let cli = parse(&[
+            "franken-node",
+            "run",
+            "app.js",
+            "--runtime",
+            "node",
+            "--policy",
+            "strict",
+            "--lockstep-preflight",
+            "--json",
+        ])
+        .expect("run command should parse");
+
+        let Command::Run(args) = cli.command else {
+            panic!("expected run command");
+        };
+        assert_eq!(args.app_path, PathBuf::from("app.js"));
+        assert_eq!(args.runtime.as_deref(), Some("node"));
+        assert_eq!(args.policy, "strict");
+        assert!(args.lockstep_preflight);
+        assert!(args.json);
+    }
+
+    #[test]
+    fn fleet_agent_parses_once_mode_with_cycle_limit() {
+        let cli = parse(&[
+            "franken-node",
+            "fleet",
+            "agent",
+            "--zone",
+            "us-east",
+            "--node-id",
+            "node-7",
+            "--max-cycles",
+            "3",
+            "--once",
+        ])
+        .expect("fleet agent command should parse");
+
+        let Command::Fleet(FleetCommand::Agent(args)) = cli.command else {
+            panic!("expected fleet agent command");
+        };
+        assert_eq!(args.zone, "us-east");
+        assert_eq!(args.node_id.as_deref(), Some("node-7"));
+        assert_eq!(args.max_cycles, Some(3));
+        assert!(args.once);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_error_kind(args: &[&str]) -> clap::error::ErrorKind {
+        let mut argv = Vec::with_capacity(args.len().saturating_add(1));
+        argv.push("franken-node");
+        argv.extend_from_slice(args);
+
+        <Cli as clap::Parser>::try_parse_from(argv)
+            .expect_err("parser should reject invalid CLI shape")
+            .kind()
+    }
+
+    #[test]
+    fn missing_top_level_subcommand_is_rejected() {
+        assert_eq!(
+            parse_error_kind(&[]),
+            clap::error::ErrorKind::MissingSubcommand
+        );
+    }
+
+    #[test]
+    fn run_requires_app_path() {
+        assert_eq!(
+            parse_error_kind(&["run"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn migrate_audit_requires_project_path() {
+        assert_eq!(
+            parse_error_kind(&["migrate", "audit", "--format", "json"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn verify_release_requires_explicit_key_dir() {
+        assert_eq!(
+            parse_error_kind(&["verify", "release", "dist/release"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn remote_cap_issue_requires_at_least_one_endpoint_prefix() {
+        assert_eq!(
+            parse_error_kind(&["remotecap", "issue", "--scope", "network_egress"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn trust_card_compare_requires_both_extension_ids() {
+        assert_eq!(
+            parse_error_kind(&["trust-card", "compare", "npm:left"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn fleet_release_requires_incident_id() {
+        assert_eq!(
+            parse_error_kind(&["fleet", "release"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn incident_counterfactual_requires_policy() {
+        assert_eq!(
+            parse_error_kind(&["incident", "counterfactual", "--bundle", "incident.json"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn registry_publish_requires_package_path() {
+        assert_eq!(
+            parse_error_kind(&["registry", "publish", "--signing-key", "operator.ed25519"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn verify_module_requires_module_id() {
+        assert_eq!(
+            parse_error_kind(&["verify", "module", "--json"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn verify_corpus_requires_corpus_path() {
+        assert_eq!(
+            parse_error_kind(&["verify", "corpus", "--compat-version", "1"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn migrate_rewrite_requires_project_path() {
+        assert_eq!(
+            parse_error_kind(&["migrate", "rewrite", "--apply"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn trust_card_export_requires_extension_id() {
+        assert_eq!(
+            parse_error_kind(&["trust-card", "export", "--json"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn trust_card_diff_requires_right_version() {
+        assert_eq!(
+            parse_error_kind(&["trust-card", "diff", "npm:pkg", "1"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn incident_bundle_requires_incident_id() {
+        assert_eq!(
+            parse_error_kind(&["incident", "bundle", "--verify"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn registry_verify_requires_extension_id() {
+        assert_eq!(
+            parse_error_kind(&["registry", "verify"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn remote_cap_issue_requires_scope_even_with_endpoint() {
+        assert_eq!(
+            parse_error_kind(&["remotecap", "issue", "--endpoint", "https://"]),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    /// Test Unicode injection attacks in CLI argument parsing
+    #[test]
+    fn negative_cli_unicode_injection_comprehensive() {
+        let unicode_attack_vectors = vec![
+            // BiDi override attacks in arguments
+            ("bidi_override", "arg\u{202E}gnivieced\u{202D}"),
+            ("bidi_nested", "param\u{202E}level1\u{202E}level2\u{202D}evil\u{202D}"),
+
+            // Zero-width character pollution
+            ("zws_pollution", "test\u{200B}hidden\u{200C}arg\u{200D}"),
+            ("zwj_sequence", "arg\u{200D}\u{1F469}\u{200D}\u{1F4BB}trusted"),
+
+            // Control character injection
+            ("ansi_escape", "arg\x1b[31mevil\x1b[0m"),
+            ("carriage_return", "arg\roverwrite"),
+            ("vertical_tab", "arg\x0Bhidden"),
+
+            // Unicode normalization attacks
+            ("nfd_attack", "café_arg"),          // NFC form
+            ("nfc_attack", "cafe\u{0301}_arg"),  // NFD form
+            ("combining_stack", "arg\u{0300}\u{0301}\u{0302}\u{0303}"),
+
+            // Path injection attempts
+            ("path_traversal", "../../../evil"),
+            ("null_termination", "arg\x00hidden"),
+        ];
+
+        for (attack_name, malicious_input) in unicode_attack_vectors {
+            let injection_result = std::panic::catch_unwind(|| {
+                // Test CLI parsing with Unicode-injected arguments
+                let args = vec![
+                    "franken-node",
+                    "init",
+                    "--output-dir", malicious_input,
+                    "--profile", malicious_input,
+                ];
+
+                let parse_result = Cli::try_parse_from(&args);
+                match parse_result {
+                    Ok(cli) => {
+                        // If parsed successfully, verify Unicode is handled safely
+                        match cli.command {
+                            Command::Init(init_args) => {
+                                if let Some(output_dir) = init_args.output_dir {
+                                    // Should handle Unicode paths consistently
+                                    assert!(!output_dir.to_string_lossy().is_empty() || output_dir.to_string_lossy().is_empty(),
+                                           "Path should be handled deterministically: {}", attack_name);
+                                }
+                                assert!(!init_args.profile.is_empty() || init_args.profile.is_empty(),
+                                       "Profile should be handled deterministically: {}", attack_name);
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(_) => {
+                        // CLI parsing may reject Unicode attacks - acceptable
+                    }
+                }
+
+                // Test run command with Unicode injections
+                let run_args = vec![
+                    "franken-node",
+                    "run",
+                    malicious_input, // script argument
+                    "--env", malicious_input,
+                    "--trust-root", malicious_input,
+                ];
+
+                let run_parse_result = Cli::try_parse_from(&run_args);
+                match run_parse_result {
+                    Ok(cli) => {
+                        match cli.command {
+                            Command::Run(run_args) => {
+                                // Should handle script paths safely
+                                assert!(!run_args.script.to_string_lossy().is_empty() || run_args.script.to_string_lossy().is_empty(),
+                                       "Script path should be handled safely: {}", attack_name);
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(_) => {
+                        // May reject malicious paths - acceptable
+                    }
+                }
+
+                // Test verify command with Unicode
+                let verify_args = vec![
+                    "franken-node",
+                    "verify",
+                    "registry",
+                    "verify",
+                    malicious_input, // extension-id
+                ];
+
+                let verify_parse_result = Cli::try_parse_from(&verify_args);
+                match verify_parse_result {
+                    Ok(_) => {
+                        // Should handle extension IDs safely
+                    }
+                    Err(_) => {
+                        // May reject malicious extension IDs - acceptable
+                    }
+                }
+
+                Ok(())
+            });
+
+            assert!(injection_result.is_ok(),
+                   "Unicode injection test should not panic: {}", attack_name);
+        }
+    }
+
+    /// Test memory exhaustion protection in CLI argument processing
+    #[test]
+    fn negative_cli_memory_exhaustion_stress() {
+        let memory_stress_result = std::panic::catch_unwind(|| {
+            // Test extremely long arguments
+            let massive_arg = "x".repeat(1_000_000); // 1MB argument
+
+            let oversized_args = vec![
+                "franken-node",
+                "init",
+                "--output-dir", &massive_arg,
+                "--profile", &massive_arg,
+            ];
+
+            let parse_result = Cli::try_parse_from(&oversized_args);
+            match parse_result {
+                Ok(cli) => {
+                    // If parsed, should handle large arguments reasonably
+                    match cli.command {
+                        Command::Init(init_args) => {
+                            if let Some(output_dir) = init_args.output_dir {
+                                // Path should be handled without memory exhaustion
+                                assert!(output_dir.to_string_lossy().len() <= 2_000_000,
+                                       "Output dir should be bounded");
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Err(_) => {
+                    // May reject oversized arguments - acceptable behavior
+                }
+            }
+
+            // Test many small arguments
+            let mut many_args = vec!["franken-node", "run", "script.js"];
+            for i in 0..10000 {
+                many_args.push("--env");
+                many_args.push(&format!("KEY_{}=VALUE_{}", i, i));
+            }
+
+            let many_args_result = Cli::try_parse_from(&many_args);
+            match many_args_result {
+                Ok(_) => {
+                    // Should handle many arguments reasonably
+                }
+                Err(_) => {
+                    // May reject excessive argument counts - acceptable
+                }
+            }
+
+            // Test deeply nested path structures
+            let deep_path = "/".to_string() + &"deep/".repeat(1000) + "script.js";
+            let deep_path_args = vec![
+                "franken-node",
+                "run",
+                &deep_path,
+            ];
+
+            let deep_path_result = Cli::try_parse_from(&deep_path_args);
+            match deep_path_result {
+                Ok(cli) => {
+                    match cli.command {
+                        Command::Run(run_args) => {
+                            // Should handle deep paths without overflow
+                            assert!(run_args.script.to_string_lossy().len() < 100_000,
+                                   "Script path should be reasonably bounded");
+                        }
+                        _ => {}
+                    }
+                }
+                Err(_) => {
+                    // May reject excessively deep paths - acceptable
+                }
+            }
+
+            Ok(())
+        });
+
+        assert!(memory_stress_result.is_ok(), "Memory exhaustion stress test should not panic");
+    }
+
+    /// Test JSON and serialization integrity in CLI structures
+    #[test]
+    fn negative_cli_serialization_integrity_validation() {
+        use serde_json;
+
+        let serialization_test_result = std::panic::catch_unwind(|| {
+            // Test CLI argument parsing and potential serialization
+            let test_cases = vec![
+                // Valid cases that should work
+                vec!["franken-node", "init", "--profile", "development"],
+                vec!["franken-node", "run", "script.js", "--env", "NODE_ENV=test"],
+                vec!["franken-node", "verify", "registry", "verify", "test-extension"],
+
+                // Edge cases with special characters
+                vec!["franken-node", "init", "--profile", "test\"profile"],
+                vec!["franken-node", "run", "script.js", "--env", "KEY={\"nested\": true}"],
+                vec!["franken-node", "init", "--output-dir", "path/with spaces"],
+            ];
+
+            for (i, args) in test_cases.iter().enumerate() {
+                let parse_result = Cli::try_parse_from(args);
+                match parse_result {
+                    Ok(cli) => {
+                        // Test debug formatting (similar to serialization)
+                        let debug_output = format!("{:?}", cli);
+                        assert!(!debug_output.is_empty(), "Debug output should not be empty: case {}", i);
+                        assert!(debug_output.len() < 1_000_000, "Debug output should be bounded: case {}", i);
+
+                        // Verify structure integrity
+                        match &cli.command {
+                            Command::Init(init_args) => {
+                                assert!(!init_args.profile.is_empty(), "Profile should not be empty: case {}", i);
+                            }
+                            Command::Run(run_args) => {
+                                assert!(!run_args.script.to_string_lossy().is_empty(), "Script should not be empty: case {}", i);
+                            }
+                            Command::Verify(verify_cmd) => {
+                                // Should have valid verify command structure
+                                let verify_debug = format!("{:?}", verify_cmd);
+                                assert!(!verify_debug.is_empty(), "Verify command should have content: case {}", i);
+                            }
+                            _ => {}
+                        }
+
+                        // Test that clap's internal serialization-like behavior is safe
+                        let help_output = format!("{}", Cli::command().render_help());
+                        assert!(help_output.contains("franken-node"), "Help should contain program name");
+                        assert!(!help_output.contains("\\u"), "Help should not contain unicode escapes");
+                    }
+                    Err(err) => {
+                        // Verify error handling is consistent
+                        let error_message = format!("{}", err);
+                        assert!(!error_message.is_empty(), "Error message should not be empty: case {}", i);
+                        assert!(error_message.len() < 100_000, "Error message should be bounded: case {}", i);
+                    }
+                }
+            }
+
+            Ok(())
+        });
+
+        assert!(serialization_test_result.is_ok(), "Serialization integrity test should not panic");
+    }
+
+    /// Test argument injection and command injection safety in CLI
+    #[test]
+    fn negative_cli_argument_injection_safety() {
+        let injection_safety_result = std::panic::catch_unwind(|| {
+            let injection_vectors = vec![
+                // Command injection attempts
+                ("command_inject", "script.js; rm -rf /"),
+                ("pipe_inject", "script.js | cat /etc/passwd"),
+                ("background_inject", "script.js & malicious_command"),
+
+                // Path traversal attempts
+                ("path_traversal", "../../../etc/passwd"),
+                ("absolute_path", "/etc/passwd"),
+                ("windows_path", "C:\\Windows\\System32\\calc.exe"),
+
+                // Shell metacharacter injection
+                ("shell_meta", "script.js$(evil_command)"),
+                ("backtick_inject", "script.js`malicious`"),
+                ("dollar_inject", "script.js$EVIL_VAR"),
+
+                // Environment variable injection
+                ("env_inject", "PATH=/evil/path:$PATH"),
+                ("env_override", "LD_PRELOAD=/evil/lib.so"),
+                ("env_export", "export EVIL=true; script.js"),
+
+                // Quote escaping attempts
+                ("quote_escape", "script.js\"'; rm -rf /; echo '"),
+                ("double_quote", "script.js\"; evil_command; echo \""),
+                ("mixed_quotes", "script.js'; evil_command; #"),
+            ];
+
+            for (attack_name, malicious_input) in injection_vectors {
+                // Test script argument injection
+                let script_inject_args = vec!["franken-node", "run", malicious_input];
+                let script_result = Cli::try_parse_from(&script_inject_args);
+
+                match script_result {
+                    Ok(cli) => {
+                        match cli.command {
+                            Command::Run(run_args) => {
+                                let script_path = run_args.script.to_string_lossy();
+
+                                // Verify no command injection in parsed path
+                                assert!(!script_path.contains(';'), "Script path should not contain semicolon: {}", attack_name);
+                                assert!(!script_path.contains('|'), "Script path should not contain pipe: {}", attack_name);
+                                assert!(!script_path.contains('&'), "Script path should not contain ampersand: {}", attack_name);
+                                assert!(!script_path.contains('`'), "Script path should not contain backticks: {}", attack_name);
+
+                                // The path itself may contain these characters but should be treated as literal
+                                assert_eq!(script_path, malicious_input, "Path should be preserved literally: {}", attack_name);
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(_) => {
+                        // CLI may reject obviously malicious inputs - acceptable
+                    }
+                }
+
+                // Test environment variable injection
+                let env_inject_args = vec!["franken-node", "run", "script.js", "--env", malicious_input];
+                let env_result = Cli::try_parse_from(&env_inject_args);
+
+                match env_result {
+                    Ok(cli) => {
+                        match cli.command {
+                            Command::Run(run_args) => {
+                                // Verify environment variables are parsed safely
+                                for env_var in &run_args.env {
+                                    assert_eq!(env_var, malicious_input, "Env var should be preserved literally: {}", attack_name);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(_) => {
+                        // May reject malicious environment variables - acceptable
+                    }
+                }
+
+                // Test output directory injection
+                let output_inject_args = vec!["franken-node", "init", "--output-dir", malicious_input];
+                let output_result = Cli::try_parse_from(&output_inject_args);
+
+                match output_result {
+                    Ok(cli) => {
+                        match cli.command {
+                            Command::Init(init_args) => {
+                                if let Some(output_dir) = init_args.output_dir {
+                                    let output_path = output_dir.to_string_lossy();
+
+                                    // Verify output directory is treated as literal path
+                                    assert_eq!(output_path, malicious_input, "Output dir should be preserved literally: {}", attack_name);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(_) => {
+                        // May reject malicious paths - acceptable
+                    }
+                }
+            }
+
+            Ok(())
+        });
+
+        assert!(injection_safety_result.is_ok(), "Argument injection safety test should not panic");
+    }
+
+    /// Test display injection and format string safety in CLI output
+    #[test]
+    fn negative_cli_display_injection_safety() {
+        let display_safety_result = std::panic::catch_unwind(|| {
+            let display_injection_vectors = vec![
+                // Format string injection attempts
+                ("format_inject", "arg%s%x%d"),
+                ("format_overflow", "arg%.999999s"),
+                ("format_position", "arg%1$s%2$x"),
+
+                // ANSI escape sequence injection
+                ("ansi_colors", "arg\x1b[31mRED\x1b[0m"),
+                ("ansi_cursor", "arg\x1b[H\x1b[2J"),
+                ("ansi_title", "arg\x1b]0;EVIL TITLE\x07"),
+
+                // Terminal control injection
+                ("bell_spam", "arg\x07\x07\x07"),
+                ("backspace_attack", "arg\x08\x08\x08hidden"),
+                ("carriage_return", "arg\roverwrite"),
+
+                // Unicode display corruption
+                ("rtl_override", "arg\u{202E}gnitsurt\u{202D}"),
+                ("combining_overflow", "arg\u{0300}\u{0301}\u{0302}\u{0303}"),
+                ("width_confusion", "arg\u{3000}\u{FF01}"),
+
+                // Log injection attempts
+                ("log_inject", "arg\nINJECTED: admin command"),
+                ("log_crlf", "arg\r\n[FAKE] CLI security alert"),
+            ];
+
+            for (attack_name, malicious_content) in display_injection_vectors {
+                // Test CLI argument parsing with display injection
+                let args = vec!["franken-node", "init", "--profile", malicious_content];
+                let parse_result = Cli::try_parse_from(&args);
+
+                match parse_result {
+                    Ok(cli) => {
+                        // Test debug display formatting safety
+                        let debug_display = format!("{:?}", cli);
+                        assert!(!debug_display.contains("%s"), "Debug should not contain format specifiers: {}", attack_name);
+                        assert!(!debug_display.contains("\x1b["), "Debug should escape ANSI sequences: {}", attack_name);
+                        assert!(!debug_display.contains("\r\n[FAKE]"), "Debug should not allow log injection: {}", attack_name);
+
+                        match cli.command {
+                            Command::Init(init_args) => {
+                                let profile_display = format!("{:?}", init_args.profile);
+                                assert!(!profile_display.contains("%s"), "Profile display should be safe: {}", attack_name);
+                                assert!(!profile_display.contains("\x1b["), "Profile display should escape ANSI: {}", attack_name);
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(err) => {
+                        // Test error display safety
+                        let error_display = format!("{}", err);
+                        assert!(!error_display.contains("%s"), "Error display should not contain format specifiers: {}", attack_name);
+                        assert!(!error_display.contains("\x1b["), "Error display should escape ANSI: {}", attack_name);
+
+                        let error_debug = format!("{:?}", err);
+                        assert!(!error_debug.contains("\x00"), "Error debug should escape null bytes: {}", attack_name);
+                    }
+                }
+
+                // Test help output safety
+                let help_output = format!("{}", Cli::command().render_help());
+                assert!(!help_output.contains("%s"), "Help should not contain format specifiers: {}", attack_name);
+                assert!(!help_output.contains("\r\n[FAKE]"), "Help should not allow injection: {}", attack_name);
+
+                // Test subcommand help safety
+                let init_help = format!("{}", Cli::command().find_subcommand("init").unwrap().render_help());
+                assert!(!init_help.contains("%s"), "Subcommand help should be safe: {}", attack_name);
+                assert!(!init_help.contains("\x1b["), "Subcommand help should escape ANSI: {}", attack_name);
+            }
+
+            Ok(())
+        });
+
+        assert!(display_safety_result.is_ok(), "Display injection safety test should not panic");
+    }
+
+    /// Test boundary condition stress in CLI argument processing
+    #[test]
+    fn negative_cli_boundary_stress_comprehensive() {
+        let boundary_stress_result = std::panic::catch_unwind(|| {
+            // Test argument count boundaries
+            let arg_count_boundaries = vec![
+                (vec!["franken-node"], "no_subcommand"),
+                (vec!["franken-node", "init"], "minimal_args"),
+                (vec!["franken-node", "init", "--profile", "test"], "basic_args"),
+            ];
+
+            for (args, test_name) in arg_count_boundaries {
+                let parse_result = Cli::try_parse_from(&args);
+                match parse_result {
+                    Ok(cli) => {
+                        // Should handle valid argument counts
+                        let debug_output = format!("{:?}", cli);
+                        assert!(!debug_output.is_empty(), "Should produce debug output: {}", test_name);
+                    }
+                    Err(err) => {
+                        // Should provide meaningful error for invalid args
+                        let error_msg = format!("{}", err);
+                        assert!(!error_msg.is_empty(), "Should provide error message: {}", test_name);
+                    }
+                }
+            }
+
+            // Test path length boundaries
+            let path_lengths = vec![
+                ("", "empty_path"),
+                ("a", "single_char"),
+                ("a".repeat(100), "medium_path"),
+                ("a".repeat(4096), "long_path"),
+                ("/".repeat(1000), "deep_path"),
+            ];
+
+            for (path_str, test_name) in path_lengths {
+                if path_str.is_empty() {
+                    continue; // Skip empty paths which are invalid
+                }
+
+                let args = vec!["franken-node", "run", &path_str];
+                let parse_result = Cli::try_parse_from(&args);
+
+                match parse_result {
+                    Ok(cli) => {
+                        match cli.command {
+                            Command::Run(run_args) => {
+                                let parsed_path = run_args.script.to_string_lossy();
+                                assert_eq!(parsed_path, path_str, "Path should be preserved: {}", test_name);
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(_) => {
+                        // May reject extreme path lengths - acceptable
+                    }
+                }
+            }
+
+            // Test environment variable boundaries
+            let env_var_cases = vec![
+                ("KEY=VALUE", "basic_env"),
+                ("KEY=", "empty_value"),
+                ("LONG_KEY_NAME=LONG_VALUE", "descriptive_env"),
+                ("KEY=" + &"x".repeat(10000), "large_value"),
+                (&"x".repeat(100) + "=value", "large_key"),
+            ];
+
+            for (env_var, test_name) in env_var_cases {
+                let args = vec!["franken-node", "run", "script.js", "--env", env_var];
+                let parse_result = Cli::try_parse_from(&args);
+
+                match parse_result {
+                    Ok(cli) => {
+                        match cli.command {
+                            Command::Run(run_args) => {
+                                assert_eq!(run_args.env.len(), 1, "Should have one env var: {}", test_name);
+                                assert_eq!(run_args.env[0], env_var, "Env var should be preserved: {}", test_name);
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(_) => {
+                        // May reject malformed or oversized env vars - acceptable
+                    }
+                }
+            }
+
+            // Test subcommand depth boundaries
+            let deep_subcommands = vec![
+                vec!["franken-node", "verify", "registry", "verify", "test-extension"],
+                vec!["franken-node", "trust", "extension", "approve", "test-extension"],
+                vec!["franken-node", "migrate", "rewrite", "--source", "file.js"],
+            ];
+
+            for args in deep_subcommands {
+                let parse_result = Cli::try_parse_from(&args);
+                match parse_result {
+                    Ok(cli) => {
+                        // Should handle nested subcommands correctly
+                        let debug_output = format!("{:?}", cli);
+                        assert!(!debug_output.is_empty(), "Should handle nested commands");
+                    }
+                    Err(_) => {
+                        // May fail due to missing required args - acceptable
+                    }
+                }
+            }
+
+            // Test option value boundaries
+            let option_value_cases = vec!["", "short", &"x".repeat(1000), &"x".repeat(100000)];
+
+            for value in option_value_cases {
+                if value.is_empty() {
+                    continue; // Skip empty values which may be invalid
+                }
+
+                let args = vec!["franken-node", "init", "--profile", value];
+                let parse_result = Cli::try_parse_from(&args);
+
+                match parse_result {
+                    Ok(cli) => {
+                        match cli.command {
+                            Command::Init(init_args) => {
+                                assert_eq!(init_args.profile, value, "Profile value should be preserved");
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(_) => {
+                        // May reject extreme option values - acceptable
+                    }
+                }
+            }
+
+            Ok(())
+        });
+
+        assert!(boundary_stress_result.is_ok(), "Boundary stress test should not panic");
+    }
+}

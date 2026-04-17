@@ -34,8 +34,12 @@ const REPLAY_CAPSULE_SCHEMA_VERSION: &str = "vep-replay-capsule-v2";
 const DEFAULT_REPLAY_CAPSULE_FRESHNESS_SECS: i64 = 3600;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
@@ -1251,6 +1255,33 @@ impl VerifierEconomyRegistry {
         let now = self.now_epoch();
         let outcome_display = format!("{}", outcome);
         let dispute_id_owned = dispute_id.to_string();
+        let attestation_id = {
+            let dispute = self.disputes.get(dispute_id).ok_or(VepError {
+                code: ERR_VEP_INCOMPLETE_PAYLOAD.to_string(),
+                message: format!("Dispute {} not found", dispute_id),
+            })?;
+
+            if dispute.outcome.is_some() {
+                return Err(VepError {
+                    code: ERR_VEP_INCOMPLETE_PAYLOAD.to_string(),
+                    message: format!("Dispute {} already resolved", dispute_id),
+                });
+            }
+
+            dispute.attestation_id.clone()
+        };
+
+        let settlement_state = match &outcome {
+            DisputeOutcome::Upheld => AttestationState::Rejected,
+            DisputeOutcome::Rejected | DisputeOutcome::Inconclusive => AttestationState::Published,
+        };
+
+        if !self.attestations.contains_key(&attestation_id) {
+            return Err(VepError {
+                code: ERR_VEP_INCOMPLETE_PAYLOAD.to_string(),
+                message: format!("Attestation {} not found", attestation_id),
+            });
+        }
 
         let dispute = self.disputes.get_mut(dispute_id).ok_or(VepError {
             code: ERR_VEP_INCOMPLETE_PAYLOAD.to_string(),
@@ -1259,6 +1290,12 @@ impl VerifierEconomyRegistry {
 
         dispute.outcome = Some(outcome);
         dispute.resolved_at = Some(format!("{}", now));
+
+        let attestation = self
+            .attestations
+            .get_mut(&attestation_id)
+            .expect("attestation existence checked before dispute resolution");
+        attestation.state = settlement_state;
 
         self.emit(
             VEP_004,
@@ -1542,6 +1579,9 @@ impl VerifierEconomyRegistry {
                 .remove(&verifier.verifier_id)
                 .unwrap_or_default();
             aggregate_score_sum += verifier.reputation_score as f64;
+            if !aggregate_score_sum.is_finite() {
+                aggregate_score_sum = 0.0;
+            }
             entries.push(ScoreboardEntry {
                 verifier_id: verifier.verifier_id.clone(),
                 verifier_name: verifier.name.clone(),
@@ -1552,11 +1592,14 @@ impl VerifierEconomyRegistry {
             });
         }
         let total_verifiers = entries.len();
-        let aggregate_score = if total_verifiers > 0 {
+        let mut aggregate_score = if total_verifiers > 0 {
             aggregate_score_sum / total_verifiers as f64
         } else {
             0.0
         };
+        if !aggregate_score.is_finite() {
+            aggregate_score = 0.0;
+        }
 
         TrustScoreboard {
             entries,
@@ -1817,6 +1860,141 @@ mod tests {
         let sub = make_submission(&v.verifier_id, &registration_signing_key());
         let att = reg.submit_attestation(sub).expect("should succeed");
         (v, att)
+    }
+
+    fn register_publish_default(reg: &mut VerifierEconomyRegistry) -> (Verifier, Attestation) {
+        let (verifier, attestation) = register_and_submit(reg);
+        reg.review_attestation(&attestation.attestation_id)
+            .expect("review should succeed");
+        reg.publish_attestation(&attestation.attestation_id)
+            .expect("publish should succeed");
+        (verifier, attestation)
+    }
+
+    fn file_default_dispute(
+        reg: &mut VerifierEconomyRegistry,
+        verifier_id: &str,
+        attestation_id: &str,
+    ) -> Dispute {
+        reg.file_dispute(
+            attestation_id,
+            verifier_id,
+            "economic settlement challenge",
+            vec!["deterministic-evidence".to_string()],
+        )
+        .expect("dispute should file")
+    }
+
+    #[test]
+    fn test_push_bounded_zero_capacity_discards_existing_values() {
+        let mut items = vec!["old-event", "older-event"];
+
+        push_bounded(&mut items, "new-event", 0);
+
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_push_bounded_zero_capacity_ignores_new_value() {
+        let mut items = Vec::new();
+
+        push_bounded(&mut items, "new-event", 0);
+
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_sha256_canonicalization_rejects_short_digest() {
+        assert!(canonicalize_sha256_prefixed_hex("sha256:abc123").is_none());
+    }
+
+    #[test]
+    fn test_sha256_canonicalization_rejects_non_hex_digest() {
+        let malformed = format!("sha256:{}", "g".repeat(64));
+
+        assert!(canonicalize_sha256_prefixed_hex(&malformed).is_none());
+    }
+
+    #[test]
+    fn test_sha256_canonicalization_rejects_duplicate_prefix_payload() {
+        let malformed = format!("sha256:{}", sample_sha256("nested-prefix"));
+
+        assert!(canonicalize_sha256_prefixed_hex(&malformed).is_none());
+    }
+
+    #[test]
+    fn test_sha256_canonicalization_rejects_digest_with_embedded_whitespace() {
+        let malformed = format!("sha256:{} {}", "a".repeat(32), "b".repeat(31));
+
+        assert!(canonicalize_sha256_prefixed_hex(&malformed).is_none());
+    }
+
+    #[test]
+    fn test_public_key_match_rejects_malformed_expected_key() {
+        let signing_key = registration_signing_key();
+        let actual_key = hex::encode(signing_key.verifying_key().to_bytes());
+
+        assert!(!canonicalized_ed25519_public_keys_match(
+            "not-an-ed25519-key",
+            &actual_key,
+        ));
+    }
+
+    #[test]
+    fn test_public_key_match_rejects_malformed_actual_key() {
+        let signing_key = registration_signing_key();
+        let expected_key = hex::encode(signing_key.verifying_key().to_bytes());
+
+        assert!(!canonicalized_ed25519_public_keys_match(
+            &expected_key,
+            "not-an-ed25519-key",
+        ));
+    }
+
+    #[test]
+    fn test_replay_freshness_rejects_nonpositive_window() {
+        let now = chrono::Utc::now();
+        let issued_at = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let expires_at = (now + chrono::Duration::seconds(60))
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+
+        assert!(!replay_capsule_freshness_window_valid(
+            &issued_at,
+            &expires_at,
+            0,
+        ));
+        assert!(!replay_capsule_freshness_window_valid(
+            &issued_at,
+            &expires_at,
+            -1,
+        ));
+    }
+
+    #[test]
+    fn test_replay_freshness_rejects_inverted_window() {
+        let now = chrono::Utc::now();
+        let issued_at = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let expires_at =
+            (now - chrono::Duration::seconds(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+
+        assert!(!replay_capsule_freshness_window_valid(
+            &issued_at,
+            &expires_at,
+            60,
+        ));
+    }
+
+    #[test]
+    fn test_replay_freshness_rejects_malformed_timestamp() {
+        let now = chrono::Utc::now();
+        let expires_at = (now + chrono::Duration::seconds(60))
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+
+        assert!(!replay_capsule_freshness_window_valid(
+            "not-a-timestamp",
+            &expires_at,
+            60,
+        ));
     }
 
     // -- Registration tests ---------------------------------------------------
@@ -2334,6 +2512,24 @@ mod tests {
     }
 
     #[test]
+    fn test_reputation_incentive_is_monotonic_with_accuracy() {
+        let lower_accuracy = ReputationDimensions {
+            consistency: 0.7,
+            coverage: 0.7,
+            accuracy: 0.2,
+            longevity: 0.7,
+        };
+        let higher_accuracy = ReputationDimensions {
+            accuracy: 0.9,
+            ..lower_accuracy.clone()
+        };
+
+        let lower_score = VerifierEconomyRegistry::compute_reputation(&lower_accuracy);
+        let higher_score = VerifierEconomyRegistry::compute_reputation(&higher_accuracy);
+        assert!(higher_score > lower_score);
+    }
+
+    #[test]
     fn test_update_reputation() {
         let mut reg = make_registry();
         let v = reg
@@ -2463,6 +2659,194 @@ mod tests {
             .unwrap();
         let resolved = reg.get_dispute(&dispute.dispute_id).unwrap();
         assert_eq!(resolved.outcome, Some(DisputeOutcome::Rejected));
+    }
+
+    #[test]
+    fn test_unresolved_dispute_holds_attestation_bond_out_of_scoreboard() {
+        let mut reg = make_registry();
+        let (verifier, attestation) = register_publish_default(&mut reg);
+
+        let initial_scoreboard = reg.build_scoreboard();
+        assert_eq!(initial_scoreboard.total_attestations, 1);
+        assert_eq!(initial_scoreboard.entries[0].attestation_count, 1);
+
+        file_default_dispute(&mut reg, &verifier.verifier_id, &attestation.attestation_id);
+
+        let held = reg.get_attestation(&attestation.attestation_id).unwrap();
+        assert_eq!(held.state, AttestationState::Disputed);
+        let disputed_scoreboard = reg.build_scoreboard();
+        assert_eq!(disputed_scoreboard.total_attestations, 0);
+        assert_eq!(disputed_scoreboard.entries[0].attestation_count, 0);
+    }
+
+    #[test]
+    fn test_rejected_dispute_releases_bond_by_republishing_attestation() {
+        let mut reg = make_registry();
+        let (verifier, attestation) = register_publish_default(&mut reg);
+        let dispute =
+            file_default_dispute(&mut reg, &verifier.verifier_id, &attestation.attestation_id);
+
+        reg.resolve_dispute(&dispute.dispute_id, DisputeOutcome::Rejected)
+            .unwrap();
+
+        let released = reg.get_attestation(&attestation.attestation_id).unwrap();
+        assert_eq!(released.state, AttestationState::Published);
+        assert!(released.immutable);
+        let scoreboard = reg.build_scoreboard();
+        assert_eq!(scoreboard.total_attestations, 1);
+        assert_eq!(scoreboard.entries[0].attestation_count, 1);
+    }
+
+    #[test]
+    fn test_inconclusive_dispute_releases_bond_without_slash() {
+        let mut reg = make_registry();
+        let (verifier, attestation) = register_publish_default(&mut reg);
+        let dispute =
+            file_default_dispute(&mut reg, &verifier.verifier_id, &attestation.attestation_id);
+
+        reg.resolve_dispute(&dispute.dispute_id, DisputeOutcome::Inconclusive)
+            .unwrap();
+
+        let released = reg.get_attestation(&attestation.attestation_id).unwrap();
+        assert_eq!(released.state, AttestationState::Published);
+        let resolved = reg.get_dispute(&dispute.dispute_id).unwrap();
+        assert_eq!(resolved.outcome, Some(DisputeOutcome::Inconclusive));
+    }
+
+    #[test]
+    fn test_upheld_dispute_slashes_by_rejecting_attestation() {
+        let mut reg = make_registry();
+        let (verifier, attestation) = register_publish_default(&mut reg);
+        let dispute =
+            file_default_dispute(&mut reg, &verifier.verifier_id, &attestation.attestation_id);
+
+        reg.resolve_dispute(&dispute.dispute_id, DisputeOutcome::Upheld)
+            .unwrap();
+
+        let slashed = reg.get_attestation(&attestation.attestation_id).unwrap();
+        assert_eq!(slashed.state, AttestationState::Rejected);
+        let scoreboard = reg.build_scoreboard();
+        assert_eq!(scoreboard.total_attestations, 0);
+        assert_eq!(scoreboard.entries[0].attestation_count, 0);
+    }
+
+    #[test]
+    fn test_resolve_dispute_is_single_assignment_for_slashing_determinism() {
+        let mut reg = make_registry();
+        let (verifier, attestation) = register_publish_default(&mut reg);
+        let dispute =
+            file_default_dispute(&mut reg, &verifier.verifier_id, &attestation.attestation_id);
+
+        reg.resolve_dispute(&dispute.dispute_id, DisputeOutcome::Rejected)
+            .unwrap();
+        let error = reg
+            .resolve_dispute(&dispute.dispute_id, DisputeOutcome::Upheld)
+            .unwrap_err();
+
+        assert_eq!(error.code, ERR_VEP_INCOMPLETE_PAYLOAD);
+        assert!(error.message.contains("already resolved"));
+        assert_eq!(
+            reg.get_dispute(&dispute.dispute_id).unwrap().outcome,
+            Some(DisputeOutcome::Rejected)
+        );
+        assert_eq!(
+            reg.get_attestation(&attestation.attestation_id)
+                .unwrap()
+                .state,
+            AttestationState::Published
+        );
+    }
+
+    #[test]
+    fn test_resolve_dispute_same_outcome_twice_is_rejected() {
+        let mut reg = make_registry();
+        let (verifier, attestation) = register_publish_default(&mut reg);
+        let dispute =
+            file_default_dispute(&mut reg, &verifier.verifier_id, &attestation.attestation_id);
+
+        reg.resolve_dispute(&dispute.dispute_id, DisputeOutcome::Rejected)
+            .unwrap();
+        let error = reg
+            .resolve_dispute(&dispute.dispute_id, DisputeOutcome::Rejected)
+            .unwrap_err();
+
+        assert_eq!(error.code, ERR_VEP_INCOMPLETE_PAYLOAD);
+        assert!(error.message.contains("already resolved"));
+        assert_eq!(
+            reg.get_dispute(&dispute.dispute_id).unwrap().outcome,
+            Some(DisputeOutcome::Rejected)
+        );
+        assert_eq!(
+            reg.get_attestation(&attestation.attestation_id)
+                .unwrap()
+                .state,
+            AttestationState::Published
+        );
+    }
+
+    #[test]
+    fn test_resolve_dispute_missing_attestation_does_not_settle_outcome() {
+        let mut reg = make_registry();
+        let (verifier, attestation) = register_publish_default(&mut reg);
+        let dispute =
+            file_default_dispute(&mut reg, &verifier.verifier_id, &attestation.attestation_id);
+        reg.attestations.remove(&attestation.attestation_id);
+
+        let error = reg
+            .resolve_dispute(&dispute.dispute_id, DisputeOutcome::Upheld)
+            .unwrap_err();
+
+        assert_eq!(error.code, ERR_VEP_INCOMPLETE_PAYLOAD);
+        assert!(error.message.contains("Attestation"));
+        let unresolved = reg.get_dispute(&dispute.dispute_id).unwrap();
+        assert_eq!(unresolved.outcome, None);
+        assert_eq!(unresolved.resolved_at, None);
+    }
+
+    #[test]
+    fn test_resolve_unknown_dispute_does_not_mutate_published_attestation() {
+        let mut reg = make_registry();
+        let (_verifier, attestation) = register_publish_default(&mut reg);
+        let events_before = reg.events().len();
+
+        let error = reg
+            .resolve_dispute("dsp-does-not-exist", DisputeOutcome::Upheld)
+            .unwrap_err();
+
+        assert_eq!(error.code, ERR_VEP_INCOMPLETE_PAYLOAD);
+        assert!(error.message.contains("not found"));
+        assert_eq!(
+            reg.get_attestation(&attestation.attestation_id)
+                .unwrap()
+                .state,
+            AttestationState::Published
+        );
+        assert_eq!(reg.events().len(), events_before);
+    }
+
+    #[test]
+    fn test_slashing_settlement_is_deterministic_across_registries() {
+        let settle = || {
+            let mut reg = make_registry();
+            let (verifier, attestation) = register_publish_default(&mut reg);
+            let dispute =
+                file_default_dispute(&mut reg, &verifier.verifier_id, &attestation.attestation_id);
+            reg.resolve_dispute(&dispute.dispute_id, DisputeOutcome::Upheld)
+                .unwrap();
+            (
+                reg.get_dispute(&dispute.dispute_id)
+                    .unwrap()
+                    .outcome
+                    .clone(),
+                reg.get_attestation(&attestation.attestation_id)
+                    .unwrap()
+                    .state
+                    .clone(),
+                reg.build_scoreboard().total_attestations,
+            )
+        };
+
+        assert_eq!(settle(), settle());
     }
 
     #[test]
@@ -2932,6 +3316,45 @@ mod tests {
         assert_eq!(scoreboard.total_attestations, 2);
         assert_eq!(scoreboard.total_verifiers, 1);
         assert_eq!(scoreboard.entries[0].verifier_id, verifier_one.verifier_id);
+    }
+
+    #[test]
+    fn test_scoreboard_aggregate_rewards_active_reputation_mean() {
+        let mut reg = make_registry();
+        let verifier_one = reg.register_verifier(make_registration()).unwrap();
+        let mut second_registration = make_registration();
+        second_registration.public_key =
+            hex::encode(test_signing_key(7).verifying_key().to_bytes());
+        second_registration.name = "Second Verifier".to_string();
+        let verifier_two = reg.register_verifier(second_registration).unwrap();
+
+        let high_reputation = ReputationDimensions {
+            consistency: 0.8,
+            coverage: 0.8,
+            accuracy: 0.8,
+            longevity: 0.8,
+        };
+        let low_reputation = ReputationDimensions {
+            consistency: 0.4,
+            coverage: 0.4,
+            accuracy: 0.4,
+            longevity: 0.4,
+        };
+        reg.update_reputation(&verifier_one.verifier_id, &high_reputation)
+            .unwrap();
+        reg.update_reputation(&verifier_two.verifier_id, &low_reputation)
+            .unwrap();
+
+        let aggregate = reg.build_scoreboard().aggregate_score;
+        assert!((aggregate - 60.0).abs() < f64::EPSILON);
+
+        reg.verifiers
+            .get_mut(&verifier_two.verifier_id)
+            .unwrap()
+            .active = false;
+        let active_only = reg.build_scoreboard();
+        assert_eq!(active_only.total_verifiers, 1);
+        assert!((active_only.aggregate_score - 80.0).abs() < f64::EPSILON);
     }
 
     // -- Anti-gaming tests ----------------------------------------------------
