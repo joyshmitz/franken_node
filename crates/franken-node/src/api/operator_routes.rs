@@ -735,4 +735,224 @@ mod tests {
             assert!(route.trace_propagation);
         }
     }
+
+    #[test]
+    fn non_health_operator_routes_do_not_allow_anonymous_access() {
+        for route in route_metadata()
+            .into_iter()
+            .filter(|route| route.path != "/v1/operator/health")
+        {
+            assert_ne!(
+                route.auth_method,
+                AuthMethod::None,
+                "{} must not bypass auth",
+                route.path
+            );
+            assert!(
+                !route.policy_hook.required_roles.is_empty(),
+                "{} must require at least one policy role",
+                route.path
+            );
+        }
+    }
+
+    #[test]
+    fn operator_route_metadata_rejects_duplicate_paths() {
+        let mut seen = std::collections::BTreeSet::new();
+        for route in route_metadata() {
+            assert!(
+                seen.insert(route.path.clone()),
+                "duplicate operator route path must be rejected in metadata: {}",
+                route.path
+            );
+        }
+    }
+
+    #[test]
+    fn future_process_start_offset_saturates_uptime_to_zero() {
+        let _lock = process_start_test_lock();
+        clear_process_start_override_for_tests();
+        let future_offset = now_epoch_nanos().saturating_add(60_000_000_000);
+        install_process_start(future_offset, "2099-01-01T00:00:00Z".to_string());
+
+        let status = get_status(&test_identity(), &test_trace()).expect("status");
+
+        assert_eq!(status.data.uptime_seconds, 0);
+    }
+
+    #[test]
+    fn config_view_clamps_oversized_fleet_timeout() {
+        let mut config = RuntimeConfig::default();
+        config.fleet.convergence_timeout_seconds = u64::MAX;
+
+        let view = ConfigView::from_runtime_config(&config);
+
+        assert_eq!(view.fleet_convergence_timeout_seconds, u32::MAX);
+    }
+
+    #[test]
+    fn component_status_deserialize_rejects_unknown_variant() {
+        let result: Result<ComponentStatus, _> = serde_json::from_str("\"Critical\"");
+
+        assert!(result.is_err(), "unknown health status must fail closed");
+    }
+
+    #[test]
+    fn config_view_deserialize_rejects_timeout_overflow() {
+        let raw = serde_json::json!({
+            "profile": "balanced",
+            "compatibility_mode": "balanced",
+            "trust_revocation_fresh": true,
+            "quarantine_on_high_risk": true,
+            "replay_persist_high_severity": true,
+            "fleet_convergence_timeout_seconds": 4_294_967_296_u64,
+            "observability_namespace": "franken_node"
+        });
+
+        let result: Result<ConfigView, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "u32 timeout overflow must not deserialize");
+    }
+
+    #[test]
+    fn rollout_state_deserialize_rejects_canary_overflow() {
+        let raw = serde_json::json!({
+            "current_phase": "canary",
+            "target_version": "1.2.3",
+            "canary_percentage": 256_u16,
+            "healthy_nodes": 1_u32,
+            "total_nodes": 1_u32,
+            "last_transition": "2026-03-20T12:34:56Z"
+        });
+
+        let result: Result<RolloutState, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "u8 canary overflow must not deserialize");
+    }
+
+    #[test]
+    fn node_status_deserialize_rejects_missing_node_id() {
+        let raw = serde_json::json!({
+            "version": "1.2.3",
+            "uptime_seconds": 10_u64,
+            "policy_profile": "balanced",
+            "active_extensions": 0_u32,
+            "quarantined_extensions": 0_u32,
+            "control_epoch": 1_u64
+        });
+
+        let result: Result<NodeStatus, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "node_id is required in status payloads");
+    }
+
+    #[test]
+    fn node_status_deserialize_rejects_string_uptime() {
+        let raw = serde_json::json!({
+            "node_id": "node-1",
+            "version": "1.2.3",
+            "uptime_seconds": "10",
+            "policy_profile": "balanced",
+            "active_extensions": 0_u32,
+            "quarantined_extensions": 0_u32,
+            "control_epoch": 1_u64
+        });
+
+        let result: Result<NodeStatus, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "uptime_seconds must remain numeric");
+    }
+
+    #[test]
+    fn node_status_deserialize_rejects_active_extension_overflow() {
+        let raw = serde_json::json!({
+            "node_id": "node-1",
+            "version": "1.2.3",
+            "uptime_seconds": 10_u64,
+            "policy_profile": "balanced",
+            "active_extensions": 4_294_967_296_u64,
+            "quarantined_extensions": 0_u32,
+            "control_epoch": 1_u64
+        });
+
+        let result: Result<NodeStatus, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "active_extensions must fit in u32");
+    }
+
+    #[test]
+    fn health_check_deserialize_rejects_missing_checks() {
+        let raw = serde_json::json!({
+            "live": true,
+            "ready": true
+        });
+
+        let result: Result<HealthCheck, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "health checks list is required");
+    }
+
+    #[test]
+    fn health_component_deserialize_rejects_lowercase_status() {
+        let raw = serde_json::json!({
+            "name": "policy_engine",
+            "status": "ok",
+            "detail": null
+        });
+
+        let result: Result<HealthComponent, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "status variants must use canonical casing");
+    }
+
+    #[test]
+    fn config_view_deserialize_rejects_string_boolean() {
+        let raw = serde_json::json!({
+            "profile": "balanced",
+            "compatibility_mode": "balanced",
+            "trust_revocation_fresh": "true",
+            "quarantine_on_high_risk": true,
+            "replay_persist_high_severity": true,
+            "fleet_convergence_timeout_seconds": 120_u32,
+            "observability_namespace": "franken_node"
+        });
+
+        let result: Result<ConfigView, _> = serde_json::from_value(raw);
+
+        assert!(
+            result.is_err(),
+            "boolean config fields must not accept strings"
+        );
+    }
+
+    #[test]
+    fn rollout_state_deserialize_rejects_missing_last_transition() {
+        let raw = serde_json::json!({
+            "current_phase": "stable",
+            "target_version": "1.2.3",
+            "canary_percentage": 0_u8,
+            "healthy_nodes": 1_u32,
+            "total_nodes": 1_u32
+        });
+
+        let result: Result<RolloutState, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "last_transition is required");
+    }
+
+    #[test]
+    fn rollout_state_deserialize_rejects_string_total_nodes() {
+        let raw = serde_json::json!({
+            "current_phase": "stable",
+            "target_version": "1.2.3",
+            "canary_percentage": 0_u8,
+            "healthy_nodes": 1_u32,
+            "total_nodes": "1",
+            "last_transition": "2026-03-20T12:34:56Z"
+        });
+
+        let result: Result<RolloutState, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "total_nodes must remain numeric");
+    }
 }

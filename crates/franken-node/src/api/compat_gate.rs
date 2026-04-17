@@ -541,7 +541,7 @@ impl CompatGateService {
         } else {
             let is_escalation = current_mode.is_escalation(request.to_mode);
             let approved = if is_escalation {
-                !request.justification.is_empty()
+                !request.justification.trim().is_empty()
             } else {
                 true
             };
@@ -739,9 +739,13 @@ impl Default for CompatGateService {
 }
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
-        items.drain(0..overflow);
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow.min(items.len()));
     }
     items.push(item);
 }
@@ -1452,5 +1456,474 @@ mod tests {
         let a = serde_json::to_string(&build().to_report()).unwrap();
         let b = serde_json::to_string(&build().to_report()).unwrap();
         assert_eq!(a, b, "report must be deterministic");
+    }
+
+    #[test]
+    fn denied_escalation_without_justification_preserves_scope_and_approval_events() {
+        let mut svc = make_service_with_scope();
+
+        let resp = svc
+            .request_transition(&ModeTransitionRequest {
+                scope_id: "project-1".into(),
+                from_mode: CompatMode::Balanced,
+                to_mode: CompatMode::LegacyRisky,
+                justification: String::new(),
+                requestor: "admin".into(),
+            })
+            .unwrap();
+
+        assert!(!resp.approved);
+        assert_eq!(
+            svc.query_mode("project-1").unwrap().mode,
+            CompatMode::Balanced
+        );
+        assert!(
+            !svc.events()
+                .iter()
+                .any(|event| event.code == PCG_003_TRANSITION_APPROVED)
+        );
+        assert_eq!(svc.receipts().len(), 1);
+    }
+
+    #[test]
+    fn wrong_from_mode_preserves_scope_and_does_not_emit_approval_event() {
+        let mut svc = make_service_with_scope();
+
+        let resp = svc
+            .request_transition(&ModeTransitionRequest {
+                scope_id: "project-1".into(),
+                from_mode: CompatMode::Strict,
+                to_mode: CompatMode::LegacyRisky,
+                justification: "stale caller state".into(),
+                requestor: "admin".into(),
+            })
+            .unwrap();
+
+        assert!(!resp.approved);
+        assert_eq!(
+            svc.query_mode("project-1").unwrap().mode,
+            CompatMode::Balanced
+        );
+        assert!(
+            !svc.events()
+                .iter()
+                .any(|event| event.code == PCG_003_TRANSITION_APPROVED)
+        );
+        assert!(
+            resp.rationale
+                .contains("does not match actual current mode")
+        );
+    }
+
+    #[test]
+    fn unknown_scope_gate_check_defaults_to_strict_and_denies_escalation() {
+        let mut svc = CompatGateService::new();
+
+        let resp = svc
+            .gate_check(&GateCheckRequest {
+                package_id: "pkg-unknown".into(),
+                requested_mode: CompatMode::Balanced,
+                scope: "unknown-scope".into(),
+                policy_context: None,
+            })
+            .unwrap();
+
+        assert_eq!(resp.decision, GateDecision::Deny);
+        assert!(resp.rationale.contains("requested balanced exceeds"));
+        assert!(svc.query_mode("unknown-scope").is_none());
+        assert!(
+            svc.events()
+                .iter()
+                .any(|event| event.code == PCG_002_GATE_FAILED)
+        );
+        assert_eq!(svc.receipts()[0].severity, CompatMode::Strict.risk_level());
+    }
+
+    #[test]
+    fn receipt_query_filters_are_exact_and_case_sensitive() {
+        let mut svc = make_service_with_scope();
+        svc.issue_divergence_receipt("scope-a", "medium").unwrap();
+        svc.issue_divergence_receipt("scope-ab", "medium").unwrap();
+
+        assert_eq!(svc.query_receipts(Some("scope-a"), Some("medium")).len(), 1);
+        assert!(
+            svc.query_receipts(Some("Scope-A"), Some("medium"))
+                .is_empty()
+        );
+        assert!(svc.query_receipts(Some("scope"), Some("medium")).is_empty());
+        assert!(svc.query_receipts(Some("scope-a"), Some("high")).is_empty());
+    }
+
+    #[test]
+    fn shim_query_filter_does_not_match_case_or_substrings() {
+        let svc = make_service_with_scope();
+
+        assert!(svc.query_shims(Some("Project-1")).is_empty());
+        assert!(svc.query_shims(Some("project")).is_empty());
+        assert!(svc.query_shims(Some("project-10")).is_empty());
+    }
+
+    #[test]
+    fn shim_capacity_error_does_not_emit_events_or_receipts() {
+        let mut svc = CompatGateService::new();
+        for idx in 0..MAX_SHIMS {
+            svc.register_shim(make_shim(format!("shim-{idx}")))
+                .expect("shim fill should succeed");
+        }
+
+        let err = svc
+            .register_shim(make_shim("overflow"))
+            .expect_err("overflow shim must fail closed");
+
+        assert_eq!(err.code(), error_codes::ERR_COMPAT_SHIM_CAPACITY);
+        assert!(svc.events().is_empty());
+        assert!(svc.receipts().is_empty());
+        assert_eq!(svc.shims.len(), MAX_SHIMS);
+    }
+
+    #[test]
+    fn predicate_capacity_error_does_not_replace_query_mode_predicate() {
+        let mut svc = CompatGateService::new();
+        svc.set_scope_mode("project-1", CompatMode::Balanced);
+        for idx in 0..MAX_PREDICATES {
+            svc.register_predicate(make_predicate(format!("predicate-{idx}")))
+                .expect("predicate fill should succeed");
+        }
+
+        let err = svc
+            .register_predicate(make_predicate("predicate-overflow"))
+            .expect_err("overflow predicate must fail closed");
+        let exposed = svc
+            .query_mode("project-1")
+            .expect("scope mode should exist")
+            .policy_predicate
+            .expect("first predicate should still be exposed");
+
+        assert_eq!(err.code(), error_codes::ERR_COMPAT_PREDICATE_CAPACITY);
+        assert_eq!(exposed.predicate_id, "predicate-0");
+        assert!(
+            !svc.predicates
+                .iter()
+                .any(|predicate| predicate.predicate_id == "predicate-overflow")
+        );
+    }
+
+    #[test]
+    fn exhausted_trace_id_after_prior_gate_check_preserves_existing_state() {
+        let mut svc = make_service_with_scope();
+        svc.gate_check(&GateCheckRequest {
+            package_id: "seed".into(),
+            requested_mode: CompatMode::Strict,
+            scope: "project-1".into(),
+            policy_context: None,
+        })
+        .unwrap();
+        let events_before = svc.events().len();
+        let receipts_before = svc.receipts().len();
+        svc.trace_counter = u64::MAX;
+        svc.trace_epoch = u64::MAX;
+
+        let err = svc
+            .gate_check(&GateCheckRequest {
+                package_id: "blocked".into(),
+                requested_mode: CompatMode::Strict,
+                scope: "project-1".into(),
+                policy_context: None,
+            })
+            .expect_err("trace exhaustion must fail closed");
+
+        assert_eq!(err, CompatGateOperationError::TraceIdSpaceExhausted);
+        assert_eq!(svc.events().len(), events_before);
+        assert_eq!(svc.receipts().len(), receipts_before);
+        assert_eq!(svc.query_receipts(Some("project-1"), None).len(), 1);
+    }
+
+    #[test]
+    fn receipt_exhaustion_on_transition_preserves_scope_and_existing_events() {
+        let mut svc = make_service_with_scope();
+        svc.gate_check(&GateCheckRequest {
+            package_id: "seed".into(),
+            requested_mode: CompatMode::Strict,
+            scope: "project-1".into(),
+            policy_context: None,
+        })
+        .unwrap();
+        let events_before = svc.events().len();
+        let receipts_before = svc.receipts().len();
+        svc.receipt_counter = u64::MAX;
+        svc.receipt_epoch = u64::MAX;
+
+        let err = svc
+            .request_transition(&ModeTransitionRequest {
+                scope_id: "project-1".into(),
+                from_mode: CompatMode::Balanced,
+                to_mode: CompatMode::Strict,
+                justification: String::new(),
+                requestor: "admin".into(),
+            })
+            .expect_err("receipt exhaustion must fail closed");
+
+        assert_eq!(err, CompatGateOperationError::ReceiptIdSpaceExhausted);
+        assert_eq!(
+            svc.query_mode("project-1").unwrap().mode,
+            CompatMode::Balanced
+        );
+        assert_eq!(svc.events().len(), events_before);
+        assert_eq!(svc.receipts().len(), receipts_before);
+    }
+}
+
+#[cfg(test)]
+mod compat_gate_additional_negative_tests {
+    use super::*;
+
+    fn service_with_balanced_scope() -> CompatGateService {
+        let mut svc = CompatGateService::new();
+        svc.set_scope_mode("project-extra", CompatMode::Balanced);
+        svc
+    }
+
+    fn escalation_request(justification: impl Into<String>) -> ModeTransitionRequest {
+        ModeTransitionRequest {
+            scope_id: "project-extra".to_string(),
+            from_mode: CompatMode::Balanced,
+            to_mode: CompatMode::LegacyRisky,
+            justification: justification.into(),
+            requestor: "operator-extra".to_string(),
+        }
+    }
+
+    #[test]
+    fn whitespace_justification_does_not_approve_escalation() {
+        let mut svc = service_with_balanced_scope();
+
+        let response = svc
+            .request_transition(&escalation_request(" \t\n "))
+            .expect("transition should return denial response");
+
+        assert!(!response.approved);
+        assert!(response.rationale.contains("justification required"));
+    }
+
+    #[test]
+    fn denied_whitespace_escalation_preserves_current_mode() {
+        let mut svc = service_with_balanced_scope();
+
+        let response = svc
+            .request_transition(&escalation_request("   "))
+            .expect("transition should return denial response");
+
+        assert!(!response.approved);
+        assert_eq!(
+            svc.query_mode("project-extra").expect("scope exists").mode,
+            CompatMode::Balanced
+        );
+    }
+
+    #[test]
+    fn denied_whitespace_escalation_emits_no_approval_event() {
+        let mut svc = service_with_balanced_scope();
+
+        svc.request_transition(&escalation_request("\n"))
+            .expect("transition should return denial response");
+
+        assert!(
+            !svc.events()
+                .iter()
+                .any(|event| event.code == event_codes::PCG_003_TRANSITION_APPROVED)
+        );
+    }
+
+    #[test]
+    fn denied_whitespace_escalation_still_records_denial_receipt() {
+        let mut svc = service_with_balanced_scope();
+
+        let response = svc
+            .request_transition(&escalation_request("\t"))
+            .expect("transition should return denial response");
+
+        assert_eq!(svc.receipts().len(), 1);
+        assert_eq!(svc.receipts()[0].receipt_id, response.receipt_id);
+        assert_eq!(svc.receipts()[0].receipt_type, "mode_transition");
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_without_retaining_new_item() {
+        let mut values = vec![1, 2, 3];
+
+        push_bounded(&mut values, 4, 0);
+
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn gate_pass_fails_after_events_are_drained_even_with_receipts() {
+        let mut svc = service_with_balanced_scope();
+        svc.gate_check(&GateCheckRequest {
+            package_id: "pkg-extra".to_string(),
+            requested_mode: CompatMode::Strict,
+            scope: "project-extra".to_string(),
+            policy_context: None,
+        })
+        .expect("fixture gate check should complete");
+
+        let drained = svc.take_events();
+
+        assert!(!drained.is_empty());
+        assert!(!svc.receipts().is_empty());
+        assert!(!svc.gate_pass());
+    }
+
+    #[test]
+    fn blank_receipt_filters_do_not_act_as_wildcards() {
+        let mut svc = service_with_balanced_scope();
+        svc.issue_divergence_receipt("project-extra", "medium")
+            .expect("fixture receipt should issue");
+
+        assert!(svc.query_receipts(Some(""), None).is_empty());
+        assert!(svc.query_receipts(None, Some("")).is_empty());
+    }
+
+    #[test]
+    fn same_scope_non_interference_check_is_negative() {
+        let mut svc = CompatGateService::new();
+        svc.set_scope_mode("shared-scope", CompatMode::Strict);
+
+        assert!(!svc.check_non_interference("shared-scope", "shared-scope"));
+    }
+
+    #[test]
+    fn blank_scope_gate_check_defaults_to_strict_and_does_not_register_scope() {
+        let mut svc = CompatGateService::new();
+
+        let response = svc
+            .gate_check(&GateCheckRequest {
+                package_id: "pkg-blank-scope".to_string(),
+                requested_mode: CompatMode::Balanced,
+                scope: String::new(),
+                policy_context: None,
+            })
+            .expect("blank scope gate check should still produce denial response");
+
+        assert_eq!(response.decision, GateDecision::Deny);
+        assert!(svc.query_mode("").is_none());
+        assert_eq!(svc.receipts().len(), 1);
+        assert_eq!(svc.receipts()[0].scope, "");
+        assert_eq!(svc.receipts()[0].severity, CompatMode::Strict.risk_level());
+    }
+
+    #[test]
+    fn divergence_receipt_trace_exhaustion_preserves_state() {
+        let mut svc = service_with_balanced_scope();
+        svc.issue_divergence_receipt("project-extra", "medium")
+            .expect("seed receipt should issue");
+        let events_before = svc.events().len();
+        let receipts_before = svc.receipts().len();
+        svc.trace_counter = u64::MAX;
+        svc.trace_epoch = u64::MAX;
+
+        let err = svc
+            .issue_divergence_receipt("project-extra", "high")
+            .expect_err("trace exhaustion must fail closed");
+
+        assert_eq!(err, CompatGateOperationError::TraceIdSpaceExhausted);
+        assert_eq!(svc.events().len(), events_before);
+        assert_eq!(svc.receipts().len(), receipts_before);
+        assert!(
+            !svc.receipts()
+                .iter()
+                .any(|receipt| receipt.severity == "high")
+        );
+    }
+
+    #[test]
+    fn divergence_receipt_receipt_exhaustion_preserves_state() {
+        let mut svc = service_with_balanced_scope();
+        svc.issue_divergence_receipt("project-extra", "medium")
+            .expect("seed receipt should issue");
+        let events_before = svc.events().len();
+        let receipts_before = svc.receipts().len();
+        svc.receipt_counter = u64::MAX;
+        svc.receipt_epoch = u64::MAX;
+
+        let err = svc
+            .issue_divergence_receipt("project-extra", "critical")
+            .expect_err("receipt exhaustion must fail closed");
+
+        assert_eq!(err, CompatGateOperationError::ReceiptIdSpaceExhausted);
+        assert_eq!(svc.events().len(), events_before);
+        assert_eq!(svc.receipts().len(), receipts_before);
+        assert!(
+            !svc.receipts()
+                .iter()
+                .any(|receipt| receipt.severity == "critical")
+        );
+    }
+
+    #[test]
+    fn take_events_second_call_is_empty_and_receipts_remain() {
+        let mut svc = service_with_balanced_scope();
+        svc.gate_check(&GateCheckRequest {
+            package_id: "pkg-drain".to_string(),
+            requested_mode: CompatMode::Strict,
+            scope: "project-extra".to_string(),
+            policy_context: None,
+        })
+        .expect("fixture gate check should complete");
+        let receipts_before = svc.receipts().len();
+
+        let first = svc.take_events();
+        let second = svc.take_events();
+
+        assert!(!first.is_empty());
+        assert!(second.is_empty());
+        assert_eq!(svc.receipts().len(), receipts_before);
+    }
+
+    #[test]
+    fn report_after_event_drain_marks_visible_invariant_false() {
+        let mut svc = service_with_balanced_scope();
+        svc.gate_check(&GateCheckRequest {
+            package_id: "pkg-report-drain".to_string(),
+            requested_mode: CompatMode::Strict,
+            scope: "project-extra".to_string(),
+            policy_context: None,
+        })
+        .expect("fixture gate check should complete");
+        let _ = svc.take_events();
+
+        let report = svc.to_report();
+
+        assert_eq!(report["gate_verdict"].as_str(), Some("FAIL"));
+        assert_eq!(report["invariants"][INV_PCG_VISIBLE].as_bool(), Some(false));
+        assert_eq!(report["invariants"][INV_PCG_RECEIPT].as_bool(), Some(true));
+    }
+
+    #[test]
+    fn security_weakening_shim_marks_monotonicity_false_in_report() {
+        let mut svc = service_with_balanced_scope();
+        let mut shim = ShimMetadata {
+            shim_id: "weakening-extra".to_string(),
+            description: "negative monotonicity fixture".to_string(),
+            risk_category: "security_weakening".to_string(),
+            activation_policy: "manual".to_string(),
+            divergence_rationale: "test fixture".to_string(),
+            scope: "project-extra".to_string(),
+        };
+        svc.register_shim(shim.clone())
+            .expect("weakening shim should register for report fixture");
+        shim.shim_id = "safe-extra".to_string();
+        shim.risk_category = "compatibility".to_string();
+        svc.register_shim(shim)
+            .expect("safe shim should register for report fixture");
+
+        let report = svc.to_report();
+
+        assert!(!svc.check_monotonicity());
+        assert_eq!(report["summary"]["total_shims"].as_u64(), Some(2));
+        assert_eq!(
+            report["summary"]["monotonicity_holds"].as_bool(),
+            Some(false)
+        );
     }
 }

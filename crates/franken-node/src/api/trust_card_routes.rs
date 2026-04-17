@@ -260,6 +260,19 @@ mod tests {
         }
     }
 
+    fn empty_mutation() -> TrustCardMutation {
+        TrustCardMutation {
+            certification_level: None,
+            revocation_status: None,
+            active_quarantine: None,
+            reputation_score_basis_points: None,
+            reputation_trend: None,
+            user_facing_risk_assessment: None,
+            last_verified_timestamp: None,
+            evidence_refs: None,
+        }
+    }
+
     #[test]
     fn get_card_returns_data() {
         let mut registry = fixture_registry(1_000).expect("fixture registry");
@@ -531,5 +544,489 @@ mod tests {
         .expect("version diff");
         assert!(version_diff.ok);
         assert!(!version_diff.data.changes.is_empty());
+    }
+
+    #[test]
+    fn create_route_rejects_missing_evidence_refs() {
+        let mut registry = TrustCardRegistry::default();
+        let mut input = sample_input("npm:@unit/no-evidence");
+        input.evidence_refs.clear();
+
+        let err = create_trust_card(&mut registry, input, 2_000, "trace-no-evidence")
+            .expect_err("create without evidence must fail closed");
+
+        assert!(matches!(err, TrustCardError::EvidenceMissing));
+        assert!(
+            get_trust_card(&mut registry, "npm:@unit/no-evidence", 2_001, "trace-read")
+                .expect("read after rejected create")
+                .data
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn update_route_rejects_missing_extension() {
+        let mut registry = TrustCardRegistry::default();
+
+        let err = update_trust_card(
+            &mut registry,
+            "npm:@unit/missing",
+            empty_mutation(),
+            2_000,
+            "trace-missing-update",
+        )
+        .expect_err("missing extension update must fail");
+
+        assert!(matches!(err, TrustCardError::NotFound(id) if id == "npm:@unit/missing"));
+    }
+
+    #[test]
+    fn update_route_rejects_certification_upgrade_without_evidence() {
+        let mut registry = TrustCardRegistry::default();
+        create_trust_card(
+            &mut registry,
+            sample_input("npm:@unit/upgrade-without-evidence"),
+            2_000,
+            "trace-create-upgrade",
+        )
+        .expect("create");
+        let mut mutation = empty_mutation();
+        mutation.certification_level = Some(CertificationLevel::Gold);
+
+        let err = update_trust_card(
+            &mut registry,
+            "npm:@unit/upgrade-without-evidence",
+            mutation,
+            2_001,
+            "trace-upgrade-denied",
+        )
+        .expect_err("upgrade without evidence must fail");
+
+        assert!(matches!(err, TrustCardError::EvidenceRequiredForUpgrade));
+    }
+
+    #[test]
+    fn update_route_rejects_empty_evidence_refs_on_mutation() {
+        let mut registry = TrustCardRegistry::default();
+        create_trust_card(
+            &mut registry,
+            sample_input("npm:@unit/empty-evidence-update"),
+            2_000,
+            "trace-create-empty-evidence",
+        )
+        .expect("create");
+        let mut mutation = empty_mutation();
+        mutation.evidence_refs = Some(Vec::new());
+
+        let err = update_trust_card(
+            &mut registry,
+            "npm:@unit/empty-evidence-update",
+            mutation,
+            2_001,
+            "trace-empty-evidence-update",
+        )
+        .expect_err("empty mutation evidence must fail");
+
+        assert!(matches!(err, TrustCardError::EvidenceMissing));
+    }
+
+    #[test]
+    fn update_route_rejects_revocation_reactivation() {
+        let mut registry = TrustCardRegistry::default();
+        create_trust_card(
+            &mut registry,
+            sample_input("npm:@unit/revoked-route"),
+            2_000,
+            "trace-create-revoked",
+        )
+        .expect("create");
+        let mut revoke = empty_mutation();
+        revoke.revocation_status = Some(RevocationStatus::Revoked {
+            reason: "malicious behavior".to_string(),
+            revoked_at: "2026-02-20T02:00:00Z".to_string(),
+        });
+        update_trust_card(
+            &mut registry,
+            "npm:@unit/revoked-route",
+            revoke,
+            2_001,
+            "trace-revoke",
+        )
+        .expect("revoke");
+
+        let mut reactivate = empty_mutation();
+        reactivate.revocation_status = Some(RevocationStatus::Active);
+        let err = update_trust_card(
+            &mut registry,
+            "npm:@unit/revoked-route",
+            reactivate,
+            2_002,
+            "trace-reactivate-denied",
+        )
+        .expect_err("revocation must be irreversible");
+
+        assert!(matches!(err, TrustCardError::RevocationIrreversible));
+    }
+
+    #[test]
+    fn compare_route_rejects_missing_left_extension() {
+        let mut registry = fixture_registry(1_000).expect("fixture registry");
+
+        let err = compare_trust_cards(
+            &mut registry,
+            "npm:@missing/left",
+            "npm:@acme/auth-guard",
+            1_010,
+            "trace-missing-left",
+        )
+        .expect_err("missing left side must fail");
+
+        assert!(matches!(err, TrustCardError::NotFound(id) if id == "npm:@missing/left"));
+    }
+
+    #[test]
+    fn compare_versions_route_rejects_missing_version() {
+        let mut registry = fixture_registry(1_000).expect("fixture registry");
+
+        let err = compare_trust_card_versions(
+            &mut registry,
+            "npm:@beta/telemetry-bridge",
+            1,
+            99,
+            1_010,
+            "trace-missing-version",
+        )
+        .expect_err("missing version must fail");
+
+        assert!(matches!(
+            err,
+            TrustCardError::VersionNotFound {
+                extension_id,
+                version: 99
+            } if extension_id == "npm:@beta/telemetry-bridge"
+        ));
+    }
+
+    #[test]
+    fn search_route_rejects_zero_page() {
+        let mut registry = fixture_registry(1_000).expect("fixture registry");
+
+        let err = search_trust_cards(
+            &mut registry,
+            "npm",
+            1_001,
+            "trace-zero-page-search",
+            Pagination {
+                page: 0,
+                per_page: 10,
+            },
+        )
+        .expect_err("zero page must fail");
+
+        assert!(matches!(
+            err,
+            TrustCardError::InvalidPagination {
+                page: 0,
+                per_page: 10
+            }
+        ));
+    }
+
+    #[test]
+    fn publisher_route_rejects_zero_page() {
+        let mut registry = fixture_registry(1_000).expect("fixture registry");
+
+        let err = get_trust_cards_by_publisher(
+            &mut registry,
+            "pub-acme",
+            1_001,
+            "trace-zero-page-publisher",
+            Pagination {
+                page: 0,
+                per_page: 10,
+            },
+        )
+        .expect_err("zero page must fail");
+
+        assert!(matches!(
+            err,
+            TrustCardError::InvalidPagination {
+                page: 0,
+                per_page: 10
+            }
+        ));
+    }
+
+    #[test]
+    fn list_route_rejects_zero_page() {
+        let mut registry = fixture_registry(1_000).expect("fixture registry");
+
+        let err = list_trust_cards(
+            &mut registry,
+            &TrustCardListFilter::empty(),
+            1_001,
+            "trace-zero-page-list",
+            Pagination {
+                page: 0,
+                per_page: 10,
+            },
+        )
+        .expect_err("zero page must fail");
+
+        assert!(matches!(
+            err,
+            TrustCardError::InvalidPagination {
+                page: 0,
+                per_page: 10
+            }
+        ));
+    }
+
+    #[test]
+    fn search_route_rejects_zero_per_page() {
+        let mut registry = fixture_registry(1_000).expect("fixture registry");
+
+        let err = search_trust_cards(
+            &mut registry,
+            "npm",
+            1_001,
+            "trace-zero-per-page-search",
+            Pagination {
+                page: 1,
+                per_page: 0,
+            },
+        )
+        .expect_err("zero per_page must fail");
+
+        assert!(matches!(
+            err,
+            TrustCardError::InvalidPagination {
+                page: 1,
+                per_page: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn publisher_route_rejects_zero_per_page() {
+        let mut registry = fixture_registry(1_000).expect("fixture registry");
+
+        let err = get_trust_cards_by_publisher(
+            &mut registry,
+            "pub-acme",
+            1_001,
+            "trace-zero-per-page-publisher",
+            Pagination {
+                page: 1,
+                per_page: 0,
+            },
+        )
+        .expect_err("zero per_page must fail");
+
+        assert!(matches!(
+            err,
+            TrustCardError::InvalidPagination {
+                page: 1,
+                per_page: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn compare_route_rejects_missing_right_extension() {
+        let mut registry = fixture_registry(1_000).expect("fixture registry");
+
+        let err = compare_trust_cards(
+            &mut registry,
+            "npm:@acme/auth-guard",
+            "npm:@missing/right",
+            1_010,
+            "trace-missing-right",
+        )
+        .expect_err("missing right side must fail");
+
+        assert!(matches!(err, TrustCardError::NotFound(id) if id == "npm:@missing/right"));
+    }
+
+    #[test]
+    fn compare_versions_route_rejects_missing_extension() {
+        let mut registry = fixture_registry(1_000).expect("fixture registry");
+
+        let err = compare_trust_card_versions(
+            &mut registry,
+            "npm:@missing/versions",
+            1,
+            2,
+            1_010,
+            "trace-missing-extension-versions",
+        )
+        .expect_err("missing extension version comparison must fail");
+
+        assert!(matches!(err, TrustCardError::NotFound(id) if id == "npm:@missing/versions"));
+    }
+
+    #[test]
+    fn compare_versions_route_rejects_missing_left_version() {
+        let mut registry = fixture_registry(1_000).expect("fixture registry");
+
+        let err = compare_trust_card_versions(
+            &mut registry,
+            "npm:@beta/telemetry-bridge",
+            99,
+            2,
+            1_010,
+            "trace-missing-left-version",
+        )
+        .expect_err("missing left version must fail");
+
+        assert!(matches!(
+            err,
+            TrustCardError::VersionNotFound {
+                extension_id,
+                version: 99
+            } if extension_id == "npm:@beta/telemetry-bridge"
+        ));
+    }
+
+    #[test]
+    fn update_route_rejects_gold_upgrade_with_empty_evidence_refs() {
+        let mut registry = TrustCardRegistry::default();
+        create_trust_card(
+            &mut registry,
+            sample_input("npm:@unit/upgrade-empty-evidence"),
+            2_000,
+            "trace-create-upgrade-empty",
+        )
+        .expect("create");
+        let mut mutation = empty_mutation();
+        mutation.certification_level = Some(CertificationLevel::Gold);
+        mutation.evidence_refs = Some(Vec::new());
+
+        let err = update_trust_card(
+            &mut registry,
+            "npm:@unit/upgrade-empty-evidence",
+            mutation,
+            2_001,
+            "trace-upgrade-empty-evidence",
+        )
+        .expect_err("empty evidence refs must fail before upgrade");
+
+        assert!(matches!(err, TrustCardError::EvidenceMissing));
+    }
+
+    #[test]
+    fn create_route_rejects_empty_evidence_refs_even_with_high_reputation() {
+        let mut registry = TrustCardRegistry::default();
+        let mut input = sample_input("npm:@unit/high-rep-no-evidence");
+        input.reputation_score_basis_points = 999;
+        input.evidence_refs = Vec::new();
+
+        let err = create_trust_card(&mut registry, input, 2_000, "trace-high-rep-no-evidence")
+            .expect_err("high reputation cannot replace evidence refs");
+
+        assert!(matches!(err, TrustCardError::EvidenceMissing));
+        assert!(
+            get_trust_card(
+                &mut registry,
+                "npm:@unit/high-rep-no-evidence",
+                2_001,
+                "trace-read-high-rep-no-evidence"
+            )
+            .expect("read rejected card")
+            .data
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn pagination_deserialize_rejects_missing_page() {
+        let value = serde_json::json!({
+            "per_page": 20
+        });
+
+        let result = serde_json::from_value::<Pagination>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn pagination_deserialize_rejects_negative_page() {
+        let value = serde_json::json!({
+            "page": -1,
+            "per_page": 20
+        });
+
+        let result = serde_json::from_value::<Pagination>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn pagination_deserialize_rejects_string_per_page() {
+        let value = serde_json::json!({
+            "page": 1,
+            "per_page": "20"
+        });
+
+        let result = serde_json::from_value::<Pagination>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn page_meta_deserialize_rejects_missing_total_pages() {
+        let value = serde_json::json!({
+            "page": 1,
+            "per_page": 20,
+            "total_items": 40
+        });
+
+        let result = serde_json::from_value::<PageMeta>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn page_meta_deserialize_rejects_negative_total_items() {
+        let value = serde_json::json!({
+            "page": 1,
+            "per_page": 20,
+            "total_items": -1,
+            "total_pages": 1
+        });
+
+        let result = serde_json::from_value::<PageMeta>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn api_response_deserialize_rejects_missing_ok() {
+        let value = serde_json::json!({
+            "data": [],
+            "page": null
+        });
+
+        let result = serde_json::from_value::<ApiResponse<Vec<String>>>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn api_response_deserialize_rejects_malformed_page_meta() {
+        let value = serde_json::json!({
+            "ok": true,
+            "data": [],
+            "page": {
+                "page": 1,
+                "per_page": "twenty",
+                "total_items": 0,
+                "total_pages": 0
+            }
+        });
+
+        let result = serde_json::from_value::<ApiResponse<Vec<String>>>(value);
+
+        assert!(result.is_err());
     }
 }

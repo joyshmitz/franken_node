@@ -33,11 +33,16 @@ const MAX_SAMPLES: usize = 4096;
 
 #[cfg(any(test, feature = "extended-surfaces"))]
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
-        items.drain(0..overflow);
+    if cap == 0 {
+        items.clear();
+        return;
     }
-    items.push(item);
+    if items.len() >= cap {
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        let drain_until = overflow.min(items.len());
+        items.drain(0..drain_until);
+    }
+    items.extend(std::iter::once(item));
 }
 
 // ── Trace Context ──────────────────────────────────────────────────────────
@@ -404,8 +409,11 @@ impl RateLimiter {
         let elapsed = now.saturating_duration_since(self.last_check).as_secs_f64();
         self.last_check = now;
 
-        // Refill tokens
-        self.tokens += elapsed * f64::from(self.config.sustained_rps);
+        // Refill tokens with overflow protection
+        let refill_amount = elapsed * f64::from(self.config.sustained_rps);
+        if refill_amount.is_finite() && refill_amount >= 0.0 {
+            self.tokens += refill_amount;
+        }
         if !self.tokens.is_finite() {
             self.tokens = 0.0; // fail-closed: deny until next refill
         }
@@ -619,6 +627,11 @@ fn build_request_log(
     principal: &str,
 ) -> RequestLog {
     let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let latency_ms = if latency_ms.is_finite() {
+        latency_ms
+    } else {
+        0.0
+    };
     let event_code = if status < 400 {
         event_codes::RESPONSE_SENT
     } else if status == 401 {
@@ -675,7 +688,9 @@ pub struct LatencyMetrics {
 #[cfg(any(test, feature = "extended-surfaces"))]
 impl LatencyMetrics {
     pub fn record(&mut self, latency_ms: f64) {
-        push_bounded(&mut self.samples, latency_ms, MAX_SAMPLES);
+        if latency_ms.is_finite() {
+            push_bounded(&mut self.samples, latency_ms, MAX_SAMPLES);
+        }
     }
 
     pub fn p50(&self) -> f64 {
@@ -695,8 +710,14 @@ impl LatencyMetrics {
             return 0.0;
         }
         let mut sorted = self.samples.clone();
-        let idx = (f64::from(pct) / 100.0 * (sorted.len() as f64 - 1.0)).round() as usize;
-        let target_idx = idx.min(sorted.len() - 1);
+        let pct_ratio = f64::from(pct.min(100)) / 100.0;
+        let len_minus_one = (sorted.len().saturating_sub(1)) as f64;
+        let idx_f64 = pct_ratio * len_minus_one;
+        if !idx_f64.is_finite() || idx_f64 < 0.0 {
+            return 0.0;
+        }
+        let idx = idx_f64.round() as usize;
+        let target_idx = idx.min(sorted.len().saturating_sub(1));
         let (_, val, _) = sorted.select_nth_unstable_by(target_idx, |a, b| a.total_cmp(b));
         *val
     }
@@ -1215,5 +1236,458 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(log.status, 401);
         assert_eq!(log.event_code, "FASTAPI_AUTH_FAIL");
+    }
+
+    #[test]
+    fn negative_trace_context_rejects_reserved_ff_version() {
+        let header = "ff-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+
+        assert!(TraceContext::from_traceparent(header).is_none());
+    }
+
+    #[test]
+    fn negative_trace_context_rejects_extra_or_empty_fields() {
+        assert!(
+            TraceContext::from_traceparent(
+                "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01-extra"
+            )
+            .is_none()
+        );
+        assert!(
+            TraceContext::from_traceparent(
+                "00--0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+            )
+            .is_none()
+        );
+        assert!(
+            TraceContext::from_traceparent(
+                "00-0af7651916cd43dd8448eb211c80319c--b7ad6b7169203331-01"
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn negative_authenticate_api_key_rejects_empty_key() {
+        let keys = get_test_keys();
+        let err = authenticate(
+            Some("ApiKey "),
+            &AuthMethod::ApiKey,
+            "trace-empty-api-key",
+            &keys,
+        )
+        .expect_err("empty API key must be rejected");
+
+        assert!(matches!(
+            err,
+            ApiError::AuthFailed {
+                detail,
+                trace_id,
+            } if detail == "empty API key" && trace_id == "trace-empty-api-key"
+        ));
+    }
+
+    #[test]
+    fn negative_authenticate_bearer_rejects_case_mismatched_scheme() {
+        let keys = get_test_keys();
+        let err = authenticate(
+            Some("bearer mytoken-abc"),
+            &AuthMethod::BearerToken,
+            "trace-lower-bearer",
+            &keys,
+        )
+        .expect_err("lowercase bearer scheme must be rejected");
+
+        assert!(matches!(
+            err,
+            ApiError::AuthFailed {
+                detail,
+                trace_id,
+            } if detail == "expected Authorization: Bearer <token>"
+                && trace_id == "trace-lower-bearer"
+        ));
+    }
+
+    #[test]
+    fn negative_enforce_policy_rejects_case_mismatched_role() {
+        let identity = AuthIdentity {
+            principal: "case-sensitive-user".to_string(),
+            method: AuthMethod::ApiKey,
+            roles: vec!["Operator".to_string()],
+        };
+        let hook = PolicyHook {
+            hook_id: "operator.case.write".to_string(),
+            required_roles: vec!["operator".to_string()],
+        };
+
+        let err = enforce_policy(&identity, &hook, "trace-policy-case")
+            .expect_err("role matching must stay case-sensitive");
+
+        assert!(matches!(
+            err,
+            ApiError::PolicyDenied {
+                detail,
+                trace_id,
+                policy_hook,
+            } if detail.contains("lacks required role")
+                && trace_id == "trace-policy-case"
+                && policy_hook == "operator.case.write"
+        ));
+    }
+
+    #[test]
+    fn negative_rate_limiter_zero_burst_denies_and_normalizes_zero_rps() {
+        let mut limiter = RateLimiter::new(RateLimitConfig {
+            sustained_rps: 0,
+            burst_size: 0,
+            fail_closed: true,
+        });
+
+        let retry_after_ms = limiter
+            .check()
+            .expect_err("zero burst must not allow immediate traffic");
+
+        assert_eq!(limiter.config().sustained_rps, 1);
+        assert!((1..=1_000).contains(&retry_after_ms));
+    }
+
+    #[test]
+    fn negative_check_rate_limit_maps_exhaustion_to_api_error() {
+        let mut limiter = RateLimiter::new(RateLimitConfig {
+            sustained_rps: 1,
+            burst_size: 0,
+            fail_closed: true,
+        });
+
+        let err = check_rate_limit(&mut limiter, "trace-rate-denied")
+            .expect_err("exhausted limiter must map to ApiError");
+
+        assert!(matches!(
+            err,
+            ApiError::RateLimited {
+                trace_id,
+                retry_after_ms,
+                ..
+            } if trace_id == "trace-rate-denied" && retry_after_ms >= 1
+        ));
+    }
+
+    #[test]
+    fn negative_execute_middleware_chain_rate_limit_skips_handler() {
+        let route = RouteMetadata {
+            method: "POST".to_string(),
+            path: "/v1/operator/mutate".to_string(),
+            group: EndpointGroup::Operator,
+            lifecycle: EndpointLifecycle::Stable,
+            auth_method: AuthMethod::None,
+            policy_hook: PolicyHook {
+                hook_id: "operator.mutate".to_string(),
+                required_roles: vec![],
+            },
+            trace_propagation: true,
+        };
+        let mut limiter = RateLimiter::new(RateLimitConfig {
+            sustained_rps: 1,
+            burst_size: 0,
+            fail_closed: true,
+        });
+        let keys = get_test_keys();
+        let mut handler_called = false;
+
+        let (result, log) = execute_middleware_chain(
+            &route,
+            None,
+            None,
+            &mut limiter,
+            &keys,
+            |_identity, _ctx| {
+                handler_called = true;
+                Ok("should not execute")
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(!handler_called);
+        assert_eq!(log.status, 429);
+        assert_eq!(log.event_code, event_codes::RATE_LIMITED);
+    }
+}
+
+#[cfg(test)]
+mod api_middleware_additional_negative_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn authorized_keys() -> BTreeSet<String> {
+        ["test-key-123", "mytoken-abc", "fleet-service-cert"]
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    }
+
+    fn route(auth_method: AuthMethod, required_roles: Vec<&str>) -> RouteMetadata {
+        RouteMetadata {
+            method: "POST".to_string(),
+            path: "/v1/operator/mutate".to_string(),
+            group: EndpointGroup::Operator,
+            lifecycle: EndpointLifecycle::Stable,
+            auth_method,
+            policy_hook: PolicyHook {
+                hook_id: "operator.mutate".to_string(),
+                required_roles: required_roles.into_iter().map(str::to_string).collect(),
+            },
+            trace_propagation: true,
+        }
+    }
+
+    #[test]
+    fn negative_push_bounded_zero_cap_clears_without_retaining_item() {
+        let mut items = vec![1, 2, 3];
+
+        push_bounded(&mut items, 4, 0);
+
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn negative_latency_metrics_ignore_nonfinite_samples() {
+        let mut metrics = LatencyMetrics::default();
+
+        metrics.record(10.0);
+        metrics.record(f64::NAN);
+        metrics.record(f64::INFINITY);
+        metrics.record(f64::NEG_INFINITY);
+
+        assert_eq!(metrics.samples, vec![10.0]);
+        assert_eq!(metrics.p95(), 10.0);
+    }
+
+    #[test]
+    fn negative_traceparent_rejects_uppercase_trace_id() {
+        let header = "00-0AF7651916CD43DD8448EB211C80319C-b7ad6b7169203331-01";
+
+        assert!(TraceContext::from_traceparent(header).is_none());
+    }
+
+    #[test]
+    fn negative_traceparent_rejects_zero_span_id() {
+        let header = "00-0af7651916cd43dd8448eb211c80319c-0000000000000000-01";
+
+        assert!(TraceContext::from_traceparent(header).is_none());
+    }
+
+    #[test]
+    fn negative_traceparent_rejects_short_flags() {
+        let header = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-1";
+
+        assert!(TraceContext::from_traceparent(header).is_none());
+    }
+
+    #[test]
+    fn negative_api_key_rejects_trailing_whitespace_after_valid_key() {
+        let err = authenticate(
+            Some("ApiKey test-key-123 "),
+            &AuthMethod::ApiKey,
+            "trace-api-key-space",
+            &authorized_keys(),
+        )
+        .expect_err("API key comparison must not trim padded credentials");
+
+        assert!(matches!(
+            err,
+            ApiError::AuthFailed {
+                detail,
+                trace_id,
+            } if detail == "invalid API key" && trace_id == "trace-api-key-space"
+        ));
+    }
+
+    #[test]
+    fn negative_bearer_rejects_whitespace_only_token() {
+        let err = authenticate(
+            Some("Bearer   "),
+            &AuthMethod::BearerToken,
+            "trace-emptyish-bearer",
+            &authorized_keys(),
+        )
+        .expect_err("whitespace-only bearer token must not authorize");
+
+        assert!(matches!(
+            err,
+            ApiError::AuthFailed {
+                detail,
+                trace_id,
+            } if detail == "invalid bearer token" && trace_id == "trace-emptyish-bearer"
+        ));
+    }
+
+    #[test]
+    fn negative_mtls_rejects_embedded_newline_identity() {
+        let err = authenticate(
+            Some("fleet-service-cert\nextra"),
+            &AuthMethod::MtlsClientCert,
+            "trace-mtls-newline",
+            &authorized_keys(),
+        )
+        .expect_err("mTLS propagated identity must match exactly after trim");
+
+        assert!(matches!(
+            err,
+            ApiError::AuthFailed {
+                detail,
+                trace_id,
+            } if detail == "invalid mTLS client identity" && trace_id == "trace-mtls-newline"
+        ));
+    }
+
+    #[test]
+    fn negative_middleware_auth_failure_skips_handler() {
+        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
+        let mut handler_called = false;
+
+        let (result, log) = execute_middleware_chain(
+            &route(AuthMethod::ApiKey, vec![]),
+            Some("ApiKey wrong-key"),
+            Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"),
+            &mut limiter,
+            &authorized_keys(),
+            |_identity, _ctx| {
+                handler_called = true;
+                Ok("should not run")
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(!handler_called);
+        assert_eq!(log.status, 401);
+        assert_eq!(log.event_code, event_codes::AUTH_FAIL);
+        assert_eq!(log.trace_id, "0af7651916cd43dd8448eb211c80319c");
+    }
+
+    #[test]
+    fn negative_middleware_policy_denial_precedes_rate_limit_and_handler() {
+        let mut limiter = RateLimiter::new(RateLimitConfig {
+            sustained_rps: 1,
+            burst_size: 0,
+            fail_closed: true,
+        });
+        let mut handler_called = false;
+
+        let (result, log) = execute_middleware_chain(
+            &route(AuthMethod::None, vec!["operator"]),
+            None,
+            None,
+            &mut limiter,
+            &authorized_keys(),
+            |_identity, _ctx| {
+                handler_called = true;
+                Ok("should not run")
+            },
+        );
+
+        assert!(matches!(result, Err(ApiError::PolicyDenied { .. })));
+        assert!(!handler_called);
+        assert_eq!(log.status, 403);
+        assert_eq!(log.event_code, event_codes::POLICY_DENY);
+    }
+}
+
+#[cfg(test)]
+mod api_middleware_schema_negative_tests {
+    use super::*;
+
+    #[test]
+    fn negative_trace_context_rejects_numeric_trace_id() {
+        let value = serde_json::json!({
+            "trace_id": 7,
+            "span_id": "b7ad6b7169203331",
+            "trace_flags": 1
+        });
+
+        let result = serde_json::from_value::<TraceContext>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn negative_auth_method_rejects_lowercase_variant() {
+        let result = serde_json::from_str::<AuthMethod>(r#""api_key""#);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn negative_auth_identity_missing_roles_is_rejected() {
+        let value = serde_json::json!({
+            "principal": "apikey:test-key",
+            "method": "ApiKey"
+        });
+
+        let result = serde_json::from_value::<AuthIdentity>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn negative_policy_hook_object_required_roles_is_rejected() {
+        let value = serde_json::json!({
+            "hook_id": "operator.mutate",
+            "required_roles": {"operator": true}
+        });
+
+        let result = serde_json::from_value::<PolicyHook>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn negative_rate_limit_config_rejects_negative_sustained_rps() {
+        let value = serde_json::json!({
+            "sustained_rps": -1,
+            "burst_size": 10,
+            "fail_closed": true
+        });
+
+        let result = serde_json::from_value::<RateLimitConfig>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn negative_request_log_rejects_string_latency() {
+        let value = serde_json::json!({
+            "method": "GET",
+            "route": "/v1/operator/status",
+            "status": 200,
+            "latency_ms": "1.25",
+            "trace_id": "trace-001",
+            "principal": "anonymous",
+            "endpoint_group": "operator",
+            "event_code": "FASTAPI_RESPONSE_SENT"
+        });
+
+        let result = serde_json::from_value::<RequestLog>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn negative_route_metadata_rejects_lowercase_endpoint_group() {
+        let value = serde_json::json!({
+            "method": "POST",
+            "path": "/v1/fleet/fence",
+            "group": "fleet_control",
+            "lifecycle": "Stable",
+            "auth_method": "BearerToken",
+            "policy_hook": {
+                "hook_id": "fleet.fence.write",
+                "required_roles": ["fleet-admin"]
+            },
+            "trace_propagation": true
+        });
+
+        let result = serde_json::from_value::<RouteMetadata>(value);
+
+        assert!(result.is_err());
     }
 }

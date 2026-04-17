@@ -3612,4 +3612,283 @@ mod tests {
         assert_eq!(stale_nodes.len(), 1);
         assert_eq!(stale_nodes[0].node_id, "node-stale");
     }
+
+    fn test_issued_at() -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339("2026-04-06T12:00:00Z")
+            .expect("timestamp")
+            .with_timezone(&chrono::Utc)
+    }
+
+    #[test]
+    fn action_envelope_rejects_empty_action_id() {
+        let err = FleetActionEnvelope::new(
+            "   ",
+            "trace-fleet-1",
+            "zone-1",
+            test_issued_at(),
+            1,
+            FleetAction::Reconcile,
+        )
+        .expect_err("empty action id must fail");
+
+        assert!(matches!(
+            err,
+            FleetTransportError::SerializationError { .. }
+        ));
+    }
+
+    #[test]
+    fn action_envelope_rejects_empty_trace_id() {
+        let err = FleetActionEnvelope::new(
+            "action-1",
+            "\t",
+            "zone-1",
+            test_issued_at(),
+            1,
+            FleetAction::Reconcile,
+        )
+        .expect_err("empty trace id must fail");
+
+        assert!(matches!(
+            err,
+            FleetTransportError::SerializationError { .. }
+        ));
+    }
+
+    #[test]
+    fn action_envelope_rejects_quarantine_scope_zone_mismatch() {
+        let err = FleetActionEnvelope::new(
+            "action-1",
+            "trace-fleet-1",
+            "zone-1",
+            test_issued_at(),
+            1,
+            FleetAction::Quarantine {
+                extension_id: "ext-1".to_string(),
+                scope: QuarantineScope {
+                    zone_id: "zone-2".to_string(),
+                    tenant_id: None,
+                    affected_nodes: 1,
+                    reason: "mismatch should fail".to_string(),
+                },
+            },
+        )
+        .expect_err("scope zone mismatch must fail");
+
+        assert!(err.to_string().contains("scope zone_id must match"));
+    }
+
+    #[test]
+    fn action_envelope_rejects_revocation_scope_zone_mismatch() {
+        let err = FleetActionEnvelope::new(
+            "action-1",
+            "trace-fleet-1",
+            "zone-1",
+            test_issued_at(),
+            1,
+            FleetAction::Revoke {
+                extension_id: "ext-1".to_string(),
+                scope: RevocationScope {
+                    zone_id: "zone-2".to_string(),
+                    tenant_id: None,
+                    severity: RevocationSeverity::Emergency,
+                    reason: "mismatch should fail".to_string(),
+                },
+            },
+        )
+        .expect_err("revocation scope zone mismatch must fail");
+
+        assert!(err.to_string().contains("scope zone_id must match"));
+    }
+
+    #[test]
+    fn action_envelope_rejects_blank_release_incident_id() {
+        let err = FleetActionEnvelope::new(
+            "action-1",
+            "trace-fleet-1",
+            "zone-1",
+            test_issued_at(),
+            1,
+            FleetAction::Release {
+                incident_id: " ".to_string(),
+            },
+        )
+        .expect_err("blank release incident id must fail");
+
+        assert!(err.to_string().contains("release incident_id"));
+    }
+
+    #[test]
+    fn action_envelope_rejects_blank_policy_update_fields() {
+        let blank_version = FleetActionEnvelope::new(
+            "action-1",
+            "trace-fleet-1",
+            "zone-1",
+            test_issued_at(),
+            1,
+            FleetAction::PolicyUpdate {
+                policy_version: " ".to_string(),
+                summary: "policy summary".to_string(),
+            },
+        )
+        .expect_err("blank policy version must fail");
+        assert!(blank_version.to_string().contains("policy_version"));
+
+        let blank_summary = FleetActionEnvelope::new(
+            "action-2",
+            "trace-fleet-1",
+            "zone-1",
+            test_issued_at(),
+            1,
+            FleetAction::PolicyUpdate {
+                policy_version: "strict@2026-04-06".to_string(),
+                summary: "\n".to_string(),
+            },
+        )
+        .expect_err("blank policy summary must fail");
+        assert!(blank_summary.to_string().contains("summary"));
+    }
+
+    #[test]
+    fn action_envelope_rejects_status_with_blank_zone_id() {
+        let err = FleetActionEnvelope::new(
+            "action-1",
+            "trace-fleet-1",
+            "zone-1",
+            test_issued_at(),
+            1,
+            FleetAction::Status {
+                zone_id: " ".to_string(),
+            },
+        )
+        .expect_err("blank status zone must fail");
+
+        assert!(err.to_string().contains("zone_id"));
+    }
+
+    #[test]
+    fn fleet_snapshot_validate_rejects_invalid_embedded_node() {
+        let snapshot = FleetStateSnapshot {
+            schema_version: FLEET_TRANSPORT_SCHEMA_VERSION.to_string(),
+            actions: Vec::new(),
+            nodes: vec![NodeStatus {
+                node_id: "../node".to_string(),
+                last_seen: test_issued_at(),
+                quarantine_version: 1,
+                health: NodeHealth::Healthy,
+            }],
+        };
+
+        let err = snapshot
+            .validate()
+            .expect_err("invalid embedded node must fail snapshot validation");
+
+        assert!(matches!(
+            err,
+            FleetTransportError::SerializationError { .. }
+        ));
+    }
+
+    #[test]
+    fn revocation_severity_deserialize_rejects_lowercase_label() {
+        let result: Result<RevocationSeverity, _> = serde_json::from_str("\"emergency\"");
+
+        assert!(result.is_err(), "severity labels must use canonical casing");
+    }
+
+    #[test]
+    fn convergence_phase_deserialize_rejects_snake_case_label() {
+        let result: Result<ConvergencePhase, _> = serde_json::from_str("\"timed_out\"");
+
+        assert!(result.is_err(), "phase labels must use canonical casing");
+    }
+
+    #[test]
+    fn node_health_deserialize_rejects_unknown_label() {
+        let result: Result<NodeHealth, _> = serde_json::from_str("\"Recovering\"");
+
+        assert!(result.is_err(), "unknown node health must fail closed");
+    }
+
+    #[test]
+    fn quarantine_request_deserialize_rejects_missing_scope() {
+        let raw = serde_json::json!({
+            "extension_id": "ext-1"
+        });
+
+        let result: Result<QuarantineRequest, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "quarantine scope is required");
+    }
+
+    #[test]
+    fn revoke_request_deserialize_rejects_string_severity() {
+        let raw = serde_json::json!({
+            "extension_id": "ext-1",
+            "scope": {
+                "zone_id": "zone-1",
+                "tenant_id": null,
+                "severity": "emergency",
+                "reason": "bad casing"
+            }
+        });
+
+        let result: Result<RevokeRequest, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "revocation severity must be canonical");
+    }
+
+    #[test]
+    fn release_request_deserialize_rejects_numeric_incident_id() {
+        let raw = serde_json::json!({
+            "incident_id": 123_u64
+        });
+
+        let result: Result<ReleaseRequest, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "incident_id must remain a string");
+    }
+
+    #[test]
+    fn convergence_state_deserialize_rejects_progress_overflow() {
+        let raw = serde_json::json!({
+            "converged_nodes": 1_u32,
+            "total_nodes": 1_u32,
+            "progress_pct": 256_u16,
+            "eta_seconds": null,
+            "phase": "Converged"
+        });
+
+        let result: Result<ConvergenceState, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "progress_pct must fit in u8");
+    }
+
+    #[test]
+    fn fleet_snapshot_validate_rejects_invalid_embedded_action() {
+        let action = FleetActionEnvelope {
+            action_id: "action-1".to_string(),
+            trace_id: "trace-fleet-1".to_string(),
+            zone_id: "zone-1".to_string(),
+            issued_at: test_issued_at(),
+            quarantine_version: 1,
+            action: FleetAction::Release {
+                incident_id: " ".to_string(),
+            },
+        };
+        let snapshot = FleetStateSnapshot {
+            schema_version: FLEET_TRANSPORT_SCHEMA_VERSION.to_string(),
+            actions: vec![action],
+            nodes: Vec::new(),
+        };
+
+        let err = snapshot
+            .validate()
+            .expect_err("invalid embedded action must fail snapshot validation");
+
+        assert!(matches!(
+            err,
+            FleetTransportError::SerializationError { .. }
+        ));
+    }
 }

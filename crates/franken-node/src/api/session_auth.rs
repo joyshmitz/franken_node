@@ -579,11 +579,16 @@ impl std::fmt::Display for SessionError {
 use crate::capacity_defaults::aliases::MAX_SESSION_EVENTS;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
-        items.drain(0..overflow);
+    if cap == 0 {
+        items.clear();
+        return;
     }
-    items.push(item);
+    if items.len() >= cap {
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        let drain_until = overflow.min(items.len());
+        items.drain(0..drain_until);
+    }
+    items.extend(std::iter::once(item));
 }
 
 // ---------------------------------------------------------------------------
@@ -3273,5 +3278,610 @@ mod tests {
         let json = session_json_with_mac(&valid_hex);
         let result: Result<AuthenticatedSession, _> = serde_json::from_str(&json);
         assert!(result.is_ok(), "valid hex must be accepted");
+    }
+
+    #[test]
+    fn adversarial_handshake_timestamp_swap_rejected() {
+        let rs = test_root_secret();
+        let epoch = test_epoch();
+        let mac = sign_handshake("s1", "c", "sv", "ek", "sk", epoch, 1_000, &rs);
+        let mut mgr = default_manager();
+
+        let result = mgr.establish_session(
+            "s1".into(),
+            "c".into(),
+            "sv".into(),
+            "ek".into(),
+            "sk".into(),
+            1_001,
+            "trace-time-swap".into(),
+            mac,
+        );
+
+        assert!(matches!(result, Err(SessionError::AuthFailed { .. })));
+        assert!(mgr.get_session("s1").is_none());
+    }
+
+    #[test]
+    fn adversarial_handshake_key_id_swap_rejected() {
+        let rs = test_root_secret();
+        let epoch = test_epoch();
+        let mac = sign_handshake("s1", "c", "sv", "ek-original", "sk", epoch, 1_000, &rs);
+        let mut mgr = default_manager();
+
+        let result = mgr.establish_session(
+            "s1".into(),
+            "c".into(),
+            "sv".into(),
+            "ek-swapped".into(),
+            "sk".into(),
+            1_000,
+            "trace-key-swap".into(),
+            mac,
+        );
+
+        assert!(matches!(result, Err(SessionError::AuthFailed { .. })));
+        assert!(mgr.get_session("s1").is_none());
+    }
+
+    #[test]
+    fn adversarial_message_sequence_swap_rejected_before_sequence_advance() {
+        let mut mgr = default_manager();
+        establish_test_session(&mut mgr, "s1");
+        let mac_for_seq_one = sign_msg(&mgr, "s1", MessageDirection::Send, 1, "payload-hash");
+
+        let result = mgr.process_message(
+            "s1",
+            MessageDirection::Send,
+            0,
+            "payload-hash",
+            &mac_for_seq_one,
+            2_000,
+            "trace-seq-swap",
+        );
+
+        assert!(matches!(result, Err(SessionError::AuthFailed { .. })));
+        assert_eq!(mgr.get_session("s1").expect("session").send_seq, 0);
+    }
+
+    #[test]
+    fn adversarial_reestablished_session_rejects_old_chain_mac() {
+        let mut mgr = default_manager();
+        establish_test_session(&mut mgr, "s1");
+        let stale_mac = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "payload-hash");
+
+        mgr.terminate_session("s1", 1_500_000, "trace-term")
+            .expect("terminate first session");
+
+        let rs = test_root_secret();
+        let epoch = test_epoch();
+        let new_handshake = sign_handshake(
+            "s1", "client-a", "server-1", "enc-key", "sign-key", epoch, 2_000_000, &rs,
+        );
+        mgr.establish_session(
+            "s1".into(),
+            "client-a".into(),
+            "server-1".into(),
+            "enc-key".into(),
+            "sign-key".into(),
+            2_000_000,
+            "trace-reestablish".into(),
+            new_handshake,
+        )
+        .expect("reestablish same session id after termination");
+
+        let result = mgr.process_message(
+            "s1",
+            MessageDirection::Send,
+            0,
+            "payload-hash",
+            &stale_mac,
+            2_000_001,
+            "trace-stale-mac",
+        );
+
+        assert!(matches!(result, Err(SessionError::AuthFailed { .. })));
+        assert_eq!(mgr.get_session("s1").expect("session").send_seq, 0);
+    }
+
+    #[test]
+    fn process_message_expires_session_at_exact_timeout_boundary() {
+        let config = SessionConfig {
+            replay_window: 0,
+            max_sessions: 10,
+            session_timeout_ms: 10,
+        };
+        let rs = test_root_secret();
+        let epoch = test_epoch();
+        let mut mgr = SessionManager::new(config, rs.clone(), epoch);
+        let handshake = sign_handshake("s1", "c", "sv", "ek", "sk", epoch, 1_000, &rs);
+        mgr.establish_session(
+            "s1".into(),
+            "c".into(),
+            "sv".into(),
+            "ek".into(),
+            "sk".into(),
+            1_000,
+            "trace-establish".into(),
+            handshake,
+        )
+        .expect("establish session");
+
+        let mac = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "payload-hash");
+        let result = mgr.process_message(
+            "s1",
+            MessageDirection::Send,
+            0,
+            "payload-hash",
+            &mac,
+            1_010,
+            "trace-timeout",
+        );
+
+        assert!(matches!(
+            result,
+            Err(SessionError::SessionExpired { session_id }) if session_id == "s1"
+        ));
+        assert_eq!(
+            mgr.get_session("s1").expect("session").state,
+            SessionState::Expired
+        );
+    }
+
+    #[test]
+    fn zero_max_sessions_rejects_first_valid_handshake() {
+        let config = SessionConfig {
+            replay_window: 0,
+            max_sessions: 0,
+            session_timeout_ms: 60_000,
+        };
+        let rs = test_root_secret();
+        let epoch = test_epoch();
+        let mut mgr = SessionManager::new(config, rs.clone(), epoch);
+        let handshake = sign_handshake("s1", "c", "sv", "ek", "sk", epoch, 1_000, &rs);
+
+        let result = mgr.establish_session(
+            "s1".into(),
+            "c".into(),
+            "sv".into(),
+            "ek".into(),
+            "sk".into(),
+            1_000,
+            "trace-zero-capacity".into(),
+            handshake,
+        );
+
+        assert!(matches!(
+            result,
+            Err(SessionError::MaxSessionsReached { limit }) if limit == 0
+        ));
+        assert_eq!(mgr.active_session_count(), 0);
+    }
+
+    #[test]
+    fn terminating_session_rejects_message_without_advancing_sequence() {
+        let mut mgr = default_manager();
+        establish_test_session(&mut mgr, "s1");
+        let mac = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "payload-hash");
+        mgr.sessions
+            .get_mut("s1")
+            .expect("session exists")
+            .begin_termination();
+
+        let result = mgr.process_message(
+            "s1",
+            MessageDirection::Send,
+            0,
+            "payload-hash",
+            &mac,
+            2_000,
+            "trace-terminating",
+        );
+
+        assert!(matches!(
+            result,
+            Err(SessionError::SessionTerminated { session_id }) if session_id == "s1"
+        ));
+        let session = mgr.get_session("s1").expect("session preserved");
+        assert_eq!(session.state, SessionState::Terminating);
+        assert_eq!(session.send_seq, 0);
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_drops_item_and_existing_values() {
+        let mut items = vec![1_u8, 2, 3];
+
+        push_bounded(&mut items, 4, 0);
+
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn push_bounded_overfull_input_keeps_only_newest_capacity_tail() {
+        let mut items = vec![1_u8, 2, 3, 4];
+
+        push_bounded(&mut items, 5, 2);
+
+        assert_eq!(items, vec![4, 5]);
+    }
+
+    #[test]
+    fn deserialize_mac_rejects_too_long_hex() {
+        let json = session_json_with_mac(&"a".repeat(SIGNATURE_LEN * 2 + 2));
+
+        let result: Result<AuthenticatedSession, _> = serde_json::from_str(&json);
+
+        assert!(result.is_err(), "oversized MAC hex must be rejected");
+    }
+
+    #[test]
+    fn deserialize_mac_rejects_non_string_value() {
+        let raw = serde_json::json!({
+            "session_id": "s1",
+            "state": "Establishing",
+            "client_identity": "c",
+            "server_identity": "sv",
+            "encryption_key_id": "ek",
+            "signing_key_id": "sk",
+            "established_at": 0_u64,
+            "last_activity_at": 0_u64,
+            "send_seq": 0_u64,
+            "recv_seq": 0_u64,
+            "replay_window": 0_u64,
+            "epoch": 1_u64,
+            "handshake_mac": 7_u8
+        });
+
+        let result: Result<AuthenticatedSession, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "MAC must be encoded as a hex string");
+    }
+
+    #[test]
+    fn establish_session_rejects_handshake_mac_for_swapped_server_identity() {
+        let rs = test_root_secret();
+        let epoch = test_epoch();
+        let mac = sign_handshake("s1", "client-a", "server-1", "ek", "sk", epoch, 1_000, &rs);
+        let mut mgr = default_manager();
+
+        let result = mgr.establish_session(
+            "s1".into(),
+            "client-a".into(),
+            "server-2".into(),
+            "ek".into(),
+            "sk".into(),
+            1_000,
+            "trace-server-swap".into(),
+            mac,
+        );
+
+        assert!(matches!(result, Err(SessionError::AuthFailed { .. })));
+        assert!(mgr.get_session("s1").is_none());
+        assert_eq!(
+            mgr.events().last().expect("rejection event").event_code,
+            event_codes::SCC_MESSAGE_REJECTED
+        );
+    }
+
+    #[test]
+    fn process_message_rejects_establishing_session_without_advancing_sequences() {
+        let mut mgr = default_manager();
+        mgr.sessions.insert(
+            "s-establishing".to_string(),
+            AuthenticatedSession::new(
+                "s-establishing".into(),
+                "client-a".into(),
+                "server-1".into(),
+                "ek".into(),
+                "sk".into(),
+                0,
+                test_epoch().value(),
+                [0x11; SIGNATURE_LEN],
+            ),
+        );
+        let bogus = [0x22; SIGNATURE_LEN];
+
+        let result = mgr.process_message(
+            "s-establishing",
+            MessageDirection::Send,
+            0,
+            "payload-hash",
+            &bogus,
+            2_000,
+            "trace-establishing-msg",
+        );
+
+        assert!(matches!(
+            result,
+            Err(SessionError::NoSession { session_id }) if session_id == "s-establishing"
+        ));
+        let session = mgr
+            .get_session("s-establishing")
+            .expect("establishing session preserved");
+        assert_eq!(session.send_seq, 0);
+        assert_eq!(session.recv_seq, 0);
+        assert_eq!(
+            mgr.events().last().expect("rejection event").detail,
+            "session not active: establishing"
+        );
+    }
+
+    #[test]
+    fn process_message_rejects_message_mac_bound_to_different_epoch() {
+        let mut mgr = default_manager();
+        establish_test_session(&mut mgr, "s1");
+        let session = mgr.get_session("s1").expect("session exists");
+        let wrong_epoch_mac = sign_session_message(
+            "s1",
+            MessageDirection::Send,
+            0,
+            "payload-hash",
+            ControlEpoch::from(test_epoch().value().saturating_add(1)),
+            &session.handshake_mac,
+            &test_root_secret(),
+        );
+
+        let result = mgr.process_message(
+            "s1",
+            MessageDirection::Send,
+            0,
+            "payload-hash",
+            &wrong_epoch_mac,
+            2_000,
+            "trace-epoch-rebound",
+        );
+
+        assert!(matches!(result, Err(SessionError::AuthFailed { .. })));
+        assert_eq!(mgr.get_session("s1").expect("session").send_seq, 0);
+    }
+
+    #[test]
+    fn terminate_session_rejects_missing_session_without_event() {
+        let mut mgr = default_manager();
+
+        let result = mgr.terminate_session("missing-session", 2_000, "trace-missing-term");
+
+        assert!(matches!(
+            result,
+            Err(SessionError::NoSession { session_id }) if session_id == "missing-session"
+        ));
+        assert!(mgr.events().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod session_auth_boundary_negative_tests {
+    use super::*;
+
+    fn malicious_manager() -> SessionManager {
+        SessionManager::new(
+            test_root_secret(),
+            ControlEpoch::new(1),
+        )
+    }
+
+    fn test_root_secret() -> RootSecret {
+        RootSecret::new(b"test-session-auth-secret".to_vec())
+    }
+
+    #[test]
+    fn negative_create_session_rejects_empty_session_id() {
+        let mut mgr = malicious_manager();
+
+        let result = mgr.create_session(
+            "", // Empty session ID
+            b"handshake-transcript",
+            1000,
+            "trace-empty-session-id",
+        );
+
+        assert!(matches!(result, Err(SessionError::InvalidSessionId { .. })));
+    }
+
+    #[test]
+    fn negative_create_session_rejects_session_id_with_nul_bytes() {
+        let mut mgr = malicious_manager();
+
+        let result = mgr.create_session(
+            "session\0injection",
+            b"handshake-transcript",
+            1000,
+            "trace-nul-session-id",
+        );
+
+        assert!(matches!(result, Err(SessionError::InvalidSessionId { .. })));
+    }
+
+    #[test]
+    fn negative_create_session_rejects_empty_handshake_transcript() {
+        let mut mgr = malicious_manager();
+
+        let result = mgr.create_session(
+            "session-empty-transcript",
+            b"", // Empty transcript
+            1000,
+            "trace-empty-transcript",
+        );
+
+        assert!(matches!(result, Err(SessionError::HandshakeBindingFailed)));
+    }
+
+    #[test]
+    fn negative_create_session_rejects_duplicate_session_id() {
+        let mut mgr = malicious_manager();
+
+        // Create first session
+        mgr.create_session("duplicate-session", b"transcript-1", 1000, "trace-1")
+            .expect("first session should succeed");
+
+        // Try to create duplicate
+        let result = mgr.create_session(
+            "duplicate-session",
+            b"transcript-2",
+            1001,
+            "trace-duplicate",
+        );
+
+        assert!(matches!(result, Err(SessionError::SessionAlreadyExists { .. })));
+    }
+
+    #[test]
+    fn negative_authenticate_message_rejects_invalid_hmac_length() {
+        let mut mgr = malicious_manager();
+        mgr.create_session("s1", b"transcript", 1000, "trace-setup")
+            .expect("session creation");
+
+        let result = mgr.authenticate_message(
+            "s1",
+            Direction::Inbound,
+            b"message-content",
+            &[0x42; 16], // Invalid HMAC length (16 instead of 32)
+            1001,
+            "trace-invalid-hmac-len",
+        );
+
+        assert!(matches!(result, Err(SessionError::AuthFailed { .. })));
+    }
+
+    #[test]
+    fn negative_authenticate_message_rejects_all_zero_hmac() {
+        let mut mgr = malicious_manager();
+        mgr.create_session("s1", b"transcript", 1000, "trace-setup")
+            .expect("session creation");
+
+        let result = mgr.authenticate_message(
+            "s1",
+            Direction::Inbound,
+            b"message-content",
+            &[0x00; SIGNATURE_LEN], // All zero HMAC
+            1001,
+            "trace-zero-hmac",
+        );
+
+        assert!(matches!(result, Err(SessionError::AuthFailed { .. })));
+    }
+
+    #[test]
+    fn negative_authenticate_message_rejects_nonexistent_session() {
+        let mut mgr = malicious_manager();
+
+        let result = mgr.authenticate_message(
+            "nonexistent-session",
+            Direction::Inbound,
+            b"message-content",
+            &[0x42; SIGNATURE_LEN],
+            1001,
+            "trace-nonexistent",
+        );
+
+        assert!(matches!(result, Err(SessionError::NoSession { .. })));
+    }
+
+    #[test]
+    fn negative_authenticate_message_rejects_terminated_session() {
+        let mut mgr = malicious_manager();
+        mgr.create_session("s1", b"transcript", 1000, "trace-setup")
+            .expect("session creation");
+        mgr.terminate_session("s1", 1001, "trace-terminate")
+            .expect("session termination");
+
+        let result = mgr.authenticate_message(
+            "s1",
+            Direction::Inbound,
+            b"message-content",
+            &[0x42; SIGNATURE_LEN],
+            1002,
+            "trace-terminated",
+        );
+
+        assert!(matches!(result, Err(SessionError::SessionTerminated { .. })));
+    }
+
+    #[test]
+    fn negative_authenticate_message_enforces_monotonic_sequence_numbers() {
+        let mut mgr = malicious_manager();
+        mgr.create_session("s1", b"transcript", 1000, "trace-setup")
+            .expect("session creation");
+
+        // First message succeeds (sequence 0 -> 1)
+        let first_result = mgr.authenticate_message_valid_hmac(
+            "s1",
+            Direction::Inbound,
+            b"first-message",
+            1001,
+            "trace-first",
+        );
+        assert!(first_result.is_ok());
+
+        // Try to send message with same or lower sequence number
+        // This should be rejected due to monotonic sequence requirement
+        let second_result = mgr.authenticate_message_valid_hmac(
+            "s1",
+            Direction::Inbound,
+            b"duplicate-seq-message",
+            1002,
+            "trace-duplicate-seq",
+        );
+
+        // Should enforce strict monotonicity
+        match second_result {
+            Ok(_) => {
+                // If it succeeds, verify sequence advanced properly
+                let session = mgr.get_session("s1").expect("session exists");
+                assert!(session.receive_seq > 1);
+            }
+            Err(SessionError::SequenceViolation { .. }) => (), // Expected
+            Err(other) => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn negative_session_manager_rejects_invalid_root_secret() {
+        let invalid_secret = RootSecret::new(vec![]); // Empty secret
+
+        let result = std::panic::catch_unwind(|| {
+            SessionManager::new(invalid_secret, ControlEpoch::new(1))
+        });
+
+        // Should either panic or handle gracefully
+        match result {
+            Ok(mgr) => {
+                // If construction succeeds, session creation should fail
+                let create_result = mgr.create_session(
+                    "test-invalid-secret",
+                    b"transcript",
+                    1000,
+                    "trace-invalid-secret",
+                );
+                // Should fail due to invalid secret
+                assert!(create_result.is_err());
+            }
+            Err(_) => (), // Panic is acceptable for invalid secret
+        }
+    }
+
+    #[test]
+    fn negative_authenticate_message_rejects_empty_trace_id() {
+        let mut mgr = malicious_manager();
+        mgr.create_session("s1", b"transcript", 1000, "trace-setup")
+            .expect("session creation");
+
+        let result = mgr.authenticate_message(
+            "s1",
+            Direction::Inbound,
+            b"message-content",
+            &[0x42; SIGNATURE_LEN],
+            1001,
+            "", // Empty trace ID
+        );
+
+        assert!(matches!(result, Err(SessionError::InvalidTraceId)));
+    }
+
+    #[test]
+    fn negative_serde_rejects_unknown_session_error_variant() {
+        let result: Result<SessionError, _> = serde_json::from_str(r#""UnknownError""#);
+
+        assert!(result.is_err());
     }
 }

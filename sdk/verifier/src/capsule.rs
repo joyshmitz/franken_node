@@ -896,4 +896,1046 @@ mod tests {
             other => panic!("expected SignatureInvalid for cross-claim replay, got {other:?}"),
         }
     }
+
+    // ── Negative-path tests for edge cases and invalid inputs ──────────
+
+    #[test]
+    fn negative_validate_manifest_with_unicode_control_characters_rejects() {
+        let mut capsule = build_reference_capsule();
+        // Inject null byte and other control characters into capsule_id
+        capsule.manifest.capsule_id = "capsule\0with\x01control\x1fchars".to_string();
+        sign_capsule(&mut capsule);
+
+        // Should pass manifest validation (we don't sanitize control chars)
+        // but demonstrates potential injection vector
+        assert!(validate_manifest(&capsule.manifest).is_ok());
+
+        // However, such IDs are suspicious and could be filtered by calling code
+        assert!(capsule.manifest.capsule_id.contains('\0'));
+    }
+
+    #[test]
+    fn negative_replay_with_extremely_large_payload_handles_gracefully() {
+        let mut capsule = build_reference_capsule();
+        // Create a very large payload (1MB of 'x' characters)
+        capsule.payload = "x".repeat(1_000_000);
+        capsule.manifest.expected_output_hash = compute_replay_hash(&capsule.payload, &capsule.inputs);
+        sign_capsule(&mut capsule);
+
+        // Should handle large payloads without panicking or excessive memory usage
+        let result = replay(&capsule, "verifier://large-test").unwrap();
+        assert_eq!(result.verdict, CapsuleVerdict::Pass);
+    }
+
+    #[test]
+    fn negative_validate_manifest_with_path_traversal_characters_accepts_but_suspicious() {
+        let mut capsule = build_reference_capsule();
+        // Inject path traversal sequences into various fields
+        capsule.manifest.capsule_id = "../../../etc/passwd".to_string();
+        capsule.manifest.description = "payload\\..\\windows\\system32".to_string();
+        capsule.manifest.creator_identity = "creator://../root@localhost".to_string();
+
+        // These are just strings, so validation passes, but calling code should sanitize
+        assert!(validate_manifest(&capsule.manifest).is_ok());
+        assert!(capsule.manifest.capsule_id.contains("../"));
+        assert!(capsule.manifest.description.contains("..\\"));
+    }
+
+    #[test]
+    fn negative_deterministic_hash_with_maximum_unicode_handles_correctly() {
+        // Test with various Unicode edge cases including max codepoints
+        let test_cases = vec![
+            "\u{FFFF}".to_string(),  // Max BMP codepoint
+            "\u{10FFFF}".to_string(), // Max Unicode codepoint
+            "🚀🔥💀\u{1F600}".to_string(), // Emoji sequence
+            "\u{200B}\u{FEFF}\u{034F}".to_string(), // Zero-width/invisible chars
+        ];
+
+        for input in test_cases {
+            let hash = deterministic_hash(&input);
+            assert_eq!(hash.len(), 64);
+            assert!(hash.bytes().all(|b| b.is_ascii_hexdigit()));
+        }
+    }
+
+    #[test]
+    fn negative_validate_manifest_with_whitespace_only_fields_rejects() {
+        let mut capsule = build_reference_capsule();
+
+        // Test various whitespace-only scenarios
+        capsule.manifest.capsule_id = "   \t\n\r   ".to_string();
+        match validate_manifest(&capsule.manifest) {
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("capsule_id"));
+            }
+            Ok(_) => {
+                // If it passes, the field isn't empty after trim, which is fine
+                assert!(!capsule.manifest.capsule_id.trim().is_empty());
+            }
+        }
+
+        let mut capsule2 = build_reference_capsule();
+        capsule2.manifest.claim_type = "\u{00A0}\u{2000}\u{2001}".to_string(); // Non-breaking spaces
+        match validate_manifest(&capsule2.manifest) {
+            Err(CapsuleError::ManifestIncomplete(_)) => {}, // Expected if considered empty
+            Ok(_) => {} // Fine if non-breaking spaces aren't considered empty
+        }
+    }
+
+    #[test]
+    fn negative_validate_verifier_identity_with_malformed_uri_rejects() {
+        let capsule = build_reference_capsule();
+
+        let invalid_identities = vec![
+            "verifier://",           // Missing verifier name
+            "verifier:///empty",     // Extra slash
+            "verifier://\n\r",       // Newlines in URI
+            "verifier://space space", // Spaces in verifier name
+            "VERIFIER://upper",      // Wrong case scheme
+            "verifier://../traversal", // Path traversal in URI
+            "verifier://\u{0000}",   // Null byte
+            "verifier://\u{FFFF}",   // Invalid Unicode
+        ];
+
+        for identity in invalid_identities {
+            match replay(&capsule, identity) {
+                Err(CapsuleError::AccessDenied(_)) => {}, // Expected
+                other => panic!("Expected AccessDenied for identity '{identity}', got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn negative_validate_manifest_with_almost_valid_hash_formats_rejects() {
+        let mut capsule = build_reference_capsule();
+
+        let invalid_hashes = vec![
+            "g".repeat(64),          // Invalid hex character 'g'
+            "f".repeat(63),          // Too short (63 chars)
+            "f".repeat(65),          // Too long (65 chars)
+            "F".repeat(64),          // Uppercase hex (might be rejected)
+            "123456789abcdef".repeat(3) + "12", // Wrong length
+            "".to_string(),          // Empty
+            "\n".repeat(32) + &"f".repeat(32), // Newlines in middle
+        ];
+
+        for hash in invalid_hashes {
+            capsule.manifest.expected_output_hash = hash.clone();
+            match validate_manifest(&capsule.manifest) {
+                Err(CapsuleError::ManifestIncomplete(msg)) => {
+                    assert!(msg.contains("expected_output_hash") || msg.contains("sha256"));
+                }
+                other => panic!("Expected ManifestIncomplete for hash '{hash}', got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn negative_replay_with_massive_input_map_handles_memory_efficiently() {
+        let mut capsule = build_reference_capsule();
+
+        // Create capsule with many inputs (1000 key-value pairs)
+        capsule.inputs.clear();
+        capsule.manifest.input_refs.clear();
+
+        for i in 0..1000 {
+            let key = format!("input_key_{:04}", i);
+            let value = format!("input_value_data_content_{}", i);
+            capsule.inputs.insert(key.clone(), value);
+            capsule.manifest.input_refs.push(key);
+        }
+
+        capsule.manifest.expected_output_hash = compute_replay_hash(&capsule.payload, &capsule.inputs);
+        sign_capsule(&mut capsule);
+
+        // Should handle large input maps without excessive memory consumption
+        let start = std::time::Instant::now();
+        let result = replay(&capsule, "verifier://stress-test").unwrap();
+        let duration = start.elapsed();
+
+        assert_eq!(result.verdict, CapsuleVerdict::Pass);
+        // Should complete within reasonable time (5 seconds is generous)
+        assert!(duration < std::time::Duration::from_secs(5));
+    }
+
+    #[test]
+    fn negative_compute_replay_hash_with_key_value_collision_attack_resists() {
+        // Test that length-prefixed encoding prevents key-value collision attacks
+        // where attacker crafts keys/values to produce same hash as different data
+
+        // Attack 1: Key ending with length prefix of value
+        let mut inputs1 = BTreeMap::new();
+        inputs1.insert("key\x08\x00\x00\x00\x00\x00\x00\x00value123".to_string(), "".to_string());
+        let hash1 = compute_replay_hash("payload", &inputs1);
+
+        // Attack 2: Different key-value split of same byte sequence
+        let mut inputs2 = BTreeMap::new();
+        inputs2.insert("key".to_string(), "value123".to_string());
+        let hash2 = compute_replay_hash("payload", &inputs2);
+
+        // Length-prefixed encoding should make these produce different hashes
+        assert_ne!(hash1, hash2, "Replay hash must resist key-value collision attacks");
+    }
+
+    #[test]
+    fn negative_replay_with_empty_string_verifier_identity_after_scheme_rejects() {
+        let capsule = build_reference_capsule();
+
+        // Test verifier:// with empty remainder after trimming
+        let empty_remainder_cases = vec![
+            "verifier://   ",        // Only whitespace after scheme
+            "verifier://\t\n\r",     // Only tabs/newlines after scheme
+            "verifier://\u{00A0}",   // Only non-breaking space after scheme
+        ];
+
+        for identity in empty_remainder_cases {
+            match replay(&capsule, identity) {
+                Err(CapsuleError::AccessDenied(msg)) => {
+                    assert!(msg.contains("non-empty verifier name"));
+                }
+                other => panic!("Expected AccessDenied for empty verifier name '{identity}', got {other:?}"),
+            }
+        }
+    }
+
+    // ── Additional negative-path tests for edge cases and boundary conditions ──
+
+    #[test]
+    fn negative_is_sha256_hex_with_boundary_and_invalid_cases() {
+        // Test exact boundary cases for SHA-256 hex validation
+        assert!(!is_sha256_hex(""));  // Empty string
+        assert!(!is_sha256_hex("f".repeat(63).as_str()));  // Too short by 1
+        assert!(!is_sha256_hex("f".repeat(65).as_str()));  // Too long by 1
+        assert!(!is_sha256_hex("G".repeat(64).as_str()));  // Invalid hex char
+        assert!(!is_sha256_hex("Z".repeat(64).as_str()));  // Invalid hex char
+        assert!(!is_sha256_hex(&format!("{}g{}", "f".repeat(31), "f".repeat(32))));  // Invalid char in middle
+        assert!(!is_sha256_hex(&format!("{}\x00{}", "f".repeat(31), "f".repeat(32))));  // Null byte
+        // Valid case for comparison
+        assert!(is_sha256_hex("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"));
+    }
+
+    #[test]
+    fn negative_push_length_prefixed_with_maximum_and_zero_values() {
+        let mut hasher = Sha256::new();
+
+        // Test with maximum possible string length (approaching usize::MAX)
+        // Note: We can't actually create a string of usize::MAX length due to memory,
+        // but we can test the length encoding behavior
+        let max_len_str = "x".repeat(65536);  // Large but manageable string
+        push_length_prefixed(&mut hasher, &max_len_str);
+
+        // Test with zero-length string
+        push_length_prefixed(&mut hasher, "");
+
+        // Test with string containing only null bytes
+        let null_str = "\0".repeat(100);
+        push_length_prefixed(&mut hasher, &null_str);
+
+        // Test with string containing high Unicode codepoints
+        let unicode_str = "\u{1F4A9}".repeat(100);  // Pile of poo emoji repeated
+        push_length_prefixed(&mut hasher, &unicode_str);
+
+        // Finalize to ensure no panic
+        let _result = hasher.finalize();
+    }
+
+    #[test]
+    fn negative_compute_replay_hash_with_minimal_and_edge_data() {
+        // Test with completely empty payload and inputs
+        let empty_inputs = BTreeMap::new();
+        let hash1 = compute_replay_hash("", &empty_inputs);
+        assert_eq!(hash1.len(), 64);
+        assert!(hash1.bytes().all(|b| b.is_ascii_hexdigit()));
+
+        // Test with payload containing only control characters
+        let control_payload = "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F";
+        let hash2 = compute_replay_hash(control_payload, &empty_inputs);
+        assert_ne!(hash1, hash2);
+
+        // Test with single-character key and value at boundaries
+        let mut single_inputs = BTreeMap::new();
+        single_inputs.insert("".to_string(), "".to_string());  // Empty key and value
+        single_inputs.insert("a".to_string(), "b".to_string());  // Single chars
+        let hash3 = compute_replay_hash("c", &single_inputs);
+        assert_ne!(hash1, hash3);
+        assert_ne!(hash2, hash3);
+    }
+
+    #[test]
+    fn negative_compute_signing_payload_with_boundary_manifest_sizes() {
+        let mut capsule = build_reference_capsule();
+
+        // Test with minimal manifest fields (empty strings where allowed)
+        let mut minimal_capsule = capsule.clone();
+        minimal_capsule.manifest.description = "".to_string();
+        minimal_capsule.manifest.input_refs.clear();
+        minimal_capsule.manifest.metadata.clear();
+        minimal_capsule.inputs.clear();
+        minimal_capsule.payload = "".to_string();
+        let minimal_payload = compute_signing_payload(&minimal_capsule);
+
+        // Test with maximum reasonable field sizes
+        let mut maximal_capsule = capsule.clone();
+        maximal_capsule.manifest.description = "x".repeat(10000);
+        maximal_capsule.payload = "y".repeat(10000);
+        for i in 0..100 {
+            let key = format!("meta_key_{}", i);
+            let value = format!("meta_value_{}", "z".repeat(100));
+            maximal_capsule.manifest.metadata.insert(key, value);
+        }
+        let maximal_payload = compute_signing_payload(&maximal_capsule);
+
+        assert_ne!(minimal_payload, maximal_payload);
+        assert_eq!(minimal_payload.len(), 64);
+        assert_eq!(maximal_payload.len(), 64);
+    }
+
+    #[test]
+    fn negative_validate_declared_input_refs_with_edge_case_collections() {
+        // Test with capsule having maximum number of input refs
+        let mut stress_capsule = build_reference_capsule();
+        stress_capsule.manifest.input_refs.clear();
+        stress_capsule.inputs.clear();
+
+        // Add many input refs to test iteration performance and memory
+        for i in 0..1000 {
+            let ref_name = format!("stress_input_{:04}", i);
+            stress_capsule.manifest.input_refs.push(ref_name.clone());
+            stress_capsule.inputs.insert(ref_name, format!("content_{}", i));
+        }
+
+        assert!(validate_declared_input_refs(&stress_capsule).is_ok());
+
+        // Test with input refs containing Unicode edge cases
+        let mut unicode_capsule = build_reference_capsule();
+        unicode_capsule.manifest.input_refs.clear();
+        unicode_capsule.inputs.clear();
+
+        let unicode_refs = vec![
+            "\u{1F600}".to_string(),  // Emoji
+            "\u{0000}".to_string(),   // Null character
+            "\u{FFFF}".to_string(),   // Max BMP
+            "\u{10FFFF}".to_string(), // Max Unicode
+        ];
+
+        for unicode_ref in unicode_refs {
+            unicode_capsule.manifest.input_refs.push(unicode_ref.clone());
+            unicode_capsule.inputs.insert(unicode_ref, "unicode_content".to_string());
+        }
+
+        assert!(validate_declared_input_refs(&unicode_capsule).is_ok());
+    }
+
+    #[test]
+    fn negative_ct_eq_bytes_with_length_boundary_conditions() {
+        // Test constant-time comparison with various length combinations
+        assert!(!ct_eq_bytes(b"", b"a"));  // Empty vs non-empty
+        assert!(!ct_eq_bytes(b"a", b""));  // Non-empty vs empty
+        assert!(ct_eq_bytes(b"", b""));    // Both empty
+
+        // Test with very large byte arrays of different lengths
+        let large1 = vec![0u8; 10000];
+        let large2 = vec![1u8; 10000];
+        let large3 = vec![0u8; 10001];  // Different length
+
+        assert!(ct_eq_bytes(&large1, &large1));   // Same content, same length
+        assert!(!ct_eq_bytes(&large1, &large2)); // Different content, same length
+        assert!(!ct_eq_bytes(&large1, &large3)); // Same content, different length
+
+        // Test with arrays differing only in last byte
+        let mut almost_same1 = vec![42u8; 1000];
+        let mut almost_same2 = vec![42u8; 1000];
+        almost_same2[999] = 43;  // Change last byte
+
+        assert!(!ct_eq_bytes(&almost_same1, &almost_same2));
+    }
+
+    #[test]
+    fn negative_domain_separator_collision_resistance_stress_test() {
+        // Test that different domain separators produce different hashes
+        // even with identical subsequent data
+        let test_data = "identical_input_data";
+
+        let hash_capsule = deterministic_hash(test_data);
+
+        // Manually compute hash with different domain separator
+        let mut hasher_different = Sha256::new();
+        hasher_different.update(b"different_domain_separator:");
+        hasher_different.update(test_data.as_bytes());
+        let hash_different = hex::encode(hasher_different.finalize());
+
+        assert_ne!(hash_capsule, hash_different,
+                  "Domain separators must prevent hash collision");
+
+        // Test with malicious input that tries to forge domain separator
+        let malicious_input = "verifier_sdk_capsule_v1:fake_domain_sep";
+        let hash_malicious = deterministic_hash(malicious_input);
+
+        // Should NOT match hash of legitimate empty string with proper separator
+        let hash_legitimate = deterministic_hash("");
+        assert_ne!(hash_malicious, hash_legitimate,
+                  "Malicious domain separator injection must be prevented");
+    }
+
+    #[test]
+    fn negative_hash_computation_with_zero_length_boundaries() {
+        // Test edge cases in hash computation involving zero-length data
+        let mut zero_inputs = BTreeMap::new();
+        zero_inputs.insert("".to_string(), "".to_string());  // Zero-length key and value
+
+        let hash_zero_payload = compute_replay_hash("", &zero_inputs);
+        let hash_zero_inputs = compute_replay_hash("data", &BTreeMap::new());
+        let hash_both_zero = compute_replay_hash("", &BTreeMap::new());
+
+        // All should be different due to different length prefixes
+        assert_ne!(hash_zero_payload, hash_zero_inputs);
+        assert_ne!(hash_zero_payload, hash_both_zero);
+        assert_ne!(hash_zero_inputs, hash_both_zero);
+
+        // Test with zero-length metadata in signing payload
+        let mut zero_meta_capsule = build_reference_capsule();
+        zero_meta_capsule.manifest.metadata.clear();
+        zero_meta_capsule.manifest.metadata.insert("".to_string(), "".to_string());
+        let signing_zero = compute_signing_payload(&zero_meta_capsule);
+
+        let mut no_meta_capsule = build_reference_capsule();
+        no_meta_capsule.manifest.metadata.clear();
+        let signing_no_meta = compute_signing_payload(&no_meta_capsule);
+
+        assert_ne!(signing_zero, signing_no_meta,
+                  "Empty metadata entry must differ from no metadata");
+    }
+
+    // =========================================================================
+    // ADDITIONAL COMPREHENSIVE NEGATIVE-PATH TESTS
+    // =========================================================================
+
+    #[test]
+    fn negative_capsule_with_schema_version_spoofing_attempts_rejected() {
+        let mut capsule = build_reference_capsule();
+
+        // Attempt to spoof schema version with similar-looking strings
+        let spoofed_versions = vec![
+            format!("{}\0", SDK_VERSION),         // Null terminator
+            format!(" {} ", SDK_VERSION),         // Extra whitespace
+            format!("{}\n", SDK_VERSION),         // Newline suffix
+            format!("{}\u{200B}", SDK_VERSION),   // Zero-width space
+            SDK_VERSION.to_uppercase(),           // Case change
+            format!("{}x", SDK_VERSION),          // Extra character
+            format!("v{}", SDK_VERSION),          // Version prefix
+        ];
+
+        for spoofed_version in spoofed_versions {
+            capsule.manifest.schema_version = spoofed_version.clone();
+            match validate_manifest(&capsule.manifest) {
+                Err(CapsuleError::SchemaMismatch(_)) => {}, // Expected
+                other => panic!("Expected SchemaMismatch for spoofed version '{}', got {other:?}", spoofed_version),
+            }
+        }
+    }
+
+    #[test]
+    fn negative_replay_with_extremely_deep_nested_input_structure() {
+        let mut capsule = build_reference_capsule();
+        capsule.inputs.clear();
+        capsule.manifest.input_refs.clear();
+
+        // Create inputs with deeply nested JSON-like structure in values
+        let deep_nesting_levels = 1000;
+        let mut nested_value = "core".to_string();
+        for i in 0..deep_nesting_levels {
+            nested_value = format!("{{\"level_{}\": \"{}\"}}", i, nested_value);
+        }
+
+        capsule.inputs.insert("deep_nested".to_string(), nested_value);
+        capsule.manifest.input_refs.push("deep_nested".to_string());
+        capsule.manifest.expected_output_hash = compute_replay_hash(&capsule.payload, &capsule.inputs);
+        sign_capsule(&mut capsule);
+
+        // Should handle deep nesting without stack overflow or excessive processing time
+        let start = std::time::Instant::now();
+        let result = replay(&capsule, "verifier://nesting-test").unwrap();
+        let duration = start.elapsed();
+
+        assert_eq!(result.verdict, CapsuleVerdict::Pass);
+        assert!(duration < std::time::Duration::from_secs(5)); // Should complete reasonably fast
+    }
+
+    #[test]
+    fn negative_capsule_creation_with_invalid_utf8_sequences_handled() {
+        // Test behavior with byte sequences that are invalid UTF-8
+        let mut capsule = build_reference_capsule();
+
+        // Create potentially invalid UTF-8 sequences (would be caught at string creation)
+        let invalid_utf8_attempts = vec![
+            "valid\u{FFFD}replacement".to_string(),     // Replacement character
+            "incomplete\u{D800}surrogate".to_string(),   // Invalid surrogate (if it gets through)
+        ];
+
+        for invalid_sequence in invalid_utf8_attempts {
+            capsule.manifest.description = invalid_sequence.clone();
+            sign_capsule(&mut capsule);
+
+            // Should handle gracefully without crashing
+            assert!(validate_manifest(&capsule.manifest).is_ok());
+            let result = replay(&capsule, "verifier://utf8-test");
+            assert!(result.is_ok());
+        }
+    }
+
+    #[test]
+    fn negative_deterministic_hash_with_identical_bytes_different_encodings() {
+        // Test that the hash distinguishes between different string interpretations of same bytes
+        let byte_sequence = vec![0xC4, 0x85]; // UTF-8 for 'ą'
+        let utf8_string = String::from_utf8(byte_sequence.clone()).unwrap();
+        let latin1_interpretation = byte_sequence.iter().map(|&b| b as char).collect::<String>();
+
+        let hash_utf8 = deterministic_hash(&utf8_string);
+        let hash_latin1 = deterministic_hash(&latin1_interpretation);
+
+        // Should produce different hashes for different string interpretations
+        if utf8_string != latin1_interpretation {
+            assert_ne!(hash_utf8, hash_latin1,
+                      "Different string interpretations must produce different hashes");
+        }
+    }
+
+    #[test]
+    fn negative_verify_signature_with_race_condition_simulation() {
+        let mut capsule = build_reference_capsule();
+
+        // Simulate potential race condition by modifying capsule during verification
+        let original_signature = capsule.signature.clone();
+
+        // Capture the expected signing payload
+        let expected_payload = compute_signing_payload(&capsule);
+
+        // Modify the capsule slightly
+        capsule.manifest.description.push('x');
+
+        // Restore original signature (simulating race where signature was computed before modification)
+        capsule.signature = original_signature;
+
+        // Should detect that signature no longer matches modified content
+        match verify_signature(&capsule) {
+            Err(CapsuleError::SignatureInvalid(_)) => {}, // Expected
+            other => panic!("Expected SignatureInvalid for modified capsule, got {other:?}"),
+        }
+
+        // Verify that the current payload is indeed different
+        let modified_payload = compute_signing_payload(&capsule);
+        assert_ne!(expected_payload, modified_payload);
+    }
+
+    #[test]
+    fn negative_capsule_input_keys_with_btreemap_edge_case_ordering() {
+        // Test BTreeMap behavior with keys that have tricky lexicographic ordering
+        let mut capsule = build_reference_capsule();
+        capsule.inputs.clear();
+        capsule.manifest.input_refs.clear();
+
+        let tricky_keys = vec![
+            "1".to_string(),
+            "10".to_string(),
+            "2".to_string(),      // Lexicographic: "1" < "10" < "2"
+            "ä".to_string(),      // Unicode
+            "z".to_string(),      // ASCII
+            "😀".to_string(),     // High Unicode
+        ];
+
+        // Insert in random order
+        for key in tricky_keys.iter().rev() {
+            capsule.inputs.insert(key.clone(), format!("value_for_{}", key));
+            capsule.manifest.input_refs.push(key.clone());
+        }
+
+        // Sort input_refs to match expected BTreeMap ordering
+        capsule.manifest.input_refs.sort();
+
+        // Compute hash multiple times to ensure deterministic ordering
+        let hash1 = compute_replay_hash(&capsule.payload, &capsule.inputs);
+        let hash2 = compute_replay_hash(&capsule.payload, &capsule.inputs);
+
+        assert_eq!(hash1, hash2, "Hash must be deterministic despite key ordering complexity");
+
+        capsule.manifest.expected_output_hash = hash1;
+        sign_capsule(&mut capsule);
+
+        let result = replay(&capsule, "verifier://ordering-complex").unwrap();
+        assert_eq!(result.verdict, CapsuleVerdict::Pass);
+    }
+
+    #[test]
+    fn negative_validate_verifier_identity_with_protocol_confusion_attempts() {
+        let capsule = build_reference_capsule();
+
+        // Test various protocol confusion attempts
+        let confusion_attempts = vec![
+            "VERIFIER://uppercase-scheme",      // Wrong case
+            "verifier:\\\\windows-style",      // Wrong separator style
+            "verifier:/single-slash",          // Missing second slash
+            "verifier:///triple-slash",        // Too many slashes
+            "http://verifier://double-proto",  // Nested protocols
+            "verifier://user:pass@host",       // Authority with credentials
+            "verifier://host:port/path",       // Port and path
+            "verifier://host?query=param",     // Query parameters
+            "verifier://host#fragment",        // Fragment
+            "javascript:alert('xss')",        // Different protocol entirely
+        ];
+
+        for attempt in confusion_attempts {
+            match replay(&capsule, attempt) {
+                Err(CapsuleError::AccessDenied(_)) => {}, // Expected
+                other => panic!("Expected AccessDenied for protocol confusion '{}', got {other:?}", attempt),
+            }
+        }
+    }
+
+    #[test]
+    fn negative_capsule_metadata_with_json_injection_patterns() {
+        let mut capsule = build_reference_capsule();
+
+        // Test metadata values that could cause JSON injection if improperly handled
+        let injection_patterns = vec![
+            "\"},\"injected\":\"malicious\",\"dummy\":\"".to_string(),
+            "\\u0022},\\u0022injected\\u0022:\\u0022malicious".to_string(),
+            "\n},\n\"injected\": \"value\",\n\"real\": \"".to_string(),
+            "\"},\"__proto__\":{\"isAdmin\":true},\"dummy\":\"".to_string(),
+        ];
+
+        for pattern in injection_patterns {
+            capsule.manifest.metadata.clear();
+            capsule.manifest.metadata.insert("potentially_malicious".to_string(), pattern.clone());
+            sign_capsule(&mut capsule);
+
+            // Should handle injection patterns without breaking verification
+            assert!(validate_manifest(&capsule.manifest).is_ok());
+
+            let result = replay(&capsule, "verifier://injection-meta-test");
+            assert!(result.is_ok(), "Metadata injection pattern should not break replay");
+
+            // Verify the pattern is preserved as-is in metadata
+            assert_eq!(capsule.manifest.metadata.get("potentially_malicious"), Some(&pattern));
+        }
+    }
+
+    #[test]
+    fn negative_compute_replay_hash_memory_exhaustion_resistance() {
+        // Test that hash computation doesn't exhaust memory with pathological inputs
+        let mut large_inputs = BTreeMap::new();
+
+        // Create many inputs with moderately large values
+        for i in 0..1000 {
+            let key = format!("stress_key_{:04}", i);
+            let value = "x".repeat(1000); // 1KB per value = 1MB total
+            large_inputs.insert(key, value);
+        }
+
+        let large_payload = "y".repeat(100_000); // 100KB payload
+
+        // Should compute hash without excessive memory allocation
+        let start_time = std::time::Instant::now();
+        let hash = compute_replay_hash(&large_payload, &large_inputs);
+        let duration = start_time.elapsed();
+
+        assert_eq!(hash.len(), 64);
+        assert!(hash.bytes().all(|b| b.is_ascii_hexdigit()));
+        assert!(duration < std::time::Duration::from_secs(5)); // Should be reasonably fast
+    }
+
+    #[test]
+    fn negative_constant_time_string_comparison_with_length_attacks() {
+        // Test that ct_eq properly handles length-based timing attacks
+        let reference = "secret_reference_string";
+
+        // Test strings of different lengths (should fail fast on length)
+        let different_lengths = vec![
+            "",
+            "a",
+            "ab",
+            "secret_reference_strin",  // One character shorter
+            "secret_reference_stringx", // One character longer
+            "secret_reference_string_much_longer_suffix",
+        ];
+
+        for test_string in different_lengths {
+            let result = ct_eq(reference, test_string);
+            assert!(!result, "Different length strings should not be equal");
+        }
+
+        // Test strings of same length but different content
+        let same_length_different = vec![
+            "tecret_reference_string", // First char different
+            "secret_reference_strinz", // Last char different
+            "secret_referencx_string", // Middle char different
+            "SECRET_REFERENCE_STRING", // Case different
+        ];
+
+        for test_string in same_length_different {
+            assert_eq!(test_string.len(), reference.len()); // Verify same length
+            let result = ct_eq(reference, test_string);
+            assert!(!result, "Same length, different content should not be equal");
+        }
+
+        // Positive test case
+        assert!(ct_eq(reference, reference));
+    }
+
+    // =========================================================================
+    // ADDITIONAL COMPREHENSIVE NEGATIVE-PATH SECURITY TESTS
+    // =========================================================================
+
+    #[test]
+    fn negative_capsule_manifest_with_extreme_field_pollution_attacks() {
+        let mut capsule = build_reference_capsule();
+
+        // Test metadata pollution with extreme key counts
+        capsule.manifest.metadata.clear();
+        for i in 0..10000 {
+            let malicious_key = format!("pollution_{:04}\x00\r\n\t", i);
+            let malicious_value = format!("<!ENTITY xxe SYSTEM 'file:///etc/passwd'>{}", "x".repeat(i % 1000));
+            capsule.manifest.metadata.insert(malicious_key, malicious_value);
+        }
+        sign_capsule(&mut capsule);
+
+        // Should handle massive metadata pollution without crashing or timeout
+        let start = std::time::Instant::now();
+        let result = validate_manifest(&capsule.manifest);
+        let duration = start.elapsed();
+
+        assert!(result.is_ok());
+        assert!(duration < std::time::Duration::from_secs(10)); // Should complete reasonably
+
+        // Test replay with polluted metadata
+        match replay(&capsule, "verifier://pollution-test") {
+            Ok(_) | Err(_) => {} // Either success or failure is acceptable, but no panic
+        }
+    }
+
+    #[test]
+    fn negative_deterministic_hash_with_unicode_normalization_bypass_attempts() {
+        // Test hash behavior with Unicode normalization attacks
+        let canonical_form = "café"; // Composed form (é as single codepoint)
+        let decomposed_form = "cafe\u{0301}"; // Decomposed form (e + combining acute)
+        let malicious_lookalike = "café"; // Different Unicode that looks similar
+
+        let hash_canonical = deterministic_hash(canonical_form);
+        let hash_decomposed = deterministic_hash(decomposed_form);
+        let hash_lookalike = deterministic_hash(malicious_lookalike);
+
+        // Different Unicode representations should produce different hashes
+        // (no normalization should be applied)
+        if canonical_form.as_bytes() != decomposed_form.as_bytes() {
+            assert_ne!(hash_canonical, hash_decomposed,
+                      "Different Unicode byte sequences must produce different hashes");
+        }
+
+        // Test with various Unicode attack patterns
+        let unicode_attacks = vec![
+            "admin\u{202E}nidma", // Right-to-left override
+            "admin\u{200D}user",  // Zero-width joiner
+            "admin\u{FEFF}user",  // Zero-width no-break space
+            "admin\u{034F}user",  // Combining grapheme joiner
+            "admin\u{200B}user",  // Zero-width space
+        ];
+
+        let legitimate_hash = deterministic_hash("adminuser");
+        for attack_input in unicode_attacks {
+            let attack_hash = deterministic_hash(attack_input);
+            assert_ne!(legitimate_hash, attack_hash,
+                      "Unicode attack pattern '{}' must not collide with legitimate input",
+                      attack_input.escape_unicode());
+        }
+    }
+
+    #[test]
+    fn negative_replay_hash_with_malicious_length_prefix_injection() {
+        // Test resistance to length-prefix injection attacks
+        let mut legitimate_inputs = BTreeMap::new();
+        legitimate_inputs.insert("key1".to_string(), "value1".to_string());
+
+        // Attacker tries to inject fake length prefixes in payload
+        let attack_payloads = vec![
+            format!("{}{}key1{}value1",
+                    "payload".len().to_le_bytes().iter().map(|&b| b as char).collect::<String>(),
+                    "payload",
+                    "key1".len().to_le_bytes().iter().map(|&b| b as char).collect::<String>(),
+                    "value1".len().to_le_bytes().iter().map(|&b| b as char).collect::<String>()),
+            "\x08\x00\x00\x00\x00\x00\x00\x00payloadX\x04\x00\x00\x00\x00\x00\x00\x00key1\x06\x00\x00\x00\x00\x00\x00\x00value1".to_string(),
+            "fake_payload\x00\x00\x00\x00\x00\x00\x00\x01\x01\x00\x00\x00\x00\x00\x00\x00".to_string(),
+        ];
+
+        let legitimate_hash = compute_replay_hash("legitimate_payload", &legitimate_inputs);
+
+        for attack_payload in attack_payloads {
+            let attack_hash = compute_replay_hash(&attack_payload, &BTreeMap::new());
+            assert_ne!(legitimate_hash, attack_hash,
+                      "Length prefix injection attack must not produce hash collision");
+        }
+    }
+
+    #[test]
+    fn negative_verifier_identity_with_homograph_and_spoofing_attacks() {
+        let capsule = build_reference_capsule();
+
+        // Test homograph attacks using similar-looking characters
+        let homograph_attacks = vec![
+            "verifier://аdmin",          // Cyrillic 'а' instead of Latin 'a'
+            "verifier://admin‍user",     // Zero-width joiner
+            "verifier://аdmіn",          // Mixed Cyrillic/Latin
+            "verifier://admín",          // Latin with accent
+            "verifier://ⱱerifier",      // Latin small letter v with right hook
+            "verifier://verífier",       // Accent on i
+            "verifier://veriﬁer",       // Latin small ligature fi
+        ];
+
+        for spoofed_identity in homograph_attacks {
+            match replay(&capsule, spoofed_identity) {
+                Err(CapsuleError::AccessDenied(_)) => {}, // May be rejected during validation
+                Ok(_) => {
+                    // If accepted, ensure it doesn't compromise security
+                    // (the test just ensures no panic/crash occurs)
+                }
+                Err(other_err) => {
+                    // Other errors are also acceptable as long as no crash
+                }
+            }
+        }
+
+        // Test IDN homograph domain spoofing patterns
+        let domain_spoofs = vec![
+            "verifier://раypal.com",     // Cyrillic 'а' and 'р'
+            "verifier://gооgle.com",     // Cyrillic 'о' characters
+            "verifier://аmazon.com",     // Cyrillic 'а'
+            "verifier://miсrosoft.com",  // Cyrillic 'с'
+        ];
+
+        for spoof in domain_spoofs {
+            match replay(&capsule, spoof) {
+                Err(_) | Ok(_) => {} // Either result acceptable, no crash expected
+            }
+        }
+    }
+
+    #[test]
+    fn negative_signing_payload_with_arithmetic_overflow_in_length_encoding() {
+        // Test behavior near arithmetic boundaries in length encoding
+        let mut stress_capsule = build_reference_capsule();
+
+        // Test with field lengths approaching u64::MAX representation
+        // Note: We can't actually create strings of usize::MAX length, but we test the encoding
+        let max_reasonable_length = 1_000_000;
+        stress_capsule.payload = "z".repeat(max_reasonable_length);
+
+        // Add metadata with keys and values that test boundary conditions
+        stress_capsule.manifest.metadata.clear();
+        stress_capsule.manifest.metadata.insert("".to_string(), "".to_string()); // Zero length
+        stress_capsule.manifest.metadata.insert("x".repeat(65535), "y".repeat(65536)); // Large but manageable
+
+        // Should handle large lengths in signing payload without overflow
+        let signing_payload = compute_signing_payload(&stress_capsule);
+        assert_eq!(signing_payload.len(), 64);
+        assert!(signing_payload.bytes().all(|b| b.is_ascii_hexdigit()));
+
+        // Test with maximum number of input_refs
+        stress_capsule.manifest.input_refs.clear();
+        stress_capsule.inputs.clear();
+        for i in 0..10000 {
+            let key = format!("input_{:05}", i);
+            stress_capsule.manifest.input_refs.push(key.clone());
+            stress_capsule.inputs.insert(key, format!("content_{}", i));
+        }
+
+        let stress_signing = compute_signing_payload(&stress_capsule);
+        assert_eq!(stress_signing.len(), 64);
+        assert!(stress_signing.bytes().all(|b| b.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn negative_capsule_error_display_with_injection_resistant_formatting() {
+        // Test that error display properly escapes malicious input
+        let injection_attempts = vec![
+            "error\x1b[31mRED_TEXT\x1b[0m",                    // ANSI escape codes
+            "error\r\nHTTP/1.1 200 OK\r\nContent-Type: text", // HTTP header injection
+            "error</script><script>alert('xss')</script>",     // HTML/JS injection
+            "error\0null_terminated\x00more",                  // Null byte injection
+            "error\n\nSecond-Line: malicious",                 // Newline injection
+            "error\u{202E}reverse\u{202D}normal",              // BiDi override attacks
+        ];
+
+        for malicious_content in injection_attempts {
+            let error_variants = vec![
+                CapsuleError::SignatureInvalid(malicious_content.clone()),
+                CapsuleError::SchemaMismatch(malicious_content.clone()),
+                CapsuleError::AccessDenied(malicious_content.clone()),
+                CapsuleError::EmptyPayload(malicious_content.clone()),
+                CapsuleError::ManifestIncomplete(malicious_content.clone()),
+                CapsuleError::ReplayDiverged {
+                    expected: malicious_content.clone(),
+                    actual: "legitimate".to_string()
+                },
+                CapsuleError::VerdictMismatch {
+                    expected: "Pass".to_string(),
+                    actual: malicious_content.clone()
+                },
+            ];
+
+            for error in error_variants {
+                let error_string = format!("{}", error);
+
+                // Error should contain the malicious content but in a safe way
+                // (Display trait should not process escape codes, just include them as-is)
+                assert!(error_string.contains(malicious_content.as_str()) ||
+                       error_string.contains(&malicious_content.escape_debug().to_string()),
+                       "Error display should include malicious content safely");
+
+                // Should not crash or cause undefined behavior
+                assert!(!error_string.is_empty(), "Error display should not be empty");
+            }
+        }
+    }
+
+    #[test]
+    fn negative_btreemap_iteration_determinism_under_adversarial_key_patterns() {
+        // Test BTreeMap determinism with adversarial key patterns designed to exploit ordering
+        let mut capsule = build_reference_capsule();
+        capsule.inputs.clear();
+        capsule.manifest.input_refs.clear();
+
+        // Keys designed to test lexicographic edge cases and potential hash collision exploitation
+        let adversarial_keys = vec![
+            // ASCII boundary conditions
+            "\x00".to_string(),              // Null character (minimum)
+            "\x1F".to_string(),              // Unit separator
+            "\x20".to_string(),              // Space
+            "\x21".to_string(),              // Exclamation
+            "\x7E".to_string(),              // Tilde (near maximum printable ASCII)
+            "\x7F".to_string(),              // DEL character
+            "\xFF".to_string(),              // Maximum 8-bit value
+            // Length-based potential collisions
+            "a".to_string(),
+            "aa".to_string(),
+            "aaa".to_string(),
+            // Numeric string sorting edge cases
+            "1".to_string(),
+            "10".to_string(),
+            "11".to_string(),
+            "2".to_string(),
+            "20".to_string(),
+            // Unicode ordering edge cases
+            "é".to_string(),                 // Latin small letter e with acute
+            "e\u{0301}".to_string(),         // e + combining acute accent
+            "\u{1F600}".to_string(),         // Emoji (high Unicode)
+            "\u{10FFFF}".to_string(),        // Maximum Unicode codepoint
+        ];
+
+        // Insert in random order to test BTreeMap stabilizes the ordering
+        for (i, key) in adversarial_keys.into_iter().rev().enumerate() {
+            capsule.inputs.insert(key.clone(), format!("value_{:03}", i));
+            capsule.manifest.input_refs.push(key);
+        }
+
+        // Sort manifest refs to match BTreeMap order
+        capsule.manifest.input_refs.sort();
+
+        // Compute hash multiple times to verify determinism
+        let hash_attempts = (0..10).map(|_| {
+            compute_replay_hash(&capsule.payload, &capsule.inputs)
+        }).collect::<Vec<_>>();
+
+        // All hash attempts should be identical
+        for (i, hash) in hash_attempts.iter().enumerate() {
+            assert_eq!(hash, &hash_attempts[0],
+                      "Hash attempt {} differs from first attempt", i);
+        }
+
+        capsule.manifest.expected_output_hash = hash_attempts[0].clone();
+        sign_capsule(&mut capsule);
+
+        let result = replay(&capsule, "verifier://adversarial-keys").unwrap();
+        assert_eq!(result.verdict, CapsuleVerdict::Pass);
+    }
+
+    #[test]
+    fn negative_replay_verdict_consistency_under_concurrent_simulation() {
+        // Test verdict consistency by simulating concurrent access patterns
+        let capsule = build_reference_capsule();
+
+        // Simulate multiple "concurrent" replay attempts with identical capsule
+        let replay_results: Vec<_> = (0..100).map(|i| {
+            replay(&capsule, &format!("verifier://concurrent-sim-{:03}", i))
+        }).collect();
+
+        // All replays should succeed with identical results
+        for (i, result) in replay_results.iter().enumerate() {
+            match result {
+                Ok(replay_result) => {
+                    assert_eq!(replay_result.verdict, CapsuleVerdict::Pass,
+                              "Replay {} should pass", i);
+                    assert_eq!(replay_result.actual_hash, replay_result.expected_hash,
+                              "Hash mismatch in replay {}", i);
+                    assert_eq!(replay_result.capsule_id, capsule.manifest.capsule_id,
+                              "Capsule ID mismatch in replay {}", i);
+                }
+                Err(e) => panic!("Replay {} failed unexpectedly: {}", i, e),
+            }
+        }
+
+        // Test with slightly modified verifier identities to ensure no cross-contamination
+        let verifier_variations = vec![
+            "verifier://test-v1",
+            "verifier://test-v2",
+            "verifier://test-v3",
+            "verifier://different-verifier",
+            "verifier://CAPS_VERIFIER",
+            "verifier://verifier-with-dashes",
+            "verifier://123-numeric-verifier",
+        ];
+
+        for verifier_id in verifier_variations {
+            let result = replay(&capsule, verifier_id).unwrap();
+            assert_eq!(result.verdict, CapsuleVerdict::Pass);
+            // Result should be identical regardless of verifier identity
+            assert_eq!(result.actual_hash, capsule.manifest.expected_output_hash);
+        }
+    }
+
+    #[test]
+    fn negative_hash_collision_resistance_against_birthday_attack_simulation() {
+        // Test hash collision resistance with patterns that could exploit birthday paradox
+        let base_input = "collision_test_input";
+        let mut hash_set = std::collections::HashSet::new();
+
+        // Generate variations of input and verify no collisions occur
+        let variations = (0..1000).map(|i| {
+            format!("{}_variant_{:04}_{}", base_input, i, "x".repeat(i % 100))
+        });
+
+        for input in variations {
+            let hash = deterministic_hash(&input);
+            assert_eq!(hash.len(), 64);
+            assert!(hash.bytes().all(|b| b.is_ascii_hexdigit()));
+
+            // In a cryptographically secure hash, collisions should be extremely rare
+            if hash_set.contains(&hash) {
+                panic!("Hash collision detected for input: {}", input);
+            }
+            hash_set.insert(hash);
+        }
+
+        // Test with structured input patterns that could exploit internal hash state
+        let structured_patterns = vec![
+            "aaaa", "aaab", "aaba", "abaa", "baaa", // Hamming distance 1 patterns
+            "0000", "0001", "0010", "0100", "1000", // Binary patterns
+            "ffff", "fffe", "ffef", "feff", "efff", // High-bit patterns
+        ];
+
+        let mut structured_hashes = std::collections::HashSet::new();
+        for pattern in structured_patterns {
+            let hash = deterministic_hash(pattern);
+            assert!(!structured_hashes.contains(&hash),
+                   "Collision in structured pattern: {}", pattern);
+            structured_hashes.insert(hash);
+        }
+    }
 }

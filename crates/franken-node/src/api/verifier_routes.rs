@@ -102,7 +102,7 @@ impl VerifierRouteState {
     fn store_check(&mut self, check_id: String, evidence: EvidenceArtifact) {
         self.checks
             .insert(check_id.clone(), StoredVerifierCheck { evidence });
-        while self.checks.len() >= MAX_STORED_CONFORMANCE_CHECKS {
+        while self.checks.len() > MAX_STORED_CONFORMANCE_CHECKS {
             if let Some(evicted_check_id) = self.check_order.pop_front() {
                 self.checks.remove(&evicted_check_id);
             } else {
@@ -183,6 +183,21 @@ fn with_verifier_route_state<T>(
             trace_id: trace_id.to_string(),
         })?;
     f(&mut state)
+}
+
+fn normalize_required_field(
+    value: &str,
+    field_name: &str,
+    trace_id: &str,
+) -> Result<String, ApiError> {
+    let normalized = value.trim();
+    if normalized.is_empty() {
+        return Err(ApiError::BadRequest {
+            detail: format!("verifier field `{field_name}` must not be empty"),
+            trace_id: trace_id.to_string(),
+        });
+    }
+    Ok(normalized.to_string())
 }
 
 // ── Response Types ─────────────────────────────────────────────────────────
@@ -422,16 +437,17 @@ pub fn get_evidence(
     trace: &TraceContext,
     check_id: &str,
 ) -> Result<ApiResponse<EvidenceArtifact>, ApiError> {
+    let check_id = normalize_required_field(check_id, "check_id", &trace.trace_id)?;
     with_verifier_route_state(&trace.trace_id, |state| {
         let Some(artifact) = state
             .checks
-            .get(check_id)
+            .get(&check_id)
             .map(|check| check.evidence.clone())
         else {
             state.append_audit(
                 "evidence.read",
                 &identity.principal,
-                check_id,
+                &check_id,
                 "not_found",
                 &trace.trace_id,
             )?;
@@ -948,5 +964,434 @@ mod tests {
         assert_eq!(state.next_audit_seq, 9);
         assert!(state.checks.is_empty());
         assert!(state.audit_log.is_empty());
+    }
+
+    #[test]
+    fn query_audit_log_rejects_zero_limit() {
+        let _guard = test_guard();
+        reset_verifier_state();
+        let identity = test_identity();
+        let trace = test_trace();
+
+        let err = query_audit_log(
+            &identity,
+            &trace,
+            &AuditLogQuery {
+                action: None,
+                actor: None,
+                limit: Some(0),
+                since: None,
+            },
+        )
+        .expect_err("zero limit must fail closed");
+
+        assert!(matches!(
+            err,
+            ApiError::BadRequest { ref trace_id, .. } if trace_id == "test-trace-verifier-001"
+        ));
+    }
+
+    #[test]
+    fn query_audit_log_rejects_malformed_since_timestamp() {
+        let _guard = test_guard();
+        reset_verifier_state();
+        let identity = test_identity();
+        let trace = test_trace();
+
+        let err = query_audit_log(
+            &identity,
+            &trace,
+            &AuditLogQuery {
+                action: None,
+                actor: None,
+                limit: Some(10),
+                since: Some("not-a-timestamp".to_string()),
+            },
+        )
+        .expect_err("malformed since timestamp must fail closed");
+
+        let problem = err.to_problem("/v1/verifier/audit-log");
+        assert_eq!(problem.status, 400);
+        assert!(
+            problem
+                .detail
+                .contains("invalid verifier audit-log since timestamp")
+        );
+    }
+
+    #[test]
+    fn query_audit_log_since_excludes_exact_boundary_timestamp() {
+        let _guard = test_guard();
+        reset_verifier_state();
+        {
+            let mut state = verifier_route_state().lock().expect("state lock");
+            state.audit_log.push(AuditLogEntry {
+                entry_id: "audit-boundary".to_string(),
+                timestamp: "2026-01-01T00:00:00Z".to_string(),
+                action: "conformance.trigger".to_string(),
+                actor: "test-verifier".to_string(),
+                resource: "chk-boundary".to_string(),
+                outcome: "pass".to_string(),
+                trace_id: "trace-boundary".to_string(),
+            });
+        }
+        let identity = test_identity();
+        let trace = test_trace();
+
+        let result = query_audit_log(
+            &identity,
+            &trace,
+            &AuditLogQuery {
+                action: None,
+                actor: None,
+                limit: Some(10),
+                since: Some("2026-01-01T00:00:00Z".to_string()),
+            },
+        )
+        .expect("query audit log");
+
+        assert!(
+            result.data.is_empty(),
+            "audit entries exactly at since boundary must be excluded"
+        );
+    }
+
+    #[test]
+    fn missing_evidence_read_records_not_found_audit_entry() {
+        let _guard = test_guard();
+        reset_verifier_state();
+        let identity = test_identity();
+        let trace = test_trace();
+
+        let err = get_evidence(&identity, &trace, "chk-missing-0001")
+            .expect_err("missing evidence must fail");
+        assert!(matches!(err, ApiError::NotFound { .. }));
+
+        let audit = query_audit_log(
+            &identity,
+            &trace,
+            &AuditLogQuery {
+                action: Some("evidence.read".to_string()),
+                actor: Some("test-verifier".to_string()),
+                limit: Some(10),
+                since: None,
+            },
+        )
+        .expect("audit query");
+        assert_eq!(audit.data.len(), 1);
+        assert_eq!(audit.data[0].resource, "chk-missing-0001");
+        assert_eq!(audit.data[0].outcome, "not_found");
+    }
+
+    #[test]
+    fn verifier_routes_do_not_allow_anonymous_access_or_empty_roles() {
+        for route in route_metadata() {
+            assert_ne!(
+                route.auth_method,
+                AuthMethod::None,
+                "{} must not bypass verifier auth",
+                route.path
+            );
+            assert!(
+                !route.policy_hook.required_roles.is_empty(),
+                "{} must require verifier/operator policy roles",
+                route.path
+            );
+        }
+    }
+
+    #[test]
+    fn conformance_status_deserialize_rejects_unknown_variant() {
+        let result: Result<ConformanceStatus, _> = serde_json::from_str("\"Bypassed\"");
+
+        assert!(
+            result.is_err(),
+            "unknown conformance status must fail closed"
+        );
+    }
+
+    #[test]
+    fn trigger_request_deserialize_rejects_verbose_type_confusion() {
+        let raw = serde_json::json!({
+            "scope": "security",
+            "verbose": "true"
+        });
+
+        let result: Result<ConformanceTriggerRequest, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "verbose must be a boolean, not a string");
+    }
+
+    #[test]
+    fn evidence_artifact_deserialize_rejects_missing_content_hash() {
+        let raw = serde_json::json!({
+            "check_id": "chk-missing-hash",
+            "artifact_type": "conformance_evidence",
+            "size_bytes": 12_u64,
+            "created_at": "2026-01-01T00:00:00Z",
+            "content": {"ok": true}
+        });
+
+        let result: Result<EvidenceArtifact, _> = serde_json::from_value(raw);
+
+        assert!(
+            result.is_err(),
+            "evidence artifacts must include a content hash"
+        );
+    }
+
+    fn evidence_for(check_id: &str) -> EvidenceArtifact {
+        EvidenceArtifact {
+            check_id: check_id.to_string(),
+            artifact_type: "conformance_evidence".to_string(),
+            content_hash: format!("sha256:{}", "0".repeat(64)),
+            size_bytes: 2,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            content: serde_json::json!({ "id": check_id }),
+        }
+    }
+
+    #[test]
+    fn store_check_keeps_exact_capacity_without_early_eviction() {
+        let mut state = VerifierRouteState::default();
+
+        for idx in 0..MAX_STORED_CONFORMANCE_CHECKS {
+            let check_id = format!("chk-cap-{idx:04}");
+            state.store_check(check_id.clone(), evidence_for(&check_id));
+        }
+
+        assert_eq!(state.checks.len(), MAX_STORED_CONFORMANCE_CHECKS);
+        assert!(state.checks.contains_key("chk-cap-0000"));
+        assert!(state.checks.contains_key("chk-cap-0255"));
+    }
+
+    #[test]
+    fn store_check_over_capacity_evicts_only_oldest_check() {
+        let mut state = VerifierRouteState::default();
+
+        for idx in 0..=MAX_STORED_CONFORMANCE_CHECKS {
+            let check_id = format!("chk-overflow-{idx:04}");
+            state.store_check(check_id.clone(), evidence_for(&check_id));
+        }
+
+        assert_eq!(state.checks.len(), MAX_STORED_CONFORMANCE_CHECKS);
+        assert!(!state.checks.contains_key("chk-overflow-0000"));
+        assert!(state.checks.contains_key("chk-overflow-0001"));
+        assert!(state.checks.contains_key("chk-overflow-0256"));
+    }
+
+    #[test]
+    fn get_evidence_rejects_blank_check_id_as_bad_request() {
+        let _guard = test_guard();
+        reset_verifier_state();
+        let identity = test_identity();
+        let trace = test_trace();
+
+        let err = get_evidence(&identity, &trace, " \t\n ").expect_err("blank check id");
+
+        assert!(matches!(
+            err,
+            ApiError::BadRequest {
+                ref detail,
+                ref trace_id
+            } if detail.contains("check_id") && trace_id == "test-trace-verifier-001"
+        ));
+    }
+
+    #[test]
+    fn get_evidence_trims_unknown_check_id_before_audit() {
+        let _guard = test_guard();
+        reset_verifier_state();
+        let identity = test_identity();
+        let trace = test_trace();
+
+        let err =
+            get_evidence(&identity, &trace, "  chk-missing-padded  ").expect_err("missing id");
+
+        assert!(matches!(err, ApiError::NotFound { .. }));
+        let audit = query_audit_log(
+            &identity,
+            &trace,
+            &AuditLogQuery {
+                action: Some("evidence.read".to_string()),
+                actor: Some("test-verifier".to_string()),
+                limit: Some(10),
+                since: None,
+            },
+        )
+        .expect("audit query");
+        assert_eq!(audit.data.len(), 1);
+        assert_eq!(audit.data[0].resource, "chk-missing-padded");
+    }
+
+    #[test]
+    fn query_audit_log_rejects_blank_since_timestamp() {
+        let _guard = test_guard();
+        reset_verifier_state();
+        let identity = test_identity();
+        let trace = test_trace();
+
+        let err = query_audit_log(
+            &identity,
+            &trace,
+            &AuditLogQuery {
+                action: None,
+                actor: None,
+                limit: Some(10),
+                since: Some(" \n\t ".to_string()),
+            },
+        )
+        .expect_err("blank since timestamp must fail closed");
+
+        assert!(matches!(err, ApiError::BadRequest { .. }));
+    }
+
+    #[test]
+    fn audit_log_query_deserialize_rejects_limit_type_confusion() {
+        let raw = serde_json::json!({
+            "action": null,
+            "actor": null,
+            "limit": "10",
+            "since": null
+        });
+
+        let result: Result<AuditLogQuery, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "audit limit must be numeric");
+    }
+
+    #[test]
+    fn audit_log_query_deserialize_rejects_action_type_confusion() {
+        let raw = serde_json::json!({
+            "action": 7_u8,
+            "actor": null,
+            "limit": 10_u32,
+            "since": null
+        });
+
+        let result: Result<AuditLogQuery, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "audit action filter must be a string");
+    }
+
+    #[test]
+    fn conformance_result_deserialize_rejects_missing_findings() {
+        let raw = serde_json::json!({
+            "check_id": "chk-schema-0001",
+            "status": "Pass",
+            "total_checks": 2,
+            "passed": 2,
+            "failed": 0,
+            "skipped": 0,
+            "triggered_at": "2026-01-01T00:00:00Z"
+        });
+
+        let result = serde_json::from_value::<ConformanceResult>(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn conformance_result_deserialize_rejects_string_total_checks() {
+        let raw = serde_json::json!({
+            "check_id": "chk-schema-0002",
+            "status": "Pass",
+            "total_checks": "2",
+            "passed": 2,
+            "failed": 0,
+            "skipped": 0,
+            "findings": [],
+            "triggered_at": "2026-01-01T00:00:00Z"
+        });
+
+        let result = serde_json::from_value::<ConformanceResult>(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn conformance_finding_deserialize_rejects_numeric_severity() {
+        let raw = serde_json::json!({
+            "check_name": "trust_card_schema",
+            "status": "Pass",
+            "detail": "ok",
+            "severity": 1
+        });
+
+        let result = serde_json::from_value::<ConformanceFinding>(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn conformance_finding_deserialize_rejects_unknown_nested_status() {
+        let raw = serde_json::json!({
+            "check_name": "trust_card_schema",
+            "status": "Bypassed",
+            "detail": "not a valid status",
+            "severity": "info"
+        });
+
+        let result = serde_json::from_value::<ConformanceFinding>(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn evidence_artifact_deserialize_rejects_negative_size_bytes() {
+        let raw = serde_json::json!({
+            "check_id": "chk-schema-0003",
+            "artifact_type": "conformance_evidence",
+            "content_hash": format!("sha256:{}", "0".repeat(64)),
+            "size_bytes": -1,
+            "created_at": "2026-01-01T00:00:00Z",
+            "content": {"ok": true}
+        });
+
+        let result = serde_json::from_value::<EvidenceArtifact>(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn audit_log_entry_deserialize_rejects_missing_trace_id() {
+        let raw = serde_json::json!({
+            "entry_id": "audit-schema-0001",
+            "timestamp": "2026-01-01T00:00:00Z",
+            "action": "evidence.read",
+            "actor": "test-verifier",
+            "resource": "chk-schema-0001",
+            "outcome": "success"
+        });
+
+        let result = serde_json::from_value::<AuditLogEntry>(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn audit_log_query_deserialize_rejects_negative_limit() {
+        let raw = serde_json::json!({
+            "action": null,
+            "actor": null,
+            "limit": -1,
+            "since": null
+        });
+
+        let result = serde_json::from_value::<AuditLogQuery>(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn trigger_request_deserialize_rejects_array_scope() {
+        let raw = serde_json::json!({
+            "scope": ["security"],
+            "verbose": false
+        });
+
+        let result = serde_json::from_value::<ConformanceTriggerRequest>(raw);
+
+        assert!(result.is_err());
     }
 }

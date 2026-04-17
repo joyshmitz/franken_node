@@ -395,11 +395,12 @@ pub fn release_lease(
     trace: &TraceContext,
     lease_id: &str,
 ) -> Result<ApiResponse<bool>, ApiError> {
+    let lease_id = normalize_required_field(lease_id, "lease_id", &trace.trace_id)?;
     with_fleet_lease_state(&trace.trace_id, |state| {
         state.sweep_expired(chrono::Utc::now());
         state
             .leases
-            .remove(lease_id)
+            .remove(&lease_id)
             .ok_or_else(|| ApiError::NotFound {
                 detail: format!("no active fleet lease found for `{lease_id}`"),
                 trace_id: trace.trace_id.clone(),
@@ -911,5 +912,412 @@ mod tests {
         let second = execute_coordination(&identity, &trace, &request).expect("second command");
 
         assert_ne!(first.data.command_id, second.data.command_id);
+    }
+
+    #[test]
+    fn acquire_lease_rejects_padded_duplicate_resource() {
+        let _guard = test_guard();
+        reset_fleet_lease_state();
+        let identity = admin_identity();
+        let trace = test_trace();
+        let padded = LeaseAcquireRequest {
+            resource: "  control-plane-lock  ".to_string(),
+            ttl_seconds: 300,
+        };
+        let canonical = LeaseAcquireRequest {
+            resource: "control-plane-lock".to_string(),
+            ttl_seconds: 300,
+        };
+
+        let first = acquire_lease(&identity, &trace, &padded).expect("first lease");
+        assert_eq!(first.data.resource, "control-plane-lock");
+
+        let err = acquire_lease(&identity, &trace, &canonical)
+            .expect_err("canonical duplicate must be rejected");
+        assert!(matches!(err, ApiError::Conflict { .. }));
+    }
+
+    #[test]
+    fn sweep_expired_removes_lease_at_exact_expiry_boundary() {
+        let _guard = test_guard();
+        reset_fleet_lease_state();
+        let now = chrono::Utc::now();
+        let mut state = FleetLeaseState::default();
+        state.leases.insert(
+            "lease-boundary-0001".to_string(),
+            StoredLease {
+                lease: Lease {
+                    lease_id: "lease-boundary-0001".to_string(),
+                    holder: "fleet-admin-1".to_string(),
+                    resource: "control-plane-lock".to_string(),
+                    acquired_at: now.to_rfc3339(),
+                    expires_at: now.to_rfc3339(),
+                    fencing_token: 1,
+                },
+                expires_at: now,
+            },
+        );
+
+        state.sweep_expired(now);
+
+        assert!(
+            state.leases.is_empty(),
+            "lease expiring exactly at now must not remain active"
+        );
+    }
+
+    #[test]
+    fn release_lease_rejects_expired_lease_after_sweep() {
+        let _guard = test_guard();
+        reset_fleet_lease_state();
+        let identity = admin_identity();
+        let trace = test_trace();
+        let expired_at = chrono::Utc::now() - chrono::Duration::seconds(1);
+        {
+            let mut state = fleet_lease_state().lock().expect("state lock");
+            state.leases.insert(
+                "lease-expired-0001".to_string(),
+                StoredLease {
+                    lease: Lease {
+                        lease_id: "lease-expired-0001".to_string(),
+                        holder: "fleet-admin-1".to_string(),
+                        resource: "control-plane-lock".to_string(),
+                        acquired_at: expired_at.to_rfc3339(),
+                        expires_at: expired_at.to_rfc3339(),
+                        fencing_token: 1,
+                    },
+                    expires_at: expired_at,
+                },
+            );
+        }
+
+        let err = release_lease(&identity, &trace, "lease-expired-0001")
+            .expect_err("expired lease should be swept before release");
+
+        assert!(matches!(err, ApiError::NotFound { .. }));
+    }
+
+    #[test]
+    fn fleet_control_routes_do_not_allow_anonymous_access() {
+        for route in route_metadata() {
+            assert_ne!(
+                route.auth_method,
+                AuthMethod::None,
+                "{} must not bypass fleet-control auth",
+                route.path
+            );
+            assert!(
+                route
+                    .policy_hook
+                    .required_roles
+                    .contains(&"fleet-admin".to_string())
+                    || route
+                        .policy_hook
+                        .required_roles
+                        .contains(&"operator".to_string()),
+                "{} must require an operator or fleet-admin role",
+                route.path
+            );
+        }
+    }
+
+    #[test]
+    fn lease_request_deserialize_rejects_missing_resource() {
+        let raw = serde_json::json!({
+            "ttl_seconds": 30_u32
+        });
+
+        let result: Result<LeaseAcquireRequest, _> = serde_json::from_value(raw);
+
+        assert!(
+            result.is_err(),
+            "resource is required for lease acquisition"
+        );
+    }
+
+    #[test]
+    fn lease_request_deserialize_rejects_ttl_overflow() {
+        let raw = serde_json::json!({
+            "resource": "control-plane-lock",
+            "ttl_seconds": 4_294_967_296_u64
+        });
+
+        let result: Result<LeaseAcquireRequest, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "u32 ttl overflow must fail closed");
+    }
+
+    #[test]
+    fn fencing_request_deserialize_rejects_unknown_action() {
+        let raw = serde_json::json!({
+            "target_node": "node-2",
+            "action": "PowerCycle",
+            "reason": "unsupported action should fail closed"
+        });
+
+        let result: Result<FencingRequest, _> = serde_json::from_value(raw);
+
+        assert!(
+            result.is_err(),
+            "unknown fencing action must not deserialize"
+        );
+    }
+
+    #[test]
+    fn coordination_request_deserialize_rejects_target_type_confusion() {
+        let raw = serde_json::json!({
+            "command_type": "policy-update",
+            "target_nodes": "node-1",
+            "timeout_seconds": 30_u32
+        });
+
+        let result: Result<CoordinationRequest, _> = serde_json::from_value(raw);
+
+        assert!(
+            result.is_err(),
+            "target_nodes must be an array, not a scalar"
+        );
+    }
+
+    #[test]
+    fn release_lease_rejects_blank_lease_id_as_bad_request() {
+        let _guard = test_guard();
+        reset_fleet_lease_state();
+        let identity = admin_identity();
+        let trace = test_trace();
+
+        let err = release_lease(&identity, &trace, " \t\n ").expect_err("blank lease id");
+
+        assert!(matches!(
+            err,
+            ApiError::BadRequest {
+                ref detail,
+                ref trace_id
+            } if detail.contains("lease_id") && trace_id == "test-trace-fleet-001"
+        ));
+    }
+
+    #[test]
+    fn release_lease_rejects_trimmed_unknown_lease_id_as_not_found() {
+        let _guard = test_guard();
+        reset_fleet_lease_state();
+        let identity = admin_identity();
+        let trace = test_trace();
+
+        let err = release_lease(&identity, &trace, "  lease-missing-0002  ")
+            .expect_err("unknown trimmed lease id");
+
+        assert!(matches!(
+            err,
+            ApiError::NotFound { ref detail, .. }
+                if detail.contains("lease-missing-0002")
+                    && !detail.contains("  lease-missing-0002  ")
+        ));
+    }
+
+    #[test]
+    fn execute_fence_rejects_blank_reason() {
+        let _guard = test_guard();
+        reset_fleet_lease_state();
+        let identity = admin_identity();
+        let trace = test_trace();
+        let request = FencingRequest {
+            target_node: "node-2".to_string(),
+            action: FencingAction::Drain,
+            reason: "\n\t ".to_string(),
+        };
+
+        let err = execute_fence(&identity, &trace, &request).expect_err("blank reason");
+
+        assert!(matches!(
+            err,
+            ApiError::BadRequest {
+                ref detail,
+                ref trace_id
+            } if detail.contains("reason") && trace_id == "test-trace-fleet-001"
+        ));
+    }
+
+    #[test]
+    fn execute_coordination_rejects_padded_duplicate_target_nodes() {
+        let _guard = test_guard();
+        reset_fleet_lease_state();
+        let identity = admin_identity();
+        let trace = test_trace();
+        let request = CoordinationRequest {
+            command_type: "policy-update".to_string(),
+            target_nodes: vec![" node-1 ".to_string(), "node-1".to_string()],
+            timeout_seconds: 30,
+        };
+
+        let err =
+            execute_coordination(&identity, &trace, &request).expect_err("padded duplicate target");
+
+        assert!(matches!(
+            err,
+            ApiError::BadRequest { ref detail, .. } if detail.contains("duplicate target node `node-1`")
+        ));
+    }
+
+    #[test]
+    fn lease_request_deserialize_rejects_resource_type_confusion() {
+        let raw = serde_json::json!({
+            "resource": 42_u32,
+            "ttl_seconds": 30_u32
+        });
+
+        let result: Result<LeaseAcquireRequest, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "resource must be a string");
+    }
+
+    #[test]
+    fn fencing_request_deserialize_rejects_missing_reason() {
+        let raw = serde_json::json!({
+            "target_node": "node-2",
+            "action": "Drain"
+        });
+
+        let result: Result<FencingRequest, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "fencing reason is required");
+    }
+
+    #[test]
+    fn coordination_request_deserialize_rejects_missing_timeout() {
+        let raw = serde_json::json!({
+            "command_type": "policy-update",
+            "target_nodes": ["node-1"]
+        });
+
+        let result: Result<CoordinationRequest, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "timeout_seconds is required");
+    }
+
+    #[test]
+    fn coordination_request_deserialize_rejects_timeout_type_confusion() {
+        let raw = serde_json::json!({
+            "command_type": "policy-update",
+            "target_nodes": ["node-1"],
+            "timeout_seconds": "30"
+        });
+
+        let result: Result<CoordinationRequest, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err(), "timeout_seconds must be numeric");
+    }
+
+    #[test]
+    fn lease_deserialize_rejects_missing_fencing_token() {
+        let raw = serde_json::json!({
+            "lease_id": "lease-schema-0001",
+            "holder": "fleet-admin-1",
+            "resource": "control-plane-lock",
+            "acquired_at": "2026-01-01T00:00:00Z",
+            "expires_at": "2026-01-01T00:01:00Z"
+        });
+
+        let result = serde_json::from_value::<Lease>(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn lease_deserialize_rejects_negative_fencing_token() {
+        let raw = serde_json::json!({
+            "lease_id": "lease-schema-0002",
+            "holder": "fleet-admin-1",
+            "resource": "control-plane-lock",
+            "acquired_at": "2026-01-01T00:00:00Z",
+            "expires_at": "2026-01-01T00:01:00Z",
+            "fencing_token": -1
+        });
+
+        let result = serde_json::from_value::<Lease>(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn fencing_result_deserialize_rejects_unknown_status() {
+        let raw = serde_json::json!({
+            "operation_id": "fence-schema-0001",
+            "target_node": "node-2",
+            "action": "Drain",
+            "status": "Bypassed",
+            "fencing_token": 1,
+            "executed_at": "2026-01-01T00:00:00Z"
+        });
+
+        let result = serde_json::from_value::<FencingResult>(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn fencing_result_deserialize_rejects_string_fencing_token() {
+        let raw = serde_json::json!({
+            "operation_id": "fence-schema-0002",
+            "target_node": "node-2",
+            "action": "Drain",
+            "status": "Completed",
+            "fencing_token": "1",
+            "executed_at": "2026-01-01T00:00:00Z"
+        });
+
+        let result = serde_json::from_value::<FencingResult>(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn coordination_result_deserialize_rejects_missing_participating_nodes() {
+        let raw = serde_json::json!({
+            "command_id": "coord-schema-0001",
+            "command_type": "policy-update",
+            "ack_count": 1,
+            "total_nodes": 1,
+            "status": "Acknowledged",
+            "issued_at": "2026-01-01T00:00:00Z"
+        });
+
+        let result = serde_json::from_value::<CoordinationResult>(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn coordination_result_deserialize_rejects_negative_ack_count() {
+        let raw = serde_json::json!({
+            "command_id": "coord-schema-0002",
+            "command_type": "policy-update",
+            "participating_nodes": ["node-1"],
+            "ack_count": -1,
+            "total_nodes": 1,
+            "status": "Partial",
+            "issued_at": "2026-01-01T00:00:00Z"
+        });
+
+        let result = serde_json::from_value::<CoordinationResult>(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn coordination_result_deserialize_rejects_unknown_status() {
+        let raw = serde_json::json!({
+            "command_id": "coord-schema-0003",
+            "command_type": "policy-update",
+            "participating_nodes": ["node-1"],
+            "ack_count": 1,
+            "total_nodes": 1,
+            "status": "SplitBrain",
+            "issued_at": "2026-01-01T00:00:00Z"
+        });
+
+        let result = serde_json::from_value::<CoordinationResult>(raw);
+
+        assert!(result.is_err());
     }
 }
