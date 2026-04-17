@@ -41,6 +41,15 @@ fn run_cli_in_dir_with_fleet_state(
     args: &[&str],
     fleet_state_dir: &std::path::Path,
 ) -> Output {
+    run_cli_in_dir_with_fleet_state_and_env(current_dir, args, fleet_state_dir, &[])
+}
+
+fn run_cli_in_dir_with_fleet_state_and_env(
+    current_dir: &std::path::Path,
+    args: &[&str],
+    fleet_state_dir: &std::path::Path,
+    extra_env: &[(&str, &str)],
+) -> Output {
     let binary_path = resolve_binary_path();
     assert!(
         binary_path.is_file(),
@@ -51,6 +60,8 @@ fn run_cli_in_dir_with_fleet_state(
         .current_dir(current_dir)
         .args(args)
         .env("FRANKEN_NODE_FLEET_STATE_DIR", fleet_state_dir)
+        .env_remove("FRANKEN_NODE_PROFILE")
+        .envs(extra_env.iter().copied())
         .output()
         .unwrap_or_else(|err| panic!("failed running `{}`: {err}", args.join(" ")))
 }
@@ -87,6 +98,53 @@ fn write_fixture_registry_to(root: &std::path::Path) {
     registry
         .persist_authoritative_state(&registry_path)
         .expect("persist trust registry");
+}
+
+fn write_profile_routing_config(root: &std::path::Path) {
+    std::fs::write(
+        root.join("franken_node.toml"),
+        r#"
+profile = "balanced"
+
+[profiles.strict.fleet]
+node_id = "strict-profile-node"
+poll_interval_seconds = 3
+convergence_timeout_seconds = 11
+
+[profiles.balanced.fleet]
+node_id = "balanced-profile-node"
+poll_interval_seconds = 5
+convergence_timeout_seconds = 22
+
+[profiles."legacy-risky".fleet]
+node_id = "legacy-profile-node"
+poll_interval_seconds = 7
+convergence_timeout_seconds = 33
+"#,
+    )
+    .expect("write profile routing config");
+}
+
+fn seed_fleet_quarantine(
+    transport: &mut FileFleetTransport,
+    zone_id: &str,
+    incident_id: &str,
+    quarantine_version: u64,
+) {
+    transport
+        .publish_action(&FleetActionRecord {
+            action_id: format!("fleet-op-{incident_id}"),
+            emitted_at: Utc::now(),
+            action: FleetAction::Quarantine {
+                zone_id: zone_id.to_string(),
+                incident_id: incident_id.to_string(),
+                target_id: format!("sha256:{incident_id}"),
+                target_kind: FleetTargetKind::Artifact,
+                reason: "e2e contract quarantine".to_string(),
+                quarantine_version,
+            },
+        })
+        .expect("publish quarantine");
 }
 
 #[test]
@@ -1153,6 +1211,263 @@ fn fleet_agent_rejects_invalid_node_id() {
         !output.status.success(),
         "fleet agent should fail with empty node_id"
     );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("invalid node_id"),
+        "expected invalid node_id error, got: {stderr}"
+    );
+}
+
+#[test]
+fn fleet_agent_routes_balanced_profile_from_config_file() {
+    let project = tempdir().expect("tempdir");
+    let fleet_state_dir = project.path().join("fleet-state");
+    seed_transport(&fleet_state_dir);
+    write_profile_routing_config(project.path());
+
+    let output = run_cli_in_dir_with_fleet_state(
+        project.path(),
+        &[
+            "fleet",
+            "agent",
+            "--zone",
+            "zone-profile",
+            "--once",
+            "--json",
+        ],
+        &fleet_state_dir,
+    );
+    assert!(
+        output.status.success(),
+        "fleet agent failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("fleet agent json output");
+    assert_eq!(payload["node_id"], "balanced-profile-node");
+    assert_eq!(payload["zone_id"], "zone-profile");
+    assert_eq!(payload["configured_poll_interval_secs"], 5);
+}
+
+#[test]
+fn fleet_agent_routes_strict_profile_from_env_override() {
+    let project = tempdir().expect("tempdir");
+    let fleet_state_dir = project.path().join("fleet-state");
+    seed_transport(&fleet_state_dir);
+    write_profile_routing_config(project.path());
+
+    let output = run_cli_in_dir_with_fleet_state_and_env(
+        project.path(),
+        &[
+            "fleet",
+            "agent",
+            "--zone",
+            "zone-profile",
+            "--once",
+            "--json",
+        ],
+        &fleet_state_dir,
+        &[("FRANKEN_NODE_PROFILE", "strict")],
+    );
+    assert!(
+        output.status.success(),
+        "fleet agent failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("fleet agent json output");
+    assert_eq!(payload["node_id"], "strict-profile-node");
+    assert_eq!(payload["zone_id"], "zone-profile");
+    assert_eq!(payload["configured_poll_interval_secs"], 3);
+}
+
+#[test]
+fn fleet_agent_routes_legacy_risky_profile_from_env_override() {
+    let project = tempdir().expect("tempdir");
+    let fleet_state_dir = project.path().join("fleet-state");
+    seed_transport(&fleet_state_dir);
+    write_profile_routing_config(project.path());
+
+    let output = run_cli_in_dir_with_fleet_state_and_env(
+        project.path(),
+        &[
+            "fleet",
+            "agent",
+            "--zone",
+            "zone-profile",
+            "--once",
+            "--json",
+        ],
+        &fleet_state_dir,
+        &[("FRANKEN_NODE_PROFILE", "legacy-risky")],
+    );
+    assert!(
+        output.status.success(),
+        "fleet agent failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("fleet agent json output");
+    assert_eq!(payload["node_id"], "legacy-profile-node");
+    assert_eq!(payload["zone_id"], "zone-profile");
+    assert_eq!(payload["configured_poll_interval_secs"], 7);
+}
+
+#[test]
+fn fleet_status_json_output_shape_is_stable() {
+    let fleet_state = tempdir().expect("tempdir");
+    let fleet_state_dir = fleet_state.path().join("fleet-state");
+    let mut transport = seed_transport(&fleet_state_dir);
+    seed_fleet_quarantine(&mut transport, "zone-json", "inc-json-shape", 2);
+
+    let output = run_cli_with_fleet_state(
+        &["fleet", "status", "--zone", "zone-json", "--json"],
+        &fleet_state_dir,
+    );
+    assert!(
+        output.status.success(),
+        "fleet status --json failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("fleet status json");
+    assert!(payload["status"].is_object());
+    assert!(payload["state"].is_object());
+    assert!(payload["state_dir"].is_string());
+    assert!(payload["stale_nodes"].is_array());
+    assert!(payload["active_incidents"].is_array());
+    assert!(payload["convergence_timeout_seconds"].is_u64());
+    assert_eq!(payload["status"]["zone_id"], "zone-json");
+    assert_eq!(payload["status"]["active_quarantines"], 1);
+}
+
+#[test]
+fn fleet_status_human_output_shape_is_stable() {
+    let output = run_cli(&["fleet", "status", "--zone", "zone-human", "--verbose"]);
+    assert!(
+        output.status.success(),
+        "fleet status failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert_eq!(lines[0], "fleet status: zone=zone-human");
+    assert_eq!(lines[1], "  activated=true");
+    assert_eq!(lines[2], "  quarantines=0 revocations=0");
+    assert_eq!(lines[3], "  healthy_nodes=0/0");
+    assert_eq!(lines[4], "  pending_convergences=0");
+}
+
+#[test]
+fn fleet_release_human_output_shape_is_stable() {
+    let fleet_state = tempdir().expect("tempdir");
+    let fleet_state_dir = fleet_state.path().join("fleet-state");
+    let mut transport = seed_transport(&fleet_state_dir);
+    seed_fleet_quarantine(&mut transport, "zone-release-human", "inc-release-human", 4);
+
+    let output = run_cli_with_fleet_state(
+        &["fleet", "release", "--incident", "inc-release-human"],
+        &fleet_state_dir,
+    );
+    assert!(
+        output.status.success(),
+        "fleet release failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert!(lines[0].starts_with("fleet action: type=release operation_id=fleet-op-release-"));
+    assert_eq!(lines[1], "  success=true");
+    assert_eq!(lines[2], "  event_code=FLEET-004");
+    assert!(lines[3].starts_with("  receipt_id=rcpt-fleet-op-release-"));
+    assert!(lines[3].contains(" issuer=cli-fleet-operator zone=zone-release-human"));
+}
+
+#[test]
+fn fleet_reconcile_json_output_shape_is_stable() {
+    let output = run_cli(&["fleet", "reconcile", "--json"]);
+    assert!(
+        output.status.success(),
+        "fleet reconcile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("fleet reconcile json");
+    assert_eq!(payload["action"]["action_type"], "reconcile");
+    assert_eq!(payload["action"]["success"], true);
+    assert_eq!(payload["action"]["event_code"], "FLEET-005");
+    assert!(
+        payload["action"]["operation_id"]
+            .as_str()
+            .expect("operation id")
+            .starts_with("fleet-op-reconcile-")
+    );
+    assert_eq!(payload["action"]["receipt"]["issuer"], "cli-fleet-operator");
+    assert_eq!(payload["status"]["zone_id"], "all");
+    assert!(payload["state"]["actions"].is_array());
+}
+
+#[test]
+fn fleet_release_missing_incident_argument_exits_with_clap_code() {
+    let output = run_cli(&["fleet", "release"]);
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--incident"),
+        "missing incident error should mention --incident, got: {stderr}"
+    );
+}
+
+#[test]
+fn fleet_invalid_profile_env_exits_with_config_error_code() {
+    let project = tempdir().expect("tempdir");
+    let fleet_state_dir = project.path().join("fleet-state");
+    seed_transport(&fleet_state_dir);
+    write_profile_routing_config(project.path());
+
+    let output = run_cli_in_dir_with_fleet_state_and_env(
+        project.path(),
+        &["fleet", "status", "--json"],
+        &fleet_state_dir,
+        &[("FRANKEN_NODE_PROFILE", "experimental")],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("FRANKEN_NODE_PROFILE=`experimental`"),
+        "invalid profile error should name env value, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("expected strict, balanced, or legacy-risky"),
+        "invalid profile error should include valid profile set, got: {stderr}"
+    );
+}
+
+#[test]
+fn fleet_agent_invalid_node_id_exits_with_application_error_code() {
+    let output = run_cli(&[
+        "fleet",
+        "agent",
+        "--node-id",
+        "",
+        "--zone",
+        "zone-1",
+        "--poll-interval-secs",
+        "1",
+        "--max-cycles",
+        "1",
+    ]);
+
+    assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("invalid node_id"),
