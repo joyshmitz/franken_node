@@ -34,26 +34,31 @@ impl SemVer {
                 reason: format!("invalid semver: {s}"),
             });
         }
-        let major = parts[0]
-            .parse::<u32>()
-            .map_err(|_| ManifestError::ManifestInvalid {
-                reason: format!("invalid major: {}", parts[0]),
-            })?;
-        let minor = parts[1]
-            .parse::<u32>()
-            .map_err(|_| ManifestError::ManifestInvalid {
-                reason: format!("invalid minor: {}", parts[1]),
-            })?;
-        let patch = parts[2]
-            .parse::<u32>()
-            .map_err(|_| ManifestError::ManifestInvalid {
-                reason: format!("invalid patch: {}", parts[2]),
-            })?;
+        let major = Self::parse_component(parts[0], "major")?;
+        let minor = Self::parse_component(parts[1], "minor")?;
+        let patch = Self::parse_component(parts[2], "patch")?;
         Ok(Self {
             major,
             minor,
             patch,
         })
+    }
+
+    fn parse_component(part: &str, label: &str) -> Result<u32, ManifestError> {
+        if part.is_empty() || !part.chars().all(|ch| ch.is_ascii_digit()) {
+            return Err(ManifestError::ManifestInvalid {
+                reason: format!("invalid {label}: {part}"),
+            });
+        }
+        if part.len() > 1 && part.starts_with('0') {
+            return Err(ManifestError::ManifestInvalid {
+                reason: format!("invalid {label}: leading zero in {part}"),
+            });
+        }
+        part.parse::<u32>()
+            .map_err(|_| ManifestError::ManifestInvalid {
+                reason: format!("invalid {label}: {part}"),
+            })
     }
 }
 
@@ -172,6 +177,35 @@ pub fn check_transport(required: &[TransportCap], available: &[TransportCap]) ->
         .collect()
 }
 
+fn contains_nul(value: &str) -> bool {
+    value.as_bytes().contains(&0)
+}
+
+fn manifest_shape_errors(manifest: &ConnectorManifest) -> Vec<String> {
+    let mut errors = Vec::new();
+    if manifest.connector_id.trim().is_empty() {
+        errors.push("connector_id must not be empty".to_string());
+    }
+    if contains_nul(&manifest.connector_id) {
+        errors.push("connector_id must not contain NUL bytes".to_string());
+    }
+    if manifest
+        .required_features
+        .iter()
+        .any(|feature| feature.trim().is_empty())
+    {
+        errors.push("required_features must not contain empty entries".to_string());
+    }
+    if manifest
+        .required_features
+        .iter()
+        .any(|feature| contains_nul(feature))
+    {
+        errors.push("required_features must not contain NUL bytes".to_string());
+    }
+    errors
+}
+
 /// Run fail-closed manifest negotiation.
 pub fn negotiate(
     manifest: &ConnectorManifest,
@@ -179,16 +213,20 @@ pub fn negotiate(
     trace_id: &str,
     timestamp: &str,
 ) -> NegotiationResult {
+    let manifest_errors = manifest_shape_errors(manifest);
     let version_ok = check_version(&manifest.version, &host.min_version, &host.max_version);
     let missing_features = check_features(&manifest.required_features, &host.available_features);
     let missing_transports = check_transport(&manifest.transport_caps, &host.transport_caps);
     let features_ok = missing_features.is_empty();
     let transport_ok = missing_transports.is_empty();
 
-    let outcome = if version_ok && features_ok && transport_ok {
+    let outcome = if manifest_errors.is_empty() && version_ok && features_ok && transport_ok {
         Outcome::Accepted
     } else {
-        let mut reasons = Vec::new();
+        let mut reasons: Vec<String> = manifest_errors
+            .into_iter()
+            .map(|reason| format!("MANIFEST_INVALID: {reason}"))
+            .collect();
         if !version_ok {
             reasons.push(format!(
                 "MANIFEST_VERSION_UNSUPPORTED: {} not in {}-{}",
@@ -485,5 +523,270 @@ mod tests {
             reason: "bad".into(),
         };
         assert!(e4.to_string().contains("MANIFEST_INVALID"));
+    }
+
+    #[test]
+    fn semver_parse_rejects_empty_components() {
+        assert!(SemVer::parse("").is_err());
+        assert!(SemVer::parse("1..0").is_err());
+        assert!(SemVer::parse(".1.0").is_err());
+    }
+
+    #[test]
+    fn semver_parse_rejects_prerelease_or_extra_components() {
+        assert!(SemVer::parse("1.2.3-beta").is_err());
+        assert!(SemVer::parse("1.2.3.4").is_err());
+    }
+
+    #[test]
+    fn semver_parse_rejects_negative_and_overflowing_components() {
+        assert!(SemVer::parse("-1.0.0").is_err());
+        assert!(SemVer::parse("1.4294967296.0").is_err());
+    }
+
+    #[test]
+    fn inverted_host_version_range_rejects_otherwise_valid_manifest() {
+        let mut host = host_caps();
+        host.min_version = SemVer::new(3, 0, 0);
+        host.max_version = SemVer::new(2, 0, 0);
+
+        let result = negotiate(&good_manifest(), &host, "trace-inverted", "ts");
+
+        assert!(!result.version_ok);
+        assert!(matches!(result.outcome, Outcome::Rejected { .. }));
+        if let Outcome::Rejected { reason } = result.outcome {
+            assert!(reason.contains("MANIFEST_VERSION_UNSUPPORTED"));
+        }
+    }
+
+    #[test]
+    fn empty_host_capabilities_reject_required_features_and_transports() {
+        let host = HostCapabilities {
+            min_version: SemVer::new(1, 0, 0),
+            max_version: SemVer::new(3, 0, 0),
+            available_features: Vec::new(),
+            transport_caps: Vec::new(),
+        };
+
+        let result = negotiate(&good_manifest(), &host, "trace-empty-host", "ts");
+
+        assert!(result.version_ok);
+        assert!(!result.features_ok);
+        assert!(!result.transport_ok);
+        assert_eq!(
+            result.missing_features,
+            vec!["auth".to_string(), "streaming".to_string()]
+        );
+        assert_eq!(result.missing_transports, vec![TransportCap::Http2]);
+    }
+
+    #[test]
+    fn required_feature_matching_is_case_sensitive_and_fails_closed() {
+        let required = vec!["Auth".to_string(), "streaming".to_string()];
+        let available = vec!["auth".to_string(), "streaming".to_string()];
+
+        let missing = check_features(&required, &available);
+
+        assert_eq!(missing, vec!["Auth".to_string()]);
+    }
+
+    #[test]
+    fn missing_features_preserve_manifest_order_for_diagnostics() {
+        let required = vec![
+            "zeta".to_string(),
+            "auth".to_string(),
+            "alpha".to_string(),
+            "omega".to_string(),
+        ];
+        let available = vec!["auth".to_string()];
+
+        let missing = check_features(&required, &available);
+
+        assert_eq!(
+            missing,
+            vec!["zeta".to_string(), "alpha".to_string(), "omega".to_string()]
+        );
+    }
+
+    #[test]
+    fn duplicate_missing_transport_requirements_are_reported_verbatim() {
+        let required = vec![
+            TransportCap::Http3,
+            TransportCap::Http3,
+            TransportCap::WebSocket,
+        ];
+        let available = vec![TransportCap::Http1, TransportCap::Http2];
+
+        let missing = check_transport(&required, &available);
+
+        assert_eq!(
+            missing,
+            vec![
+                TransportCap::Http3,
+                TransportCap::Http3,
+                TransportCap::WebSocket
+            ]
+        );
+    }
+
+    #[test]
+    fn rejected_negotiation_reports_all_failure_categories_together() {
+        let manifest = ConnectorManifest {
+            connector_id: "conn-multi-bad".into(),
+            version: SemVer::new(0, 1, 0),
+            required_features: vec!["missing-a".into(), "missing-b".into()],
+            transport_caps: vec![TransportCap::Http3, TransportCap::WebSocket],
+        };
+
+        let result = negotiate(&manifest, &host_caps(), "trace-multi-bad", "ts");
+
+        assert!(!result.version_ok);
+        assert!(!result.features_ok);
+        assert!(!result.transport_ok);
+        if let Outcome::Rejected { reason } = result.outcome {
+            assert!(reason.contains("MANIFEST_VERSION_UNSUPPORTED"));
+            assert!(reason.contains("MANIFEST_FEATURE_MISSING"));
+            assert!(reason.contains("MANIFEST_TRANSPORT_MISMATCH"));
+        } else {
+            unreachable!("expected rejected negotiation");
+        }
+    }
+
+    #[test]
+    fn semver_parse_rejects_zero_padded_major_component() {
+        let err = SemVer::parse("01.2.3").unwrap_err();
+
+        assert!(matches!(err, ManifestError::ManifestInvalid { .. }));
+        assert!(err.to_string().contains("leading zero"));
+    }
+
+    #[test]
+    fn semver_parse_rejects_zero_padded_minor_component() {
+        let err = SemVer::parse("1.02.3").unwrap_err();
+
+        assert!(matches!(err, ManifestError::ManifestInvalid { .. }));
+        assert!(err.to_string().contains("leading zero"));
+    }
+
+    #[test]
+    fn semver_parse_rejects_zero_padded_patch_component() {
+        let err = SemVer::parse("1.2.03").unwrap_err();
+
+        assert!(matches!(err, ManifestError::ManifestInvalid { .. }));
+        assert!(err.to_string().contains("leading zero"));
+    }
+
+    #[test]
+    fn semver_parse_rejects_plus_prefixed_component() {
+        let err = SemVer::parse("+1.2.3").unwrap_err();
+
+        assert!(matches!(err, ManifestError::ManifestInvalid { .. }));
+        assert!(err.to_string().contains("invalid major"));
+    }
+
+    #[test]
+    fn semver_parse_rejects_whitespace_padded_component() {
+        let err = SemVer::parse("1.2.3 ").unwrap_err();
+
+        assert!(matches!(err, ManifestError::ManifestInvalid { .. }));
+        assert!(err.to_string().contains("invalid patch"));
+    }
+
+    #[test]
+    fn semver_parse_rejects_non_ascii_digit_component() {
+        let err = SemVer::parse("1.٢.3").unwrap_err();
+
+        assert!(matches!(err, ManifestError::ManifestInvalid { .. }));
+        assert!(err.to_string().contains("invalid minor"));
+    }
+
+    fn rejected_reason(result: &NegotiationResult) -> &str {
+        match &result.outcome {
+            Outcome::Rejected { reason } => reason,
+            Outcome::Accepted => unreachable!("expected rejected negotiation"),
+        }
+    }
+
+    #[test]
+    fn empty_connector_id_is_rejected_even_when_capabilities_match() {
+        let mut manifest = good_manifest();
+        manifest.connector_id.clear();
+
+        let result = negotiate(&manifest, &host_caps(), "trace-empty-id", "ts");
+
+        assert!(result.version_ok);
+        assert!(result.features_ok);
+        assert!(result.transport_ok);
+        assert!(rejected_reason(&result).contains("MANIFEST_INVALID"));
+        assert!(rejected_reason(&result).contains("connector_id must not be empty"));
+    }
+
+    #[test]
+    fn whitespace_connector_id_is_rejected_even_when_capabilities_match() {
+        let mut manifest = good_manifest();
+        manifest.connector_id = " \t\n ".to_string();
+
+        let result = negotiate(&manifest, &host_caps(), "trace-space-id", "ts");
+
+        assert!(result.version_ok);
+        assert!(result.features_ok);
+        assert!(result.transport_ok);
+        assert!(rejected_reason(&result).contains("connector_id must not be empty"));
+    }
+
+    #[test]
+    fn connector_id_with_nul_is_rejected_even_when_capabilities_match() {
+        let mut manifest = good_manifest();
+        manifest.connector_id = "conn\0hidden".to_string();
+
+        let result = negotiate(&manifest, &host_caps(), "trace-nul-id", "ts");
+
+        assert!(result.version_ok);
+        assert!(result.features_ok);
+        assert!(result.transport_ok);
+        assert!(rejected_reason(&result).contains("connector_id must not contain NUL bytes"));
+    }
+
+    #[test]
+    fn empty_required_feature_is_rejected_even_if_host_lists_empty_feature() {
+        let mut manifest = good_manifest();
+        manifest.required_features.push(String::new());
+        let mut host = host_caps();
+        host.available_features.push(String::new());
+
+        let result = negotiate(&manifest, &host, "trace-empty-feature", "ts");
+
+        assert!(result.features_ok);
+        assert!(
+            rejected_reason(&result).contains("required_features must not contain empty entries")
+        );
+    }
+
+    #[test]
+    fn whitespace_required_feature_is_rejected_even_if_host_lists_same_string() {
+        let mut manifest = good_manifest();
+        manifest.required_features.push(" \t ".to_string());
+        let mut host = host_caps();
+        host.available_features.push(" \t ".to_string());
+
+        let result = negotiate(&manifest, &host, "trace-space-feature", "ts");
+
+        assert!(result.features_ok);
+        assert!(
+            rejected_reason(&result).contains("required_features must not contain empty entries")
+        );
+    }
+
+    #[test]
+    fn required_feature_with_nul_is_rejected_even_if_host_lists_same_string() {
+        let mut manifest = good_manifest();
+        manifest.required_features.push("auth\0shadow".to_string());
+        let mut host = host_caps();
+        host.available_features.push("auth\0shadow".to_string());
+
+        let result = negotiate(&manifest, &host, "trace-nul-feature", "ts");
+
+        assert!(result.features_ok);
+        assert!(rejected_reason(&result).contains("required_features must not contain NUL bytes"));
     }
 }

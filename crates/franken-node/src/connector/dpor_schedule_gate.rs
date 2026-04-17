@@ -863,6 +863,9 @@ impl DporScheduleGate {
 
 /// Push an item to a bounded Vec, evicting oldest entries if at capacity.
 fn push_bounded<T>(vec: &mut Vec<T>, item: T, max: usize) {
+    if max == 0 {
+        return;
+    }
     if vec.len() >= max {
         let overflow = vec.len() - max + 1;
         vec.drain(0..overflow);
@@ -892,6 +895,10 @@ mod tests {
                 state_summary: "deliberately violated".to_string(),
             }],
         ))
+    }
+
+    fn empty_trace_violation(_ops: &[&Operation]) -> Option<(String, Vec<CounterexampleStep>)> {
+        Some(("empty_counterexample_trace".to_string(), Vec::new()))
     }
 
     fn make_gate() -> DporScheduleGate {
@@ -1186,5 +1193,215 @@ mod tests {
         for (s1, s2) in r1.per_scenario.iter().zip(r2.per_scenario.iter()) {
             assert_eq!(s1.explored_count, s2.explored_count);
         }
+    }
+
+    // --- Negative regression coverage ---
+
+    #[test]
+    fn run_full_gate_with_checker_no_scenarios_fails() {
+        let mut gate = DporScheduleGate::with_defaults().unwrap();
+
+        let err = gate.run_full_gate_with_checker(&no_violations).unwrap_err();
+
+        assert_eq!(err.code(), ERR_DSG_NO_SCENARIOS);
+        assert!(
+            !gate
+                .events()
+                .iter()
+                .any(|event| event.code == event_codes::DSG_006)
+        );
+    }
+
+    #[test]
+    fn explore_unregistered_scenario_fails_without_completion_event() {
+        let mut gate = DporScheduleGate::with_defaults().unwrap();
+
+        let err = gate
+            .explore_scenario(SCENARIO_EPOCH_LEASE_INTERLEAVE, &no_violations)
+            .unwrap_err();
+
+        assert_eq!(err.code(), ERR_DSG_EXPLORATION_FAILED);
+        assert!(
+            gate.events()
+                .iter()
+                .any(|event| event.code == event_codes::DSG_003)
+        );
+        assert!(
+            !gate
+                .events()
+                .iter()
+                .any(|event| event.code == event_codes::DSG_004)
+        );
+    }
+
+    #[test]
+    fn unknown_scenario_registration_does_not_emit_registration_event() {
+        let mut gate = DporScheduleGate::with_defaults().unwrap();
+        let initial_events = gate.events().len();
+
+        let err = gate
+            .register_scenario("epoch lease interleave")
+            .unwrap_err();
+
+        assert_eq!(err.code(), ERR_DSG_SCENARIO_NOT_FOUND);
+        assert_eq!(gate.registered_scenarios().len(), 0);
+        assert_eq!(gate.events().len(), initial_events);
+        assert!(
+            !gate
+                .events()
+                .iter()
+                .any(|event| event.code == event_codes::DSG_002)
+        );
+    }
+
+    #[test]
+    fn partial_registration_does_not_claim_complete_coverage() {
+        let mut gate = DporScheduleGate::with_defaults().unwrap();
+        gate.register_scenario(SCENARIO_LEASE_EVIDENCE_SYNC)
+            .unwrap();
+
+        let result = gate.run_full_gate().unwrap();
+
+        assert_eq!(result.scenarios_explored, 1);
+        assert_eq!(result.scenarios_total, ALL_SCENARIOS.len());
+        assert!(result.scenarios_explored < result.scenarios_total);
+        assert!(result.is_pass());
+    }
+
+    #[test]
+    fn empty_counterexample_trace_still_fails_gate() {
+        let mut gate = DporScheduleGate::with_defaults().unwrap();
+        gate.register_scenario(SCENARIO_REMOTE_EVIDENCE_RACE)
+            .unwrap();
+
+        let result = gate
+            .run_full_gate_with_checker(&empty_trace_violation)
+            .unwrap();
+
+        assert_eq!(result.verdict, "FAIL");
+        assert!(result.total_violations > 0);
+        assert!(
+            gate.events()
+                .iter()
+                .any(|event| event.code == event_codes::DSG_005)
+        );
+    }
+
+    #[test]
+    fn gate_result_is_pass_rejects_non_pass_verdicts() {
+        for verdict in ["FAIL", "ERROR", "", "pass"] {
+            let result = GateResult {
+                schema_version: SCHEMA_VERSION.to_string(),
+                scenarios_explored: 0,
+                scenarios_total: ALL_SCENARIOS.len(),
+                total_schedules_explored: 0,
+                total_violations: 1,
+                per_scenario: Vec::new(),
+                verdict: verdict.to_string(),
+            };
+
+            assert!(!result.is_pass());
+        }
+    }
+
+    #[test]
+    fn event_description_rejects_near_miss_codes() {
+        for code in ["DSG-000", "DSG-001 ", " DSG-001", "dsg-001"] {
+            assert_eq!(event_description(code), "unknown event code");
+        }
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_drops_event_without_panicking() {
+        let mut events = vec![GateEvent::new(event_codes::DSG_001, "kept")];
+
+        push_bounded(&mut events, GateEvent::new(event_codes::DSG_002, "drop"), 0);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].detail, "kept");
+    }
+
+    #[test]
+    fn push_bounded_over_capacity_discards_oldest_events() {
+        let mut events = vec![
+            GateEvent::new(event_codes::DSG_001, "oldest"),
+            GateEvent::new(event_codes::DSG_002, "middle"),
+            GateEvent::new(event_codes::DSG_003, "newest"),
+        ];
+
+        push_bounded(&mut events, GateEvent::new(event_codes::DSG_004, "incoming"), 2);
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].detail, "newest");
+        assert_eq!(events[1].detail, "incoming");
+    }
+
+    #[test]
+    fn config_validate_zero_time_preserves_specific_detail() {
+        let config = DporScheduleGateConfig {
+            time_budget_per_scenario_secs: 0,
+            memory_budget_bytes: 1,
+        };
+
+        let err = config.validate().unwrap_err();
+
+        assert_eq!(err.code(), ERR_DSG_INVALID_CONFIG);
+        assert!(err
+            .to_string()
+            .contains("time_budget_per_scenario_secs must be > 0"));
+    }
+
+    #[test]
+    fn config_validate_zero_memory_preserves_specific_detail() {
+        let config = DporScheduleGateConfig {
+            time_budget_per_scenario_secs: 1,
+            memory_budget_bytes: 0,
+        };
+
+        let err = config.validate().unwrap_err();
+
+        assert_eq!(err.code(), ERR_DSG_INVALID_CONFIG);
+        assert!(err
+            .to_string()
+            .contains("memory_budget_bytes must be > 0"));
+    }
+
+    #[test]
+    fn empty_scenario_name_is_rejected_without_state_change() {
+        let mut gate = DporScheduleGate::with_defaults().unwrap();
+        gate.register_scenario(SCENARIO_LEASE_EVIDENCE_SYNC)
+            .unwrap();
+        let before = gate.registered_scenarios().to_vec();
+        let before_events = gate.events().len();
+
+        let err = gate.register_scenario("").unwrap_err();
+
+        assert_eq!(err.code(), ERR_DSG_SCENARIO_NOT_FOUND);
+        assert_eq!(gate.registered_scenarios(), before.as_slice());
+        assert_eq!(gate.events().len(), before_events);
+    }
+
+    #[test]
+    fn whitespace_scenario_name_is_rejected_without_state_change() {
+        let mut gate = DporScheduleGate::with_defaults().unwrap();
+        let before_events = gate.events().len();
+
+        let err = gate.register_scenario(" ").unwrap_err();
+
+        assert_eq!(err.code(), ERR_DSG_SCENARIO_NOT_FOUND);
+        assert!(gate.registered_scenarios().is_empty());
+        assert_eq!(gate.events().len(), before_events);
+    }
+
+    #[test]
+    fn mixed_case_scenario_name_is_rejected_case_sensitively() {
+        let mut gate = DporScheduleGate::with_defaults().unwrap();
+
+        let err = gate
+            .register_scenario("Epoch_Lease_Interleave")
+            .unwrap_err();
+
+        assert_eq!(err.code(), ERR_DSG_SCENARIO_NOT_FOUND);
+        assert!(gate.registered_scenarios().is_empty());
     }
 }

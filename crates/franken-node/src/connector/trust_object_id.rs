@@ -802,6 +802,187 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[test]
+    fn test_parse_rejects_empty_content_digest() {
+        let result = TrustObjectId::parse("ext:sha256:");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            IdError::MalformedDigest { reason, .. } => {
+                assert!(reason.contains("expected 64 hex chars"));
+            }
+            other => unreachable!("expected MalformedDigest, got {other}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rejects_prefix_without_payload() {
+        let result = TrustObjectId::parse("ext:");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            IdError::InvalidFormat { reason, .. } => {
+                assert!(reason.contains("expected sha256"));
+            }
+            other => unreachable!("expected InvalidFormat, got {other}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rejects_negative_epoch() {
+        let digest = sha256_digest(b"ctx-negative-epoch");
+        let candidate = format!("ext:-1:0:{digest}");
+
+        let result = TrustObjectId::parse(&candidate);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            IdError::InvalidFormat { reason, .. } => {
+                assert!(reason.contains("epoch is not a valid u64"));
+            }
+            other => unreachable!("expected InvalidFormat, got {other}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rejects_negative_sequence() {
+        let digest = sha256_digest(b"ctx-negative-seq");
+        let candidate = format!("ext:1:-1:{digest}");
+
+        let result = TrustObjectId::parse(&candidate);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            IdError::InvalidFormat { reason, .. } => {
+                assert!(reason.contains("sequence is not a valid u64"));
+            }
+            other => unreachable!("expected InvalidFormat, got {other}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rejects_empty_epoch() {
+        let digest = sha256_digest(b"ctx-empty-epoch");
+        let candidate = format!("ext::1:{digest}");
+
+        let result = TrustObjectId::parse(&candidate);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            IdError::InvalidFormat { reason, .. } => {
+                assert!(reason.contains("epoch is not a valid u64"));
+            }
+            other => unreachable!("expected InvalidFormat, got {other}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rejects_empty_sequence() {
+        let digest = sha256_digest(b"ctx-empty-seq");
+        let candidate = format!("ext:1::{digest}");
+
+        let result = TrustObjectId::parse(&candidate);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            IdError::InvalidFormat { reason, .. } => {
+                assert!(reason.contains("sequence is not a valid u64"));
+            }
+            other => unreachable!("expected InvalidFormat, got {other}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rejects_case_mismatched_prefix() {
+        let digest = sha256_digest(b"case-mismatch");
+        let candidate = format!("Ext:sha256:{digest}");
+
+        let result = TrustObjectId::parse(&candidate);
+
+        assert!(matches!(result, Err(IdError::InvalidPrefix { .. })));
+    }
+
+    #[test]
+    fn test_validate_rejects_trailing_digest_segment() {
+        let digest = sha256_digest(b"trailing-segment");
+        let candidate = format!("ext:sha256:{digest}:extra");
+
+        assert!(!TrustObjectId::validate(&candidate));
+    }
+
+    #[test]
+    fn test_parse_rejects_uppercase_algorithm_marker() {
+        let digest = sha256_digest(b"uppercase-algorithm");
+        let candidate = format!("ext:SHA256:{digest}");
+
+        let result = TrustObjectId::parse(&candidate);
+
+        assert!(matches!(result, Err(IdError::InvalidFormat { .. })));
+    }
+
+    #[test]
+    fn test_parse_rejects_leading_whitespace_before_prefix() {
+        let digest = sha256_digest(b"leading-space");
+        let candidate = format!(" ext:sha256:{digest}");
+
+        let result = TrustObjectId::parse(&candidate);
+
+        assert!(matches!(result, Err(IdError::InvalidPrefix { .. })));
+    }
+
+    #[test]
+    fn test_parse_rejects_epoch_over_u64_max() {
+        let digest = sha256_digest(b"epoch-overflow");
+        let candidate = format!("ext:18446744073709551616:0:{digest}");
+
+        let result = TrustObjectId::parse(&candidate);
+
+        assert!(matches!(
+            result,
+            Err(IdError::InvalidFormat { ref reason, .. })
+                if reason == "epoch is not a valid u64"
+        ));
+    }
+
+    #[test]
+    fn test_parse_rejects_sequence_over_u64_max() {
+        let digest = sha256_digest(b"sequence-overflow");
+        let candidate = format!("ext:1:18446744073709551616:{digest}");
+
+        let result = TrustObjectId::parse(&candidate);
+
+        assert!(matches!(
+            result,
+            Err(IdError::InvalidFormat { ref reason, .. })
+                if reason == "sequence is not a valid u64"
+        ));
+    }
+
+    #[test]
+    fn test_parse_rejects_context_non_hex_digest() {
+        let candidate = format!("ext:1:2:{}", "z".repeat(64));
+
+        let result = TrustObjectId::parse(&candidate);
+
+        assert!(matches!(
+            result,
+            Err(IdError::MalformedDigest { ref reason, .. })
+                if reason == "contains non-hex characters"
+        ));
+    }
+
+    #[test]
+    fn test_parse_rejects_context_digest_with_trailing_segment() {
+        let digest = sha256_digest(b"context-trailing-segment");
+        let candidate = format!("ext:1:2:{digest}:extra");
+
+        let result = TrustObjectId::parse(&candidate);
+
+        assert!(matches!(
+            result,
+            Err(IdError::MalformedDigest { ref reason, .. })
+                if reason.contains("expected 64 hex chars")
+        ));
+    }
+
     // ── TrustObjectId: validate ─────────────────────────────────────
 
     #[test]

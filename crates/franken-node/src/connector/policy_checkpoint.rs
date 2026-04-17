@@ -27,6 +27,7 @@ use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
+use crate::security::constant_time::ct_eq_bytes;
 const MAX_CHECKPOINTS: usize = 4096;
 
 // ---------------------------------------------------------------------------
@@ -242,15 +243,15 @@ impl PolicyCheckpoint {
         // Length-prefixed variable-length fields prevent collision via
         // embedded null bytes or field-boundary ambiguity.
         let channel_label = channel.label();
-        hasher.update((channel_label.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(channel_label.len()).to_le_bytes());
         hasher.update(channel_label.as_bytes());
-        hasher.update((policy_hash.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(policy_hash.len()).to_le_bytes());
         hasher.update(policy_hash.as_bytes());
         let parent = parent_hash.unwrap_or("GENESIS");
-        hasher.update((parent.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(parent.len()).to_le_bytes());
         hasher.update(parent.as_bytes());
         hasher.update(timestamp.to_be_bytes());
-        hasher.update((signer.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(signer.len()).to_le_bytes());
         hasher.update(signer.as_bytes());
         hex::encode(hasher.finalize())
     }
@@ -268,7 +269,7 @@ impl PolicyCheckpoint {
             self.timestamp,
             &self.signer,
         );
-        crate::security::constant_time::ct_eq(&computed, &self.checkpoint_hash)
+        ct_eq_bytes(computed.as_bytes(), self.checkpoint_hash.as_bytes())
     }
 
     /// Short hash prefix for logging (first 16 hex chars).
@@ -337,7 +338,7 @@ impl PolicyCheckpointChain {
                 let actual_head = self.head_hash.as_deref();
                 let head_matches = match (expected_head, actual_head) {
                     (Some(expected), Some(actual)) => {
-                        crate::security::constant_time::ct_eq(expected, actual)
+                        ct_eq_bytes(expected.as_bytes(), actual.as_bytes())
                     }
                     (None, None) => true,
                     _ => false,
@@ -352,7 +353,7 @@ impl PolicyCheckpointChain {
                     ));
                 }
 
-                let expected_next = self.checkpoints.len() as u64;
+                let expected_next = len_to_u64(self.checkpoints.len());
                 if self.next_seq != expected_next {
                     return Some((
                         self.checkpoints.len(),
@@ -559,7 +560,7 @@ impl PolicyCheckpointChain {
 
         // INV-PCK-PARENT-CHAIN
         let parent_match = match (&checkpoint.parent_hash, &self.head_hash) {
-            (Some(a), Some(b)) => crate::security::constant_time::ct_eq(a, b),
+            (Some(a), Some(b)) => ct_eq_bytes(a.as_bytes(), b.as_bytes()),
             (None, None) => true,
             _ => false,
         };
@@ -675,7 +676,7 @@ impl PolicyCheckpointChain {
             let expected_parent = prev_hash;
             let actual_parent = cp.parent_hash.as_deref();
             let parent_match = match (expected_parent, actual_parent) {
-                (Some(a), Some(b)) => crate::security::constant_time::ct_eq(a, b),
+                (Some(a), Some(b)) => ct_eq_bytes(a.as_bytes(), b.as_bytes()),
                 (None, None) => true,
                 _ => false,
             };
@@ -845,6 +846,10 @@ impl Default for PolicyCheckpointChain {
 // Helpers
 // ---------------------------------------------------------------------------
 
+fn len_to_u64(len: usize) -> u64 {
+    u64::try_from(len).unwrap_or(u64::MAX)
+}
+
 fn now_unix_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -864,6 +869,11 @@ pub fn sha256_hex(data: &[u8]) -> String {
 // ---------------------------------------------------------------------------
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
+
     if items.len() >= cap {
         let overflow = items.len() - cap + 1;
         items.drain(0..overflow);
@@ -878,6 +888,16 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn same_len_tamper(value: &str) -> String {
+        let mut bytes = value.as_bytes().to_vec();
+        if let Some(first) = bytes.first_mut() {
+            *first = if *first == b'0' { b'1' } else { b'0' };
+        } else {
+            bytes.push(b'0');
+        }
+        String::from_utf8(bytes).expect("test hashes are ASCII")
+    }
 
     // ── ReleaseChannel tests ─────────────────────────────────────────
 
@@ -913,6 +933,13 @@ mod tests {
             ReleaseChannel::Custom("a".into()),
             ReleaseChannel::Custom("b".into())
         );
+    }
+
+    #[test]
+    fn test_release_channel_deserialize_rejects_unknown_variant() {
+        let result: Result<ReleaseChannel, _> = serde_json::from_str(r#""nightly""#);
+
+        assert!(result.is_err());
     }
 
     // ── CheckpointChainError tests ───────────────────────────────────
@@ -1090,6 +1117,33 @@ mod tests {
     }
 
     #[test]
+    fn test_checkpoint_verify_hash_rejects_same_length_digest_tamper() {
+        let hash = PolicyCheckpoint::compute_hash(
+            0,
+            1,
+            &ReleaseChannel::Stable,
+            "policy_abc",
+            None,
+            1000,
+            "alice",
+        );
+        let mut cp = PolicyCheckpoint {
+            sequence: 0,
+            epoch_id: 1,
+            channel: ReleaseChannel::Stable,
+            policy_hash: "policy_abc".to_string(),
+            parent_hash: None,
+            timestamp: 1000,
+            signer: "alice".to_string(),
+            checkpoint_hash: hash.clone(),
+        };
+        cp.checkpoint_hash = same_len_tamper(&cp.checkpoint_hash);
+
+        assert_eq!(cp.checkpoint_hash.len(), hash.len());
+        assert!(!cp.verify_hash());
+    }
+
+    #[test]
     fn test_checkpoint_short_hash() {
         let cp = PolicyCheckpoint {
             sequence: 0,
@@ -1199,6 +1253,57 @@ mod tests {
             rejection.detail,
             "CHECKPOINT_HASH_CHAIN_BREAK: existing chain invalid at index 0: checkpoint_hash does not match recomputed hash"
         );
+    }
+
+    #[test]
+    fn test_create_rejects_existing_head_hash_mismatch() {
+        let mut chain = PolicyCheckpointChain::new();
+        let original_head = chain
+            .create_checkpoint(1, ReleaseChannel::Stable, "h0", "alice", "trace-create")
+            .expect("seed checkpoint")
+            .checkpoint_hash
+            .clone();
+        chain.tamper_head_hash(Some("wrong-head".to_string()));
+
+        let err = chain
+            .create_checkpoint(2, ReleaseChannel::Beta, "h1", "alice", "trace-head")
+            .expect_err("head hash mismatch must reject create");
+
+        match err {
+            CheckpointChainError::HashChainBreak { index, reason } => {
+                assert_eq!(index, 0);
+                assert!(reason.contains("head_hash mismatch"));
+                assert!(reason.contains("wrong-head"));
+            }
+            _ => unreachable!("wrong error variant"),
+        }
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain.head_hash(), Some("wrong-head"));
+        assert_ne!(chain.head_hash(), Some(original_head.as_str()));
+        assert_eq!(
+            chain.events().last().unwrap().event_code,
+            event_codes::PCK_003_CHECKPOINT_REJECTED
+        );
+    }
+
+    #[test]
+    fn test_create_rejects_empty_chain_with_tampered_next_seq() {
+        let mut chain = PolicyCheckpointChain::new();
+        chain.tamper_next_seq(7);
+
+        let err = chain
+            .create_checkpoint(1, ReleaseChannel::Stable, "h0", "alice", "trace-next-seq")
+            .expect_err("tampered empty-chain next_seq must reject create");
+
+        match err {
+            CheckpointChainError::HashChainBreak { index, reason } => {
+                assert_eq!(index, 0);
+                assert_eq!(reason, "next_seq mismatch: expected 0, got 7");
+            }
+            _ => unreachable!("wrong error variant"),
+        }
+        assert!(chain.is_empty());
+        assert_eq!(chain.next_seq(), 7);
     }
 
     // ── append_checkpoint with enforcement ──────────────────────────
@@ -1326,6 +1431,109 @@ mod tests {
         };
         let err = chain.append_checkpoint(bad_cp, "t").unwrap_err();
         assert_eq!(err.code(), "CHECKPOINT_PARENT_MISMATCH");
+    }
+
+    #[test]
+    fn test_append_rejects_same_length_parent_hash_tamper() {
+        let mut chain = PolicyCheckpointChain::new();
+        let head = chain
+            .create_checkpoint(1, ReleaseChannel::Stable, "h0", "a", "t")
+            .unwrap()
+            .checkpoint_hash
+            .clone();
+        let bad_parent = same_len_tamper(&head);
+        let bad_cp = PolicyCheckpoint {
+            sequence: chain.next_seq(),
+            epoch_id: 1,
+            channel: ReleaseChannel::Beta,
+            policy_hash: "h1".to_string(),
+            parent_hash: Some(bad_parent.clone()),
+            timestamp: 1000,
+            signer: "a".to_string(),
+            checkpoint_hash: PolicyCheckpoint::compute_hash(
+                chain.next_seq(),
+                1,
+                &ReleaseChannel::Beta,
+                "h1",
+                Some(bad_parent.as_str()),
+                1000,
+                "a",
+            ),
+        };
+
+        let err = chain
+            .append_checkpoint(bad_cp, "trace-parent-same-len")
+            .expect_err("same-length parent tamper must reject append");
+
+        assert_eq!(bad_parent.len(), head.len());
+        assert_eq!(err.code(), error_codes::CHECKPOINT_PARENT_MISMATCH);
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain.head_hash(), Some(head.as_str()));
+    }
+
+    #[test]
+    fn test_append_rejects_genesis_with_parent_hash() {
+        let mut chain = PolicyCheckpointChain::new();
+        let bad_cp = PolicyCheckpoint {
+            sequence: 0,
+            epoch_id: 1,
+            channel: ReleaseChannel::Stable,
+            policy_hash: "h0".to_string(),
+            parent_hash: Some("unexpected-parent".to_string()),
+            timestamp: 1000,
+            signer: "alice".to_string(),
+            checkpoint_hash: PolicyCheckpoint::compute_hash(
+                0,
+                1,
+                &ReleaseChannel::Stable,
+                "h0",
+                Some("unexpected-parent"),
+                1000,
+                "alice",
+            ),
+        };
+
+        let err = chain
+            .append_checkpoint(bad_cp, "trace-parent")
+            .expect_err("genesis checkpoint with parent must be rejected");
+
+        assert_eq!(err.code(), error_codes::CHECKPOINT_PARENT_MISMATCH);
+        assert!(chain.is_empty());
+        assert_eq!(
+            chain.events().last().unwrap().event_code,
+            event_codes::PCK_003_CHECKPOINT_REJECTED
+        );
+    }
+
+    #[test]
+    fn test_append_rejects_genesis_with_invalid_hash() {
+        let mut chain = PolicyCheckpointChain::new();
+        let bad_cp = PolicyCheckpoint {
+            sequence: 0,
+            epoch_id: 1,
+            channel: ReleaseChannel::Stable,
+            policy_hash: "h0".to_string(),
+            parent_hash: None,
+            timestamp: 1000,
+            signer: "alice".to_string(),
+            checkpoint_hash: "bad-hash".to_string(),
+        };
+
+        let err = chain
+            .append_checkpoint(bad_cp, "trace-bad-hash")
+            .expect_err("genesis checkpoint with bad hash must be rejected");
+
+        match err {
+            CheckpointChainError::HashChainBreak { index, reason } => {
+                assert_eq!(index, 0);
+                assert_eq!(
+                    reason,
+                    "checkpoint_hash does not match canonical serialization"
+                );
+            }
+            _ => unreachable!("wrong error variant"),
+        }
+        assert!(chain.is_empty());
     }
 
     #[test]
@@ -1502,6 +1710,31 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_detects_same_length_checkpoint_hash_tamper() {
+        let mut chain = PolicyCheckpointChain::new();
+        for i in 0..3 {
+            chain
+                .create_checkpoint(1, ReleaseChannel::Stable, &format!("p{i}"), "a", "t")
+                .unwrap();
+        }
+        let tampered = same_len_tamper(&chain.checkpoints()[1].checkpoint_hash);
+        chain.tamper_checkpoint_hash(1, &tampered);
+
+        let (idx, err) = chain
+            .verify_chain()
+            .expect_err("same-length checkpoint tamper must break verification");
+
+        assert_eq!(idx, 1);
+        match err {
+            CheckpointChainError::HashChainBreak { index, reason } => {
+                assert_eq!(index, 1);
+                assert_eq!(reason, "checkpoint_hash does not match recomputed hash");
+            }
+            _ => unreachable!("wrong error variant"),
+        }
+    }
+
+    #[test]
     fn test_verify_detects_tampered_parent_hash() {
         let mut chain = PolicyCheckpointChain::new();
         for i in 0..5 {
@@ -1514,6 +1747,35 @@ mod tests {
         assert!(result.is_err());
         let (idx, _) = result.unwrap_err();
         assert_eq!(idx, 3);
+    }
+
+    #[test]
+    fn test_verify_detects_same_length_parent_hash_tamper() {
+        let mut chain = PolicyCheckpointChain::new();
+        for i in 0..4 {
+            chain
+                .create_checkpoint(1, ReleaseChannel::Stable, &format!("p{i}"), "a", "t")
+                .unwrap();
+        }
+        let parent = chain.checkpoints()[2]
+            .parent_hash
+            .as_ref()
+            .expect("non-genesis parent")
+            .clone();
+        chain.tamper_parent_hash(2, Some(same_len_tamper(&parent)));
+
+        let (idx, err) = chain
+            .verify_chain()
+            .expect_err("same-length parent tamper must break verification");
+
+        assert_eq!(idx, 2);
+        match err {
+            CheckpointChainError::HashChainBreak { index, reason } => {
+                assert_eq!(index, 2);
+                assert!(reason.contains("parent_hash mismatch"));
+            }
+            _ => unreachable!("wrong error variant"),
+        }
     }
 
     #[test]
@@ -1738,6 +2000,24 @@ mod tests {
     }
 
     #[test]
+    fn test_push_bounded_zero_capacity_clears_existing_items() {
+        let mut items = vec![1, 2, 3];
+
+        push_bounded(&mut items, 4, 0);
+
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_push_bounded_zero_capacity_drops_new_item() {
+        let mut items = Vec::new();
+
+        push_bounded(&mut items, "dropped", 0);
+
+        assert!(items.is_empty());
+    }
+
+    #[test]
     fn test_create_checkpoint_capacity_rejection_emits_event() {
         let mut chain = PolicyCheckpointChain::new();
         for seq in 0..MAX_CHECKPOINTS {
@@ -1949,6 +2229,41 @@ mod tests {
     }
 
     #[test]
+    fn test_checkpoint_deserialize_rejects_missing_checkpoint_hash() {
+        let json = r#"{
+            "sequence": 0,
+            "epoch_id": 1,
+            "channel": "Stable",
+            "policy_hash": "abc",
+            "parent_hash": null,
+            "timestamp": 1000,
+            "signer": "alice"
+        }"#;
+
+        let result: Result<PolicyCheckpoint, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_checkpoint_deserialize_rejects_channel_type_confusion() {
+        let json = r#"{
+            "sequence": 0,
+            "epoch_id": 1,
+            "channel": {"Stable": true},
+            "policy_hash": "abc",
+            "parent_hash": null,
+            "timestamp": 1000,
+            "signer": "alice",
+            "checkpoint_hash": "abc"
+        }"#;
+
+        let result: Result<PolicyCheckpoint, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_chain_serde_round_trip() {
         let mut chain = PolicyCheckpointChain::new();
         chain
@@ -1962,6 +2277,20 @@ mod tests {
         let parsed: PolicyCheckpointChain = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed.verify_chain(), Ok(2));
+    }
+
+    #[test]
+    fn test_chain_deserialize_rejects_negative_next_seq() {
+        let json = r#"{
+            "checkpoints": [],
+            "head_hash": null,
+            "next_seq": -1,
+            "events": []
+        }"#;
+
+        let result: Result<PolicyCheckpointChain, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
     }
 
     #[test]
@@ -2068,6 +2397,33 @@ mod tests {
         assert_ne!(
             h1, h2,
             "length-prefixed encoding must prevent field boundary collision"
+        );
+    }
+
+    #[test]
+    fn test_compute_hash_resists_custom_channel_policy_boundary_collision() {
+        let h1 = PolicyCheckpoint::compute_hash(
+            1,
+            1,
+            &ReleaseChannel::Custom("ab".to_string()),
+            "c",
+            Some("parent"),
+            1000,
+            "signer",
+        );
+        let h2 = PolicyCheckpoint::compute_hash(
+            1,
+            1,
+            &ReleaseChannel::Custom("a".to_string()),
+            "bc",
+            Some("parent"),
+            1000,
+            "signer",
+        );
+
+        assert_ne!(
+            h1, h2,
+            "length-prefixed channel labels must prevent custom-channel boundary collision"
         );
     }
 }

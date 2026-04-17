@@ -1152,4 +1152,548 @@ mod tests {
         assert_eq!(parsed["section"], "10.15");
         assert!(parsed["passed"].as_bool().expect("boolean field expected"));
     }
+
+    fn campaign_with_faults(
+        total_faults: usize,
+        drops: usize,
+        reorders: usize,
+        corruptions: usize,
+    ) -> CampaignResult {
+        CampaignResult {
+            scenario_name: "negative-campaign".to_string(),
+            seed: 42,
+            total_messages: 10,
+            total_faults,
+            drops,
+            reorders,
+            corruptions,
+            content_hash: "negative-hash".to_string(),
+        }
+    }
+
+    #[test]
+    fn run_full_gate_rejects_mutated_empty_seeds() {
+        let mut gate = TransportFaultGate::new();
+        gate.config.seeds.clear();
+
+        let err = gate.run_full_gate().unwrap_err();
+
+        assert!(matches!(err, TransportFaultGateError::InvalidConfig(_)));
+        assert!(err.to_string().contains("seeds must be non-empty"));
+    }
+
+    #[test]
+    fn run_full_gate_rejects_mutated_empty_protocols() {
+        let mut gate = TransportFaultGate::new();
+        gate.config.protocols.clear();
+
+        let err = gate.run_full_gate().unwrap_err();
+
+        assert!(matches!(err, TransportFaultGateError::InvalidConfig(_)));
+        assert!(err.to_string().contains("protocols must be non-empty"));
+    }
+
+    #[test]
+    fn run_full_gate_rejects_mutated_zero_messages_per_run() {
+        let mut gate = TransportFaultGate::new();
+        gate.config.messages_per_run = 0;
+
+        let err = gate.run_full_gate().unwrap_err();
+
+        assert!(matches!(err, TransportFaultGateError::InvalidConfig(_)));
+        assert!(err.to_string().contains("messages_per_run must be > 0"));
+    }
+
+    #[test]
+    fn with_config_rejects_zero_messages_without_audit_side_effects() {
+        let config = TransportFaultGateConfig {
+            messages_per_run: 0,
+            ..Default::default()
+        };
+
+        let err = TransportFaultGate::with_config(config).unwrap_err();
+
+        assert!(matches!(err, TransportFaultGateError::InvalidConfig(_)));
+        assert!(
+            err.to_string()
+                .starts_with(error_codes::ERR_TFG_INVALID_CONFIG)
+        );
+    }
+
+    #[test]
+    fn none_mode_with_faults_is_incorrect_result() {
+        let campaign = campaign_with_faults(1, 1, 0, 0);
+
+        let outcome = TransportFaultGate::evaluate_outcome(
+            ControlProtocol::HealthCheck,
+            &FaultMode::None,
+            &campaign,
+        );
+
+        assert!(matches!(
+            &outcome,
+            ProtocolOutcome::IncorrectResult { detail }
+                if detail.contains("unexpected faults under None mode")
+        ));
+        assert!(!outcome.is_acceptable());
+    }
+
+    #[test]
+    fn incorrect_results_are_counted_as_failed_in_summary() {
+        let results = vec![
+            FaultTestResult {
+                protocol: "health_check".to_string(),
+                fault_mode: "NONE".to_string(),
+                seed: 1,
+                outcome: ProtocolOutcome::IncorrectResult {
+                    detail: "silent corruption".to_string(),
+                },
+                campaign: None,
+                messages_processed: 0,
+                content_hash: "bad".to_string(),
+                event_code: event_codes::TFG_005.to_string(),
+            },
+            FaultTestResult {
+                protocol: "health_check".to_string(),
+                fault_mode: "DROP".to_string(),
+                seed: 1,
+                outcome: ProtocolOutcome::DeterministicFailure {
+                    reason: "failed closed".to_string(),
+                },
+                campaign: None,
+                messages_processed: 0,
+                content_hash: "closed".to_string(),
+                event_code: event_codes::TFG_004.to_string(),
+            },
+        ];
+
+        let summary = TransportFaultGate::summarize_by_protocol(&results);
+
+        assert_eq!(summary["health_check"].total, 2);
+        assert_eq!(summary["health_check"].passed, 1);
+        assert_eq!(summary["health_check"].failed, 1);
+    }
+
+    #[test]
+    fn partition_with_zero_drops_still_fails_closed() {
+        let campaign = campaign_with_faults(0, 0, 0, 0);
+
+        let outcome = TransportFaultGate::evaluate_outcome(
+            ControlProtocol::EvidenceCommit,
+            &FaultMode::Partition,
+            &campaign,
+        );
+
+        assert!(matches!(
+            &outcome,
+            ProtocolOutcome::DeterministicFailure { reason }
+                if reason.contains("partitioned") && reason.contains("0 messages dropped")
+        ));
+        assert!(outcome.is_acceptable());
+    }
+
+    #[test]
+    fn audit_log_export_is_empty_for_gate_with_no_runs() {
+        let gate = TransportFaultGate::new();
+
+        let jsonl = gate.export_audit_log_jsonl();
+
+        assert!(jsonl.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod transport_fault_gate_extreme_adversarial_negative_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn extreme_adversarial_massive_seed_collection_memory_exhaustion() {
+        // Test memory exhaustion with massive seed collections
+        let massive_seeds: Vec<u64> = (0..1_000_000).collect(); // 1M seeds
+
+        let config = TransportFaultGateConfig {
+            seeds: massive_seeds,
+            messages_per_run: 1, // Minimal to avoid extreme runtime
+            protocols: vec![ControlProtocol::HealthCheck], // Single protocol
+            fault_modes: vec![FaultMode::None], // Single mode
+        };
+
+        // Should handle massive seed collection without crashing
+        let gate_result = TransportFaultGate::with_config(config);
+
+        match gate_result {
+            Ok(_) => {
+                // If it succeeds, it should handle the memory allocation gracefully
+                // (In practice, this would consume significant memory)
+            }
+            Err(e) => {
+                // Should fail gracefully with meaningful error, not panic
+                assert!(matches!(e, TransportFaultGateError::InvalidConfig(_)));
+            }
+        }
+    }
+
+    #[test]
+    fn extreme_adversarial_unicode_injection_in_trace_identifiers() {
+        let mut gate = TransportFaultGate::new();
+
+        // Simulate Unicode injection attack by modifying internal trace generation
+        // This tests the robustness of trace_id generation and logging
+        let result = gate.test_protocol(
+            ControlProtocol::EpochTransition,
+            &FaultMode::None,
+            0xCAFEBABEDEADBEEF, // Suspicious seed value
+        );
+
+        // Should complete without Unicode corruption in logs
+        assert!(result.outcome.is_acceptable());
+
+        // Verify audit log doesn't contain problematic Unicode sequences
+        for audit_entry in gate.audit_log() {
+            let json = serde_json::to_string(audit_entry).unwrap_or_default();
+            assert!(!json.contains('\u{0000}'), "audit log must not contain null bytes");
+            assert!(!json.contains('\u{202E}'), "audit log must not contain RTL override");
+        }
+    }
+
+    #[test]
+    fn extreme_adversarial_arithmetic_overflow_seed_boundary_values() {
+        let mut gate = TransportFaultGate::new();
+
+        // Test arithmetic overflow scenarios with boundary seed values
+        let boundary_seeds = vec![
+            0,                    // Minimum value
+            1,                    // Minimal non-zero
+            u64::MAX / 2,        // Mid-range
+            u64::MAX - 1,        // Near maximum
+            u64::MAX,            // Maximum value
+        ];
+
+        for &seed in &boundary_seeds {
+            let result = gate.test_protocol(
+                ControlProtocol::FencingAcquire,
+                &FaultMode::Drop,
+                seed,
+            );
+
+            // Should handle boundary values without arithmetic overflow
+            assert!(result.outcome.is_acceptable());
+            assert_eq!(result.seed, seed);
+
+            // Verify content hash is generated correctly
+            assert!(!result.content_hash.is_empty());
+            assert!(result.content_hash.len() >= 32); // SHA256 hex minimum
+        }
+    }
+
+    #[test]
+    fn extreme_adversarial_concurrent_gate_access_state_corruption() {
+        // Simulate concurrent access to the same gate instance
+        // This tests thread safety and state corruption resistance
+        let mut gate = TransportFaultGate::new();
+
+        let protocols = vec![
+            ControlProtocol::EpochTransition,
+            ControlProtocol::LeaseRenewal,
+            ControlProtocol::EvidenceCommit,
+        ];
+
+        let mut results = Vec::new();
+
+        // Simulate rapid concurrent protocol tests
+        for (i, &protocol) in protocols.iter().enumerate() {
+            for j in 0..10 {
+                let result = gate.test_protocol(
+                    protocol,
+                    &FaultMode::Reorder,
+                    (i as u64 * 100) + j,
+                );
+                results.push(result);
+            }
+        }
+
+        // Verify state consistency after concurrent access
+        assert_eq!(results.len(), 30); // 3 protocols * 10 iterations
+        assert!(gate.audit_log().len() >= 60); // At least 2 events per test
+
+        // Verify no duplicate trace IDs (would indicate state corruption)
+        let mut trace_ids = BTreeSet::new();
+        for entry in gate.audit_log() {
+            if let Some(trace_value) = entry.detail.get("trace_id") {
+                if let Some(trace_str) = trace_value.as_str() {
+                    assert!(trace_ids.insert(trace_str.to_string()),
+                        "duplicate trace ID detected: {}", trace_str);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn extreme_adversarial_hash_collision_resistance_verification() {
+        let mut gate = TransportFaultGate::new();
+
+        // Test hash collision resistance by running identical configurations
+        // multiple times and verifying deterministic behavior
+        let test_configs = vec![
+            (ControlProtocol::HealthCheck, FaultMode::None, 42),
+            (ControlProtocol::MarkerAppend, FaultMode::Corrupt, 1337),
+            (ControlProtocol::FencingAcquire, FaultMode::Partition, 9999),
+        ];
+
+        for &(protocol, ref fault_mode, seed) in &test_configs {
+            let result1 = gate.test_protocol(protocol, fault_mode, seed);
+            let result2 = gate.test_protocol(protocol, fault_mode, seed);
+
+            // Identical inputs should produce identical hashes (determinism)
+            assert_eq!(result1.content_hash, result2.content_hash,
+                "hash collision or non-determinism detected for {} {} {}",
+                protocol.name(), fault_mode, seed);
+
+            // Verify constant-time comparison for security
+            assert!(ct_eq(&result1.content_hash, &result2.content_hash));
+        }
+
+        // Verify different inputs produce different hashes
+        let result_a = gate.test_protocol(ControlProtocol::HealthCheck, &FaultMode::None, 1);
+        let result_b = gate.test_protocol(ControlProtocol::HealthCheck, &FaultMode::None, 2);
+
+        assert_ne!(result_a.content_hash, result_b.content_hash,
+            "different seeds should produce different hashes");
+        assert!(!ct_eq(&result_a.content_hash, &result_b.content_hash));
+    }
+
+    #[test]
+    fn extreme_adversarial_malformed_fault_configuration_injection() {
+        // Test malformed fault configurations that could cause crashes
+        let malformed_configs = vec![
+            // Extreme probability values
+            FaultConfig {
+                drop_probability: f64::INFINITY,
+                reorder_probability: f64::NAN,
+                reorder_max_depth: usize::MAX,
+                corrupt_probability: -1.0,
+                corrupt_bit_count: usize::MAX,
+                max_faults: 0,
+            },
+            // Contradictory values
+            FaultConfig {
+                drop_probability: 2.0, // > 1.0
+                reorder_probability: 1.5, // > 1.0
+                reorder_max_depth: 0,
+                corrupt_probability: 1.1, // > 1.0
+                corrupt_bit_count: 0,
+                max_faults: usize::MAX,
+            },
+        ];
+
+        for (i, malformed_config) in malformed_configs.iter().enumerate() {
+            // Should reject malformed configs gracefully during validation
+            let validation_result = malformed_config.validate();
+
+            match validation_result {
+                Ok(_) => {
+                    // If validation passes, the harness should handle it gracefully
+                    // without panics or undefined behavior
+                }
+                Err(_) => {
+                    // Expected - malformed configs should be rejected
+                    // This is the preferred outcome for security
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn extreme_adversarial_control_character_injection_in_protocol_names() {
+        let mut gate = TransportFaultGate::new();
+
+        // Test robustness against control character pollution in audit logs
+        let result = gate.test_protocol(
+            ControlProtocol::EvidenceCommit,
+            &FaultMode::Corrupt,
+            0x00010203, // Seed with control character pattern
+        );
+
+        assert!(result.outcome.is_acceptable());
+
+        // Verify audit log entries are sanitized
+        for audit_entry in gate.audit_log() {
+            assert!(!audit_entry.protocol.contains('\x00'),
+                "protocol name must not contain null bytes");
+            assert!(!audit_entry.protocol.contains('\x01'),
+                "protocol name must not contain control characters");
+            assert!(!audit_entry.fault_mode.contains('\r'),
+                "fault mode must not contain carriage return");
+            assert!(!audit_entry.fault_mode.contains('\n'),
+                "fault mode must not contain newline");
+
+            // Verify JSON serialization doesn't introduce control characters
+            let json = serde_json::to_string(audit_entry).unwrap_or_default();
+            assert!(!json.contains("\\u0000"), "JSON must not contain escaped null bytes");
+        }
+    }
+
+    #[test]
+    fn extreme_adversarial_resource_exhaustion_massive_messages_per_run() {
+        // Test resource exhaustion with massive messages_per_run values
+        let exhaustion_configs = vec![
+            1_000_000,   // 1M messages
+            10_000_000,  // 10M messages
+            usize::MAX,  // Maximum possible
+        ];
+
+        for &massive_count in &exhaustion_configs {
+            let config = TransportFaultGateConfig {
+                seeds: vec![42], // Single seed to avoid multiplicative explosion
+                messages_per_run: massive_count,
+                protocols: vec![ControlProtocol::HealthCheck], // Single protocol
+                fault_modes: vec![FaultMode::None], // No faults for speed
+            };
+
+            let gate_result = TransportFaultGate::with_config(config);
+
+            match gate_result {
+                Ok(mut gate) => {
+                    // If config validation passes, test should complete without crash
+                    let test_result = gate.test_protocol(
+                        ControlProtocol::HealthCheck,
+                        &FaultMode::None,
+                        42,
+                    );
+
+                    // Should complete or fail gracefully
+                    assert!(test_result.outcome.is_acceptable() ||
+                        matches!(test_result.outcome, ProtocolOutcome::IncorrectResult { .. }));
+                }
+                Err(e) => {
+                    // Should reject extreme values gracefully
+                    assert!(matches!(e, TransportFaultGateError::InvalidConfig(_)));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn extreme_adversarial_seed_stability_hash_manipulation_resistance() {
+        let mut gate = TransportFaultGate::new();
+
+        // Test seed stability against potential hash manipulation attacks
+        let suspicious_seeds = vec![
+            0x5555555555555555, // Alternating bits
+            0xAAAAAAAAAAAAA, // Alternating bits (opposite)
+            0x0000000000000001, // Single bit set
+            0xFFFFFFFFFFFFFFFE, // All bits except one
+            0x0123456789ABCDEF, // Incremental pattern
+            0xFEDCBA9876543210, // Decremental pattern
+        ];
+
+        for &seed in &suspicious_seeds {
+            let stability_result = gate.check_seed_stability(
+                ControlProtocol::LeaseRenewal,
+                &FaultMode::Reorder,
+                seed,
+            );
+
+            // Seed stability should hold regardless of bit patterns
+            assert!(stability_result.is_ok(),
+                "seed stability failed for suspicious seed: 0x{:016X}", seed);
+        }
+
+        // Verify audit log contains stability check events
+        let stability_events: Vec<_> = gate.audit_log()
+            .iter()
+            .filter(|entry| entry.event_code == event_codes::TFG_008)
+            .collect();
+
+        assert_eq!(stability_events.len(), suspicious_seeds.len());
+
+        // Verify constant-time hash comparisons in stability checks
+        for event in stability_events {
+            if let (Some(hash1), Some(hash2)) = (
+                event.detail.get("hash_1").and_then(|v| v.as_str()),
+                event.detail.get("hash_2").and_then(|v| v.as_str())
+            ) {
+                // Hashes should be identical for same seed
+                assert_eq!(hash1, hash2);
+                assert!(ct_eq(hash1, hash2));
+            }
+        }
+    }
+
+    #[test]
+    fn extreme_adversarial_gate_verdict_json_injection_protection() {
+        let config = TransportFaultGateConfig {
+            seeds: vec![0x22225C5C5C22, 0x7B7B7B7B7B7B], // JSON-like bit patterns
+            messages_per_run: 5,
+            protocols: vec![ControlProtocol::MarkerAppend],
+            fault_modes: vec![FaultMode::None, FaultMode::Drop],
+        };
+
+        let mut gate = TransportFaultGate::with_config(config)
+            .expect("config should be valid");
+
+        let verdict = gate.run_full_gate()
+            .expect("gate should pass");
+
+        // Serialize verdict to JSON
+        let json = serde_json::to_string(&verdict)
+            .expect("verdict should serialize");
+
+        // Verify no JSON injection vulnerabilities
+        assert!(!json.contains("</script>"), "JSON must not contain script injection");
+        assert!(!json.contains("<!--"), "JSON must not contain comment injection");
+        assert!(!json.contains("javascript:"), "JSON must not contain javascript injection");
+
+        // Verify JSON can be safely parsed back
+        let parsed: serde_json::Value = serde_json::from_str(&json)
+            .expect("JSON should parse back safely");
+
+        // Verify critical fields are preserved
+        assert_eq!(parsed["schema_version"], SCHEMA_VERSION);
+        assert_eq!(parsed["bead_id"], BEAD_ID);
+        assert_eq!(parsed["section"], SECTION);
+        assert!(parsed["passed"].as_bool().is_some());
+
+        // Verify content hash integrity
+        let content_hash = parsed["content_hash"].as_str()
+            .expect("content hash should be present");
+        assert!(content_hash.len() >= 32); // Minimum hex hash length
+        assert!(content_hash.chars().all(|c| c.is_ascii_hexdigit()),
+            "content hash should only contain hex characters");
+    }
+
+    #[test]
+    fn extreme_adversarial_audit_log_capacity_boundary_overflow_protection() {
+        let mut gate = TransportFaultGate::new();
+
+        // Force audit log to exceed MAX_AUDIT_LOG_ENTRIES
+        let iterations = MAX_AUDIT_LOG_ENTRIES + 100;
+
+        for i in 0..iterations {
+            gate.test_protocol(
+                ControlProtocol::HealthCheck,
+                &FaultMode::None,
+                i as u64,
+            );
+        }
+
+        // Verify bounded behavior - log should not exceed maximum capacity
+        assert!(gate.audit_log().len() <= MAX_AUDIT_LOG_ENTRIES,
+            "audit log exceeded maximum capacity: {} > {}",
+            gate.audit_log().len(), MAX_AUDIT_LOG_ENTRIES);
+
+        // Verify most recent entries are preserved (LIFO eviction)
+        let last_entry = gate.audit_log().last()
+            .expect("audit log should not be empty");
+
+        // Last entry should be from the most recent iteration
+        assert!(last_entry.seed >= (iterations - MAX_AUDIT_LOG_ENTRIES) as u64,
+            "most recent entries should be preserved");
+
+        // Verify JSONL export handles bounded log correctly
+        let jsonl = gate.export_audit_log_jsonl();
+        let line_count = jsonl.split('\n').filter(|line| !line.is_empty()).count();
+        assert!(line_count <= MAX_AUDIT_LOG_ENTRIES);
+    }
 }

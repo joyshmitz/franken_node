@@ -558,6 +558,89 @@ mod tests {
     }
 
     #[test]
+    fn product_error_rejects_whitespace_trace_id() {
+        let registry = demo_registry();
+        let result = product_error(
+            &registry,
+            ProductSurface::Migration,
+            "FRANKEN_CONNECTOR_LEASE_EXPIRED",
+            "lease expired",
+            "   ",
+            BTreeMap::new(),
+        );
+
+        assert!(matches!(
+            result,
+            Err(ProductErrorBuildError::MissingTraceId)
+        ));
+    }
+
+    #[test]
+    fn product_error_rejects_empty_message() {
+        let registry = demo_registry();
+        let result = product_error(
+            &registry,
+            ProductSurface::Auth,
+            "FRANKEN_PROTOCOL_AUTH_FAILED",
+            "",
+            "trace-empty-message",
+            BTreeMap::new(),
+        );
+
+        assert!(matches!(
+            result,
+            Err(ProductErrorBuildError::MissingMessage)
+        ));
+    }
+
+    #[test]
+    fn product_error_rejects_whitespace_message() {
+        let registry = demo_registry();
+        let result = product_error(
+            &registry,
+            ProductSurface::Auth,
+            "FRANKEN_PROTOCOL_AUTH_FAILED",
+            "\t \n",
+            "trace-blank-message",
+            BTreeMap::new(),
+        );
+
+        assert!(matches!(
+            result,
+            Err(ProductErrorBuildError::MissingMessage)
+        ));
+    }
+
+    #[test]
+    fn product_error_rejects_short_recovery_hint_for_nonfatal_code() {
+        let mut registry = ErrorCodeRegistry::new();
+        register_entry(
+            &mut registry,
+            "FRANKEN_EGRESS_SHORT_HINT",
+            Severity::Transient,
+            true,
+            Some(100),
+            "retry",
+            "short hint",
+        );
+
+        let result = product_error(
+            &registry,
+            ProductSurface::ControlPlane,
+            "FRANKEN_EGRESS_SHORT_HINT",
+            "egress failed",
+            "trace-short-hint",
+            BTreeMap::new(),
+        );
+
+        assert!(matches!(
+            result,
+            Err(ProductErrorBuildError::RecoveryHintTooShort(code))
+                if code == "FRANKEN_EGRESS_SHORT_HINT"
+        ));
+    }
+
+    #[test]
     fn formatters_keep_retryable_consistent() {
         let registry = demo_registry();
         let err = product_error(
@@ -621,6 +704,24 @@ mod tests {
         .expect("build should succeed");
 
         let result = telemetry_error_dimensions("invalid.metric.error_total", &err);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn telemetry_dimensions_reject_empty_metric_name() {
+        let registry = demo_registry();
+        let err = product_error(
+            &registry,
+            ProductSurface::Token,
+            "FRANKEN_CONNECTOR_LEASE_EXPIRED",
+            "lease expired",
+            "trace-empty-metric",
+            BTreeMap::new(),
+        )
+        .expect("build should succeed");
+
+        let result = telemetry_error_dimensions("", &err);
+
         assert!(result.is_err());
     }
 
@@ -772,6 +873,304 @@ mod tests {
     }
 
     #[test]
+    fn compatibility_detects_new_code_missing_description() {
+        let old_registry = demo_registry();
+        let mut new_registry = demo_registry();
+        register_entry(
+            &mut new_registry,
+            "FRANKEN_EGRESS_UNDESCRIBED",
+            Severity::Transient,
+            true,
+            Some(2000),
+            "Retry egress request after refreshing connection state",
+            "",
+        );
+
+        let report = compatibility_report(
+            &old_registry.catalog(),
+            &new_registry.catalog(),
+            &ErrorCompatibilityPolicy::default(),
+        );
+
+        assert!(!report.is_compatible());
+        assert!(report.violations.iter().any(|violation| {
+            violation.code == "FRANKEN_EGRESS_UNDESCRIBED"
+                && violation.reason.contains("missing description")
+        }));
+    }
+
+    #[test]
+    fn compatibility_detects_new_code_short_recovery_hint() {
+        let old_registry = demo_registry();
+        let mut new_registry = demo_registry();
+        register_entry(
+            &mut new_registry,
+            "FRANKEN_EGRESS_SHORT_RECOVERY",
+            Severity::Transient,
+            true,
+            Some(2000),
+            "retry",
+            "short recovery hint",
+        );
+
+        let report = compatibility_report(
+            &old_registry.catalog(),
+            &new_registry.catalog(),
+            &ErrorCompatibilityPolicy::default(),
+        );
+
+        assert!(!report.is_compatible());
+        assert!(report.violations.iter().any(|violation| {
+            violation.code == "FRANKEN_EGRESS_SHORT_RECOVERY"
+                && violation
+                    .reason
+                    .contains("recovery hint below policy minimum")
+        }));
+    }
+
+    #[test]
+    fn compatibility_keeps_removed_code_violation_when_other_checks_disabled() {
+        let old_registry = demo_registry();
+        let mut new_registry = ErrorCodeRegistry::new();
+        register_entry(
+            &mut new_registry,
+            "FRANKEN_PROTOCOL_AUTH_FAILED",
+            Severity::Transient,
+            false,
+            Some(1000),
+            "Re-authenticate with fresh credentials and retry request",
+            "auth failed",
+        );
+        let policy = ErrorCompatibilityPolicy {
+            enforce_append_only: true,
+            enforce_category_stability: false,
+            enforce_retryable_stability: false,
+            recovery_hint_min_len: 1,
+        };
+
+        let report =
+            compatibility_report(&old_registry.catalog(), &new_registry.catalog(), &policy);
+
+        assert!(!report.is_compatible());
+        assert!(
+            report
+                .violations
+                .iter()
+                .any(|violation| violation.reason.contains("append-only"))
+        );
+    }
+
+    #[test]
+    fn product_error_rejects_canonical_code_with_leading_space() {
+        let registry = demo_registry();
+
+        let result = product_error(
+            &registry,
+            ProductSurface::ControlPlane,
+            " FRANKEN_PROTOCOL_AUTH_FAILED",
+            "auth failed",
+            "trace-leading-code",
+            BTreeMap::new(),
+        );
+
+        assert!(matches!(
+            result,
+            Err(ProductErrorBuildError::UnregisteredCode(code))
+                if code == " FRANKEN_PROTOCOL_AUTH_FAILED"
+        ));
+    }
+
+    #[test]
+    fn product_error_rejects_canonical_code_with_trailing_space() {
+        let registry = demo_registry();
+
+        let result = product_error(
+            &registry,
+            ProductSurface::ControlPlane,
+            "FRANKEN_PROTOCOL_AUTH_FAILED ",
+            "auth failed",
+            "trace-trailing-code",
+            BTreeMap::new(),
+        );
+
+        assert!(matches!(
+            result,
+            Err(ProductErrorBuildError::UnregisteredCode(code))
+                if code == "FRANKEN_PROTOCOL_AUTH_FAILED "
+        ));
+    }
+
+    #[test]
+    fn product_error_rejects_whitespace_only_recovery_hint() {
+        let mut registry = ErrorCodeRegistry::new();
+        register_entry(
+            &mut registry,
+            "FRANKEN_EGRESS_BLANK_HINT",
+            Severity::Transient,
+            true,
+            Some(250),
+            "                         ",
+            "blank recovery hint",
+        );
+
+        let result = product_error(
+            &registry,
+            ProductSurface::Migration,
+            "FRANKEN_EGRESS_BLANK_HINT",
+            "egress retry failed",
+            "trace-blank-hint",
+            BTreeMap::new(),
+        );
+
+        assert!(matches!(
+            result,
+            Err(ProductErrorBuildError::RecoveryHintTooShort(code))
+                if code == "FRANKEN_EGRESS_BLANK_HINT"
+        ));
+    }
+
+    #[test]
+    fn product_error_validates_message_before_registry_lookup() {
+        let registry = demo_registry();
+
+        let result = product_error(
+            &registry,
+            ProductSurface::Policy,
+            "FRANKEN_NOT_REGISTERED",
+            " \t ",
+            "trace-message-first",
+            BTreeMap::new(),
+        );
+
+        assert!(matches!(
+            result,
+            Err(ProductErrorBuildError::MissingMessage)
+        ));
+    }
+
+    #[test]
+    fn telemetry_dimensions_rejects_uppercase_metric_segment() {
+        let registry = demo_registry();
+        let err = product_error(
+            &registry,
+            ProductSurface::Token,
+            "FRANKEN_CONNECTOR_LEASE_EXPIRED",
+            "lease expired",
+            "trace-uppercase-metric",
+            BTreeMap::new(),
+        )
+        .expect("build should succeed");
+
+        let result = telemetry_error_dimensions("franken.protocol.ErrorTotal", &err);
+
+        assert!(matches!(
+            result,
+            Err(NamespaceError::InvalidNamespace(metric))
+                if metric == "franken.protocol.ErrorTotal"
+        ));
+    }
+
+    #[test]
+    fn telemetry_dimensions_rejects_empty_metric_segment() {
+        let registry = demo_registry();
+        let err = product_error(
+            &registry,
+            ProductSurface::Token,
+            "FRANKEN_CONNECTOR_LEASE_EXPIRED",
+            "lease expired",
+            "trace-empty-segment-metric",
+            BTreeMap::new(),
+        )
+        .expect("build should succeed");
+
+        let result = telemetry_error_dimensions("franken.protocol..error_total", &err);
+
+        assert!(matches!(
+            result,
+            Err(NamespaceError::InvalidNamespace(metric))
+                if metric == "franken.protocol..error_total"
+        ));
+    }
+
+    #[test]
+    fn compatibility_reports_multiple_added_code_defects() {
+        let old_registry = demo_registry();
+        let mut new_registry = demo_registry();
+        register_entry(
+            &mut new_registry,
+            "FRANKEN_EGRESS_MULTI_DEFECT",
+            Severity::Transient,
+            true,
+            Some(1000),
+            "retry",
+            "",
+        );
+
+        let report = compatibility_report(
+            &old_registry.catalog(),
+            &new_registry.catalog(),
+            &ErrorCompatibilityPolicy::default(),
+        );
+        let defect_count = report
+            .violations
+            .iter()
+            .filter(|violation| violation.code == "FRANKEN_EGRESS_MULTI_DEFECT")
+            .count();
+
+        assert!(!report.is_compatible());
+        assert_eq!(defect_count, 2);
+    }
+
+    #[test]
+    fn compatibility_reports_category_and_retryable_drift_together() {
+        let old_registry = demo_registry();
+        let mut new_registry = ErrorCodeRegistry::new();
+        register_entry(
+            &mut new_registry,
+            "FRANKEN_PROTOCOL_AUTH_FAILED",
+            Severity::Fatal,
+            false,
+            None,
+            "",
+            "auth failed",
+        );
+        register_entry(
+            &mut new_registry,
+            "FRANKEN_CONNECTOR_LEASE_EXPIRED",
+            Severity::Transient,
+            true,
+            Some(3000),
+            "Re-negotiate lease with coordinator before issuing writes",
+            "lease expired",
+        );
+        register_entry(
+            &mut new_registry,
+            "FRANKEN_CAPABILITY_NOT_AVAILABLE",
+            Severity::Degraded,
+            false,
+            None,
+            "Check capability registry, then recover capability provider",
+            "capability missing",
+        );
+
+        let report = compatibility_report(
+            &old_registry.catalog(),
+            &new_registry.catalog(),
+            &ErrorCompatibilityPolicy::default(),
+        );
+
+        assert!(!report.is_compatible());
+        assert!(report.violations.iter().any(|violation| {
+            violation.code == "FRANKEN_PROTOCOL_AUTH_FAILED"
+                && violation.reason.contains("category changed")
+        }));
+        assert!(report.violations.iter().any(|violation| {
+            violation.code == "FRANKEN_PROTOCOL_AUTH_FAILED"
+                && violation.reason.contains("retryable flag changed")
+        }));
+    }
+
+    #[test]
     fn product_error_macro_builds_error() {
         let registry = demo_registry();
         let result = crate::product_error!(
@@ -783,5 +1182,249 @@ mod tests {
             BTreeMap::new()
         );
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn product_error_validates_trace_id_before_registry_lookup() {
+        let registry = demo_registry();
+        let result = product_error(
+            &registry,
+            ProductSurface::Policy,
+            "FRANKEN_NOT_REGISTERED",
+            "registered-looking message",
+            " \t ",
+            BTreeMap::new(),
+        );
+
+        assert!(matches!(result, Err(ProductErrorBuildError::MissingTraceId)));
+    }
+
+    #[test]
+    fn product_error_rejects_lowercase_canonical_code_alias() {
+        let registry = demo_registry();
+        let result = product_error(
+            &registry,
+            ProductSurface::Auth,
+            "franken_protocol_auth_failed",
+            "session auth failed",
+            "trace-lowercase-canonical",
+            BTreeMap::new(),
+        );
+
+        assert!(matches!(
+            result,
+            Err(ProductErrorBuildError::UnregisteredCode(code))
+                if code == "franken_protocol_auth_failed"
+        ));
+    }
+
+    #[test]
+    fn product_prefix_without_trailing_dash_is_not_registered() {
+        assert!(!is_registered_product_prefix("FN-CTRL"));
+        assert!(!is_registered_product_prefix("FN-AUTH"));
+        assert!(!is_registered_product_prefix("FN-TOK"));
+    }
+
+    #[test]
+    fn product_prefix_with_extra_segment_is_not_registered() {
+        assert!(!is_registered_product_prefix("FN-CTRL-X"));
+        assert!(!is_registered_product_prefix("FN-MIG-ROLLBACK-"));
+        assert!(!is_registered_product_prefix("FN-ZON-TENANT-"));
+    }
+
+    #[test]
+    fn telemetry_dimensions_reject_metric_name_with_space() {
+        let registry = demo_registry();
+        let err = product_error(
+            &registry,
+            ProductSurface::ControlPlane,
+            "FRANKEN_PROTOCOL_AUTH_FAILED",
+            "session auth failed",
+            "trace-space-metric",
+            BTreeMap::new(),
+        )
+        .expect("build should succeed");
+
+        let result = telemetry_error_dimensions("franken.protocol.error total", &err);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn telemetry_dimensions_reject_metric_name_with_leading_dot() {
+        let registry = demo_registry();
+        let err = product_error(
+            &registry,
+            ProductSurface::ControlPlane,
+            "FRANKEN_PROTOCOL_AUTH_FAILED",
+            "session auth failed",
+            "trace-leading-dot-metric",
+            BTreeMap::new(),
+        )
+        .expect("build should succeed");
+
+        let result = telemetry_error_dimensions(".franken.protocol.error_total", &err);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn compatibility_category_policy_disabled_keeps_retryable_violation() {
+        let old_registry = demo_registry();
+        let mut new_registry = ErrorCodeRegistry::new();
+        register_entry(
+            &mut new_registry,
+            "FRANKEN_PROTOCOL_AUTH_FAILED",
+            Severity::Fatal,
+            false,
+            None,
+            "",
+            "auth failed",
+        );
+        register_entry(
+            &mut new_registry,
+            "FRANKEN_CONNECTOR_LEASE_EXPIRED",
+            Severity::Transient,
+            true,
+            Some(3000),
+            "Re-negotiate lease with coordinator before issuing writes",
+            "lease expired",
+        );
+        register_entry(
+            &mut new_registry,
+            "FRANKEN_CAPABILITY_NOT_AVAILABLE",
+            Severity::Degraded,
+            false,
+            None,
+            "Check capability registry, then recover capability provider",
+            "capability missing",
+        );
+        let policy = ErrorCompatibilityPolicy {
+            enforce_category_stability: false,
+            ..ErrorCompatibilityPolicy::default()
+        };
+
+        let report =
+            compatibility_report(&old_registry.catalog(), &new_registry.catalog(), &policy);
+
+        assert!(!report.is_compatible());
+        assert!(report.violations.iter().any(|violation| {
+            violation.code == "FRANKEN_PROTOCOL_AUTH_FAILED"
+                && violation.reason.contains("retryable flag changed")
+        }));
+        assert!(!report.violations.iter().any(|violation| {
+            violation.code == "FRANKEN_PROTOCOL_AUTH_FAILED"
+                && violation.reason.contains("category changed")
+        }));
+    }
+
+    #[test]
+    fn compatibility_retryable_policy_disabled_keeps_category_violation() {
+        let old_registry = demo_registry();
+        let mut new_registry = ErrorCodeRegistry::new();
+        register_entry(
+            &mut new_registry,
+            "FRANKEN_PROTOCOL_AUTH_FAILED",
+            Severity::Degraded,
+            true,
+            Some(1000),
+            "Re-authenticate with fresh credentials and retry request",
+            "auth failed",
+        );
+        register_entry(
+            &mut new_registry,
+            "FRANKEN_CONNECTOR_LEASE_EXPIRED",
+            Severity::Transient,
+            true,
+            Some(3000),
+            "Re-negotiate lease with coordinator before issuing writes",
+            "lease expired",
+        );
+        register_entry(
+            &mut new_registry,
+            "FRANKEN_CAPABILITY_NOT_AVAILABLE",
+            Severity::Degraded,
+            false,
+            None,
+            "Check capability registry, then recover capability provider",
+            "capability missing",
+        );
+        let policy = ErrorCompatibilityPolicy {
+            enforce_retryable_stability: false,
+            ..ErrorCompatibilityPolicy::default()
+        };
+
+        let report =
+            compatibility_report(&old_registry.catalog(), &new_registry.catalog(), &policy);
+
+        assert!(!report.is_compatible());
+        assert!(report.violations.iter().any(|violation| {
+            violation.code == "FRANKEN_PROTOCOL_AUTH_FAILED"
+                && violation.reason.contains("category changed")
+        }));
+        assert!(!report.violations.iter().any(|violation| {
+            violation.code == "FRANKEN_PROTOCOL_AUTH_FAILED"
+                && violation.reason.contains("retryable flag changed")
+        }));
+    }
+
+    #[test]
+    fn compatibility_append_only_disabled_still_checks_added_code_quality() {
+        let old_registry = demo_registry();
+        let mut new_registry = demo_registry();
+        register_entry(
+            &mut new_registry,
+            "FRANKEN_EGRESS_BAD_ADDITION",
+            Severity::Transient,
+            true,
+            Some(1000),
+            "retry",
+            "",
+        );
+        let policy = ErrorCompatibilityPolicy {
+            enforce_append_only: false,
+            ..ErrorCompatibilityPolicy::default()
+        };
+
+        let report =
+            compatibility_report(&old_registry.catalog(), &new_registry.catalog(), &policy);
+
+        assert!(!report.is_compatible());
+        assert_eq!(report.violations.len(), 2);
+        assert!(report.violations.iter().all(|violation| {
+            violation.code == "FRANKEN_EGRESS_BAD_ADDITION"
+        }));
+    }
+
+    #[test]
+    fn protocol_frame_deserialization_rejects_non_bool_retryable() {
+        let value = serde_json::json!({
+            "code": "FN-AUTH-FRANKEN_PROTOCOL_AUTH_FAILED",
+            "canonical_code": "FRANKEN_PROTOCOL_AUTH_FAILED",
+            "retryable": "true",
+            "retry_after_ms": null,
+            "trace_id": "trace-protocol-bad-retryable"
+        });
+
+        let result = serde_json::from_value::<ProtocolErrorFrame>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn sdk_payload_deserialization_rejects_array_context() {
+        let value = serde_json::json!({
+            "code": "FN-AUTH-FRANKEN_PROTOCOL_AUTH_FAILED",
+            "canonical_code": "FRANKEN_PROTOCOL_AUTH_FAILED",
+            "category": "TRANSIENT",
+            "retryable": true,
+            "trace_id": "trace-sdk-bad-context",
+            "message": "session auth failed",
+            "context": ["not", "a", "map"]
+        });
+
+        let result = serde_json::from_value::<SdkErrorPayload>(value);
+
+        assert!(result.is_err());
     }
 }

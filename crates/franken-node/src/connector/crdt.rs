@@ -401,6 +401,31 @@ mod tests {
         assert_eq!(ab.entries["k"].value, ba.entries["k"].value);
     }
 
+    #[test]
+    fn lww_map_equal_timestamp_lower_json_ignored() {
+        let mut m = LwwMap::new();
+        m.set("k".into(), json!("z"), 7);
+        m.set("k".into(), json!("a"), 7);
+        assert_eq!(m.entries["k"].value, json!("z"));
+    }
+
+    #[test]
+    fn lww_map_merge_rejects_type_mismatch() {
+        let a = LwwMap::new();
+        let mut b = LwwMap::new();
+        b.crdt_type = CrdtType::OrSet;
+
+        let err = a.merge(&b).unwrap_err();
+
+        assert_eq!(
+            err,
+            CrdtError::TypeMismatch {
+                expected: CrdtType::LwwMap,
+                actual: CrdtType::OrSet
+            }
+        );
+    }
+
     // === OR-Set tests ===
 
     #[test]
@@ -470,6 +495,45 @@ mod tests {
         assert_eq!(merged.elements(), reverse_merged.elements());
     }
 
+    #[test]
+    fn or_set_add_empty_replica_ignored() {
+        let mut s = OrSet::new();
+
+        s.add("", "x".into());
+
+        assert!(s.adds.is_empty());
+        assert!(s.next_dot_by_replica.is_empty());
+        assert!(s.elements().is_empty());
+    }
+
+    #[test]
+    fn or_set_add_at_max_counter_ignored() {
+        let mut s = OrSet::new();
+        s.next_dot_by_replica.insert("r1".to_string(), u64::MAX);
+
+        s.add("r1", "x".into());
+
+        assert!(s.adds.is_empty());
+        assert_eq!(s.next_dot_by_replica["r1"], u64::MAX);
+    }
+
+    #[test]
+    fn or_set_merge_rejects_type_mismatch() {
+        let a = OrSet::new();
+        let mut b = OrSet::new();
+        b.crdt_type = CrdtType::GCounter;
+
+        let err = a.merge(&b).unwrap_err();
+
+        assert_eq!(
+            err,
+            CrdtError::TypeMismatch {
+                expected: CrdtType::OrSet,
+                actual: CrdtType::GCounter
+            }
+        );
+    }
+
     // === GCounter tests ===
 
     #[test]
@@ -516,6 +580,32 @@ mod tests {
         assert_eq!(ab.value(), 5); // max(5, 3) = 5
     }
 
+    #[test]
+    fn gcounter_merge_rejects_type_mismatch() {
+        let a = GCounter::new();
+        let mut b = GCounter::new();
+        b.crdt_type = CrdtType::LwwMap;
+
+        let err = a.merge(&b).unwrap_err();
+
+        assert_eq!(
+            err,
+            CrdtError::TypeMismatch {
+                expected: CrdtType::GCounter,
+                actual: CrdtType::LwwMap
+            }
+        );
+    }
+
+    #[test]
+    fn gcounter_value_saturates_instead_of_wrapping() {
+        let mut c = GCounter::new();
+        c.counts.insert("r1".to_string(), u64::MAX);
+        c.counts.insert("r2".to_string(), 1);
+
+        assert_eq!(c.value(), u64::MAX);
+    }
+
     // === PNCounter tests ===
 
     #[test]
@@ -560,6 +650,40 @@ mod tests {
         assert_eq!(aa.value(), a.value());
     }
 
+    #[test]
+    fn pncounter_merge_rejects_outer_type_mismatch() {
+        let a = PnCounter::new();
+        let mut b = PnCounter::new();
+        b.crdt_type = CrdtType::GCounter;
+
+        let err = a.merge(&b).unwrap_err();
+
+        assert_eq!(
+            err,
+            CrdtError::TypeMismatch {
+                expected: CrdtType::PnCounter,
+                actual: CrdtType::GCounter
+            }
+        );
+    }
+
+    #[test]
+    fn pncounter_merge_rejects_nested_counter_type_mismatch() {
+        let a = PnCounter::new();
+        let mut b = PnCounter::new();
+        b.positive.crdt_type = CrdtType::OrSet;
+
+        let err = a.merge(&b).unwrap_err();
+
+        assert_eq!(
+            err,
+            CrdtError::TypeMismatch {
+                expected: CrdtType::GCounter,
+                actual: CrdtType::OrSet
+            }
+        );
+    }
+
     // === Type mismatch tests ===
 
     #[test]
@@ -583,5 +707,98 @@ mod tests {
             let parsed: CrdtType = serde_json::from_str(&json).unwrap();
             assert_eq!(t, parsed);
         }
+    }
+
+    #[test]
+    fn serde_unknown_crdt_type_fails() {
+        let err = serde_json::from_str::<CrdtType>("\"unknown\"");
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn serde_lww_map_missing_entries_fails() {
+        let err = serde_json::from_str::<LwwMap>(r#"{"crdt_type":"lww_map"}"#);
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn serde_crdt_type_is_case_sensitive() {
+        let err = serde_json::from_str::<CrdtType>("\"LWW_MAP\"");
+
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn serde_or_set_missing_adds_fails() {
+        let err = serde_json::from_str::<OrSet>(
+            r#"{"crdt_type":"or_set","removes":{},"next_dot_by_replica":{}}"#,
+        );
+
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn serde_or_set_negative_tag_counter_fails() {
+        let err = serde_json::from_str::<OrSet>(
+            r#"{
+  "crdt_type":"or_set",
+  "adds":{"x":[{"replica_id":"r1","counter":-1}]},
+  "removes":{},
+  "next_dot_by_replica":{"r1":1}
+}"#,
+        );
+
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn serde_gcounter_missing_counts_fails() {
+        let err = serde_json::from_str::<GCounter>(r#"{"crdt_type":"gcounter"}"#);
+
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn serde_gcounter_negative_count_fails() {
+        let err = serde_json::from_str::<GCounter>(
+            r#"{"crdt_type":"gcounter","counts":{"r1":-1}}"#,
+        );
+
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn serde_pncounter_missing_negative_counter_fails() {
+        let err = serde_json::from_str::<PnCounter>(
+            r#"{
+  "crdt_type":"pncounter",
+  "positive":{"crdt_type":"gcounter","counts":{}}
+}"#,
+        );
+
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn serde_pncounter_malformed_nested_counter_fails() {
+        let err = serde_json::from_str::<PnCounter>(
+            r#"{
+  "crdt_type":"pncounter",
+  "positive":{"crdt_type":"gcounter"},
+  "negative":{"crdt_type":"gcounter","counts":{}}
+}"#,
+        );
+
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn or_set_remove_unknown_element_does_not_create_tombstone() {
+        let mut s = OrSet::new();
+
+        s.remove("unknown".into());
+
+        assert!(s.removes.is_empty());
+        assert!(s.elements().is_empty());
     }
 }

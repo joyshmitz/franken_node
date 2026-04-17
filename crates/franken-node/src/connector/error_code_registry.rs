@@ -125,13 +125,24 @@ fn parse_subsystem(code: &str) -> Option<String> {
     let rest = code.strip_prefix("FRANKEN_")?;
     for &sub in VALID_SUBSYSTEMS {
         if let Some(after) = rest.strip_prefix(sub)
-            && after.starts_with('_')
-            && after.len() > 1
+            && is_valid_code_suffix(after)
         {
             return Some(sub.to_string());
         }
     }
     None
+}
+
+fn is_valid_code_suffix(suffix_with_separator: &str) -> bool {
+    let Some(suffix) = suffix_with_separator.strip_prefix('_') else {
+        return false;
+    };
+    if suffix.is_empty() || suffix.starts_with('_') || suffix.ends_with('_') {
+        return false;
+    }
+    suffix
+        .bytes()
+        .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
 }
 
 // ── Registry ────────────────────────────────────────────────────────────────
@@ -180,7 +191,7 @@ impl ErrorCodeRegistry {
         }
 
         // INV-ECR-RECOVERY — non-fatal must have recovery fields
-        if !reg.severity.is_fatal() && reg.recovery.recovery_hint.is_empty() {
+        if !reg.severity.is_fatal() && reg.recovery.recovery_hint.trim().is_empty() {
             return Err(RegistryError::MissingRecovery(reg.code.clone()));
         }
 
@@ -328,6 +339,70 @@ mod tests {
     }
 
     #[test]
+    fn reject_missing_subsystem_after_franken_prefix() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "FRANKEN_",
+                Severity::Transient,
+                recovery(true, None, "retry"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_INVALID_NAMESPACE");
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn reject_subsystem_without_code_suffix() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "FRANKEN_PROTOCOL",
+                Severity::Transient,
+                recovery(true, None, "retry"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_INVALID_NAMESPACE");
+        assert!(r.get("FRANKEN_PROTOCOL").is_none());
+    }
+
+    #[test]
+    fn reject_subsystem_with_empty_code_suffix() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "FRANKEN_PROTOCOL_",
+                Severity::Transient,
+                recovery(true, None, "retry"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_INVALID_NAMESPACE");
+        assert!(r.catalog().is_empty());
+    }
+
+    #[test]
+    fn reject_partial_subsystem_prefix() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "FRANKEN_SUPPLY_BAD",
+                Severity::Transient,
+                recovery(true, None, "retry"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_INVALID_NAMESPACE");
+        assert!(r.list_by_subsystem("SUPPLY_CHAIN").is_empty());
+    }
+
+    #[test]
     fn reject_duplicate_code() {
         let mut r = ErrorCodeRegistry::new();
         r.register(&reg(
@@ -409,6 +484,325 @@ mod tests {
             ))
             .unwrap_err();
         assert_eq!(err.code(), "ECR_FROZEN_CONFLICT");
+    }
+
+    #[test]
+    fn frozen_entry_rejects_same_version_reregistration() {
+        let mut r = ErrorCodeRegistry::new();
+        r.register(&reg(
+            "FRANKEN_CONNECTOR_STABLE",
+            Severity::Transient,
+            recovery(true, Some(2000), "renegotiate lease"),
+            1,
+        ))
+        .unwrap();
+        r.freeze("FRANKEN_CONNECTOR_STABLE").unwrap();
+
+        let err = r
+            .register(&reg(
+                "FRANKEN_CONNECTOR_STABLE",
+                Severity::Transient,
+                recovery(true, Some(2000), "renegotiate lease"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_FROZEN_CONFLICT");
+    }
+
+    #[test]
+    fn frozen_entry_rejects_lower_version_reregistration() {
+        let mut r = ErrorCodeRegistry::new();
+        r.register(&reg(
+            "FRANKEN_RUNTIME_STABLE",
+            Severity::Degraded,
+            recovery(false, None, "operator investigation required"),
+            2,
+        ))
+        .unwrap();
+        r.freeze("FRANKEN_RUNTIME_STABLE").unwrap();
+
+        let err = r
+            .register(&reg(
+                "FRANKEN_RUNTIME_STABLE",
+                Severity::Degraded,
+                recovery(false, None, "operator investigation required"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_FROZEN_CONFLICT");
+        assert_eq!(r.get("FRANKEN_RUNTIME_STABLE").unwrap().version, 2);
+    }
+
+    #[test]
+    fn frozen_entry_rejects_recovery_shape_change() {
+        let mut r = ErrorCodeRegistry::new();
+        r.register(&reg(
+            "FRANKEN_PROTOCOL_RETRYABLE",
+            Severity::Transient,
+            recovery(true, Some(1000), "retry with backoff"),
+            1,
+        ))
+        .unwrap();
+        r.freeze("FRANKEN_PROTOCOL_RETRYABLE").unwrap();
+
+        let err = r
+            .register(&reg(
+                "FRANKEN_PROTOCOL_RETRYABLE",
+                Severity::Transient,
+                recovery(false, None, "manual intervention required"),
+                2,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_FROZEN_CONFLICT");
+    }
+
+    #[test]
+    fn failed_duplicate_registration_does_not_replace_original_entry() {
+        let mut r = ErrorCodeRegistry::new();
+        r.register(&reg(
+            "FRANKEN_CONFORMANCE_DUP",
+            Severity::Transient,
+            recovery(true, None, "retry conformance check"),
+            1,
+        ))
+        .unwrap();
+
+        let err = r
+            .register(&reg(
+                "FRANKEN_CONFORMANCE_DUP",
+                Severity::Fatal,
+                recovery(false, None, ""),
+                99,
+            ))
+            .unwrap_err();
+
+        let entry = r.get("FRANKEN_CONFORMANCE_DUP").unwrap();
+        assert_eq!(err.code(), "ECR_DUPLICATE_CODE");
+        assert_eq!(entry.severity, Severity::Transient);
+        assert_eq!(entry.version, 1);
+    }
+
+    #[test]
+    fn reject_lowercase_franken_prefix_without_inserting_entry() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "franken_PROTOCOL_CASE",
+                Severity::Transient,
+                recovery(true, None, "retry"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_INVALID_NAMESPACE");
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn reject_lowercase_subsystem_without_inserting_entry() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "FRANKEN_protocol_CASE",
+                Severity::Transient,
+                recovery(true, None, "retry"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_INVALID_NAMESPACE");
+        assert!(r.catalog().is_empty());
+    }
+
+    #[test]
+    fn reject_valid_subsystem_prefix_without_separator() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "FRANKEN_PROTOCOLX_BAD",
+                Severity::Transient,
+                recovery(true, None, "retry"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_INVALID_NAMESPACE");
+        assert!(r.get("FRANKEN_PROTOCOLX_BAD").is_none());
+    }
+
+    #[test]
+    fn reject_code_suffix_with_trailing_whitespace_without_inserting_entry() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "FRANKEN_PROTOCOL_BAD ",
+                Severity::Transient,
+                recovery(true, None, "retry"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_INVALID_NAMESPACE");
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn reject_code_suffix_with_embedded_newline() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "FRANKEN_PROTOCOL_BAD\nLINE",
+                Severity::Transient,
+                recovery(true, None, "retry"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_INVALID_NAMESPACE");
+        assert!(r.get("FRANKEN_PROTOCOL_BAD\nLINE").is_none());
+    }
+
+    #[test]
+    fn reject_code_suffix_with_lowercase_tail() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "FRANKEN_RUNTIME_bad",
+                Severity::Degraded,
+                recovery(false, None, "operator review"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_INVALID_NAMESPACE");
+        assert!(r.catalog().is_empty());
+    }
+
+    #[test]
+    fn reject_code_suffix_with_empty_middle_segment() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "FRANKEN_CONNECTOR__BROKEN",
+                Severity::Transient,
+                recovery(true, None, "retry connector"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_INVALID_NAMESPACE");
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn reject_code_suffix_with_trailing_separator() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "FRANKEN_SECURITY_BAD_",
+                Severity::Fatal,
+                recovery(false, None, ""),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_INVALID_NAMESPACE");
+        assert!(r.get("FRANKEN_SECURITY_BAD_").is_none());
+    }
+
+    #[test]
+    fn reject_code_suffix_with_hyphen() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "FRANKEN_SUPPLY_CHAIN_BAD-NAME",
+                Severity::Transient,
+                recovery(true, Some(100), "retry supply chain check"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_INVALID_NAMESPACE");
+        assert!(r.list_by_subsystem("SUPPLY_CHAIN").is_empty());
+    }
+
+    #[test]
+    fn reject_non_fatal_whitespace_only_recovery_hint() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "FRANKEN_EGRESS_BLANK_HINT",
+                Severity::Transient,
+                recovery(true, Some(50), " \t\n"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_MISSING_RECOVERY");
+        assert!(r.get("FRANKEN_EGRESS_BLANK_HINT").is_none());
+    }
+
+    #[test]
+    fn reject_fatal_retryable_even_without_retry_after_hint() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "FRANKEN_SECURITY_RETRY_FATAL",
+                Severity::Fatal,
+                recovery(true, None, "do not retry"),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_MISSING_RECOVERY");
+        assert!(r.get("FRANKEN_SECURITY_RETRY_FATAL").is_none());
+    }
+
+    #[test]
+    fn failed_missing_recovery_registration_does_not_insert_entry() {
+        let mut r = ErrorCodeRegistry::new();
+        let err = r
+            .register(&reg(
+                "FRANKEN_RUNTIME_MISSING_HINT",
+                Severity::Transient,
+                recovery(true, Some(10), ""),
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ECR_MISSING_RECOVERY");
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn failed_frozen_recovery_change_preserves_original_entry() {
+        let mut r = ErrorCodeRegistry::new();
+        r.register(&reg(
+            "FRANKEN_CONNECTOR_FROZEN_RECOVERY",
+            Severity::Transient,
+            recovery(true, Some(250), "retry connector"),
+            1,
+        ))
+        .unwrap();
+        r.freeze("FRANKEN_CONNECTOR_FROZEN_RECOVERY").unwrap();
+
+        let err = r
+            .register(&reg(
+                "FRANKEN_CONNECTOR_FROZEN_RECOVERY",
+                Severity::Transient,
+                recovery(true, Some(500), "retry slower"),
+                2,
+            ))
+            .unwrap_err();
+
+        let entry = r.get("FRANKEN_CONNECTOR_FROZEN_RECOVERY").unwrap();
+        assert_eq!(err.code(), "ECR_FROZEN_CONFLICT");
+        assert_eq!(entry.recovery.retry_after_ms, Some(250));
+        assert_eq!(entry.recovery.recovery_hint, "retry connector");
+        assert_eq!(entry.version, 1);
     }
 
     #[test]

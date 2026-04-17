@@ -523,4 +523,237 @@ mod tests {
             "all-optional checks must fail gate (no required checks)"
         );
     }
+
+    #[test]
+    fn error_from_empty_check_set_reports_zero_failing_required_checks() {
+        let result = HealthGateResult::evaluate(vec![]);
+
+        let err = HealthGateError::from_result(&result)
+            .expect("fail-closed empty check set should produce a gate error");
+
+        assert_eq!(err.failing_checks, Vec::<String>::new());
+        assert!(err.message.contains("0 required check(s)"));
+    }
+
+    #[test]
+    fn failed_optional_check_does_not_enter_required_failure_list() {
+        let checks = vec![
+            HealthCheck {
+                name: "liveness".to_string(),
+                required: true,
+                passed: false,
+                message: Some("probe failed".to_string()),
+            },
+            HealthCheck {
+                name: "resource_ok".to_string(),
+                required: false,
+                passed: false,
+                message: Some("pressure high".to_string()),
+            },
+        ];
+
+        let result = HealthGateResult::evaluate(checks);
+
+        assert!(!result.gate_passed);
+        assert_eq!(result.failing_required(), vec!["liveness"]);
+        let err = HealthGateError::from_result(&result)
+            .expect("required check failure should produce a gate error");
+        assert_eq!(err.failing_checks, vec!["liveness".to_string()]);
+    }
+
+    #[test]
+    fn whitespace_only_policy_id_is_rejected_before_future_epoch_check() {
+        let policy = EpochScopedHealthPolicy::new(
+            "   ".to_string(),
+            ControlEpoch::new(99),
+            standard_checks(true, true, true, true),
+            "trace-hg-whitespace-only".to_string(),
+        );
+        let validity = ValidityWindowPolicy::new(ControlEpoch::new(7), 2);
+
+        let err = evaluate_epoch_scoped_policy(&policy, &validity).unwrap_err();
+
+        assert!(matches!(err, EpochHealthGateError::InvalidPolicyId { .. }));
+        assert!(err.to_string().contains("must not be empty"));
+    }
+
+    #[test]
+    fn reserved_policy_id_is_rejected_before_stale_epoch_check() {
+        let policy = EpochScopedHealthPolicy::new(
+            RESERVED_POLICY_ID.to_string(),
+            ControlEpoch::new(1),
+            standard_checks(true, true, true, true),
+            "trace-hg-reserved-stale".to_string(),
+        );
+        let validity = ValidityWindowPolicy::new(ControlEpoch::new(10), 2);
+
+        let err = evaluate_epoch_scoped_policy(&policy, &validity).unwrap_err();
+
+        assert!(matches!(err, EpochHealthGateError::InvalidPolicyId { .. }));
+        assert!(err.rejection().is_none());
+    }
+
+    #[test]
+    fn tab_padded_policy_id_is_rejected_before_gate_evaluation() {
+        let policy = EpochScopedHealthPolicy::new(
+            "\thealth-policy-tab".to_string(),
+            ControlEpoch::new(7),
+            standard_checks(false, false, false, false),
+            "trace-hg-tab-policy".to_string(),
+        );
+        let validity = ValidityWindowPolicy::new(ControlEpoch::new(7), 2);
+
+        let err = evaluate_epoch_scoped_policy(&policy, &validity).unwrap_err();
+
+        assert!(matches!(err, EpochHealthGateError::InvalidPolicyId { .. }));
+        assert!(err.to_string().contains("leading or trailing whitespace"));
+    }
+
+    #[test]
+    fn stale_epoch_error_exposes_rejection_payload() {
+        let policy = EpochScopedHealthPolicy::new(
+            "health-policy-stale-payload".to_string(),
+            ControlEpoch::new(4),
+            standard_checks(true, true, true, true),
+            "trace-hg-stale-payload".to_string(),
+        );
+        let validity = ValidityWindowPolicy::new(ControlEpoch::new(9), 2);
+
+        let err = evaluate_epoch_scoped_policy(&policy, &validity).unwrap_err();
+        let rejection = err
+            .rejection()
+            .expect("stale epoch rejection should preserve payload");
+
+        assert_eq!(rejection.artifact_id, "health-policy-stale-payload");
+        assert_eq!(rejection.artifact_epoch, ControlEpoch::new(4));
+        assert_eq!(rejection.current_epoch, ControlEpoch::new(9));
+        assert_eq!(
+            rejection.rejection_reason,
+            EpochRejectionReason::ExpiredEpoch
+        );
+    }
+
+    #[test]
+    fn valid_epoch_with_no_required_checks_still_returns_failed_gate() {
+        let policy = EpochScopedHealthPolicy::new(
+            "health-policy-no-required".to_string(),
+            ControlEpoch::new(7),
+            vec![HealthCheck {
+                name: "resource_ok".to_string(),
+                required: false,
+                passed: true,
+                message: None,
+            }],
+            "trace-hg-no-required".to_string(),
+        );
+        let validity = ValidityWindowPolicy::new(ControlEpoch::new(7), 2);
+
+        let result = evaluate_epoch_scoped_policy(&policy, &validity)
+            .expect("valid epoch should still evaluate gate result");
+
+        assert!(!result.gate_result.gate_passed);
+        assert!(result.gate_result.failing_required().is_empty());
+        assert!(HealthGateError::from_result(&result.gate_result).is_some());
+    }
+
+    #[test]
+    fn malformed_health_check_missing_required_flag_is_rejected() {
+        let payload = serde_json::json!({
+            "name": "liveness",
+            "passed": true,
+            "message": null
+        });
+
+        let err = serde_json::from_value::<HealthCheck>(payload).unwrap_err();
+
+        assert!(err.to_string().contains("required"));
+    }
+
+    #[test]
+    fn malformed_health_gate_result_missing_gate_flag_is_rejected() {
+        let payload = serde_json::json!({
+            "checks": standard_checks(true, true, true, true)
+        });
+
+        let err = serde_json::from_value::<HealthGateResult>(payload).unwrap_err();
+
+        assert!(err.to_string().contains("gate_passed"));
+    }
+
+    #[test]
+    fn unknown_epoch_health_error_tag_is_rejected() {
+        let payload = serde_json::json!({
+            "code": "EPV-999",
+            "reason": "unknown failure mode"
+        });
+
+        let err = serde_json::from_value::<EpochHealthGateError>(payload).unwrap_err();
+
+        assert!(err.to_string().contains("EPV-999"));
+    }
+
+    #[test]
+    fn duplicate_required_failures_are_not_deduplicated_in_error() {
+        let checks = vec![
+            HealthCheck {
+                name: "readiness".to_string(),
+                required: true,
+                passed: false,
+                message: None,
+            },
+            HealthCheck {
+                name: "readiness".to_string(),
+                required: true,
+                passed: false,
+                message: Some("second probe failed".to_string()),
+            },
+        ];
+        let result = HealthGateResult::evaluate(checks);
+
+        let err = HealthGateError::from_result(&result).expect("duplicate failures still fail");
+
+        assert_eq!(
+            err.failing_checks,
+            vec!["readiness".to_string(), "readiness".to_string()]
+        );
+        assert!(err.message.contains("2 required check(s)"));
+    }
+
+    #[test]
+    fn future_epoch_rejects_before_health_gate_failure_evaluation() {
+        let policy = EpochScopedHealthPolicy::new(
+            "health-policy-future-before-gate".to_string(),
+            ControlEpoch::new(9),
+            standard_checks(false, false, false, false),
+            "trace-hg-future-before-gate".to_string(),
+        );
+        let validity = ValidityWindowPolicy::new(ControlEpoch::new(7), 2);
+
+        let err = evaluate_epoch_scoped_policy(&policy, &validity).unwrap_err();
+
+        assert!(matches!(
+            err,
+            EpochHealthGateError::FutureEpochRejected { .. }
+        ));
+        assert!(err.rejection().is_some());
+    }
+
+    #[test]
+    fn stale_epoch_rejects_before_empty_gate_failure_evaluation() {
+        let policy = EpochScopedHealthPolicy::new(
+            "health-policy-stale-before-gate".to_string(),
+            ControlEpoch::new(1),
+            Vec::new(),
+            "trace-hg-stale-before-gate".to_string(),
+        );
+        let validity = ValidityWindowPolicy::new(ControlEpoch::new(8), 2);
+
+        let err = evaluate_epoch_scoped_policy(&policy, &validity).unwrap_err();
+
+        assert!(matches!(
+            err,
+            EpochHealthGateError::StaleEpochRejected { .. }
+        ));
+        assert!(err.rejection().is_some());
+    }
 }

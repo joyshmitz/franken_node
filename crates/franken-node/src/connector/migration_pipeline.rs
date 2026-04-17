@@ -702,6 +702,22 @@ pub fn advance(mut state: PipelineState) -> Result<PipelineState, PipelineError>
             state.verification_report = Some(report);
         }
         PipelineStage::ReceiptIssuance => {
+            let report = state.verification_report.as_ref().ok_or_else(|| PipelineError {
+                code: error_codes::ERR_PIPE_INVALID_TRANSITION.to_string(),
+                message: "Cannot issue receipt without verification report".to_string(),
+            })?;
+            if !report.meets_threshold {
+                return Err(PipelineError {
+                    code: error_codes::ERR_PIPE_THRESHOLD_NOT_MET.to_string(),
+                    message: "Cannot issue receipt for failed verification report".to_string(),
+                });
+            }
+            if state.migration_plan.is_none() {
+                return Err(PipelineError {
+                    code: error_codes::ERR_PIPE_INVALID_TRANSITION.to_string(),
+                    message: "Cannot issue receipt without migration plan".to_string(),
+                });
+            }
             // Issue signed receipt
             let receipt = issue_receipt(&state);
             state.migration_receipt = Some(receipt);
@@ -753,7 +769,10 @@ pub fn rollback(mut state: PipelineState) -> Result<PipelineState, PipelineError
 pub fn is_idempotent(a: &PipelineState, b: &PipelineState) -> bool {
     a.current_stage == b.current_stage
         && a.cohort_id == b.cohort_id
-        && crate::security::constant_time::ct_eq(&a.idempotency_key, &b.idempotency_key)
+        && crate::security::constant_time::ct_eq_bytes(
+            a.idempotency_key.as_bytes(),
+            b.idempotency_key.as_bytes(),
+        )
         && a.extensions == b.extensions
         && a.extension_specs == b.extension_specs
         && a.schema_version == b.schema_version
@@ -1871,7 +1890,11 @@ fn sign_receipt(receipt: &MigrationReceipt) -> String {
 }
 
 pub fn verify_receipt_signature(receipt: &MigrationReceipt) -> bool {
-    crate::security::constant_time::ct_eq(&receipt.signature, &sign_receipt(receipt))
+    let expected_signature = sign_receipt(receipt);
+    crate::security::constant_time::ct_eq_bytes(
+        receipt.signature.as_bytes(),
+        expected_signature.as_bytes(),
+    )
 }
 
 /// Compute a cohort summary from a completed pipeline state.
@@ -2208,6 +2231,75 @@ mod tests {
     }
 
     #[test]
+    fn test_plan_generation_without_compatibility_report_rejected() {
+        let mut state = new(&sample_cohort()).expect("should succeed");
+        state.current_stage = PipelineStage::PlanGeneration;
+        state.compatibility_report = None;
+
+        let err = advance(state).unwrap_err();
+
+        assert_eq!(err.code, error_codes::ERR_PIPE_INVALID_TRANSITION);
+        assert!(err.message.contains("compatibility report"));
+    }
+
+    #[test]
+    fn test_plan_review_without_migration_plan_rejected() {
+        let mut state = new(&sample_cohort()).expect("should succeed");
+        state.current_stage = PipelineStage::PlanReview;
+        state.migration_plan = None;
+
+        let err = advance(state).unwrap_err();
+
+        assert_eq!(err.code, error_codes::ERR_PIPE_INVALID_TRANSITION);
+        assert!(err.message.contains("migration plan"));
+    }
+
+    #[test]
+    fn test_receipt_issuance_without_verification_report_rejected() {
+        let mut state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        state.current_stage = PipelineStage::ReceiptIssuance;
+        state.verification_report = None;
+        state.migration_receipt = None;
+
+        let err = advance(state).unwrap_err();
+
+        assert_eq!(err.code, error_codes::ERR_PIPE_INVALID_TRANSITION);
+        assert!(err.message.contains("verification report"));
+    }
+
+    #[test]
+    fn test_receipt_issuance_with_failed_verification_report_rejected() {
+        let mut state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        let mut failed_report = state
+            .verification_report
+            .clone()
+            .expect("verification report should exist");
+        failed_report.meets_threshold = false;
+        failed_report.pass_rate = 0.0;
+        state.current_stage = PipelineStage::ReceiptIssuance;
+        state.verification_report = Some(failed_report);
+        state.migration_receipt = None;
+
+        let err = advance(state).unwrap_err();
+
+        assert_eq!(err.code, error_codes::ERR_PIPE_THRESHOLD_NOT_MET);
+        assert!(err.message.contains("failed verification"));
+    }
+
+    #[test]
+    fn test_receipt_issuance_without_migration_plan_rejected() {
+        let mut state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        state.current_stage = PipelineStage::ReceiptIssuance;
+        state.migration_plan = None;
+        state.migration_receipt = None;
+
+        let err = advance(state).unwrap_err();
+
+        assert_eq!(err.code, error_codes::ERR_PIPE_INVALID_TRANSITION);
+        assert!(err.message.contains("migration plan"));
+    }
+
+    #[test]
     fn test_plan_has_deterministic_rollout_phases_and_certificates() {
         let mut state = new(&sample_cohort()).expect("should succeed");
         state = advance(state).expect("should succeed");
@@ -2363,6 +2455,42 @@ mod tests {
     }
 
     #[test]
+    fn test_verification_without_analysis_finding_fails_closed() {
+        let cohort = single_ext_cohort("missing_analysis_finding");
+        let mut state = new(&cohort).expect("should succeed");
+        state.current_stage = PipelineStage::Verification;
+        state.compatibility_report = None;
+
+        let report = run_verification(&state);
+        let detail = report
+            .extension_details
+            .get("missing_analysis_finding")
+            .expect("verification detail should exist");
+
+        assert!(!report.meets_threshold);
+        assert!(!report.per_extension_results["missing_analysis_finding"]);
+        assert_eq!(report.counterexample_witnesses.len(), 1);
+        assert_eq!(
+            detail
+                .counterexample_witness
+                .as_ref()
+                .expect("witness should exist")
+                .reason_code,
+            "ERR_PIPE_ANALYSIS_BLOCKED"
+        );
+    }
+
+    #[test]
+    fn test_full_pipeline_rejects_fail_closed_degraded_evidence() {
+        let cohort = single_ext_cohort_with_evidence("degraded_case", degraded_evidence());
+
+        let err = run_full_pipeline(&cohort).unwrap_err();
+
+        assert_eq!(err.code, error_codes::ERR_PIPE_THRESHOLD_NOT_MET);
+        assert!(err.message.contains("below threshold"));
+    }
+
+    #[test]
     fn test_degraded_mode_is_reported_and_not_green() {
         let cohort = single_ext_cohort_with_evidence("degraded_case", degraded_evidence());
         let mut state = new(&cohort).expect("should succeed");
@@ -2387,6 +2515,57 @@ mod tests {
             .as_ref()
             .expect("should have report");
         assert_eq!(report.per_extension_results.len(), 2);
+    }
+
+    #[test]
+    fn test_blocked_dependency_withholds_dependent_from_canary() {
+        let mut dependent_evidence = healthy_evidence();
+        dependent_evidence.dependency_edges = vec!["blocked_core".to_string()];
+        let cohort = CohortDefinition {
+            cohort_id: "blocked-dependency".to_string(),
+            extensions: vec![
+                ext("blocked_core", "1.0.0", "2.0.0", 1, 3, high_risk_evidence()),
+                ext(
+                    "dependent_plugin",
+                    "1.0.0",
+                    "2.0.0",
+                    1,
+                    1,
+                    dependent_evidence,
+                ),
+            ],
+            selection_criteria: "dependency-block".to_string(),
+        };
+        let state = new(&cohort).expect("should succeed");
+        let report = run_analysis(&state);
+        let plan = generate_plan(&state, &report);
+        let shadow = plan
+            .phases
+            .iter()
+            .find(|phase| phase.phase == RolloutPhase::Shadow)
+            .expect("shadow phase should exist");
+        let canary = plan
+            .phases
+            .iter()
+            .find(|phase| phase.phase == RolloutPhase::Canary)
+            .expect("canary phase should exist");
+
+        assert!(
+            shadow
+                .extension_names
+                .contains(&"dependent_plugin".to_string())
+        );
+        assert!(
+            !canary
+                .extension_names
+                .contains(&"dependent_plugin".to_string())
+        );
+        assert!(
+            canary
+                .explanation_trace
+                .iter()
+                .any(|line| line.contains("blocked dependency blocked_core"))
+        );
     }
 
     // ── Receipt issuance ────────────────────────────────────────────────
@@ -2435,6 +2614,78 @@ mod tests {
             .clone();
         assert!(verify_receipt_signature(&receipt));
         receipt.verification_summary.push_str(" tampered");
+        assert!(!verify_receipt_signature(&receipt));
+    }
+
+    #[test]
+    fn test_receipt_signature_rejects_empty_signature() {
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        let mut receipt = state
+            .migration_receipt
+            .as_ref()
+            .expect("should have receipt")
+            .clone();
+
+        receipt.signature.clear();
+
+        assert!(!verify_receipt_signature(&receipt));
+    }
+
+    #[test]
+    fn test_receipt_signature_rejects_evidence_id_tampering() {
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        let mut receipt = state
+            .migration_receipt
+            .as_ref()
+            .expect("should have receipt")
+            .clone();
+
+        receipt
+            .evidence_artifact_ids
+            .push("forged-evidence-artifact".to_string());
+
+        assert!(!verify_receipt_signature(&receipt));
+    }
+
+    #[test]
+    fn test_receipt_signature_rejects_timestamp_tampering() {
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        let mut receipt = state
+            .migration_receipt
+            .as_ref()
+            .expect("should have receipt")
+            .clone();
+
+        receipt.timestamp = "2026-02-21T00:00:01Z".to_string();
+
+        assert!(!verify_receipt_signature(&receipt));
+    }
+
+    #[test]
+    fn test_receipt_signature_rejects_rollback_proof_tampering() {
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        let mut receipt = state
+            .migration_receipt
+            .as_ref()
+            .expect("should have receipt")
+            .clone();
+
+        receipt.rollback_proof.push_str("-tampered");
+
+        assert!(!verify_receipt_signature(&receipt));
+    }
+
+    #[test]
+    fn test_receipt_signature_rejects_degraded_summary_tampering() {
+        let state = run_full_pipeline(&sample_cohort()).expect("should succeed");
+        let mut receipt = state
+            .migration_receipt
+            .as_ref()
+            .expect("should have receipt")
+            .clone();
+
+        receipt.degraded_mode_summary = Some("forged degraded-mode summary".to_string());
+
         assert!(!verify_receipt_signature(&receipt));
     }
 
@@ -2526,6 +2777,26 @@ mod tests {
         let s1 = new(&cohort).unwrap();
         let s2 = new(&cohort).unwrap();
         assert_eq!(s1.idempotency_key, s2.idempotency_key);
+    }
+
+    #[test]
+    fn test_idempotency_rejects_tampered_key_for_same_state() {
+        let state1 = new(&sample_cohort()).expect("should succeed");
+        let mut state2 = state1.clone();
+        state2.idempotency_key.push_str("-tampered");
+
+        assert!(!is_idempotent(&state1, &state2));
+    }
+
+    #[test]
+    fn test_idempotency_rejects_tampered_extension_version() {
+        let state1 = new(&sample_cohort()).expect("should succeed");
+        let mut state2 = state1.clone();
+        state2
+            .extensions
+            .insert("ext-a".to_string(), "9.9.9".to_string());
+
+        assert!(!is_idempotent(&state1, &state2));
     }
 
     // ── Deterministic pipeline ──────────────────────────────────────────

@@ -211,12 +211,18 @@ impl MeasurementResult {
         } else {
             0.0
         };
-        let inputs_finite = baseline_p95_us.is_finite()
-            && baseline_p99_us.is_finite()
-            && integrated_p95_us.is_finite()
-            && integrated_p99_us.is_finite()
-            && cold_start_ms.is_finite();
-        let within_budget = inputs_finite
+        let inputs_valid = [
+            baseline_p50_us,
+            baseline_p95_us,
+            baseline_p99_us,
+            integrated_p50_us,
+            integrated_p95_us,
+            integrated_p99_us,
+            cold_start_ms,
+        ]
+        .into_iter()
+        .all(|value| value.is_finite() && value >= 0.0);
+        let within_budget = inputs_valid
             && overhead_p95_pct <= budget.p95_overhead_pct
             && overhead_p99_pct <= budget.p99_overhead_pct
             && cold_start_ms <= budget.cold_start_ms;
@@ -617,6 +623,13 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_hot_path_deserialize_rejects_unknown_variant() {
+        let result: Result<HotPath, _> = serde_json::from_str(r#""KernelBypass""#);
+
+        assert!(result.is_err());
+    }
+
     // ── BudgetPolicy ─────────────────────────────────────────────
 
     #[test]
@@ -660,6 +673,32 @@ mod tests {
         let json = serde_json::to_string(&policy).unwrap();
         let parsed: BudgetPolicy = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, policy);
+    }
+
+    #[test]
+    fn test_budget_policy_deserialize_rejects_budgets_type_confusion() {
+        let json = r#"{
+            "budgets": {
+                "hot_path": "HealthGateEvaluation"
+            }
+        }"#;
+
+        let result: Result<BudgetPolicy, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_hot_path_budget_deserialize_rejects_missing_hot_path() {
+        let json = r#"{
+            "p95_overhead_pct": 10.0,
+            "p99_overhead_pct": 20.0,
+            "cold_start_ms": 30.0
+        }"#;
+
+        let result: Result<HotPathBudget, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
     }
 
     // ── MeasurementResult ────────────────────────────────────────
@@ -731,6 +770,49 @@ mod tests {
     }
 
     #[test]
+    fn test_measurement_deserialize_rejects_missing_within_budget() {
+        let json = r#"{
+            "hot_path": "HealthGateEvaluation",
+            "baseline_p50_us": 100.0,
+            "baseline_p95_us": 110.0,
+            "baseline_p99_us": 120.0,
+            "integrated_p50_us": 105.0,
+            "integrated_p95_us": 118.0,
+            "integrated_p99_us": 130.0,
+            "overhead_p95_pct": 7.27,
+            "overhead_p99_pct": 8.33,
+            "cold_start_ms": 15.0,
+            "flamegraph_path": null
+        }"#;
+
+        let result: Result<MeasurementResult, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_measurement_deserialize_rejects_invalid_flamegraph_type() {
+        let json = r#"{
+            "hot_path": "HealthGateEvaluation",
+            "baseline_p50_us": 100.0,
+            "baseline_p95_us": 110.0,
+            "baseline_p99_us": 120.0,
+            "integrated_p50_us": 105.0,
+            "integrated_p95_us": 118.0,
+            "integrated_p99_us": 130.0,
+            "overhead_p95_pct": 7.27,
+            "overhead_p99_pct": 8.33,
+            "cold_start_ms": 15.0,
+            "within_budget": true,
+            "flamegraph_path": 42
+        }"#;
+
+        let result: Result<MeasurementResult, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_measurement_cold_start_over_budget() {
         let budget = HotPathBudget {
             hot_path: HotPath::HealthGateEvaluation,
@@ -786,6 +868,13 @@ mod tests {
         let json = serde_json::to_string(&d).unwrap();
         let parsed: GateDecision = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, d);
+    }
+
+    #[test]
+    fn test_gate_decision_deserialize_rejects_unknown_variant() {
+        let result: Result<GateDecision, _> = serde_json::from_str(r#""Maybe""#);
+
+        assert!(result.is_err());
     }
 
     // ── OverheadGateSummary ──────────────────────────────────────
@@ -847,6 +936,17 @@ mod tests {
         let r = over_budget_result(HotPath::HealthGateEvaluation);
         let d = gate.evaluate(r);
         assert!(d.is_fail());
+    }
+
+    #[test]
+    fn test_gate_evaluate_over_budget_with_missing_policy_budget_fails_closed() {
+        let mut gate = OverheadGate::new(BudgetPolicy {
+            budgets: Vec::new(),
+        });
+        let decision = gate.evaluate(over_budget_result(HotPath::HealthGateEvaluation));
+
+        assert!(decision.is_fail());
+        assert!(!gate.gate_pass());
     }
 
     #[test]
@@ -1187,6 +1287,20 @@ mod tests {
         assert_eq!(parsed.code, "PRF-001");
     }
 
+    #[test]
+    fn test_overhead_event_deserialize_rejects_missing_trace_id() {
+        let json = r#"{
+            "code": "PRF-001",
+            "hot_path": "health_gate_evaluation",
+            "detail": "test",
+            "overhead_pct": 5.0
+        }"#;
+
+        let result: Result<OverheadEvent, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
     // ── Determinism ──────────────────────────────────────────────
 
     #[test]
@@ -1327,5 +1441,340 @@ mod tests {
             None,
         );
         assert!(!r.within_budget, "Inf baseline must fail closed");
+    }
+
+    #[test]
+    fn test_nan_baseline_p99_fails_closed() {
+        let budget = HotPathBudget {
+            hot_path: HotPath::LifecycleTransition,
+            p95_overhead_pct: 15.0,
+            p99_overhead_pct: 25.0,
+            cold_start_ms: 50.0,
+        };
+        let r = MeasurementResult::from_measurements(
+            HotPath::LifecycleTransition,
+            70.0,
+            100.0,
+            f64::NAN,
+            77.0,
+            105.0,
+            135.0,
+            10.0,
+            &budget,
+            None,
+        );
+        assert!(!r.within_budget, "NaN p99 baseline must fail closed");
+    }
+
+    #[test]
+    fn test_nan_integrated_p99_fails_closed() {
+        let budget = HotPathBudget {
+            hot_path: HotPath::LifecycleTransition,
+            p95_overhead_pct: 15.0,
+            p99_overhead_pct: 25.0,
+            cold_start_ms: 50.0,
+        };
+        let r = MeasurementResult::from_measurements(
+            HotPath::LifecycleTransition,
+            70.0,
+            100.0,
+            130.0,
+            77.0,
+            105.0,
+            f64::NAN,
+            10.0,
+            &budget,
+            None,
+        );
+        assert!(!r.within_budget, "NaN p99 integrated must fail closed");
+    }
+
+    #[test]
+    fn test_inf_integrated_p95_fails_closed() {
+        let budget = HotPathBudget {
+            hot_path: HotPath::LifecycleTransition,
+            p95_overhead_pct: 15.0,
+            p99_overhead_pct: 25.0,
+            cold_start_ms: 50.0,
+        };
+        let r = MeasurementResult::from_measurements(
+            HotPath::LifecycleTransition,
+            70.0,
+            100.0,
+            130.0,
+            77.0,
+            f64::INFINITY,
+            135.0,
+            10.0,
+            &budget,
+            None,
+        );
+        assert!(!r.within_budget, "Inf p95 integrated must fail closed");
+    }
+
+    #[test]
+    fn test_inf_cold_start_fails_closed() {
+        let budget = HotPathBudget {
+            hot_path: HotPath::LifecycleTransition,
+            p95_overhead_pct: 15.0,
+            p99_overhead_pct: 25.0,
+            cold_start_ms: 50.0,
+        };
+        let r = MeasurementResult::from_measurements(
+            HotPath::LifecycleTransition,
+            70.0,
+            100.0,
+            130.0,
+            77.0,
+            105.0,
+            135.0,
+            f64::INFINITY,
+            &budget,
+            None,
+        );
+        assert!(!r.within_budget, "Inf cold start must fail closed");
+    }
+
+    #[test]
+    fn test_missing_policy_budget_fails_without_false_violations() {
+        let mut gate = OverheadGate::new(BudgetPolicy {
+            budgets: Vec::new(),
+        });
+        let result = over_budget_result(HotPath::HealthGateEvaluation);
+
+        let decision = gate.evaluate(result);
+
+        match decision {
+            GateDecision::Fail { violations } => assert!(violations.is_empty()),
+            GateDecision::Pass => {
+                unreachable!("missing budget must not turn failed result into pass")
+            }
+        }
+        assert!(!gate.gate_pass());
+        assert_eq!(gate.summary().over_budget, 1);
+        assert!(
+            gate.events()
+                .iter()
+                .any(|event| event.code == event_codes::PRF_003_OVER_BUDGET)
+        );
+    }
+
+    #[test]
+    fn test_p95_only_violation_reports_p95() {
+        let budget = HotPathBudget {
+            hot_path: HotPath::HealthGateEvaluation,
+            p95_overhead_pct: 5.0,
+            p99_overhead_pct: 50.0,
+            cold_start_ms: 50.0,
+        };
+        let mut gate = OverheadGate::new(BudgetPolicy {
+            budgets: vec![budget.clone()],
+        });
+        let result = MeasurementResult::from_measurements(
+            HotPath::HealthGateEvaluation,
+            100.0,
+            100.0,
+            100.0,
+            105.0,
+            110.0,
+            110.0,
+            10.0,
+            &budget,
+            None,
+        );
+
+        let decision = gate.evaluate(result);
+
+        match decision {
+            GateDecision::Fail { violations } => {
+                assert_eq!(violations.len(), 1);
+                assert!(violations[0].contains("p95 overhead"));
+            }
+            GateDecision::Pass => unreachable!("p95-only violation must fail"),
+        }
+    }
+
+    #[test]
+    fn test_p99_only_violation_reports_p99() {
+        let budget = HotPathBudget {
+            hot_path: HotPath::HealthGateEvaluation,
+            p95_overhead_pct: 50.0,
+            p99_overhead_pct: 5.0,
+            cold_start_ms: 50.0,
+        };
+        let mut gate = OverheadGate::new(BudgetPolicy {
+            budgets: vec![budget.clone()],
+        });
+        let result = MeasurementResult::from_measurements(
+            HotPath::HealthGateEvaluation,
+            100.0,
+            100.0,
+            100.0,
+            105.0,
+            110.0,
+            110.0,
+            10.0,
+            &budget,
+            None,
+        );
+
+        let decision = gate.evaluate(result);
+
+        match decision {
+            GateDecision::Fail { violations } => {
+                assert_eq!(violations.len(), 1);
+                assert!(violations[0].contains("p99 overhead"));
+            }
+            GateDecision::Pass => unreachable!("p99-only violation must fail"),
+        }
+    }
+
+    #[test]
+    fn test_cold_start_only_violation_reports_cold_start() {
+        let budget = HotPathBudget {
+            hot_path: HotPath::HealthGateEvaluation,
+            p95_overhead_pct: 50.0,
+            p99_overhead_pct: 50.0,
+            cold_start_ms: 5.0,
+        };
+        let mut gate = OverheadGate::new(BudgetPolicy {
+            budgets: vec![budget.clone()],
+        });
+        let result = MeasurementResult::from_measurements(
+            HotPath::HealthGateEvaluation,
+            100.0,
+            100.0,
+            100.0,
+            105.0,
+            110.0,
+            110.0,
+            10.0,
+            &budget,
+            None,
+        );
+
+        let decision = gate.evaluate(result);
+
+        match decision {
+            GateDecision::Fail { violations } => {
+                assert_eq!(violations.len(), 1);
+                assert!(violations[0].contains("cold-start"));
+            }
+            GateDecision::Pass => unreachable!("cold-start-only violation must fail"),
+        }
+    }
+
+    #[test]
+    fn test_negative_baseline_p50_fails_closed() {
+        let budget = default_budget();
+        let r = MeasurementResult::from_measurements(
+            HotPath::HealthGateEvaluation,
+            -1.0,
+            100.0,
+            120.0,
+            80.0,
+            105.0,
+            125.0,
+            10.0,
+            &budget,
+            None,
+        );
+
+        assert!(!r.within_budget, "negative baseline p50 must fail closed");
+    }
+
+    #[test]
+    fn test_negative_baseline_p95_fails_closed() {
+        let budget = default_budget();
+        let r = MeasurementResult::from_measurements(
+            HotPath::HealthGateEvaluation,
+            90.0,
+            -100.0,
+            120.0,
+            80.0,
+            105.0,
+            125.0,
+            10.0,
+            &budget,
+            None,
+        );
+
+        assert!(!r.within_budget, "negative baseline p95 must fail closed");
+    }
+
+    #[test]
+    fn test_negative_baseline_p99_fails_closed() {
+        let budget = default_budget();
+        let r = MeasurementResult::from_measurements(
+            HotPath::HealthGateEvaluation,
+            90.0,
+            100.0,
+            -120.0,
+            80.0,
+            105.0,
+            125.0,
+            10.0,
+            &budget,
+            None,
+        );
+
+        assert!(!r.within_budget, "negative baseline p99 must fail closed");
+    }
+
+    #[test]
+    fn test_negative_integrated_p50_fails_closed() {
+        let budget = default_budget();
+        let r = MeasurementResult::from_measurements(
+            HotPath::HealthGateEvaluation,
+            90.0,
+            100.0,
+            120.0,
+            -80.0,
+            105.0,
+            125.0,
+            10.0,
+            &budget,
+            None,
+        );
+
+        assert!(!r.within_budget, "negative integrated p50 must fail closed");
+    }
+
+    #[test]
+    fn test_negative_integrated_p95_fails_closed() {
+        let budget = default_budget();
+        let r = MeasurementResult::from_measurements(
+            HotPath::HealthGateEvaluation,
+            90.0,
+            100.0,
+            120.0,
+            80.0,
+            -105.0,
+            125.0,
+            10.0,
+            &budget,
+            None,
+        );
+
+        assert!(!r.within_budget, "negative integrated p95 must fail closed");
+    }
+
+    #[test]
+    fn test_negative_cold_start_fails_closed() {
+        let budget = default_budget();
+        let r = MeasurementResult::from_measurements(
+            HotPath::HealthGateEvaluation,
+            90.0,
+            100.0,
+            120.0,
+            80.0,
+            105.0,
+            125.0,
+            -10.0,
+            &budget,
+            None,
+        );
+
+        assert!(!r.within_budget, "negative cold start must fail closed");
     }
 }

@@ -567,4 +567,238 @@ mod tests {
         assert!(store.contains("obj1"));
         assert_eq!(store.stats(1200).total_bytes, 120);
     }
+
+    #[test]
+    fn duplicate_one_second_before_ttl_boundary_is_rejected() {
+        let mut store = QuarantineStore::new(config()).unwrap();
+        store.ingest("obj1", 100, "peer1", 1000).unwrap();
+
+        let err = store.ingest("obj1", 120, "peer2", 1099).unwrap_err();
+
+        assert_eq!(err.code(), "QDS_DUPLICATE");
+        assert!(store.contains("obj1"));
+        assert_eq!(store.stats(1099).object_count, 1);
+        assert_eq!(store.stats(1099).total_bytes, 100);
+    }
+
+    #[test]
+    fn ttl_eviction_does_not_fire_before_boundary() {
+        let mut store = QuarantineStore::new(config()).unwrap();
+        store.ingest("obj1", 100, "peer1", 1000).unwrap();
+
+        let evictions = store.evict_expired(1099);
+
+        assert!(evictions.is_empty());
+        assert!(store.contains("obj1"));
+        assert_eq!(store.stats(1099).evictions_total, 0);
+    }
+
+    #[test]
+    fn oversized_ingest_after_ttl_cleanup_still_rejects() {
+        let mut store = QuarantineStore::new(config()).unwrap();
+        store.ingest("expired", 100, "peer1", 1000).unwrap();
+
+        let err = store.ingest("too-big", 501, "peer2", 1200).unwrap_err();
+
+        assert_eq!(err.code(), "QDS_QUOTA_EXCEEDED");
+        assert!(!store.contains("expired"));
+        assert!(!store.contains("too-big"));
+        assert_eq!(store.stats(1200).object_count, 0);
+        assert_eq!(store.stats(1200).evictions_total, 1);
+    }
+
+    #[test]
+    fn oversized_ingest_reports_current_bytes_without_mutating_store() {
+        let mut store = QuarantineStore::new(config()).unwrap();
+        store.ingest("obj1", 200, "peer1", 1000).unwrap();
+        store.ingest("obj2", 150, "peer1", 1001).unwrap();
+
+        let err = store.ingest("too-big", 501, "peer2", 1002).unwrap_err();
+
+        assert_eq!(
+            err,
+            QuarantineError::QuotaExceeded {
+                current_bytes: 350,
+                max_bytes: 500,
+            }
+        );
+        assert_eq!(store.stats(1002).object_count, 2);
+        assert_eq!(store.stats(1002).total_bytes, 350);
+        assert_eq!(store.quarantined_ids(), vec!["obj1", "obj2"]);
+    }
+
+    #[test]
+    fn promote_missing_after_ttl_eviction_returns_not_found() {
+        let mut store = QuarantineStore::new(config()).unwrap();
+        store.ingest("expired", 100, "peer1", 1000).unwrap();
+        let evictions = store.evict_expired(1200);
+
+        let err = store.promote("expired").unwrap_err();
+
+        assert_eq!(evictions.len(), 1);
+        assert_eq!(
+            err,
+            QuarantineError::NotFound {
+                object_id: "expired".to_string(),
+            }
+        );
+        assert_eq!(store.stats(1200).total_bytes, 0);
+    }
+
+    #[test]
+    fn evict_expired_with_clock_skew_does_not_underflow_or_evict() {
+        let mut store = QuarantineStore::new(config()).unwrap();
+        store.ingest("future", 100, "peer1", 1000).unwrap();
+
+        let evictions = store.evict_expired(900);
+
+        assert!(evictions.is_empty());
+        assert!(store.contains("future"));
+        assert_eq!(store.stats(900).oldest_entry_age, 0);
+        assert_eq!(store.stats(900).evictions_total, 0);
+    }
+
+    #[test]
+    fn promote_missing_keeps_existing_entries_and_bytes() {
+        let mut store = QuarantineStore::new(config()).unwrap();
+        store.ingest("kept", 125, "peer1", 1000).unwrap();
+
+        let err = store.promote("missing").unwrap_err();
+
+        assert_eq!(err.code(), "QDS_NOT_FOUND");
+        assert!(store.contains("kept"));
+        assert_eq!(store.stats(1001).object_count, 1);
+        assert_eq!(store.stats(1001).total_bytes, 125);
+    }
+
+    #[test]
+    fn duplicate_at_exact_ttl_boundary_reingests_after_eviction() {
+        let mut store = QuarantineStore::new(config()).unwrap();
+        store.ingest("boundary", 100, "peer1", 1000).unwrap();
+
+        let evictions = store.ingest("boundary", 120, "peer2", 1100).unwrap();
+
+        assert_eq!(evictions.len(), 1);
+        assert_eq!(evictions[0].reason, "ttl_expired");
+        assert!(store.contains("boundary"));
+        assert_eq!(store.stats(1100).object_count, 1);
+        assert_eq!(store.stats(1100).total_bytes, 120);
+    }
+
+    #[test]
+    fn quota_eviction_ties_break_by_object_id() {
+        let cfg = QuarantineConfig {
+            max_objects: 2,
+            max_bytes: 500,
+            ttl_seconds: 100,
+        };
+        let mut store = QuarantineStore::new(cfg).unwrap();
+        store.ingest("b-old", 100, "peer1", 1000).unwrap();
+        store.ingest("a-old", 100, "peer1", 1000).unwrap();
+
+        let evictions = store.ingest("new", 100, "peer1", 1001).unwrap();
+
+        assert_eq!(evictions.len(), 1);
+        assert_eq!(evictions[0].object_id, "a-old");
+        assert!(!store.contains("a-old"));
+        assert!(store.contains("b-old"));
+        assert!(store.contains("new"));
+    }
+
+    #[test]
+    fn byte_quota_eviction_removes_multiple_oldest_entries_until_room() {
+        let cfg = QuarantineConfig {
+            max_objects: 10,
+            max_bytes: 300,
+            ttl_seconds: 100,
+        };
+        let mut store = QuarantineStore::new(cfg).unwrap();
+        store.ingest("oldest", 120, "peer1", 1000).unwrap();
+        store.ingest("middle", 120, "peer1", 1001).unwrap();
+        store.ingest("newest", 20, "peer1", 1002).unwrap();
+
+        let evictions = store.ingest("large", 200, "peer2", 1003).unwrap();
+
+        assert_eq!(
+            evictions
+                .iter()
+                .map(|record| record.object_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["oldest", "middle"]
+        );
+        assert!(!store.contains("oldest"));
+        assert!(!store.contains("middle"));
+        assert!(store.contains("newest"));
+        assert!(store.contains("large"));
+        assert_eq!(store.stats(1003).total_bytes, 220);
+    }
+
+    #[test]
+    fn evictions_total_saturates_during_ttl_cleanup() {
+        let mut store = QuarantineStore::new(config()).unwrap();
+        store.ingest("expired", 100, "peer1", 1000).unwrap();
+        store.evictions_total = u64::MAX;
+
+        let evictions = store.evict_expired(1100);
+
+        assert_eq!(evictions.len(), 1);
+        assert_eq!(store.stats(1100).evictions_total, u64::MAX);
+        assert_eq!(store.stats(1100).total_bytes, 0);
+    }
+
+    #[test]
+    fn evict_expired_saturates_corrupt_total_bytes_to_zero() {
+        let mut store = QuarantineStore::new(config()).unwrap();
+        store.entries.insert(
+            "corrupt".to_string(),
+            QuarantineEntry {
+                object_id: "corrupt".to_string(),
+                size_bytes: 250,
+                ingested_at: 1000,
+                source_peer: "peer1".to_string(),
+            },
+        );
+        store.total_bytes = 10;
+
+        let evictions = store.evict_expired(1100);
+
+        assert_eq!(evictions.len(), 1);
+        assert_eq!(store.stats(1100).total_bytes, 0);
+        assert!(!store.contains("corrupt"));
+    }
+
+    #[test]
+    fn promote_saturates_corrupt_total_bytes_to_zero() {
+        let mut store = QuarantineStore::new(config()).unwrap();
+        store.entries.insert(
+            "corrupt-promote".to_string(),
+            QuarantineEntry {
+                object_id: "corrupt-promote".to_string(),
+                size_bytes: 250,
+                ingested_at: 1000,
+                source_peer: "peer1".to_string(),
+            },
+        );
+        store.total_bytes = 10;
+
+        let entry = store.promote("corrupt-promote").unwrap();
+
+        assert_eq!(entry.object_id, "corrupt-promote");
+        assert_eq!(store.stats(1001).total_bytes, 0);
+        assert!(!store.contains("corrupt-promote"));
+    }
+
+    #[test]
+    fn quota_rejection_after_clock_skew_ttl_check_preserves_future_entry() {
+        let mut store = QuarantineStore::new(config()).unwrap();
+        store.ingest("future-entry", 100, "peer1", 1000).unwrap();
+
+        let err = store.ingest("too-big", 501, "peer2", 900).unwrap_err();
+
+        assert_eq!(err.code(), "QDS_QUOTA_EXCEEDED");
+        assert!(store.contains("future-entry"));
+        assert!(!store.contains("too-big"));
+        assert_eq!(store.stats(900).object_count, 1);
+        assert_eq!(store.stats(900).total_bytes, 100);
+    }
 }

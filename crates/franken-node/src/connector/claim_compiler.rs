@@ -1325,4 +1325,220 @@ mod tests {
         let snapshot = compiler.publish_batch(&[compiled]).unwrap();
         assert_eq!(snapshot.entry_count, 1);
     }
+
+    // -- Additional negative paths --
+
+    #[test]
+    fn unknown_schema_rejection_stops_before_evidence_validation_or_success() {
+        let mut compiler = make_compiler();
+        let mut raw = valid_raw_claim("schema-stop");
+        raw.schema_version = "claim-compiler-v99.0".to_string();
+
+        let err = compiler.compile_claim(&raw).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CLMC_SCHEMA_UNKNOWN);
+        assert_eq!(compiler.entry_count(), 0);
+        let codes: Vec<&str> = compiler
+            .events()
+            .iter()
+            .map(|event| event.event_code.as_str())
+            .collect();
+        assert_eq!(codes, vec![event_codes::CLMC_001, event_codes::CLMC_003]);
+        assert!(!codes.contains(&event_codes::CLMC_007));
+        assert!(!codes.contains(&event_codes::CLMC_002));
+    }
+
+    #[test]
+    fn empty_claim_text_rejection_does_not_validate_evidence_or_compile() {
+        let mut compiler = make_compiler();
+        let mut raw = valid_raw_claim("empty-stop");
+        raw.claim_text = "\n\t  ".to_string();
+
+        let err = compiler.compile_claim(&raw).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CLMC_EMPTY_CLAIM_TEXT);
+        assert_eq!(compiler.entry_count(), 0);
+        assert!(
+            compiler
+                .events()
+                .iter()
+                .any(|event| event.event_code == event_codes::CLMC_003)
+        );
+        assert!(
+            !compiler
+                .events()
+                .iter()
+                .any(|event| event.event_code == event_codes::CLMC_007)
+        );
+        assert!(
+            !compiler
+                .events()
+                .iter()
+                .any(|event| event.event_code == event_codes::CLMC_002)
+        );
+    }
+
+    #[test]
+    fn invalid_second_evidence_link_stops_without_compile_success() {
+        let mut compiler = make_compiler();
+        let mut raw = valid_raw_claim("second-link-bad");
+        raw.evidence_links.push(EvidenceLink {
+            label: "bad-second".to_string(),
+            uri: "missing-scheme".to_string(),
+            content_digest: "bad".to_string(),
+        });
+
+        let err = compiler.compile_claim(&raw).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CLMC_INVALID_EVIDENCE_LINK);
+        assert_eq!(
+            compiler
+                .events()
+                .iter()
+                .filter(|event| event.event_code == event_codes::CLMC_007)
+                .count(),
+            1
+        );
+        assert!(
+            compiler
+                .events()
+                .iter()
+                .any(|event| event.event_code == event_codes::CLMC_008)
+        );
+        assert!(
+            !compiler
+                .events()
+                .iter()
+                .any(|event| event.event_code == event_codes::CLMC_002)
+        );
+    }
+
+    #[test]
+    fn duplicate_existing_claim_publish_preserves_existing_entry_and_sequence() {
+        let mut compiler = make_compiler();
+        let original = compiler
+            .compile_claim(&valid_raw_claim("dup-existing"))
+            .unwrap();
+        compiler.publish_batch(&[original]).unwrap();
+        let sequence_before = compiler.sequence;
+        let entries_before = compiler.entries.clone();
+        let duplicate = compiler
+            .compile_claim(&valid_raw_claim("dup-existing"))
+            .unwrap();
+
+        let err = compiler.publish_batch(&[duplicate]).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CLMC_DUPLICATE_CLAIM_ID);
+        assert_eq!(compiler.sequence, sequence_before);
+        assert_eq!(compiler.entries, entries_before);
+        assert_eq!(compiler.entry_count(), 1);
+        assert_eq!(
+            compiler
+                .events()
+                .iter()
+                .filter(|event| event.event_code == event_codes::CLMC_006)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn duplicate_within_batch_preserves_empty_scoreboard_and_sequence() {
+        let mut compiler = make_compiler();
+        let first = compiler
+            .compile_claim(&valid_raw_claim("dup-batch"))
+            .unwrap();
+        let second = compiler
+            .compile_claim(&valid_raw_claim("dup-batch"))
+            .unwrap();
+
+        let err = compiler.publish_batch(&[first, second]).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CLMC_DUPLICATE_CLAIM_ID);
+        assert_eq!(compiler.sequence, 0);
+        assert_eq!(compiler.entry_count(), 0);
+        assert!(compiler.entries.is_empty());
+        assert!(
+            !compiler
+                .events()
+                .iter()
+                .any(|event| event.event_code == event_codes::CLMC_005)
+        );
+    }
+
+    #[test]
+    fn scoreboard_full_rejection_does_not_increment_sequence_or_commit() {
+        let mut compiler = ClaimCompiler::new(ClaimCompilerConfig {
+            scoreboard_capacity: 0,
+            ..Default::default()
+        });
+        let compiled = compiler
+            .compile_claim(&valid_raw_claim("full-zero"))
+            .unwrap();
+
+        let err = compiler.publish_batch(&[compiled]).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CLMC_SCOREBOARD_FULL);
+        assert_eq!(compiler.sequence, 0);
+        assert_eq!(compiler.entry_count(), 0);
+        assert_eq!(compiler.capacity_remaining(), 0);
+        assert!(
+            compiler
+                .events()
+                .iter()
+                .any(|event| event.event_code == event_codes::CLMC_006)
+        );
+        assert!(
+            !compiler
+                .events()
+                .iter()
+                .any(|event| event.event_code == event_codes::CLMC_005)
+        );
+    }
+
+    #[test]
+    fn digest_mismatch_in_batch_rolls_back_all_claims() {
+        let mut compiler = make_compiler();
+        let valid = compiler
+            .compile_claim(&valid_raw_claim("batch-valid"))
+            .unwrap();
+        let mut tampered = compiler
+            .compile_claim(&valid_raw_claim("batch-tampered"))
+            .unwrap();
+        tampered.normalised_text = "tampered after compile".to_string();
+
+        let err = compiler.publish_batch(&[valid, tampered]).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CLMC_DIGEST_MISMATCH);
+        assert_eq!(compiler.sequence, 0);
+        assert_eq!(compiler.entry_count(), 0);
+        assert!(!compiler.entries.contains_key("batch-valid"));
+        assert!(!compiler.entries.contains_key("batch-tampered"));
+        assert!(
+            !compiler
+                .events()
+                .iter()
+                .any(|event| event.event_code == event_codes::CLMC_005)
+        );
+    }
+
+    #[test]
+    fn snapshot_digest_verification_failure_is_read_only() {
+        let mut compiler = make_compiler();
+        let compiled = compiler
+            .compile_claim(&valid_raw_claim("snapshot-readonly"))
+            .unwrap();
+        let mut snapshot = compiler.publish_batch(&[compiled]).unwrap();
+        snapshot.entries.clear();
+        let events_before = compiler.events().len();
+        let sequence_before = compiler.sequence;
+        let entries_before = compiler.entries.clone();
+
+        let err = compiler.verify_snapshot_digest(&snapshot).unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CLMC_DIGEST_MISMATCH);
+        assert_eq!(compiler.events().len(), events_before);
+        assert_eq!(compiler.sequence, sequence_before);
+        assert_eq!(compiler.entries, entries_before);
+    }
 }

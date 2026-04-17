@@ -1249,4 +1249,142 @@ mod tests {
         );
         assert_eq!(storage.tier_count(Tier::L1Local), 2);
     }
+
+    #[test]
+    fn test_authority_map_update_rejection_preserves_mapping() {
+        let mut map = AuthorityMap::default_mapping();
+        let before: Vec<_> = map.iter().map(|(class, tier)| (*class, *tier)).collect();
+
+        let err = map
+            .try_update(ObjectClass::CriticalMarker, Tier::L3Archive)
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_AUTHORITY_MAP_IMMUTABLE);
+        let after: Vec<_> = map.iter().map(|(class, tier)| (*class, *tier)).collect();
+        assert_eq!(after, before);
+        assert_eq!(
+            map.authoritative_tier(ObjectClass::CriticalMarker),
+            Some(Tier::L1Local)
+        );
+    }
+
+    #[test]
+    fn test_try_update_authority_failure_preserves_storage_counts() {
+        let mut storage = TieredTrustStorage::with_defaults();
+        let art = make_artifact("immutable-count", ObjectClass::CriticalMarker);
+        storage.store(Tier::L1Local, art);
+        let l1_count = storage.tier_count(Tier::L1Local);
+        let l2_count = storage.tier_count(Tier::L2Warm);
+        let l3_count = storage.tier_count(Tier::L3Archive);
+
+        let err = storage
+            .try_update_authority(ObjectClass::CriticalMarker, Tier::L3Archive)
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_AUTHORITY_MAP_IMMUTABLE);
+        assert_eq!(storage.tier_count(Tier::L1Local), l1_count);
+        assert_eq!(storage.tier_count(Tier::L2Warm), l2_count);
+        assert_eq!(storage.tier_count(Tier::L3Archive), l3_count);
+        assert!(storage.contains(Tier::L1Local, &ArtifactId("immutable-count".to_string())));
+    }
+
+    #[test]
+    fn test_retrieve_missing_does_not_emit_success_event() {
+        let mut storage = TieredTrustStorage::with_defaults();
+        let event_len = storage.events().len();
+        let id = ArtifactId("missing-retrieve".to_string());
+
+        let err = storage.retrieve(Tier::L2Warm, &id).unwrap_err();
+
+        assert_eq!(err.code, ERR_ARTIFACT_NOT_FOUND);
+        assert_eq!(storage.events().len(), event_len);
+        assert!(!storage.contains(Tier::L2Warm, &id));
+    }
+
+    #[test]
+    fn test_failed_l1_eviction_preserves_artifact_and_emits_no_evict_event() {
+        let mut storage = TieredTrustStorage::with_defaults();
+        let id = storage.store(
+            Tier::L1Local,
+            make_artifact("no-proof-l1", ObjectClass::CriticalMarker),
+        );
+        let event_len = storage.events().len();
+
+        let err = storage.evict(Tier::L1Local, &id).unwrap_err();
+
+        assert_eq!(err.code, ERR_EVICT_REQUIRES_RETRIEVABILITY);
+        assert!(storage.contains(Tier::L1Local, &id));
+        assert_eq!(storage.tier_count(Tier::L1Local), 1);
+        assert_eq!(storage.events().len(), event_len);
+    }
+
+    #[test]
+    fn test_failed_l2_eviction_preserves_artifact_and_lower_tiers() {
+        let mut storage = TieredTrustStorage::with_defaults();
+        let id = storage.store(
+            Tier::L2Warm,
+            make_artifact("no-proof-l2", ObjectClass::TrustReceipt),
+        );
+        let event_len = storage.events().len();
+
+        let err = storage.evict(Tier::L2Warm, &id).unwrap_err();
+
+        assert_eq!(err.code, ERR_EVICT_REQUIRES_RETRIEVABILITY);
+        assert!(storage.contains(Tier::L2Warm, &id));
+        assert!(!storage.contains(Tier::L3Archive, &id));
+        assert_eq!(storage.events().len(), event_len);
+    }
+
+    #[test]
+    fn test_recover_l3_invalid_direction_does_not_create_artifact() {
+        let mut storage = TieredTrustStorage::with_defaults();
+        let id = ArtifactId("invalid-direction".to_string());
+
+        let err = storage.recover_tier(Tier::L3Archive, &id).unwrap_err();
+
+        assert_eq!(err.code, ERR_RECOVERY_DIRECTION_INVALID);
+        assert!(!storage.contains(Tier::L3Archive, &id));
+        assert!(
+            storage
+                .events()
+                .iter()
+                .all(|event| event.code != TS_RECOVERY_COMPLETE)
+        );
+    }
+
+    #[test]
+    fn test_recover_missing_source_does_not_create_target_copy() {
+        let mut storage = TieredTrustStorage::with_defaults();
+        let id = ArtifactId("missing-source".to_string());
+        let event_len = storage.events().len();
+
+        let err = storage.recover_tier(Tier::L1Local, &id).unwrap_err();
+
+        assert_eq!(err.code, ERR_RECOVERY_SOURCE_MISSING);
+        assert!(!storage.contains(Tier::L1Local, &id));
+        assert!(!storage.contains(Tier::L2Warm, &id));
+        assert!(!storage.contains(Tier::L3Archive, &id));
+        assert_eq!(
+            storage.events()[event_len..]
+                .iter()
+                .filter(|event| event.code == TS_RECOVERY_COMPLETE)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn test_recover_l2_does_not_use_l1_as_source() {
+        let mut storage = TieredTrustStorage::with_defaults();
+        let id = storage.store(
+            Tier::L1Local,
+            make_artifact("wrong-source", ObjectClass::TrustReceipt),
+        );
+
+        let err = storage.recover_tier(Tier::L2Warm, &id).unwrap_err();
+
+        assert_eq!(err.code, ERR_RECOVERY_SOURCE_MISSING);
+        assert!(storage.contains(Tier::L1Local, &id));
+        assert!(!storage.contains(Tier::L2Warm, &id));
+    }
 }

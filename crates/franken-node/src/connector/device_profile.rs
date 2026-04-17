@@ -106,25 +106,30 @@ fn tier_rank(tier: &str) -> u8 {
 /// INV-DPR-SCHEMA: profiles must have non-empty device_id, region, tier,
 /// at least one capability, and a valid schema_version.
 pub fn validate_profile(profile: &DeviceProfile) -> Result<(), RegistryError> {
-    if profile.device_id.is_empty() {
+    if profile.device_id.trim().is_empty() || profile.device_id.trim() != profile.device_id {
         return Err(RegistryError::SchemaInvalid {
             device_id: "(empty)".into(),
             field: "device_id".into(),
         });
     }
-    if profile.capabilities.is_empty() {
+    if profile.capabilities.is_empty()
+        || profile
+            .capabilities
+            .iter()
+            .any(|capability| capability.trim().is_empty() || capability.trim() != capability)
+    {
         return Err(RegistryError::SchemaInvalid {
             device_id: profile.device_id.clone(),
             field: "capabilities".into(),
         });
     }
-    if profile.region.is_empty() {
+    if profile.region.trim().is_empty() || profile.region.trim() != profile.region {
         return Err(RegistryError::SchemaInvalid {
             device_id: profile.device_id.clone(),
             field: "region".into(),
         });
     }
-    if profile.tier.is_empty() {
+    if profile.tier.trim().is_empty() || profile.tier.trim() != profile.tier {
         return Err(RegistryError::SchemaInvalid {
             device_id: profile.device_id.clone(),
             field: "tier".into(),
@@ -149,9 +154,20 @@ pub fn validate_constraints(constraints: &[PlacementConstraint]) -> Result<(), R
         });
     }
     for c in constraints {
-        if c.required_capabilities.is_empty() {
+        if c.required_capabilities.is_empty()
+            || c.required_capabilities
+                .iter()
+                .any(|capability| capability.trim().is_empty() || capability.trim() != capability)
+        {
             return Err(RegistryError::InvalidConstraint {
-                reason: "required_capabilities is empty".into(),
+                reason: "required_capabilities contains empty or non-canonical capability".into(),
+            });
+        }
+        if !c.min_tier.is_empty()
+            && (c.min_tier.trim() != c.min_tier || tier_rank(&c.min_tier) == 0)
+        {
+            return Err(RegistryError::InvalidConstraint {
+                reason: "min_tier is not a canonical supported tier".into(),
             });
         }
         if c.max_latency_ms == 0 {
@@ -586,5 +602,271 @@ mod tests {
         );
         let result = reg.evaluate_placement(&p, 200, "ts").unwrap();
         assert_eq!(result.matched.len(), 1);
+    }
+
+    #[test]
+    fn register_empty_tier_fails_without_mutating_registry() {
+        let mut reg = DeviceProfileRegistry::new();
+        let p = prof("d-empty-tier", &["gpu"], "us", "", 100);
+
+        let err = reg.register(p).unwrap_err();
+
+        assert_eq!(err.code(), "DPR_SCHEMA_INVALID");
+        assert_eq!(reg.count(), 0);
+        assert!(reg.get("d-empty-tier").is_none());
+    }
+
+    #[test]
+    fn register_whitespace_device_id_fails_without_mutating_registry() {
+        let mut reg = DeviceProfileRegistry::new();
+        let p = prof(" d-space ", &["gpu"], "us", "Standard", 100);
+
+        let err = reg.register(p).unwrap_err();
+
+        assert_eq!(err.code(), "DPR_SCHEMA_INVALID");
+        assert_eq!(reg.count(), 0);
+        assert!(reg.get(" d-space ").is_none());
+    }
+
+    #[test]
+    fn register_whitespace_region_fails_without_mutating_registry() {
+        let mut reg = DeviceProfileRegistry::new();
+        let p = prof("d-region", &["gpu"], " us ", "Standard", 100);
+
+        let err = reg.register(p).unwrap_err();
+
+        assert_eq!(err.code(), "DPR_SCHEMA_INVALID");
+        assert_eq!(reg.count(), 0);
+        assert!(reg.get("d-region").is_none());
+    }
+
+    #[test]
+    fn register_whitespace_tier_fails_without_mutating_registry() {
+        let mut reg = DeviceProfileRegistry::new();
+        let p = prof("d-tier", &["gpu"], "us", " Standard", 100);
+
+        let err = reg.register(p).unwrap_err();
+
+        assert_eq!(err.code(), "DPR_SCHEMA_INVALID");
+        assert_eq!(reg.count(), 0);
+        assert!(reg.get("d-tier").is_none());
+    }
+
+    #[test]
+    fn register_blank_capability_fails_without_mutating_registry() {
+        let mut reg = DeviceProfileRegistry::new();
+        let p = prof("d-blank-cap", &["gpu", " "], "us", "Standard", 100);
+
+        let err = reg.register(p).unwrap_err();
+
+        assert_eq!(err.code(), "DPR_SCHEMA_INVALID");
+        assert_eq!(reg.count(), 0);
+        assert!(reg.get("d-blank-cap").is_none());
+    }
+
+    #[test]
+    fn register_padded_capability_fails_without_mutating_registry() {
+        let mut reg = DeviceProfileRegistry::new();
+        let p = prof("d-padded-cap", &["gpu", " tpu"], "us", "Standard", 100);
+
+        let err = reg.register(p).unwrap_err();
+
+        assert_eq!(err.code(), "DPR_SCHEMA_INVALID");
+        assert_eq!(reg.count(), 0);
+        assert!(reg.get("d-padded-cap").is_none());
+    }
+
+    #[test]
+    fn constraint_padded_required_capability_is_rejected() {
+        let reg = DeviceProfileRegistry::new();
+        let p = policy(vec![constraint(&[" gpu"], "us", "", 100)], 3600);
+
+        let err = reg.evaluate_placement(&p, 200, "ts").unwrap_err();
+
+        assert_eq!(err.code(), "DPR_INVALID_CONSTRAINT");
+        assert!(err.to_string().contains("required_capabilities"));
+    }
+
+    #[test]
+    fn failed_register_does_not_replace_existing_profile() {
+        let mut reg = DeviceProfileRegistry::new();
+        reg.register(prof("d1", &["gpu"], "us", "Standard", 100))
+            .unwrap();
+        let invalid_replacement = DeviceProfile {
+            device_id: "d1".into(),
+            capabilities: Vec::new(),
+            region: "eu".into(),
+            tier: "Dangerous".into(),
+            registered_at: 200,
+            schema_version: 1,
+        };
+
+        let err = reg.register(invalid_replacement).unwrap_err();
+
+        assert_eq!(err.code(), "DPR_SCHEMA_INVALID");
+        let original = reg.get("d1").expect("original profile should remain");
+        assert_eq!(original.region, "us");
+        assert_eq!(original.tier, "Standard");
+        assert_eq!(reg.count(), 1);
+    }
+
+    #[test]
+    fn placement_with_no_profiles_returns_no_match_for_valid_policy() {
+        let reg = DeviceProfileRegistry::new();
+        let p = policy(vec![constraint(&["gpu"], "us", "", 100)], 3600);
+
+        let err = reg.evaluate_placement(&p, 200, "ts").unwrap_err();
+
+        assert_eq!(err, RegistryError::NoMatch);
+    }
+
+    #[test]
+    fn stale_at_exact_freshness_boundary_is_excluded() {
+        let mut reg = DeviceProfileRegistry::new();
+        reg.register(prof("d-stale", &["gpu"], "us", "Standard", 100))
+            .unwrap();
+        let p = policy(vec![constraint(&["gpu"], "us", "", 100)], 100);
+
+        let err = reg.evaluate_placement(&p, 200, "ts").unwrap_err();
+
+        assert_eq!(err.code(), "DPR_NO_MATCH");
+    }
+
+    #[test]
+    fn case_mismatched_capability_requirement_fails_closed() {
+        let mut reg = DeviceProfileRegistry::new();
+        reg.register(prof("d-case", &["gpu"], "us", "Standard", 100))
+            .unwrap();
+        let p = policy(vec![constraint(&["GPU"], "us", "", 100)], 3600);
+
+        let err = reg.evaluate_placement(&p, 200, "ts").unwrap_err();
+
+        assert_eq!(err.code(), "DPR_NO_MATCH");
+    }
+
+    #[test]
+    fn unknown_device_tier_fails_min_tier_requirement() {
+        let mut reg = DeviceProfileRegistry::new();
+        reg.register(prof("d-unknown-tier", &["gpu"], "us", "Experimental", 100))
+            .unwrap();
+        let p = policy(vec![constraint(&["gpu"], "us", "Standard", 100)], 3600);
+
+        let err = reg.evaluate_placement(&p, 200, "ts").unwrap_err();
+
+        assert_eq!(err.code(), "DPR_NO_MATCH");
+    }
+
+    #[test]
+    fn stale_profile_is_reported_in_rejected_set_when_other_device_matches() {
+        let mut reg = DeviceProfileRegistry::new();
+        reg.register(prof("d-fresh", &["gpu"], "us", "Standard", 190))
+            .unwrap();
+        reg.register(prof("d-stale", &["gpu"], "us", "Standard", 100))
+            .unwrap();
+        let p = policy(vec![constraint(&["gpu"], "us", "", 100)], 100);
+
+        let result = reg.evaluate_placement(&p, 200, "ts").unwrap();
+
+        assert_eq!(result.matched.len(), 1);
+        assert_eq!(result.matched[0].device_id, "d-fresh");
+        assert_eq!(result.rejected.len(), 1);
+        assert_eq!(result.rejected[0].device_id, "d-stale");
+        assert!(result.rejected[0].reason.contains("stale"));
+    }
+
+    #[test]
+    fn invalid_later_constraint_rejects_policy_before_matching_profiles() {
+        let mut reg = DeviceProfileRegistry::new();
+        reg.register(prof("d1", &["gpu"], "us", "Dangerous", 100))
+            .unwrap();
+        let p = policy(
+            vec![
+                constraint(&["gpu"], "us", "Standard", 100),
+                constraint(&["tpu"], "us", "Standard", 0),
+            ],
+            3600,
+        );
+
+        let err = reg.evaluate_placement(&p, 200, "ts").unwrap_err();
+
+        assert_eq!(err.code(), "DPR_INVALID_CONSTRAINT");
+    }
+
+    #[test]
+    fn register_trailing_capability_fails_without_mutating_registry() {
+        let mut reg = DeviceProfileRegistry::new();
+        let p = prof("d-trailing-cap", &["gpu", "tpu "], "us", "Standard", 100);
+
+        let err = reg.register(p).unwrap_err();
+
+        assert_eq!(err.code(), "DPR_SCHEMA_INVALID");
+        assert_eq!(reg.count(), 0);
+        assert!(reg.get("d-trailing-cap").is_none());
+    }
+
+    #[test]
+    fn validate_profile_reports_capability_field_for_blank_capability() {
+        let p = prof("d-cap-field", &["gpu", "\t"], "us", "Standard", 100);
+
+        let err = validate_profile(&p).unwrap_err();
+
+        assert_eq!(
+            err,
+            RegistryError::SchemaInvalid {
+                device_id: "d-cap-field".to_string(),
+                field: "capabilities".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn blank_required_capability_is_rejected() {
+        let reg = DeviceProfileRegistry::new();
+        let p = policy(vec![constraint(&["\n"], "us", "", 100)], 3600);
+
+        let err = reg.evaluate_placement(&p, 200, "ts").unwrap_err();
+
+        assert_eq!(err.code(), "DPR_INVALID_CONSTRAINT");
+        assert!(err.to_string().contains("required_capabilities"));
+    }
+
+    #[test]
+    fn later_blank_required_capability_rejects_before_profile_matching() {
+        let mut reg = DeviceProfileRegistry::new();
+        reg.register(prof("d1", &["gpu"], "us", "Standard", 100))
+            .unwrap();
+        let p = policy(vec![constraint(&["gpu", " "], "us", "", 100)], 3600);
+
+        let err = reg.evaluate_placement(&p, 200, "ts").unwrap_err();
+
+        assert_eq!(err.code(), "DPR_INVALID_CONSTRAINT");
+        assert_eq!(reg.count(), 1);
+        assert!(reg.get("d1").is_some());
+    }
+
+    #[test]
+    fn unknown_min_tier_constraint_is_rejected() {
+        let mut reg = DeviceProfileRegistry::new();
+        reg.register(prof("d1", &["gpu"], "us", "Dangerous", 100))
+            .unwrap();
+        let p = policy(vec![constraint(&["gpu"], "us", "Experimental", 100)], 3600);
+
+        let err = reg.evaluate_placement(&p, 200, "ts").unwrap_err();
+
+        assert_eq!(err.code(), "DPR_INVALID_CONSTRAINT");
+        assert!(err.to_string().contains("min_tier"));
+    }
+
+    #[test]
+    fn padded_min_tier_constraint_is_rejected() {
+        let mut reg = DeviceProfileRegistry::new();
+        reg.register(prof("d1", &["gpu"], "us", "Dangerous", 100))
+            .unwrap();
+        let p = policy(vec![constraint(&["gpu"], "us", "Risky ", 100)], 3600);
+
+        let err = reg.evaluate_placement(&p, 200, "ts").unwrap_err();
+
+        assert_eq!(err.code(), "DPR_INVALID_CONSTRAINT");
+        assert!(err.to_string().contains("min_tier"));
     }
 }

@@ -81,6 +81,9 @@ pub enum PromotionError {
     NotPinned {
         object_id: String,
     },
+    InvalidRequest {
+        reason: String,
+    },
     InvalidRule {
         reason: String,
     },
@@ -93,6 +96,7 @@ impl PromotionError {
             Self::NotAuthenticated { .. } => "QPR_NOT_AUTHENTICATED",
             Self::NotReachable { .. } => "QPR_NOT_REACHABLE",
             Self::NotPinned { .. } => "QPR_NOT_PINNED",
+            Self::InvalidRequest { .. } => "QPR_INVALID_REQUEST",
             Self::InvalidRule { .. } => "QPR_INVALID_RULE",
         }
     }
@@ -118,6 +122,7 @@ impl std::fmt::Display for PromotionError {
             ),
             Self::NotReachable { object_id } => write!(f, "QPR_NOT_REACHABLE: {object_id}"),
             Self::NotPinned { object_id } => write!(f, "QPR_NOT_PINNED: {object_id}"),
+            Self::InvalidRequest { reason } => write!(f, "QPR_INVALID_REQUEST: {reason}"),
             Self::InvalidRule { reason } => write!(f, "QPR_INVALID_RULE: {reason}"),
         }
     }
@@ -125,10 +130,33 @@ impl std::fmt::Display for PromotionError {
 
 /// Validate a promotion rule.
 pub fn validate_rule(rule: &PromotionRule) -> Result<(), PromotionError> {
-    if rule.required_schema_version.is_empty() {
+    if rule.required_schema_version.trim().is_empty() {
         return Err(PromotionError::InvalidRule {
             reason: "required_schema_version must not be empty".into(),
         });
+    }
+    Ok(())
+}
+
+fn validate_request(
+    request: &PromotionRequest,
+    validator_id: &str,
+    trace_id: &str,
+    timestamp: &str,
+) -> Result<(), PromotionError> {
+    for (field, value) in [
+        ("object_id", request.object_id.as_str()),
+        ("requester_id", request.requester_id.as_str()),
+        ("reason", request.reason.as_str()),
+        ("validator_id", validator_id),
+        ("trace_id", trace_id),
+        ("timestamp", timestamp),
+    ] {
+        if value.trim().is_empty() {
+            return Err(PromotionError::InvalidRequest {
+                reason: format!("{field} must not be empty"),
+            });
+        }
     }
     Ok(())
 }
@@ -147,6 +175,7 @@ pub fn evaluate_promotion(
     timestamp: &str,
 ) -> Result<PromotionResult, PromotionError> {
     validate_rule(rule)?;
+    validate_request(request, validator_id, trace_id, timestamp)?;
 
     let mut rejections = Vec::new();
 
@@ -385,6 +414,165 @@ mod tests {
     }
 
     #[test]
+    fn schema_rejection_preserves_expected_and_got_versions() {
+        let mut rl = rule();
+        rl.required_schema_version = "schema-2026".into();
+        let r = req("obj-schema", true, "schema-2025", true, false);
+        let result = evaluate_promotion(&r, &rl, "v1", "tr", "ts").unwrap();
+
+        assert!(!result.promoted);
+        assert_eq!(
+            result.rejection_reasons,
+            vec![RejectionReason::SchemaFailed {
+                expected: "schema-2026".into(),
+                got: "schema-2025".into(),
+            }]
+        );
+        assert!(result.receipt.is_none());
+    }
+
+    #[test]
+    fn rejected_result_preserves_object_id_for_audit() {
+        let r = req("quarantined-object-7", false, "1.0", true, false);
+        let result = evaluate_promotion(&r, &rule(), "v1", "tr", "ts").unwrap();
+
+        assert!(!result.promoted);
+        assert_eq!(result.object_id, "quarantined-object-7");
+        assert!(result.receipt.is_none());
+    }
+
+    #[test]
+    fn all_required_gates_can_fail_together() {
+        let mut rl = rule();
+        rl.require_pin = true;
+        let r = req("obj-all-fail", false, "0.9", false, false);
+        let result = evaluate_promotion(&r, &rl, "v1", "tr", "ts").unwrap();
+
+        assert!(!result.promoted);
+        assert_eq!(result.rejection_reasons.len(), 4);
+        assert!(
+            result
+                .rejection_reasons
+                .contains(&RejectionReason::NotAuthenticated)
+        );
+        assert!(
+            result
+                .rejection_reasons
+                .contains(&RejectionReason::NotReachable)
+        );
+        assert!(
+            result
+                .rejection_reasons
+                .contains(&RejectionReason::NotPinned)
+        );
+        assert!(
+            result
+                .rejection_reasons
+                .iter()
+                .any(|reason| matches!(reason, RejectionReason::SchemaFailed { .. }))
+        );
+        assert!(result.receipt.is_none());
+    }
+
+    #[test]
+    fn invalid_rule_short_circuits_before_request_rejections() {
+        let rl = PromotionRule {
+            required_schema_version: "".into(),
+            require_reachability: true,
+            require_pin: true,
+        };
+        let r = req("obj-short-circuit", false, "bad-schema", false, false);
+        let err = evaluate_promotion(&r, &rl, "v1", "tr", "ts").unwrap_err();
+
+        assert_eq!(
+            err,
+            PromotionError::InvalidRule {
+                reason: "required_schema_version must not be empty".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn batch_rejects_invalid_rule_for_empty_input() {
+        let rl = PromotionRule {
+            required_schema_version: "".into(),
+            require_reachability: true,
+            require_pin: false,
+        };
+        let err = evaluate_batch(&[], &rl, "v1", "tr", "ts").unwrap_err();
+
+        assert_eq!(err.code(), "QPR_INVALID_RULE");
+    }
+
+    #[test]
+    fn batch_preserves_rejected_items_without_receipts() {
+        let requests = vec![
+            req("obj-auth", false, "1.0", true, false),
+            req("obj-reach", true, "1.0", false, false),
+        ];
+        let results = evaluate_batch(&requests, &rule(), "v1", "tr", "ts").unwrap();
+
+        assert_eq!(results.len(), 2);
+        assert!(!results[0].promoted);
+        assert!(!results[1].promoted);
+        assert!(results[0].receipt.is_none());
+        assert!(results[1].receipt.is_none());
+        assert_eq!(
+            results[0].rejection_reasons,
+            vec![RejectionReason::NotAuthenticated]
+        );
+        assert_eq!(
+            results[1].rejection_reasons,
+            vec![RejectionReason::NotReachable]
+        );
+    }
+
+    #[test]
+    fn batch_keeps_rejection_order_for_mixed_failures() {
+        let requests = vec![
+            req("obj-schema", true, "2.0", true, false),
+            req("obj-auth", false, "1.0", true, false),
+            req("obj-reach", true, "1.0", false, false),
+        ];
+        let results = evaluate_batch(&requests, &rule(), "v1", "tr", "ts").unwrap();
+
+        assert_eq!(
+            results
+                .iter()
+                .map(|result| result.object_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["obj-schema", "obj-auth", "obj-reach"]
+        );
+        assert!(
+            results[0]
+                .rejection_reasons
+                .iter()
+                .any(|reason| matches!(reason, RejectionReason::SchemaFailed { .. }))
+        );
+        assert_eq!(
+            results[1].rejection_reasons,
+            vec![RejectionReason::NotAuthenticated]
+        );
+        assert_eq!(
+            results[2].rejection_reasons,
+            vec![RejectionReason::NotReachable]
+        );
+    }
+
+    #[test]
+    fn pin_rejection_is_not_reported_when_pin_gate_disabled() {
+        let r = req("obj-pin-disabled", true, "1.0", true, false);
+        let result = evaluate_promotion(&r, &rule(), "v1", "tr", "ts").unwrap();
+
+        assert!(result.promoted);
+        assert!(
+            !result
+                .rejection_reasons
+                .contains(&RejectionReason::NotPinned)
+        );
+    }
+
+    #[test]
     fn error_codes_all_present() {
         assert_eq!(
             PromotionError::SchemaFailed {
@@ -418,6 +606,10 @@ mod tests {
             "QPR_NOT_PINNED"
         );
         assert_eq!(
+            PromotionError::InvalidRequest { reason: "".into() }.code(),
+            "QPR_INVALID_REQUEST"
+        );
+        assert_eq!(
             PromotionError::InvalidRule { reason: "".into() }.code(),
             "QPR_INVALID_RULE"
         );
@@ -436,5 +628,109 @@ mod tests {
     #[test]
     fn default_rule_valid() {
         assert!(validate_rule(&PromotionRule::default_rule()).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod quarantine_promotion_additional_negative_tests {
+    use super::*;
+
+    fn rule() -> PromotionRule {
+        PromotionRule::default_rule()
+    }
+
+    fn request(object_id: &str) -> PromotionRequest {
+        PromotionRequest {
+            object_id: object_id.to_string(),
+            requester_id: "operator-a".to_string(),
+            authenticated: true,
+            schema_version: "1.0".to_string(),
+            reachable: true,
+            pinned: false,
+            reason: "validated quarantine release".to_string(),
+        }
+    }
+
+    fn expect_invalid_request(err: PromotionError, field: &str) {
+        assert!(matches!(
+            err,
+            PromotionError::InvalidRequest { ref reason } if reason.contains(field)
+        ));
+    }
+
+    #[test]
+    fn whitespace_schema_rule_is_invalid() {
+        let invalid = PromotionRule {
+            required_schema_version: " \t\n ".to_string(),
+            require_reachability: true,
+            require_pin: false,
+        };
+        let err = validate_rule(&invalid).expect_err("blank schema must fail closed");
+
+        assert_eq!(err.code(), "QPR_INVALID_RULE");
+    }
+
+    #[test]
+    fn blank_object_id_is_invalid_request() {
+        let err = evaluate_promotion(&request(" "), &rule(), "validator-a", "trace-a", "ts-a")
+            .expect_err("blank object ID must fail closed");
+
+        expect_invalid_request(err, "object_id");
+    }
+
+    #[test]
+    fn blank_requester_id_is_invalid_request() {
+        let mut req = request("object-a");
+        req.requester_id = "\t ".to_string();
+
+        let err = evaluate_promotion(&req, &rule(), "validator-a", "trace-a", "ts-a")
+            .expect_err("blank requester ID must fail closed");
+
+        expect_invalid_request(err, "requester_id");
+    }
+
+    #[test]
+    fn blank_reason_is_invalid_request() {
+        let mut req = request("object-a");
+        req.reason.clear();
+
+        let err = evaluate_promotion(&req, &rule(), "validator-a", "trace-a", "ts-a")
+            .expect_err("blank promotion reason must fail closed");
+
+        expect_invalid_request(err, "reason");
+    }
+
+    #[test]
+    fn blank_validator_id_is_invalid_request() {
+        let err = evaluate_promotion(&request("object-a"), &rule(), " ", "trace-a", "ts-a")
+            .expect_err("blank validator ID must fail closed");
+
+        expect_invalid_request(err, "validator_id");
+    }
+
+    #[test]
+    fn blank_trace_id_is_invalid_request() {
+        let err = evaluate_promotion(&request("object-a"), &rule(), "validator-a", "\n", "ts-a")
+            .expect_err("blank trace ID must fail closed");
+
+        expect_invalid_request(err, "trace_id");
+    }
+
+    #[test]
+    fn blank_timestamp_is_invalid_request() {
+        let err = evaluate_promotion(&request("object-a"), &rule(), "validator-a", "trace-a", "")
+            .expect_err("blank timestamp must fail closed");
+
+        expect_invalid_request(err, "timestamp");
+    }
+
+    #[test]
+    fn batch_aborts_on_invalid_request_without_receipt() {
+        let requests = vec![request("valid-a"), request(" ")];
+
+        let err = evaluate_batch(&requests, &rule(), "validator-a", "trace-a", "ts-a")
+            .expect_err("batch should fail closed on invalid request metadata");
+
+        expect_invalid_request(err, "object_id");
     }
 }

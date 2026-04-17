@@ -845,6 +845,27 @@ mod tests {
     }
 
     #[test]
+    fn test_severity_parse_rejects_case_and_padding() {
+        assert_eq!(Severity::parse("Critical"), None);
+        assert_eq!(Severity::parse(" critical"), None);
+        assert_eq!(Severity::parse("critical "), None);
+    }
+
+    #[test]
+    fn test_retention_tier_parse_rejects_case_and_padding() {
+        assert_eq!(RetentionTier::parse("Hot"), None);
+        assert_eq!(RetentionTier::parse(" hot"), None);
+        assert_eq!(RetentionTier::parse("archive "), None);
+    }
+
+    #[test]
+    fn test_export_format_parse_rejects_case_and_padding() {
+        assert_eq!(ExportFormat::parse("Json"), None);
+        assert_eq!(ExportFormat::parse(" json"), None);
+        assert_eq!(ExportFormat::parse("sarif "), None);
+    }
+
+    #[test]
     fn test_default_config() {
         let cfg = RetentionConfig::default();
         assert_eq!(cfg.hot_days, 90);
@@ -973,6 +994,57 @@ mod tests {
         bundle.incident_id = String::new();
         let err = validate_bundle_complete(&bundle).unwrap_err();
         assert_eq!(err.code(), "IBR_INCOMPLETE");
+    }
+
+    #[test]
+    fn test_validate_incomplete_created_at() {
+        let mut bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
+        bundle.created_at.clear();
+
+        let err = validate_bundle_complete(&bundle).unwrap_err();
+
+        assert_eq!(err.code(), "IBR_INCOMPLETE");
+        assert!(err.to_string().contains("created_at"));
+    }
+
+    #[test]
+    fn test_validate_incomplete_metadata_title() {
+        let mut bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
+        bundle.metadata.title.clear();
+
+        let err = validate_bundle_complete(&bundle).unwrap_err();
+
+        assert_eq!(err.code(), "IBR_INCOMPLETE");
+        assert!(err.to_string().contains("metadata.title"));
+    }
+
+    #[test]
+    fn test_validate_incomplete_integrity_hash() {
+        let mut bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
+        bundle.integrity_hash.clear();
+
+        let err = validate_bundle_complete(&bundle).unwrap_err();
+
+        assert_eq!(err.code(), "IBR_INCOMPLETE");
+        assert!(err.to_string().contains("integrity_hash"));
     }
 
     #[test]
@@ -1107,6 +1179,32 @@ mod tests {
     }
 
     #[test]
+    fn test_export_rejects_tampered_stored_bundle() {
+        let mut store = default_store();
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::Critical,
+            RetentionTier::Hot,
+            1000,
+        );
+        store.store(bundle, 1000).unwrap();
+        store
+            .bundles
+            .get_mut("ibr-001")
+            .unwrap()
+            .metadata
+            .title
+            .push_str("-tampered");
+
+        let err = store
+            .export("ibr-001", ExportFormat::Json, "test-user", 1001)
+            .unwrap_err();
+
+        assert_eq!(err.code(), "IBR_INTEGRITY_FAILURE");
+    }
+
+    #[test]
     fn test_rotate_hot_to_cold() {
         let mut store = default_store();
         let bundle = sample_bundle(
@@ -1130,6 +1228,28 @@ mod tests {
         assert_eq!(
             bundle.integrity_hash.as_str(),
             compute_integrity_hash(bundle)
+        );
+    }
+
+    #[test]
+    fn test_rotate_hot_before_threshold_is_noop() {
+        let mut store = default_store();
+        let bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Hot,
+            1000,
+        );
+        store.store(bundle, 1000).unwrap();
+
+        let hot_seconds = 90_u64.saturating_mul(86_400);
+        let transitions = store.rotate_tiers(1000 + hot_seconds - 1);
+
+        assert!(transitions.is_empty());
+        assert_eq!(
+            store.get("ibr-001").unwrap().retention_tier,
+            RetentionTier::Hot
         );
     }
 
@@ -1159,6 +1279,29 @@ mod tests {
         assert_eq!(
             bundle.integrity_hash.as_str(),
             compute_integrity_hash(bundle)
+        );
+    }
+
+    #[test]
+    fn test_rotate_cold_before_tier_period_is_noop() {
+        let mut store = default_store();
+        let mut bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::High,
+            RetentionTier::Cold,
+            1000,
+        );
+        bundle.integrity_hash = compute_integrity_hash(&bundle);
+        store.store(bundle, 1000).unwrap();
+
+        let cold_seconds = 365_u64.saturating_mul(86_400);
+        let transitions = store.rotate_tiers(1000 + cold_seconds - 1);
+
+        assert!(transitions.is_empty());
+        assert_eq!(
+            store.get("ibr-001").unwrap().retention_tier,
+            RetentionTier::Cold
         );
     }
 
@@ -1198,6 +1341,27 @@ mod tests {
 
         let err = store.delete("ibr-001", false, 2000).unwrap_err();
         assert_eq!(err.code(), "IBR_ARCHIVE_PROTECTED");
+        assert!(store.contains("ibr-001"));
+    }
+
+    #[test]
+    fn test_archive_delete_without_force_does_not_record_delete_decision() {
+        let mut store = default_store();
+        let mut bundle = sample_bundle(
+            "ibr-001",
+            "INC-001",
+            Severity::Critical,
+            RetentionTier::Archive,
+            1000,
+        );
+        bundle.integrity_hash = compute_integrity_hash(&bundle);
+        store.store(bundle, 1000).unwrap();
+
+        let decision_count = store.decisions().len();
+        let err = store.delete("ibr-001", false, 2000).unwrap_err();
+
+        assert_eq!(err.code(), "IBR_ARCHIVE_PROTECTED");
+        assert_eq!(store.decisions().len(), decision_count);
         assert!(store.contains("ibr-001"));
     }
 

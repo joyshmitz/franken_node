@@ -634,6 +634,30 @@ mod tests {
     }
 
     #[test]
+    fn test_duplicate_tenant_to_different_zone_preserves_original_binding() {
+        let mut engine = make_engine();
+        engine.register_zone(make_policy("zone-a")).unwrap();
+        engine.register_zone(make_policy("zone-b")).unwrap();
+        engine
+            .bind_tenant(make_binding("team-alpha", "zone-a"))
+            .unwrap();
+
+        let err = engine
+            .bind_tenant(make_binding("team-alpha", "zone-b"))
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            SegmentationError::DuplicateTenant {
+                existing_zone,
+                ..
+            } if existing_zone == "zone-a"
+        ));
+        assert_eq!(engine.tenant_count(), 1);
+        assert_eq!(engine.get_tenant("team-alpha").unwrap().zone_id, "zone-a");
+    }
+
+    #[test]
     fn test_bind_tenant_to_nonexistent_zone() {
         let mut engine = make_engine();
         let err = engine
@@ -742,6 +766,52 @@ mod tests {
     }
 
     #[test]
+    fn test_bridge_auth_rejects_source_substring_match() {
+        let mut engine = make_engine();
+        let mut pa = make_policy("zone-a");
+        pa.allowed_cross_zone_targets = vec!["zone-b".to_string()];
+        engine.register_zone(pa).unwrap();
+        engine.register_zone(make_policy("zone-b")).unwrap();
+
+        let req = CrossZoneRequest {
+            source_zone: "zone-a".to_string(),
+            target_zone: "zone-b".to_string(),
+            action: "read".to_string(),
+            requester: "entity-1".to_string(),
+            authorization_proof: "signed:zone-a-shadow:zone-b".to_string(),
+        };
+
+        let err = engine.authorize_cross_zone(&req).unwrap_err();
+        assert!(matches!(
+            err,
+            SegmentationError::BridgeAuthIncomplete { .. }
+        ));
+    }
+
+    #[test]
+    fn test_bridge_auth_rejects_target_substring_match() {
+        let mut engine = make_engine();
+        let mut pa = make_policy("zone-a");
+        pa.allowed_cross_zone_targets = vec!["zone-b".to_string()];
+        engine.register_zone(pa).unwrap();
+        engine.register_zone(make_policy("zone-b")).unwrap();
+
+        let req = CrossZoneRequest {
+            source_zone: "zone-a".to_string(),
+            target_zone: "zone-b".to_string(),
+            action: "read".to_string(),
+            requester: "entity-1".to_string(),
+            authorization_proof: "signed:zone-a:zone-b-shadow".to_string(),
+        };
+
+        let err = engine.authorize_cross_zone(&req).unwrap_err();
+        assert!(matches!(
+            err,
+            SegmentationError::BridgeAuthIncomplete { .. }
+        ));
+    }
+
+    #[test]
     fn test_cross_zone_nonexistent_source() {
         let mut engine = make_engine();
         engine.register_zone(make_policy("zone-b")).unwrap();
@@ -795,6 +865,50 @@ mod tests {
         assert!(matches!(err, SegmentationError::IsolationViolation { .. }));
     }
 
+    #[test]
+    fn test_permissive_delete_requires_bridge() {
+        let mut engine = make_engine();
+        let mut pa = make_policy("zone-a");
+        pa.isolation_level = IsolationLevel::Permissive;
+        engine.register_zone(pa).unwrap();
+        engine.register_zone(make_policy("zone-b")).unwrap();
+
+        let req = CrossZoneRequest {
+            source_zone: "zone-a".to_string(),
+            target_zone: "zone-b".to_string(),
+            action: "delete".to_string(),
+            requester: "entity-1".to_string(),
+            authorization_proof: "signed:zone-a:zone-b".to_string(),
+        };
+        let err = engine.authorize_cross_zone(&req).unwrap_err();
+        assert!(matches!(err, SegmentationError::IsolationViolation { .. }));
+    }
+
+    #[test]
+    fn test_custom_isolation_read_requires_bridge_target() {
+        let mut engine = make_engine();
+        let mut pa = make_policy("zone-a");
+        pa.isolation_level = IsolationLevel::Custom;
+        engine.register_zone(pa).unwrap();
+        engine.register_zone(make_policy("zone-b")).unwrap();
+
+        let req = CrossZoneRequest {
+            source_zone: "zone-a".to_string(),
+            target_zone: "zone-b".to_string(),
+            action: "read".to_string(),
+            requester: "entity-1".to_string(),
+            authorization_proof: "signed:zone-a:zone-b".to_string(),
+        };
+        let err = engine.authorize_cross_zone(&req).unwrap_err();
+        assert!(matches!(
+            err,
+            SegmentationError::IsolationViolation {
+                level: IsolationLevel::Custom,
+                ..
+            }
+        ));
+    }
+
     // -- Isolation level query --
 
     #[test]
@@ -844,6 +958,13 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn test_delegation_unknown_zone_rejected() {
+        let engine = make_engine();
+        let err = engine.check_delegation_depth("ghost", 1).unwrap_err();
+        assert!(matches!(err, SegmentationError::ZoneNotFound { .. }));
+    }
+
     // -- Trust ceiling --
 
     #[test]
@@ -859,6 +980,13 @@ mod tests {
         engine.register_zone(make_policy("zone-a")).unwrap();
         let err = engine.check_trust_ceiling("zone-a", 95).unwrap_err();
         assert!(matches!(err, SegmentationError::IsolationViolation { .. }));
+    }
+
+    #[test]
+    fn test_trust_ceiling_unknown_zone_rejected() {
+        let engine = make_engine();
+        let err = engine.check_trust_ceiling("ghost", 1).unwrap_err();
+        assert!(matches!(err, SegmentationError::ZoneNotFound { .. }));
     }
 
     // -- Key binding --
@@ -878,6 +1006,13 @@ mod tests {
             .check_key_binding("zone-a", "key-zone-b")
             .unwrap_err();
         assert!(matches!(err, SegmentationError::KeyZoneMismatch { .. }));
+    }
+
+    #[test]
+    fn test_key_binding_unknown_zone_rejected() {
+        let engine = make_engine();
+        let err = engine.check_key_binding("ghost", "key-zone-a").unwrap_err();
+        assert!(matches!(err, SegmentationError::ZoneNotFound { .. }));
     }
 
     // -- Resource resolution --
@@ -906,6 +1041,16 @@ mod tests {
         assert_eq!(r1, r2);
     }
 
+    #[test]
+    fn test_register_resource_unknown_zone_is_side_effect_free() {
+        let mut engine = make_engine();
+
+        let err = engine.register_resource("res-1", "ghost").unwrap_err();
+
+        assert!(matches!(err, SegmentationError::ZoneNotFound { .. }));
+        assert!(engine.resolve_zone("res-1").is_err());
+    }
+
     // -- Zone deletion --
 
     #[test]
@@ -926,6 +1071,21 @@ mod tests {
         engine.register_zone(make_policy("zone-a")).unwrap();
         let err = engine.delete_zone("zone-a", None).unwrap_err();
         assert!(matches!(err, SegmentationError::FreshnessStale { .. }));
+    }
+
+    #[test]
+    fn test_delete_zone_without_proof_preserves_bindings_and_resources() {
+        let mut engine = make_engine();
+        engine.register_zone(make_policy("zone-a")).unwrap();
+        engine.bind_tenant(make_binding("t1", "zone-a")).unwrap();
+        engine.register_resource("res-1", "zone-a").unwrap();
+
+        let err = engine.delete_zone("zone-a", None).unwrap_err();
+
+        assert!(matches!(err, SegmentationError::FreshnessStale { .. }));
+        assert_eq!(engine.zone_count(), 1);
+        assert_eq!(engine.tenant_count(), 1);
+        assert_eq!(engine.resolve_zone("res-1").unwrap(), "zone-a");
     }
 
     #[test]

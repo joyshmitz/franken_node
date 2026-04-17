@@ -617,4 +617,395 @@ mod tests {
         let err = validate_policy(&p).unwrap_err();
         assert_eq!(err.code(), "AAR_INVALID_POLICY");
     }
+
+    #[test]
+    fn negative_max_response_ratio_rejected() {
+        let mut p = policy();
+        p.max_response_ratio = -0.01;
+
+        let err = validate_policy(&p).unwrap_err();
+
+        assert_eq!(err.code(), "AAR_INVALID_POLICY");
+        assert!(err.to_string().contains("max_response_ratio"));
+    }
+
+    #[test]
+    fn declared_zero_byte_bound_blocks_nonzero_response() {
+        let r = req("r-zero-bound", "p1", true, 100, 0, 1, 0);
+
+        let (v, audit) = check_response_bound(&r, &policy(), "tr", "ts").expect("valid policy");
+
+        assert!(!v.allowed);
+        assert_eq!(v.enforced_limit, 0);
+        assert_eq!(audit.verdict, "BLOCK");
+        assert!(v.violations.iter().any(|v| matches!(
+            v,
+            BoundViolation::ResponseTooLarge {
+                actual: 1,
+                limit: 0
+            }
+        )));
+    }
+
+    #[test]
+    fn declared_zero_item_bound_blocks_nonzero_items() {
+        let mut r = req("r-zero-items", "p1", true, 100, 500, 0, 1);
+        r.declared_bound.max_items = 0;
+
+        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").expect("valid policy");
+
+        assert!(!v.allowed);
+        assert!(v.violations.iter().any(|v| matches!(
+            v,
+            BoundViolation::ItemsExceeded {
+                actual: 1,
+                limit: 0
+            }
+        )));
+    }
+
+    #[test]
+    fn authenticated_response_over_auth_cap_blocks_even_when_declared_allows() {
+        let r = req("r-auth-cap", "p1", true, 2_000, 50_000, 10_001, 1);
+
+        let (v, audit) = check_response_bound(&r, &policy(), "tr", "ts").expect("valid policy");
+
+        assert!(!v.allowed);
+        assert_eq!(v.enforced_limit, 10_000);
+        assert_eq!(audit.enforced_limit, 10_000);
+        assert!(v.violations.iter().any(|v| matches!(
+            v,
+            BoundViolation::ResponseTooLarge {
+                actual: 10_001,
+                limit: 10_000
+            }
+        )));
+    }
+
+    #[test]
+    fn declared_item_bound_below_policy_limit_is_enforced() {
+        let mut r = req("r-item-declared", "p1", true, 100, 500, 100, 6);
+        r.declared_bound.max_items = 5;
+
+        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").expect("valid policy");
+
+        assert!(!v.allowed);
+        assert!(v.violations.iter().any(|v| matches!(
+            v,
+            BoundViolation::ItemsExceeded {
+                actual: 6,
+                limit: 5
+            }
+        )));
+    }
+
+    #[test]
+    fn zero_request_with_nonzero_response_records_infinite_ratio_violation() {
+        let r = req("r-inf-ratio", "p1", true, 0, 5_000, 1, 0);
+
+        let (v, audit) = check_response_bound(&r, &policy(), "tr", "ts").expect("valid policy");
+
+        assert!(!v.allowed);
+        assert!(audit.ratio.is_infinite());
+        assert!(v.violations.iter().any(|v| {
+            matches!(
+                v,
+                BoundViolation::RatioExceeded {
+                    ratio,
+                    max_ratio: 10.0
+                } if ratio.is_infinite()
+            )
+        }));
+    }
+
+    #[test]
+    fn unauthenticated_oversize_response_reports_both_size_and_unauth_limits() {
+        let r = req("r-unauth-both", "p1", false, 500, 50_000, 1_001, 1);
+
+        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").expect("valid policy");
+
+        assert!(!v.allowed);
+        assert_eq!(v.enforced_limit, 1_000);
+        assert!(v.violations.iter().any(|v| {
+            matches!(
+                v,
+                BoundViolation::ResponseTooLarge {
+                    actual: 1_001,
+                    limit: 1_000
+                }
+            )
+        }));
+        assert!(v.violations.iter().any(|v| {
+            matches!(
+                v,
+                BoundViolation::UnauthLimit {
+                    actual: 1_001,
+                    limit: 1_000
+                }
+            )
+        }));
+    }
+
+    #[test]
+    fn harness_rejects_invalid_policy_without_processing_batch() {
+        let mut p = policy();
+        p.auth_max_bytes = 0;
+        let requests = vec![req("r-invalid-policy", "p1", true, 100, 500, 100, 1)];
+
+        let err = run_adversarial_harness(&requests, &p, "tr", "ts").unwrap_err();
+
+        assert_eq!(err.code(), "AAR_INVALID_POLICY");
+    }
+
+    #[test]
+    fn negative_unauth_declared_bound_below_policy_cap_is_enforced() {
+        let r = req("r-unauth-declared", "p1", false, 1_000, 400, 401, 1);
+
+        let (v, audit) = check_response_bound(&r, &policy(), "tr", "ts").expect("valid policy");
+
+        assert!(!v.allowed);
+        assert_eq!(v.enforced_limit, 400);
+        assert_eq!(audit.enforced_limit, 400);
+        assert!(v.violations.iter().any(|v| matches!(
+            v,
+            BoundViolation::ResponseTooLarge {
+                actual: 401,
+                limit: 400
+            }
+        )));
+        assert!(
+            !v.violations
+                .iter()
+                .any(|v| matches!(v, BoundViolation::UnauthLimit { .. }))
+        );
+    }
+
+    #[test]
+    fn negative_policy_item_cap_applies_when_declared_item_bound_is_larger() {
+        let mut r = req("r-policy-items", "p1", true, 1_000, 5_000, 100, 51);
+        r.declared_bound.max_items = 500;
+
+        let (v, _) = check_response_bound(&r, &policy(), "tr", "ts").expect("valid policy");
+
+        assert!(!v.allowed);
+        assert!(v.violations.iter().any(|v| matches!(
+            v,
+            BoundViolation::ItemsExceeded {
+                actual: 51,
+                limit: 50
+            }
+        )));
+    }
+
+    #[test]
+    fn negative_ratio_exceeded_by_one_byte_over_exact_limit() {
+        let r = req("r-ratio-over", "p1", true, 100, 10_000, 1_001, 1);
+
+        let (v, audit) = check_response_bound(&r, &policy(), "tr", "ts").expect("valid policy");
+
+        assert!(!v.allowed);
+        assert_eq!(v.violations.len(), 1);
+        assert!(audit.ratio > 10.0);
+        assert!(v.violations.iter().any(|v| matches!(
+            v,
+            BoundViolation::RatioExceeded {
+                ratio,
+                max_ratio: 10.0
+            } if *ratio > 10.0
+        )));
+    }
+
+    #[test]
+    fn negative_exact_ratio_limit_allowed_but_next_byte_rejected() {
+        let exact = req("r-ratio-exact", "p1", true, 100, 10_000, 1_000, 1);
+        let over = req("r-ratio-next-byte", "p1", true, 100, 10_000, 1_001, 1);
+
+        let (exact_v, _) =
+            check_response_bound(&exact, &policy(), "tr", "ts").expect("valid policy");
+        let (over_v, _) = check_response_bound(&over, &policy(), "tr", "ts").expect("valid policy");
+
+        assert!(exact_v.allowed);
+        assert!(!over_v.allowed);
+        assert!(
+            over_v
+                .violations
+                .iter()
+                .any(|v| matches!(v, BoundViolation::RatioExceeded { .. }))
+        );
+    }
+
+    #[test]
+    fn negative_harness_preserves_blocked_verdict_order() {
+        let mut item_block = req("r-order-items", "p3", true, 100, 500, 100, 51);
+        item_block.declared_bound.max_items = 50;
+        let requests = vec![
+            req("r-order-ok", "p1", true, 100, 5_000, 500, 1),
+            req("r-order-ratio", "p2", true, 100, 10_000, 1_001, 1),
+            item_block,
+        ];
+
+        let results =
+            run_adversarial_harness(&requests, &policy(), "tr", "ts").expect("valid policy");
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].0.request_id, "r-order-ok");
+        assert_eq!(results[1].0.request_id, "r-order-ratio");
+        assert_eq!(results[2].0.request_id, "r-order-items");
+        assert!(results[0].0.allowed);
+        assert!(!results[1].0.allowed);
+        assert!(!results[2].0.allowed);
+        assert!(
+            results[1]
+                .0
+                .violations
+                .iter()
+                .any(|v| matches!(v, BoundViolation::RatioExceeded { .. }))
+        );
+        assert!(
+            results[2]
+                .0
+                .violations
+                .iter()
+                .any(|v| matches!(v, BoundViolation::ItemsExceeded { .. }))
+        );
+    }
+
+    #[test]
+    fn negative_blocked_verdict_preserves_request_and_trace_metadata() {
+        let r = req("r-meta-block", "peer-meta", false, 500, 50_000, 1_001, 1);
+
+        let (v, audit) =
+            check_response_bound(&r, &policy(), "trace-meta", "2026-04-17").expect("valid policy");
+
+        assert!(!v.allowed);
+        assert_eq!(v.request_id, "r-meta-block");
+        assert_eq!(v.trace_id, "trace-meta");
+        assert_eq!(audit.request_id, "r-meta-block");
+        assert_eq!(audit.peer_id, "peer-meta");
+        assert_eq!(audit.timestamp, "2026-04-17");
+        assert_eq!(audit.verdict, "BLOCK");
+    }
+
+    #[test]
+    fn negative_empty_harness_still_rejects_invalid_policy() {
+        let mut p = policy();
+        p.max_items_per_response = 0;
+
+        let err = run_adversarial_harness(&[], &p, "tr", "ts").unwrap_err();
+
+        assert_eq!(err.code(), "AAR_INVALID_POLICY");
+        assert!(err.to_string().contains("max_items_per_response"));
+    }
+
+    #[test]
+    fn negative_zero_request_unauth_large_response_reports_three_violations() {
+        let r = req("r-zero-unauth-large", "p1", false, 0, 50_000, 1_001, 0);
+
+        let (v, audit) = check_response_bound(&r, &policy(), "tr", "ts").expect("valid policy");
+
+        assert!(!v.allowed);
+        assert!(audit.ratio.is_infinite());
+        assert_eq!(v.violations.len(), 3);
+        assert!(v.violations.iter().any(|v| {
+            matches!(
+                v,
+                BoundViolation::ResponseTooLarge {
+                    actual: 1_001,
+                    limit: 1_000
+                }
+            )
+        }));
+        assert!(v.violations.iter().any(|v| {
+            matches!(
+                v,
+                BoundViolation::RatioExceeded {
+                    ratio,
+                    max_ratio: 10.0
+                } if ratio.is_infinite()
+            )
+        }));
+        assert!(v.violations.iter().any(|v| {
+            matches!(
+                v,
+                BoundViolation::UnauthLimit {
+                    actual: 1_001,
+                    limit: 1_000
+                }
+            )
+        }));
+    }
+
+    #[test]
+    fn negative_zero_declared_bytes_and_items_report_independent_violations() {
+        let mut r = req("r-zero-both", "p1", true, 1_000, 0, 1, 1);
+        r.declared_bound.max_items = 0;
+
+        let (v, audit) = check_response_bound(&r, &policy(), "tr", "ts").expect("valid policy");
+
+        assert!(!v.allowed);
+        assert_eq!(audit.enforced_limit, 0);
+        assert_eq!(v.violations.len(), 2);
+        assert!(v.violations.iter().any(|v| matches!(
+            v,
+            BoundViolation::ResponseTooLarge {
+                actual: 1,
+                limit: 0
+            }
+        )));
+        assert!(v.violations.iter().any(|v| matches!(
+            v,
+            BoundViolation::ItemsExceeded {
+                actual: 1,
+                limit: 0
+            }
+        )));
+    }
+
+    #[test]
+    fn negative_invalid_policy_preempts_malicious_request_values() {
+        let mut p = policy();
+        p.max_response_ratio = f64::NAN;
+        let r = req("r-malicious", "p1", false, 0, u64::MAX, u64::MAX, u32::MAX);
+
+        let err = check_response_bound(&r, &p, "tr", "ts").unwrap_err();
+
+        assert_eq!(err.code(), "AAR_INVALID_POLICY");
+        assert!(err.to_string().contains("max_response_ratio"));
+    }
+
+    #[test]
+    fn negative_policy_with_unauth_equal_to_auth_still_enforces_declared_bound() {
+        let mut p = policy();
+        p.unauth_max_bytes = p.auth_max_bytes;
+        let r = req("r-equal-caps", "p1", false, 1_000, 100, 101, 1);
+
+        let (v, audit) = check_response_bound(&r, &p, "tr", "ts").expect("valid policy");
+
+        assert!(!v.allowed);
+        assert_eq!(v.enforced_limit, 100);
+        assert_eq!(audit.enforced_limit, 100);
+        assert!(v.violations.iter().any(|v| matches!(
+            v,
+            BoundViolation::ResponseTooLarge {
+                actual: 101,
+                limit: 100
+            }
+        )));
+    }
+
+    #[test]
+    fn negative_invalid_policy_in_batch_prevents_later_block_verdicts() {
+        let mut p = policy();
+        p.unauth_max_bytes = 20_000;
+        p.auth_max_bytes = 10_000;
+        let requests = vec![
+            req("r-would-block", "p1", false, 0, 50_000, 1_001, 0),
+            req("r-would-allow", "p2", true, 1_000, 2_000, 100, 1),
+        ];
+
+        let err = run_adversarial_harness(&requests, &p, "tr", "ts").unwrap_err();
+
+        assert_eq!(err.code(), "AAR_INVALID_POLICY");
+        assert!(err.to_string().contains("unauth_max_bytes"));
+    }
 }

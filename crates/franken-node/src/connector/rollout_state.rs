@@ -845,4 +845,158 @@ mod tests {
         assert!(matches!(err, EpochPersistError::InvalidConnectorId { .. }));
         assert!(err.to_string().contains("leading or trailing whitespace"));
     }
+
+    #[test]
+    fn persist_epoch_scoped_rejects_all_whitespace_connector_id_without_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("state-epoch-blank.json");
+        let mut state = sample_state();
+        state.connector_id = "\t \n".to_string();
+        let policy = ValidityWindowPolicy::new(ControlEpoch::new(7), 2);
+
+        let err = persist_epoch_scoped(&state, &path, &policy, "trace-rollout-blank")
+            .expect_err("blank connector_id must be rejected before persistence");
+
+        assert!(matches!(
+            err,
+            EpochPersistError::InvalidConnectorId { reason } if reason.contains("must not be empty")
+        ));
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn persist_epoch_scoped_rejects_future_epoch_without_creating_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("state-epoch-future-side-effect.json");
+        let mut state = sample_state();
+        state.rollout_epoch = ControlEpoch::new(99);
+        let policy = ValidityWindowPolicy::new(ControlEpoch::new(7), 2);
+
+        let err = persist_epoch_scoped(&state, &path, &policy, "trace-rollout-future-side-effect")
+            .expect_err("future epoch must be rejected before persistence");
+
+        assert!(matches!(err, EpochPersistError::FutureEpochRejected { .. }));
+        assert!(!path.exists());
+        assert!(temp_leftovers(dir.path(), ".tmp.").is_empty());
+    }
+
+    #[test]
+    fn persist_epoch_scoped_rejects_stale_epoch_without_creating_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("state-epoch-stale-side-effect.json");
+        let mut state = sample_state();
+        state.rollout_epoch = ControlEpoch::new(1);
+        let policy = ValidityWindowPolicy::new(ControlEpoch::new(7), 2);
+
+        let err = persist_epoch_scoped(&state, &path, &policy, "trace-rollout-stale-side-effect")
+            .expect_err("stale epoch must be rejected before persistence");
+
+        assert!(matches!(err, EpochPersistError::StaleEpochRejected { .. }));
+        assert!(!path.exists());
+        assert!(temp_leftovers(dir.path(), ".tmp.").is_empty());
+    }
+
+    #[test]
+    fn persist_epoch_scoped_stale_version_preserves_existing_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("state-epoch-stale-version.json");
+        let mut existing = sample_state();
+        existing.bump_version();
+        persist(&existing, &path).unwrap();
+        let before = std::fs::read_to_string(&path).unwrap();
+        let stale = sample_state();
+        let policy = ValidityWindowPolicy::new(ControlEpoch::new(7), 2);
+
+        let err = persist_epoch_scoped(&stale, &path, &policy, "trace-rollout-stale-version")
+            .expect_err("stale version must be surfaced through epoch-scoped persist");
+
+        assert!(matches!(
+            err,
+            EpochPersistError::Persist {
+                source: PersistError::StaleVersion {
+                    current_version: 2,
+                    attempted_version: 1
+                }
+            }
+        ));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn load_malformed_json_returns_io_error() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("malformed-state.json");
+        std::fs::write(&path, "{not-json").unwrap();
+
+        let err = load(&path).expect_err("malformed JSON must fail to load");
+
+        assert!(matches!(err, PersistError::IoError { .. }));
+        assert!(!err.to_string().is_empty());
+    }
+
+    #[test]
+    fn verify_replay_mismatch_connector_id_reports_field_and_values() {
+        let expected = sample_state();
+        let mut actual = expected.clone();
+        actual.connector_id = "other-connector".to_string();
+
+        let err = verify_replay(&expected, &actual).unwrap_err();
+
+        match err {
+            PersistError::ReplayMismatch {
+                field,
+                expected,
+                actual,
+            } => {
+                assert_eq!(field, "connector_id");
+                assert_eq!(expected, "test-connector-1");
+                assert_eq!(actual, "other-connector");
+            }
+            other => panic!("expected connector_id replay mismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn verify_replay_mismatch_version_reports_field_and_values() {
+        let expected = sample_state();
+        let mut actual = expected.clone();
+        actual.bump_version();
+
+        let err = verify_replay(&expected, &actual).unwrap_err();
+
+        match err {
+            PersistError::ReplayMismatch {
+                field,
+                expected,
+                actual,
+            } => {
+                assert_eq!(field, "version");
+                assert_eq!(expected, "1");
+                assert_eq!(actual, "2");
+            }
+            other => panic!("expected version replay mismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn verify_replay_mismatch_missing_actual_cancel_phase_reports_none() {
+        let mut expected = sample_state();
+        expected.cancel_phase = Some(CancellationPhase::Finalizing);
+        let actual = sample_state();
+
+        let err = verify_replay(&expected, &actual).unwrap_err();
+
+        match err {
+            PersistError::ReplayMismatch {
+                field,
+                expected,
+                actual,
+            } => {
+                assert_eq!(field, "cancel_phase");
+                assert_eq!(expected, "finalizing");
+                assert_eq!(actual, "<none>");
+            }
+            other => panic!("expected cancel_phase replay mismatch, got {other:?}"),
+        }
+    }
 }

@@ -187,7 +187,10 @@ pub fn detect_divergence(local: &StateRoot, canonical: &StateRoot) -> Divergence
         DivergenceType::Stale
     } else if local.version > canonical.version {
         DivergenceType::SplitBrain
-    } else if !ct_eq(&local.root_hash, &canonical.root_hash) {
+    } else if local.connector_id != canonical.connector_id
+        || local.state_model != canonical.state_model
+        || !ct_eq(&local.root_hash, &canonical.root_hash)
+    {
         DivergenceType::HashMismatch
     } else {
         DivergenceType::None
@@ -397,5 +400,185 @@ mod tests {
         let parsed: StateRoot = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.connector_id, "conn-1");
         assert_eq!(parsed.version, 1);
+    }
+
+    #[test]
+    fn verify_integrity_fails_when_head_is_tampered_without_rehash() {
+        let mut root = StateRoot::new("conn-1".into(), StateModelType::Document, json!({"x": 1}));
+        let original_hash = root.root_hash.clone();
+
+        root.head = json!({"x": 2});
+
+        assert_eq!(root.root_hash, original_hash);
+        assert!(!root.verify_integrity());
+    }
+
+    #[test]
+    fn stale_version_takes_precedence_over_hash_mismatch() {
+        let mut local = StateRoot::new("conn-1".into(), StateModelType::KeyValue, json!({"a": 1}));
+        let mut canonical = local.clone();
+        canonical.update_head(json!({"a": 2}));
+        local.root_hash = "bad-local-hash".to_string();
+
+        let check = detect_divergence(&local, &canonical);
+
+        assert_eq!(check.divergence_type, DivergenceType::Stale);
+        assert_eq!(reconcile_action(&check), ReconcileAction::PullCanonical);
+    }
+
+    #[test]
+    fn split_brain_version_takes_precedence_over_hash_mismatch() {
+        let canonical = StateRoot::new("conn-1".into(), StateModelType::KeyValue, json!({"a": 1}));
+        let mut local = canonical.clone();
+        local.update_head(json!({"a": 2}));
+        local.root_hash = "bad-local-hash".to_string();
+
+        let check = detect_divergence(&local, &canonical);
+
+        assert_eq!(check.divergence_type, DivergenceType::SplitBrain);
+        assert_eq!(reconcile_action(&check), ReconcileAction::FlagForReview);
+    }
+
+    #[test]
+    fn serde_rejects_unknown_state_model_type() {
+        let err = serde_json::from_str::<StateModelType>("\"graph\"").unwrap_err();
+
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn serde_rejects_unknown_divergence_type() {
+        let err = serde_json::from_str::<DivergenceType>("\"forked\"").unwrap_err();
+
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn serde_rejects_unknown_reconcile_action() {
+        let err = serde_json::from_str::<ReconcileAction>("\"overwrite_canonical\"").unwrap_err();
+
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn tampered_deserialized_state_root_fails_integrity() {
+        let root = StateRoot::new("conn-1".into(), StateModelType::Document, json!({"k": "v"}));
+        let mut value = serde_json::to_value(&root).expect("state root should serialize");
+        value["head"] = json!({"k": "tampered"});
+        let parsed: StateRoot =
+            serde_json::from_value(value).expect("tampered shape should still deserialize");
+
+        assert!(!parsed.verify_integrity());
+    }
+
+    #[test]
+    fn root_hash_mismatch_error_display_includes_expected_and_actual() {
+        let err = StateModelError::RootHashMismatch {
+            expected: "expected-hash".to_string(),
+            actual: "actual-hash".to_string(),
+        };
+        let message = err.to_string();
+
+        assert!(message.contains("ROOT_HASH_MISMATCH"));
+        assert!(message.contains("expected-hash"));
+        assert!(message.contains("actual-hash"));
+    }
+
+    #[test]
+    fn connector_id_mismatch_with_same_head_is_divergence() {
+        let local = StateRoot::new(
+            "conn-local".into(),
+            StateModelType::Document,
+            json!({"k": "v"}),
+        );
+        let canonical = StateRoot::new(
+            "conn-canonical".into(),
+            StateModelType::Document,
+            json!({"k": "v"}),
+        );
+
+        let check = detect_divergence(&local, &canonical);
+
+        assert_eq!(check.divergence_type, DivergenceType::HashMismatch);
+        assert_eq!(reconcile_action(&check), ReconcileAction::RepairHash);
+    }
+
+    #[test]
+    fn state_model_mismatch_with_same_head_is_divergence() {
+        let local = StateRoot::new("conn-1".into(), StateModelType::Document, json!({"k": "v"}));
+        let canonical =
+            StateRoot::new("conn-1".into(), StateModelType::KeyValue, json!({"k": "v"}));
+
+        let check = detect_divergence(&local, &canonical);
+
+        assert_eq!(check.divergence_type, DivergenceType::HashMismatch);
+        assert_eq!(reconcile_action(&check), ReconcileAction::RepairHash);
+    }
+
+    #[test]
+    fn empty_local_hash_at_same_version_is_hash_mismatch() {
+        let canonical =
+            StateRoot::new("conn-1".into(), StateModelType::Document, json!({"k": "v"}));
+        let mut local = canonical.clone();
+        local.root_hash.clear();
+
+        let check = detect_divergence(&local, &canonical);
+
+        assert_eq!(check.divergence_type, DivergenceType::HashMismatch);
+    }
+
+    #[test]
+    fn empty_canonical_hash_at_same_version_is_hash_mismatch() {
+        let local = StateRoot::new("conn-1".into(), StateModelType::Document, json!({"k": "v"}));
+        let mut canonical = local.clone();
+        canonical.root_hash.clear();
+
+        let check = detect_divergence(&local, &canonical);
+
+        assert_eq!(check.divergence_type, DivergenceType::HashMismatch);
+    }
+
+    #[test]
+    fn serde_rejects_state_root_missing_head() {
+        let root = StateRoot::new("conn-1".into(), StateModelType::Document, json!({"k": "v"}));
+        let mut value = serde_json::to_value(root).expect("state root should serialize");
+        value.as_object_mut().unwrap().remove("head");
+
+        let err = serde_json::from_value::<StateRoot>(value).unwrap_err();
+
+        assert!(err.to_string().contains("missing field"));
+    }
+
+    #[test]
+    fn serde_rejects_state_root_version_type_confusion() {
+        let root = StateRoot::new("conn-1".into(), StateModelType::Document, json!({"k": "v"}));
+        let mut value = serde_json::to_value(root).expect("state root should serialize");
+        value["version"] = json!("2");
+
+        let err = serde_json::from_value::<StateRoot>(value).unwrap_err();
+
+        assert!(err.to_string().contains("invalid type"));
+    }
+
+    #[test]
+    fn serde_rejects_state_root_hash_type_confusion() {
+        let root = StateRoot::new("conn-1".into(), StateModelType::Document, json!({"k": "v"}));
+        let mut value = serde_json::to_value(root).expect("state root should serialize");
+        value["root_hash"] = json!(["not", "a", "string"]);
+
+        let err = serde_json::from_value::<StateRoot>(value).unwrap_err();
+
+        assert!(err.to_string().contains("invalid type"));
+    }
+
+    #[test]
+    fn update_head_saturates_version_at_u64_max() {
+        let mut root = StateRoot::new("conn-1".into(), StateModelType::KeyValue, json!({"a": 1}));
+        root.version = u64::MAX;
+
+        root.update_head(json!({"a": 2}));
+
+        assert_eq!(root.version, u64::MAX);
+        assert!(root.verify_integrity());
     }
 }

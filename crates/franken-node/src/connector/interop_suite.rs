@@ -237,6 +237,18 @@ pub fn check_source_diversity(case_id: &str, sources: usize, required: usize) ->
     }
 }
 
+fn invalid_source_diversity_count(case_id: &str, field: &str, value: &str) -> InteropResult {
+    InteropResult {
+        class: InteropClass::SourceDiversity,
+        case_id: case_id.to_string(),
+        passed: false,
+        details: format!("invalid {field} count: {value}"),
+        reproducer: Some(format!(
+            "{{\"case\":\"{case_id}\",\"field\":\"{field}\",\"value\":\"{value}\"}}"
+        )),
+    }
+}
+
 /// Run a full interop suite from test cases.
 pub fn run_suite(cases: &[InteropTestCase]) -> Vec<InteropResult> {
     cases
@@ -259,9 +271,22 @@ pub fn run_suite(cases: &[InteropTestCase]) -> Vec<InteropResult> {
                     tc.expected_output == "revoked",
                 ),
                 InteropClass::SourceDiversity => {
-                    let sources: usize = tc.input.parse().unwrap_or(0);
-                    let required: usize = tc.expected_output.parse().unwrap_or(0);
-                    check_source_diversity(&tc.case_id, sources, required)
+                    match (
+                        tc.input.parse::<usize>(),
+                        tc.expected_output.parse::<usize>(),
+                    ) {
+                        (Ok(sources), Ok(required)) => {
+                            check_source_diversity(&tc.case_id, sources, required)
+                        }
+                        (Err(_), _) => {
+                            invalid_source_diversity_count(&tc.case_id, "sources", &tc.input)
+                        }
+                        (_, Err(_)) => invalid_source_diversity_count(
+                            &tc.case_id,
+                            "required",
+                            &tc.expected_output,
+                        ),
+                    }
                 }
             }
         })
@@ -302,6 +327,21 @@ mod tests {
     }
 
     #[test]
+    fn serialization_mismatch_records_failure_context() {
+        let r = check_serialization("s3", "raw", "actual", "expected");
+
+        assert!(!r.passed);
+        assert_eq!(r.class, InteropClass::Serialization);
+        assert_eq!(r.case_id, "s3");
+        assert!(r.details.contains("expected=expected"));
+        assert!(r.details.contains("actual=actual"));
+        let reproducer = r.reproducer.expect("mismatch should include reproducer");
+        assert!(reproducer.contains("\"input\":\"raw\""));
+        assert!(reproducer.contains("\"expected\":\"expected\""));
+        assert!(reproducer.contains("\"actual\":\"actual\""));
+    }
+
+    #[test]
     fn object_id_deterministic() {
         let r = check_object_id("o1", "id-abc", "id-abc");
         assert!(r.passed);
@@ -312,6 +352,19 @@ mod tests {
         let r = check_object_id("o2", "id-abc", "id-xyz");
         assert!(!r.passed);
         assert!(r.reproducer.unwrap().contains("id_a"));
+    }
+
+    #[test]
+    fn object_id_mismatch_records_both_ids() {
+        let r = check_object_id("o3", "id-left", "id-right");
+
+        assert!(!r.passed);
+        assert_eq!(r.class, InteropClass::ObjectId);
+        assert!(r.details.contains("id_a=id-left"));
+        assert!(r.details.contains("id_b=id-right"));
+        let reproducer = r.reproducer.expect("mismatch should include reproducer");
+        assert!(reproducer.contains("\"id_a\":\"id-left\""));
+        assert!(reproducer.contains("\"id_b\":\"id-right\""));
     }
 
     #[test]
@@ -328,6 +381,19 @@ mod tests {
     }
 
     #[test]
+    fn signature_invalid_records_case_and_error() {
+        let r = check_signature("sig3", false, "wrong issuer");
+
+        assert!(!r.passed);
+        assert_eq!(r.class, InteropClass::Signature);
+        assert_eq!(r.case_id, "sig3");
+        assert_eq!(r.details, "wrong issuer");
+        let reproducer = r.reproducer.expect("invalid signature should reproduce");
+        assert!(reproducer.contains("\"case\":\"sig3\""));
+        assert!(reproducer.contains("\"error\":\"wrong issuer\""));
+    }
+
+    #[test]
     fn revocation_agree() {
         let r = check_revocation("rev1", true, true);
         assert!(r.passed);
@@ -337,6 +403,19 @@ mod tests {
     fn revocation_disagree() {
         let r = check_revocation("rev2", true, false);
         assert!(!r.passed);
+    }
+
+    #[test]
+    fn revocation_disagreement_records_both_statuses() {
+        let r = check_revocation("rev3", false, true);
+
+        assert!(!r.passed);
+        assert_eq!(r.class, InteropClass::Revocation);
+        assert!(r.details.contains("impl_a=false"));
+        assert!(r.details.contains("impl_b=true"));
+        let reproducer = r.reproducer.expect("disagreement should reproduce");
+        assert!(reproducer.contains("\"impl_a\":false"));
+        assert!(reproducer.contains("\"impl_b\":true"));
     }
 
     #[test]
@@ -350,6 +429,29 @@ mod tests {
         let r = check_source_diversity("sd2", 1, 3);
         assert!(!r.passed);
         assert!(r.reproducer.unwrap().contains("\"required\":3"));
+    }
+
+    #[test]
+    fn source_diversity_zero_sources_fails_threshold() {
+        let r = check_source_diversity("sd3", 0, 2);
+
+        assert!(!r.passed);
+        assert_eq!(r.class, InteropClass::SourceDiversity);
+        assert_eq!(r.details, "0/2 sources");
+        let reproducer = r
+            .reproducer
+            .expect("insufficient diversity should reproduce");
+        assert!(reproducer.contains("\"sources\":0"));
+        assert!(reproducer.contains("\"required\":2"));
+    }
+
+    #[test]
+    fn source_diversity_one_below_threshold_fails() {
+        let r = check_source_diversity("sd4", 2, 3);
+
+        assert!(!r.passed);
+        assert_eq!(r.details, "2/3 sources");
+        assert!(r.reproducer.is_some());
     }
 
     #[test]
@@ -376,6 +478,175 @@ mod tests {
     }
 
     #[test]
+    fn run_suite_serialization_mismatch_fails() {
+        let cases = vec![InteropTestCase {
+            class: InteropClass::Serialization,
+            case_id: "s-bad".into(),
+            input: "actual".into(),
+            expected_output: "expected".into(),
+            implementation: "impl_a".into(),
+        }];
+
+        let results = run_suite(&cases);
+
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].passed);
+        assert_eq!(results[0].class, InteropClass::Serialization);
+        assert!(results[0].reproducer.is_some());
+    }
+
+    #[test]
+    fn run_suite_invalid_source_count_fails_closed() {
+        let cases = vec![InteropTestCase {
+            class: InteropClass::SourceDiversity,
+            case_id: "sd-bad-parse".into(),
+            input: "not-a-number".into(),
+            expected_output: "2".into(),
+            implementation: "impl_a".into(),
+        }];
+
+        let results = run_suite(&cases);
+
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].passed);
+        assert_eq!(results[0].details, "invalid sources count: not-a-number");
+    }
+
+    #[test]
+    fn run_suite_invalid_required_source_count_fails_closed() {
+        let cases = vec![InteropTestCase {
+            class: InteropClass::SourceDiversity,
+            case_id: "sd-bad-required".into(),
+            input: "3".into(),
+            expected_output: "not-a-number".into(),
+            implementation: "impl_a".into(),
+        }];
+
+        let results = run_suite(&cases);
+
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].passed);
+        assert_eq!(results[0].class, InteropClass::SourceDiversity);
+        assert_eq!(results[0].details, "invalid required count: not-a-number");
+    }
+
+    #[test]
+    fn run_suite_both_source_counts_invalid_reports_actual_count_first() {
+        let cases = vec![InteropTestCase {
+            class: InteropClass::SourceDiversity,
+            case_id: "sd-both-bad".into(),
+            input: "many".into(),
+            expected_output: "several".into(),
+            implementation: "impl_a".into(),
+        }];
+
+        let results = run_suite(&cases);
+
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].passed);
+        assert_eq!(results[0].details, "invalid sources count: many");
+    }
+
+    #[test]
+    fn run_suite_empty_source_count_fails_closed() {
+        let cases = vec![InteropTestCase {
+            class: InteropClass::SourceDiversity,
+            case_id: "sd-empty-source".into(),
+            input: String::new(),
+            expected_output: "1".into(),
+            implementation: "impl_a".into(),
+        }];
+
+        let results = run_suite(&cases);
+
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].passed);
+        assert_eq!(results[0].details, "invalid sources count: ");
+    }
+
+    #[test]
+    fn run_suite_whitespace_source_count_fails_closed() {
+        let cases = vec![InteropTestCase {
+            class: InteropClass::SourceDiversity,
+            case_id: "sd-space-source".into(),
+            input: "2 ".into(),
+            expected_output: "1".into(),
+            implementation: "impl_a".into(),
+        }];
+
+        let results = run_suite(&cases);
+
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].passed);
+        assert_eq!(results[0].details, "invalid sources count: 2 ");
+        assert!(
+            results[0]
+                .reproducer
+                .as_ref()
+                .is_some_and(|reproducer| reproducer.contains("\"field\":\"sources\""))
+        );
+    }
+
+    #[test]
+    fn run_suite_empty_required_count_fails_closed() {
+        let cases = vec![InteropTestCase {
+            class: InteropClass::SourceDiversity,
+            case_id: "sd-empty-required".into(),
+            input: "1".into(),
+            expected_output: String::new(),
+            implementation: "impl_a".into(),
+        }];
+
+        let results = run_suite(&cases);
+
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].passed);
+        assert_eq!(results[0].details, "invalid required count: ");
+    }
+
+    #[test]
+    fn run_suite_whitespace_required_count_fails_closed() {
+        let cases = vec![InteropTestCase {
+            class: InteropClass::SourceDiversity,
+            case_id: "sd-space-required".into(),
+            input: "2".into(),
+            expected_output: " 1".into(),
+            implementation: "impl_a".into(),
+        }];
+
+        let results = run_suite(&cases);
+
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].passed);
+        assert_eq!(results[0].details, "invalid required count:  1");
+        assert!(
+            results[0]
+                .reproducer
+                .as_ref()
+                .is_some_and(|reproducer| reproducer.contains("\"field\":\"required\""))
+        );
+    }
+
+    #[test]
+    fn run_suite_revocation_mismatch_fails() {
+        let cases = vec![InteropTestCase {
+            class: InteropClass::Revocation,
+            case_id: "rev-bad".into(),
+            input: "revoked".into(),
+            expected_output: "active".into(),
+            implementation: "impl_a".into(),
+        }];
+
+        let results = run_suite(&cases);
+
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].passed);
+        assert_eq!(results[0].class, InteropClass::Revocation);
+        assert!(results[0].details.contains("impl_a=true"));
+        assert!(results[0].details.contains("impl_b=false"));
+    }
+
+    #[test]
     fn summarize_results() {
         let results = vec![
             check_serialization("s1", "d", "a", "a"),
@@ -385,6 +656,19 @@ mod tests {
         let s = summarize(&results);
         assert_eq!(s[&InteropClass::Serialization], (1, 2));
         assert_eq!(s[&InteropClass::ObjectId], (1, 1));
+    }
+
+    #[test]
+    fn summarize_all_failures_reports_zero_passes() {
+        let results = vec![
+            check_signature("sig-bad", false, "bad key"),
+            check_source_diversity("sd-bad", 1, 3),
+        ];
+
+        let summary = summarize(&results);
+
+        assert_eq!(summary[&InteropClass::Signature], (0, 1));
+        assert_eq!(summary[&InteropClass::SourceDiversity], (0, 1));
     }
 
     #[test]

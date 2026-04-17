@@ -306,6 +306,44 @@ impl DurableClaimGate {
                 ));
             }
 
+            if proof.proof_hash.trim().is_empty() {
+                self.emit(
+                    "PROOF_INVALID",
+                    claim,
+                    Some(required_type.clone()),
+                    Some("proof_hash_empty".to_string()),
+                    input.available_markers.len(),
+                    input.proofs.len(),
+                );
+                return Ok(self.deny(
+                    claim,
+                    ClaimDenialReason::ProofInvalid {
+                        proof_type: required_type.clone(),
+                        detail: "proof_hash_empty".to_string(),
+                    },
+                    start,
+                ));
+            }
+
+            if contains_nul(&proof.proof_hash) {
+                self.emit(
+                    "PROOF_INVALID",
+                    claim,
+                    Some(required_type.clone()),
+                    Some("proof_hash_contains_nul".to_string()),
+                    input.available_markers.len(),
+                    input.proofs.len(),
+                );
+                return Ok(self.deny(
+                    claim,
+                    ClaimDenialReason::ProofInvalid {
+                        proof_type: required_type.clone(),
+                        detail: "proof_hash_contains_nul".to_string(),
+                    },
+                    start,
+                ));
+            }
+
             if !proof.verified {
                 self.emit(
                     "PROOF_INVALID",
@@ -449,14 +487,24 @@ fn validate_config(config: &DurableClaimGateConfig) -> Result<(), DurableClaimGa
 }
 
 fn validate_claim(claim: &DurableClaim) -> Result<(), DurableClaimGateError> {
-    if claim.claim_id.is_empty() {
+    if claim.claim_id.trim().is_empty() {
         return Err(DurableClaimGateError::InvalidClaim {
             reason: "claim_id must not be empty".to_string(),
         });
     }
-    if claim.claim_hash.is_empty() {
+    if contains_nul(&claim.claim_id) {
+        return Err(DurableClaimGateError::InvalidClaim {
+            reason: "claim_id must not contain NUL bytes".to_string(),
+        });
+    }
+    if claim.claim_hash.trim().is_empty() {
         return Err(DurableClaimGateError::InvalidClaim {
             reason: "claim_hash must not be empty".to_string(),
+        });
+    }
+    if contains_nul(&claim.claim_hash) {
+        return Err(DurableClaimGateError::InvalidClaim {
+            reason: "claim_hash must not contain NUL bytes".to_string(),
         });
     }
     if claim.required_proofs.is_empty() {
@@ -464,7 +512,37 @@ fn validate_claim(claim: &DurableClaim) -> Result<(), DurableClaimGateError> {
             reason: "required_proofs must not be empty".to_string(),
         });
     }
+    for marker_id in &claim.required_markers {
+        if marker_id.trim().is_empty() {
+            return Err(DurableClaimGateError::InvalidClaim {
+                reason: "required_markers must not contain empty marker ids".to_string(),
+            });
+        }
+        if contains_nul(marker_id) {
+            return Err(DurableClaimGateError::InvalidClaim {
+                reason: "required_markers must not contain NUL bytes".to_string(),
+            });
+        }
+    }
+    for proof_type in &claim.required_proofs {
+        if let ProofType::Custom(value) = proof_type {
+            if value.trim().is_empty() {
+                return Err(DurableClaimGateError::InvalidClaim {
+                    reason: "custom proof type must not be empty".to_string(),
+                });
+            }
+            if contains_nul(value) {
+                return Err(DurableClaimGateError::InvalidClaim {
+                    reason: "custom proof type must not contain NUL bytes".to_string(),
+                });
+            }
+        }
+    }
     Ok(())
+}
+
+fn contains_nul(value: &str) -> bool {
+    value.as_bytes().contains(&0)
 }
 
 fn hash_witnesses(proof_hashes: &[String]) -> String {
@@ -480,8 +558,12 @@ fn hash_witnesses(proof_hashes: &[String]) -> String {
 
 /// Push an item to a bounded Vec, evicting oldest entries if at capacity.
 fn push_bounded<T>(vec: &mut Vec<T>, item: T, max: usize) {
+    if max == 0 {
+        vec.clear();
+        return;
+    }
     if vec.len() >= max {
-        let overflow = vec.len() - max + 1;
+        let overflow = vec.len().saturating_sub(max).saturating_add(1);
         vec.drain(0..overflow);
     }
     vec.push(item);
@@ -633,6 +715,427 @@ mod tests {
         let decision = gate.evaluate_claim(&base_claim(), &input, 10).unwrap();
         let reason = decision.denial_reason.unwrap();
         assert_eq!(reason.code(), "CLAIM_MARKER_UNAVAILABLE");
+    }
+
+    #[test]
+    fn zero_timeout_config_is_rejected() {
+        let err = DurableClaimGate::new(DurableClaimGateConfig {
+            verification_timeout_ms: 0,
+            freshness_window_epochs: 1,
+        })
+        .expect_err("zero timeout must be rejected");
+
+        assert_eq!(err.code(), "CLAIM_GATE_INVALID_CONFIG");
+        assert_eq!(
+            err,
+            DurableClaimGateError::InvalidConfig {
+                reason: "verification_timeout_ms must be > 0".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn zero_freshness_window_config_is_rejected() {
+        let err = DurableClaimGate::new(DurableClaimGateConfig {
+            verification_timeout_ms: 1,
+            freshness_window_epochs: 0,
+        })
+        .expect_err("zero freshness window must be rejected");
+
+        assert_eq!(err.code(), "CLAIM_GATE_INVALID_CONFIG");
+        assert_eq!(
+            err,
+            DurableClaimGateError::InvalidConfig {
+                reason: "freshness_window_epochs must be > 0".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn empty_claim_id_is_rejected_before_event_emission() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut claim = base_claim();
+        claim.claim_id.clear();
+
+        let err = gate
+            .evaluate_claim(&claim, &valid_input(), 10)
+            .expect_err("empty claim id must be rejected");
+
+        assert_eq!(err.code(), "CLAIM_GATE_INVALID_CLAIM");
+        assert_eq!(
+            err,
+            DurableClaimGateError::InvalidClaim {
+                reason: "claim_id must not be empty".to_string(),
+            }
+        );
+        assert!(gate.events().is_empty());
+    }
+
+    #[test]
+    fn empty_claim_hash_is_rejected_before_event_emission() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut claim = base_claim();
+        claim.claim_hash.clear();
+
+        let err = gate
+            .evaluate_claim(&claim, &valid_input(), 10)
+            .expect_err("empty claim hash must be rejected");
+
+        assert_eq!(
+            err,
+            DurableClaimGateError::InvalidClaim {
+                reason: "claim_hash must not be empty".to_string(),
+            }
+        );
+        assert!(gate.events().is_empty());
+    }
+
+    #[test]
+    fn claim_without_required_proofs_is_rejected_before_event_emission() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut claim = base_claim();
+        claim.required_proofs.clear();
+
+        let err = gate
+            .evaluate_claim(&claim, &valid_input(), 10)
+            .expect_err("claim without required proofs must be rejected");
+
+        assert_eq!(
+            err,
+            DurableClaimGateError::InvalidClaim {
+                reason: "required_proofs must not be empty".to_string(),
+            }
+        );
+        assert!(gate.events().is_empty());
+    }
+
+    #[test]
+    fn whitespace_claim_id_is_rejected_before_event_emission() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut claim = base_claim();
+        claim.claim_id = " \t\n ".to_string();
+
+        let err = gate
+            .evaluate_claim(&claim, &valid_input(), 10)
+            .expect_err("whitespace claim id must be rejected");
+
+        assert_eq!(
+            err,
+            DurableClaimGateError::InvalidClaim {
+                reason: "claim_id must not be empty".to_string(),
+            }
+        );
+        assert!(gate.events().is_empty());
+    }
+
+    #[test]
+    fn claim_id_with_nul_is_rejected_before_event_emission() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut claim = base_claim();
+        claim.claim_id = "claim\0id".to_string();
+
+        let err = gate
+            .evaluate_claim(&claim, &valid_input(), 10)
+            .expect_err("claim id containing NUL must be rejected");
+
+        assert_eq!(
+            err,
+            DurableClaimGateError::InvalidClaim {
+                reason: "claim_id must not contain NUL bytes".to_string(),
+            }
+        );
+        assert!(gate.events().is_empty());
+    }
+
+    #[test]
+    fn whitespace_claim_hash_is_rejected_before_event_emission() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut claim = base_claim();
+        claim.claim_hash = " \t ".to_string();
+
+        let err = gate
+            .evaluate_claim(&claim, &valid_input(), 10)
+            .expect_err("whitespace claim hash must be rejected");
+
+        assert_eq!(
+            err,
+            DurableClaimGateError::InvalidClaim {
+                reason: "claim_hash must not be empty".to_string(),
+            }
+        );
+        assert!(gate.events().is_empty());
+    }
+
+    #[test]
+    fn claim_hash_with_nul_is_rejected_before_event_emission() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut claim = base_claim();
+        claim.claim_hash = "claim\0hash".to_string();
+
+        let err = gate
+            .evaluate_claim(&claim, &valid_input(), 10)
+            .expect_err("claim hash containing NUL must be rejected");
+
+        assert_eq!(
+            err,
+            DurableClaimGateError::InvalidClaim {
+                reason: "claim_hash must not contain NUL bytes".to_string(),
+            }
+        );
+        assert!(gate.events().is_empty());
+    }
+
+    #[test]
+    fn marker_with_empty_id_is_rejected_before_event_emission() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut claim = base_claim();
+        claim.required_markers = vec!["marker-a".to_string(), " ".to_string()];
+
+        let err = gate
+            .evaluate_claim(&claim, &valid_input(), 10)
+            .expect_err("empty marker id must be rejected");
+
+        assert_eq!(
+            err,
+            DurableClaimGateError::InvalidClaim {
+                reason: "required_markers must not contain empty marker ids".to_string(),
+            }
+        );
+        assert!(gate.events().is_empty());
+    }
+
+    #[test]
+    fn marker_with_nul_is_rejected_before_event_emission() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut claim = base_claim();
+        claim.required_markers = vec!["marker-a".to_string(), "marker\0b".to_string()];
+
+        let err = gate
+            .evaluate_claim(&claim, &valid_input(), 10)
+            .expect_err("marker id containing NUL must be rejected");
+
+        assert_eq!(
+            err,
+            DurableClaimGateError::InvalidClaim {
+                reason: "required_markers must not contain NUL bytes".to_string(),
+            }
+        );
+        assert!(gate.events().is_empty());
+    }
+
+    #[test]
+    fn custom_proof_type_with_blank_name_is_rejected_before_event_emission() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut claim = base_claim();
+        claim
+            .required_proofs
+            .push(ProofType::Custom(" \t ".to_string()));
+
+        let err = gate
+            .evaluate_claim(&claim, &valid_input(), 10)
+            .expect_err("blank custom proof type must be rejected");
+
+        assert_eq!(
+            err,
+            DurableClaimGateError::InvalidClaim {
+                reason: "custom proof type must not be empty".to_string(),
+            }
+        );
+        assert!(gate.events().is_empty());
+    }
+
+    #[test]
+    fn custom_proof_type_with_nul_is_rejected_before_event_emission() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut claim = base_claim();
+        claim
+            .required_proofs
+            .push(ProofType::Custom("custom\0proof".to_string()));
+
+        let err = gate
+            .evaluate_claim(&claim, &valid_input(), 10)
+            .expect_err("custom proof type containing NUL must be rejected");
+
+        assert_eq!(
+            err,
+            DurableClaimGateError::InvalidClaim {
+                reason: "custom proof type must not contain NUL bytes".to_string(),
+            }
+        );
+        assert!(gate.events().is_empty());
+    }
+
+    #[test]
+    fn proof_with_empty_proof_hash_is_rejected_as_invalid() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut input = valid_input();
+        input.proofs[0].proof_hash = " \t ".to_string();
+
+        let decision = gate.evaluate_claim(&base_claim(), &input, 10).unwrap();
+
+        assert!(!decision.accepted);
+        assert_eq!(
+            decision.denial_reason,
+            Some(ClaimDenialReason::ProofInvalid {
+                proof_type: ProofType::MerkleInclusion,
+                detail: "proof_hash_empty".to_string(),
+            })
+        );
+        assert_eq!(
+            gate.events()
+                .iter()
+                .find(|event| event.event_code == "PROOF_INVALID")
+                .and_then(|event| event.denial_reason.as_deref()),
+            Some("proof_hash_empty")
+        );
+    }
+
+    #[test]
+    fn proof_hash_with_nul_is_rejected_as_invalid() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut input = valid_input();
+        input.proofs[0].proof_hash = "proof\0hash".to_string();
+
+        let decision = gate.evaluate_claim(&base_claim(), &input, 10).unwrap();
+
+        assert!(!decision.accepted);
+        assert_eq!(
+            decision.denial_reason,
+            Some(ClaimDenialReason::ProofInvalid {
+                proof_type: ProofType::MerkleInclusion,
+                detail: "proof_hash_contains_nul".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_without_retaining_new_item() {
+        let mut values = vec![1, 2, 3];
+
+        push_bounded(&mut values, 4, 0);
+
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn timeout_at_exact_config_boundary_fails_closed() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig {
+            verification_timeout_ms: 10,
+            freshness_window_epochs: 1,
+        })
+        .unwrap();
+        let mut input = valid_input();
+        input.simulated_elapsed_ms = 10;
+
+        let decision = gate.evaluate_claim(&base_claim(), &input, 10).unwrap();
+
+        assert!(!decision.accepted);
+        assert_eq!(
+            decision.denial_reason,
+            Some(ClaimDenialReason::ProofVerificationTimeout {
+                timeout_ms: 10,
+                elapsed_ms: 10,
+            })
+        );
+    }
+
+    #[test]
+    fn incomplete_verification_takes_priority_over_missing_markers() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut input = valid_input();
+        input.verification_complete = false;
+        input.available_markers.clear();
+
+        let decision = gate.evaluate_claim(&base_claim(), &input, 10).unwrap();
+
+        assert!(!decision.accepted);
+        assert!(matches!(
+            decision.denial_reason,
+            Some(ClaimDenialReason::ProofVerificationTimeout { .. })
+        ));
+    }
+
+    #[test]
+    fn proof_with_wrong_claim_id_is_treated_as_missing() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut input = valid_input();
+        input.proofs[0].claim_id = "claim-2".to_string();
+
+        let decision = gate.evaluate_claim(&base_claim(), &input, 10).unwrap();
+
+        assert!(!decision.accepted);
+        assert_eq!(
+            decision.denial_reason,
+            Some(ClaimDenialReason::ProofMissing {
+                proof_type: ProofType::MerkleInclusion,
+            })
+        );
+    }
+
+    #[test]
+    fn proof_issued_in_future_is_rejected_as_expired() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut input = valid_input();
+        input.proofs[0].issued_at_epoch = 11;
+        input.proofs[0].expires_at_epoch = 20;
+
+        let decision = gate.evaluate_claim(&base_claim(), &input, 10).unwrap();
+
+        assert!(!decision.accepted);
+        assert_eq!(
+            decision.denial_reason,
+            Some(ClaimDenialReason::ProofExpired {
+                proof_type: ProofType::MerkleInclusion,
+                proof_epoch: 11,
+                current_epoch: 10,
+            })
+        );
+    }
+
+    #[test]
+    fn proof_at_freshness_window_boundary_is_rejected() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig {
+            verification_timeout_ms: 1000,
+            freshness_window_epochs: 2,
+        })
+        .unwrap();
+        let mut input = valid_input();
+        for proof in &mut input.proofs {
+            proof.issued_at_epoch = 10;
+            proof.expires_at_epoch = 20;
+        }
+
+        let decision = gate.evaluate_claim(&base_claim(), &input, 12).unwrap();
+
+        assert!(!decision.accepted);
+        assert_eq!(
+            decision.denial_reason,
+            Some(ClaimDenialReason::ProofExpired {
+                proof_type: ProofType::MerkleInclusion,
+                proof_epoch: 10,
+                current_epoch: 12,
+            })
+        );
+    }
+
+    #[test]
+    fn denied_claim_updates_status_and_emits_rejection_event() {
+        let mut gate = DurableClaimGate::new(DurableClaimGateConfig::default()).unwrap();
+        let mut input = valid_input();
+        input.proofs[0].verified = false;
+
+        let decision = gate.evaluate_claim(&base_claim(), &input, 10).unwrap();
+        let status = gate.claim_gate_status();
+        let last_event = gate.events().last().expect("rejection event");
+
+        assert!(!decision.accepted);
+        assert_eq!(status.last_event_code, "CLAIM_REJECTED");
+        assert_eq!(status.last_denial_reason, decision.denial_reason);
+        assert_eq!(last_event.event_code, "CLAIM_REJECTED");
+        assert_eq!(
+            last_event.denial_reason.as_deref(),
+            Some("CLAIM_PROOF_INVALID")
+        );
     }
 
     #[test]

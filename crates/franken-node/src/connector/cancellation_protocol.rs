@@ -733,8 +733,12 @@ pub fn generate_timing_csv(rows: &[TimingRow]) -> String {
 
 /// Push an item to a bounded Vec, evicting oldest entries if at capacity.
 fn push_bounded<T>(vec: &mut Vec<T>, item: T, max: usize) {
+    if max == 0 {
+        vec.clear();
+        return;
+    }
     if vec.len() >= max {
-        let overflow = vec.len() - max + 1;
+        let overflow = vec.len().saturating_sub(max).saturating_add(1);
         vec.drain(0..overflow);
     }
     vec.push(item);
@@ -839,6 +843,27 @@ mod tests {
         rt.acquire("b");
         rt.acquire("b");
         assert_eq!(rt.release_all(), 3);
+        assert!(!rt.has_leaks());
+    }
+
+    #[test]
+    fn resource_tracker_release_unknown_resource_is_rejected() {
+        let mut rt = ResourceTracker::new();
+        rt.acquire("known");
+
+        assert!(!rt.release("missing"));
+        assert_eq!(rt.held_count(), 1);
+        assert!(rt.has_leaks());
+    }
+
+    #[test]
+    fn resource_tracker_double_release_is_rejected_without_underflow() {
+        let mut rt = ResourceTracker::new();
+        rt.acquire("conn");
+
+        assert!(rt.release("conn"));
+        assert!(!rt.release("conn"));
+        assert_eq!(rt.held_count(), 0);
         assert!(!rt.has_leaks());
     }
 
@@ -974,6 +999,78 @@ mod tests {
         assert_eq!(err, "ERR_CANCEL_INVALID_PHASE");
     }
 
+    #[test]
+    fn request_from_draining_is_rejected_without_phase_change() {
+        let mut proto = make_protocol("test", 3000);
+        proto.request().unwrap();
+        proto.drain(100).unwrap();
+
+        let err = proto.request().unwrap_err();
+
+        assert_eq!(err, "ERR_CANCEL_INVALID_PHASE");
+        assert_eq!(proto.phase(), CancellationPhase::Draining);
+    }
+
+    #[test]
+    fn drain_from_draining_is_rejected_without_duplicate_events() {
+        let mut proto = make_protocol("test", 3000);
+        proto.request().unwrap();
+        proto.drain(100).unwrap();
+        let events_before = proto.audit_log().len();
+
+        let err = proto.drain(100).unwrap_err();
+
+        assert_eq!(err, "ERR_CANCEL_INVALID_PHASE");
+        assert_eq!(proto.phase(), CancellationPhase::Draining);
+        assert_eq!(proto.audit_log().len(), events_before);
+    }
+
+    #[test]
+    fn finalize_from_requested_is_rejected_without_releasing_resources() {
+        let mut proto = make_protocol("test", 3000);
+        proto.resource_guard_mut().acquire("conn");
+        proto.request().unwrap();
+
+        let err = proto.finalize().unwrap_err();
+
+        assert_eq!(err, "ERR_CANCEL_INVALID_PHASE");
+        assert_eq!(proto.phase(), CancellationPhase::Requested);
+        assert!(proto.resource_guard().has_leaks());
+    }
+
+    #[test]
+    fn drain_after_completed_fails_already_final() {
+        let mut proto = make_protocol("test", 3000);
+        proto.run_full(100).unwrap();
+
+        let err = proto.drain(100).unwrap_err();
+
+        assert_eq!(err, "ERR_CANCEL_ALREADY_FINAL");
+        assert_eq!(proto.phase(), CancellationPhase::Completed);
+    }
+
+    #[test]
+    fn finalize_after_completed_fails_already_final() {
+        let mut proto = make_protocol("test", 3000);
+        proto.run_full(100).unwrap();
+
+        let err = proto.finalize().unwrap_err();
+
+        assert_eq!(err, "ERR_CANCEL_ALREADY_FINAL");
+        assert_eq!(proto.phase(), CancellationPhase::Completed);
+    }
+
+    #[test]
+    fn run_full_timeout_force_finalizes_then_reports_already_final() {
+        let mut proto = make_protocol("test", 100);
+
+        let err = proto.run_full(100).unwrap_err();
+
+        assert_eq!(err, "ERR_CANCEL_ALREADY_FINAL");
+        assert!(proto.was_force_finalized());
+        assert_eq!(proto.phase(), CancellationPhase::Completed);
+    }
+
     // ── Protocol: child propagation ──────────────────────────────────────
 
     #[test]
@@ -985,6 +1082,16 @@ mod tests {
         proto.complete_child();
         assert_eq!(proto.inflight_children(), 1);
         proto.complete_child();
+        assert_eq!(proto.inflight_children(), 0);
+    }
+
+    #[test]
+    fn completing_child_without_registration_stays_at_zero() {
+        let mut proto = make_protocol("lifecycle", 5000);
+
+        proto.complete_child();
+        proto.complete_child();
+
         assert_eq!(proto.inflight_children(), 0);
     }
 
@@ -1098,5 +1205,144 @@ mod tests {
         assert!(result.force_finalized);
         assert_eq!(result.to, CancellationPhase::Completed);
         assert!(proto.is_completed());
+    }
+
+    #[test]
+    fn drain_at_exact_budget_force_finalizes_fail_closed() {
+        let mut proto = make_protocol("exact-budget", 100);
+        proto.request().unwrap();
+
+        let result = proto.drain(100).unwrap();
+
+        assert!(result.force_finalized);
+        assert_eq!(result.from, CancellationPhase::Requested);
+        assert_eq!(result.to, CancellationPhase::Completed);
+        assert_eq!(result.event_code, event_codes::CAN_004);
+        assert_eq!(
+            result.error,
+            Some(error_codes::ERR_CANCEL_DRAIN_TIMEOUT.to_string())
+        );
+        assert!(proto.was_force_finalized());
+    }
+
+    #[test]
+    fn duplicate_request_does_not_append_audit_event() {
+        let mut proto = make_protocol("dup-request", 3000);
+        proto.request().unwrap();
+        let events_before = proto.audit_log().len();
+
+        let result = proto.request().unwrap();
+
+        assert_eq!(result.from, CancellationPhase::Requested);
+        assert_eq!(result.to, CancellationPhase::Requested);
+        assert_eq!(proto.audit_log().len(), events_before);
+    }
+
+    #[test]
+    fn finalize_from_idle_does_not_append_audit_event() {
+        let mut proto = make_protocol("idle-finalize", 3000);
+
+        let err = proto.finalize().unwrap_err();
+
+        assert_eq!(err, error_codes::ERR_CANCEL_INVALID_PHASE);
+        assert_eq!(proto.phase(), CancellationPhase::Idle);
+        assert!(proto.audit_log().is_empty());
+    }
+
+    #[test]
+    fn request_after_manual_force_finalize_fails_already_final() {
+        let mut proto = make_protocol("manual-force", 3000);
+        proto.resource_guard_mut().acquire("conn");
+        let result = proto.force_finalize();
+
+        let err = proto.request().unwrap_err();
+
+        assert_eq!(result.error, Some(error_codes::ERR_CANCEL_LEAK.to_string()));
+        assert_eq!(err, error_codes::ERR_CANCEL_ALREADY_FINAL);
+        assert_eq!(proto.phase(), CancellationPhase::Completed);
+        assert!(!proto.resource_guard().has_leaks());
+    }
+
+    #[test]
+    fn force_finalize_from_idle_with_leak_records_leak_before_finalize() {
+        let mut proto = make_protocol("idle-force-leak", 3000);
+        proto.resource_guard_mut().acquire("socket");
+
+        let result = proto.force_finalize();
+
+        assert!(result.force_finalized);
+        assert_eq!(result.from, CancellationPhase::Idle);
+        assert_eq!(result.error, Some(error_codes::ERR_CANCEL_LEAK.to_string()));
+        assert_eq!(proto.audit_log()[0].event_code, event_codes::CAN_006);
+        assert_eq!(proto.audit_log()[1].event_code, event_codes::CAN_005);
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_without_appending() {
+        let mut items = vec!["old"];
+
+        push_bounded(&mut items, "new", 0);
+
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn push_bounded_overfull_vector_trims_to_capacity() {
+        let mut items = vec![1, 2, 3, 4];
+
+        push_bounded(&mut items, 5, 2);
+
+        assert_eq!(items, vec![4, 5]);
+    }
+
+    #[test]
+    fn push_bounded_exact_capacity_evicts_oldest_entry() {
+        let mut items = vec!["first", "second"];
+
+        push_bounded(&mut items, "third", 2);
+
+        assert_eq!(items, vec!["second", "third"]);
+    }
+
+    #[test]
+    fn push_bounded_capacity_one_keeps_only_newest_entry() {
+        let mut items = vec!["stale"];
+
+        push_bounded(&mut items, "fresh", 1);
+
+        assert_eq!(items, vec!["fresh"]);
+    }
+
+    #[test]
+    fn zero_timeout_budget_drain_force_finalizes_immediately() {
+        let mut proto = make_protocol("zero-timeout", 0);
+        proto.request().unwrap();
+
+        let result = proto.drain(0).unwrap();
+
+        assert!(result.force_finalized);
+        assert_eq!(result.to, CancellationPhase::Completed);
+        assert_eq!(
+            result.error,
+            Some(error_codes::ERR_CANCEL_DRAIN_TIMEOUT.to_string())
+        );
+        assert!(proto.was_force_finalized());
+    }
+
+    #[test]
+    fn export_audit_log_jsonl_empty_before_events() {
+        let proto = make_protocol("empty-audit", 3000);
+
+        assert_eq!(proto.export_audit_log_jsonl(), "");
+    }
+
+    #[test]
+    fn timing_csv_empty_rows_contains_only_header() {
+        let csv = generate_timing_csv(&[]);
+
+        assert_eq!(
+            csv,
+            "workflow_id,phase,budget_ms,actual_ms,within_budget,resources_released\n"
+        );
     }
 }

@@ -1704,4 +1704,165 @@ mod tests {
         let action2 = sup.handle_failure("worker-1").unwrap();
         assert!(matches!(action2, SupervisionAction::Ignore));
     }
+
+    #[test]
+    fn test_duplicate_child_error_preserves_original_record_and_event_log() {
+        let mut sup = make_supervisor();
+        let mut original = make_spec("worker-1");
+        original.shutdown_timeout_ms = 10;
+        sup.add_child(original.clone()).unwrap();
+        let event_len = sup.events().len();
+        let next_order = sup.next_order;
+
+        let mut replacement = make_spec("worker-1");
+        replacement.shutdown_timeout_ms = 0;
+        let err = sup.add_child(replacement).unwrap_err();
+
+        assert_eq!(
+            err,
+            SupervisionError::DuplicateChild {
+                name: "worker-1".to_string()
+            }
+        );
+        assert_eq!(sup.child_count(), 1);
+        assert_eq!(sup.next_order, next_order);
+        assert_eq!(sup.events().len(), event_len);
+        let stored = sup.children.get("worker-1").unwrap();
+        assert_eq!(stored.spec, original);
+        assert_eq!(stored.state, ChildState::Running);
+    }
+
+    #[test]
+    fn test_remove_missing_child_preserves_existing_children_and_events() {
+        let mut sup = make_supervisor();
+        sup.add_child(make_spec("worker-1")).unwrap();
+        let event_len = sup.events().len();
+
+        let err = sup.remove_child("missing").unwrap_err();
+
+        assert_eq!(
+            err,
+            SupervisionError::ChildNotFound {
+                name: "missing".to_string()
+            }
+        );
+        assert_eq!(sup.child_count(), 1);
+        assert_eq!(sup.child_state("worker-1"), Some(ChildState::Running));
+        assert_eq!(sup.events().len(), event_len);
+    }
+
+    #[test]
+    fn test_handle_failure_rejects_stopped_child_without_failure_event() {
+        let mut sup = make_supervisor();
+        sup.add_child(make_spec("worker-1")).unwrap();
+        sup.children.get_mut("worker-1").unwrap().state = ChildState::Stopped;
+        let event_len = sup.events().len();
+
+        let err = sup.handle_failure("worker-1").unwrap_err();
+
+        assert_eq!(
+            err,
+            SupervisionError::InvalidFailureState {
+                name: "worker-1".to_string(),
+                state: "Stopped".to_string()
+            }
+        );
+        assert_eq!(sup.child_state("worker-1"), Some(ChildState::Stopped));
+        assert!(sup.restart_timestamps.is_empty());
+        assert_eq!(sup.escalation_depth, 0);
+        assert_eq!(sup.events().len(), event_len);
+    }
+
+    #[test]
+    fn test_steady_clock_rejects_manual_advance_without_state_mutation() {
+        let mut sup = Supervisor::new(SupervisionStrategy::OneForOne, 2, 1_000, 1);
+        sup.add_child(make_spec("worker-1")).unwrap();
+        let event_len = sup.events().len();
+        let child_count = sup.child_count();
+
+        let err = sup.advance_clock_ms(1).unwrap_err();
+
+        assert_eq!(err, SupervisionClockError::ManualControlUnavailable);
+        assert_eq!(sup.child_count(), child_count);
+        assert_eq!(sup.child_state("worker-1"), Some(ChildState::Running));
+        assert_eq!(sup.events().len(), event_len);
+    }
+
+    #[test]
+    fn test_steady_clock_rejects_manual_set_without_event_mutation() {
+        let mut sup = Supervisor::new(SupervisionStrategy::OneForOne, 2, 1_000, 1);
+        let event_len = sup.events().len();
+
+        let err = sup.set_clock_ms(500).unwrap_err();
+
+        assert_eq!(err, SupervisionClockError::ManualControlUnavailable);
+        assert_eq!(sup.events().len(), event_len);
+        assert_eq!(sup.child_count(), 0);
+        assert!(sup.restart_timestamps.is_empty());
+    }
+
+    #[test]
+    fn test_zero_restart_budget_escalates_without_recording_restart() {
+        let mut sup =
+            Supervisor::with_deterministic_clock(SupervisionStrategy::OneForOne, 0, 1_000, 3, 0);
+        sup.add_child(make_spec("worker-1")).unwrap();
+
+        let action = sup.handle_failure("worker-1").unwrap();
+
+        assert!(matches!(action, SupervisionAction::Escalate { .. }));
+        assert_eq!(sup.child_state("worker-1"), Some(ChildState::Failed));
+        assert!(sup.restart_timestamps.is_empty());
+        assert_eq!(sup.escalation_depth, 1);
+        assert!(sup.events().iter().any(|event| {
+            matches!(
+                event,
+                SupervisionEvent::BudgetExhausted {
+                    restart_count: 0,
+                    max_restarts: 0
+                }
+            )
+        }));
+    }
+
+    #[test]
+    fn test_zero_escalation_depth_shutdown_does_not_restart_child() {
+        let mut sup =
+            Supervisor::with_deterministic_clock(SupervisionStrategy::OneForOne, 0, 1_000, 0, 0);
+        sup.add_child(make_spec("worker-1")).unwrap();
+
+        let action = sup.handle_failure("worker-1").unwrap();
+
+        assert!(matches!(action, SupervisionAction::Shutdown { .. }));
+        assert_eq!(sup.child_state("worker-1"), Some(ChildState::Failed));
+        assert!(sup.restart_timestamps.is_empty());
+        assert_eq!(sup.escalation_depth, 1);
+        assert!(sup.events().iter().any(|event| {
+            matches!(
+                event,
+                SupervisionEvent::Escalation {
+                    depth: 1,
+                    max_depth: 0
+                }
+            )
+        }));
+    }
+
+    #[test]
+    fn test_health_status_with_expired_restart_window_is_observational_only() {
+        let mut sup =
+            Supervisor::with_deterministic_clock(SupervisionStrategy::OneForOne, 2, 10, 3, 0);
+        sup.add_child(make_spec("worker-1")).unwrap();
+        sup.handle_failure("worker-1").unwrap();
+        sup.advance_clock_ms(11).unwrap();
+        let event_len = sup.events().len();
+        let retained_restart_timestamps = sup.restart_timestamps.len();
+
+        let health = sup.health_status();
+
+        assert_eq!(health.restart_count, 0);
+        assert_eq!(health.budget_remaining, 2);
+        assert_eq!(health.oldest_restart_age_ms, None);
+        assert_eq!(sup.restart_timestamps.len(), retained_restart_timestamps);
+        assert_eq!(sup.events().len(), event_len);
+    }
 }

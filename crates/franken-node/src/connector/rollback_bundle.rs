@@ -1085,6 +1085,63 @@ mod tests {
     }
 
     #[test]
+    fn verify_integrity_rejects_manifest_component_missing_from_bundle() {
+        let (_store, mut bundle) = make_store_and_bundle();
+        bundle
+            .components
+            .retain(|component| component.name != "config_diff");
+
+        let err = bundle.verify_integrity().unwrap_err();
+
+        assert!(matches!(err, RollbackBundleError::ManifestInvalid { .. }));
+        assert!(
+            err.to_string()
+                .contains("listed in manifest but not in bundle")
+        );
+    }
+
+    #[test]
+    fn verify_integrity_rejects_bundle_component_missing_from_manifest() {
+        let (_store, mut bundle) = make_store_and_bundle();
+        bundle.components.push(BundleComponent::new(
+            "unlisted_component",
+            99,
+            b"extra".to_vec(),
+        ));
+
+        let err = bundle.verify_integrity().unwrap_err();
+
+        assert!(matches!(err, RollbackBundleError::ManifestInvalid { .. }));
+        assert!(err.to_string().contains("not listed in manifest"));
+    }
+
+    #[test]
+    fn verify_integrity_rejects_component_checksum_field_drift() {
+        let (_store, mut bundle) = make_store_and_bundle();
+        bundle.components[0].checksum = sha256_hex(b"different component bytes");
+
+        let err = bundle.verify_integrity().unwrap_err();
+
+        assert!(matches!(err, RollbackBundleError::ChecksumMismatch { .. }));
+        assert!(err.to_string().contains("ERR-RRB-CHECKSUM-MISMATCH"));
+    }
+
+    #[test]
+    fn verify_integrity_rejects_manifest_checksum_drift_after_rehash() {
+        let (_store, mut bundle) = make_store_and_bundle();
+        bundle.manifest.components[0].checksum = sha256_hex(b"manifest-only drift");
+        bundle.integrity_hash = bundle
+            .manifest
+            .integrity_hash()
+            .expect("rehash drifted manifest");
+
+        let err = bundle.verify_integrity().unwrap_err();
+
+        assert!(matches!(err, RollbackBundleError::ChecksumMismatch { .. }));
+        assert!(err.to_string().contains("ERR-RRB-CHECKSUM-MISMATCH"));
+    }
+
+    #[test]
     fn test_bundle_component_tampered_in_bundle() {
         let (_store, mut bundle) = make_store_and_bundle();
         bundle.components[0].data = b"tampered".to_vec();
@@ -1218,6 +1275,98 @@ mod tests {
         );
         assert!(!result.success);
         assert!(!result.errors.is_empty());
+    }
+
+    #[test]
+    fn failed_integrity_rollback_leaves_state_and_actions_empty() {
+        let (mut store, mut bundle) = make_store_and_bundle();
+        let pre_upgrade = make_snapshot("1.4.1");
+        let initial_state = make_snapshot("1.4.2");
+        store.set_state(initial_state.clone());
+        let replacement = if bundle.integrity_hash.starts_with('0') {
+            "1"
+        } else {
+            "0"
+        };
+        bundle.integrity_hash.replace_range(0..1, replacement);
+        store.take_events();
+
+        let result = store.apply_rollback(
+            &bundle,
+            "1.4.2",
+            RollbackMode::Apply,
+            &pre_upgrade,
+            "2026-02-20T13:00:00Z",
+        );
+
+        assert!(!result.success);
+        assert!(result.actions.is_empty());
+        assert!(result.health_results.is_empty());
+        assert!(matches!(
+            result.errors.first(),
+            Some(RollbackBundleError::ManifestInvalid { .. })
+        ));
+        assert_eq!(store.current_state(), Some(&initial_state));
+        assert!(
+            store
+                .events()
+                .contains(&event_codes::RRB_004_ROLLBACK_FAILED.to_string())
+        );
+    }
+
+    #[test]
+    fn failed_health_check_apply_reverts_to_pre_rollback_state() {
+        let (mut store, bundle) = make_store_and_bundle();
+        let initial_state = make_snapshot("1.4.2");
+        let incompatible_restore = make_snapshot("1.4.0");
+        store.set_state(initial_state.clone());
+
+        let result = store.apply_rollback(
+            &bundle,
+            "1.4.2",
+            RollbackMode::Apply,
+            &incompatible_restore,
+            "2026-02-20T13:00:00Z",
+        );
+
+        assert!(!result.success);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|error| matches!(error, RollbackBundleError::HealthCheckFailed { .. }))
+        );
+        assert_eq!(store.current_state(), Some(&initial_state));
+        assert!(
+            store
+                .events()
+                .contains(&event_codes::RRB_004_ROLLBACK_FAILED.to_string())
+        );
+    }
+
+    #[test]
+    fn failed_health_check_dry_run_preserves_current_state() {
+        let (mut store, bundle) = make_store_and_bundle();
+        let initial_state = make_snapshot("1.4.2");
+        let incompatible_restore = make_snapshot("1.4.0");
+        store.set_state(initial_state.clone());
+
+        let result = store.apply_rollback(
+            &bundle,
+            "1.4.2",
+            RollbackMode::DryRun,
+            &incompatible_restore,
+            "2026-02-20T13:00:00Z",
+        );
+
+        assert!(!result.success);
+        assert!(result.actions.iter().all(|action| !action.applied));
+        assert_eq!(store.current_state(), Some(&initial_state));
+        assert!(
+            store
+                .events()
+                .contains(&event_codes::RRB_004_ROLLBACK_FAILED.to_string())
+        );
     }
 
     #[test]
@@ -1431,6 +1580,13 @@ mod tests {
         assert_eq!(dry_run, "\"dry_run\"");
         let decoded: RollbackMode = serde_json::from_str(&apply).unwrap();
         assert_eq!(decoded, RollbackMode::Apply);
+    }
+
+    #[test]
+    fn rollback_mode_serde_rejects_unknown_mode() {
+        let err = serde_json::from_str::<RollbackMode>("\"preview\"").unwrap_err();
+
+        assert!(err.to_string().contains("unknown rollback mode"));
     }
 
     #[test]

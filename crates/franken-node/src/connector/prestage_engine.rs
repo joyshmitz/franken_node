@@ -405,6 +405,95 @@ mod tests {
     }
 
     #[test]
+    fn negative_threshold_rejected_by_validation() {
+        let cfg = PrestageConfig {
+            probability_threshold: -0.1,
+            ..config()
+        };
+
+        let err = validate_config(&cfg).unwrap_err();
+
+        assert!(matches!(err, PrestageError::ThresholdInvalid { value } if value < 0.0));
+    }
+
+    #[test]
+    fn infinite_threshold_rejected_by_validation() {
+        let cfg = PrestageConfig {
+            probability_threshold: f64::INFINITY,
+            ..config()
+        };
+
+        let err = validate_config(&cfg).unwrap_err();
+
+        assert!(matches!(
+            err,
+            PrestageError::ThresholdInvalid { value } if value.is_infinite()
+        ));
+    }
+
+    #[test]
+    fn negative_candidate_probability_not_staged() {
+        let candidates = vec![cand("a1", 100, -0.25)];
+
+        let (decisions, report) = evaluate_candidates(&candidates, &config(), "tr", "ts").unwrap();
+
+        assert!(!decisions[0].staged);
+        assert!(decisions[0].reason.contains("< threshold"));
+        assert_eq!(report.staged_count, 0);
+        assert_eq!(report.budget_used, 0);
+    }
+
+    #[test]
+    fn oversized_candidate_skipped_without_budget_use() {
+        let candidates = vec![cand("too-large", 1_001, 0.99)];
+
+        let (decisions, report) = evaluate_candidates(&candidates, &config(), "tr", "ts").unwrap();
+
+        assert!(!decisions[0].staged);
+        assert!(decisions[0].reason.contains("budget exceeded"));
+        assert_eq!(decisions[0].budget_remaining, 1_000);
+        assert_eq!(report.staged_count, 0);
+        assert_eq!(report.budget_used, 0);
+    }
+
+    #[test]
+    fn oversized_candidate_does_not_block_later_affordable_candidate() {
+        let candidates = vec![cand("too-large", 1_001, 0.99), cand("small", 10, 0.98)];
+
+        let (decisions, report) = evaluate_candidates(&candidates, &config(), "tr", "ts").unwrap();
+
+        let too_large = decisions
+            .iter()
+            .find(|decision| decision.artifact_id == "too-large")
+            .expect("oversized candidate should be evaluated");
+        let small = decisions
+            .iter()
+            .find(|decision| decision.artifact_id == "small")
+            .expect("affordable candidate should be evaluated");
+        assert!(!too_large.staged);
+        assert!(small.staged);
+        assert_eq!(report.staged_count, 1);
+        assert_eq!(report.budget_used, 10);
+    }
+
+    #[test]
+    fn max_artifacts_limit_marks_remaining_candidates_skipped() {
+        let cfg = PrestageConfig {
+            max_artifacts_per_cycle: 1,
+            ..config()
+        };
+        let candidates = vec![cand("a1", 10, 0.9), cand("a2", 10, 0.8)];
+
+        let (decisions, report) = evaluate_candidates(&candidates, &cfg, "tr", "ts").unwrap();
+
+        assert!(decisions[0].staged);
+        assert!(!decisions[1].staged);
+        assert_eq!(decisions[1].reason, "max_artifacts_per_cycle reached");
+        assert_eq!(report.staged_count, 1);
+        assert_eq!(report.skipped_count, 1);
+    }
+
+    #[test]
     fn quality_perfect() {
         let decisions = vec![PrestageDecision {
             artifact_id: "a1".into(),
@@ -452,6 +541,40 @@ mod tests {
         let q = measure_quality(&decisions, &actual);
         assert!((q.precision - 0.5).abs() < 1e-10); // 1/2 staged were needed
         assert!((q.recall - 0.5).abs() < 1e-10); // 1/2 needed were staged
+    }
+
+    #[test]
+    fn quality_no_staged_but_actual_needed_has_zero_recall() {
+        let decisions = vec![PrestageDecision {
+            artifact_id: "a1".into(),
+            staged: false,
+            reason: "below threshold".into(),
+            budget_remaining: 1000,
+        }];
+        let actual = vec!["a1".to_string()];
+
+        let q = measure_quality(&decisions, &actual);
+
+        assert!((q.precision - 0.0).abs() < 1e-10);
+        assert!((q.recall - 0.0).abs() < 1e-10);
+        assert!((q.f1_score - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn quality_staged_when_actual_empty_has_zero_precision() {
+        let decisions = vec![PrestageDecision {
+            artifact_id: "a1".into(),
+            staged: true,
+            reason: "staged".into(),
+            budget_remaining: 900,
+        }];
+        let actual = Vec::new();
+
+        let q = measure_quality(&decisions, &actual);
+
+        assert!((q.precision - 0.0).abs() < 1e-10);
+        assert!((q.recall - 1.0).abs() < 1e-10);
+        assert!((q.f1_score - 0.0).abs() < 1e-10);
     }
 
     #[test]
@@ -591,5 +714,127 @@ mod tests {
         };
         let err = evaluate_candidates(&[cand("a", 10, 0.9)], &cfg, "tr", "ts").unwrap_err();
         assert_eq!(err.code(), "PSE_THRESHOLD_INVALID");
+    }
+
+    #[test]
+    fn negative_infinite_threshold_rejected_by_validation() {
+        let cfg = PrestageConfig {
+            probability_threshold: f64::NEG_INFINITY,
+            ..config()
+        };
+
+        let err = validate_config(&cfg).unwrap_err();
+
+        assert!(matches!(err, PrestageError::ThresholdInvalid { value } if value.is_infinite()));
+    }
+
+    #[test]
+    fn threshold_just_above_one_rejected_by_validation() {
+        let cfg = PrestageConfig {
+            probability_threshold: 1.0 + f64::EPSILON,
+            ..config()
+        };
+
+        let err = validate_config(&cfg).unwrap_err();
+
+        assert!(matches!(
+            err,
+            PrestageError::ThresholdInvalid { value } if value > 1.0
+        ));
+    }
+
+    #[test]
+    fn zero_budget_validation_preserves_specific_reason() {
+        let cfg = PrestageConfig {
+            max_bytes: 0,
+            ..config()
+        };
+
+        let err = validate_config(&cfg).unwrap_err();
+
+        assert_eq!(
+            err,
+            PrestageError::InvalidConfig {
+                reason: "max_bytes must be > 0".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn zero_artifact_limit_validation_preserves_specific_reason() {
+        let cfg = PrestageConfig {
+            max_artifacts_per_cycle: 0,
+            ..config()
+        };
+
+        let err = validate_config(&cfg).unwrap_err();
+
+        assert_eq!(
+            err,
+            PrestageError::InvalidConfig {
+                reason: "max_artifacts_per_cycle must be > 0".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn saturating_budget_check_skips_overflowing_candidate() {
+        let cfg = PrestageConfig {
+            max_bytes: u64::MAX - 2,
+            probability_threshold: 0.0,
+            max_artifacts_per_cycle: 10,
+        };
+        let candidates = vec![
+            cand("almost-full", u64::MAX - 7, 1.0),
+            cand("would-overflow", 10, 0.9),
+        ];
+
+        let (decisions, report) = evaluate_candidates(&candidates, &cfg, "tr", "ts").unwrap();
+
+        let almost_full = decisions
+            .iter()
+            .find(|decision| decision.artifact_id == "almost-full")
+            .expect("first candidate should be evaluated");
+        let overflowing = decisions
+            .iter()
+            .find(|decision| decision.artifact_id == "would-overflow")
+            .expect("overflow candidate should be evaluated");
+        assert!(almost_full.staged);
+        assert!(!overflowing.staged);
+        assert!(overflowing.reason.contains("budget exceeded"));
+        assert_eq!(overflowing.budget_remaining, 5);
+        assert_eq!(report.staged_count, 1);
+        assert_eq!(report.budget_used, u64::MAX - 7);
+    }
+
+    #[test]
+    fn all_nonfinite_candidates_are_skipped_without_budget_use() {
+        let candidates = vec![
+            cand("nan", 100, f64::NAN),
+            cand("pos-inf", 100, f64::INFINITY),
+            cand("neg-inf", 100, f64::NEG_INFINITY),
+        ];
+
+        let (decisions, report) =
+            evaluate_candidates(&candidates, &config(), "tr", "ts").unwrap();
+
+        assert!(decisions.iter().all(|decision| !decision.staged));
+        assert!(decisions
+            .iter()
+            .all(|decision| decision.reason.contains("< threshold")));
+        assert_eq!(report.staged_count, 0);
+        assert_eq!(report.skipped_count, 3);
+        assert_eq!(report.budget_used, 0);
+    }
+
+    #[test]
+    fn empty_decisions_with_actual_needed_has_zero_quality() {
+        let actual = vec!["missing-artifact".to_string()];
+
+        let quality = measure_quality(&[], &actual);
+
+        assert!((quality.precision - 0.0).abs() < 1e-10);
+        assert!((quality.recall - 0.0).abs() < 1e-10);
+        assert!((quality.f1_score - 0.0).abs() < 1e-10);
     }
 }

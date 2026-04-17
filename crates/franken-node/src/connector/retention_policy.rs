@@ -8,11 +8,19 @@ use std::collections::BTreeMap;
 const MAX_DECISIONS: usize = 4096;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
+}
+
+fn contains_nul(value: &str) -> bool {
+    value.as_bytes().contains(&0)
 }
 
 /// Retention class for a control-plane message.
@@ -51,9 +59,14 @@ impl RetentionRegistry {
     }
 
     pub fn register(&mut self, policy: RetentionPolicy) -> Result<(), RetentionError> {
-        if policy.message_type.is_empty() {
+        if policy.message_type.trim().is_empty() {
             return Err(RetentionError::InvalidPolicy {
                 reason: "message_type must not be empty".into(),
+            });
+        }
+        if contains_nul(&policy.message_type) {
+            return Err(RetentionError::InvalidPolicy {
+                reason: "message_type must not contain NUL bytes".into(),
             });
         }
         if policy.retention_class == RetentionClass::Ephemeral && policy.ephemeral_ttl_seconds == 0
@@ -179,9 +192,29 @@ impl RetentionStore {
         size_bytes: u64,
         now: u64,
     ) -> Result<(), RetentionError> {
+        if message_id.trim().is_empty() {
+            return Err(RetentionError::InvalidPolicy {
+                reason: "message_id must not be empty".into(),
+            });
+        }
+        if contains_nul(message_id) {
+            return Err(RetentionError::InvalidPolicy {
+                reason: "message_id must not contain NUL bytes".into(),
+            });
+        }
         if self.messages.contains_key(message_id) {
             return Err(RetentionError::DuplicateMessageId {
                 message_id: message_id.to_string(),
+            });
+        }
+        if message_type.trim().is_empty() {
+            return Err(RetentionError::InvalidPolicy {
+                reason: "message_type must not be empty".into(),
+            });
+        }
+        if contains_nul(message_type) {
+            return Err(RetentionError::InvalidPolicy {
+                reason: "message_type must not contain NUL bytes".into(),
             });
         }
 
@@ -559,5 +592,286 @@ mod tests {
     fn retention_class_labels() {
         assert_eq!(RetentionClass::Required.label(), "required");
         assert_eq!(RetentionClass::Ephemeral.label(), "ephemeral");
+    }
+
+    #[test]
+    fn unclassified_store_rejects_without_mutating_store() {
+        let mut store = RetentionStore::new(registry(), 10_000).unwrap();
+
+        let err = store
+            .store("missing-type", "not_registered", 100, 1_000)
+            .unwrap_err();
+
+        assert_eq!(err.code(), "CPR_UNCLASSIFIED");
+        assert_eq!(store.total_bytes(), 0);
+        assert_eq!(store.message_count(), 0);
+        assert!(store.decisions().is_empty());
+    }
+
+    #[test]
+    fn duplicate_id_is_rejected_before_unclassified_type_lookup() {
+        let mut store = RetentionStore::new(registry(), 10_000).unwrap();
+        store.store("m1", "invoke", 100, 1_000).unwrap();
+
+        let err = store.store("m1", "not_registered", 25, 1_001).unwrap_err();
+
+        assert_eq!(err.code(), "CPR_DUPLICATE_MESSAGE_ID");
+        assert_eq!(store.total_bytes(), 100);
+        assert_eq!(store.message_count(), 1);
+        assert_eq!(store.decisions().len(), 1);
+    }
+
+    #[test]
+    fn storage_pressure_before_ttl_keeps_ephemeral_message_and_rejects_new_store() {
+        let mut store = RetentionStore::new(registry(), 200).unwrap();
+        store
+            .store("heartbeat-live", "heartbeat", 150, 1_000)
+            .unwrap();
+
+        let err = store
+            .store("required-too-large", "invoke", 100, 1_059)
+            .unwrap_err();
+
+        assert_eq!(err.code(), "CPR_STORAGE_FULL");
+        assert!(store.contains("heartbeat-live"));
+        assert!(!store.contains("required-too-large"));
+        assert_eq!(store.total_bytes(), 150);
+        assert_eq!(store.decisions().len(), 1);
+    }
+
+    #[test]
+    fn cleanup_before_ephemeral_ttl_drops_nothing() {
+        let mut store = RetentionStore::new(registry(), 10_000).unwrap();
+        store
+            .store("heartbeat-live", "heartbeat", 50, 1_000)
+            .unwrap();
+
+        let dropped = store.cleanup_ephemeral(1_059);
+
+        assert!(dropped.is_empty());
+        assert!(store.contains("heartbeat-live"));
+        assert_eq!(store.total_bytes(), 50);
+        assert_eq!(store.decisions().len(), 1);
+    }
+
+    #[test]
+    fn dropping_required_message_does_not_add_drop_decision() {
+        let mut store = RetentionStore::new(registry(), 10_000).unwrap();
+        store.store("required", "invoke", 100, 1_000).unwrap();
+
+        let err = store.drop_message("required", 1_001).unwrap_err();
+
+        assert_eq!(err.code(), "CPR_DROP_REQUIRED");
+        assert!(store.contains("required"));
+        assert_eq!(store.total_bytes(), 100);
+        assert_eq!(store.decisions().len(), 1);
+        assert_eq!(store.decisions()[0].action, "store");
+    }
+
+    #[test]
+    fn failed_ephemeral_policy_registration_does_not_mutate_registry() {
+        let mut reg = RetentionRegistry::new();
+
+        let err = reg
+            .register(RetentionPolicy {
+                message_type: "heartbeat".into(),
+                retention_class: RetentionClass::Ephemeral,
+                ephemeral_ttl_seconds: 0,
+            })
+            .unwrap_err();
+
+        assert_eq!(err.code(), "CPR_INVALID_POLICY");
+        assert_eq!(reg.policy_count(), 0);
+        assert!(matches!(
+            reg.classify("heartbeat"),
+            Err(RetentionError::Unclassified { .. })
+        ));
+    }
+
+    #[test]
+    fn zero_size_unknown_type_is_still_rejected_as_unclassified() {
+        let mut store = RetentionStore::new(registry(), 10_000).unwrap();
+
+        let err = store
+            .store("zero-unknown", "not_registered", 0, 1_000)
+            .unwrap_err();
+
+        assert_eq!(err.code(), "CPR_UNCLASSIFIED");
+        assert_eq!(store.total_bytes(), 0);
+        assert!(!store.contains("zero-unknown"));
+        assert!(store.decisions().is_empty());
+    }
+
+    #[test]
+    fn storage_full_error_preserves_current_capacity_fields() {
+        let mut store = RetentionStore::new(registry(), 200).unwrap();
+        store.store("required", "invoke", 150, 1_000).unwrap();
+
+        let err = store.store("too-large", "invoke", 100, 1_001).unwrap_err();
+
+        assert_eq!(
+            err,
+            RetentionError::StorageFull {
+                current_bytes: 150,
+                max_bytes: 200,
+            }
+        );
+        assert_eq!(store.total_bytes(), 150);
+        assert!(!store.contains("too-large"));
+    }
+
+    #[test]
+    fn whitespace_policy_message_type_is_rejected_without_mutating_registry() {
+        let mut reg = RetentionRegistry::new();
+
+        let err = reg
+            .register(RetentionPolicy {
+                message_type: " \t\n ".into(),
+                retention_class: RetentionClass::Required,
+                ephemeral_ttl_seconds: 0,
+            })
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            RetentionError::InvalidPolicy {
+                reason: "message_type must not be empty".into(),
+            }
+        );
+        assert_eq!(reg.policy_count(), 0);
+    }
+
+    #[test]
+    fn nul_policy_message_type_is_rejected_without_mutating_registry() {
+        let mut reg = RetentionRegistry::new();
+
+        let err = reg
+            .register(RetentionPolicy {
+                message_type: "heart\0beat".into(),
+                retention_class: RetentionClass::Ephemeral,
+                ephemeral_ttl_seconds: 60,
+            })
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            RetentionError::InvalidPolicy {
+                reason: "message_type must not contain NUL bytes".into(),
+            }
+        );
+        assert_eq!(reg.policy_count(), 0);
+    }
+
+    #[test]
+    fn empty_message_id_store_is_rejected_without_mutating_store() {
+        let mut store = RetentionStore::new(registry(), 10_000).unwrap();
+
+        let err = store.store("", "invoke", 100, 1_000).unwrap_err();
+
+        assert_eq!(
+            err,
+            RetentionError::InvalidPolicy {
+                reason: "message_id must not be empty".into(),
+            }
+        );
+        assert_eq!(store.total_bytes(), 0);
+        assert_eq!(store.message_count(), 0);
+        assert!(store.decisions().is_empty());
+    }
+
+    #[test]
+    fn whitespace_message_id_store_is_rejected_without_mutating_store() {
+        let mut store = RetentionStore::new(registry(), 10_000).unwrap();
+
+        let err = store.store(" \n\t ", "invoke", 100, 1_000).unwrap_err();
+
+        assert_eq!(
+            err,
+            RetentionError::InvalidPolicy {
+                reason: "message_id must not be empty".into(),
+            }
+        );
+        assert_eq!(store.total_bytes(), 0);
+        assert_eq!(store.message_count(), 0);
+        assert!(store.decisions().is_empty());
+    }
+
+    #[test]
+    fn nul_message_id_store_is_rejected_without_mutating_store() {
+        let mut store = RetentionStore::new(registry(), 10_000).unwrap();
+
+        let err = store
+            .store("msg\0hidden", "invoke", 100, 1_000)
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            RetentionError::InvalidPolicy {
+                reason: "message_id must not contain NUL bytes".into(),
+            }
+        );
+        assert_eq!(store.total_bytes(), 0);
+        assert_eq!(store.message_count(), 0);
+        assert!(store.decisions().is_empty());
+    }
+
+    #[test]
+    fn whitespace_message_type_store_is_rejected_without_mutating_store() {
+        let mut store = RetentionStore::new(registry(), 10_000).unwrap();
+
+        let err = store.store("m-whitespace", " \t ", 100, 1_000).unwrap_err();
+
+        assert_eq!(
+            err,
+            RetentionError::InvalidPolicy {
+                reason: "message_type must not be empty".into(),
+            }
+        );
+        assert_eq!(store.total_bytes(), 0);
+        assert!(!store.contains("m-whitespace"));
+        assert!(store.decisions().is_empty());
+    }
+
+    #[test]
+    fn nul_message_type_store_is_rejected_without_mutating_store() {
+        let mut store = RetentionStore::new(registry(), 10_000).unwrap();
+
+        let err = store
+            .store("m-nul-type", "heart\0beat", 100, 1_000)
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            RetentionError::InvalidPolicy {
+                reason: "message_type must not contain NUL bytes".into(),
+            }
+        );
+        assert_eq!(store.total_bytes(), 0);
+        assert!(!store.contains("m-nul-type"));
+        assert!(store.decisions().is_empty());
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_existing_decisions_without_adding_item() {
+        let mut decisions = vec![RetentionDecision {
+            message_id: "old".into(),
+            message_type: "invoke".into(),
+            retention_class: RetentionClass::Required.label().into(),
+            action: "store".into(),
+            reason: "existing".into(),
+            timestamp: 1,
+        }];
+        let new_decision = RetentionDecision {
+            message_id: "new".into(),
+            message_type: "heartbeat".into(),
+            retention_class: RetentionClass::Ephemeral.label().into(),
+            action: "drop".into(),
+            reason: "zero cap".into(),
+            timestamp: 2,
+        };
+
+        push_bounded(&mut decisions, new_decision, 0);
+
+        assert!(decisions.is_empty());
     }
 }

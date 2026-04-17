@@ -573,6 +573,9 @@ impl DurabilityController {
 
 /// Push an item to a bounded Vec, evicting oldest entries if at capacity.
 fn push_bounded<T>(vec: &mut Vec<T>, item: T, max: usize) {
+    if max == 0 {
+        return;
+    }
     if vec.len() >= max {
         let overflow = vec.len() - max + 1;
         vec.drain(0..overflow);
@@ -1048,5 +1051,238 @@ mod tests {
         ctrl.switch_mode(DurabilityMode::Local, true).unwrap();
         let claim = ctrl.write_local().unwrap();
         assert_eq!(claim.claim_string, "local-fsync-confirmed");
+    }
+
+    #[test]
+    fn test_quorum_write_with_no_responses_fails_closed() {
+        let mut ctrl = DurabilityController::quorum("critical_receipt", 1);
+
+        let err = ctrl.write_quorum(&[]).unwrap_err();
+
+        assert_eq!(err.code, ERR_QUORUM_INSUFFICIENT);
+        assert!(err.message.contains("0 acks received"));
+        assert!(ctrl.events().iter().any(|event| {
+            event.code == DM_WRITE_QUORUM_FAILED
+                && event.detail.contains("0/0 acks")
+                && event.detail.contains("required 1")
+        }));
+    }
+
+    #[test]
+    fn test_quorum_write_all_nacks_fails_closed() {
+        let mut ctrl = DurabilityController::quorum("trust_receipt", 2);
+        let responses = make_responses(0, 3);
+
+        let err = ctrl.write_quorum(&responses).unwrap_err();
+
+        assert_eq!(err.code, ERR_QUORUM_INSUFFICIENT);
+        assert!(ctrl.events().iter().any(|event| {
+            event.code == DM_CLAIM_GENERATED && event.detail.contains("quorum-failed-0-of-3-acked")
+        }));
+    }
+
+    #[test]
+    fn test_denied_downgrade_preserves_quorum_mode() {
+        let mut ctrl = DurabilityController::quorum("epoch_marker", 3);
+
+        let err = ctrl.switch_mode(DurabilityMode::Local, false).unwrap_err();
+
+        assert_eq!(err.code, ERR_MODE_SWITCH_DENIED);
+        assert_eq!(ctrl.mode(), &DurabilityMode::Quorum { min_acks: 3 });
+        assert!(
+            ctrl.events()
+                .iter()
+                .any(|event| { event.code == DM_MODE_SWITCH_DENIED && event.mode == "quorum(3)" })
+        );
+    }
+
+    #[test]
+    fn test_strict_policy_denied_upgrade_preserves_local_mode() {
+        let mut ctrl = DurabilityController::new(
+            "local_artifact",
+            DurabilityMode::Local,
+            ModeSwitchPolicy::strict(),
+        );
+
+        let err = ctrl
+            .switch_mode(DurabilityMode::Quorum { min_acks: 2 }, false)
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_MODE_SWITCH_DENIED);
+        assert_eq!(ctrl.mode(), &DurabilityMode::Local);
+        assert!(
+            !ctrl
+                .events()
+                .iter()
+                .any(|event| event.code == DM_MODE_SWITCH)
+        );
+    }
+
+    #[test]
+    fn test_denied_quorum_size_decrease_preserves_original_requirement() {
+        let mut ctrl = DurabilityController::quorum("receipt", 5);
+
+        let err = ctrl
+            .switch_mode(DurabilityMode::Quorum { min_acks: 3 }, false)
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_MODE_SWITCH_DENIED);
+        assert_eq!(ctrl.mode(), &DurabilityMode::Quorum { min_acks: 5 });
+    }
+
+    #[test]
+    fn test_quorum_mode_local_write_error_does_not_generate_claim_event() {
+        let mut ctrl = DurabilityController::quorum("quorum_only", 2);
+        ctrl.take_events();
+
+        let err = ctrl.write_local().unwrap_err();
+
+        assert_eq!(err.code, ERR_QUORUM_INSUFFICIENT);
+        assert!(ctrl.events().is_empty());
+    }
+
+    #[test]
+    fn test_local_mode_quorum_write_error_does_not_generate_claim_event() {
+        let mut ctrl = DurabilityController::local("local_only");
+        ctrl.take_events();
+        let responses = make_responses(2, 0);
+
+        let err = ctrl.write_quorum(&responses).unwrap_err();
+
+        assert_eq!(err.code, ERR_QUORUM_INSUFFICIENT);
+        assert!(ctrl.events().is_empty());
+    }
+
+    #[test]
+    fn test_unexpected_quorum_outcome_in_local_mode_gets_sentinel_claim() {
+        let claim = DurabilityClaim::derive(
+            &DurabilityMode::Local,
+            &WriteOutcome::QuorumAcked { acked: 2, total: 3 },
+        );
+
+        assert_eq!(claim.claim_string, "local-mode-unexpected-quorum-outcome");
+        assert!(claim.deterministic);
+    }
+
+    #[test]
+    fn test_unexpected_local_outcome_in_quorum_mode_gets_sentinel_claim() {
+        let claim = DurabilityClaim::derive(
+            &DurabilityMode::Quorum { min_acks: 2 },
+            &WriteOutcome::LocalFsyncConfirmed,
+        );
+
+        assert_eq!(claim.claim_string, "quorum-mode-unexpected-local-outcome");
+        assert!(claim.deterministic);
+    }
+
+    #[test]
+    fn test_push_bounded_zero_capacity_drops_event_without_panicking() {
+        let mut events = vec![DurabilityEvent {
+            code: DM_MODE_INITIALIZED.to_string(),
+            mode: "local".to_string(),
+            detail: "kept".to_string(),
+        }];
+
+        push_bounded(
+            &mut events,
+            DurabilityEvent {
+                code: DM_MODE_SWITCH.to_string(),
+                mode: "quorum(2)".to_string(),
+                detail: "drop".to_string(),
+            },
+            0,
+        );
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].detail, "kept");
+    }
+
+    #[test]
+    fn test_push_bounded_over_capacity_discards_oldest_events() {
+        let mut events = vec![
+            DurabilityEvent {
+                code: DM_MODE_INITIALIZED.to_string(),
+                mode: "local".to_string(),
+                detail: "oldest".to_string(),
+            },
+            DurabilityEvent {
+                code: DM_WRITE_LOCAL_CONFIRMED.to_string(),
+                mode: "local".to_string(),
+                detail: "middle".to_string(),
+            },
+            DurabilityEvent {
+                code: DM_CLAIM_GENERATED.to_string(),
+                mode: "local".to_string(),
+                detail: "newest".to_string(),
+            },
+        ];
+
+        push_bounded(
+            &mut events,
+            DurabilityEvent {
+                code: DM_MODE_SWITCH.to_string(),
+                mode: "quorum(3)".to_string(),
+                detail: "incoming".to_string(),
+            },
+            2,
+        );
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].detail, "newest");
+        assert_eq!(events[1].detail, "incoming");
+    }
+
+    #[test]
+    fn test_serde_rejects_unknown_durability_mode_variant() {
+        let err = serde_json::from_str::<DurabilityMode>(r#""RemoteQuorum""#).unwrap_err();
+
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn test_serde_rejects_quorum_mode_missing_min_acks() {
+        let err = serde_json::from_str::<DurabilityMode>(r#"{"Quorum":{}}"#).unwrap_err();
+
+        assert!(err.to_string().contains("min_acks"));
+    }
+
+    #[test]
+    fn test_serde_rejects_unknown_write_outcome_variant() {
+        let err = serde_json::from_str::<WriteOutcome>(r#""RemoteDurable""#).unwrap_err();
+
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn test_local_mode_quorum_failed_outcome_gets_sentinel_claim() {
+        let claim = DurabilityClaim::derive(
+            &DurabilityMode::Local,
+            &WriteOutcome::QuorumFailed {
+                acked: 0,
+                required: 1,
+                total: 3,
+            },
+        );
+
+        assert_eq!(claim.claim_string, "local-mode-unexpected-quorum-outcome");
+        assert!(!claim.outcome.is_success());
+        assert!(claim.deterministic);
+    }
+
+    #[test]
+    fn test_take_events_twice_after_error_does_not_replay_denial() {
+        let mut ctrl = DurabilityController::quorum("denied", 3);
+        let _ = ctrl.switch_mode(DurabilityMode::Local, false);
+
+        let first = ctrl.take_events();
+        let second = ctrl.take_events();
+
+        assert!(
+            first
+                .iter()
+                .any(|event| event.code == DM_MODE_SWITCH_DENIED)
+        );
+        assert!(second.is_empty());
+        assert!(ctrl.events().is_empty());
     }
 }

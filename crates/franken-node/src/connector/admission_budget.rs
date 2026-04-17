@@ -257,15 +257,15 @@ impl AdmissionBudgetTracker {
     /// Record an inflight decode starting.
     pub fn record_decode_start(&mut self, peer_id: &str) -> Result<(), AdmissionError> {
         let usage = self.peers.entry(peer_id.to_string()).or_default();
-        usage.inflight_decode_count = usage.inflight_decode_count.saturating_add(1);
-        if usage.inflight_decode_count > self.budget.max_inflight_decode {
-            usage.inflight_decode_count = usage.inflight_decode_count.saturating_sub(1);
+        let attempted_count = usage.inflight_decode_count.saturating_add(1);
+        if attempted_count > self.budget.max_inflight_decode {
             return Err(AdmissionError::InflightExceeded {
                 peer_id: peer_id.to_string(),
-                count: usage.inflight_decode_count.saturating_add(1),
+                count: attempted_count,
                 limit: self.budget.max_inflight_decode,
             });
         }
+        usage.inflight_decode_count = attempted_count;
         Ok(())
     }
 
@@ -822,6 +822,318 @@ mod tests {
     }
 
     #[test]
+    fn rejected_admission_does_not_mutate_empty_peer_usage() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        let req = request("p1", 1001, 10, 10);
+
+        let (verdict, records) = tracker.admit(&req, "tr", "ts");
+
+        assert!(!verdict.admitted);
+        assert!(records.iter().any(|record| {
+            record.dimension.as_str() == "bytes" && record.verdict.as_str() == "FAIL"
+        }));
+        let usage = tracker.get_usage("p1");
+        assert_eq!(usage.bytes_used, 0);
+        assert_eq!(usage.symbols_used, 0);
+        assert_eq!(usage.decode_cpu_ms, 0);
+    }
+
+    #[test]
+    fn rejected_cumulative_admission_keeps_prior_usage() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        let first = request("p1", 600, 300, 1100);
+        let (first_verdict, _) = tracker.admit(&first, "tr", "ts");
+        assert!(first_verdict.admitted);
+
+        let rejected = request("p1", 500, 250, 1000);
+        let (rejected_verdict, _) = tracker.admit(&rejected, "tr", "ts");
+
+        assert!(!rejected_verdict.admitted);
+        assert!(
+            rejected_verdict
+                .violated_dimensions
+                .contains(&BudgetDimension::Bytes)
+        );
+        assert!(
+            rejected_verdict
+                .violated_dimensions
+                .contains(&BudgetDimension::Symbols)
+        );
+        assert!(
+            rejected_verdict
+                .violated_dimensions
+                .contains(&BudgetDimension::DecodeCpu)
+        );
+        let usage = tracker.get_usage("p1");
+        assert_eq!(usage.bytes_used, 600);
+        assert_eq!(usage.symbols_used, 300);
+        assert_eq!(usage.decode_cpu_ms, 1100);
+    }
+
+    #[test]
+    fn update_budget_rejects_invalid_budget_without_replacing_current_config() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        let mut invalid = budget();
+        invalid.max_symbols = 0;
+
+        let err = tracker.update_budget(invalid).unwrap_err();
+
+        assert_eq!(err.code(), "PAB_INVALID_BUDGET");
+        assert_eq!(tracker.budget().max_symbols, 500);
+        assert_eq!(tracker.budget().max_bytes, 1000);
+    }
+
+    #[test]
+    fn stateless_check_rejects_invalid_budget_before_verdict() {
+        let usage = PeerUsage::default();
+        let req = request("p1", 1, 1, 1);
+        let mut invalid = budget();
+        invalid.max_bytes = 0;
+
+        let err = check_admission_stateless(&req, &usage, &invalid, "tr", "ts").unwrap_err();
+
+        assert!(matches!(
+            err,
+            AdmissionError::InvalidBudget { reason } if reason.contains("max_bytes")
+        ));
+    }
+
+    #[test]
+    fn decode_start_rejection_rolls_back_inflight_usage() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        for _ in 0..5 {
+            tracker.record_decode_start("p1").unwrap();
+        }
+
+        let err = tracker.record_decode_start("p1").unwrap_err();
+
+        assert!(matches!(
+            err,
+            AdmissionError::InflightExceeded {
+                count: 6,
+                limit: 5,
+                ..
+            }
+        ));
+        assert_eq!(tracker.get_usage("p1").inflight_decode_count, 5);
+    }
+
+    #[test]
+    fn decode_complete_on_zero_usage_does_not_underflow() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        tracker.record_decode_complete("p1");
+        assert_eq!(tracker.get_usage("p1").inflight_decode_count, 0);
+
+        tracker.record_decode_start("p1").unwrap();
+        tracker.record_decode_complete("p1");
+        tracker.record_decode_complete("p1");
+
+        assert_eq!(tracker.get_usage("p1").inflight_decode_count, 0);
+    }
+
+    #[test]
+    fn failed_auth_at_exact_limit_blocks_admission() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        for _ in 0..3 {
+            tracker.record_failed_auth("p1").unwrap();
+        }
+
+        let (verdict, records) = tracker.check_admission(&request("p1", 1, 1, 1), "tr", "ts");
+
+        assert!(!verdict.admitted);
+        assert!(
+            verdict
+                .violated_dimensions
+                .contains(&BudgetDimension::FailedAuth)
+        );
+        assert_eq!(verdict.remaining.failed_auth_remaining, 0);
+        assert!(records.iter().any(|record| {
+            record.dimension.as_str() == "failed_auth" && record.verdict.as_str() == "FAIL"
+        }));
+    }
+
+    #[test]
+    fn failed_auth_exceedance_is_visible_in_usage() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        for _ in 0..3 {
+            tracker.record_failed_auth("p1").unwrap();
+        }
+
+        let err = tracker.record_failed_auth("p1").unwrap_err();
+
+        assert!(matches!(
+            err,
+            AdmissionError::AuthExceeded {
+                count: 4,
+                limit: 3,
+                ..
+            }
+        ));
+        assert_eq!(tracker.get_usage("p1").failed_auth_count, 4);
+        let (verdict, _) = tracker.check_admission(&request("p1", 1, 1, 1), "tr", "ts");
+        assert!(!verdict.admitted);
+    }
+
+    #[test]
+    fn saturated_request_rejects_without_overflowing_records() {
+        let tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        let req = request("p1", u64::MAX, u64::MAX, u64::MAX);
+
+        let (verdict, records) = tracker.check_admission(&req, "tr", "ts");
+
+        assert!(!verdict.admitted);
+        assert!(
+            verdict
+                .violated_dimensions
+                .contains(&BudgetDimension::Bytes)
+        );
+        assert!(
+            verdict
+                .violated_dimensions
+                .contains(&BudgetDimension::Symbols)
+        );
+        assert!(
+            verdict
+                .violated_dimensions
+                .contains(&BudgetDimension::DecodeCpu)
+        );
+        let bytes_record = records
+            .iter()
+            .find(|record| record.dimension.as_str() == "bytes")
+            .expect("bytes record");
+        assert_eq!(bytes_record.requested, u64::MAX);
+    }
+
+    #[test]
+    fn negative_byte_limit_plus_one_rejects_without_mutating_usage() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        let exact = request("p1", 1000, 0, 0);
+        assert!(tracker.admit(&exact, "tr", "ts").0.admitted);
+
+        let over = request("p1", 1, 0, 0);
+        let (verdict, records) = tracker.admit(&over, "tr-over", "ts-over");
+
+        assert!(!verdict.admitted);
+        assert_eq!(tracker.get_usage("p1").bytes_used, 1000);
+        assert!(records.iter().any(|record| {
+            record.dimension.as_str() == "bytes"
+                && record.usage_before == 1000
+                && record.requested == 1
+                && record.verdict.as_str() == "FAIL"
+        }));
+    }
+
+    #[test]
+    fn negative_symbol_limit_plus_one_rejects_without_mutating_usage() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        let exact = request("p1", 0, 500, 0);
+        assert!(tracker.admit(&exact, "tr", "ts").0.admitted);
+
+        let over = request("p1", 0, 1, 0);
+        let (verdict, _) = tracker.admit(&over, "tr-over", "ts-over");
+
+        assert!(!verdict.admitted);
+        assert!(
+            verdict
+                .violated_dimensions
+                .contains(&BudgetDimension::Symbols)
+        );
+        assert_eq!(tracker.get_usage("p1").symbols_used, 500);
+    }
+
+    #[test]
+    fn negative_decode_cpu_limit_plus_one_rejects_without_mutating_usage() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        let exact = request("p1", 0, 0, 2000);
+        assert!(tracker.admit(&exact, "tr", "ts").0.admitted);
+
+        let over = request("p1", 0, 0, 1);
+        let (verdict, _) = tracker.admit(&over, "tr-over", "ts-over");
+
+        assert!(!verdict.admitted);
+        assert!(
+            verdict
+                .violated_dimensions
+                .contains(&BudgetDimension::DecodeCpu)
+        );
+        assert_eq!(tracker.get_usage("p1").decode_cpu_ms, 2000);
+    }
+
+    #[test]
+    fn negative_stateless_inflight_limit_rejects_with_record_metadata() {
+        let usage = PeerUsage {
+            inflight_decode_count: 5,
+            ..Default::default()
+        };
+        let req = request("p-stateless", 1, 1, 1);
+
+        let (verdict, records) =
+            check_admission_stateless(&req, &usage, &budget(), "trace-meta", "ts-meta").unwrap();
+
+        assert!(!verdict.admitted);
+        assert!(
+            verdict
+                .violated_dimensions
+                .contains(&BudgetDimension::InflightDecode)
+        );
+        assert_eq!(verdict.trace_id, "trace-meta");
+        let inflight_record = records
+            .iter()
+            .find(|record| record.dimension.as_str() == "inflight_decode")
+            .expect("inflight record");
+        assert_eq!(inflight_record.peer_id, "p-stateless");
+        assert_eq!(inflight_record.timestamp, "ts-meta");
+        assert_eq!(inflight_record.verdict, "FAIL");
+    }
+
+    #[test]
+    fn negative_reset_peer_clears_failed_auth_block() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        for _ in 0..3 {
+            tracker.record_failed_auth("p1").unwrap();
+        }
+        assert!(
+            !tracker
+                .check_admission(&request("p1", 1, 1, 1), "tr-block", "ts-block")
+                .0
+                .admitted
+        );
+
+        tracker.reset_peer("p1");
+
+        assert!(
+            tracker
+                .check_admission(&request("p1", 1, 1, 1), "tr-reset", "ts-reset")
+                .0
+                .admitted
+        );
+    }
+
+    #[test]
+    fn negative_failed_auth_counter_saturates_without_wrapping() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        tracker.peers.insert(
+            "p-max".to_string(),
+            PeerUsage {
+                failed_auth_count: u32::MAX,
+                ..Default::default()
+            },
+        );
+
+        let err = tracker.record_failed_auth("p-max").unwrap_err();
+
+        assert!(matches!(
+            err,
+            AdmissionError::AuthExceeded {
+                count: u32::MAX,
+                limit: 3,
+                ..
+            }
+        ));
+        assert_eq!(tracker.get_usage("p-max").failed_auth_count, u32::MAX);
+    }
+
+    #[test]
     fn failed_auth_error_on_exceed() {
         let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
         for _ in 0..3 {
@@ -848,5 +1160,122 @@ mod tests {
         assert_eq!(BudgetDimension::FailedAuth.label(), "failed_auth");
         assert_eq!(BudgetDimension::InflightDecode.label(), "inflight_decode");
         assert_eq!(BudgetDimension::DecodeCpu.label(), "decode_cpu");
+    }
+
+    #[test]
+    fn decode_start_at_saturated_counter_rejects_without_decrementing() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        tracker.peers.insert(
+            "p-max".to_string(),
+            PeerUsage {
+                inflight_decode_count: u32::MAX,
+                ..Default::default()
+            },
+        );
+
+        let err = tracker.record_decode_start("p-max").unwrap_err();
+
+        assert!(matches!(
+            err,
+            AdmissionError::InflightExceeded {
+                count: u32::MAX,
+                limit: 5,
+                ..
+            }
+        ));
+        assert_eq!(tracker.get_usage("p-max").inflight_decode_count, u32::MAX);
+    }
+
+    #[test]
+    fn decode_start_at_exact_limit_rejects_without_mutating_count() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        tracker.peers.insert(
+            "p-limit".to_string(),
+            PeerUsage {
+                inflight_decode_count: 5,
+                ..Default::default()
+            },
+        );
+
+        let err = tracker.record_decode_start("p-limit").unwrap_err();
+
+        assert!(matches!(
+            err,
+            AdmissionError::InflightExceeded {
+                count: 6,
+                limit: 5,
+                ..
+            }
+        ));
+        assert_eq!(tracker.get_usage("p-limit").inflight_decode_count, 5);
+    }
+
+    #[test]
+    fn decode_complete_unknown_peer_does_not_create_usage() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+
+        tracker.record_decode_complete("ghost-peer");
+
+        assert!(tracker.snapshot().is_empty());
+        assert_eq!(tracker.get_usage("ghost-peer").inflight_decode_count, 0);
+    }
+
+    #[test]
+    fn reset_unknown_peer_keeps_existing_peer_usage() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        let req = request("kept-peer", 100, 50, 25);
+        assert!(tracker.admit(&req, "tr", "ts").0.admitted);
+
+        tracker.reset_peer("missing-peer");
+
+        let usage = tracker.get_usage("kept-peer");
+        assert_eq!(usage.bytes_used, 100);
+        assert_eq!(usage.symbols_used, 50);
+        assert_eq!(usage.decode_cpu_ms, 25);
+    }
+
+    #[test]
+    fn update_budget_rejects_zero_failed_auth_without_replacing_current_config() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        let mut invalid = budget();
+        invalid.max_failed_auth = 0;
+
+        let err = tracker.update_budget(invalid).unwrap_err();
+
+        assert!(matches!(
+            err,
+            AdmissionError::InvalidBudget { reason } if reason.contains("max_failed_auth")
+        ));
+        assert_eq!(tracker.budget().max_failed_auth, 3);
+    }
+
+    #[test]
+    fn update_budget_rejects_zero_inflight_without_replacing_current_config() {
+        let mut tracker = AdmissionBudgetTracker::new(budget()).unwrap();
+        let mut invalid = budget();
+        invalid.max_inflight_decode = 0;
+
+        let err = tracker.update_budget(invalid).unwrap_err();
+
+        assert!(matches!(
+            err,
+            AdmissionError::InvalidBudget { reason } if reason.contains("max_inflight_decode")
+        ));
+        assert_eq!(tracker.budget().max_inflight_decode, 5);
+    }
+
+    #[test]
+    fn stateless_check_rejects_zero_cpu_budget_with_specific_reason() {
+        let usage = PeerUsage::default();
+        let req = request("p-stateless", 1, 1, 1);
+        let mut invalid = budget();
+        invalid.max_decode_cpu_ms = 0;
+
+        let err = check_admission_stateless(&req, &usage, &invalid, "tr", "ts").unwrap_err();
+
+        assert!(matches!(
+            err,
+            AdmissionError::InvalidBudget { reason } if reason.contains("max_decode_cpu_ms")
+        ));
     }
 }

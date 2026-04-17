@@ -10,8 +10,12 @@ use std::fmt;
 const MAX_VECTORS_PER_CATEGORY: usize = 1024;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
@@ -287,6 +291,38 @@ mod tests {
     }
 
     #[test]
+    fn reject_zero_version_before_no_changelog() {
+        let mut r = SchemaRegistry::new();
+        let spec = SchemaSpec {
+            category: SchemaCategory::Signature,
+            version: 0,
+            content_hash: "hash".into(),
+            changelog: vec![],
+        };
+
+        let err = r.register_schema(spec).unwrap_err();
+
+        assert_eq!(err.code(), "GSV_INVALID_VERSION");
+    }
+
+    #[test]
+    fn failed_schema_registration_does_not_replace_existing_schema() {
+        let mut r = SchemaRegistry::new();
+        r.register_schema(make_spec(SchemaCategory::Serialization, 1))
+            .expect("initial schema");
+
+        let err = r
+            .register_schema(make_spec(SchemaCategory::Serialization, 0))
+            .expect_err("zero version rejected");
+
+        assert_eq!(err.code(), "GSV_INVALID_VERSION");
+        assert_eq!(r.schema_count(), 1);
+        r.add_vector(make_vector(SchemaCategory::Serialization, "still-valid"))
+            .expect("existing schema remains usable");
+        assert_eq!(r.vector_count(SchemaCategory::Serialization), 1);
+    }
+
+    #[test]
     fn add_vector_requires_schema() {
         let mut r = SchemaRegistry::new();
         let err = r
@@ -296,9 +332,30 @@ mod tests {
     }
 
     #[test]
+    fn failed_add_vector_does_not_create_vector_bucket() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .add_vector(make_vector(SchemaCategory::ControlFrame, "missing-schema"))
+            .expect_err("schema is required before vectors");
+
+        assert_eq!(err.code(), "GSV_MISSING_SCHEMA");
+        assert_eq!(r.vector_count(SchemaCategory::ControlFrame), 0);
+    }
+
+    #[test]
     fn validate_complete_registry() {
         let r = populated_registry();
         r.validate().unwrap();
+    }
+
+    #[test]
+    fn validate_empty_registry_reports_missing_serialization_schema_first() {
+        let r = SchemaRegistry::new();
+
+        let err = r.validate().unwrap_err();
+
+        assert_eq!(err, SchemaError::MissingSchema("serialization".to_string()));
     }
 
     #[test]
@@ -328,6 +385,26 @@ mod tests {
     }
 
     #[test]
+    fn validate_reports_first_schema_without_vector() {
+        let mut r = SchemaRegistry::new();
+        for cat in [
+            SchemaCategory::Serialization,
+            SchemaCategory::Signature,
+            SchemaCategory::ControlFrame,
+        ] {
+            r.register_schema(make_spec(cat, 1)).expect("schema");
+        }
+        r.add_vector(make_vector(SchemaCategory::Signature, "sig-v1"))
+            .expect("signature vector");
+        r.add_vector(make_vector(SchemaCategory::ControlFrame, "ctrl-v1"))
+            .expect("control vector");
+
+        let err = r.validate().unwrap_err();
+
+        assert_eq!(err, SchemaError::MissingVector("serialization".to_string()));
+    }
+
+    #[test]
     fn verify_vectors_all_pass() {
         let r = populated_registry();
         let results = r.verify_vectors(|v| v.expected_output.clone());
@@ -340,6 +417,34 @@ mod tests {
         let r = populated_registry();
         let results = r.verify_vectors(|_v| "wrong".to_string());
         assert!(results.iter().all(|r| !r.passed));
+    }
+
+    #[test]
+    fn verify_vectors_empty_registry_returns_no_results() {
+        let r = SchemaRegistry::new();
+
+        let results = r.verify_vectors(|v| v.expected_output.clone());
+
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn verify_vectors_mismatch_details_include_expected_and_actual() {
+        let r = populated_registry();
+
+        let results = r.verify_vectors(|_v| "actual-output".to_string());
+
+        assert!(results.iter().all(|result| !result.passed));
+        assert!(
+            results
+                .iter()
+                .all(|result| result.details.contains("actual=actual-output"))
+        );
+        assert!(
+            results
+                .iter()
+                .all(|result| result.details.contains("expected=output_"))
+        );
     }
 
     #[test]
@@ -361,6 +466,193 @@ mod tests {
     fn error_display() {
         let e = SchemaError::MissingSchema("ser".into());
         assert!(e.to_string().contains("GSV_MISSING_SCHEMA"));
+    }
+
+    #[test]
+    fn vector_mismatch_display_preserves_id_expected_and_actual() {
+        let err = SchemaError::VectorMismatch {
+            vector_id: "vec-1".into(),
+            expected: "expected-bytes".into(),
+            actual: "actual-bytes".into(),
+        };
+        let rendered = err.to_string();
+
+        assert!(rendered.contains("GSV_VECTOR_MISMATCH"));
+        assert!(rendered.contains("vec-1"));
+        assert!(rendered.contains("expected=expected-bytes"));
+        assert!(rendered.contains("actual=actual-bytes"));
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_drops_item_without_panic() {
+        let mut values = vec![1, 2, 3];
+
+        push_bounded(&mut values, 4, 0);
+
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn validate_reports_missing_signature_schema_after_serialization_complete() {
+        let mut r = SchemaRegistry::new();
+        r.register_schema(make_spec(SchemaCategory::Serialization, 1))
+            .expect("serialization schema");
+        r.add_vector(make_vector(SchemaCategory::Serialization, "ser-v1"))
+            .expect("serialization vector");
+
+        let err = r.validate().expect_err("signature schema is required");
+
+        assert_eq!(err, SchemaError::MissingSchema("signature".to_string()));
+    }
+
+    #[test]
+    fn validate_reports_missing_control_frame_schema_after_prior_categories_complete() {
+        let mut r = SchemaRegistry::new();
+        for cat in [SchemaCategory::Serialization, SchemaCategory::Signature] {
+            r.register_schema(make_spec(cat, 1)).expect("schema");
+            r.add_vector(make_vector(cat, &format!("{cat}-v1")))
+                .expect("vector");
+        }
+
+        let err = r.validate().expect_err("control frame schema is required");
+
+        assert_eq!(err, SchemaError::MissingSchema("control_frame".to_string()));
+    }
+
+    #[test]
+    fn validate_reports_missing_signature_vector_before_control_frame_vector() {
+        let mut r = SchemaRegistry::new();
+        for cat in [
+            SchemaCategory::Serialization,
+            SchemaCategory::Signature,
+            SchemaCategory::ControlFrame,
+        ] {
+            r.register_schema(make_spec(cat, 1)).expect("schema");
+        }
+        r.add_vector(make_vector(SchemaCategory::Serialization, "ser-v1"))
+            .expect("serialization vector");
+        r.add_vector(make_vector(SchemaCategory::ControlFrame, "ctrl-v1"))
+            .expect("control vector");
+
+        let err = r.validate().expect_err("signature vector is required");
+
+        assert_eq!(err, SchemaError::MissingVector("signature".to_string()));
+    }
+
+    #[test]
+    fn failed_no_changelog_registration_does_not_replace_existing_schema() {
+        let mut r = SchemaRegistry::new();
+        r.register_schema(make_spec(SchemaCategory::Signature, 1))
+            .expect("initial schema");
+        let invalid = SchemaSpec {
+            category: SchemaCategory::Signature,
+            version: 2,
+            content_hash: "sha256:new-signature".into(),
+            changelog: vec![],
+        };
+
+        let err = r
+            .register_schema(invalid)
+            .expect_err("empty changelog is rejected");
+
+        assert_eq!(err.code(), "GSV_NO_CHANGELOG");
+        assert_eq!(r.schema_count(), 1);
+        assert_eq!(
+            r.schemas
+                .get(&SchemaCategory::Signature)
+                .expect("original schema remains")
+                .version,
+            1
+        );
+    }
+
+    #[test]
+    fn failed_signature_schema_registration_keeps_vector_add_rejected() {
+        let mut r = SchemaRegistry::new();
+        let invalid = SchemaSpec {
+            category: SchemaCategory::Signature,
+            version: 0,
+            content_hash: "sha256:bad-signature".into(),
+            changelog: vec![ChangelogEntry {
+                version: 0,
+                description: "invalid".into(),
+            }],
+        };
+
+        let schema_err = r
+            .register_schema(invalid)
+            .expect_err("zero version is rejected");
+        let vector_err = r
+            .add_vector(make_vector(SchemaCategory::Signature, "sig-after-reject"))
+            .expect_err("rejected schema must not create a category");
+
+        assert_eq!(schema_err.code(), "GSV_INVALID_VERSION");
+        assert_eq!(
+            vector_err,
+            SchemaError::MissingSchema("signature".to_string())
+        );
+        assert_eq!(r.schema_count(), 0);
+        assert_eq!(r.vector_count(SchemaCategory::Signature), 0);
+    }
+
+    #[test]
+    fn verify_vectors_mismatch_preserves_vector_ids() {
+        let r = populated_registry();
+
+        let results = r.verify_vectors(|_v| "wrong-output".to_string());
+        let ids: Vec<_> = results
+            .iter()
+            .map(|result| result.vector_id.as_str())
+            .collect();
+
+        assert_eq!(results.len(), 3);
+        assert!(results.iter().all(|result| !result.passed));
+        assert!(ids.contains(&"serialization_v1"));
+        assert!(ids.contains(&"signature_v1"));
+        assert!(ids.contains(&"control_frame_v1"));
+    }
+
+    #[test]
+    fn push_bounded_retains_latest_items_when_over_capacity() {
+        let mut values = Vec::new();
+
+        for value in 0..5 {
+            push_bounded(&mut values, value, 2);
+        }
+
+        assert_eq!(values, vec![3, 4]);
+    }
+
+    #[test]
+    fn invalid_control_frame_schema_does_not_satisfy_validate() {
+        let mut r = SchemaRegistry::new();
+        for cat in [SchemaCategory::Serialization, SchemaCategory::Signature] {
+            r.register_schema(make_spec(cat, 1)).expect("schema");
+            r.add_vector(make_vector(cat, &format!("{cat}-v1")))
+                .expect("vector");
+        }
+        let invalid = SchemaSpec {
+            category: SchemaCategory::ControlFrame,
+            version: 0,
+            content_hash: "sha256:bad-control-frame".into(),
+            changelog: vec![ChangelogEntry {
+                version: 0,
+                description: "invalid".into(),
+            }],
+        };
+
+        let schema_err = r
+            .register_schema(invalid)
+            .expect_err("zero version is rejected");
+        let validate_err = r.validate().expect_err("control frame schema is absent");
+
+        assert_eq!(schema_err.code(), "GSV_INVALID_VERSION");
+        assert_eq!(
+            validate_err,
+            SchemaError::MissingSchema("control_frame".to_string())
+        );
+        assert_eq!(r.schema_count(), 2);
+        assert_eq!(r.vector_count(SchemaCategory::ControlFrame), 0);
     }
 
     #[test]

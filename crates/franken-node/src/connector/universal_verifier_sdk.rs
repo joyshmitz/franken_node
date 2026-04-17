@@ -878,6 +878,13 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_capsule_verdict_deserialize_rejects_unknown_variant() {
+        let result: Result<CapsuleVerdict, _> = serde_json::from_str(r#""unknown""#);
+
+        assert!(result.is_err());
+    }
+
     // ── CapsuleManifest ────────────────────────────────────────────
 
     #[test]
@@ -886,6 +893,43 @@ mod tests {
         let json = serde_json::to_string(&manifest).unwrap();
         let parsed: CapsuleManifest = serde_json::from_str(&json).unwrap();
         assert_eq!(manifest, parsed);
+    }
+
+    #[test]
+    fn test_manifest_deserialize_rejects_missing_metadata() {
+        let json = r#"{
+            "schema_version": "vsdk-v1.0",
+            "capsule_id": "capsule-ref-001",
+            "description": "missing metadata",
+            "claim_type": "migration_safety",
+            "input_refs": [],
+            "expected_output_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "created_at": "2026-02-21T00:00:00Z",
+            "creator_identity": "creator://test@example.com"
+        }"#;
+
+        let result: Result<CapsuleManifest, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_manifest_deserialize_rejects_input_refs_type_confusion() {
+        let json = r#"{
+            "schema_version": "vsdk-v1.0",
+            "capsule_id": "capsule-ref-001",
+            "description": "bad input refs",
+            "claim_type": "migration_safety",
+            "input_refs": {"artifact_a": true},
+            "expected_output_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "created_at": "2026-02-21T00:00:00Z",
+            "creator_identity": "creator://test@example.com",
+            "metadata": {}
+        }"#;
+
+        let result: Result<CapsuleManifest, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
     }
 
     #[test]
@@ -1006,6 +1050,22 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_manifest_empty_signer_key() {
+        let mut manifest = build_reference_manifest();
+        manifest.metadata.insert(
+            CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY.to_string(),
+            String::new(),
+        );
+        match validate_manifest(&manifest) {
+            Err(VsdkError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains(CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY));
+                assert!(msg.contains("empty"));
+            }
+            other => unreachable!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_validate_manifest_malformed_signer_key() {
         let mut manifest = build_reference_manifest();
         manifest.metadata.insert(
@@ -1080,6 +1140,44 @@ mod tests {
     }
 
     #[test]
+    fn test_capsule_deserialize_rejects_missing_signature() {
+        let json = r#"{
+            "manifest": {
+                "schema_version": "vsdk-v1.0",
+                "capsule_id": "capsule-missing-signature",
+                "description": "bad capsule",
+                "claim_type": "migration_safety",
+                "input_refs": [],
+                "expected_output_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+                "created_at": "2026-02-21T00:00:00Z",
+                "creator_identity": "creator://test@example.com",
+                "metadata": {}
+            },
+            "payload": "payload",
+            "inputs": {}
+        }"#;
+
+        let result: Result<ReplayCapsule, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_capsule_deserialize_rejects_inputs_type_confusion() {
+        let manifest_json = serde_json::to_value(build_reference_manifest()).unwrap();
+        let json = serde_json::json!({
+            "manifest": manifest_json,
+            "payload": "reference_payload_data",
+            "inputs": ["artifact_a", "artifact_b"],
+            "signature": "00"
+        });
+
+        let result: Result<ReplayCapsule, _> = serde_json::from_value(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_sign_capsule_produces_nonempty_signature() {
         let capsule = build_reference_capsule();
         assert!(!capsule.signature.is_empty());
@@ -1132,6 +1230,30 @@ mod tests {
     fn test_verify_capsule_signature_rejects_manifest_only_tamper() {
         let mut capsule = build_reference_capsule();
         capsule.manifest.description = "tampered description".to_string();
+        match verify_capsule_signature(&capsule) {
+            Err(VsdkError::SignatureMismatch { .. }) => {}
+            other => unreachable!("expected SignatureMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_verify_capsule_signature_rejects_payload_tamper() {
+        let mut capsule = build_reference_capsule();
+        capsule.payload.push_str("-tampered");
+
+        match verify_capsule_signature(&capsule) {
+            Err(VsdkError::SignatureMismatch { .. }) => {}
+            other => unreachable!("expected SignatureMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_verify_capsule_signature_rejects_input_value_tamper() {
+        let mut capsule = build_reference_capsule();
+        capsule
+            .inputs
+            .insert("artifact_a".to_string(), "tampered-content".to_string());
+
         match verify_capsule_signature(&capsule) {
             Err(VsdkError::SignatureMismatch { .. }) => {}
             other => unreachable!("expected SignatureMismatch, got {other:?}"),
@@ -1318,6 +1440,25 @@ mod tests {
     }
 
     #[test]
+    fn test_replay_capsule_rejects_missing_signature_algorithm_metadata() {
+        let mut capsule = build_reference_capsule();
+        capsule
+            .manifest
+            .metadata
+            .remove(CAPSULE_SIGNATURE_ALGORITHM_METADATA_KEY);
+        let signature =
+            reference_signing_key().sign(&canonical_capsule_signature_payload(&capsule));
+        capsule.signature = hex::encode(signature.to_bytes());
+
+        match replay_capsule(&capsule, "v1") {
+            Err(VsdkError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains(CAPSULE_SIGNATURE_ALGORITHM_METADATA_KEY));
+            }
+            other => unreachable!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_replay_capsule_rejects_missing_input_ref() {
         let mut capsule = build_reference_capsule();
         capsule.inputs.remove("artifact_b");
@@ -1365,6 +1506,17 @@ mod tests {
     }
 
     #[test]
+    fn test_replay_capsule_rejects_unsigned_payload_tamper() {
+        let mut capsule = build_reference_capsule();
+        capsule.payload = "tampered payload".to_string();
+
+        match replay_capsule(&capsule, "v1") {
+            Err(VsdkError::SignatureMismatch { .. }) => {}
+            other => unreachable!("expected SignatureMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_replay_capsule_invalid_schema() {
         let mut capsule = build_reference_capsule();
         capsule.manifest.schema_version = "bad-version".to_string();
@@ -1384,6 +1536,23 @@ mod tests {
         let json = serde_json::to_string(&result).unwrap();
         let parsed: ReplayResult = serde_json::from_str(&json).unwrap();
         assert_eq!(result, parsed);
+    }
+
+    #[test]
+    fn test_replay_result_deserialize_rejects_verdict_type_confusion() {
+        let json = r#"{
+            "capsule_id": "capsule-ref-001",
+            "verdict": {"pass": true},
+            "expected_output_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "actual_output_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "replay_duration_ms": 0,
+            "verifier_identity": "v1",
+            "detail": "bad verdict"
+        }"#;
+
+        let result: Result<ReplayResult, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
     }
 
     // ── VerificationSession ────────────────────────────────────────
@@ -1438,6 +1607,23 @@ mod tests {
     }
 
     #[test]
+    fn test_record_step_sealed_session_does_not_append() {
+        let capsule = build_reference_capsule();
+        let result = replay_capsule(&capsule, "v1").unwrap();
+        let mut session = create_session("s1", "v1");
+        record_session_step(&mut session, &result).unwrap();
+        seal_session(&mut session).unwrap();
+        let before = session.steps.len();
+        let final_verdict = session.final_verdict.clone();
+
+        let err = record_session_step(&mut session, &result).unwrap_err();
+
+        assert!(matches!(err, VsdkError::SessionSealed(_)));
+        assert_eq!(session.steps.len(), before);
+        assert_eq!(session.final_verdict, final_verdict);
+    }
+
+    #[test]
     fn test_seal_session_all_pass() {
         let capsule = build_reference_capsule();
         let result = replay_capsule(&capsule, "v1").unwrap();
@@ -1479,11 +1665,54 @@ mod tests {
     }
 
     #[test]
+    fn test_seal_session_twice_preserves_first_final_verdict() {
+        let mut session = create_session("s1", "v1");
+        let first = seal_session(&mut session).unwrap();
+        let final_verdict = session.final_verdict.clone();
+
+        let err = seal_session(&mut session).unwrap_err();
+
+        assert_eq!(first, CapsuleVerdict::Inconclusive);
+        assert!(matches!(err, VsdkError::SessionSealed(_)));
+        assert!(session.sealed);
+        assert_eq!(session.final_verdict, final_verdict);
+    }
+
+    #[test]
     fn test_session_serde_roundtrip() {
         let session = build_reference_session().unwrap();
         let json = serde_json::to_string(&session).unwrap();
         let parsed: VerificationSession = serde_json::from_str(&json).unwrap();
         assert_eq!(session, parsed);
+    }
+
+    #[test]
+    fn test_session_deserialize_rejects_missing_sealed_flag() {
+        let json = r#"{
+            "session_id": "s1",
+            "verifier_identity": "v1",
+            "created_at": "2026-02-21T00:00:00Z",
+            "steps": [],
+            "final_verdict": null
+        }"#;
+
+        let result: Result<VerificationSession, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_session_step_deserialize_rejects_missing_output_hash() {
+        let json = r#"{
+            "step_index": 0,
+            "capsule_id": "capsule-ref-001",
+            "verdict": "pass",
+            "timestamp": "2026-02-21T00:00:00Z"
+        }"#;
+
+        let result: Result<SessionStep, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
     }
 
     // ── VerifierSdk ────────────────────────────────────────────────
@@ -1505,6 +1734,20 @@ mod tests {
         assert_eq!(sdk, parsed);
     }
 
+    #[test]
+    fn test_verifier_sdk_deserialize_rejects_claim_types_type_confusion() {
+        let json = r#"{
+            "verifier_identity": "v1",
+            "schema_version": "vsdk-v1.0",
+            "supported_claim_types": {"migration_safety": true},
+            "config": {"schema_version": "vsdk-v1.0"}
+        }"#;
+
+        let result: Result<VerifierSdk, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
     // ── VsdkEvent ──────────────────────────────────────────────────
 
     #[test]
@@ -1518,6 +1761,19 @@ mod tests {
         let json = serde_json::to_string(&evt).unwrap();
         let parsed: VsdkEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.event_code, "VSDK_001");
+    }
+
+    #[test]
+    fn test_vsdk_event_deserialize_rejects_missing_timestamp() {
+        let json = r#"{
+            "event_code": "VSDK_001",
+            "capsule_id": "capsule-001",
+            "detail": "replay started"
+        }"#;
+
+        let result: Result<VsdkEvent, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
     }
 
     // ── VsdkError display ──────────────────────────────────────────

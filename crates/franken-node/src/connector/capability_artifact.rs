@@ -2492,4 +2492,285 @@ mod tests {
         let gate = AdmissionGate::new();
         assert!(gate.get_envelope("ext-missing").is_none());
     }
+
+    #[test]
+    fn test_rejection_due_to_allowed_scope_does_not_admit_or_emit_success_events() {
+        let mut gate = AdmissionGate::new();
+        gate.allowed_scope.clear();
+        let artifact = build_test_artifact("ext-no-scope", &[("cap:fs:read", "read config")]);
+
+        let err = gate.admit(&artifact, "2026-02-21T00:00:00Z").unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CART_OVER_SCOPED);
+        assert_eq!(gate.admitted_count(), 0);
+        assert!(gate.get_envelope("ext-no-scope").is_none());
+        assert!(
+            gate.audit_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::CART_010)
+        );
+        assert!(
+            !gate
+                .audit_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::CART_008)
+        );
+        assert!(
+            !gate
+                .audit_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::CART_004)
+        );
+        assert!(
+            !gate
+                .audit_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::CART_002)
+        );
+    }
+
+    #[test]
+    fn test_duplicate_artifact_does_not_replace_existing_envelope() {
+        let mut gate = AdmissionGate::new();
+        let original = build_test_artifact("ext-dup-stable", &[("cap:fs:read", "read config")]);
+        let replacement =
+            build_test_artifact("ext-dup-stable", &[("cap:crypto:sign", "sign receipts")]);
+        gate.admit(&original, "2026-02-21T00:00:00Z").unwrap();
+
+        let err = gate
+            .admit(&replacement, "2026-02-21T00:00:01Z")
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CART_DUPLICATE_ARTIFACT);
+        assert_eq!(gate.admitted_count(), 1);
+        let admitted = gate
+            .get_envelope("ext-dup-stable")
+            .expect("original envelope should remain admitted");
+        assert!(admitted.requirements.contains_key("cap:fs:read"));
+        assert!(!admitted.requirements.contains_key("cap:crypto:sign"));
+        assert_eq!(
+            gate.audit_log()
+                .iter()
+                .filter(|entry| entry.event_code == event_codes::CART_002)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_missing_envelope_stops_before_schema_digest_and_success_audits() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("ext-no-env", "author", "2026-02-21T00:00:00Z");
+        let artifact = ExtensionArtifact::new(identity, None);
+
+        let err = gate.admit(&artifact, "2026-02-21T00:00:00Z").unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CART_MISSING_ENVELOPE);
+        assert_eq!(gate.admitted_count(), 0);
+        for forbidden in [
+            event_codes::CART_010,
+            event_codes::CART_008,
+            event_codes::CART_004,
+            event_codes::CART_002,
+        ] {
+            assert!(
+                !gate
+                    .audit_log()
+                    .iter()
+                    .any(|entry| entry.event_code == forbidden),
+                "{forbidden} should not be emitted after missing envelope"
+            );
+        }
+    }
+
+    #[test]
+    fn test_digest_mismatch_stops_after_schema_validation_without_admission() {
+        let mut gate = AdmissionGate::new();
+        let identity = ArtifactIdentity::new("ext-bad-digest", "author", "2026-02-21T00:00:00Z");
+        let wrong_identity =
+            ArtifactIdentity::new("ext-other-digest", "author", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        envelope.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        envelope.bind_to(&wrong_identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+
+        let err = gate.admit(&artifact, "2026-02-21T00:00:00Z").unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CART_DIGEST_MISMATCH);
+        assert_eq!(gate.admitted_count(), 0);
+        assert!(
+            gate.audit_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::CART_010)
+        );
+        assert!(
+            gate.audit_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::CART_009)
+        );
+        assert!(
+            !gate
+                .audit_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::CART_008)
+        );
+        assert!(
+            !gate
+                .audit_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::CART_004)
+        );
+        assert!(
+            !gate
+                .audit_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::CART_002)
+        );
+    }
+
+    #[test]
+    fn test_unknown_schema_stops_before_schema_success_and_digest_audits() {
+        let mut gate = AdmissionGate::new();
+        let identity =
+            ArtifactIdentity::new("ext-unknown-schema", "author", "2026-02-21T00:00:00Z");
+        let mut envelope = CapabilityEnvelope::new();
+        envelope.schema_version = "cart-v2.0".to_string();
+        envelope.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        envelope.bind_to(&identity);
+        let artifact = ExtensionArtifact::new(identity, Some(envelope));
+
+        let err = gate.admit(&artifact, "2026-02-21T00:00:00Z").unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CART_SCHEMA_UNKNOWN);
+        assert_eq!(gate.admitted_count(), 0);
+        for forbidden in [
+            event_codes::CART_010,
+            event_codes::CART_008,
+            event_codes::CART_004,
+            event_codes::CART_002,
+        ] {
+            assert!(
+                !gate
+                    .audit_log()
+                    .iter()
+                    .any(|entry| entry.event_code == forbidden),
+                "{forbidden} should not be emitted after unknown schema"
+            );
+        }
+    }
+
+    #[test]
+    fn test_enforcer_empty_capability_is_drift_not_enforced() {
+        let mut env = CapabilityEnvelope::new();
+        env.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        let mut enforcer = EnvelopeEnforcer::from_envelope("ext-empty-cap", &env);
+
+        let err = enforcer
+            .check_capability("", "2026-02-21T00:00:00Z")
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CART_DRIFT_DETECTED);
+        assert!(enforcer.used_capabilities.contains(""));
+        assert_eq!(enforcer.enforcement_log().len(), 1);
+        assert_eq!(
+            enforcer.enforcement_log()[0].event_code,
+            event_codes::CART_007
+        );
+        assert!(
+            !enforcer
+                .enforcement_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::CART_006)
+        );
+        assert!(
+            enforcer
+                .detect_drift()
+                .iter()
+                .any(|drift| drift.contains("used but undeclared"))
+        );
+    }
+
+    #[test]
+    fn test_revoking_unused_declared_capability_does_not_create_drift_until_use() {
+        let mut env = CapabilityEnvelope::new();
+        env.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        let mut enforcer = EnvelopeEnforcer::from_envelope("ext-revoke-unused", &env);
+
+        enforcer.revoke_capability("cap:fs:read");
+
+        assert!(enforcer.detect_drift().is_empty());
+        assert!(enforcer.enforcement_log().is_empty());
+
+        let err = enforcer
+            .check_capability("cap:fs:read", "2026-02-21T00:00:00Z")
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CART_DRIFT_DETECTED);
+        assert!(
+            enforcer
+                .detect_drift()
+                .iter()
+                .any(|drift| drift.as_str() == "revoked but used: cap:fs:read")
+        );
+    }
+
+    #[test]
+    fn test_revoked_undeclared_capability_records_both_drift_reasons() {
+        let mut env = CapabilityEnvelope::new();
+        env.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        let mut enforcer = EnvelopeEnforcer::from_envelope("ext-revoked-undeclared", &env);
+
+        enforcer.revoke_capability("cap:network:connect");
+        let err = enforcer
+            .check_capability("cap:network:connect", "2026-02-21T00:00:00Z")
+            .unwrap_err();
+
+        assert_eq!(err.code(), error_codes::ERR_CART_DRIFT_DETECTED);
+        assert!(format!("{err}").contains("revoked but used"));
+        let drifts = enforcer.detect_drift();
+        assert!(
+            drifts
+                .iter()
+                .any(|drift| drift.as_str() == "used but undeclared: cap:network:connect")
+        );
+        assert!(
+            drifts
+                .iter()
+                .any(|drift| drift.as_str() == "revoked but used: cap:network:connect")
+        );
+        assert_eq!(enforcer.enforcement_log().len(), 1);
+        assert_eq!(
+            enforcer.enforcement_log()[0].event_code,
+            event_codes::CART_007
+        );
+    }
+
+    #[test]
+    fn test_repeated_undeclared_uses_do_not_duplicate_used_set_but_audit_each_attempt() {
+        let mut env = CapabilityEnvelope::new();
+        env.add_requirement(CapabilityRequirement::new("cap:fs:read", "read", true));
+        let mut enforcer = EnvelopeEnforcer::from_envelope("ext-repeat-drift", &env);
+
+        let first = enforcer.check_capability("cap:process:spawn", "t1");
+        let second = enforcer.check_capability("cap:process:spawn", "t2");
+
+        assert!(first.is_err());
+        assert!(second.is_err());
+        assert_eq!(enforcer.used_capabilities.len(), 1);
+        assert!(enforcer.used_capabilities.contains("cap:process:spawn"));
+        assert_eq!(
+            enforcer
+                .enforcement_log()
+                .iter()
+                .filter(|entry| entry.event_code == event_codes::CART_007)
+                .count(),
+            2
+        );
+        assert!(
+            !enforcer
+                .enforcement_log()
+                .iter()
+                .any(|entry| entry.event_code == event_codes::CART_006)
+        );
+    }
 }

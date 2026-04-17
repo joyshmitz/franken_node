@@ -806,6 +806,15 @@ mod tests {
     }
 
     #[test]
+    fn reserved_policy_id_with_padding_fails_as_reserved() {
+        let mut policy = full_policy();
+        policy.policy_id = format!(" {RESERVED_POLICY_ID} ");
+        let err = compile_policy(&policy, "trace-reserved-policy-padded").unwrap_err();
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_001_INVALID_INPUT);
+        assert!(err.message.contains("reserved"));
+    }
+
+    #[test]
     fn policy_id_reserved_fails() {
         let mut policy = full_policy();
         policy.policy_id = RESERVED_POLICY_ID.to_string();
@@ -838,6 +847,16 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_rule_id_after_trimming_fails() {
+        let mut policy = full_policy();
+        policy.rules[0].rule_id = "dup-rule".to_string();
+        policy.rules[1].rule_id = " dup-rule ".to_string();
+        let err = compile_policy(&policy, "trace-trimmed-dup").unwrap_err();
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_004_INVALID_RULE);
+        assert_eq!(err.rule_id.as_deref(), Some("dup-rule"));
+    }
+
+    #[test]
     fn require_rule_needs_detail() {
         let policy = RuntimePolicy {
             schema_version: LANGUAGE_VERSION.to_string(),
@@ -854,6 +873,34 @@ mod tests {
 
         let err = compile_policy(&policy, "trace-require").unwrap_err();
         assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_004_INVALID_RULE);
+    }
+
+    #[test]
+    fn require_rule_with_only_blank_capability_fails() {
+        let mut policy = full_policy();
+        policy.require_full_action_coverage = false;
+        policy.rules.truncate(1);
+        policy.rules[0].effect = RuleEffect::Require;
+        policy.rules[0].required_capabilities = vec!["   ".to_string()];
+        policy.rules[0].constraints.clear();
+
+        let err = compile_policy(&policy, "trace-blank-cap").unwrap_err();
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_004_INVALID_RULE);
+        assert!(err.message.contains("require rule"));
+    }
+
+    #[test]
+    fn constraint_key_error_uses_trimmed_rule_id() {
+        let mut policy = full_policy();
+        policy.rules[0].rule_id = " keyed-rule ".to_string();
+        policy.rules[0]
+            .constraints
+            .insert("   ".to_string(), "scope".to_string());
+
+        let err = compile_policy(&policy, "trace-empty-key").unwrap_err();
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_004_INVALID_RULE);
+        assert!(err.message.contains("constraint key"));
+        assert_eq!(err.rule_id.as_deref(), Some("keyed-rule"));
     }
 
     #[test]
@@ -880,6 +927,97 @@ mod tests {
     }
 
     #[test]
+    fn empty_schema_version_fails() {
+        let mut policy = full_policy();
+        policy.schema_version = "   ".to_string();
+
+        let err = compile_policy(&policy, "trace-empty-schema").unwrap_err();
+
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_001_INVALID_INPUT);
+    }
+
+    #[test]
+    fn whitespace_only_policy_id_fails_without_rule_context() {
+        let mut policy = full_policy();
+        policy.policy_id = "   ".to_string();
+
+        let err = compile_policy(&policy, "trace-empty-policy").unwrap_err();
+
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_001_INVALID_INPUT);
+        assert!(err.rule_id.is_none());
+    }
+
+    #[test]
+    fn empty_rule_set_fails() {
+        let mut policy = full_policy();
+        policy.rules.clear();
+
+        let err = compile_policy(&policy, "trace-empty-rules").unwrap_err();
+
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_001_INVALID_INPUT);
+        assert!(err.message.contains("at least one rule"));
+    }
+
+    #[test]
+    fn single_rule_policy_constraint_key_must_be_non_empty() {
+        let policy = RuntimePolicy {
+            schema_version: LANGUAGE_VERSION.to_string(),
+            policy_id: "policy-empty-key".to_string(),
+            require_full_action_coverage: false,
+            rules: vec![PolicyRule {
+                rule_id: "rule-1".to_string(),
+                action_class: ActionClass::NetworkAccess,
+                effect: RuleEffect::Allow,
+                required_capabilities: vec![],
+                constraints: {
+                    let mut map = BTreeMap::new();
+                    map.insert("  ".to_string(), "network".to_string());
+                    map
+                },
+            }],
+        };
+
+        let err = compile_policy(&policy, "trace-empty-key").unwrap_err();
+
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_004_INVALID_RULE);
+        assert_eq!(err.rule_id.as_deref(), Some("rule-1"));
+    }
+
+    #[test]
+    fn round_trip_semantics_propagates_invalid_rule() {
+        let mut policy = full_policy();
+        policy.rules[0].rule_id = "   ".to_string();
+
+        let err = round_trip_semantics(&policy, "trace-roundtrip-invalid").unwrap_err();
+
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_004_INVALID_RULE);
+    }
+
+    #[test]
+    fn proof_generator_rejects_invalid_language_version() {
+        let mut envelope = compile_policy(&full_policy(), "trace-proofgen-lang").unwrap();
+        envelope.language_version = "bad-language".to_string();
+
+        assert!(!proof_generator_accepts(&envelope));
+    }
+
+    #[test]
+    fn proof_generator_rejects_empty_predicates() {
+        let mut envelope = compile_policy(&full_policy(), "trace-proofgen-empty-preds").unwrap();
+        envelope.predicates.clear();
+
+        assert!(!proof_generator_accepts(&envelope));
+    }
+
+    #[test]
+    fn proof_generator_rejects_predicate_without_rule_trace_link() {
+        let mut envelope = compile_policy(&full_policy(), "trace-proofgen-bad-trace").unwrap();
+        envelope.predicates[0].trace_link = "policy:policy-full".to_string();
+
+        assert!(!proof_generator_accepts(&envelope));
+    }
+
+    #[test]
     fn decompile_projection_matches_rule_count() {
         let envelope = compile_policy(&full_policy(), "trace-decompile").unwrap();
         let projection = decompile_projection(&envelope);
@@ -896,6 +1034,50 @@ mod tests {
     fn proof_generator_rejects_invalid_schema() {
         let mut envelope = compile_policy(&full_policy(), "trace-proofgen-bad").unwrap();
         envelope.schema_version = "bad-schema".to_string();
+        assert!(!proof_generator_accepts(&envelope));
+    }
+
+    #[test]
+    fn proof_generator_rejects_empty_predicate_id() {
+        let mut envelope =
+            compile_policy(&full_policy(), "trace-proofgen-empty-predicate").unwrap();
+        envelope.predicates[0].predicate_id.clear();
+        assert!(!proof_generator_accepts(&envelope));
+    }
+
+    #[test]
+    fn proof_generator_rejects_empty_source_rule_id() {
+        let mut envelope = compile_policy(&full_policy(), "trace-proofgen-empty-source").unwrap();
+        envelope.predicates[0].source_rule_id.clear();
+        assert!(!proof_generator_accepts(&envelope));
+    }
+
+    #[test]
+    fn proof_generator_rejects_empty_rule_projections() {
+        let mut envelope = compile_policy(&full_policy(), "trace-proofgen-empty-proj").unwrap();
+        envelope.rule_projections.clear();
+        assert!(!proof_generator_accepts(&envelope));
+    }
+
+    #[test]
+    fn proof_generator_rejects_empty_coverage() {
+        let mut envelope = compile_policy(&full_policy(), "trace-proofgen-empty-coverage").unwrap();
+        envelope.coverage.clear();
+        assert!(!proof_generator_accepts(&envelope));
+    }
+
+    #[test]
+    fn proof_generator_rejects_empty_expression() {
+        let mut envelope =
+            compile_policy(&full_policy(), "trace-proofgen-empty-expression").unwrap();
+        envelope.predicates[0].expression.clear();
+        assert!(!proof_generator_accepts(&envelope));
+    }
+
+    #[test]
+    fn proof_generator_rejects_non_policy_trace_prefix() {
+        let mut envelope = compile_policy(&full_policy(), "trace-proofgen-trace-prefix").unwrap();
+        envelope.predicates[0].trace_link = "claim:policy-full/rule:rule-00".to_string();
         assert!(!proof_generator_accepts(&envelope));
     }
 

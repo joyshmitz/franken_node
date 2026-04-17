@@ -31,6 +31,9 @@ const MAX_CHILD_REGION_IDS: usize = 4096;
 const MAX_TASKS: usize = 4096;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        return;
+    }
     if items.len() >= cap {
         let overflow = items.len() - cap + 1;
         items.drain(0..overflow);
@@ -822,5 +825,217 @@ mod tests {
         let event = region.open_event();
         assert_eq!(event.cx_id, expected);
         assert!(event.detail.contains("cx="));
+    }
+
+    #[test]
+    fn close_with_zero_budget_force_terminates_running_task() {
+        let mut region = Region::new_root(test_cx(), 0);
+        region.register_task("slow-task").unwrap();
+
+        let result = region.close().unwrap();
+
+        assert!(!result.quiescence_achieved);
+        assert_eq!(result.tasks_drained, 0);
+        assert_eq!(result.tasks_force_terminated, 1);
+        assert_eq!(region.tasks[0].state, TaskState::ForceTerminated);
+        assert!(result.events.iter().any(|event| {
+            event.event_code == event_codes::CHILD_FORCE_TERMINATED
+                && event.detail.contains("slow-task")
+        }));
+        assert!(
+            result
+                .events
+                .iter()
+                .any(|event| event.event_code == event_codes::QUIESCENCE_TIMEOUT)
+        );
+    }
+
+    #[test]
+    fn close_with_existing_force_terminated_task_reports_timeout() {
+        let mut region = Region::new_root(test_cx(), 5000);
+        region.register_task("already-killed").unwrap();
+        region.tasks[0].state = TaskState::ForceTerminated;
+
+        let result = region.close().unwrap();
+
+        assert!(!result.quiescence_achieved);
+        assert_eq!(result.tasks_drained, 0);
+        assert_eq!(result.tasks_force_terminated, 1);
+        assert_eq!(region.active_task_count(), 0);
+        assert!(region.is_quiescent());
+    }
+
+    #[test]
+    fn close_twice_preserves_region_id_in_error() {
+        let mut region = Region::new_root(test_cx(), 5000);
+        let region_id = region.id;
+        region.close().unwrap();
+
+        let err = region.close().unwrap_err();
+
+        assert_eq!(err, RegionError::AlreadyClosed { region_id });
+        assert!(err.to_string().contains("RGN_ALREADY_CLOSED"));
+    }
+
+    #[test]
+    fn register_task_after_close_preserves_region_id_in_error() {
+        let mut region = Region::new_root(test_cx(), 5000);
+        let region_id = region.id;
+        region.close().unwrap();
+
+        let err = region.register_task("late-task").unwrap_err();
+
+        assert_eq!(err, RegionError::AlreadyClosed { region_id });
+        assert!(region.tasks.is_empty());
+    }
+
+    #[test]
+    fn complete_missing_task_preserves_task_id_in_error() {
+        let mut region = Region::new_root(test_cx(), 5000);
+        region.register_task("existing-task").unwrap();
+        let region_id = region.id;
+
+        let err = region.complete_task("missing-task").unwrap_err();
+
+        assert_eq!(
+            err,
+            RegionError::TaskNotFound {
+                region_id,
+                task_id: "missing-task".to_string()
+            }
+        );
+        assert_eq!(region.active_task_count(), 1);
+    }
+
+    #[test]
+    fn serde_rejects_unknown_region_kind() {
+        let err = serde_json::from_str::<RegionKind>(r#""speculative""#).unwrap_err();
+
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn serde_rejects_unknown_task_state() {
+        let err = serde_json::from_str::<TaskState>(r#""zombie""#).unwrap_err();
+
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn serde_rejects_task_not_found_error_missing_task_id() {
+        let json = serde_json::json!({
+            "code": "RGN_TASK_NOT_FOUND",
+            "region_id": 7
+        });
+
+        let err = serde_json::from_value::<RegionError>(json).unwrap_err();
+
+        assert!(err.to_string().contains("task_id"));
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_drops_item_without_panicking() {
+        let mut ids = vec![RegionId(1), RegionId(2)];
+
+        push_bounded(&mut ids, RegionId(3), 0);
+
+        assert_eq!(ids, vec![RegionId(1), RegionId(2)]);
+    }
+
+    #[test]
+    fn push_bounded_over_capacity_discards_oldest_child_ids() {
+        let mut ids = vec![RegionId(1), RegionId(2), RegionId(3)];
+
+        push_bounded(&mut ids, RegionId(4), 2);
+
+        assert_eq!(ids, vec![RegionId(3), RegionId(4)]);
+    }
+
+    #[test]
+    fn malformed_region_error_code_is_rejected() {
+        let json = serde_json::json!({
+            "code": "RGN_UNKNOWN",
+            "region_id": 9
+        });
+
+        let err = serde_json::from_value::<RegionError>(json).unwrap_err();
+
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn malformed_control_plane_cx_missing_id_is_rejected() {
+        let json = serde_json::json!({
+            "epoch": 42,
+            "seq": 7,
+            "parent_cx_id": null,
+            "connector_id": "conn-1",
+            "trace_id": "trace-1"
+        });
+
+        let err = serde_json::from_value::<ControlPlaneCx>(json).unwrap_err();
+
+        assert!(err.to_string().contains("cx_id"));
+    }
+
+    #[test]
+    fn malformed_region_task_unknown_state_is_rejected() {
+        let json = serde_json::json!({
+            "task_id": "task-1",
+            "state": "wedged",
+            "registered_at_ms": 0
+        });
+
+        let err = serde_json::from_value::<RegionTask>(json).unwrap_err();
+
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn completing_force_terminated_task_does_not_resurrect_it() {
+        let mut region = Region::new_root(test_cx(), 5000);
+        region.register_task("killed").unwrap();
+        region.tasks[0].state = TaskState::ForceTerminated;
+
+        region.complete_task("killed").unwrap();
+
+        assert_eq!(region.tasks[0].state, TaskState::ForceTerminated);
+        assert_eq!(region.active_task_count(), 0);
+        assert!(region.is_quiescent());
+    }
+
+    #[test]
+    fn close_mixed_completed_and_force_terminated_tasks_reports_timeout() {
+        let mut region = Region::new_root(test_cx(), 5000);
+        region.register_task("done").unwrap();
+        region.register_task("killed").unwrap();
+        region.tasks[0].state = TaskState::Completed;
+        region.tasks[1].state = TaskState::ForceTerminated;
+
+        let result = region.close().unwrap();
+
+        assert!(!result.quiescence_achieved);
+        assert_eq!(result.tasks_drained, 1);
+        assert_eq!(result.tasks_force_terminated, 1);
+        assert!(result.events.iter().any(|event| {
+            event.event_code == event_codes::QUIESCENCE_TIMEOUT
+                && event.child_task_count == 2
+        }));
+    }
+
+    #[test]
+    fn timeout_close_events_preserve_region_cx_id() {
+        let cx = test_cx();
+        let expected_cx_id = cx.cx_id.clone();
+        let mut region = Region::new_root(cx, 0);
+        region.register_task("slow").unwrap();
+
+        let result = region.close().unwrap();
+
+        assert!(!result.quiescence_achieved);
+        assert!(result
+            .events
+            .iter()
+            .all(|event| event.cx_id == expected_cx_id));
     }
 }

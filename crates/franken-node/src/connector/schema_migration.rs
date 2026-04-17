@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::security::constant_time::ct_eq_bytes;
 use crate::storage::models::SchemaMigrationRecord;
 
 const MAX_HINTS: usize = 4096;
@@ -19,11 +20,19 @@ const MAX_JOURNAL_RECORDS: usize = 4096;
 const RECEIPT_SCHEMA_VERSION: &str = "franken-node/schema-migration-receipt/v1";
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
+}
+
+fn len_to_u64(len: usize) -> u64 {
+    u64::try_from(len).unwrap_or(u64::MAX)
 }
 
 /// A semantic version (major.minor.patch).
@@ -535,6 +544,58 @@ pub fn execute_plan(
     let total = plan.steps.len();
     let original_state = state.clone();
 
+    match compute_state_hash(
+        &state.connector_id,
+        &state.schema_version,
+        &state.canonical_state,
+    ) {
+        Ok(actual_initial_hash) => {
+            if !ct_eq_bytes(
+                actual_initial_hash.as_bytes(),
+                initial_state_hash.as_bytes(),
+            ) {
+                return failed_receipt(
+                    plan,
+                    String::new(),
+                    String::new(),
+                    started_at,
+                    completed_at,
+                    initial_state_hash.clone(),
+                    initial_state_hash,
+                    total,
+                    0,
+                    0,
+                    0,
+                    Vec::new(),
+                    RollbackResult::NotNeeded,
+                    Vec::new(),
+                    MigrationError::StateConflict {
+                        reason: "state hash does not match canonical state payload".to_string(),
+                    },
+                );
+            }
+        }
+        Err(error) => {
+            return failed_receipt(
+                plan,
+                String::new(),
+                String::new(),
+                started_at,
+                completed_at,
+                initial_state_hash.clone(),
+                initial_state_hash,
+                total,
+                0,
+                0,
+                0,
+                Vec::new(),
+                RollbackResult::NotNeeded,
+                Vec::new(),
+                error,
+            );
+        }
+    }
+
     let normalized = match normalize_plan(plan) {
         Ok(normalized) => normalized,
         Err(error) => {
@@ -776,7 +837,7 @@ pub fn execute_plan(
         let checkpoint = state.clone();
         match apply_executable_step(state, step, timestamp) {
             Ok(record) => {
-                steps_applied += 1;
+                steps_applied = steps_applied.saturating_add(1);
                 let post_state_hash = state.state_hash.clone();
                 let journal_record_id = record.migration_id.clone();
                 push_bounded(&mut state.migration_journal, record, MAX_JOURNAL_RECORDS);
@@ -1014,9 +1075,9 @@ fn render_json(value: &Value) -> String {
 fn stable_digest(prefix: &str, parts: &[String]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(prefix.as_bytes());
-    hasher.update((parts.len() as u64).to_le_bytes());
+    hasher.update(len_to_u64(parts.len()).to_le_bytes());
     for part in parts {
-        hasher.update((part.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(part.len()).to_le_bytes());
         hasher.update(part.as_bytes());
     }
     hex::encode(hasher.finalize())
@@ -1034,10 +1095,10 @@ fn compute_state_hash(
         })?;
     let mut hasher = Sha256::new();
     hasher.update(b"schema_migration_state_v1:");
-    hasher.update((connector_id.len() as u64).to_le_bytes());
+    hasher.update(len_to_u64(connector_id.len()).to_le_bytes());
     hasher.update(connector_id.as_bytes());
     hasher.update(schema_version.to_string().as_bytes());
-    hasher.update((serialized.len() as u64).to_le_bytes());
+    hasher.update(len_to_u64(serialized.len()).to_le_bytes());
     hasher.update(serialized);
     Ok(hex::encode(hasher.finalize()))
 }
@@ -1219,10 +1280,9 @@ fn replay_proven_prefix_len(state: &ConnectorState, steps: &[ExecutableMigration
             continue;
         }
 
-        if suffix
-            .last()
-            .is_some_and(|record| record.checksum == state.state_hash)
-        {
+        if suffix.last().is_some_and(|record| {
+            ct_eq_bytes(record.checksum.as_bytes(), state.state_hash.as_bytes())
+        }) {
             return prefix_len;
         }
     }
@@ -1438,7 +1498,7 @@ fn rollback_or_fail_receipt(
         &original_state.schema_version,
         &original_state.canonical_state,
     ) {
-        Ok(hash) if hash == original_state.state_hash => hash,
+        Ok(hash) if ct_eq_bytes(hash.as_bytes(), original_state.state_hash.as_bytes()) => hash,
         Ok(_) | Err(_) => {
             return failed_receipt(
                 plan,
@@ -1738,6 +1798,318 @@ mod tests {
     }
 
     #[test]
+    fn execute_remove_field_success_path_emits_receipt_and_journal() {
+        let plan = MigrationPlan {
+            connector_id: "conn-1".into(),
+            from_version: v(1, 0, 0),
+            to_version: v(1, 0, 1),
+            steps: vec![MigrationHint {
+                from_version: v(1, 0, 0),
+                to_version: v(1, 0, 1),
+                hint_type: HintType::RemoveField,
+                description: "Remove legacy profile version field".into(),
+                idempotent: true,
+                rollback_safe: true,
+                mutation: MutationSpec::RemoveField {
+                    field: "profile_version".into(),
+                },
+            }],
+        };
+        let mut state = sample_state();
+        let receipt = execute_plan(&plan, &mut state, "2026-01-01T00:00:00Z");
+
+        assert_eq!(receipt.outcome, MigrationOutcome::Applied);
+        assert_eq!(receipt.steps_applied, 1);
+        assert_eq!(receipt.steps_total, 1);
+        assert_eq!(receipt.rollback_result, RollbackResult::NotNeeded);
+        assert_eq!(state.schema_version, v(1, 0, 1));
+        assert!(!state.canonical_state.contains_key("profile_version"));
+        assert_eq!(state.migration_journal.len(), 1);
+        assert!(ct_eq_bytes(
+            receipt.final_state_hash.as_bytes(),
+            state.state_hash.as_bytes()
+        ));
+        assert_eq!(receipt.step_results[0].status, MigrationStepStatus::Applied);
+        assert_eq!(
+            receipt.step_results[0].journal_record_id.as_deref(),
+            Some(receipt.step_results[0].step_id.as_str())
+        );
+    }
+
+    #[test]
+    fn first_step_conflict_fails_without_rollback_or_journal_mutation() {
+        let plan = MigrationPlan {
+            connector_id: "conn-1".into(),
+            from_version: v(1, 0, 0),
+            to_version: v(1, 1, 0),
+            steps: vec![MigrationHint {
+                from_version: v(1, 0, 0),
+                to_version: v(1, 1, 0),
+                hint_type: HintType::AddField,
+                description: "Add a conflicting name field".into(),
+                idempotent: true,
+                rollback_safe: true,
+                mutation: MutationSpec::AddField {
+                    field: "name".into(),
+                    value: json!("Grace Hopper"),
+                },
+            }],
+        };
+        let mut state = sample_state();
+        let original_hash = state.state_hash.clone();
+        let receipt = execute_plan(&plan, &mut state, "2026-01-01T00:00:00Z");
+
+        assert!(matches!(receipt.outcome, MigrationOutcome::Failed { .. }));
+        assert_eq!(receipt.rollback_result, RollbackResult::NotNeeded);
+        assert_eq!(receipt.steps_applied, 0);
+        assert_eq!(receipt.steps_rolled_back, 0);
+        assert_eq!(
+            receipt.error_code.as_deref(),
+            Some("MIGRATION_STATE_CONFLICT")
+        );
+        assert!(state.migration_journal.is_empty());
+        assert!(ct_eq_bytes(
+            state.state_hash.as_bytes(),
+            original_hash.as_bytes()
+        ));
+        assert_eq!(state.schema_version, v(1, 0, 0));
+        assert_eq!(receipt.step_results[0].status, MigrationStepStatus::Failed);
+    }
+
+    #[test]
+    fn rollback_after_transform_conflict_restores_hash_state_and_journal() {
+        let plan = MigrationPlan {
+            connector_id: "conn-1".into(),
+            from_version: v(1, 0, 0),
+            to_version: v(1, 2, 0),
+            steps: vec![
+                MigrationHint {
+                    from_version: v(1, 0, 0),
+                    to_version: v(1, 1, 0),
+                    hint_type: HintType::AddField,
+                    description: "Add email before failing transform".into(),
+                    idempotent: true,
+                    rollback_safe: true,
+                    mutation: MutationSpec::AddField {
+                        field: "email".into(),
+                        value: json!("unknown@example.invalid"),
+                    },
+                },
+                MigrationHint {
+                    from_version: v(1, 1, 0),
+                    to_version: v(1, 2, 0),
+                    hint_type: HintType::Transform,
+                    description: "Expect the wrong profile version".into(),
+                    idempotent: true,
+                    rollback_safe: true,
+                    mutation: MutationSpec::Transform {
+                        field: "profile_version".into(),
+                        from: json!(99),
+                        to: json!(2),
+                    },
+                },
+            ],
+        };
+        let mut state = sample_state();
+        let original_hash = state.state_hash.clone();
+        let original_state = state.canonical_state.clone();
+        let receipt = execute_plan(&plan, &mut state, "2026-01-01T00:00:00Z");
+
+        assert_eq!(receipt.outcome, MigrationOutcome::RolledBack);
+        assert_eq!(receipt.rollback_result, RollbackResult::RestoredCheckpoint);
+        assert_eq!(receipt.steps_applied, 1);
+        assert_eq!(receipt.steps_rolled_back, 1);
+        assert_eq!(state.schema_version, v(1, 0, 0));
+        assert_eq!(state.canonical_state, original_state);
+        assert!(state.migration_journal.is_empty());
+        assert!(ct_eq_bytes(
+            state.state_hash.as_bytes(),
+            original_hash.as_bytes()
+        ));
+        assert!(receipt.step_results.iter().any(|result| {
+            result.status == MigrationStepStatus::RolledBack
+                && ct_eq_bytes(result.post_state_hash.as_bytes(), original_hash.as_bytes())
+        }));
+        assert!(receipt.step_results.iter().any(|result| {
+            result.status == MigrationStepStatus::Failed && result.error_detail.is_some()
+        }));
+    }
+
+    #[test]
+    fn state_hash_payload_divergence_fails_before_any_step() {
+        let reg = sample_registry();
+        let plan = reg.build_plan("conn-1", &v(1, 0, 0), &v(1, 1, 0)).unwrap();
+        let mut state = sample_state();
+        let stale_hash = state.state_hash.clone();
+        state
+            .canonical_state
+            .insert("tampered".to_string(), json!(true));
+
+        let receipt = execute_plan(&plan, &mut state, "2026-01-01T00:00:00Z");
+
+        assert!(matches!(receipt.outcome, MigrationOutcome::Failed { .. }));
+        assert_eq!(
+            receipt.error_code.as_deref(),
+            Some("MIGRATION_STATE_CONFLICT")
+        );
+        assert_eq!(receipt.steps_applied, 0);
+        assert_eq!(receipt.steps_already_applied, 0);
+        assert_eq!(receipt.steps_rolled_back, 0);
+        assert!(receipt.step_results.is_empty());
+        assert!(ct_eq_bytes(
+            receipt.initial_state_hash.as_bytes(),
+            stale_hash.as_bytes()
+        ));
+        assert!(state.canonical_state.contains_key("tampered"));
+        assert!(ct_eq_bytes(
+            state.state_hash.as_bytes(),
+            stale_hash.as_bytes()
+        ));
+    }
+
+    #[test]
+    fn journal_suffix_checksum_mismatch_blocks_replay() {
+        let reg = sample_registry();
+        let plan = reg.build_plan("conn-1", &v(1, 0, 0), &v(2, 0, 0)).unwrap();
+        let mut state = sample_state();
+        let applied = execute_plan(&plan, &mut state, "2026-01-01T00:00:00Z");
+        assert_eq!(applied.outcome, MigrationOutcome::Applied);
+
+        state
+            .migration_journal
+            .last_mut()
+            .expect("applied plan should leave journal records")
+            .checksum = "0".repeat(64);
+
+        let replay = execute_plan(&plan, &mut state, "2026-01-01T00:00:01Z");
+
+        assert!(matches!(replay.outcome, MigrationOutcome::Failed { .. }));
+        assert_eq!(
+            replay.error_code.as_deref(),
+            Some("MIGRATION_STATE_CONFLICT")
+        );
+        assert_eq!(replay.steps_applied, 0);
+        assert_eq!(replay.steps_already_applied, 0);
+        assert!(replay.journal_record_ids.is_empty());
+    }
+
+    #[test]
+    fn deterministic_receipt_ignores_nested_object_key_insertion_order() {
+        let plan = MigrationPlan {
+            connector_id: "conn-1".into(),
+            from_version: v(1, 0, 0),
+            to_version: v(1, 1, 0),
+            steps: vec![MigrationHint {
+                from_version: v(1, 0, 0),
+                to_version: v(1, 1, 0),
+                hint_type: HintType::AddField,
+                description: "Add receipt marker".into(),
+                idempotent: true,
+                rollback_safe: true,
+                mutation: MutationSpec::AddField {
+                    field: "receipt_marker".into(),
+                    value: json!("ok"),
+                },
+            }],
+        };
+        let mut first_object = serde_json::Map::new();
+        first_object.insert("b".into(), json!(2));
+        first_object.insert("a".into(), json!(1));
+        let mut second_object = serde_json::Map::new();
+        second_object.insert("a".into(), json!(1));
+        second_object.insert("b".into(), json!(2));
+        let mut first_state = ConnectorState::new(
+            "conn-1",
+            v(1, 0, 0),
+            BTreeMap::from([("nested".to_string(), Value::Object(first_object))]),
+        )
+        .unwrap();
+        let mut second_state = ConnectorState::new(
+            "conn-1",
+            v(1, 0, 0),
+            BTreeMap::from([("nested".to_string(), Value::Object(second_object))]),
+        )
+        .unwrap();
+
+        let first_receipt = execute_plan(&plan, &mut first_state, "2026-01-01T00:00:00Z");
+        let second_receipt = execute_plan(&plan, &mut second_state, "2026-01-01T00:00:00Z");
+        let first_bytes = serde_json::to_vec(&first_receipt).unwrap();
+        let second_bytes = serde_json::to_vec(&second_receipt).unwrap();
+
+        assert_eq!(first_receipt.outcome, MigrationOutcome::Applied);
+        assert_eq!(second_receipt.outcome, MigrationOutcome::Applied);
+        assert!(ct_eq_bytes(
+            first_receipt.receipt_id.as_bytes(),
+            second_receipt.receipt_id.as_bytes()
+        ));
+        assert_eq!(first_bytes, second_bytes);
+    }
+
+    #[test]
+    fn deterministic_receipt_id_changes_when_timestamp_changes() {
+        let reg = sample_registry();
+        let plan = reg.build_plan("conn-1", &v(1, 0, 0), &v(1, 1, 0)).unwrap();
+        let mut first_state = sample_state();
+        let mut second_state = sample_state();
+
+        let first_receipt = execute_plan(&plan, &mut first_state, "2026-01-01T00:00:00Z");
+        let second_receipt = execute_plan(&plan, &mut second_state, "2026-01-01T00:00:01Z");
+
+        assert_eq!(first_receipt.outcome, MigrationOutcome::Applied);
+        assert_eq!(second_receipt.outcome, MigrationOutcome::Applied);
+        assert!(!ct_eq_bytes(
+            first_receipt.receipt_id.as_bytes(),
+            second_receipt.receipt_id.as_bytes()
+        ));
+    }
+
+    #[test]
+    fn deterministic_receipt_id_changes_when_mutation_changes() {
+        let first_plan = MigrationPlan {
+            connector_id: "conn-1".into(),
+            from_version: v(1, 0, 0),
+            to_version: v(1, 1, 0),
+            steps: vec![MigrationHint {
+                from_version: v(1, 0, 0),
+                to_version: v(1, 1, 0),
+                hint_type: HintType::AddField,
+                description: "Add email".into(),
+                idempotent: true,
+                rollback_safe: true,
+                mutation: MutationSpec::AddField {
+                    field: "email".into(),
+                    value: json!("unknown@example.invalid"),
+                },
+            }],
+        };
+        let mut second_plan = first_plan.clone();
+        second_plan.steps[0].mutation = MutationSpec::AddField {
+            field: "email".into(),
+            value: json!("alternate@example.invalid"),
+        };
+        let mut first_state = sample_state();
+        let mut second_state = sample_state();
+
+        let first_receipt = execute_plan(&first_plan, &mut first_state, "2026-01-01T00:00:00Z");
+        let second_receipt = execute_plan(&second_plan, &mut second_state, "2026-01-01T00:00:00Z");
+
+        assert_eq!(first_receipt.outcome, MigrationOutcome::Applied);
+        assert_eq!(second_receipt.outcome, MigrationOutcome::Applied);
+        assert!(!ct_eq_bytes(
+            first_receipt.plan_id.as_bytes(),
+            second_receipt.plan_id.as_bytes()
+        ));
+        assert!(!ct_eq_bytes(
+            first_receipt.receipt_id.as_bytes(),
+            second_receipt.receipt_id.as_bytes()
+        ));
+        assert_ne!(
+            first_state.canonical_state.get("email"),
+            second_state.canonical_state.get("email")
+        );
+    }
+
+    #[test]
     fn execute_rejects_rollback_unsafe_steps() {
         let plan = MigrationPlan {
             connector_id: "conn-1".into(),
@@ -1850,15 +2222,27 @@ mod tests {
         assert_eq!(second.steps_applied, 0);
         assert_eq!(second.steps_already_applied, 3);
         assert_eq!(second.steps_rolled_back, 0);
-        assert_eq!(second.initial_state_hash, state.state_hash);
-        assert_eq!(second.final_state_hash, state.state_hash);
+        assert!(ct_eq_bytes(
+            second.initial_state_hash.as_bytes(),
+            state.state_hash.as_bytes()
+        ));
+        assert!(ct_eq_bytes(
+            second.final_state_hash.as_bytes(),
+            state.state_hash.as_bytes()
+        ));
         assert_eq!(second.journal_record_ids.len(), 3);
         assert_eq!(second.step_results.len(), 3);
         assert!(second.step_results.iter().all(|result| {
             result.status == MigrationStepStatus::AlreadyApplied
                 && result.journal_record_id.as_ref() == Some(&result.step_id)
-                && result.pre_state_hash == state.state_hash
-                && result.post_state_hash == state.state_hash
+                && ct_eq_bytes(
+                    result.pre_state_hash.as_bytes(),
+                    state.state_hash.as_bytes(),
+                )
+                && ct_eq_bytes(
+                    result.post_state_hash.as_bytes(),
+                    state.state_hash.as_bytes(),
+                )
                 && result.error_detail.is_none()
         }));
     }

@@ -448,8 +448,8 @@ impl CancelInjectionGate {
             let canonical_key = format!("custom:{}", wf_key);
 
             if !self.control_workflows.contains_key(&wf_key) {
-                total_points += 1;
-                total_failed += 1;
+                total_points = total_points.saturating_add(1);
+                total_failed = total_failed.saturating_add(1);
                 workflow_results.push(WorkflowInjectionResult {
                     workflow: wf_key,
                     total_points: 1,
@@ -475,8 +475,8 @@ impl CancelInjectionGate {
             let point_count = await_points.len();
 
             if point_count == 0 {
-                total_points += 1;
-                total_failed += 1;
+                total_points = total_points.saturating_add(1);
+                total_failed = total_failed.saturating_add(1);
                 workflow_results.push(WorkflowInjectionResult {
                     workflow: wf_key,
                     total_points: 1,
@@ -496,8 +496,8 @@ impl CancelInjectionGate {
             let count_failures = point_count_mismatch_failures(workflow, &await_points);
             if !count_failures.is_empty() {
                 let failure_count = count_failures.len();
-                total_points += failure_count;
-                total_failed += failure_count;
+                total_points = total_points.saturating_add(failure_count);
+                total_failed = total_failed.saturating_add(failure_count);
                 workflow_results.push(WorkflowInjectionResult {
                     workflow: wf_key,
                     total_points: failure_count,
@@ -510,8 +510,8 @@ impl CancelInjectionGate {
 
             let metadata_failures = malformed_await_point_failures(workflow, &await_points);
             if !metadata_failures.is_empty() {
-                total_points += point_count;
-                total_failed += point_count;
+                total_points = total_points.saturating_add(point_count);
+                total_failed = total_failed.saturating_add(point_count);
                 workflow_results.push(WorkflowInjectionResult {
                     workflow: wf_key,
                     total_points: point_count,
@@ -531,7 +531,7 @@ impl CancelInjectionGate {
             };
 
             for (point, await_point) in await_points.iter().enumerate() {
-                total_points += 1;
+                total_points = total_points.saturating_add(1);
                 let ts = 1000 + point as u64 * 100;
                 let rb = ResourceSnapshot::empty(ts);
                 let ra = ResourceSnapshot::empty(ts + 50);
@@ -550,11 +550,11 @@ impl CancelInjectionGate {
                 ) {
                     Ok(outcome) => {
                         if outcome.is_pass() {
-                            wf_result.points_passed += 1;
-                            total_passed += 1;
+                            wf_result.points_passed = wf_result.points_passed.saturating_add(1);
+                            total_passed = total_passed.saturating_add(1);
                         } else {
-                            wf_result.points_failed += 1;
-                            total_failed += 1;
+                            wf_result.points_failed = wf_result.points_failed.saturating_add(1);
+                            total_failed = total_failed.saturating_add(1);
                             wf_result.failures.push(PointFailure {
                                 await_point_index: point,
                                 await_point_label: await_point.label.clone(),
@@ -564,8 +564,8 @@ impl CancelInjectionGate {
                         }
                     }
                     Err(e) => {
-                        wf_result.points_failed += 1;
-                        total_failed += 1;
+                        wf_result.points_failed = wf_result.points_failed.saturating_add(1);
+                        total_failed = total_failed.saturating_add(1);
                         wf_result.failures.push(PointFailure {
                             await_point_index: point,
                             await_point_label: await_point.label.clone(),
@@ -744,8 +744,12 @@ fn point_count_mismatch_failures(
 }
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
@@ -759,6 +763,20 @@ mod tests {
         let mut gate = CancelInjectionGate::new();
         gate.register_default_control_workflows("test");
         gate
+    }
+
+    fn clean_snapshots() -> (
+        ResourceSnapshot,
+        ResourceSnapshot,
+        StateSnapshot,
+        StateSnapshot,
+    ) {
+        (
+            ResourceSnapshot::empty(1000),
+            ResourceSnapshot::empty(1050),
+            StateSnapshot::new(5, 1000),
+            StateSnapshot::new(5, 1050),
+        )
     }
 
     // ---- Setup ----
@@ -1271,6 +1289,392 @@ mod tests {
             .run_injection_case("connector_lifecycle", 0, &rb, &ra, &sb, &sa, 50, "t1")
             .unwrap();
         assert!(outcome.is_pass());
+    }
+
+    #[test]
+    fn unknown_workflow_injection_case_returns_error_without_matrix_entry() {
+        let mut gate = make_gate();
+        let (rb, ra, sb, sa) = clean_snapshots();
+
+        let err = gate
+            .run_injection_case(
+                "unregistered_control_workflow",
+                0,
+                &rb,
+                &ra,
+                &sb,
+                &sa,
+                50,
+                "neg-unknown-workflow",
+            )
+            .expect_err("unregistered control workflow must fail closed");
+
+        assert!(err.contains("ERR_CANCEL_UNKNOWN_WORKFLOW"));
+        assert!(err.contains("custom:unregistered_control_workflow"));
+        assert_eq!(gate.framework().matrix().total_cases, 0);
+    }
+
+    #[test]
+    fn out_of_range_await_point_returns_error_without_matrix_entry() {
+        let mut gate = make_gate();
+        let (rb, ra, sb, sa) = clean_snapshots();
+
+        let err = gate
+            .run_injection_case(
+                "fencing_acquire",
+                99,
+                &rb,
+                &ra,
+                &sb,
+                &sa,
+                50,
+                "neg-invalid-point",
+            )
+            .expect_err("out-of-range await point must fail closed");
+
+        assert!(err.contains("ERR_CANCEL_INVALID_POINT"));
+        assert!(err.contains("custom:fencing_acquire@99"));
+        assert!(err.contains("exceeds max 2"));
+        assert_eq!(gate.framework().matrix().total_cases, 0);
+    }
+
+    #[test]
+    fn resource_leak_single_case_is_failed_outcome_and_matrix_failure() {
+        let mut gate = make_gate();
+        let (rb, mut ra, sb, sa) = clean_snapshots();
+        ra.file_handles = 1;
+        ra.temp_files = 2;
+
+        let outcome = gate
+            .run_injection_case("connector_lifecycle", 1, &rb, &ra, &sb, &sa, 50, "neg-leak")
+            .expect("registered workflow should return a leak outcome");
+
+        match &outcome {
+            CancelTestOutcome::LeakDetected { delta } => {
+                assert_eq!(delta.file_handles, 1);
+                assert_eq!(delta.temp_files, 2);
+            }
+            other => panic!("expected leak outcome, got {other:?}"),
+        }
+        assert!(!outcome.is_pass());
+
+        let matrix = gate.framework().matrix();
+        assert_eq!(matrix.total_cases, 1);
+        assert_eq!(matrix.pass_count, 0);
+        assert_eq!(matrix.fail_count, 1);
+        assert_eq!(matrix.entries[0].workflow, "custom:connector_lifecycle");
+        assert_eq!(matrix.entries[0].await_point_index, 1);
+        assert_eq!(matrix.entries[0].await_point_label, "health_probe");
+        assert_eq!(matrix.entries[0].resource_delta.file_handles, 1);
+        assert_eq!(matrix.entries[0].resource_delta.temp_files, 2);
+    }
+
+    #[test]
+    fn halfcommit_single_case_is_failed_outcome_and_matrix_failure() {
+        let mut gate = make_gate();
+        let (rb, ra, sb, mut sa) = clean_snapshots();
+        sa.root_pointer = Some("unexpected-root".to_string());
+
+        let outcome = gate
+            .run_injection_case(
+                "migration_orchestration",
+                2,
+                &rb,
+                &ra,
+                &sb,
+                &sa,
+                50,
+                "neg-halfcommit",
+            )
+            .expect("registered workflow should return a half-commit outcome");
+
+        match &outcome {
+            CancelTestOutcome::HalfCommitDetected { detection } => {
+                assert!(
+                    detection
+                        .changes
+                        .iter()
+                        .any(|change| change.contains("root_pointer"))
+                );
+            }
+            other => panic!("expected half-commit outcome, got {other:?}"),
+        }
+        assert!(!outcome.is_pass());
+
+        let matrix = gate.framework().matrix();
+        assert_eq!(matrix.total_cases, 1);
+        assert_eq!(matrix.pass_count, 0);
+        assert_eq!(matrix.fail_count, 1);
+        assert_eq!(matrix.entries[0].workflow, "custom:migration_orchestration");
+        assert_eq!(matrix.entries[0].await_point_index, 2);
+        assert_eq!(matrix.entries[0].await_point_label, "validate_result");
+        assert!(matrix.entries[0].halfcommit_detected);
+    }
+
+    #[test]
+    fn resource_leak_preempts_halfcommit_when_both_are_present() {
+        let mut gate = make_gate();
+        let (rb, mut ra, sb, mut sa) = clean_snapshots();
+        ra.locks_held = 1;
+        sa.epoch = 6;
+
+        let outcome = gate
+            .run_injection_case(
+                "rollout_transition",
+                2,
+                &rb,
+                &ra,
+                &sb,
+                &sa,
+                50,
+                "neg-leak-before-halfcommit",
+            )
+            .expect("registered workflow should return a negative outcome");
+
+        match &outcome {
+            CancelTestOutcome::LeakDetected { delta } => {
+                assert_eq!(delta.locks_held, 1);
+            }
+            other => panic!("expected leak outcome to be reported first, got {other:?}"),
+        }
+
+        let matrix = gate.framework().matrix();
+        assert_eq!(matrix.total_cases, 1);
+        assert_eq!(matrix.fail_count, 1);
+        assert!(!matrix.entries[0].halfcommit_detected);
+    }
+
+    #[test]
+    fn invalid_injection_case_after_negative_outcome_does_not_add_matrix_case() {
+        let mut gate = make_gate();
+        let (rb, mut ra, sb, sa) = clean_snapshots();
+        ra.memory_allocations = 3;
+
+        let first = gate
+            .run_injection_case(
+                "health_gate_evaluation",
+                0,
+                &rb,
+                &ra,
+                &sb,
+                &sa,
+                50,
+                "neg-recorded-first",
+            )
+            .expect("registered workflow should return a negative outcome");
+        assert!(!first.is_pass());
+        assert_eq!(gate.framework().matrix().total_cases, 1);
+
+        let err = gate
+            .run_injection_case(
+                "health_gate_evaluation",
+                42,
+                &rb,
+                &ra,
+                &sb,
+                &sa,
+                50,
+                "neg-invalid-second",
+            )
+            .expect_err("invalid await point should not record another matrix case");
+
+        assert!(err.contains("ERR_CANCEL_INVALID_POINT"));
+        assert_eq!(gate.framework().matrix().total_cases, 1);
+        assert_eq!(gate.framework().matrix().fail_count, 1);
+    }
+
+    #[test]
+    fn single_case_negative_outcome_does_not_publish_gate_report() {
+        let mut gate = make_gate();
+        let (rb, mut ra, sb, sa) = clean_snapshots();
+        ra.file_handles = 1;
+
+        let outcome = gate
+            .run_injection_case(
+                "quarantine_promotion",
+                0,
+                &rb,
+                &ra,
+                &sb,
+                &sa,
+                50,
+                "neg-no-report",
+            )
+            .expect("registered workflow should return a negative outcome");
+
+        assert!(!outcome.is_pass());
+        assert!(gate.report().is_none());
+        assert_eq!(gate.export_report_json(), "{}");
+    }
+
+    #[test]
+    fn failed_full_gate_export_preserves_failure_verdict_and_detail() {
+        let mut gate = make_gate();
+        gate.register_control_workflow(ControlWorkflow::RolloutTransition, Vec::new(), "neg");
+
+        let report = gate.run_full_gate("neg");
+        let json = gate.export_report_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let workflows = parsed["workflow_results"].as_array().unwrap();
+        let rollout = workflows
+            .iter()
+            .find(|workflow| workflow["workflow"] == "rollout_transition")
+            .expect("rollout failure should be exported");
+
+        assert_eq!(report.verdict, "FAIL");
+        assert_eq!(parsed["verdict"], "FAIL");
+        assert_eq!(
+            rollout["failures"][0]["failure_type"],
+            error_codes::ERR_CIG_MATRIX_INCOMPLETE
+        );
+        assert!(
+            rollout["failures"][0]["detail"]
+                .as_str()
+                .unwrap()
+                .contains("no registered await points")
+        );
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_without_panic() {
+        let mut items = vec![1, 2, 3];
+
+        push_bounded(&mut items, 4, 0);
+
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn push_bounded_overfull_vector_trims_to_capacity() {
+        let mut items = vec![1, 2, 3, 4];
+
+        push_bounded(&mut items, 5, 2);
+
+        assert_eq!(items, vec![4, 5]);
+    }
+
+    #[test]
+    fn push_bounded_capacity_one_keeps_newest_item_only() {
+        let mut items = vec![10];
+
+        push_bounded(&mut items, 11, 1);
+
+        assert_eq!(items, vec![11]);
+    }
+
+    #[test]
+    fn point_count_mismatch_reports_extra_unexpected_await_point() {
+        let points = vec![
+            AwaitPoint::new(
+                WorkflowId::Custom("fencing_acquire".into()),
+                0,
+                "token_request",
+                "Requesting fencing token",
+            ),
+            AwaitPoint::new(
+                WorkflowId::Custom("fencing_acquire".into()),
+                1,
+                "epoch_validate",
+                "Validating epoch binding",
+            ),
+            AwaitPoint::new(
+                WorkflowId::Custom("fencing_acquire".into()),
+                2,
+                "token_commit",
+                "Committing token acquisition",
+            ),
+            AwaitPoint::new(
+                WorkflowId::Custom("fencing_acquire".into()),
+                3,
+                "extra_commit",
+                "Unexpected extra point",
+            ),
+        ];
+
+        let failures = point_count_mismatch_failures(&ControlWorkflow::FencingAcquire, &points);
+
+        assert_eq!(failures.len(), 4);
+        assert!(
+            failures
+                .iter()
+                .all(|failure| failure.failure_type == error_codes::ERR_CIG_MATRIX_INCOMPLETE)
+        );
+        assert_eq!(failures[3].await_point_label, "extra_commit");
+        assert!(
+            failures[0]
+                .detail
+                .contains("registers 4 await points but canonical matrix requires 3")
+        );
+    }
+
+    #[test]
+    fn point_count_mismatch_reports_missing_tail_await_point() {
+        let points = vec![
+            AwaitPoint::new(
+                WorkflowId::Custom("fencing_acquire".into()),
+                0,
+                "token_request",
+                "Requesting fencing token",
+            ),
+            AwaitPoint::new(
+                WorkflowId::Custom("fencing_acquire".into()),
+                1,
+                "epoch_validate",
+                "Validating epoch binding",
+            ),
+        ];
+
+        let failures = point_count_mismatch_failures(&ControlWorkflow::FencingAcquire, &points);
+
+        assert_eq!(failures.len(), 3);
+        assert_eq!(failures[2].await_point_index, 2);
+        assert_eq!(failures[2].await_point_label, "token_commit");
+        assert!(
+            failures[2]
+                .detail
+                .contains("registers 2 await points but canonical matrix requires 3")
+        );
+    }
+
+    #[test]
+    fn malformed_await_point_failure_fans_out_to_all_points() {
+        let points = vec![
+            AwaitPoint::new(
+                WorkflowId::Custom("wrong_workflow".into()),
+                0,
+                "probe_collect",
+                "Wrong workflow",
+            ),
+            AwaitPoint::new(
+                WorkflowId::Custom("health_gate_evaluation".into()),
+                1,
+                "score_compute",
+                "Computing health score",
+            ),
+            AwaitPoint::new(
+                WorkflowId::Custom("health_gate_evaluation".into()),
+                2,
+                "verdict_emit",
+                "Emitting health verdict",
+            ),
+        ];
+
+        let failures =
+            malformed_await_point_failures(&ControlWorkflow::HealthGateEvaluation, &points);
+
+        assert_eq!(failures.len(), 3);
+        assert_eq!(failures[0].await_point_label, "probe_collect");
+        assert!(failures[0].detail.contains("instead of"));
+        assert!(
+            failures[1]
+                .detail
+                .contains("workflow registration is malformed")
+        );
+        assert!(
+            failures
+                .iter()
+                .all(|failure| failure.failure_type == error_codes::ERR_CIG_MATRIX_INCOMPLETE)
+        );
     }
 
     // ---- INV-CIG-CANONICAL-ONLY ----

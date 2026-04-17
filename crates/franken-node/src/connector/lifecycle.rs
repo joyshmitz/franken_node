@@ -182,6 +182,28 @@ pub struct TransitionEntry {
 mod tests {
     use super::*;
 
+    fn assert_illegal_transition(
+        from: ConnectorState,
+        to: ConnectorState,
+        expected_permitted: &[ConnectorState],
+    ) {
+        let err = transition(from, to).unwrap_err();
+        match err {
+            LifecycleError::IllegalTransition {
+                from: actual_from,
+                to: actual_to,
+                permitted,
+            } => {
+                assert_eq!(actual_from, from);
+                assert_eq!(actual_to, to);
+                assert_eq!(permitted.as_slice(), expected_permitted);
+            }
+            LifecycleError::SelfTransition { .. } => {
+                unreachable!("expected IllegalTransition")
+            }
+        }
+    }
+
     #[test]
     fn happy_path_full_lifecycle() {
         let mut state = ConnectorState::Discovered;
@@ -224,6 +246,222 @@ mod tests {
             }
             _ => unreachable!("expected IllegalTransition"),
         }
+    }
+
+    #[test]
+    fn discovered_cannot_skip_to_configured() {
+        let err = transition(ConnectorState::Discovered, ConnectorState::Configured).unwrap_err();
+        match err {
+            LifecycleError::IllegalTransition {
+                from,
+                to,
+                permitted,
+            } => {
+                assert_eq!(from, ConnectorState::Discovered);
+                assert_eq!(to, ConnectorState::Configured);
+                assert!(!permitted.contains(&ConnectorState::Configured));
+            }
+            _ => unreachable!("expected IllegalTransition"),
+        }
+    }
+
+    #[test]
+    fn verified_cannot_skip_to_active() {
+        let err = transition(ConnectorState::Verified, ConnectorState::Active).unwrap_err();
+        match err {
+            LifecycleError::IllegalTransition {
+                from,
+                to,
+                permitted,
+            } => {
+                assert_eq!(from, ConnectorState::Verified);
+                assert_eq!(to, ConnectorState::Active);
+                assert_eq!(
+                    permitted,
+                    vec![ConnectorState::Installed, ConnectorState::Failed]
+                );
+            }
+            _ => unreachable!("expected IllegalTransition"),
+        }
+    }
+
+    #[test]
+    fn installed_cannot_skip_to_active() {
+        let err = transition(ConnectorState::Installed, ConnectorState::Active).unwrap_err();
+        match err {
+            LifecycleError::IllegalTransition {
+                from,
+                to,
+                permitted,
+            } => {
+                assert_eq!(from, ConnectorState::Installed);
+                assert_eq!(to, ConnectorState::Active);
+                assert_eq!(
+                    permitted,
+                    vec![ConnectorState::Configured, ConnectorState::Failed]
+                );
+            }
+            _ => unreachable!("expected IllegalTransition"),
+        }
+    }
+
+    #[test]
+    fn stopped_cannot_resume_active_directly() {
+        let err = transition(ConnectorState::Stopped, ConnectorState::Active).unwrap_err();
+        match err {
+            LifecycleError::IllegalTransition {
+                from,
+                to,
+                permitted,
+            } => {
+                assert_eq!(from, ConnectorState::Stopped);
+                assert_eq!(to, ConnectorState::Active);
+                assert_eq!(
+                    permitted,
+                    vec![ConnectorState::Configured, ConnectorState::Failed]
+                );
+            }
+            _ => unreachable!("expected IllegalTransition"),
+        }
+    }
+
+    #[test]
+    fn cancelling_cannot_resume_active() {
+        let err = transition(ConnectorState::Cancelling, ConnectorState::Active).unwrap_err();
+        match err {
+            LifecycleError::IllegalTransition {
+                from,
+                to,
+                permitted,
+            } => {
+                assert_eq!(from, ConnectorState::Cancelling);
+                assert_eq!(to, ConnectorState::Active);
+                assert_eq!(
+                    permitted,
+                    vec![ConnectorState::Stopped, ConnectorState::Failed]
+                );
+            }
+            _ => unreachable!("expected IllegalTransition"),
+        }
+    }
+
+    #[test]
+    fn failed_cannot_reinstall_directly() {
+        let err = transition(ConnectorState::Failed, ConnectorState::Installed).unwrap_err();
+        match err {
+            LifecycleError::IllegalTransition {
+                from,
+                to,
+                permitted,
+            } => {
+                assert_eq!(from, ConnectorState::Failed);
+                assert_eq!(to, ConnectorState::Installed);
+                assert_eq!(permitted, vec![ConnectorState::Discovered]);
+            }
+            _ => unreachable!("expected IllegalTransition"),
+        }
+    }
+
+    #[test]
+    fn configured_cannot_pause_before_activation() {
+        assert_illegal_transition(
+            ConnectorState::Configured,
+            ConnectorState::Paused,
+            &[ConnectorState::Active, ConnectorState::Failed],
+        );
+    }
+
+    #[test]
+    fn configured_cannot_stop_before_activation() {
+        assert_illegal_transition(
+            ConnectorState::Configured,
+            ConnectorState::Stopped,
+            &[ConnectorState::Active, ConnectorState::Failed],
+        );
+    }
+
+    #[test]
+    fn paused_cannot_reconfigure_directly() {
+        assert_illegal_transition(
+            ConnectorState::Paused,
+            ConnectorState::Configured,
+            &[
+                ConnectorState::Active,
+                ConnectorState::Cancelling,
+                ConnectorState::Stopped,
+                ConnectorState::Failed,
+            ],
+        );
+    }
+
+    #[test]
+    fn active_cannot_reconfigure_without_stopping() {
+        assert_illegal_transition(
+            ConnectorState::Active,
+            ConnectorState::Configured,
+            &[
+                ConnectorState::Paused,
+                ConnectorState::Cancelling,
+                ConnectorState::Stopped,
+                ConnectorState::Failed,
+            ],
+        );
+    }
+
+    #[test]
+    fn stopped_cannot_install_directly() {
+        assert_illegal_transition(
+            ConnectorState::Stopped,
+            ConnectorState::Installed,
+            &[ConnectorState::Configured, ConnectorState::Failed],
+        );
+    }
+
+    #[test]
+    fn failed_cannot_pause_directly() {
+        assert_illegal_transition(
+            ConnectorState::Failed,
+            ConnectorState::Paused,
+            &[ConnectorState::Discovered],
+        );
+    }
+
+    #[test]
+    fn verified_cannot_stop_directly() {
+        assert_illegal_transition(
+            ConnectorState::Verified,
+            ConnectorState::Stopped,
+            &[ConnectorState::Installed, ConnectorState::Failed],
+        );
+    }
+
+    #[test]
+    fn installed_cannot_pause_directly() {
+        assert_illegal_transition(
+            ConnectorState::Installed,
+            ConnectorState::Paused,
+            &[ConnectorState::Configured, ConnectorState::Failed],
+        );
+    }
+
+    #[test]
+    fn transition_matrix_excludes_self_transitions() {
+        let matrix = transition_matrix();
+
+        for state in ConnectorState::ALL {
+            assert!(
+                !matrix
+                    .iter()
+                    .any(|entry| entry.from == state && entry.to == state)
+            );
+        }
+    }
+
+    #[test]
+    fn serde_unknown_state_fails() {
+        let result = serde_json::from_str::<ConnectorState>("\"decommissioned\"");
+
+        assert!(result.is_err());
     }
 
     #[test]

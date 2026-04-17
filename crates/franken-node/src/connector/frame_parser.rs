@@ -176,7 +176,7 @@ pub fn check_frame(
 ) -> Result<(DecodeVerdict, DecodeAuditEntry), ParserError> {
     validate_config(config)?;
 
-    if frame.frame_id.is_empty() {
+    if frame.frame_id.trim().is_empty() {
         return Err(ParserError::MalformedFrame {
             frame_id: "(empty)".into(),
             reason: "frame_id must not be empty".into(),
@@ -299,6 +299,22 @@ mod tests {
     }
 
     #[test]
+    fn exact_size_limit_blocks_with_payload() {
+        let f = frame("f1", 1000, 5, 20);
+        let (v, audit) = check_frame(&f, &config(), "ts").unwrap();
+
+        assert!(!v.allowed);
+        assert_eq!(
+            v.violations,
+            vec![GuardrailViolation::SizeExceeded {
+                actual: 1000,
+                limit: 1000,
+            }]
+        );
+        assert_eq!(audit.verdict, "BLOCK");
+    }
+
+    #[test]
     fn block_depth_exceeded() {
         let f = frame("f1", 500, 11, 20);
         let (v, _) = check_frame(&f, &config(), "ts").unwrap();
@@ -308,6 +324,22 @@ mod tests {
                 .iter()
                 .any(|v| matches!(v, GuardrailViolation::DepthExceeded { .. }))
         );
+    }
+
+    #[test]
+    fn exact_depth_limit_blocks_with_payload() {
+        let f = frame("f1", 500, 10, 20);
+        let (v, audit) = check_frame(&f, &config(), "ts").unwrap();
+
+        assert!(!v.allowed);
+        assert_eq!(
+            v.violations,
+            vec![GuardrailViolation::DepthExceeded {
+                actual: 10,
+                limit: 10,
+            }]
+        );
+        assert_eq!(audit.verdict, "BLOCK");
     }
 
     #[test]
@@ -323,6 +355,22 @@ mod tests {
     }
 
     #[test]
+    fn exact_cpu_limit_blocks_with_payload() {
+        let f = frame("f1", 500, 5, 50);
+        let (v, audit) = check_frame(&f, &config(), "ts").unwrap();
+
+        assert!(!v.allowed);
+        assert_eq!(
+            v.violations,
+            vec![GuardrailViolation::CpuExceeded {
+                actual: 50,
+                limit: 50,
+            }]
+        );
+        assert_eq!(audit.verdict, "BLOCK");
+    }
+
+    #[test]
     fn multiple_violations() {
         let f = frame("f1", 1001, 11, 51);
         let (v, _) = check_frame(&f, &config(), "ts").unwrap();
@@ -331,10 +379,49 @@ mod tests {
     }
 
     #[test]
+    fn exact_all_limits_emit_all_blocking_violations() {
+        let f = frame("f1", 1000, 10, 50);
+        let (v, audit) = check_frame(&f, &config(), "ts").unwrap();
+
+        assert!(!v.allowed);
+        assert_eq!(v.violations.len(), 3);
+        assert_eq!(
+            v.violations,
+            vec![
+                GuardrailViolation::SizeExceeded {
+                    actual: 1000,
+                    limit: 1000,
+                },
+                GuardrailViolation::DepthExceeded {
+                    actual: 10,
+                    limit: 10,
+                },
+                GuardrailViolation::CpuExceeded {
+                    actual: 50,
+                    limit: 50,
+                },
+            ]
+        );
+        assert_eq!(audit.verdict, "BLOCK");
+    }
+
+    #[test]
     fn malformed_empty_id() {
         let f = frame("", 100, 5, 20);
         let err = check_frame(&f, &config(), "ts").unwrap_err();
         assert_eq!(err.code(), "BPG_MALFORMED_FRAME");
+    }
+
+    #[test]
+    fn malformed_empty_id_reports_placeholder_and_reason() {
+        let f = frame("", 100, 5, 20);
+        let err = check_frame(&f, &config(), "ts").unwrap_err();
+
+        assert!(matches!(
+            err,
+            ParserError::MalformedFrame { ref frame_id, ref reason }
+                if frame_id == "(empty)" && reason == "frame_id must not be empty"
+        ));
     }
 
     #[test]
@@ -369,6 +456,31 @@ mod tests {
         assert!(results[0].0.allowed);
         assert!(!results[1].0.allowed);
         assert!(results[2].0.allowed);
+    }
+
+    #[test]
+    fn batch_rejects_invalid_config_before_frame_validation() {
+        let mut cfg = config();
+        cfg.max_frame_bytes = 0;
+        let frames = vec![frame("", 100, 5, 20)];
+        let err = check_batch(&frames, &cfg, "ts").unwrap_err();
+
+        assert!(matches!(
+            err,
+            ParserError::InvalidConfig { ref reason }
+                if reason == "max_frame_bytes must be > 0"
+        ));
+    }
+
+    #[test]
+    fn batch_aborts_on_malformed_frame_after_valid_prefix() {
+        let frames = vec![frame("f1", 500, 5, 20), frame("", 500, 5, 20)];
+        let err = check_batch(&frames, &config(), "ts").unwrap_err();
+
+        assert!(matches!(
+            err,
+            ParserError::MalformedFrame { ref frame_id, .. } if frame_id == "(empty)"
+        ));
     }
 
     #[test]
@@ -473,5 +585,249 @@ mod tests {
         let f = frame("f2", 999, 9, 49);
         let (v, _) = check_frame(&f, &config(), "ts").unwrap();
         assert!(v.allowed);
+    }
+}
+
+#[cfg(test)]
+mod frame_parser_additional_negative_tests {
+    use super::*;
+
+    fn config() -> ParserConfig {
+        ParserConfig {
+            max_frame_bytes: 1000,
+            max_nesting_depth: 10,
+            max_decode_cpu_ms: 50,
+        }
+    }
+
+    fn frame(id: &str, bytes: u64, depth: u32, cpu: u64) -> FrameInput {
+        FrameInput {
+            frame_id: id.to_string(),
+            raw_bytes_len: bytes,
+            nesting_depth: depth,
+            decode_cpu_ms: cpu,
+        }
+    }
+
+    #[test]
+    fn whitespace_frame_id_is_malformed() {
+        let err = check_frame(&frame("   ", 100, 2, 10), &config(), "ts")
+            .expect_err("blank frame ID must fail closed");
+
+        assert!(matches!(
+            err,
+            ParserError::MalformedFrame { ref frame_id, ref reason }
+                if frame_id == "(empty)" && reason == "frame_id must not be empty"
+        ));
+    }
+
+    #[test]
+    fn tab_newline_frame_id_is_malformed_with_placeholder() {
+        let err = check_frame(&frame("\t\n ", 100, 2, 10), &config(), "ts")
+            .expect_err("control-whitespace frame ID must fail closed");
+
+        assert_eq!(err.code(), "BPG_MALFORMED_FRAME");
+        assert!(err.to_string().contains("(empty)"));
+    }
+
+    #[test]
+    fn malformed_frame_id_precedes_resource_guardrails() {
+        let err = check_frame(&frame(" ", 1000, 10, 50), &config(), "ts")
+            .expect_err("malformed frame ID should fail before guardrail verdicts");
+
+        assert!(matches!(
+            err,
+            ParserError::MalformedFrame { ref frame_id, .. } if frame_id == "(empty)"
+        ));
+    }
+
+    #[test]
+    fn batch_rejects_blank_frame_id_after_valid_prefix() {
+        let frames = vec![frame("ok", 100, 2, 10), frame(" \t", 100, 2, 10)];
+        let err = check_batch(&frames, &config(), "ts")
+            .expect_err("batch must abort when a later frame ID is blank");
+
+        assert!(matches!(
+            err,
+            ParserError::MalformedFrame { ref frame_id, .. } if frame_id == "(empty)"
+        ));
+    }
+
+    #[test]
+    fn invalid_config_reports_zero_depth_before_zero_cpu() {
+        let cfg = ParserConfig {
+            max_frame_bytes: 1,
+            max_nesting_depth: 0,
+            max_decode_cpu_ms: 0,
+        };
+        let err = validate_config(&cfg).expect_err("zero depth must be invalid");
+
+        assert!(matches!(
+            err,
+            ParserError::InvalidConfig { ref reason }
+                if reason == "max_nesting_depth must be > 0"
+        ));
+    }
+
+    #[test]
+    fn invalid_zero_cpu_config_rejects_before_frame_guardrails() {
+        let cfg = ParserConfig {
+            max_frame_bytes: 1,
+            max_nesting_depth: 1,
+            max_decode_cpu_ms: 0,
+        };
+        let err = check_frame(&frame("", 1, 1, 0), &cfg, "ts")
+            .expect_err("invalid config must be reported before malformed frame");
+
+        assert!(matches!(
+            err,
+            ParserError::InvalidConfig { ref reason }
+                if reason == "max_decode_cpu_ms must be > 0"
+        ));
+    }
+
+    #[test]
+    fn max_u64_frame_size_at_limit_is_blocked() {
+        let cfg = ParserConfig {
+            max_frame_bytes: u64::MAX,
+            max_nesting_depth: u32::MAX,
+            max_decode_cpu_ms: u64::MAX,
+        };
+        let (verdict, audit) =
+            check_frame(&frame("huge", u64::MAX, 1, 1), &cfg, "ts").expect("verdict");
+
+        assert!(!verdict.allowed);
+        assert_eq!(
+            verdict.violations,
+            vec![GuardrailViolation::SizeExceeded {
+                actual: u64::MAX,
+                limit: u64::MAX,
+            }]
+        );
+        assert_eq!(audit.verdict, "BLOCK");
+    }
+
+    #[test]
+    fn max_u32_depth_at_limit_is_blocked() {
+        let cfg = ParserConfig {
+            max_frame_bytes: u64::MAX,
+            max_nesting_depth: u32::MAX,
+            max_decode_cpu_ms: u64::MAX,
+        };
+        let (verdict, audit) =
+            check_frame(&frame("deep", 1, u32::MAX, 1), &cfg, "ts").expect("verdict");
+
+        assert!(!verdict.allowed);
+        assert_eq!(
+            verdict.violations,
+            vec![GuardrailViolation::DepthExceeded {
+                actual: u32::MAX,
+                limit: u32::MAX,
+            }]
+        );
+        assert_eq!(audit.depth_limit, u32::MAX);
+        assert_eq!(audit.verdict, "BLOCK");
+    }
+
+    #[test]
+    fn max_u64_cpu_at_limit_is_blocked() {
+        let cfg = ParserConfig {
+            max_frame_bytes: u64::MAX,
+            max_nesting_depth: u32::MAX,
+            max_decode_cpu_ms: u64::MAX,
+        };
+        let (verdict, audit) =
+            check_frame(&frame("cpu", 1, 1, u64::MAX), &cfg, "ts").expect("verdict");
+
+        assert!(!verdict.allowed);
+        assert_eq!(
+            verdict.violations,
+            vec![GuardrailViolation::CpuExceeded {
+                actual: u64::MAX,
+                limit: u64::MAX,
+            }]
+        );
+        assert_eq!(audit.cpu_limit, u64::MAX);
+        assert_eq!(audit.verdict, "BLOCK");
+    }
+
+    #[test]
+    fn blocked_frame_preserves_resource_usage_and_audit_limits() {
+        let (verdict, audit) =
+            check_frame(&frame("blocked", 1000, 10, 50), &config(), "ts-blocked")
+                .expect("blocked verdict");
+
+        assert!(!verdict.allowed);
+        assert_eq!(verdict.resource_usage.bytes_parsed, 1000);
+        assert_eq!(verdict.resource_usage.nesting_depth, 10);
+        assert_eq!(verdict.resource_usage.cpu_ms, 50);
+        assert_eq!(audit.size_limit, 1000);
+        assert_eq!(audit.depth_limit, 10);
+        assert_eq!(audit.cpu_limit, 50);
+        assert_eq!(audit.timestamp, "ts-blocked");
+    }
+
+    #[test]
+    fn batch_preserves_blocked_verdict_order_for_guardrail_violations() {
+        let frames = vec![
+            frame("size-block", 1000, 1, 1),
+            frame("depth-block", 1, 10, 1),
+            frame("cpu-block", 1, 1, 50),
+        ];
+
+        let results = check_batch(&frames, &config(), "ts").expect("batch verdicts");
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].0.frame_id, "size-block");
+        assert_eq!(results[1].0.frame_id, "depth-block");
+        assert_eq!(results[2].0.frame_id, "cpu-block");
+        assert!(results.iter().all(|(verdict, _)| !verdict.allowed));
+        assert!(matches!(
+            results[0].0.violations.as_slice(),
+            [GuardrailViolation::SizeExceeded { .. }]
+        ));
+        assert!(matches!(
+            results[1].0.violations.as_slice(),
+            [GuardrailViolation::DepthExceeded { .. }]
+        ));
+        assert!(matches!(
+            results[2].0.violations.as_slice(),
+            [GuardrailViolation::CpuExceeded { .. }]
+        ));
+    }
+
+    #[test]
+    fn invalid_config_reports_zero_bytes_before_other_zero_limits() {
+        let cfg = ParserConfig {
+            max_frame_bytes: 0,
+            max_nesting_depth: 0,
+            max_decode_cpu_ms: 0,
+        };
+
+        let err = validate_config(&cfg).expect_err("zero byte limit must be invalid first");
+
+        assert!(matches!(
+            err,
+            ParserError::InvalidConfig { ref reason }
+                if reason == "max_frame_bytes must be > 0"
+        ));
+    }
+
+    #[test]
+    fn invalid_zero_bytes_config_rejects_before_malformed_frame() {
+        let cfg = ParserConfig {
+            max_frame_bytes: 0,
+            max_nesting_depth: 1,
+            max_decode_cpu_ms: 1,
+        };
+
+        let err = check_frame(&frame(" ", 1, 1, 1), &cfg, "ts")
+            .expect_err("invalid config must be reported before malformed frame");
+
+        assert!(matches!(
+            err,
+            ParserError::InvalidConfig { ref reason }
+                if reason == "max_frame_bytes must be > 0"
+        ));
     }
 }

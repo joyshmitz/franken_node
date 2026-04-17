@@ -280,17 +280,17 @@ pub fn fork_log_entry(
     action_id: &str,
     timestamp: &str,
 ) -> Result<ForkLogEntry, ConflictError> {
-    if trace_id.is_empty() {
+    if trace_id.trim().is_empty() {
         return Err(ConflictError::ForkLogIncomplete {
             field: "trace_id".into(),
         });
     }
-    if action_id.is_empty() {
+    if action_id.trim().is_empty() {
         return Err(ConflictError::ForkLogIncomplete {
             field: "action_id".into(),
         });
     }
-    if timestamp.is_empty() {
+    if timestamp.trim().is_empty() {
         return Err(ConflictError::ForkLogIncomplete {
             field: "timestamp".into(),
         });
@@ -573,6 +573,69 @@ mod tests {
     }
 
     #[test]
+    fn fork_log_rejects_whitespace_trace_id() {
+        let conflict = LeaseConflict {
+            lease_a: "l1".into(),
+            lease_b: "l2".into(),
+            resource: "r".into(),
+            overlap_start: 100,
+            overlap_end: 160,
+            tier: ConflictTier::Standard,
+        };
+
+        let err = fork_log_entry(&conflict, None, "   ", "act", "ts").unwrap_err();
+
+        assert_eq!(
+            err,
+            ConflictError::ForkLogIncomplete {
+                field: "trace_id".into()
+            }
+        );
+    }
+
+    #[test]
+    fn fork_log_rejects_whitespace_action_id() {
+        let conflict = LeaseConflict {
+            lease_a: "l1".into(),
+            lease_b: "l2".into(),
+            resource: "r".into(),
+            overlap_start: 100,
+            overlap_end: 160,
+            tier: ConflictTier::Standard,
+        };
+
+        let err = fork_log_entry(&conflict, None, "tr", "\t", "ts").unwrap_err();
+
+        assert_eq!(
+            err,
+            ConflictError::ForkLogIncomplete {
+                field: "action_id".into()
+            }
+        );
+    }
+
+    #[test]
+    fn fork_log_rejects_whitespace_timestamp() {
+        let conflict = LeaseConflict {
+            lease_a: "l1".into(),
+            lease_b: "l2".into(),
+            resource: "r".into(),
+            overlap_start: 100,
+            overlap_end: 160,
+            tier: ConflictTier::Standard,
+        };
+
+        let err = fork_log_entry(&conflict, None, "tr", "act", "\n").unwrap_err();
+
+        assert_eq!(
+            err,
+            ConflictError::ForkLogIncomplete {
+                field: "timestamp".into()
+            }
+        );
+    }
+
+    #[test]
     fn deterministic_resolution() {
         let leases = vec![
             lease("l1", "r", "Operation", 100, 60, "Standard"),
@@ -624,6 +687,75 @@ mod tests {
         assert_eq!(logs.len(), 0);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].code(), "OLC_FORK_LOG_INCOMPLETE");
+    }
+
+    #[test]
+    fn process_conflicts_missing_action_keeps_resolution_but_suppresses_log() {
+        let leases = vec![
+            lease("l1", "r", "Operation", 100, 60, "Standard"),
+            lease("l2", "r", "Operation", 110, 60, "Standard"),
+        ];
+
+        let (resolutions, logs, errors) =
+            process_conflicts(&leases, "r", 120, &policy(), "tr", " ", "ts");
+
+        assert_eq!(resolutions.len(), 1);
+        assert!(logs.is_empty());
+        assert_eq!(
+            errors,
+            vec![ConflictError::ForkLogIncomplete {
+                field: "action_id".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn process_conflicts_missing_timestamp_keeps_resolution_but_suppresses_log() {
+        let leases = vec![
+            lease("l1", "r", "Operation", 100, 60, "Standard"),
+            lease("l2", "r", "Operation", 110, 60, "Standard"),
+        ];
+
+        let (resolutions, logs, errors) =
+            process_conflicts(&leases, "r", 120, &policy(), "tr", "act", "\n");
+
+        assert_eq!(resolutions.len(), 1);
+        assert!(logs.is_empty());
+        assert_eq!(
+            errors,
+            vec![ConflictError::ForkLogIncomplete {
+                field: "timestamp".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn resolve_conflict_dangerous_halt_preempts_missing_lease_lookup() {
+        let conflict = LeaseConflict {
+            lease_a: "missing-a".into(),
+            lease_b: "missing-b".into(),
+            resource: "danger-zone".into(),
+            overlap_start: 100,
+            overlap_end: 160,
+            tier: ConflictTier::Dangerous,
+        };
+        let leases = vec![lease(
+            "present",
+            "danger-zone",
+            "Operation",
+            100,
+            60,
+            "Standard",
+        )];
+
+        let err = resolve_conflict(&conflict, &policy(), &leases).unwrap_err();
+
+        assert_eq!(
+            err,
+            ConflictError::DangerousHalt {
+                resource: "danger-zone".into()
+            }
+        );
     }
 
     #[test]
@@ -752,5 +884,113 @@ mod tests {
         assert_eq!(ConflictTier::parse("Risky"), ConflictTier::Risky);
         assert_eq!(ConflictTier::parse("Dangerous"), ConflictTier::Dangerous);
         assert_eq!(ConflictTier::parse("Unknown"), ConflictTier::Dangerous);
+    }
+
+    #[test]
+    fn detect_conflicts_excludes_lease_expiring_at_now() {
+        let leases = vec![
+            lease("l1", "r", "Operation", 100, 20, "Standard"),
+            lease("l2", "r", "Operation", 110, 40, "Standard"),
+        ];
+
+        let conflicts = detect_conflicts(&leases, "r", 120);
+
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn detect_conflicts_excludes_future_grants() {
+        let leases = vec![
+            lease("l1", "r", "Operation", 100, 60, "Standard"),
+            lease("l2", "r", "Operation", 130, 60, "Standard"),
+        ];
+
+        let conflicts = detect_conflicts(&leases, "r", 120);
+
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn detect_conflicts_excludes_zero_ttl_leases() {
+        let leases = vec![
+            lease("l1", "r", "Operation", 100, 0, "Standard"),
+            lease("l2", "r", "Operation", 100, 60, "Standard"),
+        ];
+
+        let conflicts = detect_conflicts(&leases, "r", 100);
+
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn resolve_conflict_missing_referenced_lease_returns_no_winner() {
+        let conflict = LeaseConflict {
+            lease_a: "missing-a".into(),
+            lease_b: "missing-b".into(),
+            resource: "r".into(),
+            overlap_start: 100,
+            overlap_end: 160,
+            tier: ConflictTier::Standard,
+        };
+        let leases = vec![lease("present", "r", "Operation", 100, 60, "Standard")];
+
+        let err = resolve_conflict(&conflict, &policy(), &leases).unwrap_err();
+
+        assert_eq!(err.code(), "OLC_NO_WINNER");
+        assert!(err.to_string().contains("missing-a"));
+        assert!(err.to_string().contains("missing-b"));
+    }
+
+    #[test]
+    fn unknown_tier_is_treated_as_dangerous_and_halts() {
+        let leases = vec![
+            lease("l1", "r", "Operation", 100, 60, "TypoTier"),
+            lease("l2", "r", "Operation", 110, 60, "Standard"),
+        ];
+        let conflict = &detect_conflicts(&leases, "r", 120)[0];
+
+        let err = resolve_conflict(conflict, &policy(), &leases).unwrap_err();
+
+        assert_eq!(conflict.tier, ConflictTier::Dangerous);
+        assert_eq!(err.code(), "OLC_DANGEROUS_HALT");
+    }
+
+    #[test]
+    fn malformed_purpose_does_not_gain_priority() {
+        let leases = vec![
+            lease("l1", "r", "MigrationHandoffTypo", 100, 60, "Standard"),
+            lease("l2", "r", "StateWrite", 110, 60, "Standard"),
+        ];
+        let conflict = &detect_conflicts(&leases, "r", 120)[0];
+
+        let res = resolve_conflict(conflict, &policy(), &leases).unwrap();
+
+        assert_eq!(
+            LeasePurposePriority::parse("MigrationHandoffTypo"),
+            LeasePurposePriority::Operation
+        );
+        assert_eq!(res.winner, "l2");
+        assert_eq!(res.rule_applied, "purpose_priority");
+    }
+
+    #[test]
+    fn process_conflicts_dangerous_with_missing_trace_reports_both_errors() {
+        let leases = vec![
+            lease("l1", "r", "Operation", 100, 60, "Dangerous"),
+            lease("l2", "r", "Operation", 110, 60, "Standard"),
+        ];
+
+        let (resolutions, logs, errors) =
+            process_conflicts(&leases, "r", 120, &policy(), "", "act", "ts");
+
+        assert!(resolutions.is_empty());
+        assert!(logs.is_empty());
+        assert_eq!(errors.len(), 2);
+        assert!(
+            errors
+                .iter()
+                .any(|err| err.code() == "OLC_FORK_LOG_INCOMPLETE")
+        );
+        assert!(errors.iter().any(|err| err.code() == "OLC_DANGEROUS_HALT"));
     }
 }

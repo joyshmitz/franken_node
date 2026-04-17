@@ -1318,6 +1318,157 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_execute_rejects_compensated_outcome_before_saga_lookup() {
+        let mut exec = SagaExecutor::new();
+
+        let err = exec
+            .execute_step("missing-saga", StepOutcome::Compensated, 9, "trace")
+            .expect_err("compensated cannot be accepted as a forward outcome");
+
+        assert!(err.contains("cannot pass Compensated"));
+        assert_eq!(exec.saga_count(), 0);
+        assert!(exec.audit_log.is_empty());
+    }
+
+    #[test]
+    fn test_commit_pending_saga_fails_without_state_or_audit_mutation() {
+        let mut exec = SagaExecutor::new();
+        let id = exec
+            .create_saga(make_steps(&["prepare"]), "create")
+            .unwrap();
+        let audit_len = exec.audit_log.len();
+
+        let err = exec
+            .commit(&id, "commit")
+            .expect_err("pending saga must not commit");
+
+        assert!(err.contains("Pending"));
+        let saga = exec.get_saga(&id).unwrap();
+        assert_eq!(saga.state, SagaState::Pending);
+        assert_eq!(saga.completed_steps, 0);
+        assert!(saga.records.is_empty());
+        assert_eq!(exec.audit_log.len(), audit_len);
+    }
+
+    #[test]
+    fn test_commit_incomplete_running_saga_fails_without_extra_audit() {
+        let mut exec = SagaExecutor::new();
+        let id = exec
+            .create_saga(make_steps(&["prepare", "apply"]), "create")
+            .unwrap();
+        exec.execute_step(&id, success_outcome(), 3, "step")
+            .unwrap();
+        let audit_len = exec.audit_log.len();
+
+        let err = exec
+            .commit(&id, "commit")
+            .expect_err("partially completed saga must not commit");
+
+        assert!(err.contains("completed 1 of 2"));
+        let saga = exec.get_saga(&id).unwrap();
+        assert_eq!(saga.state, SagaState::Running);
+        assert_eq!(saga.completed_steps, 1);
+        assert_eq!(saga.records.len(), 1);
+        assert_eq!(exec.audit_log.len(), audit_len);
+    }
+
+    #[test]
+    fn test_execute_after_all_steps_completed_fails_without_new_record() {
+        let mut exec = SagaExecutor::new();
+        let id = exec.create_saga(make_steps(&["only"]), "create").unwrap();
+        exec.execute_step(&id, success_outcome(), 4, "step")
+            .unwrap();
+        let audit_len = exec.audit_log.len();
+        let record_len = exec.get_saga(&id).unwrap().records.len();
+
+        let err = exec
+            .execute_step(&id, success_outcome(), 5, "extra")
+            .expect_err("completed saga must not accept extra forward records");
+
+        assert!(err.contains("no more steps"));
+        let saga = exec.get_saga(&id).unwrap();
+        assert_eq!(saga.state, SagaState::Running);
+        assert_eq!(saga.completed_steps, 1);
+        assert_eq!(saga.records.len(), record_len);
+        assert_eq!(exec.audit_log.len(), audit_len);
+    }
+
+    #[test]
+    fn test_compensate_committed_saga_fails_without_trace_or_audit_mutation() {
+        let mut exec = SagaExecutor::new();
+        let id = exec.create_saga(make_steps(&["only"]), "create").unwrap();
+        exec.execute_step(&id, success_outcome(), 4, "step")
+            .unwrap();
+        exec.commit(&id, "commit").unwrap();
+        let audit_len = exec.audit_log.len();
+        let record_len = exec.get_saga(&id).unwrap().records.len();
+
+        let err = exec
+            .compensate(&id, "compensate")
+            .expect_err("committed saga must not compensate");
+
+        assert!(err.contains("Committed"));
+        let saga = exec.get_saga(&id).unwrap();
+        assert_eq!(saga.state, SagaState::Committed);
+        assert_eq!(saga.records.len(), record_len);
+        assert!(exec.export_trace(&id).is_none());
+        assert_eq!(exec.audit_log.len(), audit_len);
+    }
+
+    #[test]
+    fn test_compensate_pending_saga_has_empty_trace_and_terminal_state() {
+        let mut exec = SagaExecutor::new();
+        let id = exec
+            .create_saga(make_steps(&["never-ran"]), "create")
+            .unwrap();
+
+        let trace = exec.compensate(&id, "compensate").unwrap();
+
+        assert_eq!(trace.saga_id, id);
+        assert!(trace.compensated_steps.is_empty());
+        assert_eq!(trace.final_state, SagaState::Compensated);
+        let exported = exec.export_trace(&id).unwrap();
+        assert!(exported.compensated_steps.is_empty());
+        assert_eq!(exported.final_state, SagaState::Compensated);
+        assert_eq!(exec.get_saga(&id).unwrap().state, SagaState::Compensated);
+    }
+
+    #[test]
+    fn test_export_trace_for_failed_uncompensated_saga_is_none() {
+        let mut exec = SagaExecutor::new();
+        let id = exec.create_saga(make_steps(&["fail"]), "create").unwrap();
+        exec.execute_step(
+            &id,
+            StepOutcome::Failed {
+                reason: "boom".to_string(),
+            },
+            1,
+            "step",
+        )
+        .unwrap();
+
+        let saga = exec.get_saga(&id).unwrap();
+        assert_eq!(saga.state, SagaState::Failed);
+        assert!(exec.export_trace(&id).is_none());
+    }
+
+    #[test]
+    fn test_create_saga_counter_exhaustion_fails_without_side_effects() {
+        let mut exec = SagaExecutor::new();
+        exec.next_saga_id = u64::MAX;
+
+        let err = exec
+            .create_saga(make_steps(&["never-created"]), "create")
+            .expect_err("exhausted saga counter must fail closed");
+
+        assert!(err.contains(ERR_SAGA_CAPACITY_EXCEEDED));
+        assert!(err.contains("counter exhausted"));
+        assert_eq!(exec.next_saga_id, u64::MAX);
+        assert_eq!(exec.saga_count(), 0);
+        assert!(exec.audit_log.is_empty());
+    }
+
     // 19. test_default_executor
     #[test]
     fn test_default_executor() {

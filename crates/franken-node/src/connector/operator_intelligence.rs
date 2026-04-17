@@ -1007,6 +1007,47 @@ mod tests {
         assert!(cfg.validate().is_err());
     }
 
+    #[test]
+    fn test_invalid_confidence_threshold_nan() {
+        let mut cfg = default_config();
+        cfg.confidence_threshold = f64::NAN;
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn test_invalid_risk_budget_infinity() {
+        let mut cfg = default_config();
+        cfg.risk_budget = f64::INFINITY;
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn test_invalid_degraded_penalty_nan() {
+        let mut cfg = default_config();
+        cfg.degraded_confidence_penalty = f64::NAN;
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn test_invalid_confidence_threshold_negative() {
+        let mut cfg = default_config();
+        cfg.confidence_threshold = -0.01;
+
+        let err = cfg.validate().unwrap_err();
+
+        assert!(matches!(err, OIError::InvalidConfig(_)));
+    }
+
+    #[test]
+    fn test_engine_new_rejects_invalid_config() {
+        let mut cfg = default_config();
+        cfg.max_recommendations = 0;
+
+        let err = RecommendationEngine::new(cfg).unwrap_err();
+
+        assert!(matches!(err, OIError::InvalidConfig(_)));
+    }
+
     // -- Context validation --
 
     #[test]
@@ -1018,6 +1059,27 @@ mod tests {
     fn test_context_invalid_rate() {
         let mut ctx = test_context();
         ctx.compatibility_pass = 1.5;
+        assert!(ctx.validate().is_err());
+    }
+
+    #[test]
+    fn test_context_invalid_nan_migration_success() {
+        let mut ctx = test_context();
+        ctx.migration_success = f64::NAN;
+        assert!(ctx.validate().is_err());
+    }
+
+    #[test]
+    fn test_context_invalid_negative_error_rate() {
+        let mut ctx = test_context();
+        ctx.error_rate = -f64::EPSILON;
+        assert!(ctx.validate().is_err());
+    }
+
+    #[test]
+    fn test_context_invalid_trust_rate_above_one() {
+        let mut ctx = test_context();
+        ctx.trust_valid = 1.0 + f64::EPSILON;
         assert!(ctx.validate().is_err());
     }
 
@@ -1138,6 +1200,53 @@ mod tests {
         let ctx = test_context();
         let recs = engine.recommend(&ctx, 1000).unwrap();
         assert!(recs.len() <= 2);
+    }
+
+    #[test]
+    fn test_recommend_rejects_invalid_context_without_side_effects() {
+        let mut engine = make_engine();
+        let mut ctx = test_context();
+        ctx.migration_success = f64::NAN;
+
+        let err = engine.recommend(&ctx, 1000).unwrap_err();
+
+        assert!(matches!(err, OIError::NoContext(_)));
+        assert!(engine.audit_trail().is_empty());
+        assert!(engine.events().is_empty());
+    }
+
+    #[test]
+    fn test_high_confidence_threshold_filters_all_recommendations() {
+        let mut cfg = default_config();
+        cfg.confidence_threshold = 1.0;
+        let mut engine = RecommendationEngine::new(cfg).unwrap();
+        let ctx = test_context();
+
+        let recs = engine.recommend(&ctx, 1000).unwrap();
+
+        assert!(recs.is_empty());
+        assert!(engine.audit_trail().is_empty());
+    }
+
+    #[test]
+    fn test_degraded_penalty_can_filter_all_recommendations() {
+        let mut cfg = default_config();
+        cfg.confidence_threshold = 0.1;
+        cfg.degraded_confidence_penalty = 0.0;
+        let mut engine = RecommendationEngine::new(cfg).unwrap();
+        engine.mark_source_unavailable("trust_store");
+        let ctx = test_context();
+
+        let recs = engine.recommend(&ctx, 1000).unwrap();
+
+        assert!(recs.is_empty());
+        assert!(engine.audit_trail().is_empty());
+        assert!(
+            engine
+                .events()
+                .iter()
+                .any(|event| event.code == EVT_DEGRADED_MODE_WARNING)
+        );
     }
 
     #[test]
@@ -1295,6 +1404,25 @@ mod tests {
             (engine.cumulative_loss() - expected_loss).abs() < f64::EPSILON,
             "acceptance must use the audit-trail expected loss"
         );
+    }
+
+    #[test]
+    fn test_accept_rejects_non_finite_authoritative_loss() {
+        let mut engine = make_engine();
+        let ctx = test_context();
+        let recs = engine.recommend(&ctx, 1000).unwrap();
+        let rec = recs[0].clone();
+        let entry = engine
+            .audit_trail
+            .iter_mut()
+            .find(|entry| entry.recommendation_id == rec.id)
+            .expect("generated recommendation should have audit entry");
+        entry.expected_loss = f64::INFINITY;
+
+        let err = engine.accept_recommendation(&rec, 1001).unwrap_err();
+
+        assert!(matches!(err, OIError::ScoreOverflow { .. }));
+        assert_eq!(engine.cumulative_loss(), 0.0);
     }
 
     #[test]
@@ -1488,6 +1616,19 @@ mod tests {
         assert!(matches!(err, OIError::NoContext(_)));
     }
 
+    #[test]
+    fn test_reject_rejects_duplicate_rejection() {
+        let mut engine = make_engine();
+        let ctx = test_context();
+        let recs = engine.recommend(&ctx, 1000).unwrap();
+        let rec = &recs[0];
+
+        engine.reject_recommendation(rec, 1001).unwrap();
+        let err = engine.reject_recommendation(rec, 1002).unwrap_err();
+
+        assert!(matches!(err, OIError::NoContext(_)));
+    }
+
     // -- Budget enforcement --
 
     #[test]
@@ -1547,6 +1688,30 @@ mod tests {
             rollback_spec: "rollback".into(),
         };
         assert!(proof.verify().is_err());
+    }
+
+    #[test]
+    fn test_rollback_proof_empty_rollback_spec() {
+        let proof = RollbackProof {
+            pre_state_hash: [1u8; 32],
+            action_spec: "migrate".into(),
+            post_state_hash: [2u8; 32],
+            rollback_spec: String::new(),
+        };
+        let err = proof.verify().unwrap_err();
+        assert!(matches!(err, OIError::RollbackFailed(_)));
+    }
+
+    #[test]
+    fn test_rollback_proof_mismatched_rollback_spec() {
+        let proof = RollbackProof {
+            pre_state_hash: [1u8; 32],
+            action_spec: "migrate".into(),
+            post_state_hash: [2u8; 32],
+            rollback_spec: "rollback:other-action".into(),
+        };
+        let err = proof.verify().unwrap_err();
+        assert!(matches!(err, OIError::RollbackFailed(_)));
     }
 
     // -- Execute recommendation --
@@ -1629,6 +1794,21 @@ mod tests {
     }
 
     #[test]
+    fn test_execute_recommendation_rejects_identical_pre_post_state() {
+        let mut engine = make_engine();
+        let ctx = test_context();
+        let recs = engine.recommend(&ctx, 1000).unwrap();
+        let rec = &recs[0];
+        engine.accept_recommendation(rec, 1001).unwrap();
+
+        let err = engine
+            .execute_recommendation(rec, [7u8; 32], [7u8; 32], &ctx)
+            .unwrap_err();
+
+        assert!(matches!(err, OIError::RollbackFailed(_)));
+    }
+
+    #[test]
     fn test_execute_rollback() {
         let mut engine = make_engine();
         let proof = RollbackProof {
@@ -1648,6 +1828,33 @@ mod tests {
             .any(|e| e.code == EVT_ROLLBACK_EXECUTED);
         assert!(has_verified);
         assert!(has_executed);
+    }
+
+    #[test]
+    fn test_execute_rollback_rejects_invalid_proof_without_events() {
+        let mut engine = make_engine();
+        let proof = RollbackProof {
+            pre_state_hash: [1u8; 32],
+            action_spec: "migrate".into(),
+            post_state_hash: [2u8; 32],
+            rollback_spec: "rollback:wrong".into(),
+        };
+
+        let err = engine.execute_rollback(&proof).unwrap_err();
+
+        assert!(matches!(err, OIError::RollbackFailed(_)));
+        assert!(
+            !engine
+                .events()
+                .iter()
+                .any(|e| e.code == EVT_ROLLBACK_PROOF_VERIFIED)
+        );
+        assert!(
+            !engine
+                .events()
+                .iter()
+                .any(|e| e.code == EVT_ROLLBACK_EXECUTED)
+        );
     }
 
     // -- Replay artifact --

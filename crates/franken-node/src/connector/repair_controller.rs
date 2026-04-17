@@ -3,7 +3,7 @@
 //! Respects per-cycle work caps. Guarantees no tenant starvation via fairness minimum.
 //! Every cycle produces an auditable record.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Configuration for the repair controller.
 #[derive(Debug, Clone)]
@@ -128,9 +128,46 @@ pub fn run_cycle(
         return Err(RepairError::NoPending);
     }
 
+    let trimmed_cycle_id = cycle_id.trim();
+    if trimmed_cycle_id.is_empty() || trimmed_cycle_id != cycle_id {
+        return Err(RepairError::InvalidConfig {
+            reason: "cycle_id must be non-empty and unpadded".into(),
+        });
+    }
+    let trimmed_trace_id = trace_id.trim();
+    if trimmed_trace_id.is_empty() || trimmed_trace_id != trace_id {
+        return Err(RepairError::InvalidConfig {
+            reason: "trace_id must be non-empty and unpadded".into(),
+        });
+    }
+    let trimmed_timestamp = timestamp.trim();
+    if trimmed_timestamp.is_empty() || trimmed_timestamp != timestamp {
+        return Err(RepairError::InvalidConfig {
+            reason: "timestamp must be non-empty and unpadded".into(),
+        });
+    }
+
     // Group by tenant, sorted by tenant_id for determinism
     let mut by_tenant: BTreeMap<String, Vec<&RepairItem>> = BTreeMap::new();
+    let mut item_ids = BTreeSet::new();
     for item in pending {
+        let item_id = item.item_id.as_str();
+        if item_id.trim().is_empty() || item_id.trim() != item_id {
+            return Err(RepairError::InvalidConfig {
+                reason: "item_id must be non-empty and unpadded".into(),
+            });
+        }
+        let tenant_id = item.tenant_id.as_str();
+        if tenant_id.trim().is_empty() || tenant_id.trim() != tenant_id {
+            return Err(RepairError::InvalidConfig {
+                reason: "tenant_id must be non-empty and unpadded".into(),
+            });
+        }
+        if !item_ids.insert(item_id) {
+            return Err(RepairError::InvalidConfig {
+                reason: format!("duplicate item_id: {item_id}"),
+            });
+        }
         by_tenant
             .entry(item.tenant_id.clone())
             .or_default()
@@ -440,5 +477,310 @@ mod tests {
         let (allocs, _) = run_cycle(&items, &config(), "c1", "tr", "ts").expect("should succeed");
         assert_eq!(allocs[0].tenant_id, "a-tenant");
         assert_eq!(allocs[1].tenant_id, "z-tenant");
+    }
+
+    #[test]
+    fn validate_config_reports_zero_cap_reason() {
+        let cfg = RepairConfig {
+            max_units_per_cycle: 0,
+            ..config()
+        };
+
+        let err = validate_config(&cfg).unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "max_units_per_cycle must be > 0".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn validate_config_reports_zero_fairness_reason() {
+        let cfg = RepairConfig {
+            fairness_minimum: 0,
+            ..config()
+        };
+
+        let err = validate_config(&cfg).unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "fairness_minimum must be > 0".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn validate_config_reports_zero_tenant_limit_reason() {
+        let cfg = RepairConfig {
+            max_tenants_per_cycle: 0,
+            ..config()
+        };
+
+        let err = validate_config(&cfg).unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "max_tenants_per_cycle must be > 0".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn invalid_config_precedes_empty_pending_error() {
+        let cfg = RepairConfig {
+            max_units_per_cycle: 0,
+            fairness_minimum: 0,
+            max_tenants_per_cycle: 0,
+        };
+
+        let err = run_cycle(&[], &cfg, "c-invalid", "tr-invalid", "ts").unwrap_err();
+
+        assert_eq!(err.code(), "BRC_INVALID_CONFIG");
+        assert_ne!(err, RepairError::NoPending);
+    }
+
+    #[test]
+    fn no_pending_does_not_emit_allocations_or_audit() {
+        let err = run_cycle(&[], &config(), "c-empty", "tr-empty", "ts").unwrap_err();
+
+        assert_eq!(err, RepairError::NoPending);
+        assert_eq!(err.to_string(), "BRC_NO_PENDING");
+    }
+
+    #[test]
+    fn zero_sized_items_are_not_counted_as_served() {
+        let items = vec![item("zero-1", "tenant-zero", 10, 0)];
+
+        let (allocs, audit) =
+            run_cycle(&items, &config(), "c-zero", "tr-zero", "ts").expect("cycle succeeds");
+
+        assert_eq!(allocs.len(), 1);
+        assert!(allocs[0].items_allocated.is_empty());
+        assert_eq!(allocs[0].units_used, 0);
+        assert_eq!(audit.total_units_used, 0);
+        assert_eq!(audit.tenants_served, 0);
+    }
+
+    #[test]
+    fn tenant_limit_can_skip_high_priority_later_tenant() {
+        let mut cfg = config();
+        cfg.max_tenants_per_cycle = 1;
+        let items = vec![
+            item("low-a", "a-tenant", 1, 5),
+            item("high-z", "z-tenant", u32::MAX, 5),
+        ];
+
+        let (allocs, audit) =
+            run_cycle(&items, &cfg, "c-skip", "tr-skip", "ts").expect("cycle succeeds");
+
+        assert_eq!(allocs.len(), 1);
+        assert_eq!(allocs[0].tenant_id, "a-tenant");
+        assert_eq!(allocs[0].items_allocated, vec!["low-a".to_string()]);
+        assert_eq!(audit.tenants_skipped, 1);
+    }
+
+    #[test]
+    fn cap_smaller_than_fairness_leaves_later_tenants_unserved() {
+        let cfg = RepairConfig {
+            max_units_per_cycle: 1,
+            fairness_minimum: 5,
+            max_tenants_per_cycle: 10,
+        };
+        let items = vec![item("a-work", "a", 10, 5), item("b-work", "b", 10, 5)];
+
+        let (allocs, audit) =
+            run_cycle(&items, &cfg, "c-cap-small", "tr-cap-small", "ts").expect("cycle succeeds");
+
+        assert_eq!(audit.total_units_used, 1);
+        assert_eq!(audit.tenants_served, 1);
+        assert_eq!(allocs[0].tenant_id, "a");
+        assert_eq!(allocs[0].units_used, 1);
+        assert_eq!(allocs[1].tenant_id, "b");
+        assert!(allocs[1].items_allocated.is_empty());
+    }
+
+    #[test]
+    fn empty_cycle_id_rejected_before_audit_creation() {
+        let err = run_cycle(&[item("r1", "t1", 5, 10)], &config(), "", "tr", "ts").unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "cycle_id must be non-empty and unpadded".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn padded_cycle_id_rejected_before_audit_creation() {
+        let err = run_cycle(&[item("r1", "t1", 5, 10)], &config(), " c1", "tr", "ts").unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "cycle_id must be non-empty and unpadded".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn whitespace_trace_id_rejected_before_audit_creation() {
+        let err = run_cycle(&[item("r1", "t1", 5, 10)], &config(), "c1", " \t", "ts").unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "trace_id must be non-empty and unpadded".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn padded_trace_id_rejected_before_audit_creation() {
+        let err = run_cycle(&[item("r1", "t1", 5, 10)], &config(), "c1", "tr ", "ts").unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "trace_id must be non-empty and unpadded".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn empty_timestamp_rejected_before_audit_creation() {
+        let err = run_cycle(&[item("r1", "t1", 5, 10)], &config(), "c1", "tr", "").unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "timestamp must be non-empty and unpadded".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn padded_timestamp_rejected_before_audit_creation() {
+        let err = run_cycle(&[item("r1", "t1", 5, 10)], &config(), "c1", "tr", " ts").unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "timestamp must be non-empty and unpadded".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn empty_item_id_rejected_before_allocation() {
+        let err = run_cycle(&[item("", "t1", 5, 10)], &config(), "c1", "tr", "ts").unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "item_id must be non-empty and unpadded".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn padded_item_id_rejected_before_allocation() {
+        let err = run_cycle(&[item(" r1 ", "t1", 5, 10)], &config(), "c1", "tr", "ts").unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "item_id must be non-empty and unpadded".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn empty_tenant_id_rejected_before_allocation() {
+        let err = run_cycle(&[item("r1", "", 5, 10)], &config(), "c1", "tr", "ts").unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "tenant_id must be non-empty and unpadded".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn padded_tenant_id_rejected_before_allocation() {
+        let err = run_cycle(&[item("r1", "\tt1", 5, 10)], &config(), "c1", "tr", "ts").unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "tenant_id must be non-empty and unpadded".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn duplicate_item_id_rejected_before_allocation() {
+        let items = vec![item("dup", "a", 10, 5), item("dup", "b", 1, 5)];
+        let err = run_cycle(&items, &config(), "c1", "tr", "ts").unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "duplicate item_id: dup".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn duplicate_item_id_same_tenant_rejected_before_allocation() {
+        let items = vec![
+            item("dup-same", "tenant", 10, 5),
+            item("dup-same", "tenant", 1, 5),
+        ];
+
+        let err = run_cycle(&items, &config(), "c1", "tr", "ts").unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "duplicate item_id: dup-same".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn zero_cap_config_precedes_blank_cycle_metadata() {
+        let cfg = RepairConfig {
+            max_units_per_cycle: 0,
+            ..config()
+        };
+
+        let err = run_cycle(&[item("r1", "t1", 5, 10)], &cfg, "", "", "").unwrap_err();
+
+        assert_eq!(
+            err,
+            RepairError::InvalidConfig {
+                reason: "max_units_per_cycle must be > 0".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn u64_max_item_size_is_clamped_to_fairness_allocation() {
+        let items = vec![item("huge", "tenant-huge", 10, u64::MAX)];
+
+        let (allocs, audit) =
+            run_cycle(&items, &config(), "c-huge", "tr-huge", "ts").expect("cycle succeeds");
+
+        assert_eq!(allocs.len(), 1);
+        assert_eq!(allocs[0].units_used, config().fairness_minimum);
+        assert_eq!(audit.total_units_used, config().fairness_minimum);
+        assert_eq!(audit.cap, config().max_units_per_cycle);
     }
 }

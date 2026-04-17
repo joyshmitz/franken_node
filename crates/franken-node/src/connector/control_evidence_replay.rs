@@ -128,6 +128,9 @@ pub fn build_replay_context(
     // Other candidates (lower score, same kind for simplicity)
     for (i, candidate_name) in entry.candidates_considered.iter().enumerate() {
         if *candidate_name != entry.decision_id {
+            if candidates.len() >= MAX_CANDIDATES {
+                break;
+            }
             let raw_score = (0.5 - (i as f64 * 0.01)).max(0.0);
             let score = if raw_score.is_finite() {
                 raw_score
@@ -517,6 +520,10 @@ impl Default for ControlReplayGate {
 
 /// Push an item to a bounded Vec, evicting oldest entries if at capacity.
 fn push_bounded<T>(vec: &mut Vec<T>, item: T, max: usize) {
+    if max == 0 {
+        vec.clear();
+        return;
+    }
     if vec.len() >= max {
         let overflow = vec.len() - max + 1;
         vec.drain(0..overflow);
@@ -1615,5 +1622,356 @@ mod tests {
         let json = serde_json::to_string(&event).unwrap();
         let parsed: ReplayGateEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.code, "RPL-001");
+    }
+
+    #[test]
+    fn test_verify_missing_policy_snapshot_errors_and_blocks_gate() {
+        let mut gate = ControlReplayGate::new();
+        let entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "DEC-NO-SNAPSHOT",
+            1000,
+        );
+        let ctx = ReplayContext::new(
+            vec![Candidate {
+                id: "DEC-NO-SNAPSHOT".into(),
+                decision_kind: LedgerDecisionKind::Admit,
+                score: 1.0,
+                metadata: serde_json::json!({}),
+            }],
+            vec![Constraint {
+                id: "policy-gate".into(),
+                description: "control-plane policy gate".into(),
+                satisfied: true,
+            }],
+            42,
+            "",
+        );
+
+        let verdict = gate.verify(&entry, &ctx);
+
+        assert!(verdict.is_error());
+        assert!(!gate.gate_pass());
+        assert_eq!(gate.summary().errors, 1);
+        assert!(gate.events().iter().any(|event| {
+            event.code == event_codes::RPL_004_ERROR && event.decision_id == "DEC-NO-SNAPSHOT"
+        }));
+    }
+
+    #[test]
+    fn test_unsatisfied_constraint_diverges_and_records_block() {
+        let mut gate = ControlReplayGate::new();
+        let entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "DEC-CONSTRAINT-BLOCK",
+            1000,
+        );
+        let ctx = ReplayContext::new(
+            vec![Candidate {
+                id: "DEC-CONSTRAINT-BLOCK".into(),
+                decision_kind: LedgerDecisionKind::Admit,
+                score: 1.0,
+                metadata: serde_json::json!({}),
+            }],
+            vec![Constraint {
+                id: "policy-gate".into(),
+                description: "unsatisfied policy gate".into(),
+                satisfied: false,
+            }],
+            42,
+            "snap-001",
+        );
+
+        let verdict = gate.verify(&entry, &ctx);
+
+        assert!(matches!(
+            verdict,
+            ReplayVerdict::Diverged {
+                diff_field_count: 1,
+                ..
+            }
+        ));
+        assert!(!gate.gate_pass());
+        assert!(gate.events().iter().any(|event| {
+            event.code == event_codes::RPL_005_GATE_DECISION
+                && event.decision_id == "DEC-CONSTRAINT-BLOCK"
+                && event.verdict == "BLOCK"
+        }));
+    }
+
+    #[test]
+    fn test_non_finite_candidate_scores_select_no_winner_and_block() {
+        let mut gate = ControlReplayGate::new();
+        let entry = make_entry(
+            DecisionType::MigrationDecision,
+            DecisionOutcome::Proceed,
+            "DEC-NON-FINITE",
+            1000,
+        );
+        let ctx = ReplayContext::new(
+            vec![
+                Candidate {
+                    id: "DEC-NON-FINITE".into(),
+                    decision_kind: LedgerDecisionKind::Admit,
+                    score: f64::NAN,
+                    metadata: serde_json::json!({}),
+                },
+                Candidate {
+                    id: "DEC-OTHER".into(),
+                    decision_kind: LedgerDecisionKind::Admit,
+                    score: f64::INFINITY,
+                    metadata: serde_json::json!({}),
+                },
+            ],
+            vec![Constraint {
+                id: "policy-gate".into(),
+                description: "control-plane policy gate".into(),
+                satisfied: true,
+            }],
+            42,
+            "snap-001",
+        );
+
+        let verdict = gate.verify(&entry, &ctx);
+
+        assert!(verdict.is_diverged());
+        assert_eq!(gate.summary().diverged, 1);
+        assert!(!gate.gate_pass());
+    }
+
+    #[test]
+    fn test_wrong_kind_and_wrong_id_reports_two_diff_fields() {
+        let mut gate = ControlReplayGate::new();
+        let entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "DEC-EXPECTED",
+            1000,
+        );
+        let ctx = ReplayContext::new(
+            vec![Candidate {
+                id: "DEC-ACTUAL".into(),
+                decision_kind: LedgerDecisionKind::Deny,
+                score: 1.0,
+                metadata: serde_json::json!({}),
+            }],
+            vec![Constraint {
+                id: "policy-gate".into(),
+                description: "control-plane policy gate".into(),
+                satisfied: true,
+            }],
+            42,
+            "snap-001",
+        );
+
+        let verdict = gate.verify(&entry, &ctx);
+
+        assert!(matches!(
+            verdict,
+            ReplayVerdict::Diverged {
+                diff_field_count: 2,
+                ..
+            }
+        ));
+        assert_eq!(gate.summary().diverged, 1);
+    }
+
+    #[test]
+    fn test_empty_batch_returns_no_verdicts_and_gate_remains_closed() {
+        let mut gate = ControlReplayGate::new();
+
+        let results = gate.verify_batch(&[]);
+
+        assert!(results.is_empty());
+        assert!(gate.verdicts().is_empty());
+        assert!(gate.events().is_empty());
+        assert!(!gate.gate_pass());
+        assert_eq!(
+            gate.summary(),
+            ReplayGateSummary {
+                total: 0,
+                reproduced: 0,
+                diverged: 0,
+                errors: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn test_report_for_only_errors_keeps_gate_closed() {
+        let mut gate = ControlReplayGate::new();
+        let entry = make_entry(
+            DecisionType::FencingDecision,
+            DecisionOutcome::Grant,
+            "DEC-ERR-REPORT",
+            1000,
+        );
+        let ctx = ReplayContext::new(vec![], vec![], 42, "snap-001");
+
+        let verdict = gate.verify(&entry, &ctx);
+        let report = gate.to_report();
+
+        assert!(verdict.is_error());
+        assert_eq!(report["gate_pass"], false);
+        assert_eq!(report["summary"]["total"], 1);
+        assert_eq!(report["summary"]["errors"], 1);
+        assert_eq!(report["summary"]["reproduced"], 0);
+    }
+
+    #[test]
+    fn test_take_events_after_error_does_not_clear_blocking_verdict() {
+        let mut gate = ControlReplayGate::new();
+        let entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "DEC-DRAIN-ERROR",
+            1000,
+        );
+        let ctx = ReplayContext::new(vec![], vec![], 42, "snap-001");
+        gate.verify(&entry, &ctx);
+
+        let events = gate.take_events();
+
+        assert!(!events.is_empty());
+        assert!(gate.events().is_empty());
+        assert_eq!(gate.verdicts().len(), 1);
+        assert!(!gate.gate_pass());
+        assert_eq!(gate.summary().errors, 1);
+    }
+
+    #[test]
+    fn negative_build_replay_context_preserves_primary_when_alternates_exceed_cap() {
+        let mut entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "DEC-HUGE-CANDIDATES",
+            1000,
+        );
+        entry.candidates_considered = (0..MAX_CANDIDATES.saturating_add(64))
+            .map(|idx| format!("alt-{idx}"))
+            .collect();
+
+        let ctx = build_replay_context(&entry, "snap-oversized");
+
+        assert_eq!(ctx.candidates.len(), MAX_CANDIDATES);
+        assert_eq!(ctx.candidates[0].id, "DEC-HUGE-CANDIDATES");
+        assert!(ctx.candidates.iter().any(|candidate| {
+            candidate.id == "DEC-HUGE-CANDIDATES"
+                && candidate.score.to_bits() == 1.0f64.to_bits()
+        }));
+    }
+
+    #[test]
+    fn negative_verify_from_entry_with_oversized_alternates_still_reproduces_primary() {
+        let mut gate = ControlReplayGate::new();
+        let mut entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "DEC-HUGE-REPLAY",
+            1000,
+        );
+        entry.candidates_considered = (0..MAX_CANDIDATES.saturating_add(64))
+            .map(|idx| format!("candidate-{idx}"))
+            .collect();
+
+        let verdict = gate.verify_from_entry(&entry, "snap-huge-replay");
+
+        assert!(verdict.is_reproduced());
+        assert!(gate.gate_pass());
+        assert_eq!(gate.summary().reproduced, 1);
+    }
+
+    #[test]
+    fn negative_build_replay_context_skips_duplicate_chosen_candidate_names() {
+        let mut entry = make_entry(
+            DecisionType::FencingDecision,
+            DecisionOutcome::Grant,
+            "DEC-DUP",
+            2000,
+        );
+        entry.candidates_considered = vec![
+            "DEC-DUP".to_string(),
+            "fallback".to_string(),
+            "DEC-DUP".to_string(),
+        ];
+
+        let ctx = build_replay_context(&entry, "snap-duplicates");
+        let chosen_count = ctx
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.id == "DEC-DUP")
+            .count();
+
+        assert_eq!(chosen_count, 1);
+        assert_eq!(ctx.candidates.len(), 2);
+        assert_eq!(ctx.candidates[0].score.to_bits(), 1.0f64.to_bits());
+    }
+
+    #[test]
+    fn negative_verify_from_entry_with_blank_policy_snapshot_errors() {
+        let mut gate = ControlReplayGate::new();
+        let entry = make_entry(
+            DecisionType::MigrationDecision,
+            DecisionOutcome::Proceed,
+            "DEC-BLANK-SNAPSHOT",
+            3000,
+        );
+
+        let verdict = gate.verify_from_entry(&entry, "");
+
+        assert!(verdict.is_error());
+        assert!(!gate.gate_pass());
+        assert_eq!(gate.summary().errors, 1);
+        assert!(gate.events().iter().any(|event| {
+            event.code == event_codes::RPL_004_ERROR && event.decision_id == "DEC-BLANK-SNAPSHOT"
+        }));
+    }
+
+    #[test]
+    fn negative_batch_error_before_success_keeps_gate_closed() {
+        let mut gate = ControlReplayGate::new();
+        let bad_entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "DEC-BAD-FIRST",
+            1000,
+        );
+        let good_entry = make_entry(
+            DecisionType::FencingDecision,
+            DecisionOutcome::Grant,
+            "DEC-GOOD-SECOND",
+            2000,
+        );
+        let bad_ctx = ReplayContext::new(Vec::new(), Vec::new(), 42, "snap-batch");
+        let good_ctx = build_replay_context(&good_entry, "snap-batch");
+
+        let results = gate.verify_batch(&[(bad_entry, bad_ctx), (good_entry, good_ctx)]);
+
+        assert_eq!(results.len(), 2);
+        assert!(results[0].is_error());
+        assert!(results[1].is_reproduced());
+        assert!(!gate.gate_pass());
+        assert_eq!(gate.summary().errors, 1);
+        assert_eq!(gate.summary().reproduced, 1);
+    }
+
+    #[test]
+    fn negative_push_bounded_zero_capacity_clears_existing_items() {
+        let mut values = vec![1, 2, 3];
+
+        push_bounded(&mut values, 4, 0);
+
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn negative_push_bounded_zero_capacity_drops_new_item_from_empty_vec() {
+        let mut values: Vec<u8> = Vec::new();
+
+        push_bounded(&mut values, 7, 0);
+
+        assert!(values.is_empty());
     }
 }

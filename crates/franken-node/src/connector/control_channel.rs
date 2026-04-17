@@ -214,12 +214,12 @@ pub fn validate_config(config: &ChannelConfig) -> Result<(), ChannelError> {
             reason: "replay_window_size must be > 0".into(),
         });
     }
-    if config.channel_id.is_empty() {
+    if config.channel_id.trim().is_empty() {
         return Err(ChannelError::InvalidConfig {
             reason: "channel_id must not be empty".into(),
         });
     }
-    if config.audience.is_empty() {
+    if config.audience.trim().is_empty() {
         return Err(ChannelError::InvalidConfig {
             reason: "audience must not be empty".into(),
         });
@@ -636,9 +636,14 @@ impl ControlChannel {
 
 /// Push an item to a bounded Vec, evicting oldest entries if at capacity.
 fn push_bounded<T>(vec: &mut Vec<T>, item: T, max: usize) {
+    if max == 0 {
+        vec.clear();
+        return;
+    }
+
     if vec.len() >= max {
-        let overflow = vec.len() - max + 1;
-        vec.drain(0..overflow);
+        let overflow = vec.len().saturating_sub(max).saturating_add(1);
+        vec.drain(0..overflow.min(vec.len()));
     }
     vec.push(item);
 }
@@ -914,6 +919,98 @@ mod tests {
         };
         let err = ControlChannel::new(cfg, test_secret()).unwrap_err();
         assert_eq!(err.code(), "ACC_INVALID_CONFIG");
+    }
+
+    #[test]
+    fn invalid_config_whitespace_channel_id() {
+        let cfg = ChannelConfig {
+            replay_window_size: 10,
+            require_auth: true,
+            channel_id: " \t\n ".into(),
+            audience: "aud".into(),
+        };
+
+        let err = ControlChannel::new(cfg, test_secret()).unwrap_err();
+
+        assert_eq!(err.code(), "ACC_INVALID_CONFIG");
+        assert!(matches!(
+            err,
+            ChannelError::InvalidConfig { reason }
+                if reason == "channel_id must not be empty"
+        ));
+    }
+
+    #[test]
+    fn invalid_config_whitespace_audience() {
+        let cfg = ChannelConfig {
+            replay_window_size: 10,
+            require_auth: true,
+            channel_id: "ch".into(),
+            audience: "\r\n\t ".into(),
+        };
+
+        let err = ControlChannel::new(cfg, test_secret()).unwrap_err();
+
+        assert_eq!(err.code(), "ACC_INVALID_CONFIG");
+        assert!(matches!(
+            err,
+            ChannelError::InvalidConfig { reason }
+                if reason == "audience must not be empty"
+        ));
+    }
+
+    #[test]
+    fn invalid_config_reports_channel_id_before_audience_when_both_blank() {
+        let cfg = ChannelConfig {
+            replay_window_size: 10,
+            require_auth: true,
+            channel_id: " ".into(),
+            audience: " ".into(),
+        };
+
+        let err = validate_config(&cfg).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ChannelError::InvalidConfig { reason }
+                if reason == "channel_id must not be empty"
+        ));
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_existing_entries() {
+        let mut values = vec![1, 2, 3];
+
+        push_bounded(&mut values, 4, 0);
+
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_on_empty_vec_stays_empty() {
+        let mut values = Vec::new();
+
+        push_bounded(&mut values, "dropped", 0);
+
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn push_bounded_over_capacity_discards_oldest_entries() {
+        let mut values = vec!["oldest", "middle", "newest"];
+
+        push_bounded(&mut values, "incoming", 2);
+
+        assert_eq!(values, vec!["newest", "incoming"]);
+    }
+
+    #[test]
+    fn push_bounded_single_capacity_replaces_existing_entry() {
+        let mut values = vec!["old"];
+
+        push_bounded(&mut values, "new", 1);
+
+        assert_eq!(values, vec!["new"]);
     }
 
     #[test]
@@ -1747,5 +1844,211 @@ mod tests {
             ch.audit_log()[0].reason_code.as_deref(),
             Some("transcript_mac_mismatch")
         );
+    }
+
+    #[test]
+    fn reject_credential_signed_for_different_audience() {
+        let signing_cfg = ChannelConfig {
+            audience: "audience-a".into(),
+            ..config()
+        };
+        let verifying_cfg = ChannelConfig {
+            audience: "audience-b".into(),
+            ..config()
+        };
+        let nonce = [0x21; 16];
+        let credential = sign_channel_message(
+            &signing_cfg,
+            "test-subject",
+            Direction::Send,
+            1,
+            "hash",
+            ControlEpoch::new(1),
+            nonce,
+            &test_secret(),
+        );
+        let msg = ChannelMessage {
+            message_id: "audience-swap".into(),
+            direction: Direction::Send,
+            sequence_number: 1,
+            credential,
+            payload_hash: "hash".into(),
+        };
+        let mut ch = ControlChannel::new(verifying_cfg, test_secret()).unwrap();
+
+        let err = ch.process_message(&msg, "ts").unwrap_err();
+
+        assert_eq!(err.code(), "ACC_AUTH_FAILED");
+        assert_eq!(
+            ch.audit_log()[0].reason_code.as_deref(),
+            Some("transcript_mac_mismatch")
+        );
+    }
+
+    #[test]
+    fn reject_subject_id_tamper_after_signing() {
+        let cfg = config();
+        let mut credential = sign_channel_message(
+            &cfg,
+            "test-subject",
+            Direction::Send,
+            1,
+            "hash",
+            ControlEpoch::new(1),
+            [0x22; 16],
+            &test_secret(),
+        );
+        credential.subject_id = "attacker".into();
+        let msg = ChannelMessage {
+            message_id: "subject-tamper".into(),
+            direction: Direction::Send,
+            sequence_number: 1,
+            credential,
+            payload_hash: "hash".into(),
+        };
+        let mut ch = ControlChannel::new(cfg, test_secret()).unwrap();
+
+        let err = ch.process_message(&msg, "ts").unwrap_err();
+
+        assert_eq!(err.code(), "ACC_AUTH_FAILED");
+        assert_eq!(ch.audit_log().len(), 1);
+        assert!(!ch.audit_log()[0].authenticated);
+    }
+
+    #[test]
+    fn reject_nonce_tamper_after_signing() {
+        let cfg = config();
+        let mut credential = sign_channel_message(
+            &cfg,
+            "test-subject",
+            Direction::Send,
+            1,
+            "hash",
+            ControlEpoch::new(1),
+            [0x23; 16],
+            &test_secret(),
+        );
+        credential.nonce = [0x24; 16];
+        let msg = ChannelMessage {
+            message_id: "nonce-tamper".into(),
+            direction: Direction::Send,
+            sequence_number: 1,
+            credential,
+            payload_hash: "hash".into(),
+        };
+        let mut ch = ControlChannel::new(cfg, test_secret()).unwrap();
+
+        let err = ch.process_message(&msg, "ts").unwrap_err();
+
+        assert_eq!(err.code(), "ACC_AUTH_FAILED");
+        assert_eq!(
+            ch.audit_log()[0].reason_code.as_deref(),
+            Some("transcript_mac_mismatch")
+        );
+    }
+
+    #[test]
+    fn auth_failure_does_not_advance_sequence_or_replay_window() {
+        let mut ch = ControlChannel::new(config(), test_secret()).unwrap();
+        let forged = forged_msg("forged-seq-one", Direction::Send, 1);
+
+        let err = ch.process_message(&forged, "ts").unwrap_err();
+        assert_eq!(err.code(), "ACC_AUTH_FAILED");
+
+        let valid = signed_msg("valid-seq-one", Direction::Send, 1);
+        let (result, audit) = ch.process_message(&valid, "ts").unwrap();
+
+        assert_eq!(result.verdict, "ACCEPT");
+        assert_eq!(audit.sequence_number, 1);
+        assert_eq!(ch.audit_log().len(), 2);
+    }
+
+    #[test]
+    fn immediate_same_sequence_replay_is_replay_not_sequence_regress() {
+        let mut ch = ControlChannel::new(config(), test_secret()).unwrap();
+        ch.process_message(&signed_msg("first-seq", Direction::Send, 1), "ts")
+            .unwrap();
+
+        let err = ch
+            .process_message(&signed_msg("second-seq", Direction::Send, 1), "ts")
+            .unwrap_err();
+
+        match err {
+            ChannelError::ReplayDetected { sequence, .. } => assert_eq!(sequence, 1),
+            other => {
+                unreachable!("expected replay detection before sequence regress, got {other:?}")
+            }
+        }
+        assert_eq!(ch.audit_log().last().unwrap().verdict, "REJECT_REPLAY");
+    }
+
+    #[test]
+    fn same_nonce_reuse_across_directions_is_rejected() {
+        let cfg = config();
+        let mut ch = ControlChannel::new(cfg.clone(), test_secret()).unwrap();
+        let nonce = [0x25; 16];
+        let send = ChannelMessage {
+            message_id: "nonce-send".into(),
+            direction: Direction::Send,
+            sequence_number: 1,
+            credential: sign_channel_message(
+                &cfg,
+                "test-subject",
+                Direction::Send,
+                1,
+                "send-hash",
+                ControlEpoch::new(1),
+                nonce,
+                &test_secret(),
+            ),
+            payload_hash: "send-hash".into(),
+        };
+        ch.process_message(&send, "ts").unwrap();
+        let receive = ChannelMessage {
+            message_id: "nonce-recv".into(),
+            direction: Direction::Receive,
+            sequence_number: 1,
+            credential: sign_channel_message(
+                &cfg,
+                "test-subject",
+                Direction::Receive,
+                1,
+                "recv-hash",
+                ControlEpoch::new(1),
+                nonce,
+                &test_secret(),
+            ),
+            payload_hash: "recv-hash".into(),
+        };
+
+        let err = ch.process_message(&receive, "ts").unwrap_err();
+
+        assert_eq!(err.code(), "ACC_AUTH_FAILED");
+        assert_eq!(
+            ch.audit_log()
+                .last()
+                .and_then(|entry| entry.reason_code.as_deref()),
+            Some("nonce_reuse_detected")
+        );
+    }
+
+    #[test]
+    fn closed_channel_rejects_without_appending_audit_entry() {
+        let mut ch = ControlChannel::new(config(), test_secret()).unwrap();
+        ch.process_message(
+            &signed_msg("accepted-before-close", Direction::Send, 1),
+            "ts",
+        )
+        .unwrap();
+        ch.close();
+        let audit_len_before = ch.audit_log().len();
+
+        let err = ch
+            .process_message(&signed_msg("after-close", Direction::Send, 2), "ts")
+            .unwrap_err();
+
+        assert_eq!(err.code(), "ACC_CHANNEL_CLOSED");
+        assert_eq!(ch.audit_log().len(), audit_len_before);
+        assert!(!ch.is_open());
     }
 }

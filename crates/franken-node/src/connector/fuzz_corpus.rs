@@ -255,13 +255,13 @@ impl DeterministicFuzzTestAdapter {
                     triaged_crashes.push(DeterministicTriagedCrash {
                         target: target_name.clone(),
                         seed_input: seed.input_data.clone(),
-                        error: format!(
-                            "simulated crash ({DETERMINISTIC_FIXTURE_EXECUTION_MODE})"
-                        ),
-                        reproducer: format!(
-                            "{{\"target\":\"{target_name}\",\"input\":\"{}\",\"fixture_mode\":\"{DETERMINISTIC_FIXTURE_EXECUTION_MODE}\"}}",
-                            seed.input_data
-                        ),
+                        error: format!("simulated crash ({DETERMINISTIC_FIXTURE_EXECUTION_MODE})"),
+                        reproducer: serde_json::json!({
+                            "target": target_name,
+                            "input": seed.input_data,
+                            "fixture_mode": DETERMINISTIC_FIXTURE_EXECUTION_MODE,
+                        })
+                        .to_string(),
                     });
                 }
             }
@@ -771,13 +771,22 @@ fn aggregate_truthful_reports(
         };
 
         if outcome == "error" {
+            let execution_error_detail = report
+                .seed_results
+                .iter()
+                .find(|result| {
+                    result.outcome == "infra_failed" || result.outcome == "target_missing"
+                })
+                .map(|result| result.exit_detail.as_str());
+            let coverage_error_detail = report
+                .coverage_summary
+                .as_ref()
+                .map(|coverage| coverage.coverage_detail.as_str());
             error_details.push(format!(
                 "{}: {}",
                 report.target.target_id,
-                report
-                    .coverage_summary
-                    .as_ref()
-                    .map(|coverage| coverage.coverage_detail.as_str())
+                execution_error_detail
+                    .or(coverage_error_detail)
                     .unwrap_or("execution infrastructure failure")
             ));
         }
@@ -1430,6 +1439,168 @@ targets = ["api_translation"]
     }
 
     #[test]
+    fn truthful_discovery_rejects_missing_budget_config() {
+        let dir = tempdir().expect("tempdir");
+
+        let error = discover_truthful_fuzz_targets(dir.path()).expect_err("must fail closed");
+
+        assert!(error.contains("failed to read"));
+        assert!(error.contains("fuzz/config/fuzz_budget.toml"));
+    }
+
+    #[test]
+    fn truthful_discovery_rejects_malformed_budget_toml() {
+        let dir = tempdir().expect("tempdir");
+        write_file(
+            &dir.path().join("fuzz/config/fuzz_budget.toml"),
+            b"[migration\nmin_seconds_per_target = nope\n",
+        );
+
+        let error = discover_truthful_fuzz_targets(dir.path()).expect_err("must fail closed");
+
+        assert!(error.contains("failed to parse"));
+        assert!(error.contains("fuzz/config/fuzz_budget.toml"));
+    }
+
+    #[test]
+    fn truthful_discovery_rejects_zero_active_targets() {
+        let dir = tempdir().expect("tempdir");
+        write_file(
+            &dir.path().join("fuzz/config/fuzz_budget.toml"),
+            br#"
+[migration]
+min_seconds_per_target = 1
+targets = []
+
+[shim]
+min_seconds_per_target = 1
+targets = []
+"#,
+        );
+
+        let error = discover_truthful_fuzz_targets(dir.path()).expect_err("must fail closed");
+
+        assert!(error.contains("resolved zero active targets"));
+    }
+
+    #[test]
+    fn read_seed_directory_rejects_missing_directory() {
+        let dir = tempdir().expect("tempdir");
+
+        let error = read_seed_directory(dir.path(), "fuzz/corpus/missing", "corpus_seed")
+            .expect_err("missing seed root must fail closed");
+
+        assert!(error.contains("missing seed directory"));
+        assert!(error.contains("fuzz/corpus/missing"));
+    }
+
+    #[test]
+    fn coverage_fixture_invalid_json_is_unavailable() {
+        let dir = tempdir().expect("tempdir");
+        write_file(
+            &dir.path().join("fuzz/coverage/latest_migration.json"),
+            b"{invalid-json",
+        );
+
+        let coverage = load_category_coverage(dir.path(), "migration");
+
+        assert_eq!(coverage.observation.coverage_status, "unavailable");
+        assert!(coverage.artifact_ref.is_none());
+        assert!(
+            coverage
+                .observation
+                .coverage_detail
+                .contains("invalid JSON")
+        );
+    }
+
+    #[test]
+    fn coverage_fixture_wrong_event_code_is_unavailable() {
+        let dir = tempdir().expect("tempdir");
+        write_file(
+            &dir.path().join("fuzz/coverage/latest_shim.json"),
+            br#"{
+  "timestamp": "2026-02-20T12:00:00Z",
+  "target": "shim_api_translation",
+  "corpus_size": 2,
+  "lines_covered": 13,
+  "lines_total": 18,
+  "coverage_pct": 72.2,
+  "new_paths_found": 2,
+  "crashes_found": 0,
+  "event_code": "FZT-999"
+}"#,
+        );
+
+        let coverage = load_category_coverage(dir.path(), "shim");
+
+        assert_eq!(coverage.observation.coverage_status, "unavailable");
+        assert!(coverage.artifact_ref.is_none());
+        assert!(
+            coverage
+                .observation
+                .coverage_detail
+                .contains("unexpected event_code")
+        );
+    }
+
+    #[test]
+    fn dispatch_target_rejects_unknown_truthful_target() {
+        let error = dispatch_target("unknown_truthful_target", b"{}")
+            .expect_err("unknown target must fail closed");
+
+        assert!(error.contains("unsupported truthful fuzz target"));
+        assert!(error.contains("unknown_truthful_target"));
+    }
+
+    #[test]
+    fn aggregate_preparation_error_returns_error_verdict() {
+        let health = AdapterHealth {
+            adapter_kind: LIVE_ADAPTER_KIND.to_string(),
+            discovered_targets: 1,
+            coverage_reports: 0,
+            corpus_roots: vec!["fuzz/corpus/migration".to_string()],
+            healthy: false,
+            detail: "fixture health unavailable".to_string(),
+        };
+        let target = FuzzTargetDescriptor {
+            target_id: "migration_directory_scan".to_string(),
+            category: "migration".to_string(),
+            adapter_kind: LIVE_ADAPTER_KIND.to_string(),
+            execution_ref: "fuzz/targets/migration_directory_scan.rs".to_string(),
+            working_directory: "fuzz".to_string(),
+            timeout_policy_ms: DEFAULT_LIVE_TIMEOUT_MS,
+            coverage_mode: "category_fixture_report".to_string(),
+            supports_remote_execution: false,
+            supported_artifact_kinds: vec!["corpus_seed".to_string()],
+        };
+
+        let report = aggregate_truthful_reports(
+            "fcg-test",
+            &health,
+            1,
+            Vec::new(),
+            vec![(
+                target,
+                "missing seed directory `fuzz/corpus/migration`".to_string(),
+            )],
+        );
+
+        assert_eq!(report.verdict, "ERROR");
+        assert_eq!(report.targets_total, 1);
+        assert_eq!(report.targets_executed, 0);
+        assert_eq!(report.seeds_executed, 0);
+        assert_eq!(report.targets[0].outcome, "error");
+        assert!(
+            report
+                .error_detail
+                .as_deref()
+                .expect("error detail")
+                .contains("missing seed directory")
+        );
+    }
+
+    #[test]
     fn truthful_gate_marks_missing_coverage_as_error() {
         let dir = minimal_truthful_repo();
         let report = run_truthful_fuzz_gate(dir.path());
@@ -1489,5 +1660,233 @@ targets = ["api_translation"]
         assert!(report.coverage_summary.iter().all(|coverage| {
             coverage.coverage_status == "measured" && coverage.coverage_pct.unwrap_or(0.0) > 0.0
         }));
+    }
+
+    fn negative_truthful_target(target_id: &str, category: &str) -> FuzzTargetDescriptor {
+        FuzzTargetDescriptor {
+            target_id: target_id.to_string(),
+            category: category.to_string(),
+            adapter_kind: LIVE_ADAPTER_KIND.to_string(),
+            execution_ref: format!("fuzz/targets/{target_id}.rs"),
+            working_directory: "fuzz".to_string(),
+            timeout_policy_ms: DEFAULT_LIVE_TIMEOUT_MS,
+            coverage_mode: "category_fixture_report".to_string(),
+            supports_remote_execution: false,
+            supported_artifact_kinds: vec!["corpus_seed".to_string()],
+        }
+    }
+
+    fn negative_measured_coverage(category: &str) -> FuzzCoverageObservation {
+        FuzzCoverageObservation {
+            coverage_pct: Some(72.5),
+            coverage_units: "lines".to_string(),
+            coverage_source: "checked_in_fuzz_fixture".to_string(),
+            coverage_scope: format!("category:{category}"),
+            coverage_status: "measured".to_string(),
+            coverage_detail: "measured fixture coverage".to_string(),
+        }
+    }
+
+    fn negative_seed_artifact(seed_id: &str) -> FuzzArtifactRef {
+        let digest = sha256_hex(seed_id.as_bytes());
+        FuzzArtifactRef {
+            artifact_id: format!("corpus_seed:{digest}"),
+            artifact_kind: "corpus_seed".to_string(),
+            artifact_location: format!("fuzz/corpus/migration/{seed_id}"),
+            artifact_digest: digest,
+            produced_by: "negative-test-fixture".to_string(),
+            created_at: "2026-02-20T12:00:00Z".to_string(),
+            is_remote: false,
+            retention_hint: "tracked_fixture".to_string(),
+        }
+    }
+
+    fn negative_execution_report(outcome: &str, exit_detail: &str) -> FuzzExecutionReport {
+        let target = negative_truthful_target("migration_directory_scan", "migration");
+        let coverage = negative_measured_coverage("migration");
+        let artifact = negative_seed_artifact("seed-negative");
+        let seed_result = SeedExecutionResult {
+            target_id: target.target_id.clone(),
+            seed_id: "seed-negative".to_string(),
+            seed_digest: artifact.artifact_digest.clone(),
+            started_at: "2026-02-20T12:00:00Z".to_string(),
+            completed_at: "2026-02-20T12:00:01Z".to_string(),
+            duration_ms: if outcome == "hang" {
+                DEFAULT_LIVE_TIMEOUT_MS.saturating_add(1)
+            } else {
+                1
+            },
+            outcome: outcome.to_string(),
+            exit_detail: exit_detail.to_string(),
+            crash_artifact: if outcome == "crash" {
+                Some(artifact.clone())
+            } else {
+                None
+            },
+            hang_artifact: if outcome == "hang" {
+                Some(artifact.clone())
+            } else {
+                None
+            },
+            coverage: Some(coverage.clone()),
+            artifact_refs: vec![artifact.clone()],
+        };
+
+        FuzzExecutionReport {
+            campaign_id: "fcg-negative".to_string(),
+            adapter_kind: LIVE_ADAPTER_KIND.to_string(),
+            target,
+            seed_results: vec![seed_result],
+            artifact_refs: vec![artifact],
+            coverage_summary: Some(coverage),
+            health: AdapterHealth {
+                adapter_kind: LIVE_ADAPTER_KIND.to_string(),
+                discovered_targets: 1,
+                coverage_reports: 1,
+                corpus_roots: vec!["fuzz/corpus/migration".to_string()],
+                healthy: true,
+                detail: "negative fixture health".to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn fixture_gate_reproducer_escapes_json_metacharacters() {
+        let mut adapter = DeterministicFuzzTestAdapter::new(1);
+        adapter.add_target(make_target("parser_fuzz", FuzzCategory::ParserInput));
+        let input = "crash_\"quoted\"\n{\"nested\":true}";
+        adapter
+            .add_seed(make_seed(
+                "parser_fuzz",
+                input,
+                DeterministicSeedOutcome::Rejected,
+            ))
+            .unwrap();
+
+        let report = adapter.run_fixture_gate();
+
+        assert_eq!(report.verdict, "FAIL");
+        let crash = report
+            .triaged_crashes
+            .first()
+            .expect("crash seed should be triaged");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&crash.reproducer).expect("reproducer should be valid JSON");
+        assert_eq!(parsed["target"].as_str(), Some("parser_fuzz"));
+        assert_eq!(parsed["input"].as_str(), Some(input));
+        assert_eq!(
+            parsed["fixture_mode"].as_str(),
+            Some(DETERMINISTIC_FIXTURE_EXECUTION_MODE)
+        );
+    }
+
+    #[test]
+    fn validate_registered_target_with_zero_seeds_reports_insufficient_corpus() {
+        let mut adapter = DeterministicFuzzTestAdapter::new(1);
+        adapter.add_target(make_target("parser_fuzz", FuzzCategory::ParserInput));
+        adapter.add_target(make_target("handshake_fuzz", FuzzCategory::HandshakeReplay));
+        adapter.add_target(make_target("token_fuzz", FuzzCategory::TokenValidation));
+        adapter.add_target(make_target("dos_fuzz", FuzzCategory::DecodeDos));
+
+        let err = adapter.validate().unwrap_err();
+
+        match err {
+            FuzzError::InsufficientCorpus { have, need, .. } => {
+                assert_eq!(have, 0);
+                assert_eq!(need, 1);
+            }
+            other => panic!("unexpected validation error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_reports_missing_decode_dos_category_before_seed_counts() {
+        let mut adapter = DeterministicFuzzTestAdapter::new(1);
+        adapter.add_target(make_target("parser_fuzz", FuzzCategory::ParserInput));
+        adapter.add_target(make_target("handshake_fuzz", FuzzCategory::HandshakeReplay));
+        adapter.add_target(make_target("token_fuzz", FuzzCategory::TokenValidation));
+
+        let err = adapter.validate().unwrap_err();
+
+        assert_eq!(err, FuzzError::MissingTarget("decode_dos".to_string()));
+    }
+
+    #[test]
+    fn truthful_discovery_rejects_missing_shim_budget_section() {
+        let dir = tempdir().expect("tempdir");
+        write_file(
+            &dir.path().join("fuzz/config/fuzz_budget.toml"),
+            br#"
+[migration]
+min_seconds_per_target = 1
+targets = ["directory_scan"]
+"#,
+        );
+
+        let error = discover_truthful_fuzz_targets(dir.path()).expect_err("must fail closed");
+
+        assert!(error.contains("failed to parse"));
+        assert!(error.contains("shim"));
+    }
+
+    #[test]
+    fn coverage_fixture_missing_event_code_is_unavailable() {
+        let dir = tempdir().expect("tempdir");
+        write_file(
+            &dir.path().join("fuzz/coverage/latest_migration.json"),
+            br#"{
+  "timestamp": "2026-02-20T12:00:00Z",
+  "target": "migration_directory_scan",
+  "corpus_size": 2,
+  "lines_covered": 19,
+  "lines_total": 24,
+  "coverage_pct": 79.1,
+  "new_paths_found": 1,
+  "crashes_found": 0
+}"#,
+        );
+
+        let coverage = load_category_coverage(dir.path(), "migration");
+
+        assert_eq!(coverage.observation.coverage_status, "unavailable");
+        assert!(coverage.artifact_ref.is_none());
+        assert!(
+            coverage
+                .observation
+                .coverage_detail
+                .contains("missing field")
+        );
+        assert!(coverage.observation.coverage_detail.contains("event_code"));
+    }
+
+    #[test]
+    fn aggregate_hang_creates_timeout_triage_without_error_detail() {
+        let report = negative_execution_report("hang", "duration exceeded timeout");
+        let health = report.health.clone();
+
+        let aggregate =
+            aggregate_truthful_reports("fcg-negative", &health, 1, vec![report], Vec::new());
+
+        assert_eq!(aggregate.verdict, "FAIL");
+        assert!(aggregate.error_detail.is_none());
+        assert_eq!(aggregate.triaged_failures.len(), 1);
+        assert_eq!(aggregate.triaged_failures[0].classifier, "timeout");
+        assert_eq!(aggregate.triaged_failures[0].outcome, "hang");
+    }
+
+    #[test]
+    fn aggregate_infra_failure_uses_seed_exit_detail_for_error_detail() {
+        let report = negative_execution_report("infra_failed", "target binary unavailable");
+        let health = report.health.clone();
+
+        let aggregate =
+            aggregate_truthful_reports("fcg-negative", &health, 1, vec![report], Vec::new());
+
+        assert_eq!(aggregate.verdict, "ERROR");
+        assert!(aggregate.triaged_failures.is_empty());
+        let detail = aggregate.error_detail.as_deref().expect("error detail");
+        assert!(detail.contains("migration_directory_scan"));
+        assert!(detail.contains("target binary unavailable"));
+        assert!(!detail.contains("measured fixture coverage"));
     }
 }

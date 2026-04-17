@@ -37,6 +37,8 @@ pub const ERR_ENE_TAMPER: &str = "ERR-ENE-TAMPER";
 pub enum ComplianceError {
     #[error("evidence artifact `{0}` not found")]
     NotFound(String),
+    #[error("invalid evidence artifact: {0}")]
+    InvalidEvidence(String),
     #[error("tamper evidence check failed for `{0}` (code: {ERR_ENE_TAMPER})")]
     TamperDetected(String),
     #[error("duplicate evidence submission: hash `{0}` already exists")]
@@ -193,6 +195,40 @@ impl ComplianceEvidenceStore {
         timestamp: &str,
         trace_id: &str,
     ) -> Result<String, ComplianceError> {
+        if publisher_id.trim().is_empty() {
+            return Err(ComplianceError::InvalidEvidence(
+                "publisher id must not be empty".to_owned(),
+            ));
+        }
+        if title.trim().is_empty() {
+            return Err(ComplianceError::InvalidEvidence(
+                "title must not be empty".to_owned(),
+            ));
+        }
+        if content.trim().is_empty() {
+            return Err(ComplianceError::InvalidEvidence(
+                "content must not be empty".to_owned(),
+            ));
+        }
+        if timestamp.trim().is_empty() {
+            return Err(ComplianceError::InvalidEvidence(
+                "timestamp must not be empty".to_owned(),
+            ));
+        }
+        if attestation.is_some_and(|value| value.trim().is_empty()) {
+            return Err(ComplianceError::InvalidEvidence(
+                "attestation must not be blank when provided".to_owned(),
+            ));
+        }
+        if tags
+            .iter()
+            .any(|tag| tag.trim().is_empty() || tag.trim() != tag)
+        {
+            return Err(ComplianceError::InvalidEvidence(
+                "tags must be non-empty and trimmed".to_owned(),
+            ));
+        }
+
         let content_hash = Self::compute_content_hash(content);
 
         if self.artifacts.contains_key(&content_hash) {
@@ -469,6 +505,198 @@ mod tests {
     }
 
     #[test]
+    fn test_duplicate_submission_does_not_mutate_store_or_emit_event() {
+        let mut store = ComplianceEvidenceStore::new();
+        store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::External,
+                "Evidence A",
+                "same content",
+                None,
+                &[],
+                &ts(1),
+                "trace-original",
+            )
+            .unwrap();
+        store.take_events();
+
+        let duplicate = store.store_evidence(
+            "pub-2",
+            EvidenceSource::SecurityAudit,
+            "Evidence B",
+            "same content",
+            Some("duplicate-attestation"),
+            &["audit".to_owned()],
+            &ts(2),
+            "trace-duplicate",
+        );
+
+        assert!(matches!(
+            duplicate,
+            Err(ComplianceError::DuplicateEvidence(_))
+        ));
+        assert_eq!(store.evidence_count(), 1);
+        assert!(store.take_events().is_empty());
+    }
+
+    #[test]
+    fn test_store_blank_publisher_rejected_without_event() {
+        let mut store = ComplianceEvidenceStore::new();
+        let result = store.store_evidence(
+            " \t ",
+            EvidenceSource::External,
+            "Evidence",
+            "payload",
+            None,
+            &[],
+            &ts(1),
+            "trace-blank-publisher",
+        );
+
+        assert!(matches!(
+            result,
+            Err(ComplianceError::InvalidEvidence(ref detail))
+                if detail.contains("publisher id")
+        ));
+        assert_eq!(store.evidence_count(), 0);
+        assert!(store.take_events().is_empty());
+    }
+
+    #[test]
+    fn test_store_blank_title_rejected_without_event() {
+        let mut store = ComplianceEvidenceStore::new();
+        let result = store.store_evidence(
+            "pub-1",
+            EvidenceSource::External,
+            "\n ",
+            "payload",
+            None,
+            &[],
+            &ts(1),
+            "trace-blank-title",
+        );
+
+        assert!(matches!(
+            result,
+            Err(ComplianceError::InvalidEvidence(ref detail)) if detail.contains("title")
+        ));
+        assert_eq!(store.evidence_count(), 0);
+        assert!(store.take_events().is_empty());
+    }
+
+    #[test]
+    fn test_store_blank_content_rejected_without_event() {
+        let mut store = ComplianceEvidenceStore::new();
+        let result = store.store_evidence(
+            "pub-1",
+            EvidenceSource::External,
+            "Evidence",
+            " \r\n ",
+            None,
+            &[],
+            &ts(1),
+            "trace-blank-content",
+        );
+
+        assert!(matches!(
+            result,
+            Err(ComplianceError::InvalidEvidence(ref detail)) if detail.contains("content")
+        ));
+        assert_eq!(store.evidence_count(), 0);
+        assert!(store.take_events().is_empty());
+    }
+
+    #[test]
+    fn test_store_blank_timestamp_rejected_without_event() {
+        let mut store = ComplianceEvidenceStore::new();
+        let result = store.store_evidence(
+            "pub-1",
+            EvidenceSource::External,
+            "Evidence",
+            "payload",
+            None,
+            &[],
+            " ",
+            "trace-blank-timestamp",
+        );
+
+        assert!(matches!(
+            result,
+            Err(ComplianceError::InvalidEvidence(ref detail)) if detail.contains("timestamp")
+        ));
+        assert_eq!(store.evidence_count(), 0);
+        assert!(store.take_events().is_empty());
+    }
+
+    #[test]
+    fn test_store_blank_attestation_rejected_without_event() {
+        let mut store = ComplianceEvidenceStore::new();
+        let result = store.store_evidence(
+            "pub-1",
+            EvidenceSource::SecurityAudit,
+            "Evidence",
+            "payload",
+            Some(" \n "),
+            &[],
+            &ts(1),
+            "trace-blank-attestation",
+        );
+
+        assert!(matches!(
+            result,
+            Err(ComplianceError::InvalidEvidence(ref detail))
+                if detail.contains("attestation")
+        ));
+        assert_eq!(store.evidence_count(), 0);
+        assert!(store.take_events().is_empty());
+    }
+
+    #[test]
+    fn test_store_blank_tag_rejected_without_event() {
+        let mut store = ComplianceEvidenceStore::new();
+        let result = store.store_evidence(
+            "pub-1",
+            EvidenceSource::SecurityAudit,
+            "Evidence",
+            "payload",
+            None,
+            &["audit".to_owned(), " ".to_owned()],
+            &ts(1),
+            "trace-blank-tag",
+        );
+
+        assert!(matches!(
+            result,
+            Err(ComplianceError::InvalidEvidence(ref detail)) if detail.contains("tags")
+        ));
+        assert_eq!(store.evidence_count(), 0);
+        assert!(store.take_events().is_empty());
+    }
+
+    #[test]
+    fn test_store_untrimmed_tag_rejected_without_event() {
+        let mut store = ComplianceEvidenceStore::new();
+        let result = store.store_evidence(
+            "pub-1",
+            EvidenceSource::SecurityAudit,
+            "Evidence",
+            "payload",
+            None,
+            &[" audit".to_owned()],
+            &ts(1),
+            "trace-untrimmed-tag",
+        );
+
+        assert!(matches!(
+            result,
+            Err(ComplianceError::InvalidEvidence(ref detail)) if detail.contains("tags")
+        ));
+        assert_eq!(store.evidence_count(), 0);
+        assert!(store.take_events().is_empty());
+    }
+
+    #[test]
     fn test_retrieve_evidence() {
         let mut store = ComplianceEvidenceStore::new();
         let hash = store
@@ -497,6 +725,16 @@ mod tests {
     }
 
     #[test]
+    fn test_retrieve_not_found_does_not_emit_events() {
+        let mut store = ComplianceEvidenceStore::new();
+
+        let result = store.retrieve_evidence("sha256:missing", &ts(1), "trace-missing");
+
+        assert!(matches!(result, Err(ComplianceError::NotFound(_))));
+        assert!(store.take_events().is_empty());
+    }
+
+    #[test]
     fn test_retrieve_tampered_detected() {
         let mut store = ComplianceEvidenceStore::new();
         let hash = store
@@ -517,6 +755,42 @@ mod tests {
 
         let result = store.retrieve_evidence(&hash, &ts(2), "t");
         assert!(matches!(result, Err(ComplianceError::TamperDetected(_))));
+    }
+
+    #[test]
+    fn test_retrieve_tampered_does_not_emit_retrieved_event() {
+        let mut store = ComplianceEvidenceStore::new();
+        let hash = store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::MigrationSingularity,
+                "Tamper Test",
+                "payload-original",
+                None,
+                &[],
+                &ts(1),
+                "trace-store",
+            )
+            .unwrap();
+        store.take_events();
+
+        let entry = store.artifacts.get_mut(&hash).expect("stored evidence");
+        entry.content = "payload-tampered".to_string();
+
+        let result = store.retrieve_evidence(&hash, &ts(2), "trace-retrieve");
+        let events = store.take_events();
+
+        assert!(matches!(result, Err(ComplianceError::TamperDetected(_))));
+        assert!(
+            events
+                .iter()
+                .any(|event| event.event_code == ENE_008_COMPLIANCE_TAMPER_CHECK_FAIL)
+        );
+        assert!(
+            events
+                .iter()
+                .all(|event| event.event_code != ENE_006_COMPLIANCE_EVIDENCE_RETRIEVED)
+        );
     }
 
     #[test]
@@ -660,6 +934,49 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_tamper_not_found_does_not_emit_events() {
+        let mut store = ComplianceEvidenceStore::new();
+
+        let result = store.verify_tamper_evidence("sha256:missing", &ts(1), "trace-missing");
+
+        assert!(matches!(result, Err(ComplianceError::NotFound(_))));
+        assert!(store.take_events().is_empty());
+    }
+
+    #[test]
+    fn test_verify_tamper_malformed_stored_hash_returns_false() {
+        let mut store = ComplianceEvidenceStore::new();
+        let hash = store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::TrustFabric,
+                "Evidence",
+                "content",
+                None,
+                &[],
+                &ts(1),
+                "trace-store",
+            )
+            .unwrap();
+        store.take_events();
+
+        let entry = store.artifacts.get_mut(&hash).expect("stored evidence");
+        entry.content_hash = "not-a-sha256-digest".to_string();
+
+        let valid = store
+            .verify_tamper_evidence(&hash, &ts(2), "trace-verify")
+            .unwrap();
+        let events = store.take_events();
+
+        assert!(!valid);
+        assert!(
+            events
+                .iter()
+                .any(|event| event.event_code == ENE_008_COMPLIANCE_TAMPER_CHECK_FAIL)
+        );
+    }
+
+    #[test]
     fn test_search_by_source() {
         let mut store = ComplianceEvidenceStore::new();
         store
@@ -689,6 +1006,27 @@ mod tests {
         let results = store.search_by_source(EvidenceSource::MigrationSingularity);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].title, "Migration Ev");
+    }
+
+    #[test]
+    fn test_search_by_source_returns_empty_for_unmatched_source() {
+        let mut store = ComplianceEvidenceStore::new();
+        store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::External,
+                "External Evidence",
+                "external-content",
+                None,
+                &[],
+                &ts(1),
+                "trace-store",
+            )
+            .unwrap();
+
+        let results = store.search_by_source(EvidenceSource::SecurityAudit);
+
+        assert!(results.is_empty());
     }
 
     #[test]
@@ -723,6 +1061,40 @@ mod tests {
     }
 
     #[test]
+    fn test_search_by_publisher_is_exact_not_prefix() {
+        let mut store = ComplianceEvidenceStore::new();
+        store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::External,
+                "Ev A",
+                "a",
+                None,
+                &[],
+                &ts(1),
+                "trace-a",
+            )
+            .unwrap();
+        store
+            .store_evidence(
+                "pub-10",
+                EvidenceSource::External,
+                "Ev B",
+                "b",
+                None,
+                &[],
+                &ts(2),
+                "trace-b",
+            )
+            .unwrap();
+
+        let results = store.search_by_publisher("pub-1");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].publisher_id, "pub-1");
+    }
+
+    #[test]
     fn test_search_by_tag() {
         let mut store = ComplianceEvidenceStore::new();
         store
@@ -741,6 +1113,48 @@ mod tests {
         assert_eq!(results.len(), 1);
         let results2 = store.search_by_tag("nonexistent");
         assert!(results2.is_empty());
+    }
+
+    #[test]
+    fn test_search_by_tag_is_exact_not_substring() {
+        let mut store = ComplianceEvidenceStore::new();
+        store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::External,
+                "Tagged",
+                "content",
+                None,
+                &["security".to_owned()],
+                &ts(1),
+                "trace-store",
+            )
+            .unwrap();
+
+        let results = store.search_by_tag("sec");
+
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_search_by_tag_is_case_sensitive() {
+        let mut store = ComplianceEvidenceStore::new();
+        store
+            .store_evidence(
+                "pub-1",
+                EvidenceSource::External,
+                "Tagged",
+                "content",
+                None,
+                &["security".to_owned()],
+                &ts(1),
+                "trace-store",
+            )
+            .unwrap();
+
+        let results = store.search_by_tag("Security");
+
+        assert!(results.is_empty());
     }
 
     #[test]

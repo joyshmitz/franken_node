@@ -28,18 +28,35 @@ impl Plane {
     }
 
     pub fn from_name(name: &str) -> Option<Plane> {
-        if name.starts_with(Plane::Protocol.prefix()) {
+        if metric_name_matches_plane(name, Plane::Protocol) {
             Some(Plane::Protocol)
-        } else if name.starts_with(Plane::Capability.prefix()) {
+        } else if metric_name_matches_plane(name, Plane::Capability) {
             Some(Plane::Capability)
-        } else if name.starts_with(Plane::Egress.prefix()) {
+        } else if metric_name_matches_plane(name, Plane::Egress) {
             Some(Plane::Egress)
-        } else if name.starts_with(Plane::Security.prefix()) {
+        } else if metric_name_matches_plane(name, Plane::Security) {
             Some(Plane::Security)
         } else {
             None
         }
     }
+}
+
+fn metric_name_matches_plane(name: &str, plane: Plane) -> bool {
+    let Some(suffix) = name.strip_prefix(plane.prefix()) else {
+        return false;
+    };
+    metric_suffix_is_valid(suffix)
+}
+
+fn metric_suffix_is_valid(suffix: &str) -> bool {
+    !suffix.is_empty()
+        && suffix.split('.').all(|segment| {
+            !segment.is_empty()
+                && segment
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+        })
 }
 
 impl fmt::Display for Plane {
@@ -94,12 +111,16 @@ pub struct MetricSchema {
 pub enum NamespaceError {
     /// TNS_INVALID_NAMESPACE — name does not start with a valid plane prefix.
     InvalidNamespace(String),
+    /// TNS_INVALID_LABEL — label names must be non-empty stable identifiers.
+    InvalidLabel(String),
     /// TNS_VERSION_MISSING — schema version not provided (0).
     VersionMissing(String),
     /// TNS_FROZEN_CONFLICT — re-registration conflicts with a frozen schema.
     FrozenConflict(String),
     /// TNS_ALREADY_DEPRECATED — metric is already deprecated.
     AlreadyDeprecated(String),
+    /// TNS_INVALID_DEPRECATION — deprecation metadata is malformed.
+    InvalidDeprecation(String),
     /// TNS_NOT_FOUND — metric not in registry.
     NotFound(String),
 }
@@ -108,9 +129,11 @@ impl NamespaceError {
     pub fn code(&self) -> &'static str {
         match self {
             NamespaceError::InvalidNamespace(_) => "TNS_INVALID_NAMESPACE",
+            NamespaceError::InvalidLabel(_) => "TNS_INVALID_LABEL",
             NamespaceError::VersionMissing(_) => "TNS_VERSION_MISSING",
             NamespaceError::FrozenConflict(_) => "TNS_FROZEN_CONFLICT",
             NamespaceError::AlreadyDeprecated(_) => "TNS_ALREADY_DEPRECATED",
+            NamespaceError::InvalidDeprecation(_) => "TNS_INVALID_DEPRECATION",
             NamespaceError::NotFound(_) => "TNS_NOT_FOUND",
         }
     }
@@ -120,9 +143,11 @@ impl fmt::Display for NamespaceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             NamespaceError::InvalidNamespace(n) => write!(f, "TNS_INVALID_NAMESPACE: {n}"),
+            NamespaceError::InvalidLabel(n) => write!(f, "TNS_INVALID_LABEL: {n}"),
             NamespaceError::VersionMissing(n) => write!(f, "TNS_VERSION_MISSING: {n}"),
             NamespaceError::FrozenConflict(n) => write!(f, "TNS_FROZEN_CONFLICT: {n}"),
             NamespaceError::AlreadyDeprecated(n) => write!(f, "TNS_ALREADY_DEPRECATED: {n}"),
+            NamespaceError::InvalidDeprecation(n) => write!(f, "TNS_INVALID_DEPRECATION: {n}"),
             NamespaceError::NotFound(n) => write!(f, "TNS_NOT_FOUND: {n}"),
         }
     }
@@ -162,6 +187,10 @@ impl SchemaRegistry {
         // INV-TNS-VERSIONED
         if reg.version == 0 {
             return Err(NamespaceError::VersionMissing(reg.name.clone()));
+        }
+
+        if reg.labels.iter().any(|label| !label_is_valid(label)) {
+            return Err(NamespaceError::InvalidLabel(reg.name.clone()));
         }
 
         // INV-TNS-FROZEN
@@ -221,6 +250,9 @@ impl SchemaRegistry {
         if schema.deprecated {
             return Err(NamespaceError::AlreadyDeprecated(name.to_string()));
         }
+        if reason.trim().is_empty() || reason.as_bytes().contains(&0) || at_version == 0 {
+            return Err(NamespaceError::InvalidDeprecation(name.to_string()));
+        }
         schema.deprecated = true;
         schema.deprecation_reason = Some(reason.to_string());
         schema.deprecated_at_version = Some(at_version);
@@ -250,6 +282,13 @@ impl SchemaRegistry {
     pub fn validate_name(name: &str) -> Result<Plane, NamespaceError> {
         Plane::from_name(name).ok_or_else(|| NamespaceError::InvalidNamespace(name.to_string()))
     }
+}
+
+fn label_is_valid(label: &str) -> bool {
+    !label.is_empty()
+        && label
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -491,16 +530,574 @@ mod tests {
     fn all_error_codes_present() {
         let errors = [
             NamespaceError::InvalidNamespace("x".into()),
+            NamespaceError::InvalidLabel("x".into()),
             NamespaceError::VersionMissing("x".into()),
             NamespaceError::FrozenConflict("x".into()),
             NamespaceError::AlreadyDeprecated("x".into()),
+            NamespaceError::InvalidDeprecation("x".into()),
             NamespaceError::NotFound("x".into()),
         ];
         let codes: Vec<_> = errors.iter().map(|e| e.code()).collect();
         assert!(codes.contains(&"TNS_INVALID_NAMESPACE"));
+        assert!(codes.contains(&"TNS_INVALID_LABEL"));
         assert!(codes.contains(&"TNS_VERSION_MISSING"));
         assert!(codes.contains(&"TNS_FROZEN_CONFLICT"));
         assert!(codes.contains(&"TNS_ALREADY_DEPRECATED"));
+        assert!(codes.contains(&"TNS_INVALID_DEPRECATION"));
         assert!(codes.contains(&"TNS_NOT_FOUND"));
+    }
+
+    #[test]
+    fn register_empty_name_is_rejected_without_inserting_schema() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg("", MetricType::Counter, &[], 1))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_NAMESPACE");
+        assert!(r.catalog().is_empty());
+    }
+
+    #[test]
+    fn register_case_mismatched_prefix_is_rejected() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "Franken.protocol.msgs_total",
+                MetricType::Counter,
+                &[],
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_NAMESPACE");
+        assert!(r.get("Franken.protocol.msgs_total").is_none());
+    }
+
+    #[test]
+    fn register_partial_plane_prefix_is_rejected() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "franken.proto.msgs_total",
+                MetricType::Counter,
+                &[],
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_NAMESPACE");
+        assert!(r.list_by_plane(Plane::Protocol).is_empty());
+    }
+
+    #[test]
+    fn version_zero_does_not_insert_schema() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "franken.protocol.zero_version",
+                MetricType::Counter,
+                &[],
+                0,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_VERSION_MISSING");
+        assert!(r.get("franken.protocol.zero_version").is_none());
+    }
+
+    #[test]
+    fn version_zero_reregister_does_not_replace_existing_schema() {
+        let mut r = SchemaRegistry::new();
+        r.register(&reg(
+            "franken.protocol.stable",
+            MetricType::Counter,
+            &["peer"],
+            2,
+        ))
+        .expect("initial registration should succeed");
+
+        let err = r
+            .register(&reg(
+                "franken.protocol.stable",
+                MetricType::Gauge,
+                &["node"],
+                0,
+            ))
+            .unwrap_err();
+        let schema = r
+            .get("franken.protocol.stable")
+            .expect("schema should remain");
+
+        assert_eq!(err.code(), "TNS_VERSION_MISSING");
+        assert_eq!(schema.metric_type, MetricType::Counter);
+        assert_eq!(schema.labels, vec!["peer".to_string()]);
+        assert_eq!(schema.version, 2);
+    }
+
+    #[test]
+    fn frozen_label_order_change_is_rejected_and_original_shape_remains() {
+        let mut r = SchemaRegistry::new();
+        r.register(&reg(
+            "franken.security.auth_latency",
+            MetricType::Histogram,
+            &["method", "result"],
+            1,
+        ))
+        .expect("initial registration should succeed");
+        r.freeze("franken.security.auth_latency")
+            .expect("freeze should succeed");
+
+        let err = r
+            .register(&reg(
+                "franken.security.auth_latency",
+                MetricType::Histogram,
+                &["result", "method"],
+                2,
+            ))
+            .unwrap_err();
+        let schema = r
+            .get("franken.security.auth_latency")
+            .expect("schema should remain");
+
+        assert_eq!(err.code(), "TNS_FROZEN_CONFLICT");
+        assert_eq!(
+            schema.labels,
+            vec!["method".to_string(), "result".to_string()]
+        );
+        assert_eq!(schema.version, 1);
+    }
+
+    #[test]
+    fn double_deprecate_preserves_original_reason_and_version() {
+        let mut r = SchemaRegistry::new();
+        r.register(&reg(
+            "franken.egress.deprecated_total",
+            MetricType::Counter,
+            &[],
+            1,
+        ))
+        .expect("registration should succeed");
+        r.deprecate("franken.egress.deprecated_total", "first reason", 2)
+            .expect("first deprecation should succeed");
+
+        let err = r
+            .deprecate("franken.egress.deprecated_total", "second reason", 3)
+            .unwrap_err();
+        let schema = r
+            .get("franken.egress.deprecated_total")
+            .expect("schema should remain");
+
+        assert_eq!(err.code(), "TNS_ALREADY_DEPRECATED");
+        assert_eq!(schema.deprecation_reason.as_deref(), Some("first reason"));
+        assert_eq!(schema.deprecated_at_version, Some(2));
+    }
+
+    #[test]
+    fn deprecate_missing_metric_does_not_create_schema() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .deprecate("franken.capability.missing_total", "not present", 7)
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_NOT_FOUND");
+        assert!(r.get("franken.capability.missing_total").is_none());
+        assert!(r.catalog().is_empty());
+    }
+
+    #[test]
+    fn register_bare_plane_prefix_is_rejected() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg("franken.protocol.", MetricType::Counter, &[], 1))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_NAMESPACE");
+        assert!(r.catalog().is_empty());
+    }
+
+    #[test]
+    fn register_trailing_dot_metric_name_is_rejected() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "franken.egress.bytes_total.",
+                MetricType::Counter,
+                &[],
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_NAMESPACE");
+        assert!(r.get("franken.egress.bytes_total.").is_none());
+    }
+
+    #[test]
+    fn register_double_dot_metric_name_is_rejected() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "franken.security.auth..failures",
+                MetricType::Counter,
+                &[],
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_NAMESPACE");
+        assert!(r.list_by_plane(Plane::Security).is_empty());
+    }
+
+    #[test]
+    fn register_metric_name_with_whitespace_is_rejected() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "franken.capability.inv total",
+                MetricType::Counter,
+                &[],
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_NAMESPACE");
+        assert!(r.catalog().is_empty());
+    }
+
+    #[test]
+    fn register_uppercase_suffix_is_rejected() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "franken.protocol.Msgs_total",
+                MetricType::Counter,
+                &[],
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_NAMESPACE");
+        assert!(r.get("franken.protocol.Msgs_total").is_none());
+    }
+
+    #[test]
+    fn validate_name_rejects_non_ascii_suffix() {
+        let err =
+            SchemaRegistry::validate_name("franken.security.auth_total_\u{00e9}").unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_NAMESPACE");
+        assert!(matches!(err, NamespaceError::InvalidNamespace(_)));
+    }
+
+    #[test]
+    fn invalid_namespace_reregister_does_not_replace_existing_schema() {
+        let mut r = SchemaRegistry::new();
+        r.register(&reg(
+            "franken.protocol.msgs_total",
+            MetricType::Counter,
+            &["peer"],
+            1,
+        ))
+        .expect("initial registration should succeed");
+
+        let err = r
+            .register(&reg(
+                "franken.protocol.msgs total",
+                MetricType::Gauge,
+                &["node"],
+                2,
+            ))
+            .unwrap_err();
+        let schema = r
+            .get("franken.protocol.msgs_total")
+            .expect("original schema should remain");
+
+        assert_eq!(err.code(), "TNS_INVALID_NAMESPACE");
+        assert_eq!(schema.metric_type, MetricType::Counter);
+        assert_eq!(schema.labels, vec!["peer".to_string()]);
+        assert_eq!(schema.version, 1);
+    }
+
+    #[test]
+    fn register_empty_label_is_rejected_without_inserting_schema() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "franken.protocol.empty_label",
+                MetricType::Counter,
+                &[""],
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_LABEL");
+        assert!(r.get("franken.protocol.empty_label").is_none());
+        assert!(r.catalog().is_empty());
+    }
+
+    #[test]
+    fn register_whitespace_label_is_rejected_without_inserting_schema() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "franken.protocol.whitespace_label",
+                MetricType::Counter,
+                &[" \t "],
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_LABEL");
+        assert!(r.get("franken.protocol.whitespace_label").is_none());
+    }
+
+    #[test]
+    fn register_uppercase_label_is_rejected_without_inserting_schema() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "franken.security.upper_label",
+                MetricType::Gauge,
+                &["Peer"],
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_LABEL");
+        assert!(r.get("franken.security.upper_label").is_none());
+    }
+
+    #[test]
+    fn register_dotted_label_is_rejected_without_inserting_schema() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "franken.egress.dotted_label",
+                MetricType::Histogram,
+                &["peer.id"],
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_LABEL");
+        assert!(r.get("franken.egress.dotted_label").is_none());
+    }
+
+    #[test]
+    fn register_nul_label_is_rejected_without_inserting_schema() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "franken.capability.nul_label",
+                MetricType::Counter,
+                &["peer\0hidden"],
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_LABEL");
+        assert!(r.get("franken.capability.nul_label").is_none());
+    }
+
+    #[test]
+    fn invalid_label_reregister_does_not_replace_existing_schema() {
+        let mut r = SchemaRegistry::new();
+        r.register(&reg(
+            "franken.protocol.label_stable",
+            MetricType::Counter,
+            &["peer"],
+            1,
+        ))
+        .expect("initial registration should succeed");
+
+        let err = r
+            .register(&reg(
+                "franken.protocol.label_stable",
+                MetricType::Gauge,
+                &["bad-label"],
+                2,
+            ))
+            .unwrap_err();
+        let schema = r
+            .get("franken.protocol.label_stable")
+            .expect("original schema should remain");
+
+        assert_eq!(err.code(), "TNS_INVALID_LABEL");
+        assert_eq!(schema.metric_type, MetricType::Counter);
+        assert_eq!(schema.labels, vec!["peer".to_string()]);
+        assert_eq!(schema.version, 1);
+    }
+
+    #[test]
+    fn deprecate_empty_reason_is_rejected_without_mutating_schema() {
+        let mut r = SchemaRegistry::new();
+        r.register(&reg(
+            "franken.egress.empty_deprecation_reason",
+            MetricType::Counter,
+            &[],
+            1,
+        ))
+        .expect("registration should succeed");
+
+        let err = r
+            .deprecate("franken.egress.empty_deprecation_reason", " \t ", 2)
+            .unwrap_err();
+        let schema = r
+            .get("franken.egress.empty_deprecation_reason")
+            .expect("schema should remain");
+
+        assert_eq!(err.code(), "TNS_INVALID_DEPRECATION");
+        assert!(!schema.deprecated);
+        assert!(schema.deprecation_reason.is_none());
+        assert_eq!(schema.deprecated_at_version, None);
+    }
+
+    #[test]
+    fn deprecate_nul_reason_is_rejected_without_mutating_schema() {
+        let mut r = SchemaRegistry::new();
+        r.register(&reg(
+            "franken.security.nul_deprecation_reason",
+            MetricType::Counter,
+            &[],
+            1,
+        ))
+        .expect("registration should succeed");
+
+        let err = r
+            .deprecate("franken.security.nul_deprecation_reason", "bad\0reason", 2)
+            .unwrap_err();
+        let schema = r
+            .get("franken.security.nul_deprecation_reason")
+            .expect("schema should remain");
+
+        assert_eq!(err.code(), "TNS_INVALID_DEPRECATION");
+        assert!(!schema.deprecated);
+        assert!(schema.deprecation_reason.is_none());
+    }
+
+    #[test]
+    fn deprecate_zero_version_is_rejected_without_mutating_schema() {
+        let mut r = SchemaRegistry::new();
+        r.register(&reg(
+            "franken.capability.zero_deprecation_version",
+            MetricType::Counter,
+            &[],
+            1,
+        ))
+        .expect("registration should succeed");
+
+        let err = r
+            .deprecate("franken.capability.zero_deprecation_version", "reason", 0)
+            .unwrap_err();
+        let schema = r
+            .get("franken.capability.zero_deprecation_version")
+            .expect("schema should remain");
+
+        assert_eq!(err.code(), "TNS_INVALID_DEPRECATION");
+        assert!(!schema.deprecated);
+        assert_eq!(schema.deprecated_at_version, None);
+    }
+
+    #[test]
+    fn validate_name_rejects_hyphenated_metric_segment() {
+        let err =
+            SchemaRegistry::validate_name("franken.protocol.requests-total").unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_NAMESPACE");
+    }
+
+    #[test]
+    fn register_metric_name_with_slash_is_rejected_without_inserting_schema() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "franken.egress.bytes/total",
+                MetricType::Counter,
+                &[],
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_NAMESPACE");
+        assert!(r.catalog().is_empty());
+    }
+
+    #[test]
+    fn register_metric_name_with_colon_is_rejected_without_inserting_schema() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "franken.security.auth:failures",
+                MetricType::Counter,
+                &[],
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_NAMESPACE");
+        assert!(r.get("franken.security.auth:failures").is_none());
+    }
+
+    #[test]
+    fn register_hyphenated_label_is_rejected_without_inserting_schema() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "franken.capability.invocations_total",
+                MetricType::Counter,
+                &["peer-id"],
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_LABEL");
+        assert!(r.list_by_plane(Plane::Capability).is_empty());
+    }
+
+    #[test]
+    fn register_non_ascii_label_is_rejected_without_inserting_schema() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .register(&reg(
+                "franken.protocol.non_ascii_label",
+                MetricType::Counter,
+                &["r\u{00f4}le"],
+                1,
+            ))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_INVALID_LABEL");
+        assert!(r.get("franken.protocol.non_ascii_label").is_none());
+    }
+
+    #[test]
+    fn deprecate_missing_metric_with_invalid_metadata_still_returns_not_found() {
+        let mut r = SchemaRegistry::new();
+
+        let err = r
+            .deprecate("franken.security.no_such_metric", " \t ", 0)
+            .unwrap_err();
+
+        assert_eq!(err.code(), "TNS_NOT_FOUND");
+        assert!(r.catalog().is_empty());
     }
 }

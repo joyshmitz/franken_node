@@ -171,6 +171,12 @@ pub fn validate_receipt(receipt: &ExecutionReceipt) -> Result<(), ExecutionRecei
             "actor_identity must be non-empty",
         ));
     }
+    if receipt.actor_identity.trim() != receipt.actor_identity.as_str() {
+        return Err(ExecutionReceiptError::new(
+            error_codes::ERR_VEF_RECEIPT_INVALID_VALUE,
+            "actor_identity contains leading or trailing whitespace",
+        ));
+    }
     if receipt.artifact_identity.trim().is_empty() {
         return Err(ExecutionReceiptError::new(
             error_codes::ERR_VEF_RECEIPT_MISSING_FIELD,
@@ -189,6 +195,12 @@ pub fn validate_receipt(receipt: &ExecutionReceipt) -> Result<(), ExecutionRecei
             "trace_id must be non-empty",
         ));
     }
+    if receipt.trace_id.trim() != receipt.trace_id.as_str() {
+        return Err(ExecutionReceiptError::new(
+            error_codes::ERR_VEF_RECEIPT_INVALID_VALUE,
+            "trace_id contains leading or trailing whitespace",
+        ));
+    }
     if receipt.capability_context.is_empty() {
         return Err(ExecutionReceiptError::new(
             error_codes::ERR_VEF_RECEIPT_MISSING_FIELD,
@@ -203,6 +215,16 @@ pub fn validate_receipt(receipt: &ExecutionReceipt) -> Result<(), ExecutionRecei
         return Err(ExecutionReceiptError::new(
             error_codes::ERR_VEF_RECEIPT_INVALID_VALUE,
             "capability_context keys/values must be non-empty strings",
+        ));
+    }
+    if receipt
+        .capability_context
+        .iter()
+        .any(|(k, v)| k.trim() != k.as_str() || v.trim() != v.as_str())
+    {
+        return Err(ExecutionReceiptError::new(
+            error_codes::ERR_VEF_RECEIPT_INVALID_VALUE,
+            "capability_context keys/values must not contain leading or trailing whitespace",
         ));
     }
     if !is_sha256_prefixed(&receipt.policy_snapshot_hash) {
@@ -388,6 +410,130 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_rejects_missing_trace_id() {
+        let mut receipt = make_receipt();
+        receipt.trace_id.clear();
+        let err = validate_receipt(&receipt).unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_VEF_RECEIPT_MISSING_FIELD);
+    }
+
+    #[test]
+    fn test_validate_rejects_blank_capability_key() {
+        let mut receipt = make_receipt();
+        receipt
+            .capability_context
+            .insert(" ".to_string(), "runtime".to_string());
+        let err = validate_receipt(&receipt).unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_VEF_RECEIPT_INVALID_VALUE);
+    }
+
+    #[test]
+    fn test_validate_rejects_blank_capability_value() {
+        let mut receipt = make_receipt();
+        receipt
+            .capability_context
+            .insert("scope".to_string(), "\t".to_string());
+        let err = validate_receipt(&receipt).unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_VEF_RECEIPT_INVALID_VALUE);
+    }
+
+    #[test]
+    fn test_validate_rejects_actor_with_edge_whitespace() {
+        let mut receipt = make_receipt();
+        receipt.actor_identity = " agent:purple-harbor".to_string();
+        let err = validate_receipt(&receipt).unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_VEF_RECEIPT_INVALID_VALUE);
+        assert!(err.message.contains("actor_identity"));
+    }
+
+    #[test]
+    fn test_validate_rejects_trace_id_with_edge_whitespace() {
+        let mut receipt = make_receipt();
+        receipt.trace_id = "trace-receipt-001\n".to_string();
+        let err = validate_receipt(&receipt).unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_VEF_RECEIPT_INVALID_VALUE);
+        assert!(err.message.contains("trace_id"));
+    }
+
+    #[test]
+    fn test_validate_rejects_capability_key_with_edge_whitespace() {
+        let mut receipt = make_receipt();
+        receipt
+            .capability_context
+            .insert(" scope".to_string(), "runtime".to_string());
+        let err = validate_receipt(&receipt).unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_VEF_RECEIPT_INVALID_VALUE);
+        assert!(err.message.contains("capability_context"));
+    }
+
+    #[test]
+    fn test_validate_rejects_capability_value_with_edge_whitespace() {
+        let mut receipt = make_receipt();
+        receipt
+            .capability_context
+            .insert("scope".to_string(), "runtime ".to_string());
+        let err = validate_receipt(&receipt).unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_VEF_RECEIPT_INVALID_VALUE);
+        assert!(err.message.contains("capability_context"));
+    }
+
+    #[test]
+    fn test_validate_rejects_policy_hash_without_prefix() {
+        let mut receipt = make_receipt();
+        receipt.policy_snapshot_hash =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string();
+        let err = validate_receipt(&receipt).unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_VEF_RECEIPT_INVALID_VALUE);
+    }
+
+    #[test]
+    fn test_validate_rejects_policy_hash_too_short() {
+        let mut receipt = make_receipt();
+        receipt.policy_snapshot_hash =
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde".to_string();
+        let err = validate_receipt(&receipt).unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_VEF_RECEIPT_INVALID_VALUE);
+    }
+
+    #[test]
+    fn test_validate_rejects_policy_hash_too_long() {
+        let mut receipt = make_receipt();
+        receipt.policy_snapshot_hash =
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef00".to_string();
+        let err = validate_receipt(&receipt).unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_VEF_RECEIPT_INVALID_VALUE);
+    }
+
+    #[test]
+    fn test_validate_rejects_policy_hash_non_hex_full_length() {
+        let mut receipt = make_receipt();
+        receipt.policy_snapshot_hash =
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg".to_string();
+        let err = validate_receipt(&receipt).unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_VEF_RECEIPT_INVALID_VALUE);
+    }
+
+    #[test]
+    fn test_serialize_canonical_rejects_invalid_receipt_before_serializing() {
+        let mut receipt = make_receipt();
+        receipt.trace_id = " trace-receipt-001".to_string();
+        let err = serialize_canonical(&receipt).unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_VEF_RECEIPT_INVALID_VALUE);
+    }
+
+    #[test]
+    fn test_verify_hash_rejects_invalid_receipt_before_hash_compare() {
+        let mut receipt = make_receipt();
+        receipt.actor_identity = "agent:purple-harbor ".to_string();
+        let err = verify_hash(
+            &receipt,
+            "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        )
+        .unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_VEF_RECEIPT_INVALID_VALUE);
+    }
+
+    #[test]
     fn test_canonicalization_sorts_and_dedups_witnesses() {
         let receipt = make_receipt();
         let canonical = receipt.canonicalized();
@@ -461,6 +607,45 @@ mod tests {
     fn test_action_type_serde_snake_case() {
         let value = serde_json::to_string(&ExecutionActionType::ArtifactPromotion).unwrap();
         assert_eq!(value, "\"artifact_promotion\"");
+    }
+
+    #[test]
+    fn test_action_type_deserialize_rejects_unknown_variant() {
+        let result: Result<ExecutionActionType, _> = serde_json::from_str(r#""kernel_bypass""#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_receipt_deserialize_rejects_missing_action_type() {
+        let mut value = serde_json::to_value(make_receipt()).unwrap();
+        value.as_object_mut().unwrap().remove("action_type");
+        let json = serde_json::to_string(&value).unwrap();
+
+        let result: Result<ExecutionReceipt, _> = serde_json::from_str(&json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_receipt_deserialize_rejects_timestamp_overflow() {
+        let mut value = serde_json::to_value(make_receipt()).unwrap();
+        value["timestamp_millis"] = serde_json::json!(18_446_744_073_709_551_616_u128);
+        let json = serde_json::to_string(&value).unwrap();
+
+        let result: Result<ExecutionReceipt, _> = serde_json::from_str(&json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_receipt_deserialize_rejects_witness_type_confusion() {
+        let mut value = serde_json::to_value(make_receipt()).unwrap();
+        value["witness_references"] = serde_json::json!("witness:alpha");
+        let json = serde_json::to_string(&value).unwrap();
+
+        let result: Result<ExecutionReceipt, _> = serde_json::from_str(&json);
+
+        assert!(result.is_err());
     }
 
     #[test]

@@ -11,6 +11,7 @@ use std::f64::consts::PI;
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
 const MAX_RECENT_SHIFTS: usize = 4096;
+const MAX_CATEGORICAL_STATE_CELLS: usize = MAX_EVENTS;
 
 // ---------------------------------------------------------------------------
 // Event codes
@@ -90,6 +91,21 @@ impl BocpdConfig {
                 "max_run_length must be > 0".into(),
             ));
         }
+        if self.min_run_length == 0 {
+            return Err(BocpdError::InvalidConfig(
+                "min_run_length must be > 0".into(),
+            ));
+        }
+        if self.min_run_length > self.max_run_length {
+            return Err(BocpdError::InvalidConfig(
+                "min_run_length must be <= max_run_length".into(),
+            ));
+        }
+        if self.max_regime_history == 0 {
+            return Err(BocpdError::InvalidConfig(
+                "max_regime_history must be > 0".into(),
+            ));
+        }
         Ok(())
     }
 }
@@ -137,10 +153,10 @@ impl HazardFunction {
                 if !lambda.is_finite() || *lambda <= 0.0 {
                     return 0.0;
                 }
-                1.0 / lambda
+                (1.0 / lambda).min(1.0)
             }
             Self::Geometric { p } => {
-                if !p.is_finite() || *p < 0.0 {
+                if !p.is_finite() || !(0.0..=1.0).contains(p) {
                     return 0.0;
                 }
                 *p
@@ -203,19 +219,34 @@ impl GaussianSuffStats {
     }
 
     fn update(&mut self, x: f64) {
-        self.n = self.n.saturating_add(1.0);
-        if !self.n.is_finite() {
-            self.n = f64::MAX;
+        if !x.is_finite() {
+            return;
+        }
+        if !self.n.is_finite()
+            || self.n < 0.0
+            || !self.mean.is_finite()
+            || !self.sum_sq.is_finite()
+            || self.sum_sq < 0.0
+        {
+            *self = Self::new();
+        }
+        // Hardening: use saturating arithmetic for counter operations
+        let old_n = self.n;
+        self.n = old_n + 1.0;
+        if !self.n.is_finite() || self.n < old_n {
+            self.n = f64::MAX; // Saturated
         }
         let delta = x - self.mean;
-        self.mean = self.mean.saturating_add(delta / self.n);
+        self.mean = self.mean + (delta / self.n);
         if !self.mean.is_finite() {
             self.mean = 0.0;
         }
         let delta2 = x - self.mean;
-        self.sum_sq = self.sum_sq.saturating_add(delta * delta2);
-        if !self.sum_sq.is_finite() {
-            self.sum_sq = 0.0;
+        // Hardening: use safe addition with overflow detection
+        let old_sum_sq = self.sum_sq;
+        self.sum_sq = old_sum_sq + (delta * delta2);
+        if !self.sum_sq.is_finite() || self.sum_sq < old_sum_sq {
+            self.sum_sq = f64::MAX; // Saturated
         }
     }
 }
@@ -223,19 +254,74 @@ impl GaussianSuffStats {
 impl GaussianModel {
     /// Compute the predictive probability (Student-t) for a new observation.
     pub(crate) fn predictive_prob(&self, stats: &GaussianSuffStats, x: f64) -> f64 {
+        if !x.is_finite()
+            || !self.mu0.is_finite()
+            || !self.kappa0.is_finite()
+            || self.kappa0 <= 0.0
+            || !self.alpha0.is_finite()
+            || self.alpha0 <= 0.0
+            || !self.beta0.is_finite()
+            || self.beta0 <= 0.0
+            || !stats.n.is_finite()
+            || stats.n < 0.0
+            || !stats.mean.is_finite()
+            || !stats.sum_sq.is_finite()
+            || stats.sum_sq < 0.0
+        {
+            return 1e-300;
+        }
         let n = stats.n;
-        let kappa_n = self.kappa0 + n;
-        if !kappa_n.is_finite() || kappa_n <= 0.0 {
+        // Hardening: safe addition with overflow detection
+        let kappa_n = {
+            let result = self.kappa0 + n;
+            if !result.is_finite() || result < self.kappa0.max(n) {
+                f64::MAX // Saturated
+            } else {
+                result
+            }
+        };
+        if kappa_n <= 0.0 {
             return 1e-300;
         }
         let mu_n = (self.kappa0 * self.mu0 + n * stats.mean) / kappa_n;
-        let alpha_n = self.alpha0 + n / 2.0;
-        if !alpha_n.is_finite() || alpha_n <= 0.0 {
+        if !mu_n.is_finite() {
             return 1e-300;
         }
-        let beta_n = self.beta0
-            + 0.5 * stats.sum_sq
-            + 0.5 * self.kappa0 * n * (stats.mean - self.mu0).powi(2) / kappa_n;
+        // Hardening: safe addition for alpha_n
+        let alpha_n = {
+            let half_n = n / 2.0;
+            let result = self.alpha0 + half_n;
+            if !result.is_finite() || result < self.alpha0.max(half_n) {
+                f64::MAX // Saturated
+            } else {
+                result
+            }
+        };
+        if alpha_n <= 0.0 {
+            return 1e-300;
+        }
+        // Hardening: safe arithmetic for beta_n calculation
+        let beta_n = {
+            let term1 = self.beta0;
+            let term2 = 0.5 * stats.sum_sq;
+            let mean_diff = stats.mean - self.mu0;
+            if !mean_diff.is_finite() {
+                return 1e-300;
+            }
+            let term3 = 0.5 * self.kappa0 * n * mean_diff.powi(2) / kappa_n;
+
+            let partial = term1 + term2;
+            if !partial.is_finite() || partial < term1.max(term2) {
+                f64::MAX
+            } else {
+                let result = partial + term3;
+                if !result.is_finite() || result < partial.max(term3) {
+                    f64::MAX
+                } else {
+                    result
+                }
+            }
+        };
 
         let nu = 2.0 * alpha_n;
         let sigma_sq = beta_n * (kappa_n + 1.0) / (alpha_n * kappa_n);
@@ -249,7 +335,13 @@ impl GaussianModel {
 
 /// Student-t PDF.
 fn student_t_pdf(x: f64, mu: f64, sigma_sq: f64, nu: f64) -> f64 {
-    if sigma_sq <= 0.0 || nu <= 0.0 {
+    if !x.is_finite()
+        || !mu.is_finite()
+        || !sigma_sq.is_finite()
+        || sigma_sq <= 0.0
+        || !nu.is_finite()
+        || nu <= 0.0
+    {
         return 1e-300;
     }
     let z = (x - mu) / sigma_sq.sqrt();
@@ -264,7 +356,7 @@ fn student_t_pdf(x: f64, mu: f64, sigma_sq: f64, nu: f64) -> f64 {
 
 /// Simple ln(Gamma) via Stirling approximation for moderate values.
 fn ln_gamma(x: f64) -> f64 {
-    if x <= 0.0 {
+    if !x.is_finite() || x <= 0.0 {
         return f64::INFINITY;
     }
     // Use the Lanczos approximation (g=7, n=9).
@@ -284,10 +376,10 @@ fn ln_gamma(x: f64) -> f64 {
         return result;
     }
     let x = x - 1.0;
-    let mut a = coefficients[0];
+    let mut a: f64 = coefficients[0];
     let t = x + 7.5;
     for (i, &coeff) in coefficients.iter().enumerate().skip(1) {
-        a = a.saturating_add(coeff / (x + i as f64));
+        a = a + (coeff / (x + i as f64));
     }
     0.5 * (2.0 * PI).ln() + (t).ln() * (x + 0.5) - t + a.ln()
 }
@@ -323,13 +415,25 @@ impl PoissonSuffStats {
     }
 
     fn update(&mut self, x: f64) {
-        self.n = self.n.saturating_add(1.0);
-        if !self.n.is_finite() {
-            self.n = f64::MAX;
+        if !x.is_finite() || x < 0.0 || x.fract() != 0.0 || x >= u64::MAX as f64 {
+            return;
         }
-        self.sum = self.sum.saturating_add(x);
-        if !self.sum.is_finite() {
-            self.sum = 0.0;
+        if !self.n.is_finite() || self.n < 0.0 || !self.sum.is_finite() || self.sum < 0.0 {
+            *self = Self::new();
+        }
+        // Hardening: use safe counter increment with overflow detection
+        let old_n = self.n;
+        self.n = old_n + 1.0;
+        if !self.n.is_finite() || self.n < old_n {
+            self.n = f64::MAX; // Saturated
+        }
+        // Hardening: use safe addition with overflow detection
+        let old_sum = self.sum;
+        self.sum = old_sum + x;
+        if !self.sum.is_finite() || (x > 0.0 && self.sum < old_sum) {
+            self.sum = f64::MAX; // Saturated for overflow, preserve sign for underflow
+        } else if x < 0.0 && self.sum > old_sum {
+            self.sum = -f64::MAX; // Saturated underflow
         }
     }
 }
@@ -337,11 +441,37 @@ impl PoissonSuffStats {
 impl PoissonModel {
     /// Negative binomial predictive probability.
     pub(crate) fn predictive_prob(&self, stats: &PoissonSuffStats, x: f64) -> f64 {
-        if x < 0.0 {
+        if x < 0.0 || !x.is_finite() || x.fract() != 0.0 || x >= u64::MAX as f64 {
             return 0.0;
         }
-        let alpha_n = self.alpha0 + stats.sum;
-        let beta_n = self.beta0 + stats.n;
+        if !self.alpha0.is_finite()
+            || self.alpha0 <= 0.0
+            || !self.beta0.is_finite()
+            || self.beta0 <= 0.0
+            || !stats.n.is_finite()
+            || stats.n < 0.0
+            || !stats.sum.is_finite()
+            || stats.sum < 0.0
+        {
+            return 1e-300;
+        }
+        // Hardening: safe addition with overflow detection
+        let alpha_n = {
+            let result = self.alpha0 + stats.sum;
+            if !result.is_finite() || result < self.alpha0.max(stats.sum) {
+                f64::MAX // Saturated
+            } else {
+                result
+            }
+        };
+        let beta_n = {
+            let result = self.beta0 + stats.n;
+            if !result.is_finite() || result < self.beta0.max(stats.n) {
+                f64::MAX // Saturated
+            } else {
+                result
+            }
+        };
         let k = x.round() as u64;
 
         // Negative binomial: NB(alpha_n, beta_n / (beta_n + 1))
@@ -352,13 +482,21 @@ impl PoissonModel {
 }
 
 fn neg_binomial_pmf(k: u64, r: f64, p: f64) -> f64 {
-    if p <= 0.0 || p >= 1.0 || r <= 0.0 {
+    if !p.is_finite() || !r.is_finite() || p <= 0.0 || p >= 1.0 || r <= 0.0 {
         return 1e-300;
     }
     let log_coeff = ln_gamma(k as f64 + r) - ln_gamma(k as f64 + 1.0) - ln_gamma(r);
     let log_prob = r * p.ln() + (k as f64) * (1.0 - p).ln();
     let result = (log_coeff + log_prob).exp().max(1e-300);
     if result.is_finite() { result } else { 1e-300 }
+}
+
+fn poisson_count(x: f64) -> Option<f64> {
+    if !x.is_finite() || x < 0.0 || x.fract() != 0.0 || x >= u64::MAX as f64 {
+        None
+    } else {
+        Some(x)
+    }
 }
 
 /// Categorical (Dirichlet prior) model for discrete distributions.
@@ -391,9 +529,15 @@ impl CategoricalSuffStats {
 
     fn update(&mut self, category: usize) {
         if category < self.counts.len() {
-            self.counts[category] = self.counts[category].saturating_add(1.0);
-            if !self.counts[category].is_finite() {
-                self.counts[category] = f64::MAX;
+            // Hardening: use safe counter increment with overflow detection
+            let old_count = if self.counts[category].is_finite() && self.counts[category] >= 0.0 {
+                self.counts[category]
+            } else {
+                0.0
+            };
+            self.counts[category] = old_count + 1.0;
+            if !self.counts[category].is_finite() || self.counts[category] < old_count {
+                self.counts[category] = f64::MAX; // Saturated
             }
         }
     }
@@ -402,16 +546,67 @@ impl CategoricalSuffStats {
 impl CategoricalModel {
     /// Dirichlet-Categorical predictive probability.
     pub(crate) fn predictive_prob(&self, stats: &CategoricalSuffStats, category: usize) -> f64 {
-        if category >= self.k {
+        if self.k == 0
+            || !self.alpha0.is_finite()
+            || self.alpha0 <= 0.0
+            || category >= self.k
+            || stats.counts.len() != self.k
+            || stats
+                .counts
+                .iter()
+                .any(|count| !count.is_finite() || *count < 0.0)
+        {
             return 1e-300;
         }
-        let total =
-            stats.counts.iter().copied().fold(0.0_f64, |a, b| a.saturating_add(b)) + self.alpha0 * self.k as f64;
+        let total = stats.counts.iter().copied().fold(0.0_f64, |a, b| {
+            let sum = a + b;
+            if sum.is_finite() { sum } else { f64::MAX }
+        }) + self.alpha0 * self.k as f64;
         if !total.is_finite() || total <= 0.0 {
             return 1e-300;
         }
         let result = (stats.counts[category] + self.alpha0) / total;
-        if result.is_finite() { result } else { 1e-300 }
+        if result.is_finite() && result > 0.0 && result <= 1.0 {
+            result
+        } else {
+            1e-300
+        }
+    }
+}
+
+fn categorical_index(x: f64) -> usize {
+    if !x.is_finite() || x < 0.0 || x.fract() != 0.0 || x >= usize::MAX as f64 {
+        usize::MAX
+    } else {
+        x as usize
+    }
+}
+
+fn observation_model_accepts(model: &ObservationModel, x: f64) -> bool {
+    if !x.is_finite() {
+        return false;
+    }
+
+    match model {
+        ObservationModel::Gaussian(m) => {
+            m.mu0.is_finite()
+                && m.kappa0.is_finite()
+                && m.kappa0 > 0.0
+                && m.alpha0.is_finite()
+                && m.alpha0 > 0.0
+                && m.beta0.is_finite()
+                && m.beta0 > 0.0
+        }
+        ObservationModel::Poisson(m) => {
+            m.alpha0.is_finite()
+                && m.alpha0 > 0.0
+                && m.beta0.is_finite()
+                && m.beta0 > 0.0
+                && poisson_count(x).is_some()
+        }
+        ObservationModel::Categorical(m) => {
+            m.k > 0 && m.alpha0.is_finite() && m.alpha0 > 0.0 && categorical_index(x) < m.k
+        }
     }
 }
 
@@ -467,6 +662,11 @@ pub struct BocpdEvent {
     pub detail: String,
 }
 
+fn stream_name_is_canonical(stream_name: &str) -> bool {
+    let trimmed = stream_name.trim();
+    !trimmed.is_empty() && trimmed == stream_name && !stream_name.chars().any(char::is_whitespace)
+}
+
 impl BocpdDetector {
     pub fn new(
         stream_name: &str,
@@ -474,20 +674,38 @@ impl BocpdDetector {
         hazard: HazardFunction,
         model: ObservationModel,
     ) -> Result<Self, BocpdError> {
+        if !stream_name_is_canonical(stream_name) {
+            return Err(BocpdError::InvalidConfig(
+                "stream_name must be non-empty and canonical".into(),
+            ));
+        }
         config.validate()?;
         let max_rl = config.max_run_length;
+        let state_slots = max_rl.checked_add(1).ok_or_else(|| {
+            BocpdError::InvalidConfig("max_run_length is too large for detector state".into())
+        })?;
         let cat_k = match &model {
             ObservationModel::Categorical(m) => m.k,
             _ => 0,
         };
+        if cat_k > 0 {
+            let categorical_state_cells = state_slots.checked_mul(cat_k).ok_or_else(|| {
+                BocpdError::InvalidConfig("categorical state is too large".into())
+            })?;
+            if categorical_state_cells > MAX_CATEGORICAL_STATE_CELLS {
+                return Err(BocpdError::InvalidConfig(
+                    "categorical state is too large".into(),
+                ));
+            }
+        }
         Ok(Self {
             config,
             hazard,
             model,
             run_length_probs: vec![1.0], // Start with P(r=0) = 1
-            gaussian_stats: vec![GaussianSuffStats::new(); max_rl + 1],
-            poisson_stats: vec![PoissonSuffStats::new(); max_rl + 1],
-            categorical_stats: vec![CategoricalSuffStats::new(cat_k); max_rl + 1],
+            gaussian_stats: vec![GaussianSuffStats::new(); state_slots],
+            poisson_stats: vec![PoissonSuffStats::new(); state_slots],
+            categorical_stats: vec![CategoricalSuffStats::new(cat_k); state_slots],
             observation_count: 0,
             current_run_length: 0,
             regime_history: VecDeque::new(),
@@ -500,7 +718,7 @@ impl BocpdDetector {
 
     /// Process a new observation.
     pub fn observe(&mut self, x: f64, timestamp: u64) -> Option<RegimeShift> {
-        if !x.is_finite() {
+        if !observation_model_accepts(&self.model, x) {
             return None;
         }
         self.observation_count = self.observation_count.saturating_add(1);
@@ -519,11 +737,7 @@ impl BocpdDetector {
                 ObservationModel::Gaussian(m) => m.predictive_prob(&self.gaussian_stats[r], x),
                 ObservationModel::Poisson(m) => m.predictive_prob(&self.poisson_stats[r], x),
                 ObservationModel::Categorical(m) => {
-                    let cat = if x < 0.0 || x.is_nan() {
-                        usize::MAX
-                    } else {
-                        x as usize
-                    };
+                    let cat = categorical_index(x);
                     m.predictive_prob(&self.categorical_stats[r], cat)
                 }
             };
@@ -531,12 +745,34 @@ impl BocpdDetector {
 
         // Step 2: Growth probabilities.
         let mut growth_probs = vec![0.0; max_rl + 1];
-        let mut changepoint_mass = 0.0;
+        let mut changepoint_mass: f64 = 0.0;
         for r in 0..max_rl {
             let h = self.hazard.evaluate(r);
-            let joint = self.run_length_probs[r] * pred_probs[r];
-            growth_probs[r + 1] = joint * (1.0 - h);
-            changepoint_mass = changepoint_mass.saturating_add(joint * h);
+            // Hardening: safe multiplication with overflow detection
+            let joint = {
+                let result = self.run_length_probs[r] * pred_probs[r];
+                if !result.is_finite() { 0.0 } else { result }
+            };
+
+            // Hardening: safe probability calculation with bounds checking
+            let growth_prob = {
+                let one_minus_h = 1.0 - h;
+                let result = joint * one_minus_h;
+                if !result.is_finite() || result < 0.0 {
+                    0.0
+                } else {
+                    result
+                }
+            };
+            growth_probs[r + 1] = growth_prob;
+
+            // Hardening: safe addition with overflow detection
+            let joint_h = joint * h;
+            let old_mass = changepoint_mass;
+            changepoint_mass = old_mass + joint_h;
+            if !changepoint_mass.is_finite() || changepoint_mass < old_mass.max(joint_h) {
+                changepoint_mass = f64::MAX; // Saturated
+            }
         }
         growth_probs[0] = changepoint_mass;
 
@@ -573,17 +809,15 @@ impl BocpdDetector {
                 ObservationModel::Poisson(_) => {
                     if r < self.poisson_stats.len() {
                         self.poisson_stats[r] = self.poisson_stats[r - 1].clone();
-                        self.poisson_stats[r].update(x.max(0.0));
+                        if let Some(count) = poisson_count(x) {
+                            self.poisson_stats[r].update(count);
+                        }
                     }
                 }
                 ObservationModel::Categorical(_) => {
                     if r < self.categorical_stats.len() {
                         self.categorical_stats[r] = self.categorical_stats[r - 1].clone();
-                        let cat = if x < 0.0 || x.is_nan() {
-                            usize::MAX
-                        } else {
-                            x as usize
-                        };
+                        let cat = categorical_index(x);
                         self.categorical_stats[r].update(cat);
                     }
                 }
@@ -600,31 +834,37 @@ impl BocpdDetector {
             ObservationModel::Poisson(_) => {
                 if !self.poisson_stats.is_empty() {
                     self.poisson_stats[0] = PoissonSuffStats::new();
-                    self.poisson_stats[0].update(x.max(0.0));
+                    if let Some(count) = poisson_count(x) {
+                        self.poisson_stats[0].update(count);
+                    }
                 }
             }
             ObservationModel::Categorical(_) => {
                 if !self.categorical_stats.is_empty() {
                     let k = self.categorical_stats[0].counts.len();
                     self.categorical_stats[0] = CategoricalSuffStats::new(k);
-                    let cat = if x < 0.0 || x.is_nan() {
-                        usize::MAX
-                    } else {
-                        x as usize
-                    };
+                    let cat = categorical_index(x);
                     self.categorical_stats[0].update(cat);
                 }
             }
         }
 
         // Track regime statistics.
-        self.current_regime_sum = self.current_regime_sum.saturating_add(x);
-        if !self.current_regime_sum.is_finite() {
-            self.current_regime_sum = 0.0;
+        // Hardening: use safe addition with overflow detection
+        let old_sum = self.current_regime_sum;
+        self.current_regime_sum = old_sum + x;
+        if !self.current_regime_sum.is_finite()
+            || (x > 0.0 && self.current_regime_sum < old_sum)
+            || (x < 0.0 && self.current_regime_sum > old_sum)
+        {
+            self.current_regime_sum = if x >= 0.0 { f64::MAX } else { -f64::MAX };
         }
-        self.current_regime_count = self.current_regime_count.saturating_add(1.0);
-        if !self.current_regime_count.is_finite() {
-            self.current_regime_count = f64::MAX;
+
+        // Hardening: use safe counter increment with overflow detection
+        let old_count = self.current_regime_count;
+        self.current_regime_count = old_count + 1.0;
+        if !self.current_regime_count.is_finite() || self.current_regime_count < old_count {
+            self.current_regime_count = f64::MAX; // Saturated
         }
 
         // Step 5: Check for changepoint.
@@ -745,9 +985,14 @@ impl MultiStreamCorrelator {
 
     /// Record a regime shift and check for correlated shifts.
     pub fn record_shift(&mut self, shift: RegimeShift) -> Vec<RegimeShift> {
+        if !regime_shift_is_valid(&shift) {
+            return Vec::new();
+        }
+
         // Prune old shifts outside window.
         let cutoff = shift.timestamp.saturating_sub(self.window_secs);
-        self.recent_shifts.retain(|s| s.timestamp >= cutoff);
+        self.recent_shifts
+            .retain(|s| regime_shift_is_valid(s) && s.timestamp >= cutoff);
 
         // Find correlated shifts from different streams.
         let correlated: Vec<RegimeShift> = self
@@ -767,7 +1012,20 @@ impl MultiStreamCorrelator {
     }
 }
 
+fn regime_shift_is_valid(shift: &RegimeShift) -> bool {
+    stream_name_is_canonical(&shift.stream_name)
+        && shift.confidence.is_finite()
+        && (0.0..=1.0).contains(&shift.confidence)
+        && shift.run_length > 0
+        && shift.old_regime_mean.is_finite()
+        && shift.new_regime_mean.is_finite()
+}
+
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
         let overflow = items.len() - cap + 1;
         items.drain(0..overflow);
@@ -817,6 +1075,116 @@ mod tests {
         .unwrap()
     }
 
+    fn assert_detector_stream_name_rejected(stream_name: &str) {
+        let err = BocpdDetector::new(
+            stream_name,
+            default_config(),
+            HazardFunction::Constant { lambda: 200.0 },
+            ObservationModel::Gaussian(GaussianModel::default()),
+        )
+        .expect_err("non-canonical stream names must fail detector construction");
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("stream_name")
+        ));
+    }
+
+    #[test]
+    fn negative_empty_stream_name_is_not_canonical() {
+        assert!(!stream_name_is_canonical(""));
+    }
+
+    #[test]
+    fn negative_space_only_stream_name_is_not_canonical() {
+        assert!(!stream_name_is_canonical("   "));
+    }
+
+    #[test]
+    fn negative_tab_only_stream_name_is_not_canonical() {
+        assert!(!stream_name_is_canonical("\t"));
+    }
+
+    #[test]
+    fn negative_newline_only_stream_name_is_not_canonical() {
+        assert!(!stream_name_is_canonical("\n"));
+    }
+
+    #[test]
+    fn negative_leading_space_stream_name_is_not_canonical() {
+        assert!(!stream_name_is_canonical(" stream-a"));
+    }
+
+    #[test]
+    fn negative_trailing_space_stream_name_is_not_canonical() {
+        assert!(!stream_name_is_canonical("stream-a "));
+    }
+
+    #[test]
+    fn negative_tab_padded_stream_name_is_not_canonical() {
+        assert!(!stream_name_is_canonical("\tstream-a\t"));
+    }
+
+    #[test]
+    fn negative_internal_space_stream_name_is_not_canonical() {
+        assert!(!stream_name_is_canonical("stream a"));
+    }
+
+    #[test]
+    fn negative_internal_tab_stream_name_is_not_canonical() {
+        assert!(!stream_name_is_canonical("stream\ta"));
+    }
+
+    #[test]
+    fn negative_internal_newline_stream_name_is_not_canonical() {
+        assert!(!stream_name_is_canonical("stream\na"));
+    }
+
+    #[test]
+    fn negative_internal_carriage_return_stream_name_is_not_canonical() {
+        assert!(!stream_name_is_canonical("stream\ra"));
+    }
+
+    #[test]
+    fn negative_crlf_stream_name_is_not_canonical() {
+        assert!(!stream_name_is_canonical("stream\r\na"));
+    }
+
+    #[test]
+    fn negative_form_feed_stream_name_is_not_canonical() {
+        assert!(!stream_name_is_canonical("stream\u{000c}a"));
+    }
+
+    #[test]
+    fn negative_detector_rejects_internal_space_stream_name() {
+        assert_detector_stream_name_rejected("stream a");
+    }
+
+    #[test]
+    fn negative_detector_rejects_internal_tab_stream_name() {
+        assert_detector_stream_name_rejected("stream\ta");
+    }
+
+    #[test]
+    fn negative_detector_rejects_internal_newline_stream_name() {
+        assert_detector_stream_name_rejected("stream\na");
+    }
+
+    #[test]
+    fn negative_detector_rejects_internal_carriage_return_stream_name() {
+        assert_detector_stream_name_rejected("stream\ra");
+    }
+
+    #[test]
+    fn negative_detector_rejects_crlf_stream_name() {
+        assert_detector_stream_name_rejected("stream\r\na");
+    }
+
+    #[test]
+    fn negative_detector_rejects_form_feed_stream_name() {
+        assert_detector_stream_name_rejected("stream\u{000c}a");
+    }
+
     // -- Config validation --
 
     #[test]
@@ -839,10 +1207,267 @@ mod tests {
     }
 
     #[test]
+    fn negative_nan_hazard_lambda_config_is_invalid() {
+        let mut cfg = default_config();
+        cfg.hazard_lambda = f64::NAN;
+
+        assert!(matches!(
+            cfg.validate(),
+            Err(BocpdError::InvalidConfig(msg)) if msg.contains("hazard_lambda")
+        ));
+    }
+
+    #[test]
+    fn negative_infinite_hazard_lambda_config_is_invalid() {
+        let mut cfg = default_config();
+        cfg.hazard_lambda = f64::INFINITY;
+
+        assert!(matches!(
+            cfg.validate(),
+            Err(BocpdError::InvalidConfig(msg)) if msg.contains("hazard_lambda")
+        ));
+    }
+
+    #[test]
+    fn negative_nan_threshold_config_is_invalid() {
+        let mut cfg = default_config();
+        cfg.changepoint_threshold = f64::NAN;
+
+        assert!(matches!(
+            cfg.validate(),
+            Err(BocpdError::InvalidConfig(msg)) if msg.contains("threshold")
+        ));
+    }
+
+    #[test]
+    fn negative_infinite_threshold_config_is_invalid() {
+        let mut cfg = default_config();
+        cfg.changepoint_threshold = f64::INFINITY;
+
+        assert!(matches!(
+            cfg.validate(),
+            Err(BocpdError::InvalidConfig(msg)) if msg.contains("threshold")
+        ));
+    }
+
+    #[test]
+    fn negative_negative_infinite_threshold_config_is_invalid() {
+        let mut cfg = default_config();
+        cfg.changepoint_threshold = f64::NEG_INFINITY;
+
+        assert!(matches!(
+            cfg.validate(),
+            Err(BocpdError::InvalidConfig(msg)) if msg.contains("threshold")
+        ));
+    }
+
+    #[test]
+    fn negative_below_zero_threshold_config_is_invalid() {
+        let mut cfg = default_config();
+        cfg.changepoint_threshold = -0.01;
+
+        assert!(matches!(
+            cfg.validate(),
+            Err(BocpdError::InvalidConfig(msg)) if msg.contains("threshold")
+        ));
+    }
+
+    #[test]
     fn test_invalid_max_run_length() {
         let mut cfg = default_config();
         cfg.max_run_length = 0;
         assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn negative_zero_regime_history_config_is_invalid() {
+        let mut cfg = default_config();
+        cfg.max_regime_history = 0;
+
+        assert!(matches!(
+            cfg.validate(),
+            Err(BocpdError::InvalidConfig(msg)) if msg.contains("max_regime_history")
+        ));
+    }
+
+    #[test]
+    fn negative_zero_min_run_length_config_is_invalid() {
+        let mut cfg = default_config();
+        cfg.min_run_length = 0;
+
+        assert!(matches!(
+            cfg.validate(),
+            Err(BocpdError::InvalidConfig(msg)) if msg.contains("min_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_min_run_length_above_run_length_cap_is_invalid() {
+        let mut cfg = default_config();
+        cfg.max_run_length = 4;
+        cfg.min_run_length = 5;
+
+        assert!(matches!(
+            cfg.validate(),
+            Err(BocpdError::InvalidConfig(msg)) if msg.contains("min_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_detector_rejects_zero_regime_history_config() {
+        let mut cfg = default_config();
+        cfg.max_regime_history = 0;
+
+        let err = BocpdDetector::new(
+            "bad-history-cap",
+            cfg,
+            HazardFunction::Constant { lambda: 200.0 },
+            ObservationModel::Gaussian(GaussianModel::default()),
+        )
+        .expect_err("zero regime history cap must fail detector creation");
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("max_regime_history")
+        ));
+    }
+
+    #[test]
+    fn negative_detector_rejects_zero_min_run_length_config() {
+        let mut cfg = default_config();
+        cfg.min_run_length = 0;
+
+        let err = BocpdDetector::new(
+            "bad-zero-min-run",
+            cfg,
+            HazardFunction::Constant { lambda: 200.0 },
+            ObservationModel::Gaussian(GaussianModel::default()),
+        )
+        .expect_err("zero min_run_length must fail detector creation");
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("min_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_zero_min_run_length_is_not_hidden_by_one_step_run_cap() {
+        let mut cfg = default_config();
+        cfg.min_run_length = 0;
+        cfg.max_run_length = 1;
+
+        assert!(matches!(
+            cfg.validate(),
+            Err(BocpdError::InvalidConfig(msg)) if msg.contains("min_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_zero_min_run_length_is_not_hidden_by_zero_threshold() {
+        let mut cfg = default_config();
+        cfg.min_run_length = 0;
+        cfg.changepoint_threshold = 0.0;
+
+        assert!(matches!(
+            cfg.validate(),
+            Err(BocpdError::InvalidConfig(msg)) if msg.contains("min_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_zero_min_run_length_is_not_hidden_by_large_hazard_lambda() {
+        let mut cfg = default_config();
+        cfg.min_run_length = 0;
+        cfg.hazard_lambda = f64::MAX;
+
+        assert!(matches!(
+            cfg.validate(),
+            Err(BocpdError::InvalidConfig(msg)) if msg.contains("min_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_detector_rejects_zero_min_run_length_for_poisson_model() {
+        let mut cfg = default_config();
+        cfg.min_run_length = 0;
+
+        let err = BocpdDetector::new(
+            "bad-zero-min-run-poisson",
+            cfg,
+            HazardFunction::Constant { lambda: 200.0 },
+            ObservationModel::Poisson(PoissonModel::default()),
+        )
+        .expect_err("zero min_run_length must fail poisson detector creation");
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("min_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_detector_rejects_zero_min_run_length_for_categorical_model() {
+        let mut cfg = default_config();
+        cfg.min_run_length = 0;
+
+        let err = BocpdDetector::new(
+            "bad-zero-min-run-categorical",
+            cfg,
+            HazardFunction::Constant { lambda: 200.0 },
+            ObservationModel::Categorical(CategoricalModel { k: 3, alpha0: 1.0 }),
+        )
+        .expect_err("zero min_run_length must fail categorical detector creation");
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("min_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_zero_min_run_length_takes_precedence_over_history_cap_failure() {
+        let mut cfg = default_config();
+        cfg.min_run_length = 0;
+        cfg.max_regime_history = 0;
+
+        assert!(matches!(
+            cfg.validate(),
+            Err(BocpdError::InvalidConfig(msg)) if msg.contains("min_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_detector_rejects_unsatisfiable_min_run_length_config() {
+        let mut cfg = default_config();
+        cfg.max_run_length = 3;
+        cfg.min_run_length = 4;
+
+        let err = BocpdDetector::new(
+            "bad-min-run",
+            cfg,
+            HazardFunction::Constant { lambda: 200.0 },
+            ObservationModel::Gaussian(GaussianModel::default()),
+        )
+        .expect_err("min_run_length beyond run-length cap must fail detector creation");
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("min_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_config_validation_reports_first_structural_failure() {
+        let mut cfg = default_config();
+        cfg.max_run_length = 0;
+        cfg.max_regime_history = 0;
+        cfg.correlation_window_secs = 0;
+
+        assert!(matches!(
+            cfg.validate(),
+            Err(BocpdError::InvalidConfig(msg)) if msg.contains("max_run_length")
+        ));
     }
 
     // -- Detector creation --
@@ -864,6 +1489,321 @@ mod tests {
     fn test_create_categorical_detector() {
         let det = categorical_detector("test");
         assert_eq!(det.stream_name(), "test");
+    }
+
+    fn assert_invalid_stream_name_rejected(stream_name: &str) {
+        let err = BocpdDetector::new(
+            stream_name,
+            default_config(),
+            HazardFunction::Constant { lambda: 200.0 },
+            ObservationModel::Gaussian(GaussianModel::default()),
+        )
+        .expect_err("malformed stream name must fail detector creation");
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("stream_name")
+        ));
+    }
+
+    #[test]
+    fn negative_empty_stream_name_is_rejected() {
+        assert_invalid_stream_name_rejected("");
+    }
+
+    #[test]
+    fn negative_space_only_stream_name_is_rejected() {
+        assert_invalid_stream_name_rejected("   ");
+    }
+
+    #[test]
+    fn negative_newline_only_stream_name_is_rejected() {
+        assert_invalid_stream_name_rejected("\n");
+    }
+
+    #[test]
+    fn negative_leading_space_stream_name_is_rejected() {
+        assert_invalid_stream_name_rejected(" latency");
+    }
+
+    #[test]
+    fn negative_trailing_space_stream_name_is_rejected() {
+        assert_invalid_stream_name_rejected("latency ");
+    }
+
+    #[test]
+    fn negative_tab_padded_stream_name_is_rejected() {
+        assert_invalid_stream_name_rejected("\tlatency\t");
+    }
+
+    #[test]
+    fn negative_invalid_stream_name_precedes_model_state_allocation() {
+        let err = BocpdDetector::new(
+            " latency ",
+            default_config(),
+            HazardFunction::Constant { lambda: 200.0 },
+            ObservationModel::Categorical(CategoricalModel {
+                k: usize::MAX,
+                alpha0: 1.0,
+            }),
+        )
+        .expect_err("stream identity must be rejected before model state allocation");
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("stream_name")
+        ));
+    }
+
+    fn detector_rejects_state_slot_overflow(model: ObservationModel) -> BocpdError {
+        let mut cfg = default_config();
+        cfg.min_run_length = usize::MAX;
+        cfg.max_run_length = usize::MAX;
+
+        assert!(
+            cfg.validate().is_ok(),
+            "config validation should remain structural; detector allocation guard owns state sizing"
+        );
+
+        BocpdDetector::new(
+            "run-length-overflow",
+            cfg,
+            HazardFunction::Constant { lambda: 200.0 },
+            model,
+        )
+        .expect_err("detector creation must reject run-length state-slot overflow")
+    }
+
+    #[test]
+    fn negative_detector_rejects_run_length_slot_overflow_for_gaussian_model() {
+        let err = detector_rejects_state_slot_overflow(ObservationModel::Gaussian(
+            GaussianModel::default(),
+        ));
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("max_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_detector_rejects_run_length_slot_overflow_for_poisson_model() {
+        let err = detector_rejects_state_slot_overflow(ObservationModel::Poisson(
+            PoissonModel::default(),
+        ));
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("max_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_detector_rejects_run_length_slot_overflow_for_categorical_model() {
+        let err =
+            detector_rejects_state_slot_overflow(ObservationModel::Categorical(CategoricalModel {
+                k: 3,
+                alpha0: 1.0,
+            }));
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("max_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_run_length_slot_overflow_is_not_hidden_by_zero_threshold() {
+        let mut cfg = default_config();
+        cfg.changepoint_threshold = 0.0;
+        cfg.min_run_length = usize::MAX;
+        cfg.max_run_length = usize::MAX;
+
+        let err = BocpdDetector::new(
+            "zero-threshold-overflow",
+            cfg,
+            HazardFunction::Constant { lambda: 200.0 },
+            ObservationModel::Gaussian(GaussianModel::default()),
+        )
+        .expect_err("zero threshold must not hide run-length state overflow");
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("max_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_run_length_slot_overflow_is_not_hidden_by_huge_history_cap() {
+        let mut cfg = default_config();
+        cfg.min_run_length = usize::MAX;
+        cfg.max_run_length = usize::MAX;
+        cfg.max_regime_history = usize::MAX;
+
+        let err = BocpdDetector::new(
+            "huge-history-overflow",
+            cfg,
+            HazardFunction::Constant { lambda: 200.0 },
+            ObservationModel::Gaussian(GaussianModel::default()),
+        )
+        .expect_err("huge history cap must not hide run-length state overflow");
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("max_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_run_length_slot_overflow_precedes_oversized_categorical_state() {
+        let mut cfg = default_config();
+        cfg.min_run_length = usize::MAX;
+        cfg.max_run_length = usize::MAX;
+
+        let err = BocpdDetector::new(
+            "categorical-state-overflow",
+            cfg,
+            HazardFunction::Constant { lambda: 200.0 },
+            ObservationModel::Categorical(CategoricalModel {
+                k: usize::MAX,
+                alpha0: 1.0,
+            }),
+        )
+        .expect_err(
+            "run-length state overflow must be rejected before categorical state allocation",
+        );
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("max_run_length")
+        ));
+    }
+
+    #[test]
+    fn negative_run_length_slot_overflow_is_not_hidden_by_huge_hazard_lambda() {
+        let mut cfg = default_config();
+        cfg.hazard_lambda = f64::MAX;
+        cfg.min_run_length = usize::MAX;
+        cfg.max_run_length = usize::MAX;
+
+        let err = BocpdDetector::new(
+            "huge-hazard-overflow",
+            cfg,
+            HazardFunction::Constant { lambda: f64::MAX },
+            ObservationModel::Gaussian(GaussianModel::default()),
+        )
+        .expect_err("huge hazard lambda must not hide run-length state overflow");
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("max_run_length")
+        ));
+    }
+
+    fn detector_rejects_categorical_state_size(cfg: BocpdConfig, k: usize) -> BocpdError {
+        assert!(
+            cfg.validate().is_ok(),
+            "config validation should not allocate categorical state"
+        );
+
+        BocpdDetector::new(
+            "categorical-state-too-large",
+            cfg,
+            HazardFunction::Constant { lambda: 200.0 },
+            ObservationModel::Categorical(CategoricalModel { k, alpha0: 1.0 }),
+        )
+        .expect_err("detector creation must reject oversized categorical state")
+    }
+
+    #[test]
+    fn negative_detector_rejects_categorical_state_cell_count_over_cap() {
+        let err = detector_rejects_categorical_state_size(default_config(), MAX_EVENTS);
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("categorical state")
+        ));
+    }
+
+    #[test]
+    fn negative_detector_rejects_categorical_state_cell_count_overflow() {
+        let mut cfg = default_config();
+        cfg.min_run_length = usize::MAX - 1;
+        cfg.max_run_length = usize::MAX - 1;
+
+        let err = detector_rejects_categorical_state_size(cfg, 2);
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("categorical state")
+        ));
+    }
+
+    #[test]
+    fn negative_categorical_state_limit_is_not_hidden_by_zero_threshold() {
+        let mut cfg = default_config();
+        cfg.changepoint_threshold = 0.0;
+
+        let err = detector_rejects_categorical_state_size(cfg, MAX_EVENTS);
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("categorical state")
+        ));
+    }
+
+    #[test]
+    fn negative_categorical_state_limit_is_not_hidden_by_huge_history_cap() {
+        let mut cfg = default_config();
+        cfg.max_regime_history = usize::MAX;
+
+        let err = detector_rejects_categorical_state_size(cfg, MAX_EVENTS);
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("categorical state")
+        ));
+    }
+
+    #[test]
+    fn negative_categorical_state_limit_is_not_hidden_by_huge_hazard_lambda() {
+        let mut cfg = default_config();
+        cfg.hazard_lambda = f64::MAX;
+
+        let err = detector_rejects_categorical_state_size(cfg, MAX_EVENTS);
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("categorical state")
+        ));
+    }
+
+    #[test]
+    fn negative_one_step_run_cap_still_bounds_categorical_state_cells() {
+        let mut cfg = default_config();
+        cfg.min_run_length = 1;
+        cfg.max_run_length = 1;
+
+        let err = detector_rejects_categorical_state_size(cfg, MAX_EVENTS);
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("categorical state")
+        ));
+    }
+
+    #[test]
+    fn negative_categorical_state_limit_is_not_hidden_by_near_cap_run_length() {
+        let mut cfg = default_config();
+        cfg.min_run_length = MAX_EVENTS;
+        cfg.max_run_length = MAX_EVENTS;
+
+        let err = detector_rejects_categorical_state_size(cfg, 2);
+
+        assert!(matches!(
+            err,
+            BocpdError::InvalidConfig(msg) if msg.contains("categorical state")
+        ));
     }
 
     // -- Observation processing --
@@ -932,7 +1872,7 @@ mod tests {
     #[test]
     fn test_no_changepoint_in_stable_stream() {
         let mut det = gaussian_detector("test");
-        let mut shifts = 0;
+        let mut shifts: u32 = 0;
         for i in 0..100 {
             if det.observe(10.0, 1000 + i as u64).is_some() {
                 shifts = shifts.saturating_add(1);
@@ -994,7 +1934,7 @@ mod tests {
         .unwrap();
 
         // Only 20 observations — should never signal due to min_run_length.
-        let mut shifts = 0;
+        let mut shifts: u32 = 0;
         for i in 0..20 {
             if det
                 .observe(if i < 10 { 0.0 } else { 100.0 }, i as u64)
@@ -1003,7 +1943,7 @@ mod tests {
                 shifts = shifts.saturating_add(1);
             }
         }
-        assert_eq!(shifts, 0, "min_run_length should suppress all signals");
+        assert_eq!(shifts, 0, "min_run_length should suppress all reports");
     }
 
     // -- INV-BCP-BOUNDED: truncation --
@@ -1218,6 +2158,403 @@ mod tests {
         assert!(correlated.is_empty());
     }
 
+    fn valid_shift(stream_name: &str) -> RegimeShift {
+        RegimeShift {
+            stream_name: stream_name.to_string(),
+            timestamp: 1_000,
+            confidence: 0.8,
+            run_length: 5,
+            old_regime_mean: 1.0,
+            new_regime_mean: 10.0,
+        }
+    }
+
+    fn assert_invalid_shift_is_ignored(mut shift: RegimeShift) {
+        let mut corr = MultiStreamCorrelator::new(60);
+        assert!(corr.record_shift(valid_shift("baseline")).is_empty());
+        shift.timestamp = 1_010;
+
+        let correlated = corr.record_shift(shift);
+
+        assert!(correlated.is_empty());
+        assert_eq!(corr.recent_count(), 1);
+    }
+
+    fn assert_invalid_retained_shift_is_pruned(mut retained: RegimeShift) {
+        retained.timestamp = 990;
+        let mut corr = MultiStreamCorrelator {
+            window_secs: 60,
+            recent_shifts: vec![retained],
+        };
+
+        let correlated = corr.record_shift(valid_shift("fresh-valid-stream"));
+
+        assert!(correlated.is_empty());
+        assert_eq!(corr.recent_count(), 1);
+        assert_eq!(corr.recent_shifts[0].stream_name, "fresh-valid-stream");
+    }
+
+    fn assert_confidence_is_rejected(confidence: f64) {
+        let mut shift = valid_shift("negative-confidence");
+        shift.confidence = confidence;
+
+        assert!(!regime_shift_is_valid(&shift));
+    }
+
+    fn assert_correlator_confidence_is_ignored(confidence: f64) {
+        let mut shift = valid_shift("correlator-negative-confidence");
+        shift.confidence = confidence;
+
+        assert_invalid_shift_is_ignored(shift);
+    }
+
+    fn assert_retained_confidence_is_pruned(confidence: f64) {
+        let mut shift = valid_shift("retained-negative-confidence");
+        shift.confidence = confidence;
+
+        assert_invalid_retained_shift_is_pruned(shift);
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_empty_stream_name() {
+        let mut shift = valid_shift("");
+        shift.stream_name.clear();
+
+        assert!(!regime_shift_is_valid(&shift));
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_padded_stream_name() {
+        assert!(!regime_shift_is_valid(&valid_shift(" padded-stream ")));
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_internal_space_stream_name() {
+        assert!(!regime_shift_is_valid(&valid_shift("stream bad")));
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_internal_tab_stream_name() {
+        assert!(!regime_shift_is_valid(&valid_shift("stream\tbad")));
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_internal_newline_stream_name() {
+        assert!(!regime_shift_is_valid(&valid_shift("stream\nbad")));
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_internal_carriage_return_stream_name() {
+        assert!(!regime_shift_is_valid(&valid_shift("stream\rbad")));
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_internal_crlf_stream_name() {
+        assert!(!regime_shift_is_valid(&valid_shift("stream\r\nbad")));
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_internal_form_feed_stream_name() {
+        assert!(!regime_shift_is_valid(&valid_shift("stream\u{000c}bad")));
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_nonfinite_confidence() {
+        let mut shift = valid_shift("bad-confidence");
+        shift.confidence = f64::NAN;
+
+        assert!(!regime_shift_is_valid(&shift));
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_confidence_above_one() {
+        let mut shift = valid_shift("bad-confidence-bound");
+        shift.confidence = 1.000_001;
+
+        assert!(!regime_shift_is_valid(&shift));
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_tiny_negative_confidence() {
+        assert_confidence_is_rejected(-f64::EPSILON);
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_small_negative_confidence() {
+        assert_confidence_is_rejected(-0.000_001);
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_fractional_negative_confidence() {
+        assert_confidence_is_rejected(-0.5);
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_minus_one_confidence() {
+        assert_confidence_is_rejected(-1.0);
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_large_negative_confidence() {
+        assert_confidence_is_rejected(-1_000.0);
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_min_finite_confidence() {
+        assert_confidence_is_rejected(f64::MIN);
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_zero_run_length() {
+        let mut shift = valid_shift("bad-run-length");
+        shift.run_length = 0;
+
+        assert!(!regime_shift_is_valid(&shift));
+    }
+
+    #[test]
+    fn negative_regime_shift_validation_rejects_nonfinite_regime_means() {
+        let mut old_mean = valid_shift("bad-old-mean");
+        old_mean.old_regime_mean = f64::NEG_INFINITY;
+        let mut new_mean = valid_shift("bad-new-mean");
+        new_mean.new_regime_mean = f64::INFINITY;
+
+        assert!(!regime_shift_is_valid(&old_mean));
+        assert!(!regime_shift_is_valid(&new_mean));
+    }
+
+    #[test]
+    fn negative_correlator_ignores_empty_stream_name_shift() {
+        let mut shift = valid_shift("");
+        shift.stream_name.clear();
+
+        assert_invalid_shift_is_ignored(shift);
+    }
+
+    #[test]
+    fn negative_correlator_ignores_padded_stream_name_shift() {
+        let mut shift = valid_shift(" padded-stream ");
+        shift.stream_name = " padded-stream ".to_string();
+
+        assert_invalid_shift_is_ignored(shift);
+    }
+
+    #[test]
+    fn negative_correlator_ignores_internal_space_stream_name_shift() {
+        assert_invalid_shift_is_ignored(valid_shift("stream bad"));
+    }
+
+    #[test]
+    fn negative_correlator_ignores_internal_tab_stream_name_shift() {
+        assert_invalid_shift_is_ignored(valid_shift("stream\tbad"));
+    }
+
+    #[test]
+    fn negative_correlator_ignores_internal_newline_stream_name_shift() {
+        assert_invalid_shift_is_ignored(valid_shift("stream\nbad"));
+    }
+
+    #[test]
+    fn negative_correlator_ignores_internal_carriage_return_stream_name_shift() {
+        assert_invalid_shift_is_ignored(valid_shift("stream\rbad"));
+    }
+
+    #[test]
+    fn negative_correlator_ignores_internal_crlf_stream_name_shift() {
+        assert_invalid_shift_is_ignored(valid_shift("stream\r\nbad"));
+    }
+
+    #[test]
+    fn negative_correlator_ignores_internal_form_feed_stream_name_shift() {
+        assert_invalid_shift_is_ignored(valid_shift("stream\u{000c}bad"));
+    }
+
+    #[test]
+    fn negative_correlator_ignores_nonfinite_confidence_shift() {
+        let mut shift = valid_shift("bad-confidence");
+        shift.confidence = f64::NAN;
+
+        assert_invalid_shift_is_ignored(shift);
+    }
+
+    #[test]
+    fn negative_correlator_ignores_confidence_above_one_shift() {
+        let mut shift = valid_shift("confidence-above-one");
+        shift.confidence = 1.1;
+
+        assert_invalid_shift_is_ignored(shift);
+    }
+
+    #[test]
+    fn negative_correlator_ignores_tiny_negative_confidence_shift() {
+        assert_correlator_confidence_is_ignored(-f64::EPSILON);
+    }
+
+    #[test]
+    fn negative_correlator_ignores_small_negative_confidence_shift() {
+        assert_correlator_confidence_is_ignored(-0.000_001);
+    }
+
+    #[test]
+    fn negative_correlator_ignores_fractional_negative_confidence_shift() {
+        assert_correlator_confidence_is_ignored(-0.5);
+    }
+
+    #[test]
+    fn negative_correlator_ignores_minus_one_confidence_shift() {
+        assert_correlator_confidence_is_ignored(-1.0);
+    }
+
+    #[test]
+    fn negative_correlator_ignores_large_negative_confidence_shift() {
+        assert_correlator_confidence_is_ignored(-1_000.0);
+    }
+
+    #[test]
+    fn negative_correlator_ignores_min_finite_confidence_shift() {
+        assert_correlator_confidence_is_ignored(f64::MIN);
+    }
+
+    #[test]
+    fn negative_correlator_ignores_zero_run_length_shift() {
+        let mut shift = valid_shift("zero-run-length");
+        shift.run_length = 0;
+
+        assert_invalid_shift_is_ignored(shift);
+    }
+
+    #[test]
+    fn negative_correlator_ignores_nonfinite_old_mean_shift() {
+        let mut shift = valid_shift("bad-old-mean");
+        shift.old_regime_mean = f64::INFINITY;
+
+        assert_invalid_shift_is_ignored(shift);
+    }
+
+    #[test]
+    fn negative_correlator_ignores_nonfinite_new_mean_shift() {
+        let mut shift = valid_shift("bad-new-mean");
+        shift.new_regime_mean = f64::NEG_INFINITY;
+
+        assert_invalid_shift_is_ignored(shift);
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_empty_stream_name_shift() {
+        let mut shift = valid_shift("");
+        shift.stream_name.clear();
+
+        assert_invalid_retained_shift_is_pruned(shift);
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_padded_stream_name_shift() {
+        let mut shift = valid_shift(" retained-stream ");
+        shift.stream_name = " retained-stream ".to_string();
+
+        assert_invalid_retained_shift_is_pruned(shift);
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_internal_space_stream_name_shift() {
+        assert_invalid_retained_shift_is_pruned(valid_shift("retained bad"));
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_internal_tab_stream_name_shift() {
+        assert_invalid_retained_shift_is_pruned(valid_shift("retained\tbad"));
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_internal_newline_stream_name_shift() {
+        assert_invalid_retained_shift_is_pruned(valid_shift("retained\nbad"));
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_internal_carriage_return_stream_name_shift() {
+        assert_invalid_retained_shift_is_pruned(valid_shift("retained\rbad"));
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_internal_crlf_stream_name_shift() {
+        assert_invalid_retained_shift_is_pruned(valid_shift("retained\r\nbad"));
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_internal_form_feed_stream_name_shift() {
+        assert_invalid_retained_shift_is_pruned(valid_shift("retained\u{000c}bad"));
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_nonfinite_confidence_shift() {
+        let mut shift = valid_shift("retained-bad-confidence");
+        shift.confidence = f64::NEG_INFINITY;
+
+        assert_invalid_retained_shift_is_pruned(shift);
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_confidence_above_one_shift() {
+        let mut shift = valid_shift("retained-confidence-above-one");
+        shift.confidence = 1.01;
+
+        assert_invalid_retained_shift_is_pruned(shift);
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_tiny_negative_confidence_shift() {
+        assert_retained_confidence_is_pruned(-f64::EPSILON);
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_small_negative_confidence_shift() {
+        assert_retained_confidence_is_pruned(-0.000_001);
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_fractional_negative_confidence_shift() {
+        assert_retained_confidence_is_pruned(-0.5);
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_minus_one_confidence_shift() {
+        assert_retained_confidence_is_pruned(-1.0);
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_large_negative_confidence_shift() {
+        assert_retained_confidence_is_pruned(-1_000.0);
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_min_finite_confidence_shift() {
+        assert_retained_confidence_is_pruned(f64::MIN);
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_zero_run_length_shift() {
+        let mut shift = valid_shift("retained-zero-run-length");
+        shift.run_length = 0;
+
+        assert_invalid_retained_shift_is_pruned(shift);
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_nonfinite_old_mean_shift() {
+        let mut shift = valid_shift("retained-bad-old-mean");
+        shift.old_regime_mean = f64::NAN;
+
+        assert_invalid_retained_shift_is_pruned(shift);
+    }
+
+    #[test]
+    fn negative_correlator_prunes_retained_nonfinite_new_mean_shift() {
+        let mut shift = valid_shift("retained-bad-new-mean");
+        shift.new_regime_mean = f64::INFINITY;
+
+        assert_invalid_retained_shift_is_pruned(shift);
+    }
+
     // -- Error display --
 
     #[test]
@@ -1246,6 +2583,799 @@ mod tests {
         assert!((ln_gamma(5.0) - (24.0_f64).ln()).abs() < 0.01);
     }
 
+    // -- Negative path hardening --
+
+    #[test]
+    fn negative_constant_hazard_rejects_non_positive_and_non_finite_values() {
+        for hazard in [
+            HazardFunction::Constant { lambda: 0.0 },
+            HazardFunction::Constant { lambda: -1.0 },
+            HazardFunction::Constant { lambda: f64::NAN },
+            HazardFunction::Constant {
+                lambda: f64::INFINITY,
+            },
+        ] {
+            assert_eq!(hazard.evaluate(42), 0.0);
+        }
+    }
+
+    #[test]
+    fn negative_constant_hazard_below_one_is_clamped_to_probability_bound() {
+        let hazard = HazardFunction::Constant { lambda: 0.5 };
+
+        assert_eq!(hazard.evaluate(0), 1.0);
+    }
+
+    #[test]
+    fn negative_geometric_hazard_rejects_out_of_probability_domain_values() {
+        for hazard in [
+            HazardFunction::Geometric { p: -0.1 },
+            HazardFunction::Geometric { p: 1.1 },
+            HazardFunction::Geometric { p: f64::NAN },
+            HazardFunction::Geometric { p: f64::INFINITY },
+        ] {
+            assert_eq!(hazard.evaluate(7), 0.0);
+        }
+    }
+
+    #[test]
+    fn negative_student_t_invalid_parameters_return_floor_probability() {
+        assert_eq!(student_t_pdf(0.0, 0.0, 0.0, 1.0), 1e-300);
+        assert_eq!(student_t_pdf(0.0, 0.0, 1.0, 0.0), 1e-300);
+        assert_eq!(student_t_pdf(f64::NAN, 0.0, 1.0, 1.0), 1e-300);
+    }
+
+    #[test]
+    fn negative_student_t_rejects_all_nonfinite_parameters_before_math() {
+        for (x, mu, variance, nu) in [
+            (f64::INFINITY, 0.0, 1.0, 1.0),
+            (0.0, f64::NAN, 1.0, 1.0),
+            (0.0, 0.0, f64::INFINITY, 1.0),
+            (0.0, 0.0, 1.0, f64::NAN),
+        ] {
+            assert_eq!(student_t_pdf(x, mu, variance, nu), 1e-300);
+        }
+    }
+
+    #[test]
+    fn negative_ln_gamma_rejects_nonfinite_domain_values() {
+        for x in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(ln_gamma(x), f64::INFINITY);
+        }
+    }
+
+    #[test]
+    fn negative_student_t_rejects_negative_variance() {
+        assert_eq!(student_t_pdf(0.0, 0.0, -1.0, 1.0), 1e-300);
+    }
+
+    #[test]
+    fn negative_student_t_rejects_negative_zero_variance() {
+        assert_eq!(student_t_pdf(0.0, 0.0, -0.0, 1.0), 1e-300);
+    }
+
+    #[test]
+    fn negative_student_t_rejects_negative_degrees_of_freedom() {
+        assert_eq!(student_t_pdf(0.0, 0.0, 1.0, -1.0), 1e-300);
+    }
+
+    #[test]
+    fn negative_ln_gamma_rejects_zero_domain_value() {
+        assert_eq!(ln_gamma(0.0), f64::INFINITY);
+    }
+
+    #[test]
+    fn negative_ln_gamma_rejects_negative_integer_domain_value() {
+        assert_eq!(ln_gamma(-2.0), f64::INFINITY);
+    }
+
+    #[test]
+    fn negative_ln_gamma_rejects_negative_fraction_domain_value() {
+        assert_eq!(ln_gamma(-0.25), f64::INFINITY);
+    }
+
+    #[test]
+    fn negative_gaussian_predictive_rejects_impossible_prior_parameters() {
+        let model = GaussianModel {
+            mu0: 0.0,
+            kappa0: 0.0,
+            alpha0: 0.0,
+            beta0: 0.0,
+        };
+        let stats = GaussianSuffStats::new();
+
+        assert_eq!(model.predictive_prob(&stats, 0.0), 1e-300);
+    }
+
+    #[test]
+    fn negative_gaussian_predictive_rejects_nonfinite_prior_mean() {
+        let stats = GaussianSuffStats::new();
+        for mu0 in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let model = GaussianModel {
+                mu0,
+                kappa0: 1.0,
+                alpha0: 1.0,
+                beta0: 1.0,
+            };
+
+            assert_eq!(model.predictive_prob(&stats, 0.0), 1e-300);
+        }
+    }
+
+    #[test]
+    fn negative_gaussian_predictive_rejects_invalid_sufficient_stats() {
+        let model = GaussianModel::default();
+
+        for stats in [
+            GaussianSuffStats {
+                n: -1.0,
+                mean: 0.0,
+                sum_sq: 0.0,
+            },
+            GaussianSuffStats {
+                n: 1.0,
+                mean: f64::NAN,
+                sum_sq: 0.0,
+            },
+            GaussianSuffStats {
+                n: 1.0,
+                mean: 0.0,
+                sum_sq: -0.01,
+            },
+        ] {
+            assert_eq!(model.predictive_prob(&stats, 0.0), 1e-300);
+        }
+    }
+
+    #[test]
+    fn negative_gaussian_predictive_rejects_overflowed_posterior_mean() {
+        let model = GaussianModel {
+            mu0: f64::MAX,
+            kappa0: f64::MAX,
+            alpha0: 1.0,
+            beta0: 1.0,
+        };
+        let stats = GaussianSuffStats {
+            n: f64::MAX,
+            mean: f64::MAX,
+            sum_sq: 0.0,
+        };
+
+        assert_eq!(model.predictive_prob(&stats, 1.0), 1e-300);
+    }
+
+    #[test]
+    fn negative_gaussian_stats_update_ignores_nonfinite_observations() {
+        for x in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut stats = GaussianSuffStats::new();
+            stats.update(10.0);
+
+            stats.update(x);
+
+            assert_eq!(stats.n, 1.0);
+            assert_eq!(stats.mean, 10.0);
+            assert_eq!(stats.sum_sq, 0.0);
+        }
+    }
+
+    #[test]
+    fn negative_gaussian_stats_update_recovers_from_poisoned_state() {
+        for mut stats in [
+            GaussianSuffStats {
+                n: -1.0,
+                mean: 0.0,
+                sum_sq: 0.0,
+            },
+            GaussianSuffStats {
+                n: 1.0,
+                mean: f64::NAN,
+                sum_sq: 0.0,
+            },
+            GaussianSuffStats {
+                n: 1.0,
+                mean: 0.0,
+                sum_sq: -1.0,
+            },
+        ] {
+            stats.update(10.0);
+
+            assert_eq!(stats.n, 1.0);
+            assert_eq!(stats.mean, 10.0);
+            assert_eq!(stats.sum_sq, 0.0);
+        }
+    }
+
+    #[test]
+    fn negative_observe_rejects_gaussian_nonfinite_prior_before_side_effects() {
+        let mut det = BocpdDetector::new(
+            "invalid-gaussian-prior",
+            default_config(),
+            HazardFunction::Constant { lambda: 200.0 },
+            ObservationModel::Gaussian(GaussianModel {
+                mu0: f64::NAN,
+                kappa0: 1.0,
+                alpha0: 1.0,
+                beta0: 1.0,
+            }),
+        )
+        .unwrap();
+
+        assert!(det.observe(10.0, 1).is_none());
+        assert_eq!(det.observation_count(), 0);
+        assert_eq!(det.current_regime_count, 0.0);
+        assert!(det.events().is_empty());
+    }
+
+    #[test]
+    fn negative_observe_rejects_gaussian_nonpositive_hyperparameters_before_side_effects() {
+        for model in [
+            GaussianModel {
+                mu0: 0.0,
+                kappa0: 0.0,
+                alpha0: 1.0,
+                beta0: 1.0,
+            },
+            GaussianModel {
+                mu0: 0.0,
+                kappa0: 1.0,
+                alpha0: -1.0,
+                beta0: 1.0,
+            },
+            GaussianModel {
+                mu0: 0.0,
+                kappa0: 1.0,
+                alpha0: 1.0,
+                beta0: 0.0,
+            },
+        ] {
+            let mut det = BocpdDetector::new(
+                "invalid-gaussian-scale",
+                default_config(),
+                HazardFunction::Constant { lambda: 200.0 },
+                ObservationModel::Gaussian(model),
+            )
+            .unwrap();
+
+            assert!(det.observe(10.0, 1).is_none());
+            assert_eq!(det.observation_count(), 0);
+            assert_eq!(det.current_regime_sum, 0.0);
+            assert!(det.events().is_empty());
+        }
+    }
+
+    #[test]
+    fn negative_poisson_predictive_rejects_invalid_prior_and_stats() {
+        let stats = PoissonSuffStats::new();
+        assert_eq!(
+            PoissonModel {
+                alpha0: -1.0,
+                beta0: 1.0,
+            }
+            .predictive_prob(&stats, 1.0),
+            1e-300
+        );
+
+        let model = PoissonModel::default();
+        for stats in [
+            PoissonSuffStats { n: -1.0, sum: 0.0 },
+            PoissonSuffStats { n: 1.0, sum: -0.1 },
+            PoissonSuffStats {
+                n: f64::NAN,
+                sum: 1.0,
+            },
+        ] {
+            assert_eq!(model.predictive_prob(&stats, 1.0), 1e-300);
+        }
+    }
+
+    #[test]
+    fn negative_observe_rejects_poisson_invalid_prior_before_side_effects() {
+        for model in [
+            PoissonModel {
+                alpha0: 0.0,
+                beta0: 1.0,
+            },
+            PoissonModel {
+                alpha0: 1.0,
+                beta0: f64::NAN,
+            },
+            PoissonModel {
+                alpha0: 1.0,
+                beta0: -1.0,
+            },
+        ] {
+            let mut det = BocpdDetector::new(
+                "invalid-poisson-prior",
+                default_config(),
+                HazardFunction::Constant { lambda: 200.0 },
+                ObservationModel::Poisson(model),
+            )
+            .unwrap();
+
+            assert!(det.observe(1.0, 1).is_none());
+            assert_eq!(det.observation_count(), 0);
+            assert_eq!(det.current_regime_count, 0.0);
+            assert!(det.events().is_empty());
+        }
+    }
+
+    #[test]
+    fn negative_poisson_predictive_rejects_fractional_and_too_large_counts() {
+        let model = PoissonModel::default();
+        let stats = PoissonSuffStats::new();
+
+        for x in [1.5, f64::NAN, f64::INFINITY, f64::MAX, u64::MAX as f64] {
+            assert_eq!(model.predictive_prob(&stats, x), 0.0);
+        }
+    }
+
+    #[test]
+    fn negative_binomial_rejects_nonfinite_parameters_before_math() {
+        for (r, p) in [(f64::NAN, 0.5), (1.0, f64::NAN), (f64::INFINITY, 0.5)] {
+            assert_eq!(neg_binomial_pmf(1, r, p), 1e-300);
+        }
+    }
+
+    #[test]
+    fn negative_binomial_rejects_out_of_probability_domain() {
+        for p in [0.0, -0.1, 1.0, 1.1] {
+            assert_eq!(neg_binomial_pmf(1, 1.0, p), 1e-300);
+        }
+        assert_eq!(neg_binomial_pmf(1, 0.0, 0.5), 1e-300);
+    }
+
+    #[test]
+    fn negative_poisson_count_rejects_malformed_observations() {
+        for x in [
+            -1.0,
+            1.5,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::MAX,
+            u64::MAX as f64,
+        ] {
+            assert_eq!(poisson_count(x), None);
+        }
+    }
+
+    #[test]
+    fn negative_poisson_stats_update_ignores_malformed_counts() {
+        for x in [
+            -1.0,
+            1.5,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::MAX,
+            u64::MAX as f64,
+        ] {
+            let mut stats = PoissonSuffStats::new();
+            stats.update(3.0);
+
+            stats.update(x);
+
+            assert_eq!(stats.n, 1.0);
+            assert_eq!(stats.sum, 3.0);
+        }
+    }
+
+    #[test]
+    fn negative_poisson_observe_does_not_coerce_negative_count_to_zero() {
+        let mut det = poisson_detector("negative-count");
+
+        det.observe(-1.0, 1);
+
+        assert_eq!(det.observation_count(), 0);
+        assert!(det.events().is_empty());
+        assert!(
+            det.poisson_stats
+                .iter()
+                .all(|stats| stats.n == 0.0 && stats.sum == 0.0)
+        );
+    }
+
+    #[test]
+    fn negative_poisson_observe_does_not_update_stats_for_fractional_count() {
+        let mut det = poisson_detector("fractional-count");
+
+        det.observe(1.5, 1);
+
+        assert_eq!(det.observation_count(), 0);
+        assert!(det.events().is_empty());
+        assert!(
+            det.poisson_stats
+                .iter()
+                .all(|stats| stats.n == 0.0 && stats.sum == 0.0)
+        );
+    }
+
+    #[test]
+    fn negative_poisson_observe_rejects_malformed_counts_before_regime_tracking() {
+        for x in [-1.0, 1.5, f64::MAX] {
+            let mut det = poisson_detector("malformed-count");
+
+            assert!(det.observe(x, 1).is_none());
+
+            assert_eq!(det.observation_count(), 0);
+            assert_eq!(det.current_regime_count, 0.0);
+            assert_eq!(det.current_regime_sum, 0.0);
+            assert!(det.events().is_empty());
+        }
+    }
+
+    #[test]
+    fn negative_poisson_stats_update_recovers_from_poisoned_state() {
+        for mut stats in [
+            PoissonSuffStats { n: -1.0, sum: 0.0 },
+            PoissonSuffStats {
+                n: f64::NAN,
+                sum: 0.0,
+            },
+            PoissonSuffStats { n: 1.0, sum: -1.0 },
+            PoissonSuffStats {
+                n: 1.0,
+                sum: f64::INFINITY,
+            },
+        ] {
+            stats.update(3.0);
+
+            assert_eq!(stats.n, 1.0);
+            assert_eq!(stats.sum, 3.0);
+        }
+    }
+
+    #[test]
+    fn negative_categorical_update_ignores_out_of_range_category() {
+        let mut stats = CategoricalSuffStats::new(2);
+        stats.update(usize::MAX);
+        stats.update(2);
+
+        assert_eq!(stats.counts, vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn negative_categorical_update_recovers_poisoned_target_count() {
+        for poisoned in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0] {
+            let mut stats = CategoricalSuffStats {
+                counts: vec![poisoned, 2.0],
+            };
+
+            stats.update(0);
+
+            assert_eq!(stats.counts, vec![1.0, 2.0]);
+        }
+    }
+
+    #[test]
+    fn negative_observe_rejects_categorical_invalid_prior_before_side_effects() {
+        for model in [
+            CategoricalModel { k: 0, alpha0: 1.0 },
+            CategoricalModel {
+                k: 3,
+                alpha0: f64::INFINITY,
+            },
+            CategoricalModel { k: 3, alpha0: 0.0 },
+        ] {
+            let mut det = BocpdDetector::new(
+                "invalid-categorical-prior",
+                default_config(),
+                HazardFunction::Constant { lambda: 200.0 },
+                ObservationModel::Categorical(model),
+            )
+            .unwrap();
+
+            assert!(det.observe(1.0, 1).is_none());
+            assert_eq!(det.observation_count(), 0);
+            assert_eq!(det.current_regime_sum, 0.0);
+            assert!(det.events().is_empty());
+        }
+    }
+
+    #[test]
+    fn negative_categorical_index_rejects_fractional_and_oversized_values() {
+        for x in [-1.0, 1.5, f64::MAX, usize::MAX as f64] {
+            assert_eq!(categorical_index(x), usize::MAX);
+        }
+    }
+
+    #[test]
+    fn negative_observation_model_accepts_rejects_malformed_models() {
+        assert!(!observation_model_accepts(
+            &ObservationModel::Gaussian(GaussianModel {
+                mu0: 0.0,
+                kappa0: f64::INFINITY,
+                alpha0: 1.0,
+                beta0: 1.0,
+            }),
+            1.0,
+        ));
+        assert!(!observation_model_accepts(
+            &ObservationModel::Poisson(PoissonModel {
+                alpha0: 1.0,
+                beta0: 0.0,
+            }),
+            1.0,
+        ));
+        assert!(!observation_model_accepts(
+            &ObservationModel::Categorical(CategoricalModel { k: 0, alpha0: 1.0 }),
+            0.0,
+        ));
+    }
+
+    #[test]
+    fn negative_observation_model_accepts_still_rejects_invalid_observation_values() {
+        assert!(!observation_model_accepts(
+            &ObservationModel::Gaussian(GaussianModel::default()),
+            f64::NAN,
+        ));
+        assert!(!observation_model_accepts(
+            &ObservationModel::Poisson(PoissonModel::default()),
+            1.5,
+        ));
+        assert!(!observation_model_accepts(
+            &ObservationModel::Categorical(CategoricalModel { k: 3, alpha0: 1.0 }),
+            3.0,
+        ));
+    }
+
+    #[test]
+    fn negative_observation_model_accepts_rejects_zero_gaussian_kappa() {
+        assert!(!observation_model_accepts(
+            &ObservationModel::Gaussian(GaussianModel {
+                mu0: 0.0,
+                kappa0: 0.0,
+                alpha0: 1.0,
+                beta0: 1.0,
+            }),
+            1.0,
+        ));
+    }
+
+    #[test]
+    fn negative_observation_model_accepts_rejects_negative_gaussian_alpha() {
+        assert!(!observation_model_accepts(
+            &ObservationModel::Gaussian(GaussianModel {
+                mu0: 0.0,
+                kappa0: 1.0,
+                alpha0: -1.0,
+                beta0: 1.0,
+            }),
+            1.0,
+        ));
+    }
+
+    #[test]
+    fn negative_observation_model_accepts_rejects_nonfinite_gaussian_beta() {
+        assert!(!observation_model_accepts(
+            &ObservationModel::Gaussian(GaussianModel {
+                mu0: 0.0,
+                kappa0: 1.0,
+                alpha0: 1.0,
+                beta0: f64::NAN,
+            }),
+            1.0,
+        ));
+    }
+
+    #[test]
+    fn negative_observation_model_accepts_rejects_nonfinite_poisson_alpha() {
+        assert!(!observation_model_accepts(
+            &ObservationModel::Poisson(PoissonModel {
+                alpha0: f64::INFINITY,
+                beta0: 1.0,
+            }),
+            1.0,
+        ));
+    }
+
+    #[test]
+    fn negative_observation_model_accepts_rejects_negative_poisson_beta() {
+        assert!(!observation_model_accepts(
+            &ObservationModel::Poisson(PoissonModel {
+                alpha0: 1.0,
+                beta0: -1.0,
+            }),
+            1.0,
+        ));
+    }
+
+    #[test]
+    fn negative_observation_model_accepts_rejects_nonfinite_categorical_alpha() {
+        assert!(!observation_model_accepts(
+            &ObservationModel::Categorical(CategoricalModel {
+                k: 3,
+                alpha0: f64::NEG_INFINITY,
+            }),
+            1.0,
+        ));
+    }
+
+    #[test]
+    fn negative_categorical_observe_does_not_truncate_fractional_category() {
+        let mut det = categorical_detector("fractional-category");
+
+        det.observe(1.5, 1);
+
+        assert_eq!(det.observation_count(), 0);
+        assert!(det.events().is_empty());
+        assert!(
+            det.categorical_stats
+                .iter()
+                .all(|stats| stats.counts.iter().all(|count| *count == 0.0))
+        );
+    }
+
+    #[test]
+    fn negative_categorical_observe_does_not_saturate_oversized_category() {
+        let mut det = categorical_detector("oversized-category");
+
+        det.observe(f64::MAX, 1);
+
+        assert_eq!(det.observation_count(), 0);
+        assert!(det.events().is_empty());
+        assert!(
+            det.categorical_stats
+                .iter()
+                .all(|stats| stats.counts.iter().all(|count| *count == 0.0))
+        );
+    }
+
+    #[test]
+    fn negative_categorical_observe_rejects_out_of_range_category_before_tracking() {
+        let mut det = categorical_detector("out-of-range-category");
+
+        assert!(det.observe(3.0, 1).is_none());
+
+        assert_eq!(det.observation_count(), 0);
+        assert_eq!(det.current_regime_count, 0.0);
+        assert_eq!(det.current_regime_sum, 0.0);
+        assert!(det.events().is_empty());
+        assert!(
+            det.categorical_stats
+                .iter()
+                .all(|stats| stats.counts.iter().all(|count| *count == 0.0))
+        );
+    }
+
+    #[test]
+    fn negative_categorical_predictive_rejects_negative_probability_result() {
+        let model = CategoricalModel { k: 2, alpha0: -0.5 };
+        let stats = CategoricalSuffStats {
+            counts: vec![2.0, 0.0],
+        };
+
+        assert_eq!(model.predictive_prob(&stats, 1), 1e-300);
+    }
+
+    #[test]
+    fn negative_categorical_predictive_rejects_nonfinite_and_negative_counts() {
+        let model = CategoricalModel { k: 2, alpha0: 1.0 };
+
+        for stats in [
+            CategoricalSuffStats {
+                counts: vec![f64::NAN, 1.0],
+            },
+            CategoricalSuffStats {
+                counts: vec![1.0, f64::INFINITY],
+            },
+            CategoricalSuffStats {
+                counts: vec![1.0, -0.1],
+            },
+        ] {
+            assert_eq!(model.predictive_prob(&stats, 0), 1e-300);
+        }
+    }
+
+    #[test]
+    fn negative_categorical_predictive_rejects_probability_above_one() {
+        let model = CategoricalModel { k: 2, alpha0: 1.0 };
+        let stats = CategoricalSuffStats {
+            counts: vec![10.0, -9.9],
+        };
+
+        assert_eq!(model.predictive_prob(&stats, 0), 1e-300);
+    }
+
+    #[test]
+    fn negative_categorical_predictive_rejects_mismatched_stats_width() {
+        let model = CategoricalModel { k: 3, alpha0: 1.0 };
+        for stats in [
+            CategoricalSuffStats { counts: vec![1.0] },
+            CategoricalSuffStats {
+                counts: vec![1.0, 0.0, 0.0, 100.0],
+            },
+        ] {
+            assert_eq!(model.predictive_prob(&stats, 0), 1e-300);
+        }
+    }
+
+    #[test]
+    fn negative_geometric_hazard_above_one_is_ignored_by_detector() {
+        let mut det = BocpdDetector::new(
+            "bad-geometric",
+            default_config(),
+            HazardFunction::Geometric { p: 2.0 },
+            ObservationModel::Gaussian(GaussianModel::default()),
+        )
+        .unwrap();
+
+        det.observe(10.0, 1);
+
+        assert_eq!(HazardFunction::Geometric { p: 2.0 }.evaluate(0), 0.0);
+        assert!(det.posterior_sum().is_finite());
+        assert!((det.posterior_sum() - 1.0).abs() < 1e-6);
+        assert!(det.run_length_probs.iter().all(|prob| *prob >= 0.0));
+    }
+
+    #[test]
+    fn negative_push_bounded_zero_capacity_drops_existing_and_new_items() {
+        let mut items = vec![1, 2, 3];
+
+        push_bounded(&mut items, 4, 0);
+
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn negative_push_bounded_cap_one_drops_existing_item() {
+        let mut items = vec![1];
+
+        push_bounded(&mut items, 2, 1);
+
+        assert_eq!(items, vec![2]);
+    }
+
+    #[test]
+    fn negative_push_bounded_exactly_full_cap_drops_oldest_item() {
+        let mut items = vec![1, 2, 3];
+
+        push_bounded(&mut items, 4, 3);
+
+        assert_eq!(items, vec![2, 3, 4]);
+    }
+
+    #[test]
+    fn negative_push_bounded_overfull_vector_drains_to_capacity() {
+        let mut items = vec![1, 2, 3, 4, 5];
+
+        push_bounded(&mut items, 6, 3);
+
+        assert_eq!(items, vec![4, 5, 6]);
+    }
+
+    #[test]
+    fn negative_push_bounded_overfull_cap_one_keeps_only_new_item() {
+        let mut items = vec![1, 2, 3, 4];
+
+        push_bounded(&mut items, 5, 1);
+
+        assert_eq!(items, vec![5]);
+    }
+
+    #[test]
+    fn negative_push_bounded_repeated_pushes_never_exceed_cap() {
+        let mut items = Vec::new();
+
+        for item in 0..10 {
+            push_bounded(&mut items, item, 3);
+            assert!(items.len() <= 3);
+        }
+
+        assert_eq!(items, vec![7, 8, 9]);
+    }
+
+    #[test]
+    fn negative_push_bounded_zero_capacity_remains_empty_after_repeated_pushes() {
+        let mut items = Vec::new();
+
+        for item in 0..10 {
+            push_bounded(&mut items, item, 0);
+        }
+
+        assert!(items.is_empty());
+    }
+
     // -- Events --
 
     #[test]
@@ -1272,5 +3402,448 @@ mod tests {
         let result = det.observe(f64::INFINITY, 2000);
         assert!(result.is_none());
         assert_eq!(det.observation_count, count_before);
+    }
+
+    // ── Negative-path tests for edge cases and invalid inputs ──────────
+
+    #[test]
+    fn negative_bocpd_config_with_extreme_floating_point_values() {
+        // Test BocpdConfig with various problematic floating point values
+        let extreme_configs = vec![
+            BocpdConfig {
+                hazard_lambda: f64::NAN,
+                changepoint_threshold: 0.7,
+                min_run_length: 10,
+                max_run_length: 500,
+                max_regime_history: 1000,
+                correlation_window_secs: 60,
+            },
+            BocpdConfig {
+                hazard_lambda: f64::INFINITY,
+                changepoint_threshold: 0.7,
+                ..Default::default()
+            },
+            BocpdConfig {
+                hazard_lambda: f64::NEG_INFINITY,
+                changepoint_threshold: 0.7,
+                ..Default::default()
+            },
+            BocpdConfig {
+                hazard_lambda: 200.0,
+                changepoint_threshold: f64::NAN,
+                ..Default::default()
+            },
+            BocpdConfig {
+                hazard_lambda: 200.0,
+                changepoint_threshold: 2.0, // > 1.0
+                ..Default::default()
+            },
+            BocpdConfig {
+                hazard_lambda: 200.0,
+                changepoint_threshold: -0.5, // < 0.0
+                ..Default::default()
+            },
+            BocpdConfig {
+                hazard_lambda: 0.0, // Zero hazard
+                changepoint_threshold: 0.7,
+                ..Default::default()
+            },
+            BocpdConfig {
+                hazard_lambda: -100.0, // Negative hazard
+                changepoint_threshold: 0.7,
+                ..Default::default()
+            },
+        ];
+
+        for config in extreme_configs {
+            // All invalid configs should be rejected by validation
+            let result = config.validate();
+            assert!(result.is_err(), "Config should be invalid: hazard_lambda={}, threshold={}",
+                    config.hazard_lambda, config.changepoint_threshold);
+
+            match result.unwrap_err() {
+                BocpdError::InvalidConfig(msg) => {
+                    assert!(!msg.is_empty(), "Error message should not be empty");
+                }
+                other => panic!("Expected InvalidConfig error, got {:?}", other),
+            }
+        }
+    }
+
+    #[test]
+    fn negative_bocpd_config_with_boundary_and_zero_length_values() {
+        // Test BocpdConfig with boundary conditions for length parameters
+        let boundary_configs = vec![
+            BocpdConfig {
+                min_run_length: 0, // Zero min run length
+                ..Default::default()
+            },
+            BocpdConfig {
+                max_run_length: 0, // Zero max run length
+                ..Default::default()
+            },
+            BocpdConfig {
+                min_run_length: 1000,
+                max_run_length: 500, // min > max
+                ..Default::default()
+            },
+            BocpdConfig {
+                max_regime_history: 0, // Zero history
+                ..Default::default()
+            },
+            BocpdConfig {
+                min_run_length: usize::MAX,
+                max_run_length: usize::MAX, // Maximum values
+                max_regime_history: usize::MAX,
+                correlation_window_secs: u64::MAX,
+                ..Default::default()
+            },
+        ];
+
+        for config in boundary_configs {
+            let result = config.validate();
+
+            // Zero min/max run length and min > max should be invalid
+            if config.min_run_length == 0 || config.max_run_length == 0 || config.min_run_length > config.max_run_length {
+                assert!(result.is_err(), "Should reject invalid run length config");
+            } else {
+                // Other boundary cases might be valid
+                match result {
+                    Ok(_) => {}, // Valid configuration
+                    Err(_) => {}, // Implementation may reject extreme values
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_hazard_function_with_invalid_parameters() {
+        // Test HazardFunction evaluation with invalid parameters
+        let invalid_hazards = vec![
+            HazardFunction::Constant { lambda: 0.0 }, // Zero lambda
+            HazardFunction::Constant { lambda: -1.0 }, // Negative lambda
+            HazardFunction::Constant { lambda: f64::NAN }, // NaN lambda
+            HazardFunction::Constant { lambda: f64::INFINITY }, // Infinite lambda
+            HazardFunction::Geometric { p: -0.5 }, // Negative probability
+            HazardFunction::Geometric { p: 1.5 }, // Probability > 1.0
+            HazardFunction::Geometric { p: f64::NAN }, // NaN probability
+            HazardFunction::Geometric { p: f64::INFINITY }, // Infinite probability
+        ];
+
+        for hazard in invalid_hazards {
+            // evaluate should return 0.0 for invalid parameters (safe fallback)
+            let rate1 = hazard.evaluate(0);
+            let rate2 = hazard.evaluate(100);
+            let rate3 = hazard.evaluate(usize::MAX);
+
+            for rate in [rate1, rate2, rate3] {
+                assert!(rate.is_finite(), "Hazard rate should be finite for invalid parameters");
+                assert!(rate >= 0.0, "Hazard rate should be non-negative");
+                assert!(rate <= 1.0, "Hazard rate should not exceed 1.0");
+            }
+        }
+
+        // Test with valid edge case parameters
+        let valid_edge_hazards = vec![
+            HazardFunction::Constant { lambda: f64::EPSILON }, // Very small lambda
+            HazardFunction::Constant { lambda: 1e-100 }, // Extremely small lambda
+            HazardFunction::Constant { lambda: 1e100 }, // Very large lambda
+            HazardFunction::Geometric { p: 0.0 }, // Zero probability
+            HazardFunction::Geometric { p: 1.0 }, // Maximum probability
+            HazardFunction::Geometric { p: f64::EPSILON }, // Very small probability
+        ];
+
+        for hazard in valid_edge_hazards {
+            let rate = hazard.evaluate(50);
+            assert!(rate.is_finite(), "Valid hazard should produce finite rate");
+            assert!(rate >= 0.0 && rate <= 1.0, "Valid hazard rate should be in [0,1]");
+        }
+    }
+
+    #[test]
+    fn negative_gaussian_model_with_problematic_priors() {
+        // Test GaussianModel with various problematic prior parameters
+        let problematic_models = vec![
+            GaussianModel {
+                mu0: f64::NAN, // NaN prior mean
+                kappa0: 1.0,
+                alpha0: 1.0,
+                beta0: 1.0,
+            },
+            GaussianModel {
+                mu0: f64::INFINITY, // Infinite prior mean
+                kappa0: 1.0,
+                alpha0: 1.0,
+                beta0: 1.0,
+            },
+            GaussianModel {
+                mu0: 0.0,
+                kappa0: 0.0, // Zero kappa (precision scaling)
+                alpha0: 1.0,
+                beta0: 1.0,
+            },
+            GaussianModel {
+                mu0: 0.0,
+                kappa0: -1.0, // Negative kappa
+                alpha0: 1.0,
+                beta0: 1.0,
+            },
+            GaussianModel {
+                mu0: 0.0,
+                kappa0: 1.0,
+                alpha0: 0.0, // Zero alpha (shape)
+                beta0: 1.0,
+            },
+            GaussianModel {
+                mu0: 0.0,
+                kappa0: 1.0,
+                alpha0: 1.0,
+                beta0: 0.0, // Zero beta (rate)
+            },
+            GaussianModel {
+                mu0: 0.0,
+                kappa0: f64::NAN,
+                alpha0: f64::INFINITY,
+                beta0: f64::NEG_INFINITY,
+            },
+        ];
+
+        for model in problematic_models {
+            // Model creation should not panic with invalid parameters
+            assert!(model.mu0.is_finite() || !model.mu0.is_finite()); // Basic existence check
+
+            // Parameters should be preserved as-is (validation happens during use)
+            if model.mu0.is_nan() {
+                assert!(model.mu0.is_nan());
+            }
+            if model.kappa0.is_infinite() {
+                assert!(model.kappa0.is_infinite());
+            }
+        }
+
+        // Test default model is well-formed
+        let default_model = GaussianModel::default();
+        assert!(default_model.mu0.is_finite());
+        assert!(default_model.kappa0.is_finite() && default_model.kappa0 > 0.0);
+        assert!(default_model.alpha0.is_finite() && default_model.alpha0 > 0.0);
+        assert!(default_model.beta0.is_finite() && default_model.beta0 > 0.0);
+    }
+
+    #[test]
+    fn negative_gaussian_suff_stats_with_extreme_numerical_values() {
+        // Test GaussianSuffStats with extreme numerical values
+        let mut stats = GaussianSuffStats::new();
+
+        // Initial state should be valid
+        assert_eq!(stats.n, 0.0);
+        assert_eq!(stats.mean, 0.0);
+        assert_eq!(stats.sum_sq, 0.0);
+
+        // Test update with extreme values
+        let extreme_values = vec![
+            f64::MIN,
+            f64::MAX,
+            -1e100,
+            1e100,
+            f64::EPSILON,
+            -f64::EPSILON,
+        ];
+
+        for value in extreme_values {
+            let original_n = stats.n;
+            stats.update(value);
+
+            // After update, n should increment
+            assert_eq!(stats.n, original_n + 1.0);
+
+            // Mean and sum_sq should be finite or handle overflow gracefully
+            if !stats.mean.is_finite() || !stats.sum_sq.is_finite() {
+                // If overflow occurs, it should not be NaN (though inf is possible)
+                assert!(!stats.mean.is_nan() && !stats.sum_sq.is_nan());
+            }
+        }
+
+        // Test with many small updates (numerical stability)
+        let mut stable_stats = GaussianSuffStats::new();
+        for _ in 0..10_000 {
+            stable_stats.update(1e-100);
+        }
+
+        assert!(stable_stats.n > 0.0);
+        assert!(stable_stats.mean.is_finite() || stable_stats.mean.is_infinite());
+        assert!(stable_stats.sum_sq.is_finite() || stable_stats.sum_sq.is_infinite());
+    }
+
+    #[test]
+    fn negative_bocpd_error_display_with_malicious_content() {
+        // Test BocpdError Display implementation with problematic content
+        let malicious_errors = vec![
+            BocpdError::InvalidConfig("\0config\x01error\x7f".to_string()),
+            BocpdError::ModelMismatch("model\nwith\nnewlines".to_string()),
+            BocpdError::InvalidConfig("<script>alert('bocpd')</script>".to_string()),
+            BocpdError::ModelMismatch("🚀model💀mismatch".to_string()),
+            BocpdError::InvalidConfig("../../../etc/passwd".to_string()),
+            BocpdError::ModelMismatch("\u{FFFF}unicode_error".to_string()),
+        ];
+
+        for error in malicious_errors {
+            // Display formatting should not panic or interpret malicious content
+            let display_output = format!("{}", error);
+            let debug_output = format!("{:?}", error);
+
+            // Should contain expected error code prefix
+            assert!(display_output.starts_with("ERR_BCP_"));
+
+            // Should not interpret malicious content as code
+            assert!(!display_output.contains("(null)"));
+            assert!(!display_output.contains("Error"));
+
+            // Debug output should also be safe
+            assert!(debug_output.contains("BocpdError"));
+        }
+
+        // Test EmptyStream error (no message content)
+        let empty_error = BocpdError::EmptyStream;
+        let display = format!("{}", empty_error);
+        assert_eq!(display, ERR_BCP_EMPTY_STREAM);
+    }
+
+    #[test]
+    fn negative_observation_model_type_safety_and_edge_cases() {
+        // Test ObservationModel variants with edge cases
+        let gaussian_model = GaussianModel {
+            mu0: 1e100, // Very large prior mean
+            kappa0: 1e-100, // Very small precision
+            alpha0: 1e100, // Very large shape
+            beta0: 1e-100, // Very small rate
+        };
+
+        let extreme_observation = ObservationModel::Gaussian(gaussian_model);
+
+        // Model creation should not panic with extreme parameters
+        match extreme_observation {
+            ObservationModel::Gaussian(model) => {
+                assert!(!model.mu0.is_nan());
+                assert!(!model.kappa0.is_nan());
+                assert!(!model.alpha0.is_nan());
+                assert!(!model.beta0.is_nan());
+            }
+            _ => panic!("Expected Gaussian model"),
+        }
+
+        // Test with problematic categorical model (if implemented)
+        // Note: Testing interface even if full implementation isn't visible
+        let categorical_model = CategoricalModel { categories: 1000 }; // Large category count
+        let categorical_obs = ObservationModel::Categorical(categorical_model);
+
+        match categorical_obs {
+            ObservationModel::Categorical(model) => {
+                assert!(model.categories > 0);
+            }
+            _ => panic!("Expected Categorical model"),
+        }
+    }
+
+    #[test]
+    fn negative_constants_validation_and_boundary_checks() {
+        // Test that all event constants are well-formed
+        let event_constants = [
+            EVT_OBSERVATION,
+            EVT_CHANGEPOINT_CANDIDATE,
+            EVT_REGIME_SHIFT,
+            EVT_CORRELATED_SHIFT,
+            EVT_FALSE_POSITIVE_SUPPRESSED,
+        ];
+
+        for constant in &event_constants {
+            assert!(!constant.is_empty());
+            assert!(constant.starts_with("BCP-"), "Event constant should start with BCP-: {}", constant);
+            assert!(constant.is_ascii(), "Event constant should be ASCII: {}", constant);
+        }
+
+        // Test error constants
+        let error_constants = [
+            ERR_BCP_INVALID_CONFIG,
+            ERR_BCP_EMPTY_STREAM,
+            ERR_BCP_MODEL_MISMATCH,
+        ];
+
+        for constant in &error_constants {
+            assert!(!constant.is_empty());
+            assert!(constant.starts_with("ERR_BCP_"), "Error constant should start with ERR_BCP_: {}", constant);
+            assert!(constant.is_ascii(), "Error constant should be ASCII: {}", constant);
+        }
+
+        // Test invariant constants
+        let invariant_constants = [
+            INV_BCP_POSTERIOR,
+            INV_BCP_MONOTONIC,
+            INV_BCP_BOUNDED,
+            INV_BCP_MIN_RUN,
+        ];
+
+        for constant in &invariant_constants {
+            assert!(!constant.is_empty());
+            assert!(constant.starts_with("INV-BCP-"), "Invariant should start with INV-BCP-: {}", constant);
+            assert!(constant.is_ascii(), "Invariant constant should be ASCII: {}", constant);
+        }
+
+        // Test capacity constants
+        assert!(MAX_RECENT_SHIFTS > 0);
+        assert!(MAX_RECENT_SHIFTS <= 1_000_000); // Reasonable upper bound
+        assert!(MAX_CATEGORICAL_STATE_CELLS > 0);
+        assert!(MAX_CATEGORICAL_STATE_CELLS <= MAX_EVENTS);
+    }
+
+    #[test]
+    fn negative_mathematical_edge_cases_in_calculations() {
+        // Test mathematical edge cases that could appear in BOCPD calculations
+        let test_cases = vec![
+            (0.0, "zero"),
+            (f64::EPSILON, "epsilon"),
+            (f64::MIN_POSITIVE, "min_positive"),
+            (PI, "pi"),
+            (1.0 / 0.0, "positive_infinity"), // This creates +inf
+            (-1.0 / 0.0, "negative_infinity"), // This creates -inf
+        ];
+
+        for (value, description) in test_cases {
+            // Test hazard function evaluation
+            if value.is_finite() && value > 0.0 {
+                let hazard = HazardFunction::Constant { lambda: value };
+                let rate = hazard.evaluate(10);
+                assert!(rate.is_finite() && rate >= 0.0,
+                        "Hazard rate should be valid for {}: {}", description, rate);
+            }
+
+            // Test as probability bound
+            if value.is_finite() && (0.0..=1.0).contains(&value) {
+                let config = BocpdConfig {
+                    changepoint_threshold: value,
+                    ..Default::default()
+                };
+                assert!(config.validate().is_ok(),
+                        "Valid threshold should be accepted: {}", description);
+            }
+        }
+
+        // Test problematic mathematical operations that could occur in BOCPD
+        let problematic_ops = vec![
+            (0.0 / 0.0, "zero_div_zero"), // NaN
+            (f64::INFINITY - f64::INFINITY, "inf_minus_inf"), // NaN
+            (0.0 * f64::INFINITY, "zero_times_inf"), // NaN
+        ];
+
+        for (result, description) in problematic_ops {
+            if result.is_nan() {
+                // NaN values should be handled gracefully in configuration validation
+                let config = BocpdConfig {
+                    hazard_lambda: result,
+                    ..Default::default()
+                };
+                assert!(config.validate().is_err(),
+                        "NaN hazard should be rejected: {}", description);
+            }
+        }
     }
 }

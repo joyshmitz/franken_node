@@ -42,6 +42,10 @@ pub enum ReputationApiError {
     SybilDuplicate(String),
     #[error("publisher `{0}` is frozen — score updates are blocked")]
     PublisherFrozen(String),
+    #[error("invalid publisher registration: {0}")]
+    InvalidPublisher(String),
+    #[error("invalid reputation dispute: {0}")]
+    InvalidDispute(String),
 }
 
 // -- Input dimensions ----------------------------------------------------------
@@ -319,6 +323,32 @@ impl EcosystemReputationApi {
         publisher_key: &str,
         timestamp: &str,
     ) -> Result<&EcosystemPublisherReputation, ReputationApiError> {
+        if publisher_id.trim().is_empty() {
+            return Err(ReputationApiError::InvalidPublisher(
+                "publisher id must not be empty".to_owned(),
+            ));
+        }
+        if publisher_id.trim() != publisher_id {
+            return Err(ReputationApiError::InvalidPublisher(
+                "publisher id must not include surrounding whitespace".to_owned(),
+            ));
+        }
+        if publisher_key.trim().is_empty() {
+            return Err(ReputationApiError::InvalidPublisher(
+                "publisher key must not be empty".to_owned(),
+            ));
+        }
+        if publisher_key.trim() != publisher_key {
+            return Err(ReputationApiError::InvalidPublisher(
+                "publisher key must not include surrounding whitespace".to_owned(),
+            ));
+        }
+        if timestamp.trim().is_empty() {
+            return Err(ReputationApiError::InvalidPublisher(
+                "registration timestamp must not be empty".to_owned(),
+            ));
+        }
+
         // Sybil check
         if let Some(existing) = self.publisher_keys.get(publisher_key)
             && existing != publisher_id
@@ -352,6 +382,15 @@ impl EcosystemReputationApi {
         inputs: ReputationInputs,
         timestamp: &str,
     ) -> Result<f64, ReputationApiError> {
+        let is_frozen = self
+            .publishers
+            .get(publisher_id)
+            .ok_or_else(|| ReputationApiError::PublisherNotFound(publisher_id.to_owned()))?
+            .frozen;
+        if is_frozen {
+            return Err(ReputationApiError::PublisherFrozen(publisher_id.to_owned()));
+        }
+
         // Rate limit check
         let counter = self
             .rate_counters
@@ -368,10 +407,6 @@ impl EcosystemReputationApi {
             .publishers
             .get_mut(publisher_id)
             .ok_or_else(|| ReputationApiError::PublisherNotFound(publisher_id.to_owned()))?;
-
-        if pub_record.frozen {
-            return Err(ReputationApiError::PublisherFrozen(publisher_id.to_owned()));
-        }
 
         let old_score = pub_record.score;
         let new_score = deterministic_reputation_score(&inputs, &self.weights);
@@ -442,6 +477,41 @@ impl EcosystemReputationApi {
                 publisher_id.to_owned(),
             ));
         }
+        if dispute_id.trim().is_empty() {
+            return Err(ReputationApiError::InvalidDispute(
+                "dispute id must not be empty".to_owned(),
+            ));
+        }
+        if dispute_id.trim() != dispute_id {
+            return Err(ReputationApiError::InvalidDispute(
+                "dispute id must not include surrounding whitespace".to_owned(),
+            ));
+        }
+        if self.disputes.iter().any(|d| d.dispute_id == dispute_id) {
+            return Err(ReputationApiError::InvalidDispute(
+                "dispute id must be unique".to_owned(),
+            ));
+        }
+        if reason.trim().is_empty() {
+            return Err(ReputationApiError::InvalidDispute(
+                "dispute reason must not be empty".to_owned(),
+            ));
+        }
+        if !old_score.is_finite() || !new_score.is_finite() {
+            return Err(ReputationApiError::InvalidDispute(
+                "dispute scores must be finite".to_owned(),
+            ));
+        }
+        if !(0.0..=100.0).contains(&old_score) || !(0.0..=100.0).contains(&new_score) {
+            return Err(ReputationApiError::InvalidDispute(
+                "dispute scores must be between 0 and 100".to_owned(),
+            ));
+        }
+        if timestamp.trim().is_empty() {
+            return Err(ReputationApiError::InvalidDispute(
+                "dispute timestamp must not be empty".to_owned(),
+            ));
+        }
         push_bounded(
             &mut self.disputes,
             ReputationDispute {
@@ -461,6 +531,9 @@ impl EcosystemReputationApi {
 
     /// Resolve a dispute.
     pub fn resolve_dispute(&mut self, dispute_id: &str, outcome: &str) -> bool {
+        if outcome.trim().is_empty() {
+            return false;
+        }
         for d in &mut self.disputes {
             if d.dispute_id == dispute_id && !d.resolved {
                 d.resolved = true;
@@ -535,6 +608,53 @@ mod tests {
         format!("2026-01-{n:02}T00:00:00Z")
     }
 
+    fn assert_invalid_publisher_rejected(
+        publisher_id: &str,
+        publisher_key: &str,
+        timestamp: &str,
+        expected_detail: &str,
+    ) {
+        let mut api = EcosystemReputationApi::new();
+
+        let err = api
+            .register_publisher(publisher_id, publisher_key, timestamp)
+            .expect_err("invalid publisher registration should fail");
+
+        assert!(matches!(
+            err,
+            ReputationApiError::InvalidPublisher(ref detail)
+                if detail.contains(expected_detail)
+        ));
+        assert_eq!(api.publisher_count(), 0);
+        assert!(api.publisher_keys.is_empty());
+        assert!(api.take_events().is_empty());
+    }
+
+    fn assert_invalid_dispute_rejected(
+        dispute_id: &str,
+        reason: &str,
+        old_score: f64,
+        new_score: f64,
+        timestamp: &str,
+        expected_detail: &str,
+    ) {
+        let mut api = EcosystemReputationApi::new();
+        api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
+
+        let err = api
+            .file_dispute(dispute_id, "pub-1", reason, old_score, new_score, timestamp)
+            .expect_err("invalid dispute should fail");
+
+        assert!(matches!(
+            err,
+            ReputationApiError::InvalidDispute(ref detail)
+                if detail.contains(expected_detail)
+        ));
+        assert!(api.disputes.is_empty());
+        assert!(api.list_disputes("pub-1").is_empty());
+        assert!(api.take_events().is_empty());
+    }
+
     #[test]
     fn test_deterministic_score_all_ones() {
         let inputs = ReputationInputs::ones();
@@ -580,6 +700,36 @@ mod tests {
     }
 
     #[test]
+    fn test_deterministic_score_non_finite_input_returns_zero() {
+        let inputs = ReputationInputs {
+            compatibility_pass_rate: f64::NAN,
+            migration_success_rate: 1.0,
+            trust_artifact_validity: 1.0,
+            verifier_audit_frequency: 1.0,
+        };
+        let weights = ScoringWeights::default();
+
+        let score = deterministic_reputation_score(&inputs, &weights);
+
+        assert!(score.abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_deterministic_score_non_finite_weight_returns_zero() {
+        let inputs = ReputationInputs::ones();
+        let weights = ScoringWeights {
+            compatibility: f64::INFINITY,
+            migration: 0.0,
+            trust_artifact: 0.0,
+            verifier_audit: 0.0,
+        };
+
+        let score = deterministic_reputation_score(&inputs, &weights);
+
+        assert!(score.abs() < 1e-9);
+    }
+
+    #[test]
     fn test_scoring_weights_valid() {
         let w = ScoringWeights::default();
         assert!(w.valid());
@@ -619,6 +769,23 @@ mod tests {
     }
 
     #[test]
+    fn test_anomaly_detection_non_finite_delta_fails_closed() {
+        let config = AnomalyConfig::default();
+
+        assert!(is_anomalous_delta(f64::NAN, &[1.0, 1.1, 0.9], &config));
+    }
+
+    #[test]
+    fn test_anomaly_detection_negative_multiplier_fails_closed() {
+        let config = AnomalyConfig {
+            std_dev_multiplier: -1.0,
+            ..AnomalyConfig::default()
+        };
+
+        assert!(is_anomalous_delta(0.1, &[1.0, 1.1, 0.9], &config));
+    }
+
+    #[test]
     fn test_register_publisher() {
         let mut api = EcosystemReputationApi::new();
         let rep = api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
@@ -628,11 +795,52 @@ mod tests {
     }
 
     #[test]
+    fn test_register_empty_publisher_id_rejected_without_mutation() {
+        assert_invalid_publisher_rejected("", "key-1", &ts(1), "publisher id");
+    }
+
+    #[test]
+    fn test_register_whitespace_publisher_id_rejected_without_mutation() {
+        assert_invalid_publisher_rejected(" pub-1 ", "key-1", &ts(1), "surrounding whitespace");
+    }
+
+    #[test]
+    fn test_register_empty_publisher_key_rejected_without_mutation() {
+        assert_invalid_publisher_rejected("pub-1", " ", &ts(1), "publisher key");
+    }
+
+    #[test]
+    fn test_register_whitespace_publisher_key_rejected_without_mutation() {
+        assert_invalid_publisher_rejected("pub-1", " key-1", &ts(1), "surrounding whitespace");
+    }
+
+    #[test]
+    fn test_register_empty_timestamp_rejected_without_mutation() {
+        assert_invalid_publisher_rejected("pub-1", "key-1", "", "registration timestamp");
+    }
+
+    #[test]
     fn test_sybil_duplicate_rejected() {
         let mut api = EcosystemReputationApi::new();
         api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
         let result = api.register_publisher("pub-2", "key-1", &ts(2));
         assert!(matches!(result, Err(ReputationApiError::SybilDuplicate(_))));
+    }
+
+    #[test]
+    fn test_sybil_duplicate_does_not_register_new_publisher() {
+        let mut api = EcosystemReputationApi::new();
+        api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
+
+        let result = api.register_publisher("pub-2", "key-1", &ts(2));
+
+        assert!(matches!(result, Err(ReputationApiError::SybilDuplicate(_))));
+        assert_eq!(api.publisher_count(), 1);
+        assert!(api.get_reputation("pub-2").is_err());
+        assert_eq!(
+            api.publisher_keys.get("key-1").map(String::as_str),
+            Some("pub-1")
+        );
     }
 
     #[test]
@@ -664,6 +872,70 @@ mod tests {
     }
 
     #[test]
+    fn test_compute_not_found_does_not_consume_rate_or_emit_event() {
+        let mut api = EcosystemReputationApi::new();
+
+        let result = api.compute_reputation("nonexistent", ReputationInputs::zeros(), &ts(1));
+
+        assert!(matches!(
+            result,
+            Err(ReputationApiError::PublisherNotFound(_))
+        ));
+        assert!(api.rate_counters.is_empty());
+        assert!(api.take_events().is_empty());
+    }
+
+    #[test]
+    fn test_repeated_compute_not_found_never_becomes_rate_limit() {
+        let mut api = EcosystemReputationApi::new();
+
+        for day in 1..=12 {
+            let result = api.compute_reputation("nonexistent", ReputationInputs::zeros(), &ts(day));
+            assert!(matches!(
+                result,
+                Err(ReputationApiError::PublisherNotFound(_))
+            ));
+        }
+
+        assert!(api.rate_counters.is_empty());
+        assert!(api.take_events().is_empty());
+    }
+
+    #[test]
+    fn test_compute_frozen_publisher_does_not_consume_rate_or_emit_event() {
+        let mut api = EcosystemReputationApi::new();
+        api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
+        api.publishers.get_mut("pub-1").unwrap().frozen = true;
+
+        let result = api.compute_reputation("pub-1", ReputationInputs::ones(), &ts(2));
+
+        assert!(matches!(
+            result,
+            Err(ReputationApiError::PublisherFrozen(_))
+        ));
+        assert!(api.rate_counters.is_empty());
+        assert!(api.take_events().is_empty());
+    }
+
+    #[test]
+    fn test_repeated_frozen_compute_never_becomes_rate_limit() {
+        let mut api = EcosystemReputationApi::new();
+        api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
+        api.publishers.get_mut("pub-1").unwrap().frozen = true;
+
+        for day in 2..=13 {
+            let result = api.compute_reputation("pub-1", ReputationInputs::ones(), &ts(day));
+            assert!(matches!(
+                result,
+                Err(ReputationApiError::PublisherFrozen(_))
+            ));
+        }
+
+        assert!(api.rate_counters.is_empty());
+        assert!(api.take_events().is_empty());
+    }
+
+    #[test]
     fn test_rate_limit() {
         let mut api = EcosystemReputationApi::new();
         api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
@@ -676,6 +948,29 @@ mod tests {
             result,
             Err(ReputationApiError::RateLimitExceeded(_))
         ));
+    }
+
+    #[test]
+    fn test_rate_limited_compute_does_not_update_score_or_emit_event() {
+        let mut api = EcosystemReputationApi::new();
+        api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
+        for i in 0..10 {
+            api.compute_reputation("pub-1", ReputationInputs::ones(), &ts(i + 2))
+                .unwrap();
+        }
+        api.take_events();
+
+        let result = api.compute_reputation("pub-1", ReputationInputs::zeros(), &ts(13));
+        let rep = api.get_reputation("pub-1").unwrap();
+
+        assert!(matches!(
+            result,
+            Err(ReputationApiError::RateLimitExceeded(_))
+        ));
+        assert!((rep.score - 100.0).abs() < 1e-9);
+        assert_eq!(rep.computation_count, 10);
+        assert_eq!(rep.score_history.len(), 10);
+        assert!(api.take_events().is_empty());
     }
 
     #[test]
@@ -745,6 +1040,80 @@ mod tests {
     }
 
     #[test]
+    fn test_file_dispute_not_found_does_not_record_dispute() {
+        let mut api = EcosystemReputationApi::new();
+
+        let result = api.file_dispute("d-1", "nonexistent", "reason", 0.0, 0.0, &ts(1));
+
+        assert!(matches!(
+            result,
+            Err(ReputationApiError::PublisherNotFound(_))
+        ));
+        assert!(api.disputes.is_empty());
+        assert!(api.list_disputes("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn test_file_dispute_empty_id_rejected_without_record() {
+        assert_invalid_dispute_rejected("", "reason", 10.0, 20.0, &ts(2), "dispute id");
+    }
+
+    #[test]
+    fn test_file_dispute_whitespace_id_rejected_without_record() {
+        assert_invalid_dispute_rejected(
+            " d-1 ",
+            "reason",
+            10.0,
+            20.0,
+            &ts(2),
+            "surrounding whitespace",
+        );
+    }
+
+    #[test]
+    fn test_file_dispute_blank_reason_rejected_without_record() {
+        assert_invalid_dispute_rejected("d-1", " ", 10.0, 20.0, &ts(2), "dispute reason");
+    }
+
+    #[test]
+    fn test_file_dispute_non_finite_old_score_rejected_without_record() {
+        assert_invalid_dispute_rejected("d-1", "reason", f64::NAN, 20.0, &ts(2), "finite");
+    }
+
+    #[test]
+    fn test_file_dispute_non_finite_new_score_rejected_without_record() {
+        assert_invalid_dispute_rejected("d-1", "reason", 10.0, f64::INFINITY, &ts(2), "finite");
+    }
+
+    #[test]
+    fn test_file_dispute_out_of_range_score_rejected_without_record() {
+        assert_invalid_dispute_rejected("d-1", "reason", -0.1, 20.0, &ts(2), "between 0 and 100");
+    }
+
+    #[test]
+    fn test_file_dispute_empty_timestamp_rejected_without_record() {
+        assert_invalid_dispute_rejected("d-1", "reason", 10.0, 20.0, "", "dispute timestamp");
+    }
+
+    #[test]
+    fn test_file_dispute_duplicate_id_rejected_without_second_record() {
+        let mut api = EcosystemReputationApi::new();
+        api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
+        api.file_dispute("d-1", "pub-1", "first", 10.0, 20.0, &ts(2))
+            .unwrap();
+
+        let result = api.file_dispute("d-1", "pub-1", "second", 20.0, 30.0, &ts(3));
+
+        assert!(matches!(
+            result,
+            Err(ReputationApiError::InvalidDispute(ref detail)) if detail.contains("unique")
+        ));
+        let disputes = api.list_disputes("pub-1");
+        assert_eq!(disputes.len(), 1);
+        assert_eq!(disputes[0].reason, "first");
+    }
+
+    #[test]
     fn test_resolve_dispute() {
         let mut api = EcosystemReputationApi::new();
         api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
@@ -762,6 +1131,34 @@ mod tests {
         let mut api = EcosystemReputationApi::new();
         let resolved = api.resolve_dispute("nonexistent", "outcome");
         assert!(!resolved);
+    }
+
+    #[test]
+    fn test_resolve_dispute_cannot_resolve_same_dispute_twice() {
+        let mut api = EcosystemReputationApi::new();
+        api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
+        api.file_dispute("d-1", "pub-1", "unfair", 50.0, 10.0, &ts(2))
+            .unwrap();
+
+        assert!(api.resolve_dispute("d-1", "upheld"));
+        assert!(!api.resolve_dispute("d-1", "overwritten"));
+
+        let disputes = api.list_disputes("pub-1");
+        assert_eq!(disputes[0].outcome.as_deref(), Some("upheld"));
+    }
+
+    #[test]
+    fn test_resolve_dispute_blank_outcome_rejected_without_mutation() {
+        let mut api = EcosystemReputationApi::new();
+        api.register_publisher("pub-1", "key-1", &ts(1)).unwrap();
+        api.file_dispute("d-1", "pub-1", "unfair", 50.0, 10.0, &ts(2))
+            .unwrap();
+
+        assert!(!api.resolve_dispute("d-1", " "));
+
+        let disputes = api.list_disputes("pub-1");
+        assert!(!disputes[0].resolved);
+        assert!(disputes[0].outcome.is_none());
     }
 
     #[test]

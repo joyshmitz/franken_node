@@ -2049,6 +2049,156 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_verdict_deserialize_rejects_unknown_variant() {
+        let result: Result<Verdict, _> = serde_json::from_str(r#""unknown""#);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validation_workflow_deserialize_rejects_unknown_variant() {
+        let result: Result<ValidationWorkflow, _> = serde_json::from_str(r#""dry_run""#);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_verification_result_deserialize_rejects_missing_signature() {
+        let json = r#"{
+            "verdict": "pass",
+            "confidence_score": 1.0,
+            "checked_assertions": [],
+            "execution_timestamp": "2026-02-21T00:00:00Z",
+            "verifier_identity": "v1",
+            "signature_algorithm": "ed25519",
+            "verifier_public_key": "00",
+            "artifact_binding_hash": "binding"
+        }"#;
+
+        let result: Result<VerificationResult, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_claim_deserialize_rejects_missing_claim_id() {
+        let json = r#"{
+            "claim_type": "migration_safety",
+            "subject": "plan-ref-001",
+            "assertion": "claim is safe",
+            "evidence_refs": ["ev-ref-001"],
+            "timestamp": "2026-02-21T00:00:00Z"
+        }"#;
+
+        let result: Result<Claim, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_claim_deserialize_rejects_evidence_refs_type_confusion() {
+        let json = r#"{
+            "claim_id": "claim-ref-001",
+            "claim_type": "migration_safety",
+            "subject": "plan-ref-001",
+            "assertion": "claim is safe",
+            "evidence_refs": {"ev-ref-001": true},
+            "timestamp": "2026-02-21T00:00:00Z"
+        }"#;
+
+        let result: Result<Claim, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_evidence_deserialize_rejects_artifacts_type_confusion() {
+        let json = r#"{
+            "evidence_id": "ev-ref-001",
+            "claim_ref": "claim-ref-001",
+            "artifacts": ["not", "a", "map"],
+            "verification_procedure": "verify hash"
+        }"#;
+
+        let result: Result<Evidence, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_evidence_bundle_deserialize_rejects_items_type_confusion() {
+        let json = r#"{
+            "claim": {
+                "claim_id": "claim-ref-001",
+                "claim_type": "migration_safety",
+                "subject": "plan-ref-001",
+                "assertion": "claim is safe",
+                "evidence_refs": ["ev-ref-001"],
+                "timestamp": "2026-02-21T00:00:00Z"
+            },
+            "evidence_items": {"ev-ref-001": true},
+            "self_contained": true
+        }"#;
+
+        let result: Result<EvidenceBundle, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_assertion_result_deserialize_rejects_passed_type_confusion() {
+        let json = r#"{
+            "assertion": "claim_fields_present",
+            "passed": "true",
+            "detail": "claim has required fields"
+        }"#;
+
+        let result: Result<AssertionResult, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_replay_result_deserialize_rejects_negative_duration() {
+        let json = r#"{
+            "verdict": "fail",
+            "expected_output_hash": "aa",
+            "actual_output_hash": "bb",
+            "replay_duration_ms": -1
+        }"#;
+
+        let result: Result<ReplayResult, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_verifier_sdk_event_deserialize_rejects_missing_timestamp() {
+        let json = r#"{
+            "event_code": "VER-001",
+            "detail": "claim verified"
+        }"#;
+
+        let result: Result<VerifierSdkEvent, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_transparency_log_entry_deserialize_rejects_merkle_proof_type_confusion() {
+        let json = r#"{
+            "result_hash": "aabb",
+            "timestamp": "2026-02-21T00:00:00Z",
+            "verifier_id": "v1",
+            "merkle_proof": {"previous": "00"}
+        }"#;
+
+        let result: Result<TransparencyLogEntry, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+    }
+
     // ── event codes ─────────────────────────────────────────────────
 
     #[test]
@@ -2310,8 +2460,97 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_result_rejects_unsupported_signature_algorithm() {
+        let mut result = generate_reference_verification_result().unwrap();
+        result.signature_algorithm = "rsa".to_string();
+
+        let err = verify_verification_result_signature(&result).unwrap_err();
+
+        assert!(matches!(err, VerifierSdkError::SignatureInvalid(_)));
+    }
+
+    #[test]
+    fn test_verify_result_rejects_malformed_public_key() {
+        let mut result = generate_reference_verification_result().unwrap();
+        result.verifier_public_key = "not-hex".to_string();
+
+        let err = verify_verification_result_signature(&result).unwrap_err();
+
+        assert!(matches!(err, VerifierSdkError::SignatureInvalid(_)));
+    }
+
+    #[test]
+    fn test_verify_result_rejects_truncated_signature() {
+        let mut result = generate_reference_verification_result().unwrap();
+        result.verifier_signature = "aa".repeat(63);
+
+        let err = verify_verification_result_signature(&result).unwrap_err();
+
+        assert!(matches!(err, VerifierSdkError::SignatureInvalid(_)));
+    }
+
+    #[test]
+    fn test_append_transparency_log_rejects_unsupported_algorithm_without_append() {
+        let mut log = Vec::new();
+        let mut result = generate_reference_verification_result().unwrap();
+        result.signature_algorithm = "rsa".to_string();
+
+        let err = append_transparency_log(&mut log, &result).unwrap_err();
+
+        assert!(matches!(err, VerifierSdkError::SignatureInvalid(_)));
+        assert!(log.is_empty());
+    }
+
+    #[test]
     fn test_compute_trace_commitment_root_rejects_empty_input() {
         assert!(compute_trace_commitment_root(&[]).is_none());
+    }
+
+    #[test]
+    fn test_compute_trace_commitment_root_rejects_malformed_leaf() {
+        let leaves = vec!["not-a-sha256-digest".to_string()];
+
+        assert!(compute_trace_commitment_root(&leaves).is_none());
+    }
+
+    #[test]
+    fn test_build_trace_commitment_proof_rejects_out_of_bounds_leaf() {
+        let leaves = vec![
+            "sha256:".to_string() + &"11".repeat(32),
+            "sha256:".to_string() + &"22".repeat(32),
+        ];
+
+        assert!(build_trace_commitment_proof(&leaves, 2).is_none());
+    }
+
+    #[test]
+    fn test_verify_trace_commitment_proof_rejects_malformed_expected_root() {
+        let leaves = vec![
+            "sha256:".to_string() + &"11".repeat(32),
+            "sha256:".to_string() + &"22".repeat(32),
+        ];
+        let proof = build_trace_commitment_proof(&leaves, 0).unwrap();
+
+        assert!(!verify_trace_commitment_proof(
+            &leaves[0],
+            &proof,
+            "not-a-root"
+        ));
+    }
+
+    #[test]
+    fn test_verify_trace_commitment_proof_rejects_malformed_sibling() {
+        let leaves = vec![
+            "sha256:".to_string() + &"11".repeat(32),
+            "sha256:".to_string() + &"22".repeat(32),
+        ];
+        let root = compute_trace_commitment_root(&leaves).unwrap();
+        let proof = vec![TraceCommitmentProofStep {
+            sibling_hash: "not-a-sibling".to_string(),
+            sibling_on_left: false,
+        }];
+
+        assert!(!verify_trace_commitment_proof(&leaves[0], &proof, &root));
     }
 
     #[test]

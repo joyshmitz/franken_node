@@ -53,6 +53,8 @@ pub enum RegistryError {
     SybilDuplicate(String),
     #[error("authentication failure (code: {ERR_ENE_AUTH})")]
     AuthFailure(String),
+    #[error("invalid extension metadata: {0}")]
+    InvalidMetadata(String),
     #[error("registry at capacity ({0} extensions, max {MAX_EXTENSIONS})")]
     RegistryFull(usize),
 }
@@ -187,6 +189,61 @@ impl EcosystemRegistry {
         timestamp: &str,
         trace_id: &str,
     ) -> Result<&ExtensionRecord, RegistryError> {
+        if metadata.extension_id.trim().is_empty() {
+            return Err(RegistryError::InvalidMetadata(
+                "extension id must not be empty".to_owned(),
+            ));
+        }
+        if metadata.extension_id.trim() != metadata.extension_id.as_str() {
+            return Err(RegistryError::InvalidMetadata(
+                "extension id must not include surrounding whitespace".to_owned(),
+            ));
+        }
+        if metadata.publisher_id.trim().is_empty() {
+            return Err(RegistryError::InvalidMetadata(
+                "publisher id must not be empty".to_owned(),
+            ));
+        }
+        if metadata.publisher_key.trim().is_empty() {
+            return Err(RegistryError::InvalidMetadata(
+                "publisher key must not be empty".to_owned(),
+            ));
+        }
+        if metadata.name.trim().is_empty() {
+            return Err(RegistryError::InvalidMetadata(
+                "extension name must not be empty".to_owned(),
+            ));
+        }
+        if metadata.description.trim().is_empty() {
+            return Err(RegistryError::InvalidMetadata(
+                "extension description must not be empty".to_owned(),
+            ));
+        }
+        if metadata.version.trim().is_empty() {
+            return Err(RegistryError::InvalidMetadata(
+                "extension version must not be empty".to_owned(),
+            ));
+        }
+        if metadata.signature.trim().is_empty() {
+            return Err(RegistryError::InvalidMetadata(
+                "extension signature must not be empty".to_owned(),
+            ));
+        }
+        if timestamp.trim().is_empty() {
+            return Err(RegistryError::InvalidMetadata(
+                "registration timestamp must not be empty".to_owned(),
+            ));
+        }
+        if metadata
+            .tags
+            .iter()
+            .any(|tag| tag.trim().is_empty() || tag.trim() != tag.as_str())
+        {
+            return Err(RegistryError::InvalidMetadata(
+                "extension tags must be non-empty and trimmed".to_owned(),
+            ));
+        }
+
         // Sybil check: reject duplicate publisher keys from different publishers.
         if let Some(existing_pub) = self.publisher_keys.get(&metadata.publisher_key)
             && existing_pub != &metadata.publisher_id
@@ -616,6 +673,24 @@ mod tests {
         }
     }
 
+    fn assert_invalid_metadata_rejected(
+        metadata: ExtensionMetadata,
+        timestamp: &str,
+        expected_detail: &str,
+    ) {
+        let mut reg = EcosystemRegistry::new();
+        let result = reg.register_extension(metadata, timestamp, "trace-invalid-metadata");
+
+        assert!(matches!(
+            result,
+            Err(RegistryError::InvalidMetadata(ref detail))
+                if detail.contains(expected_detail)
+        ));
+        assert_eq!(reg.extension_count(), 0);
+        assert_eq!(reg.audit_trail_len(), 0);
+        assert!(reg.take_events().is_empty());
+    }
+
     fn tamper_same_length(hash: &str) -> String {
         assert!(!hash.is_empty(), "hash cannot be empty");
         let mut bytes = hash.as_bytes().to_vec();
@@ -643,6 +718,94 @@ mod tests {
             result,
             Err(RegistryError::DuplicateRegistration(_))
         ));
+    }
+
+    #[test]
+    fn test_register_empty_extension_id_rejected_without_mutation() {
+        assert_invalid_metadata_rejected(
+            make_metadata("", "pub-1", "key-1"),
+            &ts(1),
+            "extension id",
+        );
+    }
+
+    #[test]
+    fn test_register_trim_required_extension_id_rejected_without_mutation() {
+        assert_invalid_metadata_rejected(
+            make_metadata(" ext-1", "pub-1", "key-1"),
+            &ts(1),
+            "surrounding whitespace",
+        );
+    }
+
+    #[test]
+    fn test_register_empty_publisher_id_rejected_without_mutation() {
+        assert_invalid_metadata_rejected(
+            make_metadata("ext-1", " \n ", "key-1"),
+            &ts(1),
+            "publisher id",
+        );
+    }
+
+    #[test]
+    fn test_register_empty_publisher_key_rejected_without_mutation() {
+        assert_invalid_metadata_rejected(
+            make_metadata("ext-1", "pub-1", "\t "),
+            &ts(1),
+            "publisher key",
+        );
+    }
+
+    #[test]
+    fn test_register_empty_name_rejected_without_mutation() {
+        let mut metadata = make_metadata("ext-1", "pub-1", "key-1");
+        metadata.name = " ".to_owned();
+
+        assert_invalid_metadata_rejected(metadata, &ts(1), "extension name");
+    }
+
+    #[test]
+    fn test_register_empty_signature_rejected_without_mutation() {
+        let mut metadata = make_metadata("ext-1", "pub-1", "key-1");
+        metadata.signature = "\n ".to_owned();
+
+        assert_invalid_metadata_rejected(metadata, &ts(1), "signature");
+    }
+
+    #[test]
+    fn test_register_empty_timestamp_rejected_without_mutation() {
+        assert_invalid_metadata_rejected(
+            make_metadata("ext-1", "pub-1", "key-1"),
+            " ",
+            "timestamp",
+        );
+    }
+
+    #[test]
+    fn test_register_blank_tag_rejected_without_mutation() {
+        let mut metadata = make_metadata("ext-1", "pub-1", "key-1");
+        metadata.tags = vec!["test".to_owned(), " ".to_owned()];
+
+        assert_invalid_metadata_rejected(metadata, &ts(1), "tags");
+    }
+
+    #[test]
+    fn test_duplicate_registration_does_not_append_audit_or_event() {
+        let mut reg = EcosystemRegistry::new();
+        let meta = make_metadata("ext-1", "pub-1", "key-1");
+        reg.register_extension(meta.clone(), &ts(1), "trace-original")
+            .unwrap();
+        reg.take_events();
+
+        let result = reg.register_extension(meta, &ts(2), "trace-duplicate");
+
+        assert!(matches!(
+            result,
+            Err(RegistryError::DuplicateRegistration(_))
+        ));
+        assert_eq!(reg.extension_count(), 1);
+        assert_eq!(reg.audit_trail_len(), 1);
+        assert!(reg.take_events().is_empty());
     }
 
     #[test]
@@ -705,6 +868,29 @@ mod tests {
         let meta2 = make_metadata("ext-2", "pub-2", "shared-key");
         let result = reg.register_extension(meta2, &ts(2), "t");
         assert!(matches!(result, Err(RegistryError::SybilDuplicate(_))));
+    }
+
+    #[test]
+    fn test_sybil_rejection_does_not_register_extension() {
+        let mut reg = EcosystemRegistry::new();
+        let meta1 = make_metadata("ext-1", "pub-1", "shared-key");
+        reg.register_extension(meta1, &ts(1), "trace-original")
+            .unwrap();
+        reg.take_events();
+        let meta2 = make_metadata("ext-2", "pub-2", "shared-key");
+
+        let result = reg.register_extension(meta2, &ts(2), "trace-sybil");
+        let events = reg.take_events();
+
+        assert!(matches!(result, Err(RegistryError::SybilDuplicate(_))));
+        assert_eq!(reg.extension_count(), 1);
+        assert_eq!(reg.audit_trail_len(), 1);
+        assert!(!reg.extensions.contains_key("ext-2"));
+        assert!(
+            events
+                .iter()
+                .any(|event| event.event_code == ENE_011_SYBIL_REJECT)
+        );
     }
 
     #[test]
@@ -779,6 +965,50 @@ mod tests {
     }
 
     #[test]
+    fn test_add_version_to_revoked_does_not_mutate_lineage_or_events() {
+        let mut reg = EcosystemRegistry::new();
+        let meta = make_metadata("ext-1", "pub-1", "key-1");
+        reg.register_extension(meta, &ts(1), "t").unwrap();
+        reg.revoke_extension("ext-1", "malicious", &ts(2), "t")
+            .unwrap();
+        reg.take_events();
+        let audit_len = reg.audit_trail_len();
+        let entry = VersionLineageEntry {
+            version: "2.0.0".to_owned(),
+            published_at: ts(3),
+            changelog: "Should fail".to_owned(),
+            parent_version: Some("1.0.0".to_owned()),
+        };
+
+        let result = reg.add_version("ext-1", entry, &ts(3), "t");
+        let record = reg.extensions.get("ext-1").expect("registered extension");
+
+        assert!(matches!(result, Err(RegistryError::Revoked(_))));
+        assert_eq!(record.metadata.version, "1.0.0");
+        assert_eq!(record.lineage.len(), 1);
+        assert_eq!(reg.audit_trail_len(), audit_len);
+        assert!(reg.take_events().is_empty());
+    }
+
+    #[test]
+    fn test_add_version_not_found_does_not_append_audit_or_event() {
+        let mut reg = EcosystemRegistry::new();
+        let entry = VersionLineageEntry {
+            version: "2.0.0".to_owned(),
+            published_at: ts(2),
+            changelog: "Missing extension".to_owned(),
+            parent_version: None,
+        };
+
+        let result = reg.add_version("missing", entry, &ts(2), "trace-missing");
+
+        assert!(matches!(result, Err(RegistryError::NotFound(_))));
+        assert_eq!(reg.extension_count(), 0);
+        assert_eq!(reg.audit_trail_len(), 0);
+        assert!(reg.take_events().is_empty());
+    }
+
+    #[test]
     fn test_get_compatibility() {
         let mut reg = EcosystemRegistry::new();
         let meta = make_metadata("ext-1", "pub-1", "key-1");
@@ -802,6 +1032,24 @@ mod tests {
         let compat = reg.get_compatibility("ext-1", &ts(3), "t").unwrap();
         assert_eq!(compat.len(), 1);
         assert!(compat[0].compatible);
+    }
+
+    #[test]
+    fn test_add_compatibility_not_found_does_not_append_audit_or_event() {
+        let mut reg = EcosystemRegistry::new();
+        let entry = CompatibilityEntry {
+            runtime: "node".to_owned(),
+            runtime_version: "20.0.0".to_owned(),
+            compatible: true,
+            tested_at: ts(2),
+        };
+
+        let result = reg.add_compatibility("missing", entry, &ts(2), "trace-missing");
+
+        assert!(matches!(result, Err(RegistryError::NotFound(_))));
+        assert_eq!(reg.extension_count(), 0);
+        assert_eq!(reg.audit_trail_len(), 0);
+        assert!(reg.take_events().is_empty());
     }
 
     #[test]
@@ -931,10 +1179,34 @@ mod tests {
     }
 
     #[test]
+    fn test_deprecate_not_found_does_not_emit_or_append_audit() {
+        let mut reg = EcosystemRegistry::new();
+
+        let result = reg.deprecate_extension("nonexistent", &ts(1), "trace-missing");
+
+        assert!(matches!(result, Err(RegistryError::NotFound(_))));
+        assert_eq!(reg.extension_count(), 0);
+        assert_eq!(reg.audit_trail_len(), 0);
+        assert!(reg.take_events().is_empty());
+    }
+
+    #[test]
     fn test_revoke_not_found() {
         let mut reg = EcosystemRegistry::new();
         let result = reg.revoke_extension("nonexistent", "reason", &ts(1), "t");
         assert!(matches!(result, Err(RegistryError::NotFound(_))));
+    }
+
+    #[test]
+    fn test_revoke_not_found_does_not_emit_or_append_audit() {
+        let mut reg = EcosystemRegistry::new();
+
+        let result = reg.revoke_extension("nonexistent", "reason", &ts(1), "trace-missing");
+
+        assert!(matches!(result, Err(RegistryError::NotFound(_))));
+        assert_eq!(reg.extension_count(), 0);
+        assert_eq!(reg.audit_trail_len(), 0);
+        assert!(reg.take_events().is_empty());
     }
 
     #[test]
@@ -1040,5 +1312,30 @@ mod tests {
             matches!(result, Err(RegistryError::Revoked(_))),
             "adding compatibility to a revoked extension should fail"
         );
+    }
+
+    #[test]
+    fn test_add_compatibility_to_revoked_does_not_mutate_matrix_or_events() {
+        let mut reg = EcosystemRegistry::new();
+        let meta = make_metadata("ext-1", "pub-1", "key-1");
+        reg.register_extension(meta, &ts(1), "t").unwrap();
+        reg.revoke_extension("ext-1", "compromised", &ts(2), "t")
+            .unwrap();
+        reg.take_events();
+        let audit_len = reg.audit_trail_len();
+        let entry = CompatibilityEntry {
+            runtime: "node".to_owned(),
+            runtime_version: "20.0.0".to_owned(),
+            compatible: true,
+            tested_at: ts(3),
+        };
+
+        let result = reg.add_compatibility("ext-1", entry, &ts(3), "t");
+        let record = reg.extensions.get("ext-1").expect("registered extension");
+
+        assert!(matches!(result, Err(RegistryError::Revoked(_))));
+        assert!(record.compatibility.is_empty());
+        assert_eq!(reg.audit_trail_len(), audit_len);
+        assert!(reg.take_events().is_empty());
     }
 }

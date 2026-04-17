@@ -1250,6 +1250,182 @@ mod tests {
         assert!(sched.schedule(0).is_err());
     }
 
+    #[test]
+    fn negative_zero_cost_diagnostic_rejected_without_registration() {
+        let mut sched = VoiScheduler::new(VoiConfig::default()).unwrap();
+        let err = sched
+            .register_diagnostic(simple_diagnostic("zero_cost", 0.0, PriorityClass::Standard))
+            .expect_err("zero-cost diagnostics must be rejected");
+
+        assert!(
+            matches!(err, VoiError::InvalidDiagnostic(message) if message.contains("cost must be finite and > 0"))
+        );
+        assert_eq!(sched.diagnostic_count(), 0);
+        assert!(sched.get_diagnostic("zero_cost").is_none());
+        assert!(sched.diagnostic_names().is_empty());
+    }
+
+    #[test]
+    fn negative_infinite_cost_diagnostic_rejected_without_state() {
+        let mut sched = VoiScheduler::new(VoiConfig::default()).unwrap();
+        let err = sched
+            .register_diagnostic(simple_diagnostic(
+                "infinite_cost",
+                f64::INFINITY,
+                PriorityClass::Critical,
+            ))
+            .expect_err("infinite-cost diagnostics must be rejected");
+
+        assert!(
+            matches!(err, VoiError::InvalidDiagnostic(message) if message.contains("cost must be finite and > 0"))
+        );
+        assert_eq!(sched.diagnostic_count(), 0);
+        assert!(!sched.states.contains_key("infinite_cost"));
+    }
+
+    #[test]
+    fn negative_duplicate_diagnostic_does_not_overwrite_original() {
+        let mut sched = VoiScheduler::new(VoiConfig::default()).unwrap();
+        sched
+            .register_diagnostic(simple_diagnostic(
+                "stable_diag",
+                10.0,
+                PriorityClass::Standard,
+            ))
+            .unwrap();
+
+        let err = sched
+            .register_diagnostic(simple_diagnostic(
+                "stable_diag",
+                99.0,
+                PriorityClass::Critical,
+            ))
+            .expect_err("duplicate diagnostic names must fail");
+
+        assert_eq!(err, VoiError::DuplicateDiagnostic("stable_diag".into()));
+        assert_eq!(sched.diagnostic_count(), 1);
+        let stored = sched.get_diagnostic("stable_diag").unwrap();
+        assert_eq!(stored.cost, 10.0);
+        assert_eq!(stored.priority_class, PriorityClass::Standard);
+    }
+
+    #[test]
+    fn negative_record_finding_unknown_does_not_emit_events() {
+        let mut sched = make_scheduler();
+        let before_events = sched.events().len();
+
+        let err = sched
+            .record_finding("missing_diagnostic", true)
+            .expect_err("unknown diagnostic findings must fail");
+
+        assert_eq!(
+            err,
+            VoiError::UnknownDiagnostic("missing_diagnostic".into())
+        );
+        assert_eq!(sched.events().len(), before_events);
+    }
+
+    #[test]
+    fn negative_compute_voi_fails_when_state_is_missing() {
+        let mut sched = VoiScheduler::new(VoiConfig::default()).unwrap();
+        sched
+            .register_diagnostic(simple_diagnostic(
+                "orphaned_state",
+                10.0,
+                PriorityClass::Standard,
+            ))
+            .unwrap();
+        sched.states.remove("orphaned_state");
+
+        let err = sched
+            .compute_voi("orphaned_state", 1000)
+            .expect_err("diagnostic without runtime state must fail");
+
+        assert_eq!(err, VoiError::UnknownDiagnostic("orphaned_state".into()));
+    }
+
+    #[test]
+    fn negative_compute_voi_rejects_corrupted_non_finite_score() {
+        let mut sched = VoiScheduler::new(VoiConfig::default()).unwrap();
+        sched
+            .register_diagnostic(simple_diagnostic(
+                "corrupt_state",
+                10.0,
+                PriorityClass::Standard,
+            ))
+            .unwrap();
+        sched
+            .states
+            .get_mut("corrupt_state")
+            .expect("state exists")
+            .uncertainty_level = f64::INFINITY;
+
+        let err = sched
+            .compute_voi("corrupt_state", 1000)
+            .expect_err("non-finite VOI score must fail closed");
+
+        assert!(
+            matches!(err, VoiError::InvalidConfig(message) if message.contains("VOI score is not finite"))
+        );
+    }
+
+    #[test]
+    fn negative_unaffordable_diagnostic_is_deferred_not_selected() {
+        let mut sched = VoiScheduler::new(VoiConfig {
+            budget_units: 10.0,
+            ..VoiConfig::default()
+        })
+        .unwrap();
+        sched
+            .register_diagnostic(simple_diagnostic(
+                "too_expensive",
+                50.0,
+                PriorityClass::Critical,
+            ))
+            .unwrap();
+
+        let result = sched.schedule(1000).unwrap();
+
+        assert!(result.selected.is_empty());
+        assert_eq!(result.deferred.len(), 1);
+        assert_eq!(result.deferred[0].diagnostic_name, "too_expensive");
+        assert_eq!(result.budget_consumed, 0.0);
+    }
+
+    #[test]
+    fn negative_storm_without_critical_preempts_all_noncritical() {
+        let mut sched = VoiScheduler::new(VoiConfig {
+            budget_units: 10.0,
+            storm_threshold: 2.0,
+            storm_windows: 1,
+            ..VoiConfig::default()
+        })
+        .unwrap();
+        for idx in 0..3 {
+            sched
+                .register_diagnostic(simple_diagnostic(
+                    &format!("standard_{idx}"),
+                    50.0,
+                    PriorityClass::Standard,
+                ))
+                .unwrap();
+        }
+
+        let result = sched.schedule(1000).unwrap();
+
+        assert!(result.storm_active);
+        assert!(result.conservative_mode);
+        assert!(result.selected.is_empty());
+        assert!(result.deferred.is_empty());
+        assert_eq!(result.preempted.len(), 3);
+        assert!(
+            sched
+                .events()
+                .iter()
+                .any(|event| event.code == EVT_PREEMPTION)
+        );
+    }
+
     // -- Error display --
 
     #[test]

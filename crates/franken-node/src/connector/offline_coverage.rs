@@ -344,9 +344,13 @@ impl OfflineCoverageTracker {
 
 /// Push an item to a bounded Vec, evicting oldest entries if at capacity.
 fn push_bounded<T>(vec: &mut Vec<T>, item: T, max: usize) {
+    if max == 0 {
+        vec.clear();
+        return;
+    }
     if vec.len() >= max {
-        let overflow = vec.len() - max + 1;
-        vec.drain(0..overflow);
+        let overflow = vec.len().saturating_sub(max).saturating_add(1);
+        vec.drain(0..overflow.min(vec.len()));
     }
     vec.push(item);
 }
@@ -688,5 +692,214 @@ mod tests {
         assert!(!rendered.contains('%'));
         assert!(rendered.contains(" > "));
         assert!(!rendered.contains(" < "));
+    }
+
+    #[test]
+    fn invalid_event_with_leading_artifact_whitespace_is_not_recorded() {
+        let mut t = OfflineCoverageTracker::new();
+
+        let err = t.record_event(ev(" a1", true, 100, "prod")).unwrap_err();
+
+        assert_eq!(err.code(), "OCT_INVALID_EVENT");
+        assert_eq!(t.event_count(), 0);
+        assert_eq!(t.scope_count(), 0);
+    }
+
+    #[test]
+    fn invalid_event_with_trailing_scope_whitespace_is_not_recorded() {
+        let mut t = OfflineCoverageTracker::new();
+
+        let err = t.record_event(ev("a1", true, 100, "prod ")).unwrap_err();
+
+        assert_eq!(err.code(), "OCT_INVALID_EVENT");
+        assert_eq!(t.event_count(), 0);
+        assert_eq!(t.scope_count(), 0);
+    }
+
+    #[test]
+    fn invalid_reserved_artifact_with_padding_is_rejected_as_reserved() {
+        let event = ev(" <unknown> ", true, 100, "prod");
+
+        let err = validate_event(&event).unwrap_err();
+
+        match err {
+            CoverageError::InvalidEvent { reason } => {
+                assert!(reason.contains("reserved"));
+                assert!(reason.contains("<unknown>"));
+            }
+            other => unreachable!("expected invalid event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn invalid_event_after_valid_event_preserves_existing_metrics() {
+        let mut t = OfflineCoverageTracker::new();
+        t.record_event(ev("a1", true, 100, "prod")).unwrap();
+
+        let err = t.record_event(ev("bad", true, 101, " prod")).unwrap_err();
+        let metrics = t.compute_metrics("prod").unwrap();
+
+        assert_eq!(err.code(), "OCT_INVALID_EVENT");
+        assert_eq!(t.event_count(), 1);
+        assert_eq!(t.scope_count(), 1);
+        assert_eq!(metrics.total_artifacts, 1);
+        assert_eq!(metrics.available_count, 1);
+    }
+
+    #[test]
+    fn compute_metrics_scope_lookup_is_case_sensitive() {
+        let mut t = OfflineCoverageTracker::new();
+        t.record_event(ev("a1", true, 100, "prod")).unwrap();
+
+        let err = t.compute_metrics("PROD").unwrap_err();
+
+        assert_eq!(
+            err,
+            CoverageError::ScopeUnknown {
+                scope: "PROD".into()
+            }
+        );
+    }
+
+    #[test]
+    fn check_slos_unknown_scope_fails_before_metric_name_validation() {
+        let t = OfflineCoverageTracker::new();
+
+        let err = t
+            .check_slos(&[slo("not_a_metric", 0.9)], "missing", 200, "trace-missing")
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            CoverageError::ScopeUnknown {
+                scope: "missing".into()
+            }
+        );
+    }
+
+    #[test]
+    fn unknown_metric_error_preserves_metric_name() {
+        let mut t = OfflineCoverageTracker::new();
+        t.record_event(ev("a1", true, 100, "prod")).unwrap();
+
+        let err = t
+            .check_slos(
+                &[slo("coverage_percent", 0.9)],
+                "prod",
+                200,
+                "trace-bad-metric",
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            CoverageError::UnknownMetric {
+                metric_name: "coverage_percent".into()
+            }
+        );
+    }
+
+    #[test]
+    fn negative_infinity_threshold_triggers_fail_closed_breach() {
+        let mut t = OfflineCoverageTracker::new();
+        t.record_event(ev("a1", true, 100, "prod")).unwrap();
+
+        let alerts = t
+            .check_slos(
+                &[slo("availability", f64::NEG_INFINITY)],
+                "prod",
+                200,
+                "trace-neg-inf",
+            )
+            .unwrap();
+
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].slo_name, "availability");
+        assert_eq!(alerts[0].trace_id, "trace-neg-inf");
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_existing_events() {
+        let mut events = vec![ev("old", true, 100, "prod")];
+
+        push_bounded(&mut events, ev("new", false, 101, "prod"), 0);
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn push_bounded_evicts_oldest_when_capacity_already_exceeded() {
+        let mut events = vec![
+            ev("old-1", true, 100, "prod"),
+            ev("old-2", true, 101, "prod"),
+            ev("old-3", true, 102, "prod"),
+        ];
+
+        push_bounded(&mut events, ev("new", false, 103, "prod"), 2);
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].artifact_id, "old-3");
+        assert_eq!(events[1].artifact_id, "new");
+    }
+
+    #[test]
+    fn check_slos_empty_target_list_returns_no_alerts() {
+        let mut t = OfflineCoverageTracker::new();
+        t.record_event(ev("a1", false, 100, "prod")).unwrap();
+
+        let alerts = t
+            .check_slos(&[], "prod", 200, "trace-empty-targets")
+            .unwrap();
+
+        assert!(alerts.is_empty());
+    }
+
+    #[test]
+    fn repair_debt_negative_threshold_triggers_breach() {
+        let mut t = OfflineCoverageTracker::new();
+        t.record_event(ev("a1", true, 100, "prod")).unwrap();
+
+        let alerts = t
+            .check_slos(&[slo("repair_debt", -1.0)], "prod", 200, "trace-neg-debt")
+            .unwrap();
+
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].slo_name, "repair_debt");
+        assert_eq!(alerts[0].actual_value, 0.0);
+        assert_eq!(alerts[0].threshold, -1.0);
+    }
+
+    #[test]
+    fn repair_debt_nan_threshold_triggers_fail_closed_breach() {
+        let mut t = OfflineCoverageTracker::new();
+        t.record_event(ev("a1", true, 100, "prod")).unwrap();
+
+        let alerts = t
+            .check_slos(
+                &[slo("repair_debt", f64::NAN)],
+                "prod",
+                200,
+                "trace-debt-nan",
+            )
+            .unwrap();
+
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].slo_name, "repair_debt");
+        assert!(alerts[0].threshold.is_nan());
+    }
+
+    #[test]
+    fn compute_metrics_rejects_scope_with_trailing_whitespace() {
+        let mut t = OfflineCoverageTracker::new();
+        t.record_event(ev("a1", true, 100, "prod")).unwrap();
+
+        let err = t.compute_metrics("prod ").unwrap_err();
+
+        assert_eq!(
+            err,
+            CoverageError::ScopeUnknown {
+                scope: "prod ".into()
+            }
+        );
     }
 }

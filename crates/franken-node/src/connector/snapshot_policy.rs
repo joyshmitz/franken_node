@@ -12,6 +12,11 @@ use crate::security::constant_time::ct_eq;
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
+
     if items.len() >= cap {
         let overflow = items.len() - cap + 1;
         items.drain(0..overflow);
@@ -621,5 +626,282 @@ mod tests {
             current_version: 5,
         };
         assert!(e4.to_string().contains("SNAPSHOT_STALE"));
+    }
+
+    #[test]
+    fn policy_validate_rejects_both_zero_thresholds_with_diagnostic_values() {
+        let policy = SnapshotPolicy::new(0, 0);
+
+        let err = policy.validate().unwrap_err();
+
+        match err {
+            SnapshotError::PolicyInvalid { reason } => {
+                assert!(reason.contains("every_updates=0"));
+                assert!(reason.contains("every_bytes=0"));
+            }
+            other => unreachable!("expected invalid policy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stale_snapshot_rejection_does_not_reset_replay_counters() {
+        let mut tracker = default_tracker();
+        tracker.record_mutation(200);
+        tracker
+            .take_snapshot(10, "root-v10".into(), "t1".into())
+            .expect("initial snapshot should succeed");
+        tracker.record_mutation(300);
+
+        let err = tracker
+            .take_snapshot(9, "root-v9".into(), "t2".into())
+            .unwrap_err();
+
+        assert!(matches!(err, SnapshotError::SnapshotStale { .. }));
+        assert_eq!(tracker.last_snapshot_version, 10);
+        assert_eq!(tracker.ops_since_snapshot, 1);
+        assert_eq!(tracker.bytes_since_snapshot, 300);
+    }
+
+    #[test]
+    fn equal_version_snapshot_rejection_preserves_existing_tracker_state() {
+        let mut tracker = default_tracker();
+        tracker
+            .take_snapshot(5, "root-v5".into(), "t1".into())
+            .expect("initial snapshot should succeed");
+        tracker.record_mutation(512);
+
+        let err = tracker
+            .take_snapshot(5, "root-v5-replacement".into(), "t2".into())
+            .unwrap_err();
+
+        assert!(matches!(err, SnapshotError::SnapshotStale { .. }));
+        assert_eq!(tracker.last_snapshot_version, 5);
+        assert_eq!(tracker.ops_since_snapshot, 1);
+        assert_eq!(tracker.bytes_since_snapshot, 512);
+    }
+
+    #[test]
+    fn hash_validation_rejects_same_prefix_with_extra_suffix() {
+        let record = SnapshotRecord {
+            connector_id: "conn-1".into(),
+            snapshot_version: 5,
+            root_hash: "abcdef".into(),
+            taken_at: "t".into(),
+            policy: SnapshotPolicy::default_policy(),
+            ops_since_last: 1,
+            bytes_since_last: 1,
+        };
+
+        let err = SnapshotTracker::validate_snapshot_hash(&record, "abcdef00").unwrap_err();
+
+        assert!(matches!(err, SnapshotError::SnapshotHashMismatch { .. }));
+    }
+
+    #[test]
+    fn hash_validation_rejects_case_variant_digest() {
+        let record = SnapshotRecord {
+            connector_id: "conn-1".into(),
+            snapshot_version: 5,
+            root_hash: "abcdef".into(),
+            taken_at: "t".into(),
+            policy: SnapshotPolicy::default_policy(),
+            ops_since_last: 1,
+            bytes_since_last: 1,
+        };
+
+        let err = SnapshotTracker::validate_snapshot_hash(&record, "ABCDEF").unwrap_err();
+
+        assert!(matches!(err, SnapshotError::SnapshotHashMismatch { .. }));
+    }
+
+    #[test]
+    fn zero_replay_limits_fail_closed_even_without_mutations() {
+        let tracker = default_tracker();
+
+        let err = tracker.check_replay_bound(0, 0, 0).unwrap_err();
+
+        assert_eq!(
+            err,
+            SnapshotError::ReplayBoundExceeded {
+                replay_ops: 0,
+                max_replay_ops: 0,
+                replay_bytes: 0,
+                max_replay_bytes: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn invalid_policy_update_zero_bytes_preserves_policy_and_audit_log() {
+        let mut tracker = default_tracker();
+        let original_policy = tracker.policy.clone();
+
+        let err = tracker
+            .update_policy(
+                SnapshotPolicy::new(10, 0),
+                "bad zero byte threshold".into(),
+                "t".into(),
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, SnapshotError::PolicyInvalid { .. }));
+        assert_eq!(tracker.policy, original_policy);
+        assert!(tracker.audit_log.is_empty());
+    }
+
+    #[test]
+    fn invalid_policy_update_both_zero_thresholds_preserves_existing_audit_log() {
+        let mut tracker = default_tracker();
+        tracker
+            .update_policy(
+                SnapshotPolicy::new(50, 4096),
+                "valid update".into(),
+                "t1".into(),
+            )
+            .expect("valid policy update should be audited");
+
+        let err = tracker
+            .update_policy(
+                SnapshotPolicy::new(0, 0),
+                "invalid update".into(),
+                "t2".into(),
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, SnapshotError::PolicyInvalid { .. }));
+        assert_eq!(tracker.policy, SnapshotPolicy::new(50, 4096));
+        assert_eq!(tracker.audit_log.len(), 1);
+        assert_eq!(tracker.audit_log[0].reason, "valid update");
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_without_retaining_new_item() {
+        let mut items = vec!["old-audit", "older-audit"];
+
+        push_bounded(&mut items, "new-audit", 0);
+
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn invalid_policy_update_zero_updates_preserves_policy_and_audit_log() {
+        let mut tracker = default_tracker();
+        tracker
+            .update_policy(
+                SnapshotPolicy::new(25, 2048),
+                "valid update".into(),
+                "t1".into(),
+            )
+            .expect("valid policy update should be audited");
+
+        let err = tracker
+            .update_policy(
+                SnapshotPolicy::new(0, 2048),
+                "invalid zero update threshold".into(),
+                "t2".into(),
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, SnapshotError::PolicyInvalid { .. }));
+        assert_eq!(tracker.policy, SnapshotPolicy::new(25, 2048));
+        assert_eq!(tracker.audit_log.len(), 1);
+        assert_eq!(tracker.audit_log[0].reason, "valid update");
+    }
+
+    #[test]
+    fn stale_snapshot_error_reports_attempted_and_current_versions() {
+        let mut tracker = default_tracker();
+        tracker
+            .take_snapshot(9, "root-v9".into(), "t1".into())
+            .expect("initial snapshot should succeed");
+
+        let err = tracker
+            .take_snapshot(4, "root-v4".into(), "t2".into())
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            SnapshotError::SnapshotStale {
+                snapshot_version: 4,
+                current_version: 9,
+            }
+        );
+    }
+
+    #[test]
+    fn hash_validation_rejects_truncated_digest_prefix() {
+        let record = SnapshotRecord {
+            connector_id: "conn-1".into(),
+            snapshot_version: 5,
+            root_hash: "abcdef0123456789".into(),
+            taken_at: "t".into(),
+            policy: SnapshotPolicy::default_policy(),
+            ops_since_last: 1,
+            bytes_since_last: 1,
+        };
+
+        let err = SnapshotTracker::validate_snapshot_hash(&record, "abcdef01").unwrap_err();
+
+        assert!(matches!(err, SnapshotError::SnapshotHashMismatch { .. }));
+    }
+
+    #[test]
+    fn replay_distance_saturates_when_current_precedes_snapshot() {
+        let target = ReplayTarget::new(10, 10, 100, 90, 0);
+
+        assert_eq!(target.replay_distance(), 0);
+        assert!(target.is_within_bounds());
+    }
+
+    #[test]
+    fn replay_bound_rewound_version_still_fails_on_byte_limit() {
+        let mut tracker = default_tracker();
+        tracker
+            .take_snapshot(10, "root-v10".into(), "t1".into())
+            .expect("initial snapshot should succeed");
+        tracker.record_mutation(4096);
+
+        let err = tracker.check_replay_bound(9, 100, 4096).unwrap_err();
+
+        assert_eq!(
+            err,
+            SnapshotError::ReplayBoundExceeded {
+                replay_ops: 0,
+                max_replay_ops: 100,
+                replay_bytes: 4096,
+                max_replay_bytes: 4096,
+            }
+        );
+    }
+
+    #[test]
+    fn serde_policy_missing_byte_threshold_fails() {
+        let err = serde_json::from_str::<SnapshotPolicy>(r#"{"every_updates":10}"#);
+
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn serde_replay_target_negative_limit_fails() {
+        let err = serde_json::from_str::<ReplayTarget>(
+            r#"{
+  "max_replay_ops":-1,
+  "max_replay_bytes":1024,
+  "snapshot_version":1,
+  "current_version":2,
+  "replay_bytes":10
+}"#,
+        );
+
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn serde_unknown_snapshot_error_code_fails() {
+        let err = serde_json::from_str::<SnapshotError>(
+            r#"{"UNKNOWN_SNAPSHOT_ERROR":{"reason":"bad"}}"#,
+        );
+
+        assert!(err.is_err());
     }
 }

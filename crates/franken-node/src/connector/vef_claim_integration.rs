@@ -99,6 +99,11 @@ impl VefClaimConfig {
                 "max_proof_age_secs must be > 0".into(),
             ));
         }
+        if self.scoreboard_publish_interval == 0 {
+            return Err(VefClaimError::InvalidConfig(
+                "scoreboard_publish_interval must be > 0".into(),
+            ));
+        }
         Ok(())
     }
 }
@@ -316,11 +321,20 @@ impl VefClaimIntegration {
             detail: format!("claim={}", claim.claim_id),
         });
 
-        // Check coverage.
-        let coverage_ok = metrics.coverage_pct >= claim.min_coverage;
+        // Check coverage. Malformed claim requirements or metric snapshots
+        // fail closed instead of letting impossible percentages satisfy a gate.
+        let coverage_requirement_valid = (0.0..=1.0).contains(&claim.min_coverage);
+        let coverage_metric_valid = (0.0..=1.0).contains(&metrics.coverage_pct);
+        let coverage_ok = coverage_requirement_valid
+            && coverage_metric_valid
+            && metrics.coverage_pct >= claim.min_coverage;
 
         // Check validity.
-        let validity_ok = metrics.validity_rate >= claim.min_validity;
+        let validity_requirement_valid = (0.0..=1.0).contains(&claim.min_validity);
+        let validity_metric_valid = (0.0..=1.0).contains(&metrics.validity_rate);
+        let validity_ok = validity_requirement_valid
+            && validity_metric_valid
+            && metrics.validity_rate >= claim.min_validity;
 
         // Check required action classes.
         let mut gaps = Vec::new();
@@ -339,14 +353,34 @@ impl VefClaimIntegration {
             "all VEF requirements met".to_string()
         } else {
             let mut reasons = Vec::new();
-            if !coverage_ok {
+            if !coverage_requirement_valid {
+                reasons.push(format!(
+                    "invalid coverage requirement {:.2}%",
+                    to_pct(claim.min_coverage)
+                ));
+            } else if !coverage_metric_valid {
+                reasons.push(format!(
+                    "invalid coverage metric {:.2}%",
+                    to_pct(metrics.coverage_pct)
+                ));
+            } else if !coverage_ok {
                 reasons.push(format!(
                     "coverage {:.2}% < required {:.2}%",
                     to_pct(metrics.coverage_pct),
                     to_pct(claim.min_coverage)
                 ));
             }
-            if !validity_ok {
+            if !validity_requirement_valid {
+                reasons.push(format!(
+                    "invalid validity requirement {:.2}%",
+                    to_pct(claim.min_validity)
+                ));
+            } else if !validity_metric_valid {
+                reasons.push(format!(
+                    "invalid validity metric {:.2}%",
+                    to_pct(metrics.validity_rate)
+                ));
+            } else if !validity_ok {
                 reasons.push(format!(
                     "validity {:.2}% < required {:.2}%",
                     to_pct(metrics.validity_rate),
@@ -557,6 +591,35 @@ mod tests {
         assert!(cfg.validate().is_err());
     }
 
+    #[test]
+    fn test_invalid_coverage_pct_nan() {
+        let mut cfg = default_config();
+        cfg.min_coverage_pct = f64::NAN;
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn test_invalid_validity_rate_infinity() {
+        let mut cfg = default_config();
+        cfg.min_validity_rate = f64::INFINITY;
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn test_invalid_scoreboard_publish_interval_zero() {
+        let mut cfg = default_config();
+        cfg.scoreboard_publish_interval = 0;
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn test_new_rejects_invalid_scoreboard_publish_interval() {
+        let mut cfg = default_config();
+        cfg.scoreboard_publish_interval = 0;
+        let err = VefClaimIntegration::new(cfg).unwrap_err();
+        assert!(matches!(err, VefClaimError::InvalidConfig(_)));
+    }
+
     // -- VEF metrics --
 
     #[test]
@@ -628,6 +691,38 @@ mod tests {
         let result = engine.evaluate_claim(&claim, &metrics);
         assert!(!result.passed);
         assert!(result.gaps.contains(&"net_connect".to_string()));
+    }
+
+    #[test]
+    fn test_claim_blocked_nan_coverage() {
+        let mut engine = make_engine();
+        let claim = test_claim();
+        let mut metrics = good_metrics();
+        metrics.coverage_pct = f64::NAN;
+        let result = engine.evaluate_claim(&claim, &metrics);
+        assert!(!result.passed);
+        assert!(result.reason.contains("coverage"));
+    }
+
+    #[test]
+    fn test_claim_blocked_nan_validity() {
+        let mut engine = make_engine();
+        let claim = test_claim();
+        let mut metrics = good_metrics();
+        metrics.validity_rate = f64::NAN;
+        let result = engine.evaluate_claim(&claim, &metrics);
+        assert!(!result.passed);
+        assert!(result.reason.contains("validity"));
+    }
+
+    #[test]
+    fn test_claim_blocked_empty_required_action_class() {
+        let mut engine = make_engine();
+        let mut claim = test_claim();
+        claim.required_action_classes.push(String::new());
+        let result = engine.evaluate_claim(&claim, &good_metrics());
+        assert!(!result.passed);
+        assert!(result.gaps.contains(&String::new()));
     }
 
     // -- Claim gate: boundary --
@@ -747,6 +842,15 @@ mod tests {
         let engine = make_engine();
         let err = engine.check_proof_freshness(7200); // 2hr > 1hr.
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn test_proof_exact_max_age_is_stale() {
+        let engine = make_engine();
+        let err = engine
+            .check_proof_freshness(engine.config().max_proof_age_secs)
+            .unwrap_err();
+        assert!(matches!(err, VefClaimError::ProofStale { .. }));
     }
 
     // -- Coverage gaps --
@@ -1017,5 +1121,83 @@ mod tests {
             ScoreboardEntry::compute_digest(&metrics, &baseline),
             ScoreboardEntry::compute_digest(&metrics, &changed)
         );
+    }
+
+    #[test]
+    fn claim_with_nan_coverage_requirement_fails_closed() {
+        let mut engine = make_engine();
+        let mut claim = test_claim();
+        claim.min_coverage = f64::NAN;
+
+        let result = engine.evaluate_claim(&claim, &good_metrics());
+
+        assert!(!result.passed);
+        assert!(result.reason.contains("invalid coverage requirement"));
+        assert_eq!(engine.gate_results().len(), 1);
+    }
+
+    #[test]
+    fn claim_with_infinite_validity_requirement_fails_closed() {
+        let mut engine = make_engine();
+        let mut claim = test_claim();
+        claim.min_validity = f64::INFINITY;
+
+        let result = engine.evaluate_claim(&claim, &good_metrics());
+
+        assert!(!result.passed);
+        assert!(result.reason.contains("invalid validity requirement"));
+        assert_eq!(engine.events().last().unwrap().code, EVT_CLAIM_BLOCKED);
+    }
+
+    #[test]
+    fn claim_with_negative_coverage_requirement_fails_closed() {
+        let mut engine = make_engine();
+        let mut claim = test_claim();
+        claim.min_coverage = -0.01;
+
+        let result = engine.evaluate_claim(&claim, &good_metrics());
+
+        assert!(!result.passed);
+        assert!(result.reason.contains("invalid coverage requirement"));
+    }
+
+    #[test]
+    fn metrics_with_coverage_above_one_fail_closed() {
+        let mut engine = make_engine();
+        let claim = test_claim();
+        let mut metrics = good_metrics();
+        metrics.coverage_pct = 1.01;
+
+        let result = engine.evaluate_claim(&claim, &metrics);
+
+        assert!(!result.passed);
+        assert!(result.reason.contains("invalid coverage metric"));
+    }
+
+    #[test]
+    fn metrics_with_negative_validity_fail_closed() {
+        let mut engine = make_engine();
+        let claim = test_claim();
+        let mut metrics = good_metrics();
+        metrics.validity_rate = -0.01;
+
+        let result = engine.evaluate_claim(&claim, &metrics);
+
+        assert!(!result.passed);
+        assert!(result.reason.contains("invalid validity metric"));
+    }
+
+    #[test]
+    fn metrics_with_infinite_coverage_fail_closed() {
+        let mut engine = make_engine();
+        let claim = test_claim();
+        let mut metrics = good_metrics();
+        metrics.coverage_pct = f64::INFINITY;
+
+        let result = engine.evaluate_claim(&claim, &metrics);
+
+        assert!(!result.passed);
+        assert!(result.reason.contains("invalid coverage metric"));
+        assert_eq!(result.coverage, f64::INFINITY);
     }
 }

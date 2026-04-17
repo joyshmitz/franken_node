@@ -808,6 +808,167 @@ mod tests {
     }
 
     #[test]
+    fn test_missing_budget_fails_closed() {
+        let mut policy = VefBudgetPolicy::default_policy();
+        policy.budgets.retain(|budget| {
+            !(budget.hot_path == VefHotPath::ReceiptEmission
+                && budget.mode == VefBudgetMode::Normal)
+        });
+        let gate = VefOverheadGate::new(policy);
+
+        let result = gate.evaluate(&[VefMeasurement {
+            hot_path: VefHotPath::ReceiptEmission,
+            mode: VefBudgetMode::Normal,
+            p95_ms: 0.1,
+            p99_ms: 0.1,
+            cold_start_ms: 0.1,
+            cv: 0.01,
+            iterations: 1000,
+        }]);
+
+        assert!(!result.overall_pass);
+        assert_eq!(result.failed, 1);
+        assert_eq!(
+            result.path_results[0].detail,
+            "no budget defined for this hot_path/mode"
+        );
+        assert!(result.events.iter().any(|event| {
+            event.code == event_codes::VEF_PERF_ERR_001 && event.detail == "no budget defined"
+        }));
+    }
+
+    #[test]
+    fn test_zero_noise_multiplier_makes_positive_measurement_fail() {
+        let mut policy = VefBudgetPolicy::default_policy();
+        policy.noise_multiplier = 0.0;
+        let gate = VefOverheadGate::new(policy);
+
+        let result = gate.evaluate(&[VefMeasurement {
+            hot_path: VefHotPath::ChainAppend,
+            mode: VefBudgetMode::Normal,
+            p95_ms: 0.1,
+            p99_ms: 0.1,
+            cold_start_ms: 0.1,
+            cv: 0.01,
+            iterations: 1000,
+        }]);
+
+        assert!(!result.overall_pass);
+        assert!(!result.path_results[0].p95_pass);
+        assert!(!result.path_results[0].p99_pass);
+        assert!(!result.path_results[0].cold_start_pass);
+    }
+
+    #[test]
+    fn test_negative_noise_multiplier_makes_positive_measurement_fail() {
+        let mut policy = VefBudgetPolicy::default_policy();
+        policy.noise_multiplier = -1.0;
+        let gate = VefOverheadGate::new(policy);
+
+        let result = gate.evaluate(&[VefMeasurement {
+            hot_path: VefHotPath::VerificationGateCheck,
+            mode: VefBudgetMode::Normal,
+            p95_ms: 0.1,
+            p99_ms: 0.1,
+            cold_start_ms: 0.1,
+            cv: 0.01,
+            iterations: 1000,
+        }]);
+
+        assert!(!result.overall_pass);
+        assert_eq!(result.verdict, "FAIL");
+        assert!(result.path_results[0].detail.contains("EXCEEDED"));
+    }
+
+    #[test]
+    fn test_infinite_noise_multiplier_fails_closed_to_zero_budget() {
+        let mut policy = VefBudgetPolicy::default_policy();
+        policy.noise_multiplier = f64::INFINITY;
+        let gate = VefOverheadGate::new(policy);
+
+        let result = gate.evaluate(&[VefMeasurement {
+            hot_path: VefHotPath::ModeTransition,
+            mode: VefBudgetMode::Normal,
+            p95_ms: 0.1,
+            p99_ms: 0.1,
+            cold_start_ms: 0.1,
+            cv: 0.01,
+            iterations: 1000,
+        }]);
+
+        assert!(!result.overall_pass);
+        assert_eq!(result.failed, 1);
+        assert!(result.events.iter().any(|event| {
+            event.code == event_codes::VEF_PERF_003_OVER_BUDGET && event.detail.contains("0.00ms")
+        }));
+    }
+
+    #[test]
+    fn test_p99_only_failure_keeps_other_checks_passing() {
+        let gate = VefOverheadGate::with_default_policy();
+
+        let result = gate.evaluate(&[VefMeasurement {
+            hot_path: VefHotPath::ReceiptEmission,
+            mode: VefBudgetMode::Normal,
+            p95_ms: 1.0,
+            p99_ms: 99.0,
+            cold_start_ms: 1.0,
+            cv: 0.01,
+            iterations: 1000,
+        }]);
+
+        assert!(!result.overall_pass);
+        assert!(result.path_results[0].p95_pass);
+        assert!(!result.path_results[0].p99_pass);
+        assert!(result.path_results[0].cold_start_pass);
+        assert!(result.path_results[0].detail.contains("p99"));
+    }
+
+    #[test]
+    fn test_positive_infinity_measurement_fails_closed() {
+        let gate = VefOverheadGate::with_default_policy();
+
+        let result = gate.evaluate(&[VefMeasurement {
+            hot_path: VefHotPath::ReceiptEmission,
+            mode: VefBudgetMode::Normal,
+            p95_ms: 1.0,
+            p99_ms: f64::INFINITY,
+            cold_start_ms: 5.0,
+            cv: 0.05,
+            iterations: 1000,
+        }]);
+
+        assert!(!result.overall_pass);
+        assert!(result.path_results[0].noisy);
+        assert_eq!(
+            result.path_results[0].detail,
+            "non-finite measurement value — fail closed"
+        );
+    }
+
+    #[test]
+    fn test_positive_infinity_cv_fails_closed() {
+        let gate = VefOverheadGate::with_default_policy();
+
+        let result = gate.evaluate(&[VefMeasurement {
+            hot_path: VefHotPath::ChainAppend,
+            mode: VefBudgetMode::Normal,
+            p95_ms: 0.5,
+            p99_ms: 1.0,
+            cold_start_ms: 5.0,
+            cv: f64::INFINITY,
+            iterations: 1000,
+        }]);
+
+        assert!(!result.overall_pass);
+        assert_eq!(result.noisy_warnings, 1);
+        assert!(result.events.iter().any(|event| {
+            event.code == event_codes::VEF_PERF_ERR_001
+                && event.detail == "non-finite measurement value"
+        }));
+    }
+
+    #[test]
     fn test_deterministic_evaluation() {
         let gate = VefOverheadGate::with_default_policy();
         let measurements = vec![VefMeasurement {

@@ -253,6 +253,14 @@ pub struct PolicyAuthorization {
     pub timestamp_ms: u64,
 }
 
+impl PolicyAuthorization {
+    fn is_valid(&self) -> bool {
+        !self.policy_ref.trim().is_empty()
+            && !self.authorizer_id.trim().is_empty()
+            && self.timestamp_ms != 0
+    }
+}
+
 // ── HighAssuranceGate ───────────────────────────────────────────────
 
 /// Gate that enforces proof-presence for quarantine promotion.
@@ -362,7 +370,7 @@ impl HighAssuranceGate {
         // Downgrade requires authorization
         if self.mode == AssuranceMode::HighAssurance
             && new_mode == AssuranceMode::Standard
-            && authorization.is_none()
+            && !authorization.is_some_and(PolicyAuthorization::is_valid)
         {
             return Err(PromotionDenialReason::UnauthorizedModeDowngrade {
                 from: self.mode,
@@ -562,6 +570,20 @@ mod tests {
     }
 
     #[test]
+    fn high_assurance_missing_proof_does_not_increment_approvals() {
+        let mut gate = HighAssuranceGate::high_assurance();
+
+        let result = gate.evaluate("art-1", ObjectClass::CriticalMarker, None);
+
+        assert!(matches!(
+            result,
+            Err(PromotionDenialReason::ProofBundleMissing { .. })
+        ));
+        assert_eq!(gate.approvals(), 0);
+        assert_eq!(gate.denials(), 1);
+    }
+
+    #[test]
     fn high_assurance_rejects_insufficient_proof() {
         let mut gate = HighAssuranceGate::high_assurance();
         let bundle = ProofBundle {
@@ -577,6 +599,26 @@ mod tests {
             result.unwrap_err().code(),
             "PROMOTION_DENIED_PROOF_INSUFFICIENT"
         );
+    }
+
+    #[test]
+    fn high_assurance_insufficient_proof_does_not_increment_approvals() {
+        let mut gate = HighAssuranceGate::high_assurance();
+        let bundle = ProofBundle {
+            has_proof_chain: false,
+            has_integrity_proof: true,
+            has_integrity_hash: true,
+            has_schema_proof: true,
+        };
+
+        let result = gate.evaluate("art-1", ObjectClass::CriticalMarker, Some(&bundle));
+
+        assert!(matches!(
+            result,
+            Err(PromotionDenialReason::ProofBundleInsufficient { .. })
+        ));
+        assert_eq!(gate.approvals(), 0);
+        assert_eq!(gate.denials(), 1);
     }
 
     #[test]
@@ -638,6 +680,69 @@ mod tests {
         }
     }
 
+    #[test]
+    fn state_object_rejects_hash_only_bundle() {
+        let mut gate = HighAssuranceGate::high_assurance();
+        let bundle = ProofBundle {
+            has_proof_chain: false,
+            has_integrity_proof: false,
+            has_integrity_hash: true,
+            has_schema_proof: false,
+        };
+
+        let result = gate.evaluate("state-1", ObjectClass::StateObject, Some(&bundle));
+
+        assert!(matches!(
+            result,
+            Err(PromotionDenialReason::ProofBundleInsufficient {
+                required: ProofRequirement::IntegrityProof,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn telemetry_artifact_rejects_signature_without_hash() {
+        let mut gate = HighAssuranceGate::high_assurance();
+        let bundle = ProofBundle {
+            has_proof_chain: false,
+            has_integrity_proof: true,
+            has_integrity_hash: false,
+            has_schema_proof: false,
+        };
+
+        let result = gate.evaluate("tel-1", ObjectClass::TelemetryArtifact, Some(&bundle));
+
+        assert!(matches!(
+            result,
+            Err(PromotionDenialReason::ProofBundleInsufficient {
+                required: ProofRequirement::IntegrityHash,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn config_object_rejects_full_chain_without_schema_proof() {
+        let mut gate = HighAssuranceGate::high_assurance();
+        let bundle = ProofBundle {
+            has_proof_chain: true,
+            has_integrity_proof: true,
+            has_integrity_hash: true,
+            has_schema_proof: false,
+        };
+
+        let result = gate.evaluate("cfg-1", ObjectClass::ConfigObject, Some(&bundle));
+
+        assert!(matches!(
+            result,
+            Err(PromotionDenialReason::ProofBundleInsufficient {
+                required: ProofRequirement::SchemaProof,
+                ..
+            })
+        ));
+    }
+
     // ── Mode switching ──
 
     #[test]
@@ -656,6 +761,77 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code(), "MODE_DOWNGRADE_UNAUTHORIZED");
         assert_eq!(gate.mode(), AssuranceMode::HighAssurance); // unchanged
+    }
+
+    #[test]
+    fn downgrade_without_auth_does_not_increment_mode_changes() {
+        let mut gate = HighAssuranceGate::high_assurance();
+
+        let result = gate.switch_mode(AssuranceMode::Standard, None);
+
+        assert!(matches!(
+            result,
+            Err(PromotionDenialReason::UnauthorizedModeDowngrade { .. })
+        ));
+        assert_eq!(gate.mode(), AssuranceMode::HighAssurance);
+        assert_eq!(gate.mode_changes(), 0);
+    }
+
+    #[test]
+    fn downgrade_with_empty_policy_ref_rejected() {
+        let mut gate = HighAssuranceGate::high_assurance();
+        let auth = PolicyAuthorization {
+            policy_ref: " ".into(),
+            authorizer_id: "admin".into(),
+            timestamp_ms: 1000,
+        };
+
+        let result = gate.switch_mode(AssuranceMode::Standard, Some(&auth));
+
+        assert!(matches!(
+            result,
+            Err(PromotionDenialReason::UnauthorizedModeDowngrade { .. })
+        ));
+        assert_eq!(gate.mode(), AssuranceMode::HighAssurance);
+        assert_eq!(gate.mode_changes(), 0);
+    }
+
+    #[test]
+    fn downgrade_with_empty_authorizer_rejected() {
+        let mut gate = HighAssuranceGate::high_assurance();
+        let auth = PolicyAuthorization {
+            policy_ref: "POL-001".into(),
+            authorizer_id: "".into(),
+            timestamp_ms: 1000,
+        };
+
+        let result = gate.switch_mode(AssuranceMode::Standard, Some(&auth));
+
+        assert!(matches!(
+            result,
+            Err(PromotionDenialReason::UnauthorizedModeDowngrade { .. })
+        ));
+        assert_eq!(gate.mode(), AssuranceMode::HighAssurance);
+        assert_eq!(gate.mode_changes(), 0);
+    }
+
+    #[test]
+    fn downgrade_with_zero_timestamp_rejected() {
+        let mut gate = HighAssuranceGate::high_assurance();
+        let auth = PolicyAuthorization {
+            policy_ref: "POL-001".into(),
+            authorizer_id: "admin".into(),
+            timestamp_ms: 0,
+        };
+
+        let result = gate.switch_mode(AssuranceMode::Standard, Some(&auth));
+
+        assert!(matches!(
+            result,
+            Err(PromotionDenialReason::UnauthorizedModeDowngrade { .. })
+        ));
+        assert_eq!(gate.mode(), AssuranceMode::HighAssurance);
+        assert_eq!(gate.mode_changes(), 0);
     }
 
     #[test]

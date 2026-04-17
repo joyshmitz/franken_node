@@ -452,8 +452,12 @@ impl LeaseService {
 
 /// Push an item to a bounded Vec, evicting oldest entries if at capacity.
 fn push_bounded<T>(vec: &mut Vec<T>, item: T, max: usize) {
+    if max == 0 {
+        vec.clear();
+        return;
+    }
     if vec.len() >= max {
-        let overflow = vec.len() - max + 1;
+        let overflow = vec.len().saturating_sub(max).saturating_add(1);
         vec.drain(0..overflow);
     }
     vec.push(item);
@@ -534,6 +538,28 @@ mod tests {
     }
 
     #[test]
+    fn renew_at_exact_expiry_boundary_fails_and_preserves_renewal_time() {
+        let mut svc = LeaseService::new();
+        let l = svc
+            .grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
+
+        let err = svc
+            .renew(&l.lease_id, 160, "tr-expiry", "ts-expiry")
+            .unwrap_err();
+
+        assert_eq!(err.code(), "LS_EXPIRED");
+        assert_eq!(svc.get(&l.lease_id).unwrap().renewed_at, 100);
+        let denial = svc
+            .decisions
+            .last()
+            .expect("denied renew should be audited");
+        assert_eq!(denial.action, "renew");
+        assert!(!denial.allowed);
+        assert_eq!(denial.reason, "lease expired");
+    }
+
+    #[test]
     fn renew_revoked_fails() {
         let mut svc = LeaseService::new();
         let l = svc
@@ -566,6 +592,48 @@ mod tests {
             .use_lease(&l.lease_id, LeasePurpose::StateWrite, 200, "tr2", "ts2")
             .unwrap_err();
         assert_eq!(err.code(), "LS_STALE_USE");
+    }
+
+    #[test]
+    fn use_at_exact_expiry_boundary_is_rejected_and_audited() {
+        let mut svc = LeaseService::new();
+        let l = svc
+            .grant("h", LeasePurpose::StateWrite, 60, 100, "tr", "ts")
+            .unwrap();
+
+        let err = svc
+            .use_lease(&l.lease_id, LeasePurpose::StateWrite, 160, "tr2", "ts2")
+            .unwrap_err();
+
+        assert_eq!(err.code(), "LS_STALE_USE");
+        let denial = svc.decisions.last().expect("denied use should be audited");
+        assert_eq!(denial.action, "use");
+        assert!(!denial.allowed);
+        assert_eq!(denial.reason, "lease expired");
+    }
+
+    #[test]
+    fn zero_ttl_lease_is_immediately_stale_on_use() {
+        let mut svc = LeaseService::new();
+        let l = svc
+            .grant("h", LeasePurpose::Operation, 0, 100, "tr", "ts")
+            .unwrap();
+
+        assert!(l.is_expired(100));
+        assert_eq!(l.remaining(100), 0);
+
+        let err = svc
+            .use_lease(
+                &l.lease_id,
+                LeasePurpose::Operation,
+                100,
+                "tr-use",
+                "ts-use",
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code(), "LS_STALE_USE");
+        assert_eq!(svc.decisions.last().unwrap().reason, "lease expired");
     }
 
     #[test]
@@ -623,6 +691,55 @@ mod tests {
     }
 
     #[test]
+    fn use_missing_lease_returns_stale_use_without_audit_entry() {
+        let mut svc = LeaseService::new();
+
+        let err = svc
+            .use_lease(
+                "missing",
+                LeasePurpose::MigrationHandoff,
+                100,
+                "tr-missing",
+                "ts-missing",
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code(), "LS_STALE_USE");
+        assert!(svc.decisions.is_empty());
+    }
+
+    #[test]
+    fn purpose_mismatch_denial_records_expected_and_actual_purpose() {
+        let mut svc = LeaseService::new();
+        let l = svc
+            .grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
+
+        let err = svc
+            .use_lease(
+                &l.lease_id,
+                LeasePurpose::StateWrite,
+                110,
+                "tr-purpose",
+                "ts-purpose",
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code(), "LS_PURPOSE_MISMATCH");
+        let denial = svc
+            .decisions
+            .last()
+            .expect("purpose denial should be audited");
+        assert_eq!(denial.action, "use");
+        assert!(!denial.allowed);
+        assert!(
+            denial
+                .reason
+                .contains("purpose mismatch: expected StateWrite, got Operation")
+        );
+    }
+
+    #[test]
     fn revoke_works() {
         let mut svc = LeaseService::new();
         let l = svc
@@ -641,6 +758,23 @@ mod tests {
         svc.revoke(&l.lease_id, "tr", "ts").unwrap();
         let err = svc.revoke(&l.lease_id, "tr", "ts").unwrap_err();
         assert_eq!(err.code(), "LS_ALREADY_REVOKED");
+    }
+
+    #[test]
+    fn second_revoke_failure_does_not_append_duplicate_decision() {
+        let mut svc = LeaseService::new();
+        let l = svc
+            .grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
+        svc.revoke(&l.lease_id, "tr-revoke", "ts-revoke").unwrap();
+        let decisions_after_first_revoke = svc.decisions.len();
+
+        let err = svc
+            .revoke(&l.lease_id, "tr-revoke-again", "ts-revoke-again")
+            .unwrap_err();
+
+        assert_eq!(err.code(), "LS_ALREADY_REVOKED");
+        assert_eq!(svc.decisions.len(), decisions_after_first_revoke);
     }
 
     #[test]
@@ -781,6 +915,33 @@ mod tests {
     }
 
     #[test]
+    fn missing_renew_and_revoke_do_not_record_decisions() {
+        let mut svc = LeaseService::new();
+
+        let renew_err = svc.renew("missing-renew", 100, "tr", "ts").unwrap_err();
+        let revoke_err = svc.revoke("missing-revoke", "tr", "ts").unwrap_err();
+
+        assert_eq!(renew_err.code(), "LS_NOT_FOUND");
+        assert_eq!(revoke_err.code(), "LS_NOT_FOUND");
+        assert!(svc.decisions.is_empty());
+    }
+
+    #[test]
+    fn grant_rejects_exhausted_id_counter_without_mutating_registry() {
+        let mut svc = LeaseService::new();
+        svc.next_id = u64::MAX;
+
+        let err = svc
+            .grant("h", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap_err();
+
+        assert_eq!(err.code(), "LS_CAPACITY_EXCEEDED");
+        assert!(svc.leases.is_empty());
+        assert!(svc.decisions.is_empty());
+        assert_eq!(svc.next_id, u64::MAX);
+    }
+
+    #[test]
     fn grant_rejects_when_registry_full_of_live_leases() {
         let mut svc = LeaseService::new();
         for id in 0..MAX_LEASES {
@@ -823,5 +984,208 @@ mod tests {
         assert_eq!(svc.leases.len(), MAX_LEASES);
         assert_eq!(lease.holder, "extra");
         assert!(!svc.leases.contains_key("lease-0"));
+    }
+
+    #[test]
+    fn grant_sweeps_expired_leases_before_capacity_check() {
+        let mut svc = LeaseService::new();
+        for id in 0..MAX_LEASES {
+            svc.leases.insert(
+                format!("lease-{id}"),
+                live_lease(id, LeasePurpose::Operation, 100),
+            );
+        }
+        svc.next_id = MAX_LEASES as u64 + 1;
+        svc.leases
+            .get_mut("lease-0")
+            .expect("seeded lease")
+            .ttl_secs = 1;
+
+        let lease = svc
+            .grant("replacement", LeasePurpose::StateWrite, 60, 200, "tr", "ts")
+            .expect("expired lease should be swept before capacity check");
+
+        assert_eq!(svc.leases.len(), MAX_LEASES);
+        assert_eq!(lease.holder, "replacement");
+        assert!(!svc.leases.contains_key("lease-0"));
+    }
+
+    #[test]
+    fn push_bounded_zero_capacity_clears_decisions_without_adding_item() {
+        let mut decisions = vec![LeaseDecision {
+            lease_id: "lease-old".into(),
+            action: "grant".into(),
+            allowed: true,
+            reason: "seeded".into(),
+            trace_id: "tr-old".into(),
+            timestamp: "ts-old".into(),
+        }];
+        let new_decision = LeaseDecision {
+            lease_id: "lease-new".into(),
+            action: "renew".into(),
+            allowed: false,
+            reason: "zero capacity".into(),
+            trace_id: "tr-new".into(),
+            timestamp: "ts-new".into(),
+        };
+
+        push_bounded(&mut decisions, new_decision, 0);
+
+        assert!(decisions.is_empty());
+    }
+
+    #[test]
+    fn push_bounded_single_capacity_replaces_old_decision() {
+        let mut decisions = vec![LeaseDecision {
+            lease_id: "lease-old".into(),
+            action: "grant".into(),
+            allowed: true,
+            reason: "seeded".into(),
+            trace_id: "tr-old".into(),
+            timestamp: "ts-old".into(),
+        }];
+        let new_decision = LeaseDecision {
+            lease_id: "lease-new".into(),
+            action: "use".into(),
+            allowed: false,
+            reason: "stale".into(),
+            trace_id: "tr-new".into(),
+            timestamp: "ts-new".into(),
+        };
+
+        push_bounded(&mut decisions, new_decision, 1);
+
+        assert_eq!(decisions.len(), 1);
+        assert_eq!(decisions[0].lease_id, "lease-new");
+        assert_eq!(decisions[0].reason, "stale");
+    }
+
+    #[test]
+    fn exhausted_id_grant_after_existing_decision_does_not_append_denial() {
+        let mut svc = LeaseService::new();
+        svc.decisions.push(LeaseDecision {
+            lease_id: "lease-prior".into(),
+            action: "grant".into(),
+            allowed: true,
+            reason: "prior decision".into(),
+            trace_id: "tr-prior".into(),
+            timestamp: "ts-prior".into(),
+        });
+        svc.next_id = u64::MAX;
+
+        let err = svc
+            .grant("holder", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap_err();
+
+        assert_eq!(err.code(), "LS_CAPACITY_EXCEEDED");
+        assert_eq!(svc.decisions.len(), 1);
+        assert_eq!(svc.decisions[0].lease_id, "lease-prior");
+        assert!(svc.leases.is_empty());
+        assert_eq!(svc.next_id, u64::MAX);
+    }
+
+    #[test]
+    fn renew_revoked_preserves_original_renewed_at_and_records_denial() {
+        let mut svc = LeaseService::new();
+        let lease = svc
+            .grant("holder", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
+        svc.revoke(&lease.lease_id, "tr-revoke", "ts-revoke")
+            .unwrap();
+        let decisions_before = svc.decisions.len();
+
+        let err = svc
+            .renew(&lease.lease_id, 120, "tr-renew", "ts-renew")
+            .unwrap_err();
+
+        assert_eq!(err.code(), "LS_ALREADY_REVOKED");
+        assert_eq!(svc.get(&lease.lease_id).unwrap().renewed_at, 100);
+        assert_eq!(svc.decisions.len(), decisions_before.saturating_add(1));
+        let denial = svc
+            .decisions
+            .last()
+            .expect("renew denial should be audited");
+        assert_eq!(denial.action, "renew");
+        assert!(!denial.allowed);
+        assert_eq!(denial.reason, "lease revoked");
+    }
+
+    #[test]
+    fn revoked_lease_is_swept_before_later_renew_attempt() {
+        let mut svc = LeaseService::new();
+        let lease = svc
+            .grant("holder", LeasePurpose::Operation, 60, 100, "tr", "ts")
+            .unwrap();
+        svc.revoke(&lease.lease_id, "tr-revoke", "ts-revoke")
+            .unwrap();
+        svc.grant(
+            "replacement",
+            LeasePurpose::StateWrite,
+            60,
+            101,
+            "tr-new",
+            "ts-new",
+        )
+        .unwrap();
+
+        let err = svc
+            .renew(&lease.lease_id, 102, "tr-renew-old", "ts-renew-old")
+            .unwrap_err();
+
+        assert_eq!(err.code(), "LS_NOT_FOUND");
+        assert!(svc.get(&lease.lease_id).is_none());
+    }
+
+    #[test]
+    fn expired_lease_is_swept_before_later_revoke_attempt() {
+        let mut svc = LeaseService::new();
+        let lease = svc
+            .grant("holder", LeasePurpose::Operation, 1, 100, "tr", "ts")
+            .unwrap();
+        assert!(lease.is_expired(101));
+
+        svc.grant(
+            "replacement",
+            LeasePurpose::StateWrite,
+            60,
+            101,
+            "tr-new",
+            "ts-new",
+        )
+        .unwrap();
+
+        let err = svc
+            .revoke(&lease.lease_id, "tr-revoke-old", "ts-revoke-old")
+            .unwrap_err();
+
+        assert_eq!(err.code(), "LS_NOT_FOUND");
+        assert!(svc.get(&lease.lease_id).is_none());
+    }
+
+    #[test]
+    fn active_count_excludes_revoked_and_overflowed_expiry_leases() {
+        let mut svc = LeaseService::new();
+        svc.leases.insert(
+            "lease-live".into(),
+            live_lease(1, LeasePurpose::Operation, 100),
+        );
+        let mut revoked = live_lease(2, LeasePurpose::Operation, 100);
+        revoked.revoked = true;
+        svc.leases.insert("lease-revoked".into(), revoked);
+        svc.leases.insert(
+            "lease-overflow".into(),
+            Lease {
+                lease_id: "lease-overflow".into(),
+                holder: "holder-overflow".into(),
+                purpose: LeasePurpose::Operation,
+                ttl_secs: 10,
+                granted_at: u64::MAX - 1,
+                renewed_at: u64::MAX - 1,
+                revoked: false,
+            },
+        );
+
+        assert_eq!(svc.active_count(100), 1);
+        assert_eq!(svc.active_count(u64::MAX - 1), 0);
     }
 }

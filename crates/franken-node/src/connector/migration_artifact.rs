@@ -1158,4 +1158,152 @@ mod tests {
         artifact2.rollback_receipt.signature = forged_rb;
         assert!(!verify_artifact_signatures(&artifact2));
     }
+
+    #[test]
+    fn test_validate_missing_rollback_procedure_hash_fails_precisely() {
+        let mut artifact = generate_reference_artifact();
+        artifact.rollback_receipt.rollback_procedure_hash.clear();
+
+        let result = validate_artifact(&artifact);
+
+        assert!(!result.valid);
+        assert_eq!(result.errors.len(), 1);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|error| error.contains(error_codes::ERR_MA_MISSING_ROLLBACK))
+        );
+    }
+
+    #[test]
+    fn test_validate_missing_rollback_signer_fails_precisely() {
+        let mut artifact = generate_reference_artifact();
+        artifact.rollback_receipt.signer_identity.clear();
+
+        let result = validate_artifact(&artifact);
+
+        assert!(!result.valid);
+        assert_eq!(result.errors.len(), 1);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|error| error.contains(error_codes::ERR_MA_MISSING_ROLLBACK))
+        );
+    }
+
+    #[test]
+    fn test_validate_missing_rollback_signature_fails_precisely() {
+        let mut artifact = generate_reference_artifact();
+        artifact.rollback_receipt.signature.clear();
+
+        let result = validate_artifact(&artifact);
+
+        assert!(!result.valid);
+        assert_eq!(result.errors.len(), 1);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|error| error.contains(error_codes::ERR_MA_MISSING_ROLLBACK))
+        );
+    }
+
+    #[test]
+    fn test_validate_nan_probability_fails_closed() {
+        let mut artifact = generate_reference_artifact();
+        artifact.confidence_interval.probability = f64::NAN;
+
+        let result = validate_artifact(&artifact);
+
+        assert!(!result.valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|error| error.contains(error_codes::ERR_MA_CONFIDENCE_LOW))
+        );
+    }
+
+    #[test]
+    fn test_validate_negative_probability_fails_closed() {
+        let mut artifact = generate_reference_artifact();
+        artifact.confidence_interval.probability = -0.01;
+
+        let result = validate_artifact(&artifact);
+
+        assert!(!result.valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|error| error.contains("probability -0.01 out of [0.0, 1.0]"))
+        );
+    }
+
+    #[test]
+    fn test_validate_confidence_warning_fields_do_not_hide_each_other() {
+        let mut artifact = generate_reference_artifact();
+        artifact.confidence_interval.dry_run_success_rate = -0.1;
+        artifact.confidence_interval.historical_similarity = 1.1;
+        artifact.confidence_interval.precondition_coverage = f64::INFINITY;
+
+        let result = validate_artifact(&artifact);
+
+        assert!(result.valid);
+        assert!(result.errors.is_empty());
+        assert_eq!(result.warnings.len(), 3);
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("dry_run_success_rate"))
+        );
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("historical_similarity"))
+        );
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("precondition_coverage"))
+        );
+    }
+
+    #[test]
+    fn test_verify_artifact_signature_rejects_content_hash_tamper() {
+        let mut artifact = generate_reference_artifact();
+        assert!(verify_artifact_signatures(&artifact));
+
+        artifact.content_hash.replace_range(0..1, "0");
+
+        assert!(!verify_artifact_signatures(&artifact));
+    }
+
+    #[test]
+    fn test_verify_rollback_signature_rejects_max_time_tamper() {
+        let mut artifact = generate_reference_artifact();
+        assert!(verify_artifact_signatures(&artifact));
+
+        artifact.rollback_receipt.max_rollback_time_ms = artifact
+            .rollback_receipt
+            .max_rollback_time_ms
+            .saturating_add(1);
+
+        assert!(!verify_artifact_signatures(&artifact));
+    }
+
+    #[test]
+    fn test_verify_artifact_signature_rejects_created_at_tamper() {
+        let mut artifact = generate_reference_artifact();
+        assert!(verify_artifact_signatures(&artifact));
+
+        artifact.created_at = "2026-02-22T00:00:00Z".to_string();
+
+        assert!(!verify_artifact_signatures(&artifact));
+    }
 }

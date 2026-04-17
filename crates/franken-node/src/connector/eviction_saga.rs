@@ -992,6 +992,59 @@ mod tests {
         assert!(!saga.remote_cap_validated());
     }
 
+    #[test]
+    fn begin_upload_without_remote_cap_records_no_transition() {
+        let mut saga = EvictionSaga::new("saga-003h", "artifact-xyz");
+
+        let err = saga.begin_upload(false).unwrap_err();
+        assert_eq!(err.code(), ERR_ES_REMOTE_CAP_REQUIRED);
+        assert_eq!(saga.current_phase(), SagaPhase::Pending);
+        assert!(!saga.remote_cap_validated());
+        assert_eq!(saga.transitions().len(), 0);
+    }
+
+    #[test]
+    fn compensation_complete_from_pending_is_illegal_and_side_effect_free() {
+        let mut saga = EvictionSaga::new("saga-003i", "artifact-xyz");
+
+        let err = saga.compensation_complete().unwrap_err();
+        assert_eq!(err.code(), ERR_ES_ILLEGAL_TRANSITION);
+        assert_eq!(saga.current_phase(), SagaPhase::Pending);
+        assert!(saga.compensation_action().is_none());
+        assert_eq!(saga.transitions().len(), 0);
+    }
+
+    #[test]
+    fn compensation_complete_from_uploading_is_illegal_and_side_effect_free() {
+        let mut saga = EvictionSaga::new("saga-003j", "artifact-xyz");
+        saga.begin_upload(true).unwrap();
+        let before = saga.transitions().len();
+
+        let err = saga.compensation_complete().unwrap_err();
+        assert_eq!(err.code(), ERR_ES_ILLEGAL_TRANSITION);
+        assert_eq!(saga.current_phase(), SagaPhase::Uploading);
+        assert!(saga.compensation_action().is_none());
+        assert_eq!(saga.transitions().len(), before);
+        assert!(saga.tier_presence().l2_present);
+    }
+
+    #[test]
+    fn compensation_complete_from_complete_is_illegal_and_side_effect_free() {
+        let mut saga = EvictionSaga::new("saga-003k", "artifact-xyz");
+        saga.begin_upload(true).unwrap();
+        saga.upload_complete(true).unwrap();
+        saga.verify_complete(true).unwrap();
+        saga.retire_complete(true).unwrap();
+        let before = saga.transitions().len();
+
+        let err = saga.compensation_complete().unwrap_err();
+        assert_eq!(err.code(), ERR_ES_ILLEGAL_TRANSITION);
+        assert_eq!(saga.current_phase(), SagaPhase::Complete);
+        assert_eq!(saga.transitions().len(), before);
+        assert!(!saga.tier_presence().l2_present);
+        assert!(saga.tier_presence().l3_verified);
+    }
+
     // -- Compensation tests --------------------------------------------------
 
     #[test]
@@ -1070,6 +1123,30 @@ mod tests {
         assert_eq!(saga.transitions().len(), 0);
     }
 
+    #[test]
+    fn retiring_compensation_keeps_verified_l3_and_l2_for_resume() {
+        let mut saga = EvictionSaga::new("saga-013c", "art-4");
+        saga.begin_upload(true).unwrap();
+        saga.upload_complete(true).unwrap();
+        saga.verify_complete(true).unwrap();
+
+        let action = saga.compensate().unwrap();
+        assert_eq!(action, CompensationAction::ResumeRetire);
+        assert_eq!(saga.current_phase(), SagaPhase::Compensating);
+        assert_eq!(
+            saga.compensation_action(),
+            Some(CompensationAction::ResumeRetire)
+        );
+        assert!(!saga.remote_cap_validated());
+        assert!(saga.tier_presence().l2_present);
+        assert!(saga.tier_presence().l3_present);
+        assert!(saga.tier_presence().l3_verified);
+        assert_eq!(
+            saga.transitions().last().unwrap().event_code.as_str(),
+            ES_COMPENSATION_START
+        );
+    }
+
     // -- Leak detection tests ------------------------------------------------
 
     #[test]
@@ -1083,6 +1160,24 @@ mod tests {
         };
         let err = saga.leak_check().unwrap_err();
         assert_eq!(err.code(), ERR_ES_LEAK_DETECTED);
+    }
+
+    #[test]
+    fn leak_check_error_preserves_orphan_state() {
+        let mut saga = EvictionSaga::new("saga-020b", "art-5");
+        saga.tier_presence = TierPresence {
+            l2_present: false,
+            l3_present: false,
+            l3_verified: false,
+        };
+
+        let err = saga.leak_check().unwrap_err();
+        assert_eq!(err.code(), ERR_ES_LEAK_DETECTED);
+        assert!(!saga.tier_presence().l2_present);
+        assert!(!saga.tier_presence().l3_present);
+        assert!(!saga.tier_presence().l3_verified);
+        assert_eq!(saga.current_phase(), SagaPhase::Pending);
+        assert_eq!(saga.transitions().len(), 0);
     }
 
     #[test]
@@ -1143,6 +1238,26 @@ mod tests {
     }
 
     #[test]
+    fn crash_recovery_from_retiring_does_not_abort_or_retire() {
+        let mut saga = EvictionSaga::new("saga-032b", "art-9");
+        saga.begin_upload(true).unwrap();
+        saga.upload_complete(true).unwrap();
+        saga.verify_complete(true).unwrap();
+        let before = saga.transitions().len();
+
+        let action = saga.crash_recovery().unwrap();
+        assert_eq!(action, CompensationAction::ResumeRetire);
+        assert_eq!(saga.current_phase(), SagaPhase::Retiring);
+        assert!(saga.tier_presence().l2_present);
+        assert!(saga.tier_presence().l3_verified);
+        assert_eq!(saga.transitions().len(), before + 1);
+        assert_eq!(
+            saga.transitions().last().unwrap().event_code.as_str(),
+            ES_CRASH_RECOVERY
+        );
+    }
+
+    #[test]
     fn crash_recovery_from_compensating_completes_aborted() {
         let mut saga = EvictionSaga::new("saga-033", "art-10");
         saga.begin_upload(true).unwrap();
@@ -1154,6 +1269,50 @@ mod tests {
         assert_eq!(action, CompensationAction::AbortUpload);
         assert_eq!(saga.current_phase(), SagaPhase::Aborted);
         assert!(saga.is_terminal());
+    }
+
+    #[test]
+    fn crash_recovery_from_complete_records_recovery_without_compensation() {
+        let mut saga = EvictionSaga::new("saga-034", "art-11");
+        saga.begin_upload(true).unwrap();
+        saga.upload_complete(true).unwrap();
+        saga.verify_complete(true).unwrap();
+        saga.retire_complete(true).unwrap();
+        let before = saga.transitions().len();
+
+        let action = saga.crash_recovery().unwrap();
+        assert_eq!(action, CompensationAction::None);
+        assert_eq!(saga.current_phase(), SagaPhase::Complete);
+        assert!(saga.compensation_action().is_none());
+        assert_eq!(saga.transitions().len(), before + 1);
+        assert_eq!(
+            saga.transitions().last().unwrap().event_code.as_str(),
+            ES_CRASH_RECOVERY
+        );
+        assert_eq!(saga.transitions().last().unwrap().outcome.as_str(), "none");
+    }
+
+    #[test]
+    fn crash_recovery_from_aborted_records_recovery_without_compensation() {
+        let mut saga = EvictionSaga::new("saga-035", "art-12");
+        saga.begin_upload(true).unwrap();
+        saga.compensate().unwrap();
+        saga.compensation_complete().unwrap();
+        let before = saga.transitions().len();
+
+        let action = saga.crash_recovery().unwrap();
+        assert_eq!(action, CompensationAction::None);
+        assert_eq!(saga.current_phase(), SagaPhase::Aborted);
+        assert_eq!(
+            saga.compensation_action(),
+            Some(CompensationAction::AbortUpload)
+        );
+        assert_eq!(saga.transitions().len(), before + 1);
+        assert_eq!(
+            saga.transitions().last().unwrap().event_code.as_str(),
+            ES_CRASH_RECOVERY
+        );
+        assert_eq!(saga.transitions().last().unwrap().outcome.as_str(), "none");
     }
 
     // -- Content hash --------------------------------------------------------

@@ -375,8 +375,20 @@ pub fn run_harness(
                 }
                 match receipt_index.get(div.divergence_id.as_str()) {
                     Some(receipt) => {
+                        if receipt_invalid_for_divergence(receipt, div) {
+                            push_bounded(
+                                &mut block_reasons,
+                                ReleaseBlockReason::ClassificationAmbiguous {
+                                    divergence_id: div.divergence_id.clone(),
+                                },
+                                MAX_BLOCK_REASONS,
+                            );
+                            continue;
+                        }
                         // INV-ORACLE-L1-LINKAGE: receipt must have valid L1 link.
-                        if config.require_l1_links && receipt.l1_oracle_result_link.is_empty() {
+                        if config.require_l1_links
+                            && receipt.l1_oracle_result_link.trim().is_empty()
+                        {
                             push_bounded(
                                 &mut broken_l1,
                                 div.divergence_id.clone(),
@@ -456,11 +468,33 @@ pub fn run_harness(
     }
 }
 
+fn receipt_invalid_for_divergence(
+    receipt: &PolicyReceipt,
+    divergence: &BoundaryDivergence,
+) -> bool {
+    receipt.risk_tier != divergence.risk_tier
+        || receipt.receipt_id.trim().is_empty()
+        || receipt.justification.trim().is_empty()
+        || receipt.issuer.trim().is_empty()
+        || contains_nul(&receipt.receipt_id)
+        || contains_nul(&receipt.justification)
+        || contains_nul(&receipt.issuer)
+        || contains_nul(&receipt.l1_oracle_result_link)
+}
+
+fn contains_nul(value: &str) -> bool {
+    value.as_bytes().contains(&0)
+}
+
 /// Push an item to a bounded Vec, evicting oldest entries if at capacity.
 fn push_bounded<T>(vec: &mut Vec<T>, item: T, max: usize) {
+    if max == 0 {
+        vec.clear();
+        return;
+    }
     if vec.len() >= max {
-        let overflow = vec.len() - max + 1;
-        vec.drain(0..overflow);
+        let overflow = vec.len().saturating_sub(max).saturating_add(1);
+        vec.drain(0..overflow.min(vec.len()));
     }
     vec.push(item);
 }
@@ -599,6 +633,37 @@ mod tests {
     }
 
     #[test]
+    fn receipt_for_unknown_divergence_does_not_satisfy_gate() {
+        let cfg = HarnessConfig::new(5000).with_reference(ReferenceRuntime {
+            runtime_id: "ref-a".into(),
+            version: "1.0.0".into(),
+        });
+        let receipt = PolicyReceipt {
+            receipt_id: "rcpt-wrong-divergence".into(),
+            divergence_id: "div-9999".into(),
+            risk_tier: RiskTier::Medium,
+            justification: "Receipt does not match the observed divergence".into(),
+            l1_oracle_result_link: "https://l1-oracle.example/result/wrong".into(),
+            issuer: "policy-team".into(),
+            issued_epoch_ms: 1_700_000_000_000,
+        };
+
+        let result = run_harness(&cfg, &[low_risk_sample()], &[receipt]);
+
+        assert_eq!(result.stats.receipted_count, 0);
+        match &result.verdict {
+            ReleaseVerdict::Blocked { reasons } => assert!(reasons.iter().any(|reason| {
+                matches!(
+                    reason,
+                    ReleaseBlockReason::MissingReceipt { divergence_ids }
+                        if divergence_ids == &vec!["div-0001".to_string()]
+                )
+            })),
+            ReleaseVerdict::Passed => unreachable!("wrong divergence receipt must not pass"),
+        }
+    }
+
+    #[test]
     fn receipt_with_broken_l1_link_blocks() {
         // INV-ORACLE-L1-LINKAGE
         let cfg = HarnessConfig::new(5000).with_reference(ReferenceRuntime {
@@ -628,6 +693,151 @@ mod tests {
             }
             _ => unreachable!("expected blocked verdict for broken L1 link"),
         }
+    }
+
+    #[test]
+    fn broken_l1_link_is_not_counted_as_receipted() {
+        let cfg = HarnessConfig::new(5000).with_reference(ReferenceRuntime {
+            runtime_id: "ref-a".into(),
+            version: "1.0.0".into(),
+        });
+        let samples = vec![low_risk_sample()];
+        let preliminary = run_harness(&cfg, &samples, &[]);
+        let receipt = PolicyReceipt {
+            receipt_id: "rcpt-broken-l1".into(),
+            divergence_id: preliminary.divergences[0].divergence_id.clone(),
+            risk_tier: RiskTier::Medium,
+            justification: "No linked L1 oracle result".into(),
+            l1_oracle_result_link: String::new(),
+            issuer: "policy-team".into(),
+            issued_epoch_ms: 1_700_000_000_000,
+        };
+
+        let result = run_harness(&cfg, &samples, &[receipt]);
+
+        assert_eq!(result.stats.receipted_count, 0);
+        assert!(matches!(
+            result.verdict,
+            ReleaseVerdict::Blocked { reasons }
+                if reasons.iter().any(|reason| matches!(reason, ReleaseBlockReason::L1LinkBroken { .. }))
+        ));
+    }
+
+    #[test]
+    fn high_risk_divergence_blocks_even_with_matching_receipts() {
+        let cfg = sample_config();
+        let samples = vec![diverging_sample()];
+        let preliminary = run_harness(&cfg, &samples, &[]);
+        let receipts = preliminary
+            .divergences
+            .iter()
+            .map(|divergence| PolicyReceipt {
+                receipt_id: format!("rcpt-{}", divergence.divergence_id),
+                divergence_id: divergence.divergence_id.clone(),
+                risk_tier: divergence.risk_tier,
+                justification: "Attempted override for high risk divergence".into(),
+                l1_oracle_result_link: "https://l1-oracle.example/result/high-risk".into(),
+                issuer: "policy-team".into(),
+                issued_epoch_ms: 1_700_000_000_000,
+            })
+            .collect::<Vec<_>>();
+
+        let result = run_harness(&cfg, &samples, &receipts);
+
+        assert_eq!(result.stats.receipted_count, 0);
+        assert!(matches!(
+            result.verdict,
+            ReleaseVerdict::Blocked { reasons }
+                if reasons.iter().any(|reason| matches!(reason, ReleaseBlockReason::HighRiskUnresolved { .. }))
+        ));
+    }
+
+    #[test]
+    fn receipt_for_only_one_medium_divergence_leaves_other_blocked() {
+        let cfg = sample_config();
+        let sample = BoundarySample {
+            boundary_name: "boundary::reference_disagreement".into(),
+            input: b"input-disagree".to_vec(),
+            franken_engine_output: b"franken-output".to_vec(),
+            reference_outputs: BTreeMap::from([
+                ("ref-a".to_string(), b"reference-a".to_vec()),
+                ("ref-b".to_string(), b"reference-b".to_vec()),
+            ]),
+        };
+        let preliminary = run_harness(&cfg, std::slice::from_ref(&sample), &[]);
+        let receipt = PolicyReceipt {
+            receipt_id: "rcpt-one-medium".into(),
+            divergence_id: preliminary.divergences[0].divergence_id.clone(),
+            risk_tier: RiskTier::Medium,
+            justification: "One reference disagreement was reviewed".into(),
+            l1_oracle_result_link: "https://l1-oracle.example/result/medium".into(),
+            issuer: "policy-team".into(),
+            issued_epoch_ms: 1_700_000_000_000,
+        };
+
+        let result = run_harness(&cfg, &[sample], &[receipt]);
+
+        assert_eq!(result.stats.medium_risk_count, 2);
+        assert_eq!(result.stats.receipted_count, 1);
+        assert!(matches!(
+            result.verdict,
+            ReleaseVerdict::Blocked { reasons }
+                if reasons.iter().any(|reason| matches!(
+                    reason,
+                    ReleaseBlockReason::MissingReceipt { divergence_ids }
+                        if divergence_ids == &vec!["div-0002".to_string()]
+                ))
+        ));
+    }
+
+    #[test]
+    fn reference_disagreement_classifies_single_delta_as_medium_not_high() {
+        let cfg = sample_config();
+        let sample = BoundarySample {
+            boundary_name: "boundary::split_vote".into(),
+            input: b"input-split".to_vec(),
+            franken_engine_output: b"franken-output".to_vec(),
+            reference_outputs: BTreeMap::from([
+                ("ref-a".to_string(), b"franken-output".to_vec()),
+                ("ref-b".to_string(), b"reference-b".to_vec()),
+            ]),
+        };
+
+        let result = run_harness(&cfg, &[sample], &[]);
+
+        assert_eq!(result.stats.high_risk_count, 0);
+        assert_eq!(result.stats.medium_risk_count, 1);
+        assert!(matches!(
+            result.verdict,
+            ReleaseVerdict::Blocked { reasons }
+                if reasons.iter().any(|reason| matches!(reason, ReleaseBlockReason::MissingReceipt { .. }))
+        ));
+    }
+
+    #[test]
+    fn configured_reference_without_sample_output_produces_no_false_pass_receipt_count() {
+        let cfg = sample_config();
+        let sample = BoundarySample {
+            boundary_name: "boundary::missing_reference_output".into(),
+            input: b"input-missing-ref".to_vec(),
+            franken_engine_output: b"franken-output".to_vec(),
+            reference_outputs: BTreeMap::from([("ref-a".to_string(), b"franken-output".to_vec())]),
+        };
+        let stale_receipt = PolicyReceipt {
+            receipt_id: "rcpt-stale".into(),
+            divergence_id: "div-0001".into(),
+            risk_tier: RiskTier::Medium,
+            justification: "Stale receipt should not be counted without divergence".into(),
+            l1_oracle_result_link: "https://l1-oracle.example/result/stale".into(),
+            issuer: "policy-team".into(),
+            issued_epoch_ms: 1_700_000_000_000,
+        };
+
+        let result = run_harness(&cfg, &[sample], &[stale_receipt]);
+
+        assert_eq!(result.verdict, ReleaseVerdict::Passed);
+        assert_eq!(result.stats.total_divergences, 0);
+        assert_eq!(result.stats.receipted_count, 0);
     }
 
     #[test]
@@ -722,5 +932,220 @@ mod tests {
         let cfg = sample_config();
         let result = run_harness(&cfg, &[], &[]);
         assert_eq!(result.schema_version, SCHEMA_VERSION);
+    }
+
+    mod n_version_oracle_additional_negative_tests {
+        use super::*;
+
+        fn single_reference_config(require_l1_links: bool) -> HarnessConfig {
+            let mut cfg = HarnessConfig::new(5000).with_reference(ReferenceRuntime {
+                runtime_id: "ref-a".into(),
+                version: "1.0.0".into(),
+            });
+            cfg.require_l1_links = require_l1_links;
+            cfg
+        }
+
+        fn receipt(divergence_id: String, l1_link: &str) -> PolicyReceipt {
+            PolicyReceipt {
+                receipt_id: format!("rcpt-{divergence_id}"),
+                divergence_id,
+                risk_tier: RiskTier::Medium,
+                justification: "reviewed medium-risk oracle delta".into(),
+                l1_oracle_result_link: l1_link.into(),
+                issuer: "policy-team".into(),
+                issued_epoch_ms: 1_700_000_000_000,
+            }
+        }
+
+        fn observed_divergence() -> (HarnessConfig, BoundarySample, String) {
+            let cfg = single_reference_config(true);
+            let sample = low_risk_sample();
+            let preliminary = run_harness(&cfg, std::slice::from_ref(&sample), &[]);
+            let divergence_id = preliminary.divergences[0].divergence_id.clone();
+            (cfg, sample, divergence_id)
+        }
+
+        fn assert_classification_ambiguous(result: &OracleResult, divergence_id: &str) {
+            assert_eq!(result.stats.receipted_count, 0);
+            assert!(matches!(
+                &result.verdict,
+                ReleaseVerdict::Blocked { reasons }
+                    if reasons.iter().any(|reason| matches!(
+                        reason,
+                        ReleaseBlockReason::ClassificationAmbiguous { divergence_id: id }
+                            if id.as_str() == divergence_id
+                    ))
+            ));
+        }
+
+        #[test]
+        fn push_bounded_zero_capacity_discards_without_panic() {
+            let mut values = vec!["old-a".to_string(), "old-b".to_string()];
+
+            push_bounded(&mut values, "new".to_string(), 0);
+
+            assert!(values.is_empty());
+        }
+
+        #[test]
+        fn push_bounded_over_capacity_retains_latest_window() {
+            let mut values = vec![1, 2, 3, 4];
+
+            push_bounded(&mut values, 99, 2);
+
+            assert_eq!(values, vec![4, 99]);
+        }
+
+        #[test]
+        fn receipt_with_whitespace_only_l1_link_blocks() {
+            let cfg = single_reference_config(true);
+            let sample = low_risk_sample();
+            let preliminary = run_harness(&cfg, std::slice::from_ref(&sample), &[]);
+            let receipt = receipt(preliminary.divergences[0].divergence_id.clone(), " \t\n ");
+
+            let result = run_harness(&cfg, &[sample], &[receipt]);
+
+            assert_eq!(result.stats.receipted_count, 0);
+            assert!(matches!(
+                result.verdict,
+                ReleaseVerdict::Blocked { reasons }
+                    if reasons.iter().any(|reason| matches!(
+                        reason,
+                        ReleaseBlockReason::L1LinkBroken { divergence_ids }
+                            if divergence_ids == &vec!["div-0001".to_string()]
+                    ))
+            ));
+        }
+
+        #[test]
+        fn duplicate_receipt_with_later_broken_l1_link_does_not_pass() {
+            let cfg = single_reference_config(true);
+            let sample = low_risk_sample();
+            let preliminary = run_harness(&cfg, std::slice::from_ref(&sample), &[]);
+            let divergence_id = preliminary.divergences[0].divergence_id.clone();
+            let valid_receipt = receipt(
+                divergence_id.clone(),
+                "https://l1-oracle.example/result/valid",
+            );
+            let broken_receipt = receipt(divergence_id, "");
+
+            let result = run_harness(&cfg, &[sample], &[valid_receipt, broken_receipt]);
+
+            assert_eq!(result.stats.receipted_count, 0);
+            assert!(matches!(
+                result.verdict,
+                ReleaseVerdict::Blocked { reasons }
+                    if reasons.iter().any(|reason| matches!(
+                        reason,
+                        ReleaseBlockReason::L1LinkBroken { .. }
+                    ))
+            ));
+        }
+
+        #[test]
+        fn empty_l1_link_is_accepted_only_when_linkage_not_required() {
+            let cfg = single_reference_config(false);
+            let sample = low_risk_sample();
+            let preliminary = run_harness(&cfg, std::slice::from_ref(&sample), &[]);
+            let receipt = receipt(preliminary.divergences[0].divergence_id.clone(), "");
+
+            let result = run_harness(&cfg, &[sample], &[receipt]);
+
+            assert_eq!(result.verdict, ReleaseVerdict::Passed);
+            assert_eq!(result.stats.receipted_count, 1);
+        }
+
+        #[test]
+        fn digest_bytes_distinguishes_empty_from_zero_byte_payload() {
+            let empty_digest = digest_bytes(b"");
+            let zero_digest = digest_bytes(&[0]);
+
+            assert!(!ct_eq(&empty_digest, &zero_digest));
+        }
+
+        #[test]
+        fn digest_bytes_distinguishes_rebound_payload_bytes() {
+            let joined_digest = digest_bytes(b"ab");
+            let separated_digest = digest_bytes(b"a\0b");
+
+            assert!(!ct_eq(&joined_digest, &separated_digest));
+        }
+
+        #[test]
+        fn single_reference_mismatch_is_never_classified_high_risk() {
+            let tier = classify_divergence("boundary::single", "franken", "reference", 1, true);
+
+            assert_eq!(tier, RiskTier::Medium);
+        }
+
+        #[test]
+        fn receipt_with_mismatched_risk_tier_is_rejected() {
+            let (cfg, sample, divergence_id) = observed_divergence();
+            let mut mismatched_receipt = receipt(divergence_id.clone(), "https://l1/result/ok");
+            mismatched_receipt.risk_tier = RiskTier::Low;
+
+            let result = run_harness(&cfg, &[sample], &[mismatched_receipt]);
+
+            assert_classification_ambiguous(&result, &divergence_id);
+        }
+
+        #[test]
+        fn receipt_with_blank_receipt_id_is_rejected() {
+            let (cfg, sample, divergence_id) = observed_divergence();
+            let mut malformed_receipt = receipt(divergence_id.clone(), "https://l1/result/ok");
+            malformed_receipt.receipt_id = " \t ".to_string();
+
+            let result = run_harness(&cfg, &[sample], &[malformed_receipt]);
+
+            assert_classification_ambiguous(&result, &divergence_id);
+        }
+
+        #[test]
+        fn receipt_with_blank_issuer_is_rejected() {
+            let (cfg, sample, divergence_id) = observed_divergence();
+            let mut malformed_receipt = receipt(divergence_id.clone(), "https://l1/result/ok");
+            malformed_receipt.issuer.clear();
+
+            let result = run_harness(&cfg, &[sample], &[malformed_receipt]);
+
+            assert_classification_ambiguous(&result, &divergence_id);
+        }
+
+        #[test]
+        fn receipt_with_blank_justification_is_rejected() {
+            let (cfg, sample, divergence_id) = observed_divergence();
+            let mut malformed_receipt = receipt(divergence_id.clone(), "https://l1/result/ok");
+            malformed_receipt.justification = "\n\t ".to_string();
+
+            let result = run_harness(&cfg, &[sample], &[malformed_receipt]);
+
+            assert_classification_ambiguous(&result, &divergence_id);
+        }
+
+        #[test]
+        fn receipt_with_nul_in_receipt_id_is_rejected() {
+            let (cfg, sample, divergence_id) = observed_divergence();
+            let mut malformed_receipt = receipt(divergence_id.clone(), "https://l1/result/ok");
+            malformed_receipt.receipt_id = "rcpt\0bad".to_string();
+
+            let result = run_harness(&cfg, &[sample], &[malformed_receipt]);
+
+            assert_classification_ambiguous(&result, &divergence_id);
+        }
+
+        #[test]
+        fn receipt_with_nul_l1_link_is_rejected_even_when_link_not_required() {
+            let mut cfg = single_reference_config(false);
+            cfg.require_l1_links = false;
+            let sample = low_risk_sample();
+            let preliminary = run_harness(&cfg, std::slice::from_ref(&sample), &[]);
+            let divergence_id = preliminary.divergences[0].divergence_id.clone();
+            let malformed_receipt = receipt(divergence_id.clone(), "https://l1/result\0bad");
+
+            let result = run_harness(&cfg, &[sample], &[malformed_receipt]);
+
+            assert_classification_ambiguous(&result, &divergence_id);
+        }
     }
 }

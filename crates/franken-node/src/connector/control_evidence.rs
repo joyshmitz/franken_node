@@ -737,6 +737,72 @@ mod tests {
         assert_eq!(invalid.len(), 1);
     }
 
+    #[test]
+    fn test_emit_invalid_empty_trace_does_not_append_entry() {
+        let mut emitter = ControlEvidenceEmitter::new();
+        let mut entry = make_entry(
+            DecisionType::FencingDecision,
+            DecisionOutcome::Grant,
+            "d1",
+            100,
+        );
+        entry.trace_id.clear();
+
+        let result = emitter.emit_evidence(entry);
+
+        assert!(matches!(result, Err(ConformanceError::SchemaInvalid(_))));
+        assert!(emitter.entries().is_empty());
+    }
+
+    #[test]
+    fn test_emit_invalid_empty_action_does_not_mark_coverage() {
+        let mut emitter = ControlEvidenceEmitter::new();
+        let mut entry = make_entry(
+            DecisionType::MigrationDecision,
+            DecisionOutcome::Proceed,
+            "d1",
+            100,
+        );
+        entry.chosen_action.clear();
+
+        let result = emitter.emit_evidence(entry);
+
+        assert!(result.is_err());
+        assert!(
+            emitter
+                .uncovered_types()
+                .contains(&DecisionType::MigrationDecision)
+        );
+    }
+
+    #[test]
+    fn test_emit_invalid_schema_does_not_emit_success_events() {
+        let mut emitter = ControlEvidenceEmitter::new();
+        let mut entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
+        entry.schema_version = "0.9".to_string();
+
+        let result = emitter.emit_evidence(entry);
+
+        assert!(result.is_err());
+        assert!(
+            emitter
+                .events()
+                .iter()
+                .all(|event| event.code != EVD_001_ENTRY_EMITTED)
+        );
+        assert!(
+            emitter
+                .events()
+                .iter()
+                .all(|event| event.code != EVD_003_SCHEMA_VALID)
+        );
+    }
+
     // -- ControlEvidenceEmitter: execute_with_evidence ------------------
 
     #[test]
@@ -789,6 +855,49 @@ mod tests {
             result.unwrap_err(),
             ConformanceError::DecisionMismatch(_)
         ));
+    }
+
+    #[test]
+    fn test_execute_wrong_type_does_not_append_entry() {
+        let mut emitter = ControlEvidenceEmitter::new();
+        let entry = make_entry(
+            DecisionType::QuarantineAction,
+            DecisionOutcome::Promote,
+            "d1",
+            100,
+        );
+
+        let result = emitter.execute_with_evidence(DecisionType::RolloutTransition, Some(entry));
+
+        assert!(matches!(result, Err(ConformanceError::DecisionMismatch(_))));
+        assert!(emitter.entries().is_empty());
+    }
+
+    #[test]
+    fn test_execute_wrong_type_does_not_emit_success_events() {
+        let mut emitter = ControlEvidenceEmitter::new();
+        let entry = make_entry(
+            DecisionType::FencingDecision,
+            DecisionOutcome::Grant,
+            "d1",
+            100,
+        );
+
+        let result = emitter.execute_with_evidence(DecisionType::MigrationDecision, Some(entry));
+
+        assert!(result.is_err());
+        assert!(
+            emitter
+                .events()
+                .iter()
+                .all(|event| event.code != EVD_001_ENTRY_EMITTED)
+        );
+        assert!(
+            emitter
+                .events()
+                .iter()
+                .all(|event| event.code != EVD_003_SCHEMA_VALID)
+        );
     }
 
     // -- Ordering verification ------------------------------------------
@@ -906,6 +1015,33 @@ mod tests {
             .unwrap();
 
         assert!(emitter.verify_ordering().is_ok());
+    }
+
+    #[test]
+    fn test_ordering_violation_detects_same_timestamp_action_regression() {
+        let mut emitter = ControlEvidenceEmitter::new();
+        let mut first = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
+        first.chosen_action = "z-release".to_string();
+        let mut second = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Fail,
+            "d1",
+            100,
+        );
+        second.chosen_action = "a-deny".to_string();
+
+        emitter.emit_evidence(first).unwrap();
+        emitter.emit_evidence(second).unwrap();
+
+        assert!(matches!(
+            emitter.verify_ordering(),
+            Err(ConformanceError::OrderingViolation(_))
+        ));
     }
 
     // -- Coverage tracking ----------------------------------------------
@@ -1076,6 +1212,68 @@ mod tests {
     }
 
     // -- Serde roundtrips -----------------------------------------------
+
+    #[test]
+    fn test_deserialize_unknown_decision_type_fails() {
+        let payload = serde_json::json!({
+            "schema_version": "1.0",
+            "decision_id": "d1",
+            "decision_type": "UnknownDecision",
+            "decision_kind": "Admit",
+            "policy_inputs": [],
+            "candidates_considered": [],
+            "chosen_action": "Pass",
+            "rejection_reasons": [],
+            "epoch": 42,
+            "trace_id": "trace-001",
+            "timestamp_ms": 100
+        });
+
+        let result = serde_json::from_value::<ControlEvidenceEntry>(payload);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_unknown_decision_kind_fails() {
+        let payload = serde_json::json!({
+            "schema_version": "1.0",
+            "decision_id": "d1",
+            "decision_type": "HealthGateEval",
+            "decision_kind": "Maybe",
+            "policy_inputs": [],
+            "candidates_considered": [],
+            "chosen_action": "Pass",
+            "rejection_reasons": [],
+            "epoch": 42,
+            "trace_id": "trace-001",
+            "timestamp_ms": 100
+        });
+
+        let result = serde_json::from_value::<ControlEvidenceEntry>(payload);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_missing_trace_id_fails() {
+        let payload = serde_json::json!({
+            "schema_version": "1.0",
+            "decision_id": "d1",
+            "decision_type": "HealthGateEval",
+            "decision_kind": "Admit",
+            "policy_inputs": [],
+            "candidates_considered": [],
+            "chosen_action": "Pass",
+            "rejection_reasons": [],
+            "epoch": 42,
+            "timestamp_ms": 100
+        });
+
+        let result = serde_json::from_value::<ControlEvidenceEntry>(payload);
+
+        assert!(result.is_err());
+    }
 
     #[test]
     fn test_entry_serde_roundtrip() {

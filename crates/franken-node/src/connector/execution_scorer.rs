@@ -980,4 +980,147 @@ mod tests {
         let err = score_action("block", &matrix, &probs).unwrap_err();
         assert_eq!(err.code(), "ELS_INVALID_SCHEMA");
     }
+
+    #[test]
+    fn loss_matrix_rejects_blank_schema_version() {
+        let matrix = LossMatrix {
+            schema_version: "   ".to_string(),
+            actions: vec!["do_nothing".to_string()],
+            outcomes: vec!["ok".to_string()],
+            values: vec![vec![0.0]],
+        };
+
+        let err = score_action("do_nothing", &matrix, &[1.0]).unwrap_err();
+
+        assert_eq!(err.code(), "ELS_INVALID_SCHEMA");
+        assert!(err.to_string().contains("missing schema_version"));
+    }
+
+    #[test]
+    fn loss_matrix_rejects_empty_actions() {
+        let matrix = LossMatrix {
+            schema_version: "1.0.0".to_string(),
+            actions: Vec::new(),
+            outcomes: vec!["ok".to_string()],
+            values: Vec::new(),
+        };
+
+        let err = matrix.validate().unwrap_err();
+
+        assert_eq!(err.code(), "ELS_INVALID_SCHEMA");
+        assert!(err.to_string().contains("at least one action"));
+    }
+
+    #[test]
+    fn loss_matrix_rejects_empty_outcomes() {
+        let matrix = LossMatrix {
+            schema_version: "1.0.0".to_string(),
+            actions: vec!["do_nothing".to_string()],
+            outcomes: Vec::new(),
+            values: vec![Vec::new()],
+        };
+
+        let err = matrix.validate().unwrap_err();
+
+        assert_eq!(err.code(), "ELS_INVALID_SCHEMA");
+        assert!(err.to_string().contains("at least one outcome"));
+    }
+
+    #[test]
+    fn loss_matrix_rejects_row_count_mismatch() {
+        let matrix = LossMatrix {
+            schema_version: "1.0.0".to_string(),
+            actions: vec!["do_nothing".to_string(), "block".to_string()],
+            outcomes: vec!["ok".to_string()],
+            values: vec![vec![0.0]],
+        };
+
+        let err = matrix.validate().unwrap_err();
+
+        assert_eq!(err.code(), "ELS_INVALID_SCHEMA");
+        assert!(err.to_string().contains("row count"));
+    }
+
+    #[test]
+    fn loss_matrix_rejects_non_finite_loss_value() {
+        let matrix = LossMatrix {
+            schema_version: "1.0.0".to_string(),
+            actions: vec!["do_nothing".to_string()],
+            outcomes: vec!["ok".to_string()],
+            values: vec![vec![f64::INFINITY]],
+        };
+
+        let err = matrix.validate().unwrap_err();
+
+        assert_eq!(err.code(), "ELS_INVALID_SCHEMA");
+        assert!(err.to_string().contains("non-finite"));
+    }
+
+    #[test]
+    fn score_action_rejects_unknown_action() {
+        let matrix = loss_matrix();
+        let probs = [0.5, 0.2, 0.15, 0.1, 0.05];
+
+        let err = score_action("restart_planet", &matrix, &probs).unwrap_err();
+
+        assert_eq!(err.code(), "ELS_UNKNOWN_ACTION");
+        assert!(err.to_string().contains("restart_planet"));
+    }
+
+    #[test]
+    fn score_action_rejects_probability_length_mismatch() {
+        let matrix = loss_matrix();
+        let probs = [0.5, 0.5];
+
+        let err = score_action("quarantine", &matrix, &probs).unwrap_err();
+
+        assert_eq!(err.code(), "ELS_PROBABILITY_LENGTH_MISMATCH");
+        assert!(err.to_string().contains("expected=5"));
+    }
+
+    #[test]
+    fn score_action_rejects_non_finite_probability() {
+        let matrix = loss_matrix();
+        let probs = [0.5, 0.2, f64::NAN, 0.1, 0.2];
+
+        let err = score_action("quarantine", &matrix, &probs).unwrap_err();
+
+        assert_eq!(err.code(), "ELS_INVALID_PROBABILITIES");
+        assert!(err.to_string().contains("finite numbers"));
+    }
+
+    #[test]
+    fn score_action_rejects_out_of_range_probability() {
+        let matrix = loss_matrix();
+        let probs = [0.5, 0.2, -0.05, 0.1, 0.25];
+
+        let err = score_action("quarantine", &matrix, &probs).unwrap_err();
+
+        assert_eq!(err.code(), "ELS_INVALID_PROBABILITIES");
+        assert!(err.to_string().contains("[0, 1]"));
+    }
+
+    #[test]
+    fn sensitivity_analysis_rejects_zero_delta() {
+        let matrix = loss_matrix();
+        let probs = [0.5, 0.2, 0.15, 0.1, 0.05];
+        let actions = ["do_nothing", "throttle", "quarantine", "rebuild"];
+
+        let err = sensitivity_analysis(&actions, &matrix, &probs, 0.0).unwrap_err();
+
+        assert_eq!(err.code(), "ELS_INVALID_SENSITIVITY_DELTA");
+        assert!(err.to_string().contains('0'));
+    }
+
+    #[test]
+    fn sensitivity_analysis_rejects_non_finite_delta() {
+        let matrix = loss_matrix();
+        let probs = [0.5, 0.2, 0.15, 0.1, 0.05];
+        let actions = ["do_nothing", "throttle", "quarantine", "rebuild"];
+
+        let err = sensitivity_analysis(&actions, &matrix, &probs, f64::INFINITY).unwrap_err();
+
+        assert_eq!(err.code(), "ELS_INVALID_SENSITIVITY_DELTA");
+        assert!(err.to_string().contains("inf"));
+    }
 }

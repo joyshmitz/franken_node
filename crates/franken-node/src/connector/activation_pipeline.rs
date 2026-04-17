@@ -9,6 +9,12 @@ use std::collections::BTreeMap;
 /// Maximum number of mounted secrets tracked for exact cleanup coverage.
 const MAX_MOUNTED_SECRETS: usize = 4096;
 
+/// Maximum string length for input validation (prevents resource exhaustion).
+const MAX_INPUT_STRING_LENGTH: usize = 64 * 1024; // 64KB
+
+/// Maximum number of capabilities to prevent resource exhaustion.
+const MAX_CAPABILITIES: usize = 1024;
+
 /// Activation stages in fixed execution order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ActivationStage {
@@ -146,6 +152,71 @@ impl EphemeralSecretTracker {
     }
 }
 
+fn validate_activation_input(input: &ActivationInput) -> Result<(), String> {
+    // Validate string lengths to prevent resource exhaustion
+    if input.connector_id.len() > MAX_INPUT_STRING_LENGTH {
+        return Err(format!(
+            "connector_id too long: {} > {} bytes",
+            input.connector_id.len(),
+            MAX_INPUT_STRING_LENGTH
+        ));
+    }
+    if input.sandbox_config.len() > MAX_INPUT_STRING_LENGTH {
+        return Err(format!(
+            "sandbox_config too long: {} > {} bytes",
+            input.sandbox_config.len(),
+            MAX_INPUT_STRING_LENGTH
+        ));
+    }
+    if input.trace_id.len() > MAX_INPUT_STRING_LENGTH {
+        return Err(format!(
+            "trace_id too long: {} > {} bytes",
+            input.trace_id.len(),
+            MAX_INPUT_STRING_LENGTH
+        ));
+    }
+    if input.timestamp.len() > MAX_INPUT_STRING_LENGTH {
+        return Err(format!(
+            "timestamp too long: {} > {} bytes",
+            input.timestamp.len(),
+            MAX_INPUT_STRING_LENGTH
+        ));
+    }
+
+    // Validate collection sizes
+    if input.capabilities.len() > MAX_CAPABILITIES {
+        return Err(format!(
+            "too many capabilities: {} > {}",
+            input.capabilities.len(),
+            MAX_CAPABILITIES
+        ));
+    }
+
+    // Validate individual secret and capability string lengths
+    for (i, secret_ref) in input.secret_refs.iter().enumerate() {
+        if secret_ref.len() > MAX_INPUT_STRING_LENGTH {
+            return Err(format!(
+                "secret_refs[{}] too long: {} > {} bytes",
+                i,
+                secret_ref.len(),
+                MAX_INPUT_STRING_LENGTH
+            ));
+        }
+    }
+    for (i, capability) in input.capabilities.iter().enumerate() {
+        if capability.len() > MAX_INPUT_STRING_LENGTH {
+            return Err(format!(
+                "capabilities[{}] too long: {} > {} bytes",
+                i,
+                capability.len(),
+                MAX_INPUT_STRING_LENGTH
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 fn validate_mounted_secret_set(requested: &[String], mounted: &[String]) -> Result<(), String> {
     if requested.len() != mounted.len() {
         return Err(format!(
@@ -157,12 +228,14 @@ fn validate_mounted_secret_set(requested: &[String], mounted: &[String]) -> Resu
 
     let mut requested_counts = BTreeMap::new();
     for secret in requested {
-        *requested_counts.entry(secret.as_str()).or_insert(0usize) += 1;
+        let count = requested_counts.entry(secret.as_str()).or_insert(0usize);
+        *count = count.saturating_add(1);
     }
 
     let mut mounted_counts = BTreeMap::new();
     for secret in mounted {
-        *mounted_counts.entry(secret.as_str()).or_insert(0usize) += 1;
+        let count = mounted_counts.entry(secret.as_str()).or_insert(0usize);
+        *count = count.saturating_add(1);
     }
 
     if requested_counts == mounted_counts {
@@ -253,6 +326,22 @@ pub fn activate(input: &ActivationInput, executor: &dyn StageExecutor) -> Activa
     let mut stages = Vec::new();
     let mut tracker = EphemeralSecretTracker::default();
 
+    // Input validation (fail early on malformed/oversized inputs)
+    if let Err(reason) = validate_activation_input(input) {
+        stages.push(StageResult {
+            stage: ActivationStage::SandboxCreate,
+            success: false,
+            error: Some(StageError::SandboxFailed { reason }),
+            timestamp: input.timestamp.clone(),
+        });
+        return ActivationTranscript {
+            connector_id: input.connector_id.clone(),
+            stages,
+            completed: false,
+            trace_id: input.trace_id.clone(),
+        };
+    }
+
     // Stage 1: SandboxCreate (INV-ACT-STAGE-ORDER: must be first)
     match executor.create_sandbox(&input.sandbox_config) {
         Ok(()) => {
@@ -279,7 +368,7 @@ pub fn activate(input: &ActivationInput, executor: &dyn StageExecutor) -> Activa
         }
     }
 
-    // Stage 2: SecretMount
+    // Stage 2: SecretMount (fail-closed: > ensures rejection beyond capacity)
     if input.secret_refs.len() > MAX_MOUNTED_SECRETS {
         stages.push(StageResult {
             stage: ActivationStage::SecretMount,
@@ -758,6 +847,54 @@ mod tests {
         );
     }
 
+    /// Regression test for boundary condition bug: exactly MAX_MOUNTED_SECRETS should be allowed
+    #[test]
+    fn max_secrets_boundary_condition_allowed() {
+        // Create input with exactly MAX_MOUNTED_SECRETS secret refs
+        let mut input = test_input();
+        input.secret_refs = (0..MAX_MOUNTED_SECRETS)
+            .map(|i| format!("secret-{}", i))
+            .collect();
+
+        // This should succeed, not fail at the boundary
+        let t = activate(&input, &DefaultExecutor);
+        assert!(
+            t.completed,
+            "activation with exactly MAX_MOUNTED_SECRETS should succeed"
+        );
+        assert_eq!(t.stages.len(), 4);
+        assert!(t.stages.iter().all(|s| s.success));
+    }
+
+    /// Test that exceeding MAX_MOUNTED_SECRETS is properly rejected
+    #[test]
+    fn max_secrets_exceeded_rejected() {
+        // Create input with one more than MAX_MOUNTED_SECRETS
+        let mut input = test_input();
+        input.secret_refs = (0..MAX_MOUNTED_SECRETS + 1)
+            .map(|i| format!("secret-{}", i))
+            .collect();
+
+        // This should fail at the secret mount stage
+        let t = activate(&input, &DefaultExecutor);
+        assert!(!t.completed, "activation with too many secrets should fail");
+        assert_eq!(t.stages.len(), 2); // SandboxCreate succeeds, SecretMount fails
+        assert!(t.stages[0].success);
+        assert!(!t.stages[1].success);
+        assert_eq!(
+            t.stages[1].error.as_ref().unwrap().code(),
+            "ACT_SECRET_MOUNT_FAILED"
+        );
+        assert!(
+            t.stages[1]
+                .error
+                .as_ref()
+                .unwrap()
+                .to_string()
+                .contains("exceeded max secrets")
+        );
+    }
+
     struct ExtraSecretMount;
     impl StageExecutor for ExtraSecretMount {
         fn create_sandbox(&self, _: &str) -> Result<(), String> {
@@ -977,5 +1114,151 @@ mod tests {
         assert!(t.completed);
         assert_eq!(t.stages.len(), 4);
         assert!(t.stages.iter().all(|s| s.success));
+    }
+
+    // --- Edge case and security tests ---
+
+    #[test]
+    fn test_max_secrets_boundary_condition() {
+        // Test exact boundary - this should fail with >= semantics but currently passes with >
+        let input = ActivationInput {
+            connector_id: "test".into(),
+            sandbox_config: r#"{"mode":"test"}"#.into(),
+            secret_refs: vec!["secret".to_string(); MAX_MOUNTED_SECRETS], // Exactly at limit
+            capabilities: vec![],
+            trace_id: "trace".into(),
+            timestamp: "2026-01-01T00:00:00Z".into(),
+        };
+
+        let transcript = activate(&input, &DefaultExecutor);
+        // With fail-closed >= semantics, this should fail at the exact boundary
+        assert!(
+            !transcript.completed,
+            "Should fail at exact boundary for fail-closed semantics"
+        );
+        assert_eq!(transcript.stages.len(), 2);
+        assert_eq!(
+            transcript.stages[1].error.as_ref().unwrap().code(),
+            "ACT_SECRET_MOUNT_FAILED"
+        );
+    }
+
+    #[test]
+    fn test_ephemeral_tracker_at_exact_limit() {
+        let mut tracker = EphemeralSecretTracker::default();
+
+        // Fill to exactly MAX_MOUNTED_SECRETS
+        for i in 0..MAX_MOUNTED_SECRETS {
+            tracker
+                .mount(&format!("secret-{}", i))
+                .expect("Should succeed");
+        }
+
+        // The next mount should fail
+        let result = tracker.mount("overflow-secret");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("tracker exhausted"));
+    }
+
+    #[test]
+    fn test_secret_validation_with_extreme_duplicates() {
+        // Test case that could stress the counting logic
+        let requested = vec!["dup".to_string(); 1000];
+        let mounted = vec!["dup".to_string(); 999]; // One short
+
+        match validate_mounted_secret_set(&requested, &mounted) {
+            Ok(_) => panic!("Should have detected missing secret"),
+            Err(e) => {
+                assert!(e.contains("mounted 999 secrets but expected 1000"));
+            }
+        }
+    }
+
+    #[test]
+    fn test_input_validation_edge_cases() {
+        // Test with extremely long strings that could cause resource exhaustion
+        let huge_string = "x".repeat(1024 * 1024); // 1MB string (exceeds MAX_INPUT_STRING_LENGTH)
+        let input = ActivationInput {
+            connector_id: huge_string.clone(),
+            sandbox_config: r#"{"mode":"test"}"#.into(),
+            secret_refs: vec![huge_string.clone()],
+            capabilities: vec![huge_string.clone()],
+            trace_id: huge_string.clone(),
+            timestamp: "2026-01-01T00:00:00Z".into(),
+        };
+
+        let transcript = activate(&input, &DefaultExecutor);
+        // Should fail due to input validation
+        assert!(
+            !transcript.completed,
+            "Should fail validation for oversized inputs"
+        );
+        assert_eq!(transcript.stages.len(), 1);
+        assert_eq!(
+            transcript.stages[0].error.as_ref().unwrap().code(),
+            "ACT_SANDBOX_FAILED"
+        );
+        assert!(
+            transcript.stages[0]
+                .error
+                .as_ref()
+                .unwrap()
+                .to_string()
+                .contains("too long")
+        );
+    }
+
+    #[test]
+    fn test_too_many_capabilities() {
+        let input = ActivationInput {
+            connector_id: "test".into(),
+            sandbox_config: r#"{"mode":"test"}"#.into(),
+            secret_refs: vec![],
+            capabilities: vec!["cap".to_string(); MAX_CAPABILITIES + 1],
+            trace_id: "trace".into(),
+            timestamp: "2026-01-01T00:00:00Z".into(),
+        };
+
+        let transcript = activate(&input, &DefaultExecutor);
+        assert!(
+            !transcript.completed,
+            "Should fail validation for too many capabilities"
+        );
+        assert!(
+            transcript.stages[0]
+                .error
+                .as_ref()
+                .unwrap()
+                .to_string()
+                .contains("too many capabilities")
+        );
+    }
+
+    #[test]
+    fn test_deterministic_transcript_comparison_edge_cases() {
+        // Test transcript comparison with subtly different inputs
+        let input1 = ActivationInput {
+            connector_id: "test".into(),
+            sandbox_config: r#"{"mode":"test"}"#.into(),
+            secret_refs: vec![],
+            capabilities: vec![],
+            trace_id: "trace1".into(),
+            timestamp: "2026-01-01T00:00:00Z".into(),
+        };
+
+        let input2 = ActivationInput {
+            connector_id: "test".into(),
+            sandbox_config: r#"{"mode":"test"}"#.into(),
+            secret_refs: vec![],
+            capabilities: vec![],
+            trace_id: "trace2".into(), // Different trace ID
+            timestamp: "2026-01-01T00:00:00Z".into(),
+        };
+
+        let t1 = activate(&input1, &DefaultExecutor);
+        let t2 = activate(&input2, &DefaultExecutor);
+
+        // These should not match due to different trace IDs
+        assert!(!transcripts_match(&t1, &t2));
     }
 }
