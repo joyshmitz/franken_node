@@ -2070,8 +2070,7 @@ mod tests {
     fn negative_hash_operations_must_include_domain_separators() {
         // Test that hash operations include domain separators to prevent collision attacks
         // BPET migration should hash trajectory data with proper domain separation
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
+        use sha2::{Digest, Sha256};
 
         let trajectory1 = TrajectorySnapshot {
             instability_score: 0.5,
@@ -2086,57 +2085,61 @@ mod tests {
         };
 
         // Hash with domain separator (proper approach)
-        let mut hasher_with_domain = DefaultHasher::new();
-        "bpet_trajectory_v1:".hash(&mut hasher_with_domain);
-        trajectory1.hash(&mut hasher_with_domain);
-        let hash_with_domain = hasher_with_domain.finish();
+        let mut hasher_with_domain = Sha256::new();
+        hasher_with_domain.update(b"bpet_trajectory_v1:");
+        let trajectory1_json = serde_json::to_string(&trajectory1).expect("trajectory1 serialization");
+        hasher_with_domain.update(trajectory1_json.as_bytes());
+        let hash_with_domain = hasher_with_domain.finalize();
 
         // Hash without domain separator (vulnerable approach)
-        let mut hasher_without_domain = DefaultHasher::new();
-        trajectory1.hash(&mut hasher_without_domain);
-        let hash_without_domain = hasher_without_domain.finish();
+        let mut hasher_without_domain = Sha256::new();
+        hasher_without_domain.update(trajectory1_json.as_bytes());
+        let hash_without_domain = hasher_without_domain.finalize();
 
         // Domain separator should change hash value
-        assert_ne!(hash_with_domain, hash_without_domain,
+        assert_ne!(hash_with_domain.as_slice(), hash_without_domain.as_slice(),
                   "Domain separator should change hash value");
 
         // Test different types with different domain separators
         let thresholds = StabilityThresholds::default();
 
-        let mut trajectory_hasher = DefaultHasher::new();
-        "bpet_trajectory:".hash(&mut trajectory_hasher);
-        trajectory1.hash(&mut trajectory_hasher);
-        let trajectory_hash = trajectory_hasher.finish();
+        let mut trajectory_hasher = Sha256::new();
+        trajectory_hasher.update(b"bpet_trajectory:");
+        trajectory_hasher.update(trajectory1_json.as_bytes());
+        let trajectory_hash = trajectory_hasher.finalize();
 
-        let mut thresholds_hasher = DefaultHasher::new();
-        "bpet_thresholds:".hash(&mut thresholds_hasher);
-        thresholds.hash(&mut thresholds_hasher);
-        let thresholds_hash = thresholds_hasher.finish();
+        let mut thresholds_hasher = Sha256::new();
+        thresholds_hasher.update(b"bpet_thresholds:");
+        let thresholds_json = serde_json::to_string(&thresholds).expect("thresholds serialization");
+        thresholds_hasher.update(thresholds_json.as_bytes());
+        let thresholds_hash = thresholds_hasher.finalize();
 
         // Different types should have different hash domains
-        assert_ne!(trajectory_hash, thresholds_hash,
+        assert_ne!(trajectory_hash.as_slice(), thresholds_hash.as_slice(),
                   "Different types should have different hash domains");
 
         // Test length-prefixed domain separation
-        let mut length_prefixed_hasher = DefaultHasher::new();
+        let mut length_prefixed_hasher = Sha256::new();
         let domain = "bpet_trajectory_v1";
-        length_prefixed_hasher.hash(&(domain.len() as u64).to_le_bytes());
-        domain.hash(&mut length_prefixed_hasher);
-        trajectory1.hash(&mut length_prefixed_hasher);
-        let length_prefixed_hash = length_prefixed_hasher.finish();
+        let domain_len = u64::try_from(domain.len()).unwrap_or(u64::MAX);
+        length_prefixed_hasher.update(domain_len.to_le_bytes());
+        length_prefixed_hasher.update(domain.as_bytes());
+        length_prefixed_hasher.update(trajectory1_json.as_bytes());
+        let length_prefixed_hash = length_prefixed_hasher.finalize();
 
-        assert_ne!(length_prefixed_hash, hash_with_domain,
+        assert_ne!(length_prefixed_hash.as_slice(), hash_with_domain.as_slice(),
                   "Length-prefixed domain separation should be distinct");
 
         // Test rollout phase hashing with domain separation
         let phase = RolloutPhase::Canary;
 
-        let mut phase_hasher = DefaultHasher::new();
-        "bpet_rollout_phase:".hash(&mut phase_hasher);
-        phase.hash(&mut phase_hasher);
-        let phase_hash = phase_hasher.finish();
+        let mut phase_hasher = Sha256::new();
+        phase_hasher.update(b"bpet_rollout_phase:");
+        let phase_json = serde_json::to_string(&phase).expect("phase serialization");
+        phase_hasher.update(phase_json.as_bytes());
+        let phase_hash = phase_hasher.finalize();
 
-        assert_ne!(phase_hash, trajectory_hash,
+        assert_ne!(phase_hash.as_slice(), trajectory_hash.as_slice(),
                   "Rollout phase should have different hash domain");
 
         // Production code should use domain separators:
