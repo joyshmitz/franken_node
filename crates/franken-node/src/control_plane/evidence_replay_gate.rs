@@ -941,6 +941,141 @@ mod tests {
     }
 
     #[test]
+    fn captured_evidence_deserialize_rejects_missing_trace_id() {
+        let raw = serde_json::json!({
+            "decision_id": "d-missing-trace",
+            "decision_type": "rollout",
+            "epoch_id": 1,
+            "timestamp": "2026-01-15T03:00:00Z",
+            "chosen_action": "proceed",
+            "input_entries": ["entry-1"],
+            "input_context": {},
+            "input_hash": "abc"
+        });
+
+        let result: Result<CapturedEvidence, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn captured_evidence_deserialize_rejects_null_input_context() {
+        let raw = serde_json::json!({
+            "decision_id": "d-null-context",
+            "decision_type": "health_gate",
+            "epoch_id": 1,
+            "timestamp": "2026-01-15T03:00:00Z",
+            "chosen_action": "admit",
+            "input_entries": ["entry-1"],
+            "input_context": null,
+            "input_hash": "abc",
+            "trace_id": "trace-null-context"
+        });
+
+        let result: Result<CapturedEvidence, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn captured_evidence_deserialize_rejects_scalar_input_entries() {
+        let raw = serde_json::json!({
+            "decision_id": "d-scalar-entries",
+            "decision_type": "quarantine",
+            "epoch_id": 1,
+            "timestamp": "2026-01-15T03:00:00Z",
+            "chosen_action": "quarantine",
+            "input_entries": "entry-1",
+            "input_context": {},
+            "input_hash": "abc",
+            "trace_id": "trace-scalar-entries"
+        });
+
+        let result: Result<CapturedEvidence, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn replay_verdict_deserialize_rejects_negative_diff_size() {
+        let raw = serde_json::json!({
+            "diverged": {
+                "original_action": "proceed",
+                "replayed_action": "rollback",
+                "diff_hash": "a".repeat(64),
+                "diff_size_bytes": -1
+            }
+        });
+
+        let result: Result<ReplayVerdict, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn replay_result_deserialize_rejects_null_verdict() {
+        let raw = serde_json::json!({
+            "decision_id": "d-null-verdict",
+            "decision_type": "fencing",
+            "verdict": null,
+            "replay_duration_us": 0,
+            "trace_id": "trace-null-verdict",
+            "event_code": RPL_004_ERROR
+        });
+
+        let result: Result<ReplayResult, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn gate_result_deserialize_rejects_string_reproduced_count() {
+        let raw = serde_json::json!({
+            "decision": "fail",
+            "replay_results": [],
+            "reproduced_count": "0",
+            "diverged_count": 0,
+            "error_count": 1,
+            "evaluated_at": "2026-01-15T03:00:00Z"
+        });
+
+        let result: Result<GateResult, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn gate_result_deserialize_rejects_scalar_replay_results() {
+        let raw = serde_json::json!({
+            "decision": "pass",
+            "replay_results": "none",
+            "reproduced_count": 0,
+            "diverged_count": 0,
+            "error_count": 0,
+            "evaluated_at": "2026-01-15T03:00:00Z"
+        });
+
+        let result: Result<GateResult, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn replay_log_entry_deserialize_rejects_missing_timestamp() {
+        let raw = serde_json::json!({
+            "event_code": RPL_004_ERROR,
+            "decision_id": "d-missing-log-time",
+            "verdict": "error",
+            "diff_size_bytes": null,
+            "trace_id": "trace-missing-log-time"
+        });
+
+        let result: Result<ReplayLogEntry, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn negative_replay_errors_when_decision_type_changes_after_hash_capture() {
         let mut gate = EvidenceReplayGate::new();
         let mut ev = make_evidence("d-type-mutation", DecisionType::HealthGate, "admit");

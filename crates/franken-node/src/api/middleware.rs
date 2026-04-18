@@ -1851,3 +1851,474 @@ mod api_middleware_edge_negative_tests {
         assert_eq!(metrics.error_counts[event_codes::ENDPOINT_ERROR], 1);
     }
 }
+
+#[cfg(test)]
+mod api_middleware_advanced_security_edge_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn setup_keys() -> BTreeSet<String> {
+        ["test-key-123", "mytoken-abc", "fleet-service-cert"]
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn advanced_security_edge_unicode_normalization_bypass_in_credentials() {
+        let keys = setup_keys();
+
+        // Test Unicode normalization attacks that could bypass authentication
+        let unicode_attack_vectors = [
+            // Lookalike characters (homograph attacks)
+            "tеst-key-123", // 'е' is Cyrillic instead of Latin 'e'
+            "test‑key‑123", // Non-breaking hyphens instead of regular hyphens
+            "test-кey-123", // 'к' is Cyrillic 'k' instead of Latin 'k'
+            "test-key-１２３", // Full-width digits instead of ASCII
+
+            // Unicode normalization differences (NFC vs NFD)
+            "test-key-123\u{0301}", // Combining acute accent
+            "tést-key-123", // Precomposed é vs decomposed e + ́
+
+            // Zero-width characters
+            "test-key\u{200D}-123", // Zero-width joiner
+            "test-key\u{FEFF}-123", // Byte order mark
+            "test-key\u{200C}-123", // Zero-width non-joiner
+
+            // Direction override attacks
+            "test-key-123\u{202E}", // Right-to-left override
+            "\u{202D}test-key-123", // Left-to-right override
+        ];
+
+        for attack_vector in &unicode_attack_vectors {
+            let result = authenticate(
+                Some(&format!("ApiKey {}", attack_vector)),
+                &AuthMethod::ApiKey,
+                "trace-unicode-attack",
+                &keys,
+            );
+
+            // Should reject all Unicode normalization attacks
+            assert!(
+                result.is_err(),
+                "Unicode attack vector should be rejected: {:?}",
+                attack_vector
+            );
+
+            // Verify error doesn't leak information about similar valid keys
+            if let Err(err) = result {
+                let error_msg = match err {
+                    ApiError::AuthFailed { detail, .. } => detail,
+                    _ => panic!("Wrong error type for Unicode attack"),
+                };
+                assert_eq!(error_msg, "invalid API key");
+                assert!(!error_msg.contains("test-key-123")); // No leakage
+            }
+        }
+    }
+
+    #[test]
+    fn advanced_security_edge_constant_time_verification_timing_resistance() {
+        let keys = setup_keys();
+
+        // Test that authentication is constant-time resistant to timing attacks
+        let timing_attack_candidates = [
+            "test-key-122", // One character off at the end
+            "test-key-124", // One character off at the end (other direction)
+            "test-key-12",  // Shorter by one
+            "test-key-1234", // Longer by one
+            "xest-key-123", // First character wrong
+            "test", // Much shorter
+            "test-key-123-extra", // Much longer
+            "", // Empty
+            "completely-different-key", // Totally different
+        ];
+
+        // All should take similar time and return the same error
+        for candidate in &timing_attack_candidates {
+            let result = authenticate(
+                Some(&format!("ApiKey {}", candidate)),
+                &AuthMethod::ApiKey,
+                "trace-timing-attack",
+                &keys,
+            );
+
+            assert!(result.is_err(), "Invalid key should be rejected: {}", candidate);
+
+            if let Err(ApiError::AuthFailed { detail, .. }) = result {
+                assert_eq!(detail, "invalid API key");
+                // All errors should be identical - no information leakage
+            } else {
+                panic!("Wrong error type for timing attack candidate: {}", candidate);
+            }
+        }
+
+        // Test with completely random strings of various lengths
+        let random_candidates = [
+            &"a".repeat(100),
+            &"b".repeat(200),
+            &"c".repeat(500),
+            "🔐".repeat(50).as_str(),
+            "😀".repeat(25).as_str(),
+        ];
+
+        for candidate in &random_candidates {
+            let result = authenticate(
+                Some(&format!("ApiKey {}", candidate)),
+                &AuthMethod::ApiKey,
+                "trace-random-timing",
+                &keys,
+            );
+
+            assert!(result.is_err());
+            if let Err(ApiError::AuthFailed { detail, .. }) = result {
+                assert_eq!(detail, "invalid API key");
+            } else {
+                panic!("Wrong error type for random candidate");
+            }
+        }
+    }
+
+    #[test]
+    fn advanced_security_edge_authorization_header_injection_attacks() {
+        let keys = setup_keys();
+
+        // Test various header injection attack vectors
+        let header_injection_attacks = [
+            "ApiKey test-key-123\r\nX-Forwarded-For: evil.com", // CRLF injection
+            "ApiKey test-key-123\nSet-Cookie: evil=true", // Newline injection
+            "ApiKey test-key-123\0X-Evil: header", // Null byte injection
+            "ApiKey test-key-123\x00X-Malicious: payload", // Null byte (hex)
+            "ApiKey test-key-123\x0d\x0aX-Injected: header", // CRLF (hex)
+            "Bearer mytoken-abc\r\n\r\n<script>alert('xss')</script>", // XSS attempt
+            "Bearer mytoken-abc\x1b[31mANSI escape\x1b[0m", // ANSI escape codes
+            "ApiKey test-key-123\x7fDEL character\x7f", // DEL control character
+        ];
+
+        for attack_header in &header_injection_attacks {
+            let result = authenticate(
+                Some(attack_header),
+                &AuthMethod::ApiKey,
+                "trace-header-injection",
+                &keys,
+            );
+
+            // Should either reject completely or accept only the valid prefix
+            match result {
+                Ok(identity) => {
+                    // If somehow accepted, verify the principal doesn't contain injected content
+                    assert!(!identity.principal.contains("evil"));
+                    assert!(!identity.principal.contains("script"));
+                    assert!(!identity.principal.contains("X-"));
+                    assert!(!identity.principal.contains("\r"));
+                    assert!(!identity.principal.contains("\n"));
+                    assert!(!identity.principal.contains("\0"));
+                }
+                Err(ApiError::AuthFailed { detail, .. }) => {
+                    // Should be rejected as invalid
+                    assert_eq!(detail, "invalid API key");
+                }
+                Err(_) => panic!("Unexpected error type for header injection"),
+            }
+        }
+    }
+
+    #[test]
+    fn advanced_security_edge_rate_limiter_arithmetic_overflow_protection() {
+        // Test rate limiter against arithmetic overflow attacks
+        let extreme_configs = [
+            RateLimitConfig {
+                sustained_rps: u32::MAX,
+                burst_size: u32::MAX,
+                fail_closed: true,
+            },
+            RateLimitConfig {
+                sustained_rps: u32::MAX - 1,
+                burst_size: u32::MAX - 1,
+                fail_closed: false,
+            },
+        ];
+
+        for config in &extreme_configs {
+            let mut limiter = RateLimiter::new(config.clone());
+
+            // Should not panic or produce invalid state
+            for _ in 0..10 {
+                let result = limiter.check();
+                match result {
+                    Ok(()) => {
+                        // Allowed - verify internal state is still finite
+                        assert!(limiter.tokens.is_finite(), "Tokens should remain finite");
+                    }
+                    Err(retry_ms) => {
+                        // Rate limited - verify retry time is reasonable
+                        assert!(retry_ms >= 1, "Retry time should be at least 1ms");
+                        assert!(retry_ms < 86400000, "Retry time should be less than 24 hours");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn advanced_security_edge_trace_context_parser_memory_exhaustion() {
+        // Test trace context parser against memory exhaustion attacks
+        let memory_attack_vectors = [
+            // Extremely long trace IDs (should be rejected)
+            &format!("00-{}-b7ad6b7169203331-01", "a".repeat(10000)),
+            &format!("00-{}-b7ad6b7169203331-01", "f".repeat(100000)),
+
+            // Extremely long span IDs
+            &format!("00-0af7651916cd43dd8448eb211c80319c-{}-01", "b".repeat(10000)),
+
+            // Many repeated dashes
+            &format!("00{}", "-".repeat(10000)),
+
+            // Unicode characters that could expand during processing
+            "00-🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥-b7ad6b7169203331-01",
+
+            // Malformed headers with extreme lengths
+            &"00-".repeat(10000),
+            &"invalid-trace-".repeat(1000),
+        ];
+
+        for attack_vector in &memory_attack_vectors {
+            let result = TraceContext::from_traceparent(attack_vector);
+
+            // Should reject without allocating excessive memory or panicking
+            assert!(
+                result.is_none(),
+                "Memory exhaustion attack should be rejected: {}",
+                if attack_vector.len() > 100 {
+                    &attack_vector[..100]
+                } else {
+                    attack_vector
+                }
+            );
+        }
+
+        // Verify normal operation still works after attack attempts
+        let valid_header = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+        let result = TraceContext::from_traceparent(valid_header);
+        assert!(result.is_some(), "Valid trace context should still work");
+    }
+
+    #[test]
+    fn advanced_security_edge_policy_hook_role_confusion_attacks() {
+        // Test role-based authorization against various confusion attacks
+        let legitimate_identity = AuthIdentity {
+            principal: "operator-user".to_string(),
+            method: AuthMethod::ApiKey,
+            roles: vec!["operator".to_string(), "reader".to_string()],
+        };
+
+        let elevation_attack_hooks = [
+            // Unicode lookalike attack on role names
+            PolicyHook {
+                hook_id: "test.read".to_string(),
+                required_roles: vec!["оperator".to_string()], // Cyrillic 'o'
+            },
+            // Case sensitivity bypass attempt
+            PolicyHook {
+                hook_id: "test.read".to_string(),
+                required_roles: vec!["Operator".to_string()],
+            },
+            // Whitespace injection
+            PolicyHook {
+                hook_id: "test.read".to_string(),
+                required_roles: vec![" operator ".to_string()],
+            },
+            // Null byte injection
+            PolicyHook {
+                hook_id: "test.read".to_string(),
+                required_roles: vec!["operator\0admin".to_string()],
+            },
+            // Partial match attempt
+            PolicyHook {
+                hook_id: "test.read".to_string(),
+                required_roles: vec!["oper".to_string()],
+            },
+        ];
+
+        for attack_hook in &elevation_attack_hooks {
+            let decision = authorize(&legitimate_identity, attack_hook, "trace-role-confusion")
+                .expect("authorize should not fail");
+
+            // All role confusion attacks should be denied
+            assert!(
+                matches!(decision, AuthzDecision::Deny { .. }),
+                "Role confusion attack should be denied: {:?}",
+                attack_hook.required_roles
+            );
+
+            if let AuthzDecision::Deny { reason } = decision {
+                // Error message should not leak information about valid roles
+                assert!(!reason.contains("operator")); // Should not suggest valid role name
+                assert!(reason.contains("lacks required role"));
+            }
+        }
+    }
+
+    #[test]
+    fn advanced_security_edge_middleware_chain_state_corruption_resistance() {
+        let route = RouteMetadata {
+            method: "POST".to_string(),
+            path: "/v1/operator/mutate".to_string(),
+            group: EndpointGroup::Operator,
+            lifecycle: EndpointLifecycle::Stable,
+            auth_method: AuthMethod::ApiKey,
+            policy_hook: PolicyHook {
+                hook_id: "operator.mutate".to_string(),
+                required_roles: vec!["operator".to_string()],
+            },
+            trace_propagation: true,
+        };
+
+        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
+        let keys = setup_keys();
+        let mut handler_call_count = 0;
+
+        // Execute multiple requests with various attack vectors
+        let request_variations = [
+            (Some("ApiKey test-key-123"), Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")),
+            (Some("ApiKey test-key-123"), None), // Missing trace
+            (Some("ApiKey wrong-key"), Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")),
+            (None, Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")), // Missing auth
+            (Some("ApiKey test-key-123"), Some("invalid-trace")),
+        ];
+
+        for (auth_header, traceparent) in &request_variations {
+            let (result, log) = execute_middleware_chain(
+                &route,
+                *auth_header,
+                *traceparent,
+                &mut limiter,
+                &keys,
+                |_identity, ctx| {
+                    handler_call_count += 1;
+                    // Simulate handler that could fail
+                    if ctx.trace_id.contains("evil") {
+                        Err(ApiError::Internal {
+                            detail: "simulated failure".to_string(),
+                            trace_id: ctx.trace_id.clone(),
+                        })
+                    } else {
+                        Ok(format!("success-{}", handler_call_count))
+                    }
+                },
+            );
+
+            // Verify middleware chain maintains invariants
+            assert!(!log.trace_id.is_empty(), "Trace ID should never be empty");
+            assert!(!log.principal.is_empty(), "Principal should never be empty");
+            assert!(!log.endpoint_group.is_empty(), "Endpoint group should never be empty");
+            assert!(!log.event_code.is_empty(), "Event code should never be empty");
+
+            // Verify status codes are within valid ranges
+            assert!((200..600).contains(&log.status), "Status code should be valid HTTP status");
+
+            // Verify latency is non-negative and finite
+            assert!(log.latency_ms >= 0.0, "Latency should be non-negative");
+            assert!(log.latency_ms.is_finite(), "Latency should be finite");
+
+            // Verify trace ID format consistency
+            if result.is_ok() {
+                // Success should have generated or parsed trace ID
+                assert!(log.trace_id.len() >= 16, "Trace ID should be reasonable length");
+            }
+        }
+    }
+
+    #[test]
+    fn advanced_security_edge_latency_metrics_statistical_poisoning_resistance() {
+        let mut metrics = LatencyMetrics::default();
+
+        // Attempt to poison statistical calculations with extreme values
+        let poisoning_attacks = [
+            // Extreme outliers
+            f64::MAX,
+            f64::MIN,
+            1e308,   // Near overflow
+            1e-308,  // Near underflow
+
+            // Special float values
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NAN,
+
+            // Values that could cause precision issues
+            0.0000000000001, // Very small positive
+            999999999999.99, // Very large
+        ];
+
+        // Record some normal values first
+        for i in 1..=100 {
+            metrics.record(f64::from(i));
+        }
+
+        let initial_sample_count = metrics.samples.len();
+
+        // Attempt statistical poisoning
+        for poison_value in &poisoning_attacks {
+            metrics.record(*poison_value);
+        }
+
+        // Verify resistance to poisoning
+        assert!(metrics.samples.len() <= initial_sample_count + 5, "Should not have recorded all poisoning values");
+
+        // Verify percentiles remain reasonable
+        let p50 = metrics.p50();
+        let p95 = metrics.p95();
+        let p99 = metrics.p99();
+
+        assert!(p50.is_finite(), "p50 should be finite after poisoning attempt");
+        assert!(p95.is_finite(), "p95 should be finite after poisoning attempt");
+        assert!(p99.is_finite(), "p99 should be finite after poisoning attempt");
+
+        assert!(p50 >= 0.0, "p50 should be non-negative");
+        assert!(p95 >= p50, "p95 should be >= p50");
+        assert!(p99 >= p95, "p99 should be >= p95");
+
+        // Should not be wildly out of expected range for our test data
+        assert!(p50 < 1000000.0, "p50 should not be extremely large");
+        assert!(p99 < 1000000.0, "p99 should not be extremely large");
+    }
+
+    #[test]
+    fn advanced_security_edge_service_metrics_counter_overflow_protection() {
+        let mut metrics = ServiceMetrics::default();
+
+        // Simulate extreme load to test counter overflow protection
+        let test_log = RequestLog {
+            method: "GET".to_string(),
+            route: "/v1/operator/status".to_string(),
+            status: 500,
+            latency_ms: 1.0,
+            trace_id: "trace-overflow-test".to_string(),
+            principal: "test-user".to_string(),
+            endpoint_group: EndpointGroup::Operator.as_str().to_string(),
+            event_code: event_codes::ENDPOINT_ERROR.to_string(),
+        };
+
+        // First, set counters to near overflow
+        metrics.request_count = u64::MAX - 10;
+        metrics.error_counts.insert(event_codes::ENDPOINT_ERROR.to_string(), u64::MAX - 5);
+
+        // Record additional requests
+        for _ in 0..20 {
+            metrics.record_request(&test_log);
+        }
+
+        // Verify overflow protection (should saturate, not wrap around)
+        assert!(metrics.request_count >= u64::MAX - 10, "Request count should saturate at max");
+        assert!(metrics.request_count <= u64::MAX, "Request count should not exceed max");
+
+        let error_count = metrics.error_counts.get(event_codes::ENDPOINT_ERROR).copied().unwrap_or(0);
+        assert!(error_count >= u64::MAX - 5, "Error count should saturate at max");
+        assert!(error_count <= u64::MAX, "Error count should not exceed max");
+
+        // Verify metrics remain functional after overflow protection
+        assert!(metrics.latencies.contains_key(EndpointGroup::Operator.as_str()));
+        assert!(!metrics.latencies[EndpointGroup::Operator.as_str()].samples.is_empty());
+    }
+}

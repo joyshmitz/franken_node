@@ -1158,9 +1158,8 @@ mod tests {
 
     #[test]
     fn pagination_deserialize_rejects_u64_overflow_page() {
-        let result = serde_json::from_str::<Pagination>(
-            r#"{"page":18446744073709551616,"per_page":20}"#,
-        );
+        let result =
+            serde_json::from_str::<Pagination>(r#"{"page":18446744073709551616,"per_page":20}"#);
 
         assert!(result.is_err());
     }
@@ -1202,5 +1201,133 @@ mod tests {
         let result = serde_json::from_value::<ApiResponse<Vec<String>>>(value);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn pagination_deserialize_rejects_u64_overflow_per_page() {
+        let result =
+            serde_json::from_str::<Pagination>(r#"{"page":1,"per_page":18446744073709551616}"#);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn pagination_deserialize_rejects_boolean_page() {
+        let value = serde_json::json!({
+            "page": false,
+            "per_page": 20
+        });
+
+        let result = serde_json::from_value::<Pagination>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn page_meta_deserialize_rejects_u64_overflow_total_pages() {
+        let result = serde_json::from_str::<PageMeta>(
+            r#"{"page":1,"per_page":20,"total_items":0,"total_pages":18446744073709551616}"#,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn page_meta_deserialize_rejects_float_page() {
+        let value = serde_json::json!({
+            "page": 1.5,
+            "per_page": 20,
+            "total_items": 0,
+            "total_pages": 0
+        });
+
+        let result = serde_json::from_value::<PageMeta>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn api_response_deserialize_rejects_nested_page_missing_per_page() {
+        let value = serde_json::json!({
+            "ok": true,
+            "data": [],
+            "page": {
+                "page": 1,
+                "total_items": 0,
+                "total_pages": 0
+            }
+        });
+
+        let result = serde_json::from_value::<ApiResponse<Vec<String>>>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn api_response_deserialize_rejects_nested_page_negative_total_pages() {
+        let value = serde_json::json!({
+            "ok": true,
+            "data": [],
+            "page": {
+                "page": 1,
+                "per_page": 20,
+                "total_items": 0,
+                "total_pages": -1
+            }
+        });
+
+        let result = serde_json::from_value::<ApiResponse<Vec<String>>>(value);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn empty_registry_list_rejects_invalid_page_before_empty_success() {
+        let mut registry = TrustCardRegistry::default();
+
+        let err = list_trust_cards(
+            &mut registry,
+            &TrustCardListFilter::empty(),
+            1_001,
+            "trace-empty-invalid-page",
+            Pagination {
+                page: 0,
+                per_page: 20,
+            },
+        )
+        .expect_err("invalid page must fail even when the registry is empty");
+
+        assert!(matches!(
+            err,
+            TrustCardError::InvalidPagination {
+                page: 0,
+                per_page: 20
+            }
+        ));
+    }
+
+    #[test]
+    fn missing_publisher_route_rejects_invalid_per_page_before_empty_success() {
+        let mut registry = fixture_registry(1_000).expect("fixture registry");
+
+        let err = get_trust_cards_by_publisher(
+            &mut registry,
+            "pub-does-not-exist",
+            1_001,
+            "trace-missing-publisher-invalid-page",
+            Pagination {
+                page: 1,
+                per_page: 0,
+            },
+        )
+        .expect_err("invalid per_page must fail even for missing publisher");
+
+        assert!(matches!(
+            err,
+            TrustCardError::InvalidPagination {
+                page: 1,
+                per_page: 0
+            }
+        ));
     }
 }

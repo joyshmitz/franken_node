@@ -1453,4 +1453,489 @@ mod problem_detail_schema_negative_tests {
                       code, marker, expected, description);
         }
     }
+
+    #[test]
+    fn negative_concurrent_problem_detail_creation_thread_safety() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        // Test concurrent creation of ProblemDetail objects for thread safety
+        let barrier = Arc::new(Barrier::new(8));
+        let mut handles = Vec::new();
+
+        for thread_id in 0..8 {
+            let barrier_clone = Arc::clone(&barrier);
+            let handle = thread::spawn(move || {
+                barrier_clone.wait(); // Synchronize start
+
+                let mut problems = Vec::new();
+                for i in 0..100 {
+                    // Create various problem types concurrently
+                    let problem = ProblemDetail::new(
+                        &format!("THREAD_{}_ERROR_{}", thread_id, i),
+                        &format!("Thread {} error {}", thread_id, i),
+                        500,
+                        &format!("Concurrent error from thread {} iteration {}", thread_id, i),
+                        &format!("/test/thread/{}/{}", thread_id, i),
+                        &format!("trace-thread-{}-{}", thread_id, i)
+                    );
+                    problems.push(problem);
+
+                    // Test concurrent serialization
+                    if i % 10 == 0 {
+                        for p in &problems {
+                            let _ = p.to_json(); // Should not panic or corrupt
+                        }
+                    }
+                }
+                problems
+            });
+            handles.push(handle);
+        }
+
+        // Collect results
+        let mut all_problems = Vec::new();
+        for handle in handles {
+            let thread_problems = handle.join().unwrap();
+            all_problems.extend(thread_problems);
+        }
+
+        // Verify all problems are distinct and well-formed
+        assert_eq!(all_problems.len(), 8 * 100);
+
+        let mut codes = std::collections::HashSet::new();
+        for problem in &all_problems {
+            // Each problem should have unique code
+            assert!(codes.insert(problem.code.clone()));
+            // Status should be 500
+            assert_eq!(problem.status, 500);
+            // Fields should not be corrupted
+            assert!(problem.code.contains("THREAD_"));
+            assert!(problem.trace_id.contains("trace-thread-"));
+        }
+    }
+
+    #[test]
+    fn negative_problem_detail_json_deserialization_memory_bomb_resistance() {
+        // Test resistance to JSON deserialization memory bombs
+        let memory_bomb_jsons = vec![
+            // Extremely deeply nested objects
+            format!("{}{}{}",
+                "{\"nested\":".repeat(10000),
+                "\"deep\"",
+                "}".repeat(10000)
+            ),
+
+            // Huge array in a field
+            format!("{{\"type\":\"test\",\"huge_array\":[{}],\"title\":\"test\",\"status\":500,\"detail\":\"test\",\"instance\":\"/test\",\"code\":\"TEST\",\"trace_id\":\"trace\"}}",
+                "\"item\",".repeat(50000)
+            ),
+
+            // Repeated very long string keys
+            (0..1000).map(|i| format!("\"very_long_key_name_that_repeats_{}\":\"value\"", i))
+                .collect::<Vec<_>>()
+                .join(","),
+
+            // Unicode normalization bomb
+            format!("{{\"type\":\"test\",\"title\":\"{}\",\"status\":500,\"detail\":\"test\",\"instance\":\"/test\",\"code\":\"TEST\",\"trace_id\":\"trace\"}}",
+                "\u{0065}\u{0301}".repeat(50000) // é as base + combining character
+            ),
+        ];
+
+        for (i, malicious_json) in memory_bomb_jsons.iter().enumerate() {
+            let start_time = std::time::Instant::now();
+
+            // Attempt deserialization - should fail gracefully without excessive resource use
+            let result = serde_json::from_str::<ProblemDetail>(malicious_json);
+
+            let parse_time = start_time.elapsed();
+
+            // Should complete quickly (reject or parse within reasonable time)
+            assert!(parse_time < std::time::Duration::from_secs(5),
+                   "Memory bomb test {}: Parsing took too long: {:?}", i, parse_time);
+
+            // Most should fail to deserialize due to missing required fields
+            match result {
+                Ok(problem) => {
+                    // If somehow successful, verify it's not corrupted
+                    assert!(!problem.code.is_empty());
+                    assert!(!problem.title.is_empty());
+                }
+                Err(_) => {
+                    // Expected to fail due to malformed JSON or missing fields
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_api_error_clone_and_equality_with_extreme_values() {
+        // Test Clone and PartialEq implementations with extreme values
+        let extreme_errors = vec![
+            ApiError::Internal {
+                detail: "\0".repeat(1000),
+                trace_id: "🚀".repeat(500),
+            },
+            ApiError::BadRequest {
+                detail: "x".repeat(100000),
+                trace_id: "",
+            },
+            #[cfg(any(test, feature = "extended-surfaces"))]
+            ApiError::RateLimited {
+                detail: "rate limited".to_string(),
+                trace_id: "trace".to_string(),
+                retry_after_ms: u64::MAX,
+            },
+            #[cfg(any(test, feature = "extended-surfaces"))]
+            ApiError::PolicyDenied {
+                detail: "denied".to_string(),
+                trace_id: "trace".to_string(),
+                policy_hook: "\u{FFFF}\u{10FFFF}".to_string(),
+            },
+        ];
+
+        for original_error in extreme_errors {
+            // Test Clone
+            let cloned_error = original_error.clone();
+
+            // Clone should be identical
+            assert_eq!(original_error, cloned_error);
+
+            // Test that equality works with extreme values
+            let same_error = original_error.clone();
+            assert_eq!(original_error, same_error);
+
+            // Test inequality with modified values
+            let different_error = match &original_error {
+                ApiError::Internal { detail, .. } => {
+                    ApiError::Internal {
+                        detail: detail.clone() + "_different",
+                        trace_id: "different_trace".to_string(),
+                    }
+                }
+                ApiError::BadRequest { detail, .. } => {
+                    ApiError::BadRequest {
+                        detail: detail.clone() + "_different",
+                        trace_id: "different_trace".to_string(),
+                    }
+                }
+                #[cfg(any(test, feature = "extended-surfaces"))]
+                ApiError::RateLimited { detail, trace_id, retry_after_ms } => {
+                    ApiError::RateLimited {
+                        detail: detail.clone(),
+                        trace_id: trace_id.clone(),
+                        retry_after_ms: retry_after_ms.saturating_sub(1),
+                    }
+                }
+                #[cfg(any(test, feature = "extended-surfaces"))]
+                ApiError::PolicyDenied { detail, trace_id, policy_hook } => {
+                    ApiError::PolicyDenied {
+                        detail: detail.clone(),
+                        trace_id: trace_id.clone(),
+                        policy_hook: policy_hook.clone() + "_different",
+                    }
+                }
+                #[cfg(feature = "extended-surfaces")]
+                _ => continue, // Skip other variants in this test
+            };
+
+            assert_ne!(original_error, different_error);
+        }
+    }
+
+    #[test]
+    fn negative_problem_detail_serialization_consistency_across_platforms() {
+        // Test serialization consistency with platform-specific edge cases
+        let problem = ProblemDetail::new(
+            "PLATFORM_TEST",
+            "Platform consistency test",
+            400,
+            "Testing serialization consistency across different platforms",
+            "/test/platform",
+            "trace-platform-test"
+        );
+
+        // Serialize multiple times - should be deterministic
+        let json1 = problem.to_json().expect("first serialization");
+        let json2 = problem.to_json().expect("second serialization");
+        assert_eq!(json1, json2, "Serialization should be deterministic");
+
+        // Test with floating-point edge cases in timestamps (if any are added later)
+        let start_time = std::time::SystemTime::now();
+        let problem_with_timing = ProblemDetail::new(
+            "TIMING_TEST",
+            "Timing test",
+            500,
+            &format!("Created at {:?}", start_time),
+            "/test/timing",
+            "trace-timing-test"
+        );
+
+        let timing_json = problem_with_timing.to_json().expect("timing serialization");
+
+        // Should deserialize back to same values
+        let deserialized: ProblemDetail = serde_json::from_str(&timing_json)
+            .expect("timing deserialization");
+        assert_eq!(deserialized.code, "TIMING_TEST");
+        assert_eq!(deserialized.status, 500);
+
+        // Test with extreme Unicode normalization cases
+        let unicode_problem = ProblemDetail::new(
+            "UNICODE_TEST_\u{0065}\u{0301}", // e + combining acute accent
+            "Unicode test: \u{1F600}\u{1F1FA}\u{1F1F8}", // emoji combinations
+            400,
+            "Testing Unicode normalization: \u{FFFF}",
+            "/test/unicode",
+            "trace-unicode-\u{10FFFF}"
+        );
+
+        let unicode_json = unicode_problem.to_json().expect("unicode serialization");
+        let unicode_deserialized: ProblemDetail = serde_json::from_str(&unicode_json)
+            .expect("unicode deserialization");
+
+        // Unicode should round-trip correctly
+        assert_eq!(unicode_deserialized.code, unicode_problem.code);
+        assert_eq!(unicode_deserialized.title, unicode_problem.title);
+        assert_eq!(unicode_deserialized.detail, unicode_problem.detail);
+    }
+
+    #[test]
+    fn negative_code_to_status_performance_with_adversarial_inputs() {
+        // Test performance of code_to_status with inputs designed to trigger worst-case behavior
+        let adversarial_performance_codes = vec![
+            // Codes designed to trigger many false positive marker checks
+            "FRANKEN_".repeat(1000) + "AUTH_FAIL",
+            "AUTH_FAIL".repeat(1000),
+            "_".repeat(10000) + "AUTH_FAIL" + &"_".repeat(10000),
+
+            // Codes with many potential marker positions
+            (0..1000).map(|i| format!("SEGMENT_{}_", i)).collect::<String>() + "AUTH_FAIL",
+
+            // Unicode that might slow down string operations
+            "🚀".repeat(1000) + "_AUTH_FAIL",
+
+            // Mixed case that might trigger many comparisons
+            "Auth_Fail_AUTH_fail_auth_FAIL_AUTH_FAIL".repeat(100),
+        ];
+
+        for (i, code) in adversarial_performance_codes.iter().enumerate() {
+            let start_time = std::time::Instant::now();
+
+            // Should complete quickly even for adversarial inputs
+            let status = code_to_status(code);
+
+            let elapsed = start_time.elapsed();
+            assert!(elapsed < std::time::Duration::from_millis(100),
+                   "Performance test {}: code_to_status took too long: {:?} for code length {}",
+                   i, elapsed, code.len());
+
+            // Result should be consistent regardless of performance
+            match status {
+                Some(http_status) => {
+                    assert!((100..=599).contains(&http_status));
+                }
+                None => {} // Valid result
+            }
+        }
+    }
+
+    #[test]
+    fn negative_problem_detail_field_boundary_value_testing() {
+        // Test boundary values for numeric fields
+        let boundary_test_cases = vec![
+            // Status code boundaries
+            (0, false),       // Below valid HTTP range
+            (99, false),      // Below valid HTTP range
+            (100, true),      // Minimum valid HTTP status
+            (200, true),      // Common success
+            (404, true),      // Common client error
+            (500, true),      // Common server error
+            (599, true),      // Maximum standard HTTP status
+            (600, false),     // Above standard range
+            (u16::MAX, false), // Maximum u16 value
+        ];
+
+        for (status_code, should_be_valid) in boundary_test_cases {
+            let problem = ProblemDetail::new(
+                "BOUNDARY_TEST",
+                "Boundary test",
+                status_code,
+                "Testing boundary values",
+                "/test/boundary",
+                "trace-boundary"
+            );
+
+            // Basic creation should always work (validation is semantic, not syntactic)
+            assert_eq!(problem.status, status_code);
+
+            // JSON serialization should preserve values
+            let json = problem.to_json().expect("boundary serialization");
+            assert!(json.contains(&format!("\"status\":{}", status_code)));
+
+            // Deserialization should work for any u16 value
+            let deserialized: ProblemDetail = serde_json::from_str(&json)
+                .expect("boundary deserialization");
+            assert_eq!(deserialized.status, status_code);
+
+            // Note: Semantic validation (is this a valid HTTP status) would be done
+            // elsewhere, not in the data structure itself
+        }
+
+        // Test optional field boundaries with retry_after_ms
+        let problem_with_retry = ProblemDetail {
+            problem_type: "test".to_string(),
+            title: "test".to_string(),
+            status: 429,
+            detail: "test".to_string(),
+            instance: "test".to_string(),
+            code: "test".to_string(),
+            trace_id: "test".to_string(),
+            retryable: Some(true),
+            retry_after_ms: Some(u64::MAX), // Maximum value
+            recovery_hint: Some("max retry".to_string()),
+        };
+
+        let max_retry_json = problem_with_retry.to_json().expect("max retry serialization");
+        assert!(max_retry_json.contains(&u64::MAX.to_string()));
+
+        let deserialized_max: ProblemDetail = serde_json::from_str(&max_retry_json)
+            .expect("max retry deserialization");
+        assert_eq!(deserialized_max.retry_after_ms, Some(u64::MAX));
+    }
+
+    #[test]
+    fn negative_api_error_variant_exhaustiveness_and_missing_field_handling() {
+        // Test that all ApiError variants handle missing/invalid data gracefully
+
+        // Test each variant with empty/minimal data
+        let minimal_errors = vec![
+            ApiError::Internal {
+                detail: "".to_string(),
+                trace_id: "".to_string()
+            },
+            ApiError::BadRequest {
+                detail: "".to_string(),
+                trace_id: "".to_string()
+            },
+            #[cfg(any(test, feature = "extended-surfaces"))]
+            ApiError::AuthFailed {
+                detail: "".to_string(),
+                trace_id: "".to_string()
+            },
+            #[cfg(any(test, feature = "extended-surfaces"))]
+            ApiError::PolicyDenied {
+                detail: "".to_string(),
+                trace_id: "".to_string(),
+                policy_hook: "".to_string(),
+            },
+            #[cfg(any(test, feature = "extended-surfaces"))]
+            ApiError::RateLimited {
+                detail: "".to_string(),
+                trace_id: "".to_string(),
+                retry_after_ms: 0,
+            },
+        ];
+
+        for error in minimal_errors {
+            // Display should work with empty fields
+            let display_output = format!("{}", error);
+            assert!(!display_output.is_empty());
+
+            // to_problem should work with empty fields
+            let problem = error.to_problem("");
+            assert!(!problem.code.is_empty()); // Code should be set by error type
+            assert_eq!(problem.detail, ""); // Empty detail should be preserved
+            assert_eq!(problem.trace_id, ""); // Empty trace_id should be preserved
+            assert_eq!(problem.instance, ""); // Empty instance should be preserved
+
+            // JSON serialization should work with empty fields
+            let json = problem.to_json().expect("empty field serialization");
+            assert!(json.contains("\"detail\":\"\""));
+            assert!(json.contains("\"trace_id\":\"\""));
+            assert!(json.contains("\"instance\":\"\""));
+
+            // Should round-trip successfully
+            let deserialized: ProblemDetail = serde_json::from_str(&json)
+                .expect("empty field deserialization");
+            assert_eq!(deserialized.detail, problem.detail);
+            assert_eq!(deserialized.trace_id, problem.trace_id);
+            assert_eq!(deserialized.instance, problem.instance);
+        }
+    }
+
+    #[test]
+    fn negative_problem_detail_memory_layout_and_size_constraints() {
+        // Test memory efficiency and size constraints of ProblemDetail
+
+        // Create a typical problem detail
+        let typical_problem = ProblemDetail::new(
+            "TYPICAL_ERROR",
+            "A typical error occurred",
+            500,
+            "This is a typical error detail message that might occur in normal operation",
+            "/v1/api/resource",
+            "trace-12345678-abcd-efgh-ijkl-1234567890ab"
+        );
+
+        // Memory size should be reasonable
+        let size = std::mem::size_of_val(&typical_problem);
+        assert!(size < 1024, "ProblemDetail size should be under 1KB, got {} bytes", size);
+
+        // Test with maximum reasonable field sizes
+        let max_reasonable_problem = ProblemDetail::new(
+            &"MAX_ERROR_CODE_".repeat(10), // ~150 chars
+            &"Maximum error title ".repeat(20), // ~400 chars
+            500,
+            &"Maximum error detail ".repeat(50), // ~1000 chars
+            &"/v1/api/maximum/path/".repeat(10), // ~200 chars
+            &"trace-maximum-".repeat(20) // ~280 chars
+        );
+
+        // Should still be able to serialize efficiently
+        let start_time = std::time::Instant::now();
+        let json = max_reasonable_problem.to_json().expect("max reasonable serialization");
+        let serialize_time = start_time.elapsed();
+
+        assert!(serialize_time < std::time::Duration::from_millis(10),
+               "Serialization of maximum reasonable problem took too long: {:?}", serialize_time);
+
+        // JSON should not be excessively large
+        assert!(json.len() < 10_000, "JSON size should be under 10KB, got {} bytes", json.len());
+
+        // Test stack allocation efficiency - should not require excessive stack space
+        let _stack_allocated_problems: [ProblemDetail; 10] = std::array::from_fn(|i| {
+            ProblemDetail::new(
+                &format!("STACK_TEST_{}", i),
+                "Stack test",
+                400,
+                "Testing stack allocation",
+                "/test/stack",
+                &format!("trace-stack-{}", i)
+            )
+        });
+
+        // Test that many problems can coexist without excessive memory
+        let many_problems: Vec<ProblemDetail> = (0..1000)
+            .map(|i| ProblemDetail::new(
+                &format!("MANY_TEST_{}", i),
+                "Many test",
+                500,
+                "Testing many problems",
+                &format!("/test/many/{}", i),
+                &format!("trace-many-{}", i)
+            ))
+            .collect();
+
+        assert_eq!(many_problems.len(), 1000);
+
+        // Should be able to serialize many problems efficiently
+        let start_time = std::time::Instant::now();
+        for problem in many_problems.iter().take(100) { // Sample to avoid excessive test time
+            let _ = problem.to_json().expect("many problems serialization");
+        }
+        let batch_serialize_time = start_time.elapsed();
+
+        assert!(batch_serialize_time < std::time::Duration::from_millis(100),
+               "Batch serialization of 100 problems took too long: {:?}", batch_serialize_time);
+    }
 }

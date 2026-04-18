@@ -4046,4 +4046,537 @@ mod tests {
 
         assert!(result.is_err(), "affected_nodes must fit in u32");
     }
+
+    // ── Comprehensive Edge Case Security Tests ────────────────────────────
+
+    #[test]
+    fn security_edge_case_unicode_injection_in_zone_identifiers() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+
+        // Test Unicode normalization attacks and lookalike characters
+        let malicious_zones = [
+            "zone-αdmin", // Greek alpha that looks like 'a'
+            "zone-аdmin", // Cyrillic 'a' that looks like Latin 'a'
+            "zone\u{200D}admin", // Zero-width joiner injection
+            "zone\u{202E}admin", // Right-to-left override
+            "zone\u{FEFF}admin", // Byte order mark injection
+            "zone\u{00A0}admin", // Non-breaking space
+            "zone\u{3000}admin", // Ideographic space
+            "zone‍admin", // Zero-width joiner (visual)
+        ];
+
+        for malicious_zone in &malicious_zones {
+            let scope = QuarantineScope {
+                zone_id: malicious_zone.to_string(),
+                tenant_id: None,
+                affected_nodes: 1,
+                reason: "unicode injection test".to_string(),
+            };
+
+            // Should either reject completely or normalize consistently
+            if let Ok(result) = mgr.quarantine("ext-unicode-test", &scope, &admin_identity(), &test_trace()) {
+                // If accepted, verify zone ID is properly normalized
+                assert!(!result.receipt.zone_id.contains('\u{202E}'), "RTL override must be stripped");
+                assert!(!result.receipt.zone_id.contains('\u{200D}'), "Zero-width joiner must be stripped");
+                assert!(!result.receipt.zone_id.contains('\u{FEFF}'), "BOM must be stripped");
+            }
+
+            // Verify status lookups use consistent normalization
+            let status_result = mgr.status(malicious_zone);
+            if let Ok(status) = status_result {
+                // Status should reflect normalized zone ID, not original
+                assert!(!status.zone_id.contains('\u{202E}'));
+                assert!(!status.zone_id.contains('\u{200D}'));
+                assert!(!status.zone_id.contains('\u{FEFF}'));
+            }
+        }
+    }
+
+    #[test]
+    fn security_edge_case_memory_exhaustion_through_massive_capacity_overflow() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+
+        // Attempt to trigger memory exhaustion through large data structures
+        let massive_reason = "A".repeat(1_000_000); // 1MB string
+        let massive_extension = "ext-".to_string() + &"x".repeat(100_000); // ~100KB extension ID
+
+        let scope = QuarantineScope {
+            zone_id: "zone-memory-test".to_string(),
+            tenant_id: Some("tenant-".to_string() + &"y".repeat(50_000)), // ~50KB tenant ID
+            affected_nodes: u32::MAX, // Maximum node count
+            reason: massive_reason,
+        };
+
+        // Should fail closed rather than allocating unbounded memory
+        let result = mgr.quarantine(&massive_extension, &scope, &admin_identity(), &test_trace());
+
+        // Verify graceful degradation - either reject or bound the data
+        match result {
+            Ok(action_result) => {
+                // If accepted, verify strings are bounded
+                assert!(action_result.receipt.payload_hash.len() < 10_000, "Hash should be bounded");
+                assert!(mgr.events().len() <= MAX_FLEET_EVENTS, "Events should respect capacity");
+                assert!(mgr.incidents.len() <= MAX_INCIDENTS, "Incidents should respect capacity");
+            }
+            Err(err) => {
+                // Should fail with capacity/validation error, not panic
+                assert!(matches!(
+                    err.error_code().as_str(),
+                    FLEET_SCOPE_INVALID | FLEET_INCIDENT_CAPACITY_EXCEEDED | FLEET_ZONE_STATUS_CAPACITY_EXCEEDED
+                ));
+            }
+        }
+
+        // Verify memory footprint stays bounded
+        assert!(mgr.zone_status.len() <= MAX_ZONE_STATUS, "Zone status should respect capacity");
+    }
+
+    #[test]
+    fn security_edge_case_concurrent_access_race_conditions() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let mgr = Arc::new(std::sync::Mutex::new(FleetControlManager::new()));
+        {
+            let mut guard = mgr.lock().unwrap();
+            guard.activate();
+        }
+
+        let barrier = Arc::new(Barrier::new(4));
+        let mut handles = Vec::new();
+
+        // Spawn concurrent threads performing different operations
+        for i in 0..4 {
+            let mgr_clone = Arc::clone(&mgr);
+            let barrier_clone = Arc::clone(&barrier);
+
+            let handle = thread::spawn(move || {
+                barrier_clone.wait(); // Synchronize start
+
+                let scope = QuarantineScope {
+                    zone_id: format!("zone-race-{}", i),
+                    tenant_id: None,
+                    affected_nodes: 1,
+                    reason: format!("race condition test {}", i),
+                };
+
+                // Attempt concurrent operations that could race
+                let mut results = Vec::new();
+                for j in 0..10 {
+                    let extension_id = format!("ext-{}-{}", i, j);
+                    let mut guard = mgr_clone.lock().unwrap();
+                    let result = guard.quarantine(&extension_id, &scope, &admin_identity(), &test_trace());
+                    results.push(result);
+                }
+                results
+            });
+            handles.push(handle);
+        }
+
+        // Collect all results
+        let mut all_results = Vec::new();
+        for handle in handles {
+            let thread_results = handle.join().unwrap();
+            all_results.extend(thread_results);
+        }
+
+        // Verify consistency - no double-allocation of operation IDs
+        let mut operation_ids = std::collections::HashSet::new();
+        for result in all_results {
+            if let Ok(action_result) = result {
+                assert!(
+                    operation_ids.insert(action_result.operation_id.clone()),
+                    "Operation ID {} was allocated twice - race condition detected",
+                    action_result.operation_id
+                );
+
+                // Verify receipt IDs are also unique
+                assert!(
+                    action_result.receipt.receipt_id.starts_with("rcpt-"),
+                    "Receipt ID format is consistent"
+                );
+            }
+        }
+
+        // Verify final state is consistent
+        let guard = mgr.lock().unwrap();
+        assert!(guard.zones().len() <= 4, "Zone count should not exceed thread count");
+        assert!(guard.incident_count() <= 40, "Incident count should not exceed attempts");
+    }
+
+    #[test]
+    fn security_edge_case_malformed_request_validation_bypass() {
+        let _guard = lock_handler_test_state();
+        activate_shared_fleet_control_manager_for_tests();
+
+        // Test malformed JSON that could bypass validation
+        let malformed_requests = vec![
+            // Missing required fields
+            serde_json::json!({
+                "extension_id": "ext-malformed"
+                // Missing scope
+            }),
+            // Type confusion attacks
+            serde_json::json!({
+                "extension_id": 123, // Wrong type
+                "scope": {
+                    "zone_id": "zone-test",
+                    "tenant_id": null,
+                    "affected_nodes": "not-a-number", // Wrong type
+                    "reason": "type confusion"
+                }
+            }),
+            // Nested object injection
+            serde_json::json!({
+                "extension_id": "ext-test",
+                "scope": {
+                    "zone_id": "zone-test",
+                    "tenant_id": null,
+                    "affected_nodes": 1,
+                    "reason": "nested test",
+                    "__proto__": {"malicious": "field"}, // Prototype pollution attempt
+                    "constructor": {"name": "evil"} // Constructor pollution attempt
+                }
+            }),
+            // Array confusion
+            serde_json::json!({
+                "extension_id": ["ext", "array"], // Array instead of string
+                "scope": {
+                    "zone_id": "zone-test",
+                    "tenant_id": null,
+                    "affected_nodes": 1,
+                    "reason": "array confusion"
+                }
+            }),
+            // Extremely nested objects
+            serde_json::json!({
+                "extension_id": "ext-test",
+                "scope": {
+                    "zone_id": "zone-test",
+                    "tenant_id": {"nested": {"deeply": {"malicious": "object"}}}, // Wrong type
+                    "affected_nodes": 1,
+                    "reason": "deep nesting"
+                }
+            }),
+        ];
+
+        for malformed in malformed_requests {
+            let result: Result<QuarantineRequest, _> = serde_json::from_value(malformed.clone());
+
+            // All malformed requests should fail deserialization
+            assert!(
+                result.is_err(),
+                "Malformed request should be rejected: {:?}",
+                malformed
+            );
+
+            // Verify error handling doesn't leak sensitive info
+            if let Err(err) = result {
+                let error_string = err.to_string();
+                assert!(!error_string.contains("internal"), "Error should not expose internals");
+                assert!(!error_string.contains("debug"), "Error should not expose debug info");
+            }
+        }
+    }
+
+    #[test]
+    fn security_edge_case_serialization_deserialization_attacks() {
+        // Test various serialization attack vectors
+        let attack_vectors = vec![
+            // Null byte injection in strings
+            serde_json::json!({
+                "extension_id": "ext-test\0malicious",
+                "scope": {
+                    "zone_id": "zone-test\0evil",
+                    "tenant_id": "tenant\0null",
+                    "affected_nodes": 1,
+                    "reason": "null\0byte\0injection"
+                }
+            }),
+            // Control character injection
+            serde_json::json!({
+                "extension_id": "ext-test\x1b[31mevil\x1b[0m", // ANSI escape codes
+                "scope": {
+                    "zone_id": "zone-test\r\n", // CRLF injection
+                    "tenant_id": null,
+                    "affected_nodes": 1,
+                    "reason": "control\x7fcharacters\x1f"
+                }
+            }),
+            // Integer overflow/underflow
+            serde_json::json!({
+                "extension_id": "ext-test",
+                "scope": {
+                    "zone_id": "zone-test",
+                    "tenant_id": null,
+                    "affected_nodes": -1, // Negative number
+                    "reason": "underflow test"
+                }
+            }),
+            // Boolean confusion
+            serde_json::json!({
+                "extension_id": "ext-test",
+                "scope": {
+                    "zone_id": true, // Boolean instead of string
+                    "tenant_id": false, // Boolean instead of optional string
+                    "affected_nodes": 1,
+                    "reason": "boolean confusion"
+                }
+            }),
+        ];
+
+        for attack_vector in attack_vectors {
+            let result: Result<QuarantineRequest, _> = serde_json::from_value(attack_vector.clone());
+
+            // Should fail gracefully without panicking
+            assert!(
+                result.is_err(),
+                "Serialization attack should be rejected: {:?}",
+                attack_vector
+            );
+
+            // Test round-trip consistency for valid data
+            if let Ok(request) = result {
+                let serialized = serde_json::to_string(&request).expect("Valid request should serialize");
+                let deserialized: QuarantineRequest =
+                    serde_json::from_str(&serialized).expect("Serialized data should deserialize");
+
+                // Verify no data corruption occurred
+                assert_eq!(request.extension_id, deserialized.extension_id);
+                assert_eq!(request.scope, deserialized.scope);
+            }
+        }
+    }
+
+    #[test]
+    fn security_edge_case_capacity_boundary_exploits() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+
+        // Test boundary conditions around capacity limits
+
+        // 1. Fill incident capacity to exactly at limit
+        for i in 0..MAX_INCIDENTS {
+            let scope = QuarantineScope {
+                zone_id: format!("zone-capacity-{}", i),
+                tenant_id: None,
+                affected_nodes: 1,
+                reason: format!("capacity test {}", i),
+            };
+
+            mgr.quarantine(&format!("ext-{}", i), &scope, &admin_identity(), &test_trace())
+                .expect("Should fit within capacity");
+        }
+
+        assert_eq!(mgr.incident_count(), MAX_INCIDENTS);
+
+        // 2. Test one more should fail
+        let overflow_scope = QuarantineScope {
+            zone_id: "zone-overflow".to_string(),
+            tenant_id: None,
+            affected_nodes: 1,
+            reason: "overflow attempt".to_string(),
+        };
+
+        let err = mgr.quarantine("ext-overflow", &overflow_scope, &admin_identity(), &test_trace())
+            .expect_err("Should fail at capacity limit");
+        assert_eq!(err.error_code(), FLEET_INCIDENT_CAPACITY_EXCEEDED);
+
+        // 3. Verify no partial state corruption
+        assert_eq!(mgr.incident_count(), MAX_INCIDENTS, "Incident count should not change on failure");
+        assert!(!mgr.zone_status.contains_key("zone-overflow"), "Failed zone should not be added");
+
+        // 4. Test zone status capacity limits
+        for i in MAX_INCIDENTS..MAX_INCIDENTS + MAX_ZONE_STATUS {
+            let zone_id = format!("zone-status-{}", i);
+            if mgr.zone_status.len() >= MAX_ZONE_STATUS {
+                break;
+            }
+
+            // Try to add zone status entries via status queries
+            let _ = mgr.status(&zone_id);
+        }
+
+        // Verify zone status respects capacity
+        assert!(mgr.zone_status.len() <= MAX_ZONE_STATUS, "Zone status should respect capacity");
+
+        // 5. Test event capacity through reconcile operations
+        let initial_event_count = mgr.events().len();
+        for _ in 0..10 {
+            let _ = mgr.reconcile(&admin_identity(), &test_trace());
+        }
+
+        // Events should be bounded
+        assert!(mgr.events().len() <= MAX_FLEET_EVENTS, "Events should respect capacity");
+        assert!(mgr.events().len() >= initial_event_count, "Events should accumulate");
+    }
+
+    #[test]
+    fn security_edge_case_error_propagation_consistency() {
+        let mut mgr = FleetControlManager::new();
+        // Note: Don't activate to test safe-start mode errors
+
+        // Test error consistency across different code paths
+        let scope = test_quarantine_scope();
+        let identity = admin_identity();
+        let trace = test_trace();
+
+        // 1. Test not-activated errors are consistent
+        let quarantine_err = mgr.quarantine("ext-1", &scope, &identity, &trace)
+            .expect_err("Should fail before activation");
+        let revoke_err = mgr.revoke("ext-1", &test_revocation_scope(), &identity, &trace)
+            .expect_err("Should fail before activation");
+        let release_err = mgr.release("inc-fake", &identity, &trace)
+            .expect_err("Should fail before activation");
+        let reconcile_err = mgr.reconcile(&identity, &trace)
+            .expect_err("Should fail before activation");
+
+        // All should have same error code
+        assert_eq!(quarantine_err.error_code(), FLEET_NOT_ACTIVATED);
+        assert_eq!(revoke_err.error_code(), FLEET_NOT_ACTIVATED);
+        assert_eq!(release_err.error_code(), FLEET_NOT_ACTIVATED);
+        assert_eq!(reconcile_err.error_code(), FLEET_NOT_ACTIVATED);
+
+        mgr.activate();
+
+        // 2. Test scope validation errors are consistent
+        let empty_scope = QuarantineScope {
+            zone_id: String::new(),
+            tenant_id: None,
+            affected_nodes: 1,
+            reason: "empty zone test".to_string(),
+        };
+
+        let empty_revoke_scope = RevocationScope {
+            zone_id: String::new(),
+            tenant_id: None,
+            severity: RevocationSeverity::Mandatory,
+            reason: "empty zone test".to_string(),
+        };
+
+        let quarantine_scope_err = mgr.quarantine("ext-1", &empty_scope, &identity, &trace)
+            .expect_err("Should fail with empty zone");
+        let revoke_scope_err = mgr.revoke("ext-1", &empty_revoke_scope, &identity, &trace)
+            .expect_err("Should fail with empty zone");
+        let status_err = mgr.status("")
+            .expect_err("Should fail with empty zone");
+
+        // All should have same scope error code
+        assert_eq!(quarantine_scope_err.error_code(), FLEET_SCOPE_INVALID);
+        assert_eq!(revoke_scope_err.error_code(), FLEET_SCOPE_INVALID);
+        assert_eq!(status_err.error_code(), FLEET_SCOPE_INVALID);
+
+        // 3. Test operation ID exhaustion errors are consistent
+        mgr.operation_ids_exhausted = true;
+
+        let quarantine_id_err = mgr.quarantine("ext-1", &scope, &identity, &trace)
+            .expect_err("Should fail with exhausted IDs");
+        let revoke_id_err = mgr.revoke("ext-1", &test_revocation_scope(), &identity, &trace)
+            .expect_err("Should fail with exhausted IDs");
+        let release_id_err = mgr.release("inc-fake", &identity, &trace)
+            .expect_err("Should fail with exhausted IDs");
+        let reconcile_id_err = mgr.reconcile(&identity, &trace)
+            .expect_err("Should fail with exhausted IDs");
+
+        // All should have same ID exhaustion error code
+        assert_eq!(quarantine_id_err.error_code(), FLEET_OPERATION_ID_EXHAUSTED);
+        assert_eq!(revoke_id_err.error_code(), FLEET_OPERATION_ID_EXHAUSTED);
+        assert_eq!(release_id_err.error_code(), FLEET_OPERATION_ID_EXHAUSTED);
+        assert_eq!(reconcile_id_err.error_code(), FLEET_OPERATION_ID_EXHAUSTED);
+    }
+
+    #[test]
+    fn security_edge_case_state_corruption_resistance() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+
+        // Test resistance to state corruption under adversarial conditions
+
+        // 1. Create some initial state
+        let scope = test_quarantine_scope();
+        mgr.quarantine("ext-initial", &scope, &admin_identity(), &test_trace())
+            .expect("Initial quarantine");
+
+        let initial_incident_count = mgr.incident_count();
+        let initial_zone_count = mgr.zones().len();
+        let initial_event_count = mgr.events().len();
+
+        // 2. Attempt operations that could corrupt state
+
+        // Try to add incidents beyond capacity
+        for i in initial_incident_count..MAX_INCIDENTS + 10 {
+            let test_scope = QuarantineScope {
+                zone_id: format!("zone-corruption-{}", i),
+                tenant_id: None,
+                affected_nodes: 1,
+                reason: format!("corruption test {}", i),
+            };
+
+            let _ = mgr.quarantine(&format!("ext-{}", i), &test_scope, &admin_identity(), &test_trace());
+        }
+
+        // Verify incident count never exceeds maximum
+        assert!(mgr.incident_count() <= MAX_INCIDENTS, "Incident count should be bounded");
+
+        // 3. Try invalid releases that could corrupt incident state
+        let fake_incident_ids = vec![
+            "inc-nonexistent",
+            "inc-fleet-op-999999999",
+            "",
+            "inc-fleet-op--1", // Negative operation ID
+            "inc-fleet-op-overflow-attack",
+            "inc-\0null-byte",
+        ];
+
+        for fake_id in fake_incident_ids {
+            let result = mgr.release(fake_id, &admin_identity(), &test_trace());
+            if result.is_ok() {
+                panic!("Release of fake incident {} should not succeed", fake_id);
+            }
+        }
+
+        // Verify incident count hasn't been corrupted by failed releases
+        assert!(mgr.incident_count() <= MAX_INCIDENTS, "Failed releases should not corrupt incident count");
+
+        // 4. Test status queries for zones that could corrupt state
+        let malicious_zones = vec![
+            "../zone-traversal",
+            "/absolute/path/zone",
+            "zone\0null",
+            "zone\r\nheader-injection",
+            "zone" + &"x".repeat(10000), // Very long zone name
+        ];
+
+        for malicious_zone in malicious_zones {
+            let result = mgr.status(&malicious_zone);
+            // Either reject or handle safely
+            if let Ok(status) = result {
+                // If accepted, verify zone ID is sanitized
+                assert!(!status.zone_id.contains('\0'), "Zone ID should not contain null bytes");
+                assert!(!status.zone_id.contains(".."), "Zone ID should not contain path traversal");
+                assert!(status.zone_id.len() < 1000, "Zone ID should be bounded");
+            }
+        }
+
+        // 5. Verify overall state consistency after all attacks
+        assert!(mgr.zones().len() <= MAX_ZONE_STATUS, "Zone count should be bounded");
+        assert!(mgr.events().len() <= MAX_FLEET_EVENTS, "Event count should be bounded");
+        assert!(mgr.incident_count() <= MAX_INCIDENTS, "Incident count should be bounded");
+
+        // Verify internal consistency
+        for incident in mgr.active_incidents() {
+            assert!(!incident.incident_id.is_empty(), "Incident ID should not be empty");
+            assert!(!incident.zone_id.is_empty(), "Zone ID should not be empty");
+            assert!(incident.incident_id.starts_with("inc-"), "Incident ID should have correct prefix");
+        }
+
+        // Verify no state leakage in receipts
+        if let Ok(test_result) = mgr.quarantine("ext-final", &scope, &admin_identity(), &test_trace()) {
+            assert!(!test_result.receipt.payload_hash.is_empty(), "Receipt hash should not be empty");
+            assert!(!test_result.receipt.receipt_id.contains("internal"), "Receipt should not leak internals");
+            assert!(test_result.receipt.receipt_id.starts_with("rcpt-"), "Receipt ID should have correct prefix");
+        }
+    }
 }

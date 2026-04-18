@@ -1556,4 +1556,136 @@ mod tests {
 
         assert!(result.is_err());
     }
+
+    #[test]
+    fn trigger_request_deserialize_rejects_null_verbose_flag() {
+        let raw = serde_json::json!({
+            "scope": "security",
+            "verbose": null
+        });
+
+        let result = serde_json::from_value::<ConformanceTriggerRequest>(raw);
+
+        assert!(result.is_err(), "verbose must be an explicit boolean");
+    }
+
+    #[test]
+    fn trigger_request_deserialize_rejects_object_scope() {
+        let raw = serde_json::json!({
+            "scope": { "module": "security" },
+            "verbose": false
+        });
+
+        let result = serde_json::from_value::<ConformanceTriggerRequest>(raw);
+
+        assert!(result.is_err(), "scope must remain an optional string");
+    }
+
+    #[test]
+    fn conformance_result_deserialize_rejects_negative_passed_count() {
+        let raw = serde_json::json!({
+            "check_id": "chk-schema-negative-passed",
+            "status": "Pass",
+            "total_checks": 2,
+            "passed": -1,
+            "failed": 0,
+            "skipped": 0,
+            "findings": [],
+            "triggered_at": "2026-01-01T00:00:00Z"
+        });
+
+        let result = serde_json::from_value::<ConformanceResult>(raw);
+
+        assert!(result.is_err(), "passed count must stay unsigned");
+    }
+
+    #[test]
+    fn conformance_result_deserialize_rejects_null_status() {
+        let raw = serde_json::json!({
+            "check_id": "chk-schema-null-status",
+            "status": null,
+            "total_checks": 2,
+            "passed": 2,
+            "failed": 0,
+            "skipped": 0,
+            "findings": [],
+            "triggered_at": "2026-01-01T00:00:00Z"
+        });
+
+        let result = serde_json::from_value::<ConformanceResult>(raw);
+
+        assert!(result.is_err(), "status is required and must be typed");
+    }
+
+    #[test]
+    fn conformance_finding_deserialize_rejects_boolean_check_name() {
+        let raw = serde_json::json!({
+            "check_name": true,
+            "status": "Pass",
+            "detail": "ok",
+            "severity": "info"
+        });
+
+        let result = serde_json::from_value::<ConformanceFinding>(raw);
+
+        assert!(result.is_err(), "check_name must be a string");
+    }
+
+    #[test]
+    fn evidence_artifact_deserialize_rejects_boolean_created_at() {
+        let raw = serde_json::json!({
+            "check_id": "chk-schema-bool-created-at",
+            "artifact_type": "conformance_evidence",
+            "content_hash": format!("sha256:{}", "0".repeat(64)),
+            "size_bytes": 0,
+            "created_at": false,
+            "content": {"ok": true}
+        });
+
+        let result = serde_json::from_value::<EvidenceArtifact>(raw);
+
+        assert!(result.is_err(), "created_at must stay a timestamp string");
+    }
+
+    #[test]
+    fn audit_log_query_deserialize_rejects_float_limit() {
+        let raw = serde_json::json!({
+            "action": null,
+            "actor": null,
+            "limit": 10.5,
+            "since": null
+        });
+
+        let result = serde_json::from_value::<AuditLogQuery>(raw);
+
+        assert!(result.is_err(), "limit must be an integer");
+    }
+
+    #[test]
+    fn query_audit_log_rejects_whitespace_wrapped_since_timestamp() {
+        let _guard = test_guard();
+        reset_verifier_state();
+        let identity = test_identity();
+        let trace = test_trace();
+
+        let err = query_audit_log(
+            &identity,
+            &trace,
+            &AuditLogQuery {
+                action: None,
+                actor: None,
+                limit: Some(10),
+                since: Some(" 2026-01-01T00:00:00Z ".to_string()),
+            },
+        )
+        .expect_err("since timestamp must not be whitespace-wrapped");
+
+        assert!(matches!(
+            err,
+            ApiError::BadRequest {
+                ref detail,
+                ref trace_id
+            } if detail.contains("since timestamp") && trace_id == "test-trace-verifier-001"
+        ));
+    }
 }

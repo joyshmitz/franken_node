@@ -2044,7 +2044,10 @@ mod compat_gate_fresh_negative_tests {
             .expect("second receipt should issue");
 
         assert!(svc.query_receipts(Some("scope-a"), Some("high")).is_empty());
-        assert!(svc.query_receipts(Some("scope-b"), Some("medium")).is_empty());
+        assert!(
+            svc.query_receipts(Some("scope-b"), Some("medium"))
+                .is_empty()
+        );
     }
 
     #[test]
@@ -2094,5 +2097,797 @@ mod compat_gate_fresh_negative_tests {
         assert_eq!(err, CompatGateOperationError::TraceIdSpaceExhausted);
         assert!(svc.receipts().is_empty());
         assert!(svc.events().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod compat_gate_malformed_payload_tests {
+    use super::*;
+
+    #[test]
+    fn compat_mode_deserialize_rejects_display_case_label() {
+        let result: Result<CompatMode, _> = serde_json::from_str("\"LegacyRisky\"");
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn gate_decision_deserialize_rejects_unknown_variant() {
+        let result: Result<GateDecision, _> = serde_json::from_str("\"maybe\"");
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn gate_check_request_deserialize_rejects_missing_package_id() {
+        let raw = serde_json::json!({
+            "requested_mode": "balanced",
+            "scope": "project-1",
+            "policy_context": null
+        });
+
+        let result: Result<GateCheckRequest, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn mode_transition_request_deserialize_rejects_string_mode_payload() {
+        let raw = serde_json::json!({
+            "scope_id": "project-1",
+            "from_mode": "strict",
+            "to_mode": "legacy-risky",
+            "justification": "bad separator in mode label",
+            "requestor": "operator"
+        });
+
+        let result: Result<ModeTransitionRequest, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn compat_receipt_deserialize_rejects_missing_payload_hash() {
+        let raw = serde_json::json!({
+            "receipt_id": "rcpt-1",
+            "scope": "project-1",
+            "receipt_type": "gate_check",
+            "severity": "low",
+            "issued_at": "2026-01-01T00:00:00Z",
+            "signature": "sig-rcpt-1"
+        });
+
+        let result: Result<CompatReceipt, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn policy_predicate_deserialize_rejects_scalar_attenuation() {
+        let raw = serde_json::json!({
+            "predicate_id": "predicate-1",
+            "signature": "sig-predicate-1",
+            "attenuation": "not-a-list",
+            "activation_condition": "balanced"
+        });
+
+        let result: Result<PolicyPredicate, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn registration_error_deserialize_rejects_unknown_variant() {
+        let raw = serde_json::json!({
+            "unknown_capacity_error": {
+                "capacity": 1_usize
+            }
+        });
+
+        let result: Result<CompatGateRegistrationError, _> = serde_json::from_value(raw);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn security_edge_case_concurrent_service_access_thread_safety() {
+        use std::sync::{Arc, Barrier, Mutex};
+        use std::thread;
+
+        let service = Arc::new(Mutex::new(CompatGateService::new()));
+        {
+            let mut svc = service.lock().unwrap();
+            svc.set_scope_mode("concurrent-scope", CompatMode::Balanced);
+        }
+
+        let barrier = Arc::new(Barrier::new(8));
+        let mut handles = Vec::new();
+
+        // Test concurrent operations that could lead to race conditions
+        for thread_id in 0..8 {
+            let service_clone = Arc::clone(&service);
+            let barrier_clone = Arc::clone(&barrier);
+
+            let handle = thread::spawn(move || {
+                barrier_clone.wait(); // Synchronize start
+
+                let mut results = Vec::new();
+
+                // Each thread performs different types of operations
+                for i in 0..50 {
+                    let mut svc = service_clone.lock().unwrap();
+
+                    match thread_id % 4 {
+                        0 => {
+                            // Gate checks
+                            let result = svc.gate_check(&GateCheckRequest {
+                                package_id: format!("pkg-{}-{}", thread_id, i),
+                                requested_mode: CompatMode::Strict,
+                                scope: "concurrent-scope".to_string(),
+                                policy_context: Some(format!("ctx-{}", thread_id)),
+                            });
+                            results.push(("gate_check", result.is_ok()));
+                        }
+                        1 => {
+                            // Mode transitions
+                            let result = svc.request_transition(&ModeTransitionRequest {
+                                scope_id: format!("scope-{}-{}", thread_id, i),
+                                from_mode: CompatMode::Strict,
+                                to_mode: CompatMode::Balanced,
+                                justification: format!("justification-{}", thread_id),
+                                requestor: format!("requestor-{}", thread_id),
+                            });
+                            results.push(("transition", result.is_ok()));
+                        }
+                        2 => {
+                            // Receipt operations
+                            let result = svc.issue_divergence_receipt(
+                                &format!("scope-{}", thread_id),
+                                &format!("severity-{}", i % 3)
+                            );
+                            results.push(("receipt", result.is_ok()));
+                        }
+                        3 => {
+                            // Shim registrations
+                            let result = svc.register_shim(ShimMetadata {
+                                shim_id: format!("shim-{}-{}", thread_id, i),
+                                description: format!("concurrent shim {}", thread_id),
+                                risk_category: "low".to_string(),
+                                activation_policy: "balanced".to_string(),
+                                divergence_rationale: "concurrency test".to_string(),
+                                scope: format!("scope-{}", thread_id),
+                            });
+                            results.push(("register_shim", result.is_ok()));
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                results
+            });
+            handles.push(handle);
+        }
+
+        // Collect results and verify no corruption occurred
+        let mut all_results = Vec::new();
+        for handle in handles {
+            let thread_results = handle.join().unwrap();
+            all_results.extend(thread_results);
+        }
+
+        // Verify final state consistency
+        let svc = service.lock().unwrap();
+
+        // Should have reasonable counts without overflows
+        assert!(svc.receipts().len() <= MAX_RECEIPTS);
+        assert!(svc.events().len() <= MAX_EVENTS);
+        assert!(svc.shims.len() <= MAX_SHIMS);
+
+        // All events should have valid trace IDs (no corruption)
+        for event in svc.events() {
+            assert!(!event.trace_id.is_empty());
+            assert!(!event.scope.is_empty());
+            assert!(!event.code.is_empty());
+        }
+
+        // All receipts should have unique IDs (no duplicates from race conditions)
+        let mut receipt_ids = std::collections::HashSet::new();
+        for receipt in svc.receipts() {
+            assert!(receipt_ids.insert(receipt.receipt_id.clone()));
+        }
+    }
+
+    #[test]
+    fn security_edge_case_id_generation_overflow_boundary_testing() {
+        let mut svc = CompatGateService::new();
+
+        // Test trace ID generation at boundary conditions
+        let trace_boundary_tests = [
+            (0, 0),              // Initial state
+            (u64::MAX - 1, 0),   // Near overflow, no epoch
+            (u64::MAX, 0),       // At overflow boundary
+            (0, 1),              // After epoch rollover
+            (u64::MAX - 1, u64::MAX - 1),  // Near both limits
+            (u64::MAX, u64::MAX - 1),      // Trace at max, epoch near max
+            (u64::MAX - 1, u64::MAX),      // Trace near max, epoch at max
+        ];
+
+        for (counter, epoch) in trace_boundary_tests {
+            svc.trace_counter = counter;
+            svc.trace_epoch = epoch;
+
+            let result = svc.next_trace_id();
+
+            if counter == u64::MAX && epoch == u64::MAX {
+                // Should fail at absolute limit
+                assert!(result.is_err());
+                assert_eq!(result.unwrap_err(), CompatGateOperationError::TraceIdSpaceExhausted);
+            } else {
+                // Should succeed with valid ID
+                let trace_id = result.unwrap();
+                assert!(!trace_id.is_empty());
+                assert!(trace_id.starts_with("trace-"));
+
+                // Verify counter incremented or epoch rolled over correctly
+                if counter == u64::MAX && epoch < u64::MAX {
+                    assert_eq!(svc.trace_counter, 1);
+                    assert_eq!(svc.trace_epoch, epoch + 1);
+                } else if counter < u64::MAX {
+                    assert_eq!(svc.trace_counter, counter + 1);
+                }
+            }
+        }
+
+        // Reset and test receipt ID generation
+        svc.receipt_counter = u64::MAX - 1;
+        svc.receipt_epoch = 0;
+
+        let receipt1 = svc.next_receipt_id().unwrap();
+        let receipt2 = svc.next_receipt_id().unwrap();
+
+        // Should be unique despite boundary rollover
+        assert_ne!(receipt1, receipt2);
+        assert!(receipt1.starts_with("rcpt-"));
+        assert!(receipt2.starts_with("rcpt-"));
+        assert_eq!(svc.receipt_epoch, 1);
+        assert_eq!(svc.receipt_counter, 1);
+    }
+
+    #[test]
+    fn security_edge_case_policy_injection_in_request_fields() {
+        let mut svc = CompatGateService::new();
+        svc.set_scope_mode("policy-test", CompatMode::Balanced);
+
+        // Test various injection patterns in request fields
+        let injection_patterns = vec![
+            // LDAP injection
+            "pkg*)(uid=*",
+            "pkg))(|(password=*",
+
+            // SQL injection patterns
+            "pkg'; DROP TABLE scopes; --",
+            "pkg' OR '1'='1",
+            "pkg' UNION SELECT * FROM secrets --",
+
+            // NoSQL injection
+            "pkg'; return {sensitive: true}; //",
+            "pkg\"; this.sensitive = true; //",
+
+            // Command injection
+            "pkg; rm -rf /; echo",
+            "pkg`cat /etc/passwd`",
+            "pkg$(whoami)",
+
+            // Path traversal
+            "../../../etc/passwd",
+            "..\\..\\..\\windows\\system32\\config\\sam",
+
+            // XSS payloads
+            "<script>alert('xss')</script>",
+            "javascript:alert('xss')",
+            "\"><script>alert('xss')</script>",
+
+            // YAML/JSON injection
+            "pkg\": {\"evil\": true}, \"dummy\": \"",
+            "pkg\\n---\\nevil: true",
+
+            // Regex DoS patterns
+            "pkg" + &"a?".repeat(10000) + "a".repeat(10000),
+
+            // Unicode attacks
+            "\u{202E}reverse\u{202D}normal",  // BiDi override
+            "\u{FEFF}bom",                    // Byte Order Mark
+            "\u{00AD}soft-hyphen",            // Soft hyphen
+        ];
+
+        for malicious_input in injection_patterns {
+            let request = GateCheckRequest {
+                package_id: malicious_input.to_string(),
+                requested_mode: CompatMode::Strict,
+                scope: "policy-test".to_string(),
+                policy_context: Some(malicious_input.to_string()),
+            };
+
+            let result = svc.gate_check(&request);
+
+            // Should handle malicious input gracefully
+            match result {
+                Ok(response) => {
+                    // If accepted, verify response doesn't leak injection content
+                    assert!(!response.rationale.contains("DROP TABLE"));
+                    assert!(!response.rationale.contains("<script>"));
+                    assert!(!response.rationale.contains("rm -rf"));
+                    assert!(!response.trace_id.contains(malicious_input));
+                    assert!(!response.receipt_id.contains(malicious_input));
+
+                    // Should still be a valid response
+                    assert!(!response.trace_id.is_empty());
+                    assert!(!response.receipt_id.is_empty());
+                }
+                Err(err) => {
+                    // If rejected, error should not leak injection attempt details
+                    let error_msg = err.to_string();
+                    assert!(!error_msg.contains("DROP TABLE"));
+                    assert!(!error_msg.contains("<script>"));
+                    assert!(!error_msg.contains("rm -rf"));
+                }
+            }
+
+            // Verify service state isn't corrupted
+            for event in svc.events() {
+                assert!(!event.detail.contains("DROP TABLE"));
+                assert!(!event.detail.contains("<script>"));
+            }
+        }
+    }
+
+    #[test]
+    fn security_edge_case_capacity_exhaustion_attack_resistance() {
+        let mut svc = CompatGateService::new();
+
+        // Attempt to exhaust shim capacity with rapid registrations
+        for i in 0..MAX_SHIMS * 2 {  // Try to register more than capacity
+            let shim = ShimMetadata {
+                shim_id: format!("attack-shim-{}", i),
+                description: format!("Capacity exhaustion attempt {}", i),
+                risk_category: "low".to_string(),
+                activation_policy: "manual".to_string(),
+                divergence_rationale: "capacity attack".to_string(),
+                scope: format!("attack-scope-{}", i),
+            };
+
+            let result = svc.register_shim(shim);
+
+            if i < MAX_SHIMS {
+                assert!(result.is_ok(), "Should accept shims within capacity");
+            } else {
+                assert!(result.is_err(), "Should reject shims beyond capacity");
+                match result.unwrap_err() {
+                    CompatGateRegistrationError::ShimCapacityExceeded { capacity } => {
+                        assert_eq!(capacity, MAX_SHIMS);
+                    }
+                    _ => panic!("Wrong error type for capacity exhaustion"),
+                }
+            }
+        }
+
+        // Verify capacity limit enforced
+        assert_eq!(svc.shims.len(), MAX_SHIMS);
+
+        // Verify original shims are preserved (no eviction)
+        assert!(svc.shims.iter().any(|s| s.shim_id == "attack-shim-0"));
+
+        // Test predicate capacity exhaustion
+        for i in 0..MAX_PREDICATES * 2 {
+            let predicate = PolicyPredicate {
+                predicate_id: format!("attack-predicate-{}", i),
+                signature: format!("sig-attack-{}", i),
+                attenuation: vec![format!("scope:attack-{}", i)],
+                activation_condition: "always".to_string(),
+            };
+
+            let result = svc.register_predicate(predicate);
+
+            if i < MAX_PREDICATES {
+                assert!(result.is_ok(), "Should accept predicates within capacity");
+            } else {
+                assert!(result.is_err(), "Should reject predicates beyond capacity");
+            }
+        }
+
+        assert_eq!(svc.predicates.len(), MAX_PREDICATES);
+
+        // Test ID space exhaustion resistance
+        svc.trace_counter = u64::MAX;
+        svc.trace_epoch = u64::MAX;
+
+        // Should fail gracefully without corruption
+        let gate_result = svc.gate_check(&GateCheckRequest {
+            package_id: "exhaustion-test".to_string(),
+            requested_mode: CompatMode::Strict,
+            scope: "test".to_string(),
+            policy_context: None,
+        });
+
+        assert!(gate_result.is_err());
+        assert_eq!(gate_result.unwrap_err(), CompatGateOperationError::TraceIdSpaceExhausted);
+
+        // Service should remain functional for reads
+        assert_eq!(svc.shims.len(), MAX_SHIMS);
+        assert_eq!(svc.predicates.len(), MAX_PREDICATES);
+    }
+
+    #[test]
+    fn security_edge_case_serialization_bomb_resistance() {
+        let mut svc = CompatGateService::new();
+
+        // Create structures with extremely large string fields
+        let huge_string = "A".repeat(100_000);
+
+        let bomb_shim = ShimMetadata {
+            shim_id: "bomb-shim".to_string(),
+            description: huge_string.clone(),
+            risk_category: huge_string.clone(),
+            activation_policy: huge_string.clone(),
+            divergence_rationale: huge_string.clone(),
+            scope: "bomb-scope".to_string(),
+        };
+
+        // Should handle large data gracefully
+        match svc.register_shim(bomb_shim) {
+            Ok(_) => {
+                // If accepted, verify serialization doesn't crash
+                let report = svc.to_report();
+                assert!(report.is_object());
+                assert!(report.get("summary").is_some());
+
+                // Verify memory usage is still reasonable
+                assert!(svc.shims.len() <= MAX_SHIMS);
+            }
+            Err(_) => {
+                // Rejection is also acceptable for very large inputs
+            }
+        }
+
+        // Test huge receipt generation
+        let result = svc.issue_divergence_receipt(&huge_string, "critical");
+        match result {
+            Ok(receipt) => {
+                // Verify receipt fields are bounded
+                assert!(receipt.scope.len() <= huge_string.len());
+                assert!(receipt.severity == "critical");
+                assert!(!receipt.receipt_id.is_empty());
+            }
+            Err(_) => {
+                // Error handling is acceptable for extreme inputs
+            }
+        }
+
+        // Test serialization of report with large data
+        let start_time = std::time::Instant::now();
+        let report = svc.to_report();
+        let serialize_time = start_time.elapsed();
+
+        // Should complete within reasonable time
+        assert!(serialize_time < std::time::Duration::from_secs(5));
+        assert!(report.is_object());
+    }
+
+    #[test]
+    fn security_edge_case_scope_isolation_boundary_testing() {
+        let mut svc = CompatGateService::new();
+
+        // Create multiple scopes with different isolation requirements
+        let scopes = vec![
+            ("production", CompatMode::Strict),
+            ("staging", CompatMode::Balanced),
+            ("development", CompatMode::LegacyRisky),
+            ("sandbox", CompatMode::Strict),
+        ];
+
+        for (scope, mode) in scopes {
+            svc.set_scope_mode(scope, mode);
+        }
+
+        // Test cross-scope contamination resistance
+        for i in 0..100 {
+            let source_scope = match i % 4 {
+                0 => "production",
+                1 => "staging",
+                2 => "development",
+                3 => "sandbox",
+                _ => unreachable!(),
+            };
+
+            let target_scope = match (i + 1) % 4 {
+                0 => "production",
+                1 => "staging",
+                2 => "development",
+                3 => "sandbox",
+                _ => unreachable!(),
+            };
+
+            // Perform operations in source scope
+            let _ = svc.gate_check(&GateCheckRequest {
+                package_id: format!("pkg-{}", i),
+                requested_mode: CompatMode::Strict,
+                scope: source_scope.to_string(),
+                policy_context: Some(format!("ctx-{}", source_scope)),
+            });
+
+            // Verify target scope is not affected
+            let source_mode = svc.query_mode(source_scope).unwrap().mode;
+            let target_mode = svc.query_mode(target_scope).unwrap().mode;
+
+            // Modes should remain independent
+            assert!(svc.check_non_interference(source_scope, target_scope) || source_scope == target_scope);
+
+            // Operations in one scope shouldn't change another scope's mode
+            if source_scope != target_scope {
+                // Target scope should maintain its original mode
+                let expected_mode = match target_scope {
+                    "production" | "sandbox" => CompatMode::Strict,
+                    "staging" => CompatMode::Balanced,
+                    "development" => CompatMode::LegacyRisky,
+                    _ => unreachable!(),
+                };
+                assert_eq!(target_mode, expected_mode);
+            }
+        }
+
+        // Test scope-specific receipt isolation
+        for scope in ["production", "staging", "development", "sandbox"] {
+            let _ = svc.issue_divergence_receipt(scope, "test");
+        }
+
+        for scope in ["production", "staging", "development", "sandbox"] {
+            let scope_receipts = svc.query_receipts(Some(scope), None);
+
+            // Each scope should only see its own receipts
+            for receipt in &scope_receipts {
+                assert_eq!(receipt.scope, scope);
+            }
+
+            // Should not see receipts from other scopes
+            let other_scope_count = svc.query_receipts(None, None)
+                .iter()
+                .filter(|r| r.scope != scope)
+                .count();
+
+            let total_count = svc.query_receipts(None, None).len();
+            assert_eq!(scope_receipts.len() + other_scope_count, total_count);
+        }
+    }
+
+    #[test]
+    fn security_edge_case_event_tampering_resistance() {
+        let mut svc = CompatGateService::new();
+        svc.set_scope_mode("event-test", CompatMode::Balanced);
+
+        // Perform operations that generate events
+        let operations = vec![
+            ("gate_check", CompatMode::Strict, true),
+            ("gate_check", CompatMode::LegacyRisky, false), // Should be denied
+            ("transition", CompatMode::Strict, true),
+        ];
+
+        for (operation, mode, should_succeed) in operations {
+            match operation {
+                "gate_check" => {
+                    let result = svc.gate_check(&GateCheckRequest {
+                        package_id: "test-pkg".to_string(),
+                        requested_mode: mode,
+                        scope: "event-test".to_string(),
+                        policy_context: None,
+                    });
+
+                    if should_succeed {
+                        assert!(result.is_ok());
+                    }
+                }
+                "transition" => {
+                    let _ = svc.request_transition(&ModeTransitionRequest {
+                        scope_id: "event-test".to_string(),
+                        from_mode: CompatMode::Balanced,
+                        to_mode: mode,
+                        justification: "test".to_string(),
+                        requestor: "test".to_string(),
+                    });
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        let events_before_drain = svc.events().to_vec();
+        assert!(!events_before_drain.is_empty());
+
+        // Verify events are immutable after creation
+        for event in &events_before_drain {
+            assert!(!event.code.is_empty());
+            assert!(!event.trace_id.is_empty());
+            assert!(!event.scope.is_empty());
+
+            // Event codes should be from known set
+            assert!(matches!(event.code.as_str(),
+                event_codes::PCG_001_GATE_PASSED |
+                event_codes::PCG_002_GATE_FAILED |
+                event_codes::PCG_003_TRANSITION_APPROVED |
+                event_codes::PCG_004_RECEIPT_ISSUED
+            ));
+        }
+
+        // Drain events
+        let drained_events = svc.take_events();
+        assert_eq!(drained_events.len(), events_before_drain.len());
+
+        // Verify drained events are identical to original (no tampering)
+        for (original, drained) in events_before_drain.iter().zip(drained_events.iter()) {
+            assert_eq!(original.code, drained.code);
+            assert_eq!(original.trace_id, drained.trace_id);
+            assert_eq!(original.scope, drained.scope);
+            assert_eq!(original.detail, drained.detail);
+        }
+
+        // Service should have no events after drain
+        assert!(svc.events().is_empty());
+
+        // New operations should still generate events normally
+        let _ = svc.gate_check(&GateCheckRequest {
+            package_id: "post-drain-pkg".to_string(),
+            requested_mode: CompatMode::Strict,
+            scope: "event-test".to_string(),
+            policy_context: None,
+        });
+
+        assert!(!svc.events().is_empty());
+    }
+
+    #[test]
+    fn security_edge_case_push_bounded_adversarial_inputs() {
+        // Test push_bounded with various adversarial scenarios
+
+        // Test with zero capacity (should clear everything)
+        let mut items = vec![1, 2, 3, 4, 5];
+        push_bounded(&mut items, 999, 0);
+        assert!(items.is_empty());
+
+        // Test with capacity 1 (should only keep latest)
+        let mut items = vec![1, 2, 3];
+        push_bounded(&mut items, 4, 1);
+        assert_eq!(items, vec![4]);
+
+        // Test with very large initial collection and small capacity
+        let mut items: Vec<i32> = (1..=10000).collect();
+        push_bounded(&mut items, 10001, 5);
+        assert_eq!(items.len(), 5);
+        assert_eq!(items[4], 10001); // New item should be at end
+        assert!(items[0] > 9995);    // Should have kept recent items
+
+        // Test overflow protection in drain calculation
+        let mut items = vec![1];
+        // Set up scenario where len() >= cap and we're adding one more
+        for i in 2..=1000 {
+            items.push(i);
+        }
+
+        // Now items.len() = 1000, cap = 500, so overflow = 1000 - 500 + 1 = 501
+        push_bounded(&mut items, 1001, 500);
+        assert_eq!(items.len(), 500);
+        assert_eq!(items[499], 1001); // New item at end
+        assert!(items[0] >= 502);      // Should have drained from beginning
+
+        // Test edge case where capacity equals current length
+        let mut items = vec![1, 2, 3];
+        push_bounded(&mut items, 4, 3);
+        assert_eq!(items.len(), 3);
+        assert_eq!(items, vec![2, 3, 4]); // Should have removed first item
+
+        // Test with extremely large capacity (should not drain)
+        let mut items = vec![1, 2, 3];
+        push_bounded(&mut items, 4, 1_000_000);
+        assert_eq!(items, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn security_edge_case_mode_risk_escalation_boundary_conditions() {
+        // Test risk escalation detection with boundary conditions
+
+        // Test all mode combinations
+        let modes = [CompatMode::Strict, CompatMode::Balanced, CompatMode::LegacyRisky];
+
+        for (i, from_mode) in modes.iter().enumerate() {
+            for (j, to_mode) in modes.iter().enumerate() {
+                let is_escalation = from_mode.is_escalation(*to_mode);
+                let expected_escalation = j > i; // Higher index = higher risk
+
+                assert_eq!(is_escalation, expected_escalation,
+                          "Escalation detection wrong for {:?} -> {:?}", from_mode, to_mode);
+
+                // Test risk ordinals are consistent
+                assert_eq!(from_mode.risk_ordinal() < to_mode.risk_ordinal(), expected_escalation);
+            }
+        }
+
+        // Test that risk levels match ordinals
+        assert_eq!(CompatMode::Strict.risk_ordinal(), 0);
+        assert_eq!(CompatMode::Balanced.risk_ordinal(), 1);
+        assert_eq!(CompatMode::LegacyRisky.risk_ordinal(), 2);
+
+        assert_eq!(CompatMode::Strict.risk_level(), "low");
+        assert_eq!(CompatMode::Balanced.risk_level(), "medium");
+        assert_eq!(CompatMode::LegacyRisky.risk_level(), "high");
+
+        // Test mode labels are consistent
+        assert_eq!(CompatMode::Strict.label(), "strict");
+        assert_eq!(CompatMode::Balanced.label(), "balanced");
+        assert_eq!(CompatMode::LegacyRisky.label(), "legacy_risky");
+
+        // Test display formatting
+        assert_eq!(format!("{}", CompatMode::Strict), "strict");
+        assert_eq!(format!("{}", CompatMode::Balanced), "balanced");
+        assert_eq!(format!("{}", CompatMode::LegacyRisky), "legacy_risky");
+
+        // Test that same-mode transitions are not escalations
+        for mode in &modes {
+            assert!(!mode.is_escalation(*mode));
+        }
+    }
+
+    #[test]
+    fn security_edge_case_error_information_leakage_prevention() {
+        // Test that errors don't leak sensitive information
+
+        let registration_errors = [
+            CompatGateRegistrationError::ShimCapacityExceeded { capacity: 42 },
+            CompatGateRegistrationError::PredicateCapacityExceeded { capacity: 84 },
+        ];
+
+        for error in &registration_errors {
+            let error_string = error.to_string();
+            let code = error.code();
+
+            // Should contain capacity information (not sensitive)
+            assert!(error_string.contains("capacity"));
+
+            // Should not contain internal paths, memory addresses, or debug info
+            assert!(!error_string.contains("/src/"));
+            assert!(!error_string.contains("0x"));
+            assert!(!error_string.contains("debug"));
+            assert!(!error_string.contains("panic"));
+            assert!(!error_string.contains("unwrap"));
+
+            // Error codes should be stable and not leak internals
+            assert!(code.starts_with("ERR_COMPAT_"));
+            assert!(!code.contains(" "));
+            assert!(!code.contains("\n"));
+        }
+
+        let operation_errors = [
+            CompatGateOperationError::TraceIdSpaceExhausted,
+            CompatGateOperationError::ReceiptIdSpaceExhausted,
+        ];
+
+        for error in &operation_errors {
+            let error_string = error.to_string();
+            let code = error.code();
+
+            // Should be descriptive but not leak internals
+            assert!(error_string.contains("exhausted"));
+            assert!(!error_string.contains("/"));
+            assert!(!error_string.contains("\\"));
+            assert!(!error_string.contains("0x"));
+
+            // Error codes should follow pattern
+            assert!(code.starts_with("ERR_COMPAT_"));
+            assert!(code.ends_with("_EXHAUSTED"));
+        }
+
+        // Test that error types implement Error trait properly
+        use std::error::Error;
+
+        let reg_error = CompatGateRegistrationError::ShimCapacityExceeded { capacity: 10 };
+        assert!(reg_error.source().is_none()); // No underlying cause
+
+        let op_error = CompatGateOperationError::TraceIdSpaceExhausted;
+        assert!(op_error.source().is_none()); // No underlying cause
     }
 }

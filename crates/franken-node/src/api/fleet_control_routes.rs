@@ -1489,4 +1489,101 @@ mod tests {
         let state = fleet_lease_state().lock().expect("state lock");
         assert_eq!(state.next_coordination_seq, 1);
     }
+
+    #[test]
+    fn lease_request_deserialize_rejects_null_ttl_seconds() {
+        let raw = serde_json::json!({
+            "resource": "control-plane-lock",
+            "ttl_seconds": null
+        });
+
+        let result = serde_json::from_value::<LeaseAcquireRequest>(raw);
+
+        assert!(result.is_err(), "ttl_seconds must be present as a u32");
+    }
+
+    #[test]
+    fn lease_request_deserialize_rejects_float_ttl_seconds() {
+        let raw = serde_json::json!({
+            "resource": "control-plane-lock",
+            "ttl_seconds": 30.5
+        });
+
+        let result = serde_json::from_value::<LeaseAcquireRequest>(raw);
+
+        assert!(result.is_err(), "ttl_seconds must not accept floats");
+    }
+
+    #[test]
+    fn fencing_action_deserialize_rejects_lowercase_variant() {
+        let result = serde_json::from_str::<FencingAction>("\"drain\"");
+
+        assert!(
+            result.is_err(),
+            "fencing actions must remain case-sensitive"
+        );
+    }
+
+    #[test]
+    fn fencing_request_deserialize_rejects_null_reason() {
+        let raw = serde_json::json!({
+            "target_node": "node-2",
+            "action": "Drain",
+            "reason": null
+        });
+
+        let result = serde_json::from_value::<FencingRequest>(raw);
+
+        assert!(result.is_err(), "fencing reason must be a string");
+    }
+
+    #[test]
+    fn coordination_request_deserialize_rejects_null_target_nodes() {
+        let raw = serde_json::json!({
+            "command_type": "policy-update",
+            "target_nodes": null,
+            "timeout_seconds": 30
+        });
+
+        let result = serde_json::from_value::<CoordinationRequest>(raw);
+
+        assert!(result.is_err(), "target_nodes must be a concrete array");
+    }
+
+    #[test]
+    fn coordination_result_deserialize_rejects_total_nodes_overflow() {
+        let raw = serde_json::json!({
+            "command_id": "coord-schema-overflow",
+            "command_type": "policy-update",
+            "participating_nodes": ["node-1"],
+            "ack_count": 1,
+            "total_nodes": 4_294_967_296_u64,
+            "status": "Acknowledged",
+            "issued_at": "2026-01-01T00:00:00Z"
+        });
+
+        let result = serde_json::from_value::<CoordinationResult>(raw);
+
+        assert!(result.is_err(), "total_nodes must fit in u32");
+    }
+
+    #[test]
+    fn execute_coordination_zero_timeout_does_not_allocate_command_id() {
+        let _guard = test_guard();
+        reset_fleet_lease_state();
+        let identity = admin_identity();
+        let trace = test_trace();
+        let request = CoordinationRequest {
+            command_type: "policy-update".to_string(),
+            target_nodes: vec!["node-1".to_string()],
+            timeout_seconds: 0,
+        };
+
+        let err = execute_coordination(&identity, &trace, &request).expect_err("zero timeout");
+
+        assert!(matches!(err, ApiError::BadRequest { .. }));
+        let state = fleet_lease_state().lock().expect("state lock");
+        assert_eq!(state.next_coordination_seq, 1);
+        assert!(state.leases.is_empty());
+    }
 }

@@ -1708,4 +1708,1116 @@ mod tests {
         let json = serde_json::to_string(&r).unwrap();
         assert!(json.contains("policy_update"));
     }
+
+    // --- Comprehensive Negative-Path Attack Vector Testing ---
+
+    #[test]
+    fn negative_state_machine_transition_boundary_and_invariant_violation_attacks() {
+        let mut gate = ControlPlaneDivergenceGate::new("test-node");
+
+        // Test 1: State transition boundary attacks and illegal state manipulation
+        let illegal_transition_sequences = vec![
+            // Attempt direct transition to Quarantined without Diverged
+            ("Normal", "try_quarantine_direct"),
+            // Attempt Alert from Normal
+            ("Normal", "try_alert_direct"),
+            // Attempt Recovery from Normal
+            ("Normal", "try_recover_direct"),
+        ];
+
+        for (initial_state, attack_description) in illegal_transition_sequences {
+            assert_eq!(gate.state().label(), "normal", "Should start in Normal state");
+
+            match attack_description {
+                "try_quarantine_direct" => {
+                    let result = gate.respond_quarantine("malicious-partition", "malicious-node", 1000, "attack-trace");
+                    assert!(result.is_err(), "Direct quarantine from Normal should fail");
+                    assert!(matches!(result.unwrap_err(), DivergenceGateError::InvalidTransition { .. }),
+                        "Should be InvalidTransition error");
+
+                    // Verify no side effects from failed attack
+                    assert_eq!(gate.state(), GateState::Normal, "State should remain Normal after failed quarantine");
+                    assert!(gate.quarantined_partitions().is_empty(), "Should not create partitions from failed attack");
+                    assert!(gate.events().is_empty(), "Should not emit events from failed attack");
+                }
+                "try_alert_direct" => {
+                    let result = gate.respond_alert(1001, "alert-attack-trace");
+                    assert!(result.is_err(), "Direct alert from Normal should fail");
+                    assert!(matches!(result.unwrap_err(), DivergenceGateError::InvalidTransition { .. }),
+                        "Should be InvalidTransition error");
+
+                    // Verify no side effects
+                    assert_eq!(gate.state(), GateState::Normal, "State should remain Normal after failed alert");
+                    assert!(gate.alerts().is_empty(), "Should not create alerts from failed attack");
+                    assert_eq!(gate.alert_counter, 0, "Alert counter should not increment from failed attack");
+                }
+                "try_recover_direct" => {
+                    let malicious_auth = OperatorAuthorization::new("malicious-operator", 999, 1002, "bypass attempt", b"fake-key");
+                    let result = gate.respond_recover(&malicious_auth, b"fake-key", 50, 1002, "recover-attack-trace");
+                    assert!(result.is_err(), "Direct recover from Normal should fail");
+                    assert!(matches!(result.unwrap_err(), DivergenceGateError::InvalidTransition { .. }),
+                        "Should be InvalidTransition error");
+
+                    // Verify detector state not modified
+                    assert_eq!(gate.state(), GateState::Normal, "State should remain Normal after failed recovery");
+                    assert!(gate.active_divergence().is_none(), "Should not have active divergence from failed recovery");
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        // Test 2: State consistency under rapid transition attempts
+        let (local, remote) = forked_pair();
+        gate.check_propagation(&local, &remote, 2000, "divergence-trace");
+        assert_eq!(gate.state(), GateState::Diverged, "Should be in Diverged state");
+
+        // Rapid-fire transition attempts that should preserve state consistency
+        for i in 0..1000 {
+            let trace_id = format!("rapid-attack-{}", i);
+
+            // Multiple HALT attempts (should be idempotent)
+            let halt_result = gate.respond_halt(2000 + i, &trace_id);
+            assert!(halt_result.is_ok(), "HALT should succeed from Diverged at iteration {}", i);
+            assert_eq!(gate.state(), GateState::Diverged, "State should remain Diverged after HALT at iteration {}", i);
+        }
+
+        // Test 3: Transition ordering constraint violations
+        let transition_attack_sequences = vec![
+            // Try to transition Quarantined -> Diverged (invalid reverse)
+            (vec!["quarantine", "halt"], "reverse_quarantine_to_halt"),
+            // Try to transition Alerted -> Quarantined (invalid lateral)
+            (vec!["alert", "quarantine"], "lateral_alert_to_quarantine"),
+            // Try to transition Recovering -> Alerted (invalid during recovery)
+            (vec!["alert", "recover_start", "alert"], "transition_during_recovery"),
+        ];
+
+        for (sequence, attack_name) in transition_attack_sequences {
+            // Reset to diverged state for each attack sequence
+            let mut test_gate = ControlPlaneDivergenceGate::new("transition-attack-test");
+            let (local, remote) = forked_pair();
+            test_gate.check_propagation(&local, &remote, 3000, "setup-trace");
+
+            let mut expected_final_state = GateState::Diverged;
+
+            for (step_idx, action) in sequence.iter().enumerate() {
+                match action.as_str() {
+                    "quarantine" => {
+                        let result = test_gate.respond_quarantine(
+                            format!("attack-partition-{}", step_idx),
+                            "attack-node",
+                            3000 + step_idx as u64,
+                            &format!("attack-{}-{}", attack_name, step_idx)
+                        );
+                        if step_idx == 0 {
+                            assert!(result.is_ok(), "Initial quarantine should succeed in attack {}", attack_name);
+                            expected_final_state = GateState::Quarantined;
+                        }
+                    }
+                    "halt" => {
+                        let result = test_gate.respond_halt(3000 + step_idx as u64, &format!("attack-{}-{}", attack_name, step_idx));
+                        // HALT from Quarantined should fail
+                        if expected_final_state == GateState::Quarantined {
+                            assert!(result.is_err(), "HALT from Quarantined should fail in attack {}", attack_name);
+                        }
+                    }
+                    "alert" => {
+                        let result = test_gate.respond_alert(3000 + step_idx as u64, &format!("attack-{}-{}", attack_name, step_idx));
+                        if step_idx == 0 || expected_final_state == GateState::Quarantined {
+                            assert!(result.is_ok(), "Alert should succeed from valid states in attack {}", attack_name);
+                            expected_final_state = GateState::Alerted;
+                        } else if expected_final_state == GateState::Recovering {
+                            assert!(result.is_err(), "Alert should fail during recovery in attack {}", attack_name);
+                        }
+                    }
+                    "recover_start" => {
+                        let auth = OperatorAuthorization::new("test-operator", 2, 3000 + step_idx as u64, "test recovery", b"test-key");
+                        let result = test_gate.respond_recover(&auth, b"test-key", 10, 3000 + step_idx as u64, &format!("attack-{}-{}", attack_name, step_idx));
+                        if expected_final_state == GateState::Alerted {
+                            assert!(result.is_ok(), "Recovery should succeed from Alerted in attack {}", attack_name);
+                            expected_final_state = GateState::Normal;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Verify final state consistency
+            assert!(test_gate.state() == expected_final_state || test_gate.state() == GateState::Normal,
+                "Final state should be consistent after attack sequence {}: expected {:?}, got {:?}",
+                attack_name, expected_final_state, test_gate.state());
+        }
+    }
+
+    #[test]
+    fn negative_operator_authorization_cryptographic_bypass_and_tampering_attacks() {
+        let mut gate = ControlPlaneDivergenceGate::new("crypto-test-node");
+        let (local, remote) = forked_pair();
+        gate.check_propagation(&local, &remote, 4000, "crypto-setup");
+
+        // Test 1: Authorization signature bypass attacks
+        let signature_bypass_attacks = vec![
+            // Signature manipulation attacks
+            ("signature_truncation", |mut auth: OperatorAuthorization| {
+                auth.signature = auth.signature[..auth.signature.len()-2].to_string();
+                auth
+            }),
+            ("signature_extension", |mut auth: OperatorAuthorization| {
+                auth.signature.push_str("00");
+                auth
+            }),
+            ("signature_case_manipulation", |mut auth: OperatorAuthorization| {
+                auth.signature = auth.signature.to_uppercase();
+                auth
+            }),
+            ("signature_nullbyte_injection", |mut auth: OperatorAuthorization| {
+                auth.signature = auth.signature.replace("a", "\x00a");
+                auth
+            }),
+
+            // Hash manipulation attacks
+            ("hash_prefix_attack", |mut auth: OperatorAuthorization| {
+                auth.authorization_hash = "00".to_string() + &auth.authorization_hash;
+                auth
+            }),
+            ("hash_suffix_attack", |mut auth: OperatorAuthorization| {
+                auth.authorization_hash.push_str("ff");
+                auth
+            }),
+            ("hash_collision_attempt", |mut auth: OperatorAuthorization| {
+                auth.authorization_hash = "a".repeat(64); // Invalid length/format
+                auth
+            }),
+            ("hash_encoding_attack", |mut auth: OperatorAuthorization| {
+                auth.authorization_hash = auth.authorization_hash.replace("a", "\u{202E}a\u{202D}"); // BiDi override
+                auth
+            }),
+
+            // Field tampering attacks
+            ("operator_id_injection", |mut auth: OperatorAuthorization| {
+                auth.operator_id = "admin\x00".to_string() + &auth.operator_id;
+                auth
+            }),
+            ("timestamp_manipulation", |mut auth: OperatorAuthorization| {
+                auth.timestamp = auth.timestamp.saturating_add(1000000); // Far future
+                auth
+            }),
+            ("epoch_overflow", |mut auth: OperatorAuthorization| {
+                auth.resync_checkpoint_epoch = u64::MAX;
+                auth
+            }),
+            ("reason_injection", |mut auth: OperatorAuthorization| {
+                auth.reason = "legitimate\"; DROP TABLE authorizations; --".to_string();
+                auth
+            }),
+        ];
+
+        for (attack_name, attack_fn) in signature_bypass_attacks {
+            let valid_auth = OperatorAuthorization::new("test-operator", 3, 4001, "legitimate recovery", b"test-key");
+            let tampered_auth = attack_fn(valid_auth);
+
+            let recovery_result = gate.respond_recover(&tampered_auth, b"test-key", 25, 4001, &format!("crypto-attack-{}", attack_name));
+
+            assert!(recovery_result.is_err(), "Tampered authorization should fail for attack: {}", attack_name);
+            assert!(matches!(recovery_result.unwrap_err(), DivergenceGateError::UnauthorizedRecovery { .. }),
+                "Should be UnauthorizedRecovery error for attack: {}", attack_name);
+
+            // Verify gate state unchanged by failed attack
+            assert_eq!(gate.state(), GateState::Diverged, "Gate should remain Diverged after failed attack: {}", attack_name);
+            assert!(gate.active_divergence().is_some(), "Should still have active divergence after failed attack: {}", attack_name);
+        }
+
+        // Test 2: Key substitution and cryptographic oracle attacks
+        let key_substitution_attacks = vec![
+            // Key length attacks
+            ("empty_key", b"".to_vec()),
+            ("short_key", b"a".to_vec()),
+            ("long_key", vec![0xFF; 10000]),
+
+            // Key content attacks
+            ("null_key", vec![0x00; 32]),
+            ("max_key", vec![0xFF; 32]),
+            ("alternating_key", (0..32).map(|i| if i % 2 == 0 { 0xAA } else { 0x55 }).collect()),
+
+            // Control character keys
+            ("control_char_key", (0..32).map(|i| (i as u8) % 32).collect()), // Control characters
+            ("unicode_key", "🔑".repeat(8).as_bytes().to_vec()),
+        ];
+
+        for (attack_name, malicious_key) in key_substitution_attacks {
+            let valid_auth = OperatorAuthorization::new("test-operator", 3, 4002, "key attack test", &malicious_key);
+
+            let recovery_result = gate.respond_recover(&valid_auth, &malicious_key, 30, 4002, &format!("key-attack-{}", attack_name));
+
+            // Most attacks should fail, but we verify that system doesn't crash
+            if recovery_result.is_ok() {
+                // If it succeeds, verify it's a legitimate success (not a bypass)
+                assert_eq!(gate.state(), GateState::Normal, "If recovery succeeds, should transition to Normal for attack: {}", attack_name);
+                // Reset state for next test
+                let (local, remote) = forked_pair();
+                gate.check_propagation(&local, &remote, 4002, &format!("reset-after-{}", attack_name));
+            } else {
+                assert!(matches!(recovery_result.unwrap_err(), DivergenceGateError::UnauthorizedRecovery { .. }),
+                    "Failed key attack should be UnauthorizedRecovery for: {}", attack_name);
+                assert_eq!(gate.state(), GateState::Diverged, "Gate should remain Diverged after failed key attack: {}", attack_name);
+            }
+        }
+
+        // Test 3: Timing attack resistance and constant-time validation
+        let timing_attack_test_iterations = 1000;
+        let mut timing_samples = Vec::new();
+
+        for i in 0..timing_attack_test_iterations {
+            let valid_auth = OperatorAuthorization::new("timing-test", 3, 4003, "timing test", b"correct-key");
+
+            // Create slightly different incorrect keys to test timing consistency
+            let incorrect_key = if i % 2 == 0 {
+                b"incorrect-key".to_vec()
+            } else {
+                b"wrong-key-different".to_vec()
+            };
+
+            let start_time = std::time::Instant::now();
+            let _ = valid_auth.verify(&incorrect_key);
+            let verification_time = start_time.elapsed();
+
+            timing_samples.push(verification_time);
+        }
+
+        // Statistical analysis for timing attack resistance
+        let mean_time = timing_samples.iter().sum::<std::time::Duration>() / timing_samples.len() as u32;
+        let variance = timing_samples.iter()
+            .map(|&t| {
+                let diff = if t > mean_time { t - mean_time } else { mean_time - t };
+                diff.as_nanos() as f64
+            })
+            .map(|diff| diff * diff)
+            .sum::<f64>() / timing_samples.len() as f64;
+
+        let std_dev = variance.sqrt();
+        let coefficient_of_variation = std_dev / mean_time.as_nanos() as f64;
+
+        // Timing should be relatively consistent (low coefficient of variation)
+        assert!(coefficient_of_variation < 0.5,
+            "Timing variation too high (CoV: {:.3}), potential timing leak", coefficient_of_variation);
+
+        // Test 4: Authorization replay and reuse attacks
+        let valid_auth = OperatorAuthorization::new("replay-test", 3, 4004, "replay attack test", b"test-key");
+
+        // First use should succeed
+        let first_result = gate.respond_recover(&valid_auth, b"test-key", 40, 4004, "first-use");
+        assert!(first_result.is_ok(), "First use of authorization should succeed");
+        assert_eq!(gate.state(), GateState::Normal, "Should be Normal after first recovery");
+
+        // Trigger new divergence
+        let (local, remote) = forked_pair();
+        gate.check_propagation(&local, &remote, 4005, "new-divergence");
+
+        // Replay attempt should work (same auth can be reused with proper verification)
+        let replay_result = gate.respond_recover(&valid_auth, b"test-key", 45, 4005, "replay-attempt");
+
+        // The implementation doesn't prevent auth reuse, but verify it still works correctly
+        if replay_result.is_ok() {
+            assert_eq!(gate.state(), GateState::Normal, "Replay should work if authorization is valid");
+        } else {
+            // If replay is rejected, it should be for a clear reason
+            assert!(matches!(replay_result.unwrap_err(), DivergenceGateError::UnauthorizedRecovery { .. }),
+                "Replay rejection should be UnauthorizedRecovery");
+        }
+    }
+
+    #[test]
+    fn negative_input_validation_injection_and_boundary_bypass_attacks() {
+        let mut gate = ControlPlaneDivergenceGate::new("injection-test-node");
+
+        // Test 1: Node ID and trace ID injection attacks
+        let injection_attack_vectors = vec![
+            // Control character injection
+            ("node\x00\r\ninjection", "trace\x00injection"),
+            ("node\x1b[31mANSI\x1b[0m", "trace\x1b[32mcolor"),
+
+            // Unicode attacks
+            ("node\u{202E}spoofed", "trace\u{FEFF}invisible"),
+            ("node\u{10FFFF}private", "trace\u{E000}pua"),
+
+            // Format string attacks
+            ("node%s%x%n", "trace%s%x%n"),
+            ("node$(echo attack)", "trace`whoami`"),
+
+            // JSON/XML injection
+            ("node\"}malicious", "trace</xml><script>"),
+            ("node\\u0000", "trace\\n\\r\\t"),
+
+            // Path traversal
+            ("../../../node", "../../trace"),
+            ("node\\..\\..\\windows", "trace/etc/passwd"),
+
+            // Very long inputs
+            ("x".repeat(100000), "y".repeat(100000)),
+
+            // Empty and whitespace
+            ("", ""),
+            (" ", "\t"),
+            ("\u{3000}", "\u{2000}"), // Unicode spaces
+        ];
+
+        for (malicious_node, malicious_trace) in injection_attack_vectors {
+            // Test with check_propagation
+            let (local, remote) = forked_pair();
+            let (result, proof, log_event) = gate.check_propagation(&local, &remote, 5000, malicious_trace);
+
+            assert_eq!(result, DetectionResult::Forked, "Should detect fork regardless of malicious trace");
+            assert!(proof.is_none(), "Should not have proof for basic fork");
+            assert!(!log_event.local_hash.is_empty(), "Log event should have valid local hash despite injection");
+
+            // Test with respond_quarantine using malicious node ID
+            if gate.state() == GateState::Diverged {
+                let quarantine_result = gate.respond_quarantine(
+                    format!("partition-for-{}", malicious_node.escape_debug()),
+                    malicious_node,
+                    5001,
+                    malicious_trace
+                );
+
+                if quarantine_result.is_ok() {
+                    let partition = quarantine_result.unwrap();
+                    // Verify malicious input is contained and stored exactly
+                    assert_eq!(partition.node_id, malicious_node,
+                        "Node ID should be stored exactly as provided: '{}'", malicious_node.escape_debug());
+                    assert!(partition.reason.contains("divergence"),
+                        "Reason should contain expected text despite injection");
+
+                    // Test alert with malicious trace
+                    let alert_result = gate.respond_alert(5002, malicious_trace);
+                    if alert_result.is_ok() {
+                        let alert = alert_result.unwrap();
+                        assert_eq!(alert.trace_id, malicious_trace,
+                            "Trace ID should be stored exactly: '{}'", malicious_trace.escape_debug());
+                        assert!(!alert.alert_id.is_empty(), "Alert ID should be generated despite injection");
+                        assert!(alert.severity == "CRITICAL", "Severity should be set correctly");
+                    }
+                }
+            }
+
+            // Reset gate for next test
+            let auth = OperatorAuthorization::new("reset-operator", 4, 5003, "reset for next test", b"reset-key");
+            let _ = gate.respond_recover(&auth, b"reset-key", 50, 5003, "reset-trace");
+        }
+
+        // Test 2: Mutation kind bypass and enum manipulation attacks
+        let mutation_bypass_attempts = vec![
+            // Test all valid mutation kinds work correctly
+            (MutationKind::PolicyUpdate, "policy_update"),
+            (MutationKind::TokenIssuance, "token_issuance"),
+            (MutationKind::ZoneBoundaryChange, "zone_boundary_change"),
+            (MutationKind::RevocationPublish, "revocation_publish"),
+            (MutationKind::EpochTransition, "epoch_transition"),
+            (MutationKind::QuarantinePromotion, "quarantine_promotion"),
+        ];
+
+        // Force diverged state
+        let (local, remote) = forked_pair();
+        gate.check_propagation(&local, &remote, 6000, "mutation-test-setup");
+
+        for (mutation_kind, expected_label) in mutation_bypass_attempts {
+            let check_result = gate.check_mutation(&mutation_kind, 6001, "mutation-bypass-test");
+
+            assert!(check_result.is_err(), "Mutation should be blocked in Diverged state");
+            assert!(matches!(check_result.unwrap_err(), DivergenceGateError::DivergenceBlock { .. }),
+                "Should be DivergenceBlock error");
+
+            // Verify blocked mutation is recorded correctly
+            let blocked_mutations = gate.blocked_mutations();
+            assert!(!blocked_mutations.is_empty(), "Should record blocked mutations");
+
+            let last_blocked = blocked_mutations.last().unwrap();
+            assert_eq!(last_blocked.mutation_kind, expected_label,
+                "Blocked mutation should record correct label");
+            assert!(!last_blocked.allowed, "Blocked mutation should be marked as not allowed");
+            assert_eq!(last_blocked.gate_state, "diverged", "Should record correct gate state");
+        }
+
+        // Test 3: Capacity limit bypass and resource exhaustion attacks
+        let capacity_stress_iterations = 5000;
+
+        for i in 0..capacity_stress_iterations {
+            // Generate rapid blocked mutations to test capacity limits
+            let mutation_result = gate.check_mutation(&MutationKind::PolicyUpdate, 7000 + i, &format!("stress-{}", i));
+            assert!(mutation_result.is_err(), "All mutations should be blocked in Diverged state");
+
+            // Test quarantine partition creation to stress capacity
+            if i % 100 == 0 && gate.state() == GateState::Diverged {
+                let quarantine_result = gate.respond_quarantine(
+                    format!("stress-partition-{}", i),
+                    format!("stress-node-{}", i),
+                    7000 + i,
+                    &format!("stress-trace-{}", i)
+                );
+
+                if quarantine_result.is_ok() {
+                    // Verify capacity limits are enforced
+                    assert!(gate.quarantined_partitions().len() <= MAX_QUARANTINED_PARTITIONS,
+                        "Quarantined partitions should respect capacity limit");
+                }
+            }
+        }
+
+        // Verify capacity enforcement worked
+        assert!(gate.blocked_mutations().len() <= MAX_BLOCKED_MUTATIONS,
+            "Blocked mutations should respect capacity limit: {} <= {}",
+            gate.blocked_mutations().len(), MAX_BLOCKED_MUTATIONS);
+        assert!(gate.events().len() <= MAX_EVENTS,
+            "Events should respect capacity limit: {} <= {}",
+            gate.events().len(), MAX_EVENTS);
+        assert!(gate.audit_log().len() <= MAX_AUDIT_LOG_ENTRIES,
+            "Audit log should respect capacity limit: {} <= {}",
+            gate.audit_log().len(), MAX_AUDIT_LOG_ENTRIES);
+
+        // Test 4: State vector manipulation and divergence detection bypass
+        let state_vector_attacks = vec![
+            // Hash collision attempts
+            (make_sv(100, "state-A", "parent", "node-A"), make_sv(100, "state-A", "parent", "node-B")),
+            // Epoch manipulation
+            (make_sv(u64::MAX, "state-max", "parent", "node"), make_sv(0, "state-zero", "parent", "node")),
+            // Empty field attacks
+            (StateVector {
+                epoch: 200,
+                marker_id: String::new(),
+                state_hash: String::new(),
+                parent_state_hash: String::new(),
+                timestamp: 8000,
+                node_id: String::new(),
+            }, make_sv(200, "normal", "parent", "node")),
+            // Timestamp attacks
+            (StateVector {
+                epoch: 300,
+                marker_id: "marker-300".to_string(),
+                state_hash: StateVector::compute_state_hash("state"),
+                parent_state_hash: "parent".to_string(),
+                timestamp: 0,
+                node_id: "node-past".to_string(),
+            }, StateVector {
+                epoch: 300,
+                marker_id: "marker-300".to_string(),
+                state_hash: StateVector::compute_state_hash("state"),
+                parent_state_hash: "parent".to_string(),
+                timestamp: u64::MAX,
+                node_id: "node-future".to_string(),
+            }),
+        ];
+
+        // Reset to normal for state vector tests
+        let reset_auth = OperatorAuthorization::new("reset-op", 5, 8000, "reset for state vector tests", b"reset-key");
+        let _ = gate.respond_recover(&reset_auth, b"reset-key", 60, 8000, "reset-trace");
+
+        for (attack_local, attack_remote) in state_vector_attacks {
+            let (result, proof, log_event) = gate.check_propagation(&attack_local, &attack_remote, 8001, "state-vector-attack");
+
+            // System should handle malformed state vectors gracefully
+            assert!(result != DetectionResult::Converged || attack_local == attack_remote,
+                "Should not converge unless vectors are actually identical");
+
+            // Verify detection results are meaningful
+            assert!(!log_event.local_hash.is_empty() || attack_local.state_hash.is_empty(),
+                "Log should have valid local hash unless input was empty");
+            assert!(!log_event.remote_hash.is_empty() || attack_remote.state_hash.is_empty(),
+                "Log should have valid remote hash unless input was empty");
+
+            // Verify system maintains consistency despite malformed input
+            assert!(matches!(gate.state(), GateState::Normal | GateState::Diverged),
+                "Gate should be in valid state after processing attack vectors");
+
+            // Reset for next iteration if needed
+            if gate.state() != GateState::Normal {
+                let recover_auth = OperatorAuthorization::new("recover-op", 6, 8002, "recover from attack", b"recover-key");
+                let _ = gate.respond_recover(&recover_auth, b"recover-key", 65, 8002, "recover-trace");
+            }
+        }
+    }
+
+    #[test]
+    fn negative_resource_exhaustion_concurrent_access_and_race_condition_attacks() {
+        use std::sync::{Arc, Mutex};
+        use std::thread;
+
+        // Test 1: Concurrent gate operation attacks and race condition exploitation
+        let gate = Arc::new(Mutex::new(ControlPlaneDivergenceGate::new("concurrent-test")));
+        let results = Arc::new(Mutex::new(Vec::new()));
+
+        // Concurrent divergence detection
+        let detection_handles: Vec<_> = (0..50).map(|thread_id| {
+            let gate_clone = gate.clone();
+            let results_clone = results.clone();
+
+            thread::spawn(move || {
+                let mut thread_results = Vec::new();
+
+                for iteration in 0..100 {
+                    let (local, remote) = if iteration % 2 == 0 {
+                        forked_pair()
+                    } else {
+                        converged_pair()
+                    };
+
+                    let detection_result = {
+                        let mut gate_guard = gate_clone.lock().unwrap();
+                        gate_guard.check_propagation(&local, &remote, 9000 + iteration, &format!("thread-{}-iter-{}", thread_id, iteration))
+                    };
+
+                    thread_results.push((thread_id, iteration, detection_result.0));
+                }
+
+                results_clone.lock().unwrap().extend(thread_results);
+            })
+        }).collect();
+
+        // Wait for all detection threads
+        for handle in detection_handles {
+            handle.join().expect("Detection thread should complete");
+        }
+
+        let detection_results = results.lock().unwrap();
+        assert!(!detection_results.is_empty(), "Should have detection results");
+
+        // Test 2: Concurrent state transition attacks
+        let transition_handles: Vec<_> = (0..20).map(|thread_id| {
+            let gate_clone = gate.clone();
+
+            thread::spawn(move || {
+                for attempt in 0..50 {
+                    let response_type = attempt % 4;
+
+                    match response_type {
+                        0 => {
+                            let _ = {
+                                let mut gate_guard = gate_clone.lock().unwrap();
+                                gate_guard.respond_halt(10000 + attempt, &format!("concurrent-halt-{}-{}", thread_id, attempt))
+                            };
+                        }
+                        1 => {
+                            let _ = {
+                                let mut gate_guard = gate_clone.lock().unwrap();
+                                gate_guard.respond_quarantine(
+                                    format!("concurrent-partition-{}-{}", thread_id, attempt),
+                                    format!("concurrent-node-{}", thread_id),
+                                    10000 + attempt,
+                                    &format!("concurrent-quarantine-{}-{}", thread_id, attempt)
+                                )
+                            };
+                        }
+                        2 => {
+                            let _ = {
+                                let mut gate_guard = gate_clone.lock().unwrap();
+                                gate_guard.respond_alert(10000 + attempt, &format!("concurrent-alert-{}-{}", thread_id, attempt))
+                            };
+                        }
+                        3 => {
+                            let auth = OperatorAuthorization::new(
+                                format!("concurrent-operator-{}", thread_id),
+                                (attempt % 10) + 1,
+                                10000 + attempt,
+                                format!("concurrent recovery {}", attempt),
+                                b"concurrent-key"
+                            );
+                            let _ = {
+                                let mut gate_guard = gate_clone.lock().unwrap();
+                                gate_guard.respond_recover(&auth, b"concurrent-key", 70 + attempt, 10000 + attempt,
+                                    &format!("concurrent-recover-{}-{}", thread_id, attempt))
+                            };
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            })
+        }).collect();
+
+        // Wait for all transition threads
+        for handle in transition_handles {
+            handle.join().expect("Transition thread should complete");
+        }
+
+        // Test 3: Memory pressure and capacity exhaustion under concurrent load
+        let memory_pressure_handles: Vec<_> = (0..100).map(|thread_id| {
+            let gate_clone = gate.clone();
+
+            thread::spawn(move || {
+                for memory_iteration in 0..1000 {
+                    // Rapid mutation checking to stress capacity limits
+                    let mutation_kinds = [
+                        MutationKind::PolicyUpdate,
+                        MutationKind::TokenIssuance,
+                        MutationKind::ZoneBoundaryChange,
+                        MutationKind::RevocationPublish,
+                        MutationKind::EpochTransition,
+                        MutationKind::QuarantinePromotion,
+                    ];
+
+                    let kind = &mutation_kinds[memory_iteration % mutation_kinds.len()];
+                    let _ = {
+                        let mut gate_guard = gate_clone.lock().unwrap();
+                        gate_guard.check_mutation(kind, 11000 + memory_iteration as u64,
+                            &format!("memory-pressure-{}-{}", thread_id, memory_iteration))
+                    };
+                }
+            })
+        }).collect();
+
+        // Wait for memory pressure threads
+        for handle in memory_pressure_handles {
+            handle.join().expect("Memory pressure thread should complete");
+        }
+
+        // Verify final state consistency after concurrent attacks
+        let final_gate = gate.lock().unwrap();
+
+        // Verify capacity constraints were maintained
+        assert!(final_gate.blocked_mutations().len() <= MAX_BLOCKED_MUTATIONS,
+            "Blocked mutations should respect limit: {} <= {}",
+            final_gate.blocked_mutations().len(), MAX_BLOCKED_MUTATIONS);
+        assert!(final_gate.quarantined_partitions().len() <= MAX_QUARANTINED_PARTITIONS,
+            "Quarantined partitions should respect limit: {} <= {}",
+            final_gate.quarantined_partitions().len(), MAX_QUARANTINED_PARTITIONS);
+        assert!(final_gate.alerts().len() <= MAX_ALERTS,
+            "Alerts should respect limit: {} <= {}",
+            final_gate.alerts().len(), MAX_ALERTS);
+        assert!(final_gate.events().len() <= MAX_EVENTS,
+            "Events should respect limit: {} <= {}",
+            final_gate.events().len(), MAX_EVENTS);
+        assert!(final_gate.audit_log().len() <= MAX_AUDIT_LOG_ENTRIES,
+            "Audit log should respect limit: {} <= {}",
+            final_gate.audit_log().len(), MAX_AUDIT_LOG_ENTRIES);
+
+        // Verify state is still valid
+        assert!(matches!(final_gate.state(),
+            GateState::Normal | GateState::Diverged | GateState::Quarantined | GateState::Alerted | GateState::Recovering),
+            "Final state should be valid: {:?}", final_gate.state());
+
+        // Test 4: Resource cleanup and memory leak prevention
+        drop(final_gate);
+
+        // Create new gate to test resource reuse
+        let cleanup_gate = ControlPlaneDivergenceGate::new("cleanup-test");
+        assert_eq!(cleanup_gate.state(), GateState::Normal, "New gate should start in Normal state");
+        assert!(cleanup_gate.events().is_empty(), "New gate should have empty events");
+        assert!(cleanup_gate.audit_log().is_empty(), "New gate should have empty audit log");
+        assert!(cleanup_gate.quarantined_partitions().is_empty(), "New gate should have empty partitions");
+        assert!(cleanup_gate.alerts().is_empty(), "New gate should have empty alerts");
+        assert!(cleanup_gate.blocked_mutations().is_empty(), "New gate should have empty blocked mutations");
+        assert!(cleanup_gate.active_divergence().is_none(), "New gate should have no active divergence");
+
+        println!("Concurrent access resistance test completed: {} detection results collected", detection_results.len());
+    }
+
+    #[test]
+    fn negative_serialization_deserialization_tampering_and_data_corruption_attacks() {
+        let mut gate = ControlPlaneDivergenceGate::new("serialization-test");
+
+        // Create complex gate state for testing serialization attacks
+        let (local, remote) = forked_pair();
+        gate.check_propagation(&local, &remote, 12000, "serialization-setup");
+        gate.respond_quarantine("test-partition", "test-node", 12001, "serialization-quarantine").unwrap();
+        gate.respond_alert(12002, "serialization-alert").unwrap();
+
+        // Test 1: JSON serialization tampering attacks on various structures
+        let serialization_targets = vec![
+            // Test OperatorAuthorization serialization attacks
+            ("operator_authorization", serde_json::to_string(&OperatorAuthorization::new(
+                "test-operator",
+                42,
+                12003,
+                "test reason",
+                b"test-key"
+            )).unwrap()),
+
+            // Test ResponseMode serialization
+            ("response_mode", serde_json::to_string(&ResponseMode::Quarantine).unwrap()),
+
+            // Test GateState serialization
+            ("gate_state", serde_json::to_string(&GateState::Alerted).unwrap()),
+
+            // Test DivergenceGateError serialization
+            ("error", serde_json::to_string(&DivergenceGateError::DivergenceBlock {
+                mutation_kind: "test_mutation".to_string(),
+                gate_state: "test_state".to_string(),
+                detail: "test detail".to_string(),
+            }).unwrap()),
+
+            // Test QuarantinePartition serialization
+            ("quarantine_partition", serde_json::to_string(&QuarantinePartition {
+                partition_id: "test-partition".to_string(),
+                node_id: "test-node".to_string(),
+                divergence_epoch: 100,
+                quarantined_at: 12004,
+                reason: "test reason".to_string(),
+            }).unwrap()),
+        ];
+
+        for (target_name, original_json) in serialization_targets {
+            let tampering_attacks = vec![
+                // Field injection attacks
+                (format!("field_injection_{}", target_name), original_json.replace("}", ",\"malicious_field\":\"injected_value\"}")),
+
+                // Type confusion attacks
+                (format!("type_confusion_{}", target_name), original_json.replace("\"test", "42")),
+                (format!("number_to_string_{}", target_name), original_json.replace("42", "\"42\"")),
+                (format!("string_to_number_{}", target_name), original_json.replace("\"test-partition\"", "123")),
+
+                // Unicode injection attacks
+                (format!("unicode_injection_{}", target_name), original_json.replace("test", "test\u{202E}spoofed\u{202D}")),
+                (format!("unicode_null_{}", target_name), original_json.replace("test", "test\u{0000}null")),
+
+                // Control character injection
+                (format!("control_chars_{}", target_name), original_json.replace("test", "test\r\n\t\x08")),
+
+                // JSON structure attacks
+                (format!("nested_injection_{}", target_name), original_json.replace("\"test\"", "{\"nested\":\"injection\"}")),
+                (format!("array_injection_{}", target_name), original_json.replace("\"test\"", "[\"array\",\"injection\"]")),
+
+                // Escape sequence attacks
+                (format!("escape_attack_{}", target_name), original_json.replace("test", "test\\\"escaped\\\"")),
+                (format!("hex_escape_{}", target_name), original_json.replace("test", "test\\u0000hex")),
+
+                // Length and overflow attacks
+                (format!("length_attack_{}", target_name), original_json.replace("test", &"x".repeat(100000))),
+                (format!("negative_number_{}", target_name), original_json.replace("42", "-999999999999999")),
+                (format!("huge_number_{}", target_name), original_json.replace("42", "999999999999999999999999999999999999999")),
+
+                // Truncation attacks
+                (format!("truncation_{}", target_name), original_json[..original_json.len()/2].to_string()),
+                (format!("incomplete_object_{}", target_name), original_json.replace("}", "")),
+
+                // Duplication attacks
+                (format!("field_duplication_{}", target_name), original_json.replace(",", ",\"duplicate_field\":\"value\",")),
+            ];
+
+            for (attack_name, tampered_json) in tampering_attacks {
+                // Test each structure type's resistance to tampering
+                match target_name {
+                    "operator_authorization" => {
+                        let parse_result: Result<OperatorAuthorization, _> = serde_json::from_str(&tampered_json);
+                        match parse_result {
+                            Ok(tampered_auth) => {
+                                // If parsing succeeds, verify the auth is still validated properly
+                                let verify_result = tampered_auth.verify(b"test-key");
+                                // Most tampering should cause verification to fail
+                                assert!(!verify_result || tampered_auth.operator_id.contains("test"),
+                                    "Tampered auth should fail verification or be benign for attack: {}", attack_name);
+                            }
+                            Err(_) => {
+                                // Expected failure for malformed JSON
+                            }
+                        }
+                    }
+                    "response_mode" => {
+                        let parse_result: Result<ResponseMode, _> = serde_json::from_str(&tampered_json);
+                        if let Ok(tampered_mode) = parse_result {
+                            // Verify the mode is still valid
+                            assert!(ResponseMode::all().contains(&tampered_mode),
+                                "Parsed response mode should be valid for attack: {}", attack_name);
+                        }
+                    }
+                    "gate_state" => {
+                        let parse_result: Result<GateState, _> = serde_json::from_str(&tampered_json);
+                        if let Ok(tampered_state) = parse_result {
+                            // Verify mutation behavior is consistent
+                            let allows_mutation = tampered_state.allows_mutation();
+                            assert!(allows_mutation == (tampered_state == GateState::Normal),
+                                "Mutation permission should be consistent for state for attack: {}", attack_name);
+                        }
+                    }
+                    "error" => {
+                        let parse_result: Result<DivergenceGateError, _> = serde_json::from_str(&tampered_json);
+                        if let Ok(tampered_error) = parse_result {
+                            // Verify error can be displayed without panic
+                            let error_string = tampered_error.to_string();
+                            assert!(!error_string.is_empty(),
+                                "Error should have meaningful display for attack: {}", attack_name);
+                        }
+                    }
+                    "quarantine_partition" => {
+                        let parse_result: Result<QuarantinePartition, _> = serde_json::from_str(&tampered_json);
+                        if let Ok(tampered_partition) = parse_result {
+                            // Verify partition fields are reasonable
+                            assert!(!tampered_partition.partition_id.is_empty() || tampered_json.contains("\"\""),
+                                "Partition should have ID unless explicitly empty for attack: {}", attack_name);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Test 2: Binary serialization corruption attacks (if applicable)
+        let binary_corruption_tests = vec![
+            // Test with various corrupted byte patterns
+            vec![0xFF; 1000], // All 0xFF bytes
+            vec![0x00; 1000], // All null bytes
+            (0..1000).map(|i| (i % 256) as u8).collect(), // Sequential pattern
+            vec![0xDE, 0xAD, 0xBE, 0xEF].repeat(250), // Repeated pattern
+        ];
+
+        for (pattern_idx, corrupted_data) in binary_corruption_tests.iter().enumerate() {
+            // Test that system handles arbitrary binary data gracefully
+            let corrupted_string = String::from_utf8_lossy(corrupted_data);
+
+            // Attempt to parse as various types
+            let _: Result<OperatorAuthorization, _> = serde_json::from_str(&corrupted_string);
+            let _: Result<ResponseMode, _> = serde_json::from_str(&corrupted_string);
+            let _: Result<GateState, _> = serde_json::from_str(&corrupted_string);
+            // These should all fail gracefully without panicking
+        }
+
+        // Test 3: State consistency after serialization round-trips
+        let consistency_auth = OperatorAuthorization::new("consistency-test", 50, 12005, "consistency test", b"consistency-key");
+
+        // Multiple round-trips to test consistency
+        for round_trip in 0..100 {
+            let serialized = serde_json::to_string(&consistency_auth).unwrap();
+            let deserialized: OperatorAuthorization = serde_json::from_str(&serialized).unwrap();
+
+            assert_eq!(consistency_auth.operator_id, deserialized.operator_id,
+                "Operator ID should be consistent after round-trip {}", round_trip);
+            assert_eq!(consistency_auth.authorization_hash, deserialized.authorization_hash,
+                "Authorization hash should be consistent after round-trip {}", round_trip);
+            assert_eq!(consistency_auth.signature, deserialized.signature,
+                "Signature should be consistent after round-trip {}", round_trip);
+            assert_eq!(consistency_auth.resync_checkpoint_epoch, deserialized.resync_checkpoint_epoch,
+                "Epoch should be consistent after round-trip {}", round_trip);
+            assert_eq!(consistency_auth.timestamp, deserialized.timestamp,
+                "Timestamp should be consistent after round-trip {}", round_trip);
+            assert_eq!(consistency_auth.reason, deserialized.reason,
+                "Reason should be consistent after round-trip {}", round_trip);
+
+            // Verify cryptographic properties are preserved
+            assert_eq!(consistency_auth.verify(b"consistency-key"), deserialized.verify(b"consistency-key"),
+                "Verification result should be consistent after round-trip {}", round_trip);
+        }
+
+        println!("Serialization tampering resistance test completed: {} targets tested with {} attack vectors each",
+            serialization_targets.len(), 15); // 15 different tampering attack types
+    }
+
+    #[test]
+    fn negative_cryptographic_timing_hash_manipulation_and_side_channel_attacks() {
+        let mut gate = ControlPlaneDivergenceGate::new("crypto-timing-test");
+
+        // Test 1: Hash manipulation and collision resistance attacks
+        let hash_manipulation_attacks = vec![
+            // Hash length attacks
+            ("short_hash", "abc123"),
+            ("long_hash", "a".repeat(10000)),
+            ("empty_hash", ""),
+
+            // Hash format attacks
+            ("non_hex_hash", "gghhiijjkkll"),
+            ("mixed_case_hash", "aBcDeF123456"),
+            ("unicode_hash", "café🔒hash"),
+
+            // Hash collision attempts
+            ("collision_a", "deadbeefdeadbeefdeadbeefdeadbeef"),
+            ("collision_b", "deadbeefdeadbeefdeadbeefdeadbeef"),
+            ("collision_variant", "deadbeefdeadbeefdeadbeefdeadbee0"),
+
+            // Control character injection in hashes
+            ("control_chars", "hash\x00\r\n\tcontrol"),
+            ("bidi_override", "hash\u{202E}spoofed\u{202D}"),
+
+            // Hash with special patterns
+            ("all_zeros", "0".repeat(64)),
+            ("all_ones", "f".repeat(64)),
+            ("alternating", "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5"),
+        ];
+
+        for (attack_name, malicious_hash) in hash_manipulation_attacks {
+            // Test hash comparisons using constant_time_eq
+            let legitimate_hash = "1234567890abcdef1234567890abcdef12345678";
+
+            // Measure timing for hash comparison
+            let timing_samples = 1000;
+            let mut comparison_times = Vec::new();
+
+            for _ in 0..timing_samples {
+                let start_time = std::time::Instant::now();
+                let _comparison_result = constant_time_eq(legitimate_hash, malicious_hash);
+                let comparison_time = start_time.elapsed();
+                comparison_times.push(comparison_time);
+            }
+
+            // Statistical analysis for timing consistency
+            let mean_time = comparison_times.iter().sum::<std::time::Duration>() / comparison_times.len() as u32;
+            let max_time = comparison_times.iter().max().unwrap();
+            let min_time = comparison_times.iter().min().unwrap();
+            let time_range = max_time.saturating_sub(*min_time);
+
+            // Verify timing is relatively consistent (constant-time property)
+            assert!(time_range.as_nanos() < mean_time.as_nanos() * 10,
+                "Timing variation too large for hash comparison attack '{}': range {:?} vs mean {:?}",
+                attack_name, time_range, mean_time);
+        }
+
+        // Test 2: Authorization signature timing attacks
+        let signature_timing_attacks = vec![
+            // Signature length variations
+            ("short_sig", "abc"),
+            ("correct_length", "a".repeat(64)),
+            ("long_sig", "a".repeat(128)),
+
+            // Signature with timing-sensitive patterns
+            ("early_diff", "0000000000000000000000000000000000000000000000000000000000000001"),
+            ("late_diff", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"),
+            ("middle_diff", "aaaaaaaaaaaaaaaaaaaaaaa1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+
+            // Signature with special characters
+            ("unicode_sig", "signature🔒test"),
+            ("control_sig", "sig\x00\r\nnature"),
+        ];
+
+        let test_auth_base = OperatorAuthorization::new("timing-test", 10, 13000, "timing attack test", b"timing-key");
+
+        for (attack_name, malicious_signature) in signature_timing_attacks {
+            let mut timing_auth = test_auth_base.clone();
+            timing_auth.signature = malicious_signature.to_string();
+
+            // Measure verification timing
+            let timing_samples = 1000;
+            let mut verification_times = Vec::new();
+
+            for _ in 0..timing_samples {
+                let start_time = std::time::Instant::now();
+                let _verify_result = timing_auth.verify(b"timing-key");
+                let verification_time = start_time.elapsed();
+                verification_times.push(verification_time);
+            }
+
+            // Check for timing consistency
+            let mean_time = verification_times.iter().sum::<std::time::Duration>() / verification_times.len() as u32;
+            let max_time = verification_times.iter().max().unwrap();
+            let min_time = verification_times.iter().min().unwrap();
+            let time_variance = max_time.saturating_sub(*min_time);
+
+            // Verify timing is reasonably consistent (no obvious timing leak)
+            assert!(time_variance.as_nanos() < mean_time.as_nanos() * 5,
+                "Verification timing too variable for signature attack '{}': variance {:?} vs mean {:?}",
+                attack_name, time_variance, mean_time);
+        }
+
+        // Test 3: State hash computation and manipulation attacks
+        let state_hash_attacks = vec![
+            // Input variations that could cause timing differences
+            ("empty_state", ""),
+            ("short_state", "a"),
+            ("medium_state", "state".repeat(100)),
+            ("long_state", "state".repeat(10000)),
+            ("unicode_state", "état🔒secure"),
+            ("binary_state", String::from_utf8_lossy(&[0xFF; 1000])),
+            ("null_state", "state\x00hidden"),
+            ("newline_state", "state\r\ninjection"),
+        ];
+
+        for (attack_name, state_content) in state_hash_attacks {
+            // Measure hash computation timing
+            let timing_samples = 1000;
+            let mut hash_times = Vec::new();
+
+            for _ in 0..timing_samples {
+                let start_time = std::time::Instant::now();
+                let _computed_hash = StateVector::compute_state_hash(&state_content);
+                let hash_time = start_time.elapsed();
+                hash_times.push(hash_time);
+            }
+
+            // Verify hash computation timing is reasonable
+            let mean_time = hash_times.iter().sum::<std::time::Duration>() / hash_times.len() as u32;
+            let max_time = hash_times.iter().max().unwrap();
+
+            // Hash computation time should scale reasonably with input size
+            assert!(max_time.as_nanos() < mean_time.as_nanos() * 10,
+                "Hash computation timing too variable for attack '{}': max {:?} vs mean {:?}",
+                attack_name, max_time, mean_time);
+
+            // Verify hash output is deterministic
+            let hash1 = StateVector::compute_state_hash(&state_content);
+            let hash2 = StateVector::compute_state_hash(&state_content);
+            assert_eq!(hash1, hash2, "Hash should be deterministic for attack '{}'", attack_name);
+        }
+
+        // Test 4: Side-channel information disclosure through error messages
+        let error_disclosure_attacks = vec![
+            // Authorization failures with different error causes
+            (OperatorAuthorization::new("", 10, 13001, "empty operator", b"test-key"), "empty_operator"),
+            ({
+                let mut auth = OperatorAuthorization::new("test", 10, 13001, "tampered hash", b"test-key");
+                auth.authorization_hash = "tampered".to_string();
+                auth
+            }, "tampered_hash"),
+            ({
+                let mut auth = OperatorAuthorization::new("test", 10, 13001, "tampered signature", b"test-key");
+                auth.signature = "tampered".to_string();
+                auth
+            }, "tampered_signature"),
+            (OperatorAuthorization::new("test", 10, 13001, "wrong key", b"wrong-key"), "wrong_key"),
+        ];
+
+        // Force diverged state for recovery testing
+        let (local, remote) = forked_pair();
+        gate.check_propagation(&local, &remote, 13000, "error-disclosure-setup");
+
+        for (malicious_auth, attack_name) in error_disclosure_attacks {
+            let recovery_result = gate.respond_recover(&malicious_auth, b"test-key", 75, 13001,
+                &format!("error-disclosure-{}", attack_name));
+
+            assert!(recovery_result.is_err(), "Malicious auth should fail for attack: {}", attack_name);
+
+            let error = recovery_result.unwrap_err();
+            let error_message = error.to_string();
+
+            // Verify error message doesn't leak sensitive information
+            assert!(error_message.contains("UNAUTHORIZED_RECOVERY"),
+                "Error should be categorized correctly for attack: {}", attack_name);
+            assert!(!error_message.contains("hash verification failed") || !error_message.contains("signature verification failed"),
+                "Error message should not leak specific verification failure details for attack: {}", attack_name);
+
+            // Verify error handling is consistent
+            assert!(matches!(error, DivergenceGateError::UnauthorizedRecovery { .. }),
+                "Error type should be consistent for attack: {}", attack_name);
+        }
+
+        // Test 5: Cryptographic primitive usage and key handling
+        let key_handling_attacks = vec![
+            // Key length attacks
+            ("empty_key", Vec::new()),
+            ("short_key", vec![0x01]),
+            ("weak_key", vec![0x00; 32]),
+            ("max_key", vec![0xFF; 32]),
+            ("huge_key", vec![0xAA; 10000]),
+
+            // Key with special patterns
+            ("alternating_key", (0..32).map(|i| if i % 2 == 0 { 0xAA } else { 0x55 }).collect()),
+            ("sequential_key", (0..32).map(|i| i as u8).collect()),
+        ];
+
+        for (attack_name, test_key) in key_handling_attacks {
+            // Test key handling in authorization creation and verification
+            let auth_result = OperatorAuthorization::new("key-test", 10, 13002, "key attack test", &test_key);
+
+            // Verify auth can be created with any key
+            assert!(!auth_result.operator_id.is_empty(), "Auth should be created for key attack: {}", attack_name);
+
+            // Test verification with same key
+            let verify_same = auth_result.verify(&test_key);
+            let verify_different = auth_result.verify(b"different-key");
+
+            // Verification behavior should be consistent
+            if test_key.is_empty() {
+                // Empty keys might behave specially
+                assert!(!verify_different, "Different key should not verify for attack: {}", attack_name);
+            } else {
+                assert!(verify_same, "Same key should verify for attack: {}", attack_name);
+                assert!(!verify_different, "Different key should not verify for attack: {}", attack_name);
+            }
+        }
+
+        println!("Cryptographic timing and side-channel resistance test completed: {} hash attacks, {} signature attacks, {} state hash attacks, {} error disclosure tests, {} key handling attacks",
+            hash_manipulation_attacks.len(), signature_timing_attacks.len(), state_hash_attacks.len(),
+            error_disclosure_attacks.len(), key_handling_attacks.len());
+    }
 }

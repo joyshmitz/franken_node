@@ -1311,6 +1311,184 @@ mod service_fresh_negative_tests {
     }
 }
 
+#[cfg(test)]
+mod service_recent_commit_gap_tests {
+    use super::*;
+
+    #[test]
+    fn whitespace_wrapped_get_uses_generic_status_surface() {
+        for method in [" GET", "GET ", "\tGET", "GET\n"] {
+            let codes = default_status_codes(method);
+
+            assert_eq!(codes, vec![200, 400, 401, 403, 500]);
+            assert!(!codes.contains(&404));
+            assert!(!codes.contains(&429));
+            assert!(!codes.contains(&503));
+        }
+    }
+
+    #[test]
+    fn nul_suffixed_post_uses_generic_status_surface() {
+        let codes = default_status_codes("POST\0");
+
+        assert_eq!(codes, vec![200, 400, 401, 403, 500]);
+        assert!(!codes.contains(&201));
+        assert!(!codes.contains(&409));
+        assert!(!codes.contains(&429));
+    }
+
+    #[test]
+    fn endpoint_catalog_entry_rejects_negative_status_code() {
+        let raw = serde_json::json!({
+            "group": "operator",
+            "path": "/v1/operator/status",
+            "method": "GET",
+            "auth_method": "ApiKey",
+            "policy_hook": "operator.status.read",
+            "lifecycle": "stable",
+            "trace_propagation": true,
+            "status_codes": [200, -1],
+            "conformance_status": "pass"
+        });
+
+        let result = serde_json::from_value::<EndpointCatalogEntry>(raw);
+
+        assert!(result.is_err(), "negative status codes must be rejected");
+    }
+
+    #[test]
+    fn transport_boundary_kind_rejects_pascal_case_variant() {
+        let result =
+            serde_json::from_value::<TransportBoundaryKind>(serde_json::json!("LiveTransport"));
+
+        assert!(result.is_err(), "transport kind must remain snake_case");
+    }
+
+    #[test]
+    fn endpoint_report_rejects_nested_transport_boundary_null_kind() {
+        let raw = serde_json::json!({
+            "endpoints": [],
+            "middleware_coverage": {
+                "auth_coverage": true,
+                "policy_hook_coverage": true,
+                "error_formatting_coverage": true,
+                "tracing_coverage": true,
+                "rate_limiting_coverage": true
+            },
+            "transport_boundary": {
+                "kind": null,
+                "owns_listener": false,
+                "bind_target_hint": "127.0.0.1:9090",
+                "request_lifecycle": "caller-owned in-process dispatch only",
+                "cancellation_semantics": "no transport-owned cancellation boundary"
+            },
+            "performance_baselines": [],
+            "generated_at": "2026-01-01T00:00:00Z"
+        });
+
+        let result = serde_json::from_value::<EndpointReport>(raw);
+
+        assert!(
+            result.is_err(),
+            "nested transport kind must be a known string variant"
+        );
+    }
+
+    #[test]
+    fn endpoint_report_rejects_nested_endpoint_missing_policy_hook() {
+        let raw = serde_json::json!({
+            "endpoints": [{
+                "group": "operator",
+                "path": "/v1/operator/status",
+                "method": "GET",
+                "auth_method": "ApiKey",
+                "lifecycle": "stable",
+                "trace_propagation": true,
+                "status_codes": [200, 400],
+                "conformance_status": "pass"
+            }],
+            "middleware_coverage": {
+                "auth_coverage": true,
+                "policy_hook_coverage": true,
+                "error_formatting_coverage": true,
+                "tracing_coverage": true,
+                "rate_limiting_coverage": true
+            },
+            "transport_boundary": {
+                "kind": "in_process_catalog",
+                "owns_listener": false,
+                "bind_target_hint": "127.0.0.1:9090",
+                "request_lifecycle": "caller-owned in-process dispatch only",
+                "cancellation_semantics": "no transport-owned cancellation boundary"
+            },
+            "performance_baselines": [],
+            "generated_at": "2026-01-01T00:00:00Z"
+        });
+
+        let result = serde_json::from_value::<EndpointReport>(raw);
+
+        assert!(result.is_err(), "nested endpoint policy_hook is required");
+    }
+
+    #[test]
+    fn service_config_rejects_negative_burst_size_override() {
+        let raw = serde_json::json!({
+            "bind_target_hint": "127.0.0.1:9090",
+            "rate_limits": {
+                "operator": {
+                    "sustained_rps": 1,
+                    "burst_size": -1,
+                    "fail_closed": false
+                }
+            },
+            "otel_enabled": false,
+            "service_name": "franken-node-control-plane"
+        });
+
+        let result = serde_json::from_value::<ServiceConfig>(raw);
+
+        assert!(result.is_err(), "burst_size must remain unsigned");
+    }
+
+    #[test]
+    fn service_config_rejects_string_fail_closed_override() {
+        let raw = serde_json::json!({
+            "bind_target_hint": "127.0.0.1:9090",
+            "rate_limits": {
+                "operator": {
+                    "sustained_rps": 1,
+                    "burst_size": 1,
+                    "fail_closed": "false"
+                }
+            },
+            "otel_enabled": false,
+            "service_name": "franken-node-control-plane"
+        });
+
+        let result = serde_json::from_value::<ServiceConfig>(raw);
+
+        assert!(result.is_err(), "fail_closed must remain boolean");
+    }
+
+    #[test]
+    fn request_lifecycle_rejects_numeric_route_path() {
+        let raw = serde_json::json!({
+            "transport_boundary_kind": "in_process_catalog",
+            "transport_owns_listener": false,
+            "endpoint_group": "operator",
+            "route_path": 404,
+            "perf_baseline_status": "unavailable_pending_transport",
+            "perf_baseline_provenance": "pending live transport",
+            "request_lifecycle": "caller-owned in-process dispatch only",
+            "cancellation_semantics": "no transport-owned cancellation boundary"
+        });
+
+        let result = serde_json::from_value::<RequestLifecycleProvenance>(raw);
+
+        assert!(result.is_err(), "route_path must stay a string");
+    }
+}
+
 /// Integration tests: API middleware pipeline → Security intent firewall.
 ///
 /// Validates that the API layer (auth, rate-limit, policy hooks) correctly

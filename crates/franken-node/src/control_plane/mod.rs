@@ -171,7 +171,10 @@ mod tests {
         ControlEpoch, EpochError, EpochRejectionReason, EpochStore, ValidityWindowPolicy,
         check_artifact_epoch,
     };
-    use super::transition_abort::{AbortError, ForceTransitionPolicy, TransitionAbortManager};
+    use super::transition_abort::{
+        AbortError, ForceTransitionPolicy, ParticipantAbortState, TransitionAbortEvent,
+        TransitionAbortManager, TransitionAbortReason,
+    };
     use std::collections::BTreeSet;
 
     fn participants(ids: &[&str]) -> BTreeSet<String> {
@@ -190,6 +193,15 @@ mod tests {
             operator_id,
             audit_reason,
         )
+    }
+
+    fn abort_state(participant_id: &str, current_epoch: u64) -> ParticipantAbortState {
+        ParticipantAbortState {
+            participant_id: participant_id.to_string(),
+            had_acked: false,
+            current_epoch,
+            in_flight_items: 0,
+        }
     }
 
     #[test]
@@ -354,5 +366,155 @@ mod tests {
             .expect_err("force policy cannot skip every participant");
 
         assert!(matches!(err, AbortError::AllSkipped { total: 2 }));
+    }
+
+    #[test]
+    fn negative_artifact_id_validation_precedes_future_epoch_rejection() {
+        let policy = ValidityWindowPolicy::new(ControlEpoch::new(20), 5);
+
+        let rejection = check_artifact_epoch(
+            "<unknown>",
+            ControlEpoch::new(21),
+            &policy,
+            "trace-invalid-first",
+        )
+        .expect_err("reserved artifact ID must fail before epoch ordering checks");
+
+        assert_eq!(
+            rejection.rejection_reason,
+            EpochRejectionReason::InvalidArtifactId
+        );
+        assert_eq!(rejection.artifact_epoch, ControlEpoch::new(21));
+    }
+
+    #[test]
+    fn negative_hot_reloaded_window_rejects_previously_valid_epoch() {
+        let mut policy = ValidityWindowPolicy::new(ControlEpoch::new(20), 5);
+        check_artifact_epoch(
+            "artifact-window-edge",
+            ControlEpoch::new(15),
+            &policy,
+            "trace-wide-window",
+        )
+        .expect("artifact at lower boundary should be valid before shrink");
+
+        policy.set_max_lookback(4);
+        let rejection = check_artifact_epoch(
+            "artifact-window-edge",
+            ControlEpoch::new(15),
+            &policy,
+            "trace-shrunk-window",
+        )
+        .expect_err("shrinking the validity window must fail closed");
+
+        assert_eq!(rejection.rejection_reason, EpochRejectionReason::ExpiredEpoch);
+        assert_eq!(policy.min_accepted_epoch(), ControlEpoch::new(16));
+    }
+
+    #[test]
+    fn negative_epoch_set_whitespace_manifest_does_not_record_transition() {
+        let mut store = EpochStore::recover(4);
+
+        let err = store
+            .epoch_set(5, " \t\n ", 1_700_000_000, "trace-blank-forward")
+            .expect_err("forward epoch set with blank manifest must be rejected");
+
+        assert!(matches!(err, EpochError::InvalidManifestHash { .. }));
+        assert_eq!(store.epoch_read(), ControlEpoch::new(4));
+        assert_eq!(store.committed_epoch(), ControlEpoch::new(4));
+        assert_eq!(store.transition_count(), 0);
+    }
+
+    #[test]
+    fn negative_blank_skippable_participant_precedes_over_limit_error() {
+        let manager = TransitionAbortManager::new();
+        let policy = force_policy(&["", "node-a"], 1, "operator-1", "manual recovery");
+        let known = participants(&["node-a", "node-b"]);
+
+        let err = manager
+            .validate_force_policy(&policy, &known)
+            .expect_err("blank skippable participant must fail before count limits");
+
+        assert!(matches!(
+            err,
+            AbortError::UnknownParticipant { participant_id } if participant_id.is_empty()
+        ));
+    }
+
+    #[test]
+    fn negative_blank_known_participant_rejects_force_policy() {
+        let manager = TransitionAbortManager::new();
+        let policy = force_policy(&["node-a"], 1, "operator-1", "manual recovery");
+        let known = participants(&["", "node-a", "node-b"]);
+
+        let err = manager
+            .validate_force_policy(&policy, &known)
+            .expect_err("known participant registry must not contain blank IDs");
+
+        assert!(matches!(
+            err,
+            AbortError::UnknownParticipant { participant_id } if participant_id.is_empty()
+        ));
+    }
+
+    #[test]
+    fn negative_empty_participant_abort_event_fails_no_partial_check() {
+        let event = TransitionAbortEvent::new(
+            "barrier-empty",
+            TransitionAbortReason::Timeout { elapsed_ms: 500 },
+            9,
+            10,
+            Vec::new(),
+            500,
+            1_700_000_000,
+            "trace-empty-abort",
+        );
+
+        assert!(!event.verify_no_partial_state());
+        assert_eq!(event.pre_epoch, 9);
+        assert_eq!(event.proposed_epoch, 10);
+    }
+
+    #[test]
+    fn negative_participant_on_proposed_epoch_fails_no_partial_check() {
+        let event = TransitionAbortEvent::new(
+            "barrier-partial",
+            TransitionAbortReason::ParticipantFailure {
+                participant_id: "node-b".to_string(),
+                detail: "acked proposed epoch".to_string(),
+            },
+            9,
+            10,
+            vec![abort_state("node-a", 9), abort_state("node-b", 10)],
+            250,
+            1_700_000_001,
+            "trace-partial-abort",
+        );
+
+        assert!(!event.verify_no_partial_state());
+        assert_eq!(event.participant_states.len(), 2);
+    }
+
+    #[test]
+    fn negative_record_abort_keeps_partial_state_visible() {
+        let mut manager = TransitionAbortManager::new();
+
+        let event = manager.record_abort(
+            "barrier-recorded-partial",
+            TransitionAbortReason::Cancellation {
+                source: "operator".to_string(),
+            },
+            12,
+            13,
+            vec![abort_state("node-a", 12), abort_state("node-b", 13)],
+            100,
+            1_700_000_002,
+            "trace-recorded-partial",
+        );
+
+        assert!(!event.verify_no_partial_state());
+        assert_eq!(manager.abort_count(), 1);
+        assert_eq!(manager.audit_log().len(), 1);
+        assert_eq!(manager.abort_events()[0].barrier_id, "barrier-recorded-partial");
     }
 }
