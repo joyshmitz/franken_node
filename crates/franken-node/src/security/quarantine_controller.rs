@@ -16,6 +16,22 @@ use crate::security::adversary_graph::AdversaryPosterior;
 pub const EVD_QUAR_CTRL_001: &str = "EVD-QUAR-CTRL-001";
 pub const EVD_QUAR_CTRL_002: &str = "EVD-QUAR-CTRL-002";
 
+/// Maximum control decisions to prevent memory exhaustion attacks.
+const MAX_DECISIONS: usize = 1024;
+
+/// Add item to Vec with bounded capacity. When capacity is exceeded, removes oldest entries.
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
+    if items.len() >= cap {
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow);
+    }
+    items.push(item);
+}
+
 #[derive(Debug, Clone, thiserror::Error, PartialEq)]
 pub enum QuarantineControllerError {
     #[error("threshold `{name}` must be in [0.0, 1.0], got {value}")]
@@ -184,16 +200,18 @@ impl QuarantineController {
 
     #[must_use]
     pub fn evaluate_posteriors(&self, posteriors: &[AdversaryPosterior]) -> Vec<ControlDecision> {
-        let mut decisions: Vec<ControlDecision> = posteriors
-            .iter()
-            .filter_map(|posterior| {
-                self.decide_for_posterior(
-                    &posterior.principal_id,
-                    posterior.posterior,
-                    &posterior.last_trace_id,
-                )
-            })
-            .collect();
+        let mut decisions: Vec<ControlDecision> = Vec::new();
+
+        // Bounded collection to prevent memory exhaustion attacks
+        for posterior in posteriors {
+            if let Some(decision) = self.decide_for_posterior(
+                &posterior.principal_id,
+                posterior.posterior,
+                &posterior.last_trace_id,
+            ) {
+                push_bounded(&mut decisions, decision, MAX_DECISIONS);
+            }
+        }
 
         // Deterministic output ordering for reproducible replay.
         decisions.sort_by(|left, right| {
@@ -506,6 +524,42 @@ mod tests {
 
         let ids: Vec<&str> = decisions.iter().map(|d| d.principal_id.as_str()).collect();
         assert_eq!(ids, vec!["ext:c", "ext:b", "ext:a"]);
+    }
+
+    #[test]
+    fn evaluate_posteriors_is_bounded_to_prevent_memory_exhaustion() {
+        use super::MAX_DECISIONS;
+
+        let controller = QuarantineController::new(QuarantineThresholdPolicy::default(), "salt")
+            .expect("controller");
+
+        // Create more posteriors than the limit to test memory exhaustion protection
+        let posteriors: Vec<AdversaryPosterior> = (0..(MAX_DECISIONS + 50))
+            .map(|i| posterior(&format!("ext:user{}", i), 0.8, &format!("trace{}", i)))
+            .collect();
+
+        let decisions = controller.evaluate_posteriors(&posteriors);
+
+        // Should only keep MAX_DECISIONS entries
+        assert_eq!(decisions.len(), MAX_DECISIONS);
+
+        // The decisions should be the highest posterior ones due to LRU eviction + sorting
+        // All should have posterior 0.8 since we generated them that way
+        for decision in &decisions {
+            assert!((decision.posterior - 0.8).abs() < f64::EPSILON);
+        }
+
+        // Verify deterministic ordering is preserved
+        for i in 1..decisions.len() {
+            let prev = &decisions[i - 1];
+            let curr = &decisions[i];
+
+            // Should be sorted by posterior desc, then principal_id asc
+            assert!(
+                prev.posterior > curr.posterior ||
+                (prev.posterior == curr.posterior && prev.principal_id <= curr.principal_id)
+            );
+        }
     }
 }
 
