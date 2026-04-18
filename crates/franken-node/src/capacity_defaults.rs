@@ -33,55 +33,81 @@ pub mod base {
     /// Very large dedupe/nonces windows.
     pub const DEDUPE: usize = 65_536;
 
-    // Inline negative-path tests for base bucket validation
-    #[cfg(test)]
-    #[allow(unreachable_code)]
-    {
-        // Test: all base constants must be non-zero to prevent capacity bypass
-        const _: () = assert!(SMALL > 0, "SMALL capacity must be non-zero");
-        const _: () = assert!(MEDIUM > 0, "MEDIUM capacity must be non-zero");
-        const _: () = assert!(STANDARD > 0, "STANDARD capacity must be non-zero");
-        const _: () = assert!(LARGE > 0, "LARGE capacity must be non-zero");
-        const _: () = assert!(XL > 0, "XL capacity must be non-zero");
-        const _: () = assert!(TRACE > 0, "TRACE capacity must be non-zero");
-        const _: () = assert!(DEDUPE > 0, "DEDUPE capacity must be non-zero");
+    // Inline negative-path const assertions for base bucket validation.
+    // Test: all base constants must be non-zero to prevent capacity bypass
+    const _: () = assert!(SMALL > 0, "SMALL capacity must be non-zero");
+    const _: () = assert!(MEDIUM > 0, "MEDIUM capacity must be non-zero");
+    const _: () = assert!(STANDARD > 0, "STANDARD capacity must be non-zero");
+    const _: () = assert!(LARGE > 0, "LARGE capacity must be non-zero");
+    const _: () = assert!(XL > 0, "XL capacity must be non-zero");
+    const _: () = assert!(TRACE > 0, "TRACE capacity must be non-zero");
+    const _: () = assert!(DEDUPE > 0, "DEDUPE capacity must be non-zero");
 
-        // Test: bucket hierarchy must be strictly increasing to prevent capacity confusion
-        const _: () = assert!(SMALL < TRACE, "SMALL must be less than TRACE");
-        const _: () = assert!(TRACE < MEDIUM, "TRACE must be less than MEDIUM");
-        const _: () = assert!(MEDIUM < STANDARD, "MEDIUM must be less than STANDARD");
-        const _: () = assert!(STANDARD < LARGE, "STANDARD must be less than LARGE");
-        const _: () = assert!(LARGE < XL, "LARGE must be less than XL");
-        const _: () = assert!(XL < DEDUPE, "XL must be less than DEDUPE");
+    // Test: bucket hierarchy must be strictly increasing to prevent capacity confusion
+    const _: () = assert!(SMALL < TRACE, "SMALL must be less than TRACE");
+    const _: () = assert!(TRACE < MEDIUM, "TRACE must be less than MEDIUM");
+    const _: () = assert!(MEDIUM < STANDARD, "MEDIUM must be less than STANDARD");
+    const _: () = assert!(STANDARD < LARGE, "STANDARD must be less than LARGE");
+    const _: () = assert!(LARGE < XL, "LARGE must be less than XL");
+    const _: () = assert!(XL < DEDUPE, "XL must be less than DEDUPE");
 
-        // Test: power-of-two alignment for cache efficiency
-        const _: () = assert!(SMALL & (SMALL - 1) == 0, "SMALL should be power of 2");
-        const _: () = assert!(TRACE & (TRACE - 1) == 0, "TRACE should be power of 2");
-        const _: () = assert!(MEDIUM & (MEDIUM - 1) == 0, "MEDIUM should be power of 2");
-        const _: () = assert!(STANDARD & (STANDARD - 1) == 0, "STANDARD should be power of 2");
-        const _: () = assert!(LARGE & (LARGE - 1) == 0, "LARGE should be power of 2");
-        const _: () = assert!(XL & (XL - 1) == 0, "XL should be power of 2");
-        const _: () = assert!(DEDUPE & (DEDUPE - 1) == 0, "DEDUPE should be power of 2");
+    // Test: power-of-two alignment for cache efficiency
+    const _: () = assert!(SMALL & (SMALL - 1) == 0, "SMALL should be power of 2");
+    const _: () = assert!(TRACE & (TRACE - 1) == 0, "TRACE should be power of 2");
+    const _: () = assert!(MEDIUM & (MEDIUM - 1) == 0, "MEDIUM should be power of 2");
+    const _: () = assert!(
+        STANDARD & (STANDARD - 1) == 0,
+        "STANDARD should be power of 2"
+    );
+    const _: () = assert!(LARGE & (LARGE - 1) == 0, "LARGE should be power of 2");
+    const _: () = assert!(XL & (XL - 1) == 0, "XL should be power of 2");
+    const _: () = assert!(DEDUPE & (DEDUPE - 1) == 0, "DEDUPE should be power of 2");
 
-        // Test: no overflow when used in common arithmetic operations
-        const _: () = assert!(DEDUPE.saturating_add(1000) > DEDUPE, "DEDUPE must not overflow in normal use");
-        const _: () = assert!(XL.saturating_mul(2) < usize::MAX / 2, "XL doubling must not approach overflow");
+    // Test: no overflow when used in common arithmetic operations
+    const _: () = assert!(
+        DEDUPE.saturating_add(1000) > DEDUPE,
+        "DEDUPE must not overflow in normal use"
+    );
+    const _: () = assert!(
+        XL.saturating_mul(2) < usize::MAX / 2,
+        "XL doubling must not approach overflow"
+    );
 
-        // Test: sufficient separation between adjacent buckets for meaningful differentiation
-        const _: () = assert!(TRACE > SMALL * 2, "TRACE should be meaningfully larger than SMALL");
-        const _: () = assert!(MEDIUM > TRACE * 2, "MEDIUM should be meaningfully larger than TRACE");
-        const _: () = assert!(STANDARD > MEDIUM * 2, "STANDARD should be meaningfully larger than MEDIUM");
-        const _: () = assert!(LARGE > STANDARD * 2, "LARGE should be meaningfully larger than STANDARD");
+    // Test: sufficient separation between adjacent buckets for meaningful differentiation
+    const _: () = assert!(
+        TRACE > SMALL * 2,
+        "TRACE should be meaningfully larger than SMALL"
+    );
+    const _: () = assert!(
+        MEDIUM > TRACE * 2,
+        "MEDIUM should be meaningfully larger than TRACE"
+    );
+    const _: () = assert!(
+        STANDARD > MEDIUM * 2,
+        "STANDARD should be meaningfully larger than MEDIUM"
+    );
+    const _: () = assert!(
+        LARGE > STANDARD * 2,
+        "LARGE should be meaningfully larger than STANDARD"
+    );
 
-        // Test: dedupe window large enough for collision resistance
-        const _: () = assert!(DEDUPE >= 32768, "DEDUPE must be sufficiently large for collision resistance");
+    // Test: dedupe window large enough for collision resistance
+    const _: () = assert!(
+        DEDUPE >= 32768,
+        "DEDUPE must be sufficiently large for collision resistance"
+    );
 
-        // Test: trace bucket appropriate for in-memory debugging structures
-        const _: () = assert!(TRACE <= 2048, "TRACE should remain memory-efficient for debugging");
+    // Test: trace bucket appropriate for in-memory debugging structures
+    const _: () = assert!(
+        TRACE <= 2048,
+        "TRACE should remain memory-efficient for debugging"
+    );
 
-        // Test: standard bucket balanced between memory usage and functionality
-        const _: () = assert!(STANDARD >= 2048 && STANDARD <= 8192, "STANDARD should be balanced capacity");
-    };
+    // Test: standard bucket balanced between memory usage and functionality
+    const _: () = assert!(
+        STANDARD >= 2048 && STANDARD <= 8192,
+        "STANDARD should be balanced capacity"
+    );
 }
 
 /// Audit-oriented capacities.
@@ -94,42 +120,92 @@ pub mod audit {
     pub const RECORDS: usize = base::STANDARD;
     pub const RECEIPT_CHAIN: usize = base::LARGE;
 
-    // Inline negative-path tests for audit capacity validation
-    #[cfg(test)]
-    #[allow(unreachable_code)]
-    {
-        // Test: all audit constants derive from valid base buckets only
-        const _: () = assert!(LOG_ENTRIES == base::STANDARD, "LOG_ENTRIES must use STANDARD bucket");
-        const _: () = assert!(TRAIL_ENTRIES == base::STANDARD, "TRAIL_ENTRIES must use STANDARD bucket");
-        const _: () = assert!(ACTION_LOG_ENTRIES == base::STANDARD, "ACTION_LOG_ENTRIES must use STANDARD bucket");
-        const _: () = assert!(RECORDS == base::STANDARD, "RECORDS must use STANDARD bucket");
-        const _: () = assert!(RECEIPT_CHAIN == base::LARGE, "RECEIPT_CHAIN must use LARGE bucket");
+    // Inline negative-path const assertions for audit capacity validation.
+    // Test: all audit constants derive from valid base buckets only
+    const _: () = assert!(
+        LOG_ENTRIES == base::STANDARD,
+        "LOG_ENTRIES must use STANDARD bucket"
+    );
+    const _: () = assert!(
+        TRAIL_ENTRIES == base::STANDARD,
+        "TRAIL_ENTRIES must use STANDARD bucket"
+    );
+    const _: () = assert!(
+        ACTION_LOG_ENTRIES == base::STANDARD,
+        "ACTION_LOG_ENTRIES must use STANDARD bucket"
+    );
+    const _: () = assert!(
+        RECORDS == base::STANDARD,
+        "RECORDS must use STANDARD bucket"
+    );
+    const _: () = assert!(
+        RECEIPT_CHAIN == base::LARGE,
+        "RECEIPT_CHAIN must use LARGE bucket"
+    );
 
-        // Test: audit capacities must not collapse to smaller buckets
-        const _: () = assert!(LOG_ENTRIES > base::MEDIUM, "LOG_ENTRIES must exceed MEDIUM capacity");
-        const _: () = assert!(TRAIL_ENTRIES > base::TRACE, "TRAIL_ENTRIES must exceed TRACE capacity");
-        const _: () = assert!(ACTION_LOG_ENTRIES > base::SMALL, "ACTION_LOG_ENTRIES must exceed SMALL capacity");
+    // Test: audit capacities must not collapse to smaller buckets
+    const _: () = assert!(
+        LOG_ENTRIES > base::MEDIUM,
+        "LOG_ENTRIES must exceed MEDIUM capacity"
+    );
+    const _: () = assert!(
+        TRAIL_ENTRIES > base::TRACE,
+        "TRAIL_ENTRIES must exceed TRACE capacity"
+    );
+    const _: () = assert!(
+        ACTION_LOG_ENTRIES > base::SMALL,
+        "ACTION_LOG_ENTRIES must exceed SMALL capacity"
+    );
 
-        // Test: receipt chain must be larger than individual log capacities for aggregation
-        const _: () = assert!(RECEIPT_CHAIN > LOG_ENTRIES, "RECEIPT_CHAIN must exceed LOG_ENTRIES");
-        const _: () = assert!(RECEIPT_CHAIN > TRAIL_ENTRIES, "RECEIPT_CHAIN must exceed TRAIL_ENTRIES");
-        const _: () = assert!(RECEIPT_CHAIN > ACTION_LOG_ENTRIES, "RECEIPT_CHAIN must exceed ACTION_LOG_ENTRIES");
+    // Test: receipt chain must be larger than individual log capacities for aggregation
+    const _: () = assert!(
+        RECEIPT_CHAIN > LOG_ENTRIES,
+        "RECEIPT_CHAIN must exceed LOG_ENTRIES"
+    );
+    const _: () = assert!(
+        RECEIPT_CHAIN > TRAIL_ENTRIES,
+        "RECEIPT_CHAIN must exceed TRAIL_ENTRIES"
+    );
+    const _: () = assert!(
+        RECEIPT_CHAIN > ACTION_LOG_ENTRIES,
+        "RECEIPT_CHAIN must exceed ACTION_LOG_ENTRIES"
+    );
 
-        // Test: standard audit buckets must be identical for cross-component compatibility
-        const _: () = assert!(LOG_ENTRIES == TRAIL_ENTRIES, "LOG_ENTRIES and TRAIL_ENTRIES must match");
-        const _: () = assert!(TRAIL_ENTRIES == ACTION_LOG_ENTRIES, "TRAIL_ENTRIES and ACTION_LOG_ENTRIES must match");
-        const _: () = assert!(RECORDS == LOG_ENTRIES, "RECORDS must match other standard audit capacities");
+    // Test: standard audit buckets must be identical for cross-component compatibility
+    const _: () = assert!(
+        LOG_ENTRIES == TRAIL_ENTRIES,
+        "LOG_ENTRIES and TRAIL_ENTRIES must match"
+    );
+    const _: () = assert!(
+        TRAIL_ENTRIES == ACTION_LOG_ENTRIES,
+        "TRAIL_ENTRIES and ACTION_LOG_ENTRIES must match"
+    );
+    const _: () = assert!(
+        RECORDS == LOG_ENTRIES,
+        "RECORDS must match other standard audit capacities"
+    );
 
-        // Test: audit capacities sufficient for high-frequency operations
-        const _: () = assert!(LOG_ENTRIES >= 1000, "LOG_ENTRIES must handle frequent logging");
-        const _: () = assert!(RECEIPT_CHAIN >= 4000, "RECEIPT_CHAIN must handle receipt accumulation");
+    // Test: audit capacities sufficient for high-frequency operations
+    const _: () = assert!(
+        LOG_ENTRIES >= 1000,
+        "LOG_ENTRIES must handle frequent logging"
+    );
+    const _: () = assert!(
+        RECEIPT_CHAIN >= 4000,
+        "RECEIPT_CHAIN must handle receipt accumulation"
+    );
 
-        // Test: no integer overflow in typical audit operations
-        const _: () = assert!(RECEIPT_CHAIN.saturating_add(LOG_ENTRIES) < usize::MAX / 2, "audit operations must not overflow");
+    // Test: no integer overflow in typical audit operations
+    const _: () = assert!(
+        RECEIPT_CHAIN.saturating_add(LOG_ENTRIES) < usize::MAX / 2,
+        "audit operations must not overflow"
+    );
 
-        // Test: audit bucket relationships are mathematically consistent
-        const _: () = assert!(RECEIPT_CHAIN >= LOG_ENTRIES * 2, "RECEIPT_CHAIN should be at least 2x LOG_ENTRIES");
-    };
+    // Test: audit bucket relationships are mathematically consistent
+    const _: () = assert!(
+        RECEIPT_CHAIN >= LOG_ENTRIES * 2,
+        "RECEIPT_CHAIN should be at least 2x LOG_ENTRIES"
+    );
 }
 
 /// Generic bounded collection capacities.
@@ -163,48 +239,104 @@ pub mod security {
     pub const SEEN_NONCES: usize = base::LARGE;
     pub const CONSUMED_NONCES: usize = base::DEDUPE;
 
-    // Inline negative-path tests for security capacity validation
-    #[cfg(test)]
-    #[allow(unreachable_code)]
-    {
-        // Test: nonce window hierarchy must prevent replay attacks
-        const _: () = assert!(CONSUMED_NONCES > SEEN_NONCES, "CONSUMED_NONCES must exceed SEEN_NONCES");
-        const _: () = assert!(CONSUMED_NONCES >= SEEN_NONCES * 4, "CONSUMED_NONCES should be significantly larger");
+    // Inline negative-path const assertions for security capacity validation.
+    // Test: nonce window hierarchy must prevent replay attacks
+    const _: () = assert!(
+        CONSUMED_NONCES > SEEN_NONCES,
+        "CONSUMED_NONCES must exceed SEEN_NONCES"
+    );
+    const _: () = assert!(
+        CONSUMED_NONCES >= SEEN_NONCES * 4,
+        "CONSUMED_NONCES should be significantly larger"
+    );
 
-        // Test: security-critical capacities must not be too small for attack resistance
-        const _: () = assert!(TRUSTED_SIGNERS >= 64, "TRUSTED_SIGNERS must support sufficient key rotation");
-        const _: () = assert!(BLOCKED_SOURCES >= 1000, "BLOCKED_SOURCES must handle attack source lists");
-        const _: () = assert!(SEEN_NONCES >= 4000, "SEEN_NONCES must provide replay protection window");
+    // Test: security-critical capacities must not be too small for attack resistance
+    const _: () = assert!(
+        TRUSTED_SIGNERS >= 64,
+        "TRUSTED_SIGNERS must support sufficient key rotation"
+    );
+    const _: () = assert!(
+        BLOCKED_SOURCES >= 1000,
+        "BLOCKED_SOURCES must handle attack source lists"
+    );
+    const _: () = assert!(
+        SEEN_NONCES >= 4000,
+        "SEEN_NONCES must provide replay protection window"
+    );
 
-        // Test: standard security buckets use consistent capacity for interoperability
-        const _: () = assert!(TRUSTED_SIGNERS == base::STANDARD, "TRUSTED_SIGNERS must use STANDARD bucket");
-        const _: () = assert!(MONITORS == base::STANDARD, "MONITORS must use STANDARD bucket");
-        const _: () = assert!(BLOCKED_SOURCES == base::STANDARD, "BLOCKED_SOURCES must use STANDARD bucket");
-        const _: () = assert!(REFERENCE_RUNTIMES == base::STANDARD, "REFERENCE_RUNTIMES must use STANDARD bucket");
-        const _: () = assert!(EVENTS == base::STANDARD, "security EVENTS must use STANDARD bucket");
+    // Test: standard security buckets use consistent capacity for interoperability
+    const _: () = assert!(
+        TRUSTED_SIGNERS == base::STANDARD,
+        "TRUSTED_SIGNERS must use STANDARD bucket"
+    );
+    const _: () = assert!(
+        MONITORS == base::STANDARD,
+        "MONITORS must use STANDARD bucket"
+    );
+    const _: () = assert!(
+        BLOCKED_SOURCES == base::STANDARD,
+        "BLOCKED_SOURCES must use STANDARD bucket"
+    );
+    const _: () = assert!(
+        REFERENCE_RUNTIMES == base::STANDARD,
+        "REFERENCE_RUNTIMES must use STANDARD bucket"
+    );
+    const _: () = assert!(
+        EVENTS == base::STANDARD,
+        "security EVENTS must use STANDARD bucket"
+    );
 
-        // Test: nonce capacities use appropriate bucket sizes for their threat model
-        const _: () = assert!(SEEN_NONCES == base::LARGE, "SEEN_NONCES must use LARGE bucket");
-        const _: () = assert!(CONSUMED_NONCES == base::DEDUPE, "CONSUMED_NONCES must use DEDUPE bucket");
+    // Test: nonce capacities use appropriate bucket sizes for their threat model
+    const _: () = assert!(
+        SEEN_NONCES == base::LARGE,
+        "SEEN_NONCES must use LARGE bucket"
+    );
+    const _: () = assert!(
+        CONSUMED_NONCES == base::DEDUPE,
+        "CONSUMED_NONCES must use DEDUPE bucket"
+    );
 
-        // Test: no overlap between security categories that should remain distinct
-        const _: () = assert!(SEEN_NONCES != CONSUMED_NONCES, "nonce windows must have different capacities");
-        const _: () = assert!(TRUSTED_SIGNERS == MONITORS, "TRUSTED_SIGNERS and MONITORS should match for symmetry");
+    // Test: no overlap between security categories that should remain distinct
+    const _: () = assert!(
+        SEEN_NONCES != CONSUMED_NONCES,
+        "nonce windows must have different capacities"
+    );
+    const _: () = assert!(
+        TRUSTED_SIGNERS == MONITORS,
+        "TRUSTED_SIGNERS and MONITORS should match for symmetry"
+    );
 
-        // Test: security capacities must not overflow in cryptographic operations
-        const _: () = assert!(CONSUMED_NONCES.saturating_mul(32) < usize::MAX / 8, "nonce operations must not overflow");
-        const _: () = assert!(TRUSTED_SIGNERS.saturating_mul(256) < usize::MAX / 16, "signature operations must not overflow");
+    // Test: security capacities must not overflow in cryptographic operations
+    const _: () = assert!(
+        CONSUMED_NONCES.saturating_mul(32) < usize::MAX / 8,
+        "nonce operations must not overflow"
+    );
+    const _: () = assert!(
+        TRUSTED_SIGNERS.saturating_mul(256) < usize::MAX / 16,
+        "signature operations must not overflow"
+    );
 
-        // Test: blocked sources capacity sufficient for threat intelligence feeds
-        const _: () = assert!(BLOCKED_SOURCES >= base::MEDIUM, "BLOCKED_SOURCES must handle threat feeds");
+    // Test: blocked sources capacity sufficient for threat intelligence feeds
+    const _: () = assert!(
+        BLOCKED_SOURCES >= base::MEDIUM,
+        "BLOCKED_SOURCES must handle threat feeds"
+    );
 
-        // Test: reference runtime capacity appropriate for verification diversity
-        const _: () = assert!(REFERENCE_RUNTIMES <= base::LARGE, "REFERENCE_RUNTIMES should remain manageable");
-        const _: () = assert!(REFERENCE_RUNTIMES >= base::TRACE, "REFERENCE_RUNTIMES must support multiple implementations");
+    // Test: reference runtime capacity appropriate for verification diversity
+    const _: () = assert!(
+        REFERENCE_RUNTIMES <= base::LARGE,
+        "REFERENCE_RUNTIMES should remain manageable"
+    );
+    const _: () = assert!(
+        REFERENCE_RUNTIMES >= base::TRACE,
+        "REFERENCE_RUNTIMES must support multiple implementations"
+    );
 
-        // Test: monitor capacity scales with security event volume expectations
-        const _: () = assert!(MONITORS == EVENTS, "MONITORS should match security EVENTS capacity");
-    };
+    // Test: monitor capacity scales with security event volume expectations
+    const _: () = assert!(
+        MONITORS == EVENTS,
+        "MONITORS should match security EVENTS capacity"
+    );
 }
 
 /// Runtime/control-plane capacities.
@@ -258,26 +390,45 @@ pub mod aliases {
     pub const MAX_ACTION_LOG_ENTRIES: usize = audit::ACTION_LOG_ENTRIES;
     pub const MAX_RECEIPT_CHAIN: usize = audit::RECEIPT_CHAIN;
 
-    // Inline negative-path tests for alias correctness and consistency
-    #[cfg(test)]
-    #[allow(unreachable_code)]
-    {
-        // Test: audit aliases must exactly match their source constants
-        const _: () = assert!(MAX_AUDIT_LOG_ENTRIES == audit::LOG_ENTRIES, "audit log alias mismatch");
-        const _: () = assert!(MAX_AUDIT_TRAIL_ENTRIES == audit::TRAIL_ENTRIES, "audit trail alias mismatch");
-        const _: () = assert!(MAX_ACTION_LOG_ENTRIES == audit::ACTION_LOG_ENTRIES, "action log alias mismatch");
-        const _: () = assert!(MAX_RECEIPT_CHAIN == audit::RECEIPT_CHAIN, "receipt chain alias mismatch");
+    // Test: audit aliases must exactly match their source constants.
+    const _: () = assert!(
+        MAX_AUDIT_LOG_ENTRIES == audit::LOG_ENTRIES,
+        "audit log alias mismatch"
+    );
+    const _: () = assert!(
+        MAX_AUDIT_TRAIL_ENTRIES == audit::TRAIL_ENTRIES,
+        "audit trail alias mismatch"
+    );
+    const _: () = assert!(
+        MAX_ACTION_LOG_ENTRIES == audit::ACTION_LOG_ENTRIES,
+        "action log alias mismatch"
+    );
+    const _: () = assert!(
+        MAX_RECEIPT_CHAIN == audit::RECEIPT_CHAIN,
+        "receipt chain alias mismatch"
+    );
 
-        // Test: no accidental cross-wiring between different capacity domains
-        const _: () = assert!(MAX_AUDIT_LOG_ENTRIES != MAX_RECEIPT_CHAIN, "audit log must not equal receipt chain");
+    // Test: no accidental cross-wiring between different capacity domains.
+    const _: () = assert!(
+        MAX_AUDIT_LOG_ENTRIES != MAX_RECEIPT_CHAIN,
+        "audit log must not equal receipt chain"
+    );
 
-        // Test: aliases maintain the same relationships as their source modules
-        const _: () = assert!(MAX_RECEIPT_CHAIN > MAX_AUDIT_LOG_ENTRIES, "alias hierarchy must match source hierarchy");
+    // Test: aliases maintain the same relationships as their source modules.
+    const _: () = assert!(
+        MAX_RECEIPT_CHAIN > MAX_AUDIT_LOG_ENTRIES,
+        "alias hierarchy must match source hierarchy"
+    );
 
-        // Test: all audit aliases use expected underlying bucket sizes
-        const _: () = assert!(MAX_AUDIT_LOG_ENTRIES == super::base::STANDARD, "audit log alias must use STANDARD");
-        const _: () = assert!(MAX_RECEIPT_CHAIN == super::base::LARGE, "receipt chain alias must use LARGE");
-    };
+    // Test: all audit aliases use expected underlying bucket sizes.
+    const _: () = assert!(
+        MAX_AUDIT_LOG_ENTRIES == super::base::STANDARD,
+        "audit log alias must use STANDARD"
+    );
+    const _: () = assert!(
+        MAX_RECEIPT_CHAIN == super::base::LARGE,
+        "receipt chain alias must use LARGE"
+    );
 
     pub const MAX_EVENTS: usize = collections::EVENTS;
     pub const MAX_ENTRIES: usize = collections::ENTRIES;
@@ -300,39 +451,85 @@ pub mod aliases {
     pub const MAX_SEEN_NONCES: usize = security::SEEN_NONCES;
     pub const MAX_CONSUMED_NONCES: usize = security::CONSUMED_NONCES;
 
-    // Inline negative-path tests for security alias validation
-    #[cfg(test)]
-    #[allow(unreachable_code)]
-    {
-        // Test: security aliases must exactly match their source constants
-        const _: () = assert!(MAX_TRUSTED_SIGNERS == security::TRUSTED_SIGNERS, "trusted signers alias mismatch");
-        const _: () = assert!(MAX_MONITORS == security::MONITORS, "monitors alias mismatch");
-        const _: () = assert!(MAX_BLOCKED_SOURCES == security::BLOCKED_SOURCES, "blocked sources alias mismatch");
-        const _: () = assert!(MAX_REFERENCE_RUNTIMES == security::REFERENCE_RUNTIMES, "reference runtimes alias mismatch");
-        const _: () = assert!(MAX_SEEN_NONCES == security::SEEN_NONCES, "seen nonces alias mismatch");
-        const _: () = assert!(MAX_CONSUMED_NONCES == security::CONSUMED_NONCES, "consumed nonces alias mismatch");
+    // Test: security aliases must exactly match their source constants.
+    const _: () = assert!(
+        MAX_TRUSTED_SIGNERS == security::TRUSTED_SIGNERS,
+        "trusted signers alias mismatch"
+    );
+    const _: () = assert!(
+        MAX_MONITORS == security::MONITORS,
+        "monitors alias mismatch"
+    );
+    const _: () = assert!(
+        MAX_BLOCKED_SOURCES == security::BLOCKED_SOURCES,
+        "blocked sources alias mismatch"
+    );
+    const _: () = assert!(
+        MAX_REFERENCE_RUNTIMES == security::REFERENCE_RUNTIMES,
+        "reference runtimes alias mismatch"
+    );
+    const _: () = assert!(
+        MAX_SEEN_NONCES == security::SEEN_NONCES,
+        "seen nonces alias mismatch"
+    );
+    const _: () = assert!(
+        MAX_CONSUMED_NONCES == security::CONSUMED_NONCES,
+        "consumed nonces alias mismatch"
+    );
 
-        // Test: critical security alias relationships for attack resistance
-        const _: () = assert!(MAX_CONSUMED_NONCES > MAX_SEEN_NONCES, "consumed nonce alias must exceed seen");
-        const _: () = assert!(MAX_CONSUMED_NONCES >= MAX_SEEN_NONCES * 8, "nonce window separation must be significant");
+    // Test: critical security alias relationships for attack resistance.
+    const _: () = assert!(
+        MAX_CONSUMED_NONCES > MAX_SEEN_NONCES,
+        "consumed nonce alias must exceed seen"
+    );
+    const _: () = assert!(
+        MAX_CONSUMED_NONCES >= MAX_SEEN_NONCES * 8,
+        "nonce window separation must be significant"
+    );
 
-        // Test: security aliases must not accidentally cross-wire with non-security capacities
-        const _: () = assert!(MAX_TRUSTED_SIGNERS != MAX_AUDIT_LOG_ENTRIES, "security and audit should be independent");
-        const _: () = assert!(MAX_BLOCKED_SOURCES != MAX_RECEIPT_CHAIN, "blocked sources should not match receipt chain");
+    // Test: security aliases must not cross-wire with non-security capacities.
+    const _: () = assert!(
+        MAX_TRUSTED_SIGNERS != MAX_AUDIT_LOG_ENTRIES,
+        "security and audit should be independent"
+    );
+    const _: () = assert!(
+        MAX_BLOCKED_SOURCES != MAX_RECEIPT_CHAIN,
+        "blocked sources should not match receipt chain"
+    );
 
-        // Test: symmetric security alias capacities for operational consistency
-        const _: () = assert!(MAX_TRUSTED_SIGNERS == MAX_MONITORS, "signers and monitors should match for balance");
-        const _: () = assert!(MAX_MONITORS == MAX_BLOCKED_SOURCES, "monitors and blocked sources should match");
+    // Test: symmetric security alias capacities for operational consistency.
+    const _: () = assert!(
+        MAX_TRUSTED_SIGNERS == MAX_MONITORS,
+        "signers and monitors should match for balance"
+    );
+    const _: () = assert!(
+        MAX_MONITORS == MAX_BLOCKED_SOURCES,
+        "monitors and blocked sources should match"
+    );
 
-        // Test: nonce alias capacities use correct underlying buckets for threat model
-        const _: () = assert!(MAX_SEEN_NONCES == super::base::LARGE, "seen nonces alias must use LARGE bucket");
-        const _: () = assert!(MAX_CONSUMED_NONCES == super::base::DEDUPE, "consumed nonces alias must use DEDUPE bucket");
+    // Test: nonce alias capacities use correct underlying buckets for threat model.
+    const _: () = assert!(
+        MAX_SEEN_NONCES == super::base::LARGE,
+        "seen nonces alias must use LARGE bucket"
+    );
+    const _: () = assert!(
+        MAX_CONSUMED_NONCES == super::base::DEDUPE,
+        "consumed nonces alias must use DEDUPE bucket"
+    );
 
-        // Test: security alias values are sufficient for production threat landscapes
-        const _: () = assert!(MAX_TRUSTED_SIGNERS >= 1000, "trusted signers alias must support key diversity");
-        const _: () = assert!(MAX_BLOCKED_SOURCES >= 2000, "blocked sources alias must handle threat intelligence");
-        const _: () = assert!(MAX_CONSUMED_NONCES >= 32768, "consumed nonces alias must provide replay protection");
-    };
+    // Test: security alias values are sufficient for production threat landscapes.
+    const _: () = assert!(
+        MAX_TRUSTED_SIGNERS >= 1000,
+        "trusted signers alias must support key diversity"
+    );
+    const _: () = assert!(
+        MAX_BLOCKED_SOURCES >= 2000,
+        "blocked sources alias must handle threat intelligence"
+    );
+    const _: () = assert!(
+        MAX_CONSUMED_NONCES >= 32768,
+        "consumed nonces alias must provide replay protection"
+    );
 
     pub const MAX_ABORT_EVENTS: usize = runtime::ABORT_EVENTS;
     pub const MAX_FORCE_EVENTS: usize = runtime::FORCE_EVENTS;
@@ -348,53 +545,119 @@ pub mod aliases {
     pub const MAX_BARRIER_HISTORY: usize = runtime::BARRIER_HISTORY;
     pub const MAX_CHECKPOINTS: usize = runtime::CHECKPOINTS;
 
-    // Inline negative-path tests for runtime alias validation
-    #[cfg(test)]
-    #[allow(unreachable_code)]
-    {
-        // Test: runtime aliases must exactly match their source constants
-        const _: () = assert!(MAX_OBLIGATIONS == runtime::OBLIGATIONS, "obligations alias mismatch");
-        const _: () = assert!(MAX_LEASES == runtime::LEASES, "leases alias mismatch");
-        const _: () = assert!(MAX_SAGAS == runtime::SAGAS, "sagas alias mismatch");
-        const _: () = assert!(MAX_TOTAL_ARTIFACTS == runtime::TOTAL_ARTIFACTS, "artifacts alias mismatch");
+    // Test: runtime aliases must exactly match their source constants.
+    const _: () = assert!(
+        MAX_OBLIGATIONS == runtime::OBLIGATIONS,
+        "obligations alias mismatch"
+    );
+    const _: () = assert!(MAX_LEASES == runtime::LEASES, "leases alias mismatch");
+    const _: () = assert!(MAX_SAGAS == runtime::SAGAS, "sagas alias mismatch");
+    const _: () = assert!(
+        MAX_TOTAL_ARTIFACTS == runtime::TOTAL_ARTIFACTS,
+        "artifacts alias mismatch"
+    );
 
-        // Test: trace-related aliases must use consistent TRACE bucket for memory efficiency
-        const _: () = assert!(MAX_REGISTERED_TRACES == super::base::TRACE, "registered traces must use TRACE bucket");
-        const _: () = assert!(MAX_BULKHEAD_EVENTS == super::base::TRACE, "bulkhead events must use TRACE bucket");
-        const _: () = assert!(MAX_LATENCY_SAMPLES == super::base::TRACE, "latency samples must use TRACE bucket");
-        const _: () = assert!(MAX_CHECKPOINTS == super::base::TRACE, "checkpoints must use TRACE bucket");
+    // Test: trace-related aliases must use consistent TRACE bucket.
+    const _: () = assert!(
+        MAX_REGISTERED_TRACES == super::base::TRACE,
+        "registered traces must use TRACE bucket"
+    );
+    const _: () = assert!(
+        MAX_BULKHEAD_EVENTS == super::base::TRACE,
+        "bulkhead events must use TRACE bucket"
+    );
+    const _: () = assert!(
+        MAX_LATENCY_SAMPLES == super::base::TRACE,
+        "latency samples must use TRACE bucket"
+    );
+    const _: () = assert!(
+        MAX_CHECKPOINTS == super::base::TRACE,
+        "checkpoints must use TRACE bucket"
+    );
 
-        // Test: large runtime aliases must use appropriate buckets for scale
-        const _: () = assert!(MAX_OBLIGATIONS == super::base::LARGE, "obligations must use LARGE bucket");
-        const _: () = assert!(MAX_LEASES == super::base::LARGE, "leases must use LARGE bucket");
-        const _: () = assert!(MAX_TOTAL_ARTIFACTS == super::base::LARGE, "artifacts must use LARGE bucket");
-        const _: () = assert!(MAX_TRACE_STEPS == super::base::LARGE, "trace steps must use LARGE bucket");
+    // Test: large runtime aliases must use appropriate buckets for scale.
+    const _: () = assert!(
+        MAX_OBLIGATIONS == super::base::LARGE,
+        "obligations must use LARGE bucket"
+    );
+    const _: () = assert!(
+        MAX_LEASES == super::base::LARGE,
+        "leases must use LARGE bucket"
+    );
+    const _: () = assert!(
+        MAX_TOTAL_ARTIFACTS == super::base::LARGE,
+        "artifacts must use LARGE bucket"
+    );
+    const _: () = assert!(
+        MAX_TRACE_STEPS == super::base::LARGE,
+        "trace steps must use LARGE bucket"
+    );
 
-        // Test: standard runtime aliases for operational consistency
-        const _: () = assert!(MAX_ABORT_EVENTS == super::base::STANDARD, "abort events must use STANDARD");
-        const _: () = assert!(MAX_FORCE_EVENTS == super::base::STANDARD, "force events must use STANDARD");
-        const _: () = assert!(MAX_SESSION_EVENTS == super::base::STANDARD, "session events must use STANDARD");
-        const _: () = assert!(MAX_SAGAS == super::base::STANDARD, "sagas must use STANDARD");
-        const _: () = assert!(MAX_BARRIER_HISTORY == super::base::STANDARD, "barrier history must use STANDARD");
+    // Test: standard runtime aliases for operational consistency.
+    const _: () = assert!(
+        MAX_ABORT_EVENTS == super::base::STANDARD,
+        "abort events must use STANDARD"
+    );
+    const _: () = assert!(
+        MAX_FORCE_EVENTS == super::base::STANDARD,
+        "force events must use STANDARD"
+    );
+    const _: () = assert!(
+        MAX_SESSION_EVENTS == super::base::STANDARD,
+        "session events must use STANDARD"
+    );
+    const _: () = assert!(
+        MAX_SAGAS == super::base::STANDARD,
+        "sagas must use STANDARD"
+    );
+    const _: () = assert!(
+        MAX_BARRIER_HISTORY == super::base::STANDARD,
+        "barrier history must use STANDARD"
+    );
 
-        // Test: runtime capacity relationships for operational coherence
-        const _: () = assert!(MAX_OBLIGATIONS > MAX_SAGAS, "obligations must exceed sagas for containment");
-        const _: () = assert!(MAX_TRACE_STEPS > MAX_REGISTERED_TRACES, "trace steps must exceed registered traces");
-        const _: () = assert!(MAX_TOTAL_ARTIFACTS > MAX_LEASES, "artifacts must exceed leases for lifecycle management");
+    // Test: runtime capacity relationships for operational coherence.
+    const _: () = assert!(
+        MAX_OBLIGATIONS > MAX_SAGAS,
+        "obligations must exceed sagas for containment"
+    );
+    const _: () = assert!(
+        MAX_TRACE_STEPS > MAX_REGISTERED_TRACES,
+        "trace steps must exceed registered traces"
+    );
+    const _: () = assert!(
+        MAX_TOTAL_ARTIFACTS > MAX_LEASES,
+        "artifacts must exceed leases for lifecycle management"
+    );
 
-        // Test: trace aliases must not accidentally expand beyond trace boundaries
-        const _: () = assert!(MAX_REGISTERED_TRACES <= super::base::MEDIUM, "registered traces must remain trace-sized");
-        const _: () = assert!(MAX_CHECKPOINTS <= super::base::MEDIUM, "checkpoints must remain trace-sized");
+    // Test: trace aliases must not accidentally expand beyond trace boundaries.
+    const _: () = assert!(
+        MAX_REGISTERED_TRACES <= super::base::MEDIUM,
+        "registered traces must remain trace-sized"
+    );
+    const _: () = assert!(
+        MAX_CHECKPOINTS <= super::base::MEDIUM,
+        "checkpoints must remain trace-sized"
+    );
 
-        // Test: runtime event aliases must handle high-frequency operations
-        const _: () = assert!(MAX_SESSION_EVENTS >= 1024, "session events must handle frequent connections");
-        const _: () = assert!(MAX_ABORT_EVENTS >= 1024, "abort events must handle error bursts");
-        const _: () = assert!(MAX_FORCE_EVENTS >= 1024, "force events must handle emergency operations");
+    // Test: runtime event aliases must handle high-frequency operations.
+    const _: () = assert!(
+        MAX_SESSION_EVENTS >= 1024,
+        "session events must handle frequent connections"
+    );
+    const _: () = assert!(
+        MAX_ABORT_EVENTS >= 1024,
+        "abort events must handle error bursts"
+    );
+    const _: () = assert!(
+        MAX_FORCE_EVENTS >= 1024,
+        "force events must handle emergency operations"
+    );
 
-        // Test: no overflow in typical runtime arithmetic operations
-        const _: () = assert!(MAX_TOTAL_ARTIFACTS.saturating_add(MAX_OBLIGATIONS) < usize::MAX / 2, "runtime ops must not overflow");
-    };
-}
+    // Test: no overflow in typical runtime arithmetic operations.
+    const _: () = assert!(
+        MAX_TOTAL_ARTIFACTS.saturating_add(MAX_OBLIGATIONS) < usize::MAX / 2,
+        "runtime ops must not overflow"
+    );
 
     pub const MAX_VERIFIERS: usize = verifier::VERIFIERS;
     pub const MAX_ATTESTATIONS: usize = verifier::ATTESTATIONS;
@@ -774,14 +1037,14 @@ mod negative_path_tests {
         // Test Unicode injection attacks in capacity identifier strings
         // Control characters and homograph attacks could bypass validation
         let unicode_attack_vectors = [
-            "capacity\u{200B}injection",     // Zero-width space
-            "capacity\u{202E}yticapac",      // Right-to-left override
-            "capacity\u{0000}injection",     // Null byte injection
-            "capacity\u{FEFF}injection",     // BOM injection
-            "capacity\u{000C}injection",     // Form feed injection
-            "capacity\ninjection",           // Newline injection
-            "capacіty",                      // Cyrillic 'і' homograph
-            "capacity\u{001F}injection",     // Unit separator injection
+            "capacity\u{200B}injection", // Zero-width space
+            "capacity\u{202E}yticapac",  // Right-to-left override
+            "capacity\u{0000}injection", // Null byte injection
+            "capacity\u{FEFF}injection", // BOM injection
+            "capacity\u{000C}injection", // Form feed injection
+            "capacity\ninjection",       // Newline injection
+            "capacіty",                  // Cyrillic 'і' homograph
+            "capacity\u{001F}injection", // Unit separator injection
         ];
 
         for malicious_id in &unicode_attack_vectors {
@@ -791,8 +1054,11 @@ mod negative_path_tests {
             match result {
                 Ok(()) => {
                     // If accepted, verify no corruption in subsequent operations
-                    assert!(base::STANDARD > 0, "Capacity validation should remain consistent after Unicode input");
-                },
+                    assert!(
+                        base::STANDARD > 0,
+                        "Capacity validation should remain consistent after Unicode input"
+                    );
+                }
                 Err(error_msg) => {
                     // Rejection is also acceptable for malformed identifiers
                     assert!(!error_msg.is_empty(), "Error message should not be empty");
@@ -825,7 +1091,7 @@ mod negative_path_tests {
             let buckets = vec![
                 ("small", base::SMALL),
                 ("medium", base::MEDIUM),
-                ("large", *capacity_value),  // Test with extreme value
+                ("large", *capacity_value), // Test with extreme value
                 ("xl", base::XL),
             ];
 
@@ -833,26 +1099,46 @@ mod negative_path_tests {
             match result {
                 Ok(()) => {
                     // If validation passes, verify no arithmetic overflow occurred
-                    assert!(*capacity_value >= base::MEDIUM, "Large bucket validation should maintain order for: {}", description);
-                },
+                    assert!(
+                        *capacity_value >= base::MEDIUM,
+                        "Large bucket validation should maintain order for: {}",
+                        description
+                    );
+                }
                 Err(error_msg) => {
                     // Expected failure for invalid hierarchies
-                    assert!(!error_msg.is_empty(), "Should have error message for: {}", description);
+                    assert!(
+                        !error_msg.is_empty(),
+                        "Should have error message for: {}",
+                        description
+                    );
                 }
             }
 
             // Test capacity doubling without overflow
             if *capacity_value <= usize::MAX / 2 {
                 let doubled = capacity_value.saturating_mul(2);
-                assert!(doubled >= *capacity_value, "Doubling should not underflow for: {}", description);
+                assert!(
+                    doubled >= *capacity_value,
+                    "Doubling should not underflow for: {}",
+                    description
+                );
             }
 
             // Test capacity addition without overflow
             let incremented = capacity_value.saturating_add(1000);
             if *capacity_value < usize::MAX - 1000 {
-                assert!(incremented > *capacity_value, "Increment should increase value for: {}", description);
+                assert!(
+                    incremented > *capacity_value,
+                    "Increment should increase value for: {}",
+                    description
+                );
             } else {
-                assert!(incremented == usize::MAX, "Should saturate at maximum for: {}", description);
+                assert!(
+                    incremented == usize::MAX,
+                    "Should saturate at maximum for: {}",
+                    description
+                );
             }
         }
     }
@@ -876,9 +1162,12 @@ mod negative_path_tests {
             Ok(()) => {
                 // If successful, verify buckets are properly ordered despite size
                 for window in massive_buckets.windows(2) {
-                    assert!(window[1].1 >= window[0].1, "Buckets should remain ordered despite memory pressure");
+                    assert!(
+                        window[1].1 >= window[0].1,
+                        "Buckets should remain ordered despite memory pressure"
+                    );
                 }
-            },
+            }
             Err(error_msg) => {
                 // Memory protection through rejection is also acceptable
                 assert!(!error_msg.is_empty(), "Error message should be provided");
@@ -909,13 +1198,25 @@ mod negative_path_tests {
             match result {
                 Ok(()) => {
                     // If accepted, verify no string truncation vulnerabilities
-                    assert!(base::STANDARD > 0, "Capacity should remain valid after null byte input: {}", description);
-                },
+                    assert!(
+                        base::STANDARD > 0,
+                        "Capacity should remain valid after null byte input: {}",
+                        description
+                    );
+                }
                 Err(error_msg) => {
                     // Rejection of null byte injection is also acceptable
-                    assert!(!error_msg.is_empty(), "Should have error message for: {}", description);
+                    assert!(
+                        !error_msg.is_empty(),
+                        "Should have error message for: {}",
+                        description
+                    );
                     // Error message should not be truncated by null bytes
-                    assert!(error_msg.len() > 0, "Error message should not be empty for: {}", description);
+                    assert!(
+                        error_msg.len() > 0,
+                        "Error message should not be empty for: {}",
+                        description
+                    );
                 }
             }
 
@@ -927,8 +1228,11 @@ mod negative_path_tests {
             match (trace_result, medium_result) {
                 (Ok(()), Ok(())) => {
                     // Both accepted - verify consistency
-                    assert!(base::TRACE < base::MEDIUM, "Bucket hierarchy should remain valid");
-                },
+                    assert!(
+                        base::TRACE < base::MEDIUM,
+                        "Bucket hierarchy should remain valid"
+                    );
+                }
                 _ => {
                     // At least one rejected - acceptable for malformed input
                 }
@@ -941,13 +1245,22 @@ mod negative_path_tests {
         // Test serialization format injection attacks
         // Malformed JSON/YAML-like content could bypass parsing
         let serialization_injection_cases = [
-            ("capacity\"],\"malicious\":\"payload", "JSON injection attempt"),
-            ("capacity</name><script>alert(1)</script>", "XML injection attempt"),
+            (
+                "capacity\"],\"malicious\":\"payload",
+                "JSON injection attempt",
+            ),
+            (
+                "capacity</name><script>alert(1)</script>",
+                "XML injection attempt",
+            ),
             ("capacity\n  malicious: payload", "YAML injection attempt"),
             ("capacity\"\nmalicious\n\"", "Multi-line string escape"),
             ("capacity{{.Values.Secret}}", "Template injection attempt"),
             ("capacity$(echo hack)", "Command injection attempt"),
-            ("capacity';<script>alert(1);</script>", "Script injection attempt"),
+            (
+                "capacity';<script>alert(1);</script>",
+                "Script injection attempt",
+            ),
             ("capacity\\u0022payload\\u0022", "Unicode escape injection"),
         ];
 
@@ -965,14 +1278,32 @@ mod negative_path_tests {
                 match result {
                     Ok(()) => {
                         // If injection is accepted, verify no code execution or corruption
-                        assert!(base::STANDARD > 0, "Constants should remain stable after injection: {} (validator {})", description, i);
-                    },
+                        assert!(
+                            base::STANDARD > 0,
+                            "Constants should remain stable after injection: {} (validator {})",
+                            description,
+                            i
+                        );
+                    }
                     Err(error_msg) => {
                         // Rejection is expected for malformed input
-                        assert!(!error_msg.is_empty(), "Error message should not be empty for: {} (validator {})", description, i);
+                        assert!(
+                            !error_msg.is_empty(),
+                            "Error message should not be empty for: {} (validator {})",
+                            description,
+                            i
+                        );
                         // Verify error message doesn't contain injected content
-                        assert!(!error_msg.contains("<script>"), "Error message should not contain script tags: {}", description);
-                        assert!(!error_msg.contains("{{"), "Error message should not contain template syntax: {}", description);
+                        assert!(
+                            !error_msg.contains("<script>"),
+                            "Error message should not contain script tags: {}",
+                            description
+                        );
+                        assert!(
+                            !error_msg.contains("{{"),
+                            "Error message should not contain template syntax: {}",
+                            description
+                        );
                     }
                 }
             }
@@ -1007,14 +1338,23 @@ mod negative_path_tests {
 
                     // Verify scaled capacity is reasonable
                     if scaled_capacity > 0 && scaled_capacity < usize::MAX / 2 {
-                        let validation_result = validate_standard_sized("precision-test", scaled_capacity);
+                        let validation_result =
+                            validate_standard_sized("precision-test", scaled_capacity);
 
                         match validation_result {
                             Ok(()) => {
-                                assert!(scaled_capacity > 0, "Scaled capacity should be positive for: {}", description);
-                            },
+                                assert!(
+                                    scaled_capacity > 0,
+                                    "Scaled capacity should be positive for: {}",
+                                    description
+                                );
+                            }
                             Err(error_msg) => {
-                                assert!(!error_msg.is_empty(), "Error message should not be empty for: {}", description);
+                                assert!(
+                                    !error_msg.is_empty(),
+                                    "Error message should not be empty for: {}",
+                                    description
+                                );
                             }
                         }
                     }
@@ -1031,9 +1371,21 @@ mod negative_path_tests {
         let total: f64 = distribution.values().sum();
         for (name, value) in &distribution {
             let ratio = value / total;
-            assert!(ratio.is_finite(), "Distribution ratio should be finite for: {}", name);
-            assert!(ratio > 0.0, "Distribution ratio should be positive for: {}", name);
-            assert!(ratio < 1.0, "Distribution ratio should be less than 1 for: {}", name);
+            assert!(
+                ratio.is_finite(),
+                "Distribution ratio should be finite for: {}",
+                name
+            );
+            assert!(
+                ratio > 0.0,
+                "Distribution ratio should be positive for: {}",
+                name
+            );
+            assert!(
+                ratio < 1.0,
+                "Distribution ratio should be less than 1 for: {}",
+                name
+            );
         }
     }
 
@@ -1045,7 +1397,11 @@ mod negative_path_tests {
             ("capacity-123", "capacity-132", "Transposed characters"),
             ("test_capacity", "test-capacity", "Underscore vs hyphen"),
             ("MaxCapacity", "maxcapacity", "Case sensitivity"),
-            ("capacity\u{00A0}test", "capacity test", "Non-breaking vs regular space"),
+            (
+                "capacity\u{00A0}test",
+                "capacity test",
+                "Non-breaking vs regular space",
+            ),
             ("capacity_v1", "capacity_v2", "Version difference"),
             ("small_cap", "small_caps", "Plural difference"),
         ];
@@ -1059,8 +1415,12 @@ mod negative_path_tests {
             match (result1, result2) {
                 (Ok(()), Ok(())) => {
                     // Both accepted - verify they're treated as separate entities
-                    assert!(name1 != name2, "Names should be distinct for: {}", description);
-                },
+                    assert!(
+                        name1 != name2,
+                        "Names should be distinct for: {}",
+                        description
+                    );
+                }
                 _ => {
                     // At least one rejected - also acceptable
                 }
@@ -1084,7 +1444,11 @@ mod negative_path_tests {
             // Both hierarchy validations should work independently
             if hier_result1.is_ok() && hier_result2.is_ok() {
                 // No collision should prevent independent validation
-                assert!(true, "Hierarchy validation should work independently for: {}", description);
+                assert!(
+                    true,
+                    "Hierarchy validation should work independently for: {}",
+                    description
+                );
             }
         }
     }
@@ -1108,18 +1472,27 @@ mod negative_path_tests {
         let elapsed = start.elapsed();
 
         // Should complete within reasonable time (allowing for some variation in test environments)
-        assert!(elapsed.as_millis() < 5000, "Validation should not take excessive time for deep hierarchies");
+        assert!(
+            elapsed.as_millis() < 5000,
+            "Validation should not take excessive time for deep hierarchies"
+        );
 
         match result {
             Ok(()) => {
                 // Verify hierarchy is actually valid
                 for window in deep_buckets.windows(2) {
-                    assert!(window[1].1 >= window[0].1, "Deep hierarchy should maintain ordering");
+                    assert!(
+                        window[1].1 >= window[0].1,
+                        "Deep hierarchy should maintain ordering"
+                    );
                 }
-            },
+            }
             Err(error_msg) => {
                 // Rejection for excessive complexity is acceptable
-                assert!(!error_msg.is_empty(), "Should provide error message for complex hierarchies");
+                assert!(
+                    !error_msg.is_empty(),
+                    "Should provide error message for complex hierarchies"
+                );
             }
         }
 
@@ -1131,7 +1504,11 @@ mod negative_path_tests {
             let validation_elapsed = validation_start.elapsed();
 
             // Individual validations should be fast (no exponential slowdown)
-            assert!(validation_elapsed.as_millis() < 100, "Individual validation should be fast for iteration {}", i);
+            assert!(
+                validation_elapsed.as_millis() < 100,
+                "Individual validation should be fast for iteration {}",
+                i
+            );
         }
     }
 
@@ -1153,10 +1530,22 @@ mod negative_path_tests {
         for (attack_capacity, description) in &boundary_attack_cases {
             // Test various validation functions with boundary values
             let validations = [
-                ("standard", validate_standard_sized("boundary-test", *attack_capacity)),
-                ("trace", validate_trace_sized("boundary-test", *attack_capacity)),
-                ("medium", validate_medium_sized("boundary-test", *attack_capacity)),
-                ("large", validate_large_sized("boundary-test", *attack_capacity)),
+                (
+                    "standard",
+                    validate_standard_sized("boundary-test", *attack_capacity),
+                ),
+                (
+                    "trace",
+                    validate_trace_sized("boundary-test", *attack_capacity),
+                ),
+                (
+                    "medium",
+                    validate_medium_sized("boundary-test", *attack_capacity),
+                ),
+                (
+                    "large",
+                    validate_large_sized("boundary-test", *attack_capacity),
+                ),
             ];
 
             for (validator_name, result) in &validations {
@@ -1164,21 +1553,33 @@ mod negative_path_tests {
                     Ok(()) => {
                         // If accepted, verify capacity is within reasonable bounds
                         if *attack_capacity > 0 && *attack_capacity < usize::MAX / 2 {
-                            assert!(*attack_capacity > 0,
-                                   "Accepted capacity should be positive: {} (validator: {}, value: {})",
-                                   description, validator_name, attack_capacity);
+                            assert!(
+                                *attack_capacity > 0,
+                                "Accepted capacity should be positive: {} (validator: {}, value: {})",
+                                description,
+                                validator_name,
+                                attack_capacity
+                            );
                         }
-                    },
+                    }
                     Err(error_msg) => {
                         // Boundary rejections are expected and acceptable
-                        assert!(!error_msg.is_empty(),
-                               "Should have error message: {} (validator: {})",
-                               description, validator_name);
+                        assert!(
+                            !error_msg.is_empty(),
+                            "Should have error message: {} (validator: {})",
+                            description,
+                            validator_name
+                        );
 
                         // Verify error message contains relevant information
                         if *attack_capacity == 0 {
-                            assert!(error_msg.contains("zero") || error_msg.contains("0") || error_msg.contains("invalid"),
-                                   "Zero capacity error should be informative: {}", error_msg);
+                            assert!(
+                                error_msg.contains("zero")
+                                    || error_msg.contains("0")
+                                    || error_msg.contains("invalid"),
+                                "Zero capacity error should be informative: {}",
+                                error_msg
+                            );
                         }
                     }
                 }
@@ -1195,20 +1596,48 @@ mod negative_path_tests {
                 let hierarchy_result = validate_strictly_increasing_buckets(&boundary_buckets);
                 match hierarchy_result {
                     Ok(()) => {
-                        assert!(*attack_capacity > base::SMALL, "Hierarchy should be valid for: {}", description);
-                        assert!(*attack_capacity < base::XL || *attack_capacity == base::XL, "Hierarchy ordering for: {}", description);
-                    },
+                        assert!(
+                            *attack_capacity > base::SMALL,
+                            "Hierarchy should be valid for: {}",
+                            description
+                        );
+                        assert!(
+                            *attack_capacity < base::XL || *attack_capacity == base::XL,
+                            "Hierarchy ordering for: {}",
+                            description
+                        );
+                    }
                     Err(error_msg) => {
-                        assert!(!error_msg.is_empty(), "Hierarchy error should be informative for: {}", description);
+                        assert!(
+                            !error_msg.is_empty(),
+                            "Hierarchy error should be informative for: {}",
+                            description
+                        );
                     }
                 }
             }
         }
 
         // Test that constants remain stable after boundary attacks
-        assert_eq!(base::SMALL, 256, "SMALL constant should remain stable after boundary attacks");
-        assert_eq!(base::MEDIUM, 2048, "MEDIUM constant should remain stable after boundary attacks");
-        assert_eq!(base::LARGE, 8192, "LARGE constant should remain stable after boundary attacks");
-        assert_eq!(base::XL, 16384, "XL constant should remain stable after boundary attacks");
+        assert_eq!(
+            base::SMALL,
+            256,
+            "SMALL constant should remain stable after boundary attacks"
+        );
+        assert_eq!(
+            base::MEDIUM,
+            2048,
+            "MEDIUM constant should remain stable after boundary attacks"
+        );
+        assert_eq!(
+            base::LARGE,
+            8192,
+            "LARGE constant should remain stable after boundary attacks"
+        );
+        assert_eq!(
+            base::XL,
+            16384,
+            "XL constant should remain stable after boundary attacks"
+        );
     }
 }

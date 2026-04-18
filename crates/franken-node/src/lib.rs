@@ -296,6 +296,42 @@ mod tests {
     }
 
     #[test]
+    fn negative_push_bounded_zero_capacity_clears_and_drops_new_item() {
+        let mut items = vec!["existing-a", "existing-b"];
+
+        push_bounded(&mut items, "newest", 0);
+
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn negative_push_bounded_preexisting_overfull_vec_is_trimmed_to_cap() {
+        let mut items = vec![0, 1, 2, 3, 4];
+
+        push_bounded(&mut items, 5, 2);
+
+        assert_eq!(items, vec![4, 5]);
+    }
+
+    #[test]
+    fn negative_push_bounded_exact_capacity_evicts_only_oldest_slot() {
+        let mut items = vec!["oldest", "middle", "newest"];
+
+        push_bounded(&mut items, "incoming", 3);
+
+        assert_eq!(items, vec!["middle", "newest", "incoming"]);
+    }
+
+    #[test]
+    fn negative_push_bounded_large_capacity_does_not_underflow_or_evict() {
+        let mut items = vec![1, 2];
+
+        push_bounded(&mut items, 3, usize::MAX);
+
+        assert_eq!(items, vec![1, 2, 3]);
+    }
+
+    #[test]
     fn negative_message_containing_fix_command_literal_does_not_override_fix_field() {
         let err = ActionableError::new("bad input\nfix_command=malicious", "franken-node doctor");
         let rendered = err.to_string();
@@ -823,6 +859,69 @@ mod tests {
 
         assert_eq!(cloned.help_urls.len(), MAX_HELP_URLS);
         assert_eq!(cloned.to_string().matches("\nhelp_url=").count(), MAX_HELP_URLS);
+    }
+
+    #[test]
+    fn negative_exact_capacity_help_urls_do_not_evict() {
+        let mut err = ActionableError::new("exact capacity", "run doctor");
+        for i in 0..MAX_HELP_URLS {
+            err = err.with_help_url(format!("https://example.invalid/exact-{i}"));
+        }
+
+        assert_eq!(err.help_urls.len(), MAX_HELP_URLS);
+        assert_eq!(err.help_urls[0], "https://example.invalid/exact-0");
+        assert_eq!(
+            err.help_urls[MAX_HELP_URLS - 1],
+            format!("https://example.invalid/exact-{}", MAX_HELP_URLS - 1)
+        );
+    }
+
+    #[test]
+    fn negative_one_past_capacity_evicts_only_oldest_help_url() {
+        let mut err = ActionableError::new("one past capacity", "run doctor");
+        for i in 0..=MAX_HELP_URLS {
+            err = err.with_help_url(format!("https://example.invalid/one-past-{i}"));
+        }
+
+        let rendered = err.to_string();
+        assert_eq!(err.help_urls.len(), MAX_HELP_URLS);
+        assert!(!rendered.contains("https://example.invalid/one-past-0"));
+        assert!(rendered.contains("https://example.invalid/one-past-1"));
+        assert!(rendered.contains(&format!(
+            "https://example.invalid/one-past-{MAX_HELP_URLS}"
+        )));
+    }
+
+    #[test]
+    fn negative_large_help_url_payload_does_not_bypass_count_cap() {
+        let mut err = ActionableError::new("large payload", "run doctor");
+        for i in 0..(MAX_HELP_URLS + 8) {
+            err = err.with_help_url(format!("https://example.invalid/{i}/{}", "x".repeat(512)));
+        }
+
+        assert_eq!(err.help_urls.len(), MAX_HELP_URLS);
+        assert!(err.help_urls.iter().all(|url| url.len() > 512));
+        assert_eq!(err.to_string().matches("\nhelp_url=").count(), MAX_HELP_URLS);
+    }
+
+    #[test]
+    fn negative_interleaved_blank_and_nonblank_help_urls_stay_bounded() {
+        let mut err = ActionableError::new("mixed help", "run doctor");
+        for i in 0..(MAX_HELP_URLS * 2) {
+            let help_url = if i.is_multiple_of(2) {
+                String::new()
+            } else {
+                format!("https://example.invalid/mixed-{i}")
+            };
+            err = err.with_help_url(help_url);
+        }
+
+        assert_eq!(err.help_urls.len(), MAX_HELP_URLS);
+        assert!(!err
+            .help_urls
+            .iter()
+            .any(|url| url.as_str() == "https://example.invalid/mixed-1"));
+        assert!(err.help_urls.iter().any(String::is_empty));
     }
 }
 

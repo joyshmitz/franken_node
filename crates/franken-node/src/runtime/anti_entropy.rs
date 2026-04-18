@@ -14,6 +14,9 @@ use crate::control_plane::mmr_proofs::{self, Hash, InclusionProof, MmrRoot};
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
 
+/// Maximum record IDs to prevent memory exhaustion attacks.
+const MAX_RECORD_IDS: usize = 8192;
+
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
         items.clear();
@@ -643,7 +646,7 @@ impl AntiEntropyReconciler {
     }
 
     fn push_event(&mut self, event: ReconciliationEvent) {
-        push_bounded_fn(&mut self.events, event, MAX_EVENTS);
+        push_bounded(&mut self.events, event, MAX_EVENTS);
     }
 
     fn resolve_conflict(local: &TrustRecord, remote: &TrustRecord) -> ConflictResolution {
@@ -1275,10 +1278,10 @@ mod tests {
     }
 
     #[test]
-    fn test_push_bounded_fn_zero_capacity_clears_without_underflow() {
+    fn test_push_bounded_zero_capacity_clears_without_underflow() {
         let mut values = vec![1, 2, 3];
 
-        push_bounded_fn(&mut values, 4, 0);
+        push_bounded(&mut values, 4, 0);
 
         assert!(values.is_empty());
     }
@@ -2481,32 +2484,32 @@ mod tests {
         }
 
         #[test]
-        fn negative_push_bounded_fn_with_extreme_capacity_scenarios() {
-            // Test push_bounded_fn with zero capacity
+        fn negative_push_bounded_with_extreme_capacity_scenarios() {
+            // Test push_bounded with zero capacity
             let mut items = vec![1, 2, 3, 4, 5];
-            push_bounded_fn(&mut items, 6, 0);
+            push_bounded(&mut items, 6, 0);
             assert!(items.is_empty(), "Zero capacity should clear all items");
 
             // Test with capacity 1
             items = vec![10, 20, 30];
-            push_bounded_fn(&mut items, 40, 1);
+            push_bounded(&mut items, 40, 1);
             assert_eq!(items, vec![40], "Capacity 1 should keep only new item");
 
             // Test massive overflow
             let mut large_vec: Vec<u32> = (0..10000).collect();
-            push_bounded_fn(&mut large_vec, 99999, 5);
+            push_bounded(&mut large_vec, 99999, 5);
             assert_eq!(large_vec.len(), 5);
             assert_eq!(*large_vec.last().unwrap(), 99999);
 
             // Test saturating arithmetic doesn't overflow
             items = vec![1, 2, 3];
             let original_len = items.len();
-            push_bounded_fn(&mut items, 4, usize::MAX); // Should not overflow
+            push_bounded(&mut items, 4, usize::MAX); // Should not overflow
             assert_eq!(items.len(), original_len + 1);
 
             // Test edge case: exactly at capacity
             items = vec![1, 2, 3];
-            push_bounded_fn(&mut items, 4, 3);
+            push_bounded(&mut items, 4, 3);
             assert_eq!(items.len(), 3);
             assert!(items.contains(&4));
         }

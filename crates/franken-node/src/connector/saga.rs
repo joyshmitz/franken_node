@@ -1536,20 +1536,36 @@ mod tests {
         // Malicious trace ID with control characters
         let malicious_trace_id = "trace\u{0000}\ninjection\r\tlog_corruption";
 
-        let saga_id = exec.create_saga(malicious_steps.clone(), malicious_trace_id).unwrap();
+        let saga_id = exec
+            .create_saga(malicious_steps.clone(), malicious_trace_id)
+            .unwrap();
 
         // Verify Unicode is preserved in saga data
         let saga = exec.get_saga(&saga_id).unwrap();
         assert!(saga.steps[0].name.contains('\u{202E}'));
-        assert!(saga.steps[0].computation_name.as_ref().unwrap().contains('\u{202E}'));
-        assert!(saga.steps[0].idempotency_key.as_ref().unwrap().contains('\u{200B}'));
+        assert!(
+            saga.steps[0]
+                .computation_name
+                .as_ref()
+                .unwrap()
+                .contains('\u{202E}')
+        );
+        assert!(
+            saga.steps[0]
+                .idempotency_key
+                .as_ref()
+                .unwrap()
+                .contains('\u{200B}')
+        );
 
         // Test step execution with Unicode in outcome data
         let unicode_outcome = StepOutcome::Success {
             result_data: "result\u{202E}kcattA\u{202D}normal".as_bytes().to_vec(),
         };
 
-        let step_idx = exec.execute_step(&saga_id, unicode_outcome, 100, malicious_trace_id).unwrap();
+        let step_idx = exec
+            .execute_step(&saga_id, unicode_outcome, 100, malicious_trace_id)
+            .unwrap();
         assert_eq!(step_idx, 0);
 
         // Path traversal injection in step names
@@ -1560,7 +1576,9 @@ mod tests {
             idempotency_key: Some("../../../keys/secret\0".to_string()),
         }];
 
-        let traversal_saga = exec.create_saga(path_traversal_steps, "traversal_trace").unwrap();
+        let traversal_saga = exec
+            .create_saga(path_traversal_steps, "traversal_trace")
+            .unwrap();
         let saga2 = exec.get_saga(&traversal_saga).unwrap();
         assert!(saga2.steps[0].name.contains('\0'));
         assert!(saga2.steps[0].name.contains('\n'));
@@ -1592,8 +1610,12 @@ mod tests {
                 result_data: vec![0x42; 100_000], // 100KB per step result
             };
 
-            if exec.get_saga(&saga_id).unwrap().completed_steps < exec.get_saga(&saga_id).unwrap().steps.len() {
-                let _ = exec.execute_step(&saga_id, massive_result, u64::MAX, "stress").unwrap();
+            if exec.get_saga(&saga_id).unwrap().completed_steps
+                < exec.get_saga(&saga_id).unwrap().steps.len()
+            {
+                let _ = exec
+                    .execute_step(&saga_id, massive_result, u64::MAX, "stress")
+                    .unwrap();
             }
         }
 
@@ -1617,19 +1639,25 @@ mod tests {
         assert!(exec.audit_log.len() <= MAX_AUDIT_LOG_ENTRIES);
 
         // Test massive failure reasons and skip reasons
-        let failure_saga = exec.create_saga(make_steps(&["fail", "skip"]), "fail_trace").unwrap();
+        let failure_saga = exec
+            .create_saga(make_steps(&["fail", "skip"]), "fail_trace")
+            .unwrap();
 
         let massive_failure = StepOutcome::Failed {
             reason: "A".repeat(1_000_000), // 1MB error message
         };
 
-        let _ = exec.execute_step(&failure_saga, massive_failure, 1, "fail").unwrap();
+        let _ = exec
+            .execute_step(&failure_saga, massive_failure, 1, "fail")
+            .unwrap();
 
         let massive_skip = StepOutcome::Skipped {
             reason: "B".repeat(1_000_000), // 1MB skip reason
         };
 
-        let _ = exec.execute_step(&failure_saga, massive_skip, 1, "skip").unwrap();
+        let _ = exec
+            .execute_step(&failure_saga, massive_skip, 1, "skip")
+            .unwrap();
 
         // Verify large data is preserved but bounded by collection limits
         let fail_saga = exec.get_saga(&failure_saga).unwrap();
@@ -1661,7 +1689,9 @@ mod tests {
 
         // Test completed_steps counter overflow
         let mut overflow_exec = SagaExecutor::new();
-        let saga_id = overflow_exec.create_saga(make_steps(&["test"]), "trace").unwrap();
+        let saga_id = overflow_exec
+            .create_saga(make_steps(&["test"]), "trace")
+            .unwrap();
 
         // Manually set completed_steps near overflow
         if let Some(saga) = overflow_exec.sagas.get_mut(&saga_id) {
@@ -1669,15 +1699,21 @@ mod tests {
         }
 
         // Execute step should use saturating arithmetic
-        let outcome = StepOutcome::Success { result_data: vec![] };
+        let outcome = StepOutcome::Success {
+            result_data: vec![],
+        };
         let _ = overflow_exec.execute_step(&saga_id, outcome, 1, "trace");
 
         let saga = overflow_exec.get_saga(&saga_id).unwrap();
         assert!(saga.completed_steps <= usize::MAX);
 
         // Test elapsed time overflow
-        let time_saga = overflow_exec.create_saga(make_steps(&["time_test"]), "time").unwrap();
-        let time_outcome = StepOutcome::Success { result_data: vec![] };
+        let time_saga = overflow_exec
+            .create_saga(make_steps(&["time_test"]), "time")
+            .unwrap();
+        let time_outcome = StepOutcome::Success {
+            result_data: vec![],
+        };
 
         let _ = overflow_exec.execute_step(&time_saga, time_outcome, u64::MAX, "time");
 
@@ -1685,8 +1721,12 @@ mod tests {
         assert_eq!(time_saga_data.records[0].elapsed_ms, u64::MAX);
 
         // Test step index overflow during compensation
-        let comp_saga = overflow_exec.create_saga(make_steps(&["comp"]), "comp").unwrap();
-        let comp_outcome = StepOutcome::Success { result_data: vec![] };
+        let comp_saga = overflow_exec
+            .create_saga(make_steps(&["comp"]), "comp")
+            .unwrap();
+        let comp_outcome = StepOutcome::Success {
+            result_data: vec![],
+        };
         let _ = overflow_exec.execute_step(&comp_saga, comp_outcome, 1, "comp");
 
         // Manually corrupt step_index to test overflow handling
@@ -1719,22 +1759,35 @@ mod tests {
             },
         ];
 
-        let saga_id = exec.create_saga(injection_steps, r#"trace","attack":"value"#).unwrap();
+        let saga_id = exec
+            .create_saga(injection_steps, r#"trace","attack":"value"#)
+            .unwrap();
 
         // Execute with JSON injection in outcome data
         let json_attack_outcome = StepOutcome::Success {
             result_data: r#"{"fake":"json","injection":true}"#.as_bytes().to_vec(),
         };
 
-        let _ = exec.execute_step(&saga_id, json_attack_outcome, 100, r#"trace\"},{"evil":true#).unwrap();
+        let _ = exec
+            .execute_step(
+                &saga_id,
+                json_attack_outcome,
+                100,
+                r#"trace\"},{"evil":true"#,
+            )
+            .unwrap();
 
         // Execute with JSON injection in failure reason
         let json_fail_outcome = StepOutcome::Failed {
             reason: r#"error\"}],"malicious_payload":"injected"#.to_string(),
         };
 
-        let fail_saga = exec.create_saga(make_steps(&["fail"]), "fail_trace").unwrap();
-        let _ = exec.execute_step(&fail_saga, json_fail_outcome, 50, "fail").unwrap();
+        let fail_saga = exec
+            .create_saga(make_steps(&["fail"]), "fail_trace")
+            .unwrap();
+        let _ = exec
+            .execute_step(&fail_saga, json_fail_outcome, 50, "fail")
+            .unwrap();
 
         // Export audit log and verify JSON integrity
         let audit_jsonl = exec.export_audit_log_jsonl();
@@ -1773,7 +1826,14 @@ mod tests {
 
         // Test serialization of compensation trace
         let comp_saga = exec.create_saga(make_steps(&["comp"]), "comp").unwrap();
-        let _ = exec.execute_step(&comp_saga, StepOutcome::Success { result_data: vec![] }, 1, "comp");
+        let _ = exec.execute_step(
+            &comp_saga,
+            StepOutcome::Success {
+                result_data: vec![],
+            },
+            1,
+            "comp",
+        );
         let trace = exec.compensate(&comp_saga, "comp").unwrap();
 
         let trace_json = serde_json::to_string(&trace).unwrap();
@@ -1785,14 +1845,18 @@ mod tests {
     #[test]
     fn negative_state_transition_bypass_and_manipulation_attacks() {
         let mut exec = SagaExecutor::new();
-        let saga_id = exec.create_saga(make_steps(&["step1", "step2"]), "trace").unwrap();
+        let saga_id = exec
+            .create_saga(make_steps(&["step1", "step2"]), "trace")
+            .unwrap();
 
         // Try to execute step while in wrong state (should fail)
         if let Some(saga) = exec.sagas.get_mut(&saga_id) {
             saga.state = SagaState::Committed; // Force invalid state
         }
 
-        let bypass_outcome = StepOutcome::Success { result_data: vec![] };
+        let bypass_outcome = StepOutcome::Success {
+            result_data: vec![],
+        };
         let result = exec.execute_step(&saga_id, bypass_outcome, 10, "bypass");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("cannot execute forward steps"));
@@ -1803,7 +1867,14 @@ mod tests {
         }
 
         // Execute valid step
-        let _ = exec.execute_step(&saga_id, StepOutcome::Success { result_data: vec![] }, 10, "valid");
+        let _ = exec.execute_step(
+            &saga_id,
+            StepOutcome::Success {
+                result_data: vec![],
+            },
+            10,
+            "valid",
+        );
 
         // Try to manipulate completed_steps counter beyond steps.len()
         if let Some(saga) = exec.sagas.get_mut(&saga_id) {
@@ -1811,11 +1882,20 @@ mod tests {
         }
 
         // Should reject additional execution
-        let overflow_result = exec.execute_step(&saga_id, StepOutcome::Success { result_data: vec![] }, 5, "overflow");
+        let overflow_result = exec.execute_step(
+            &saga_id,
+            StepOutcome::Success {
+                result_data: vec![],
+            },
+            5,
+            "overflow",
+        );
         assert!(overflow_result.is_err());
 
         // Test compensation state bypass
-        let comp_saga = exec.create_saga(make_steps(&["comp1", "comp2"]), "comp").unwrap();
+        let comp_saga = exec
+            .create_saga(make_steps(&["comp1", "comp2"]), "comp")
+            .unwrap();
 
         // Force saga to Committed state
         if let Some(saga) = exec.sagas.get_mut(&comp_saga) {
@@ -1829,7 +1909,14 @@ mod tests {
 
         // Test invalid step record manipulation
         let record_saga = exec.create_saga(make_steps(&["record"]), "record").unwrap();
-        let _ = exec.execute_step(&record_saga, StepOutcome::Success { result_data: vec![] }, 5, "record");
+        let _ = exec.execute_step(
+            &record_saga,
+            StepOutcome::Success {
+                result_data: vec![],
+            },
+            5,
+            "record",
+        );
 
         // Manually corrupt step record
         if let Some(saga) = exec.sagas.get_mut(&record_saga) {
@@ -1842,8 +1929,17 @@ mod tests {
         assert!(corrupted_trace.is_ok());
 
         // Test failed forward step validation bypass
-        let fail_saga = exec.create_saga(make_steps(&["fail", "after_fail"]), "fail").unwrap();
-        let _ = exec.execute_step(&fail_saga, StepOutcome::Failed { reason: "boom".to_string() }, 1, "fail");
+        let fail_saga = exec
+            .create_saga(make_steps(&["fail", "after_fail"]), "fail")
+            .unwrap();
+        let _ = exec.execute_step(
+            &fail_saga,
+            StepOutcome::Failed {
+                reason: "boom".to_string(),
+            },
+            1,
+            "fail",
+        );
 
         // Manually reset state to try bypassing failure check
         if let Some(saga) = exec.sagas.get_mut(&fail_saga) {
@@ -1851,7 +1947,14 @@ mod tests {
         }
 
         // Should still detect failed forward step and reject
-        let bypass_fail = exec.execute_step(&fail_saga, StepOutcome::Success { result_data: vec![] }, 1, "bypass");
+        let bypass_fail = exec.execute_step(
+            &fail_saga,
+            StepOutcome::Success {
+                result_data: vec![],
+            },
+            1,
+            "bypass",
+        );
         assert!(bypass_fail.is_err());
         assert!(bypass_fail.unwrap_err().contains("failed forward steps"));
     }
@@ -1887,21 +1990,30 @@ mod tests {
                         },
                     ];
 
-                    let saga_id_result = executor.create_saga(steps, &format!("trace_{}_{}", thread_id, op_id));
+                    let saga_id_result =
+                        executor.create_saga(steps, &format!("trace_{}_{}", thread_id, op_id));
 
                     if let Ok(saga_id) = saga_id_result {
                         // Execute first step
-                        let outcome1 = StepOutcome::Success { result_data: vec![thread_id as u8; 100] };
+                        let outcome1 = StepOutcome::Success {
+                            result_data: vec![thread_id as u8; 100],
+                        };
                         let _ = executor.execute_step(&saga_id, outcome1, op_id as u64, "step1");
 
                         // Some threads compensate, others commit
                         if thread_id % 2 == 0 {
-                            let outcome2 = StepOutcome::Success { result_data: vec![0xFF; 100] };
-                            let _ = executor.execute_step(&saga_id, outcome2, op_id as u64, "step2");
+                            let outcome2 = StepOutcome::Success {
+                                result_data: vec![0xFF; 100],
+                            };
+                            let _ =
+                                executor.execute_step(&saga_id, outcome2, op_id as u64, "step2");
                             let _ = executor.commit(&saga_id, "commit");
                         } else {
-                            let outcome2 = StepOutcome::Failed { reason: format!("deliberate_fail_{}", op_id) };
-                            let _ = executor.execute_step(&saga_id, outcome2, op_id as u64, "step2");
+                            let outcome2 = StepOutcome::Failed {
+                                reason: format!("deliberate_fail_{}", op_id),
+                            };
+                            let _ =
+                                executor.execute_step(&saga_id, outcome2, op_id as u64, "step2");
                             let _ = executor.compensate(&saga_id, "compensate");
                         }
                     }
@@ -1944,10 +2056,38 @@ mod tests {
         let saga_id = exec.create_saga(steps, "comp_trace").unwrap();
 
         // Execute steps with different outcomes
-        let _ = exec.execute_step(&saga_id, StepOutcome::Success { result_data: b"prepare_ok".to_vec() }, 10, "step1");
-        let _ = exec.execute_step(&saga_id, StepOutcome::Skipped { reason: "validation_skipped".to_string() }, 5, "step2");
-        let _ = exec.execute_step(&saga_id, StepOutcome::Success { result_data: b"execute_ok".to_vec() }, 15, "step3");
-        let _ = exec.execute_step(&saga_id, StepOutcome::Failed { reason: "finalize_failed".to_string() }, 20, "step4");
+        let _ = exec.execute_step(
+            &saga_id,
+            StepOutcome::Success {
+                result_data: b"prepare_ok".to_vec(),
+            },
+            10,
+            "step1",
+        );
+        let _ = exec.execute_step(
+            &saga_id,
+            StepOutcome::Skipped {
+                reason: "validation_skipped".to_string(),
+            },
+            5,
+            "step2",
+        );
+        let _ = exec.execute_step(
+            &saga_id,
+            StepOutcome::Success {
+                result_data: b"execute_ok".to_vec(),
+            },
+            15,
+            "step3",
+        );
+        let _ = exec.execute_step(
+            &saga_id,
+            StepOutcome::Failed {
+                reason: "finalize_failed".to_string(),
+            },
+            20,
+            "step4",
+        );
 
         // Get compensation trace
         let trace = exec.compensate(&saga_id, "compensate").unwrap();
@@ -1981,8 +2121,17 @@ mod tests {
         assert_eq!(exported.compensated_steps.len(), 2);
 
         // Test compensation with corrupted step records
-        let corrupt_saga = exec.create_saga(make_steps(&["corrupt"]), "corrupt").unwrap();
-        let _ = exec.execute_step(&corrupt_saga, StepOutcome::Success { result_data: vec![] }, 1, "corrupt");
+        let corrupt_saga = exec
+            .create_saga(make_steps(&["corrupt"]), "corrupt")
+            .unwrap();
+        let _ = exec.execute_step(
+            &corrupt_saga,
+            StepOutcome::Success {
+                result_data: vec![],
+            },
+            1,
+            "corrupt",
+        );
 
         // Manually corrupt the records
         if let Some(saga) = exec.sagas.get_mut(&corrupt_saga) {
@@ -2015,7 +2164,14 @@ mod tests {
         // Execute many successful steps
         for i in 0..100 {
             if exec.get_saga(&mass_saga).unwrap().completed_steps < 100 {
-                let _ = exec.execute_step(&mass_saga, StepOutcome::Success { result_data: vec![i as u8] }, 1, "mass");
+                let _ = exec.execute_step(
+                    &mass_saga,
+                    StepOutcome::Success {
+                        result_data: vec![i as u8],
+                    },
+                    1,
+                    "mass",
+                );
             }
         }
 
@@ -2048,8 +2204,22 @@ mod tests {
         assert_eq!(hash1, hash2);
 
         // Modify one executor and verify hash changes
-        let _ = exec1.execute_step(&id1, StepOutcome::Success { result_data: b"data1".to_vec() }, 10, "exec1");
-        let _ = exec2.execute_step(&id2, StepOutcome::Success { result_data: b"data2".to_vec() }, 10, "exec2");
+        let _ = exec1.execute_step(
+            &id1,
+            StepOutcome::Success {
+                result_data: b"data1".to_vec(),
+            },
+            10,
+            "exec1",
+        );
+        let _ = exec2.execute_step(
+            &id2,
+            StepOutcome::Success {
+                result_data: b"data2".to_vec(),
+            },
+            10,
+            "exec2",
+        );
 
         let hash1_modified = exec1.content_hash();
         let hash2_modified = exec2.content_hash();
@@ -2067,14 +2237,12 @@ mod tests {
         let mut collision_hashes = Vec::new();
         for (name1, name2) in collision_attempts {
             let mut collision_exec = SagaExecutor::new();
-            let collision_steps = vec![
-                SagaStepDef {
-                    name: name1.to_string(),
-                    computation_name: Some(name2.to_string()),
-                    is_remote: true,
-                    idempotency_key: None,
-                },
-            ];
+            let collision_steps = vec![SagaStepDef {
+                name: name1.to_string(),
+                computation_name: Some(name2.to_string()),
+                is_remote: true,
+                idempotency_key: None,
+            }];
             let _ = collision_exec.create_saga(collision_steps, "collision");
             collision_hashes.push(collision_exec.content_hash());
         }
@@ -2088,7 +2256,9 @@ mod tests {
 
         // Test hash with serialization failures
         let mut corrupt_exec = SagaExecutor::new();
-        let corrupt_id = corrupt_exec.create_saga(make_steps(&["test"]), "trace").unwrap();
+        let corrupt_id = corrupt_exec
+            .create_saga(make_steps(&["test"]), "trace")
+            .unwrap();
 
         // Force a serialization error by corrupting internal state
         if let Some(saga) = corrupt_exec.sagas.get_mut(&corrupt_id) {
@@ -2102,10 +2272,19 @@ mod tests {
 
         // Test deterministic hashing across multiple operations
         let mut deterministic_exec = SagaExecutor::new();
-        let det_id = deterministic_exec.create_saga(make_steps(&["det1", "det2"]), "det").unwrap();
+        let det_id = deterministic_exec
+            .create_saga(make_steps(&["det1", "det2"]), "det")
+            .unwrap();
 
         let hash_before = deterministic_exec.content_hash();
-        let _ = deterministic_exec.execute_step(&det_id, StepOutcome::Success { result_data: vec![42] }, 100, "det");
+        let _ = deterministic_exec.execute_step(
+            &det_id,
+            StepOutcome::Success {
+                result_data: vec![42],
+            },
+            100,
+            "det",
+        );
         let hash_after = deterministic_exec.content_hash();
         let _ = deterministic_exec.compensate(&det_id, "det");
         let hash_compensated = deterministic_exec.content_hash();

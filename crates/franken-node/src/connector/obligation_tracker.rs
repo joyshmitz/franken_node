@@ -2250,12 +2250,12 @@ pub mod conformance {
 
         // Test malicious Unicode in obligation IDs (through payload reconstruction)
         let malicious_payloads = vec![
-            b"payload\u{202e}evil\u{200b}".to_vec(),     // Right-to-Left Override + Zero Width Space
-            b"payload\u{0000}injection".to_vec(),        // Null byte injection
-            b"payload\u{feff}bom".to_vec(),               // Byte Order Mark
-            b"payload\u{2028}line\u{2029}sep".to_vec(),   // Line/Paragraph separators
-            b"payload\u{200c}\u{200d}joiners".to_vec(),   // Zero-width joiners
-            b"payload\x00\x01\x02\x03\x04".to_vec(),      // Control characters
+            "payload\u{202e}evil\u{200b}".as_bytes().to_vec(), // Right-to-Left Override + Zero Width Space
+            "payload\0injection".as_bytes().to_vec(),          // Null byte injection
+            "payload\u{feff}bom".as_bytes().to_vec(),          // Byte Order Mark
+            "payload\u{2028}line\u{2029}sep".as_bytes().to_vec(), // Line/Paragraph separators
+            "payload\u{200c}\u{200d}joiners".as_bytes().to_vec(), // Zero-width joiners
+            b"payload\x00\x01\x02\x03\x04".to_vec(),           // Control characters
         ];
 
         for (i, malicious_payload) in malicious_payloads.iter().enumerate() {
@@ -2263,7 +2263,7 @@ pub mod conformance {
                 ObligationFlow::Publish,
                 malicious_payload.clone(),
                 1000,
-                &format!("malicious\u{202e}trace\u{200b}{}", i)
+                &format!("malicious\u{202e}trace\u{200b}{}", i),
             );
 
             match result {
@@ -2275,13 +2275,21 @@ pub mod conformance {
 
                     // Test commit/rollback still work with Unicode
                     if i % 2 == 0 {
-                        let commit_result = tracker.commit(&id, 1100, &format!("commit\u{200c}trace{}", i));
-                        assert!(commit_result.is_ok(), "Commit should succeed despite Unicode in trace");
+                        let commit_result =
+                            tracker.commit(&id, 1100, &format!("commit\u{200c}trace{}", i));
+                        assert!(
+                            commit_result.is_ok(),
+                            "Commit should succeed despite Unicode in trace"
+                        );
                     } else {
-                        let rollback_result = tracker.rollback(&id, 1100, &format!("rollback\u{200d}trace{}", i));
-                        assert!(rollback_result.is_ok(), "Rollback should succeed despite Unicode in trace");
+                        let rollback_result =
+                            tracker.rollback(&id, 1100, &format!("rollback\u{200d}trace{}", i));
+                        assert!(
+                            rollback_result.is_ok(),
+                            "Rollback should succeed despite Unicode in trace"
+                        );
                     }
-                },
+                }
                 Err(_) => {
                     // Unicode rejection is also acceptable for security
                 }
@@ -2293,9 +2301,16 @@ pub mod conformance {
             "key": "value\u{202e}reversed",
             "field\u{200b}": "hidden\u{0000}null",
             "control\u{2028}": "line\u{2029}breaks"
-        }).to_string().into_bytes();
+        })
+        .to_string()
+        .into_bytes();
 
-        let result = tracker.reserve(ObligationFlow::Migration, complex_unicode_payload, 2000, "complex-unicode");
+        let result = tracker.reserve(
+            ObligationFlow::Migration,
+            complex_unicode_payload,
+            2000,
+            "complex-unicode",
+        );
         if let Ok(id) = result {
             // Verify Unicode doesn't break state queries
             assert!(tracker.get_obligation(&id).is_ok());
@@ -2310,9 +2325,14 @@ pub mod conformance {
 
         // Test extremely large payloads
         let massive_payload = vec![0xAA; 100_000]; // 100KB payload
-        let huge_trace_id = "x".repeat(50_000);    // 50KB trace ID
+        let huge_trace_id = "x".repeat(50_000); // 50KB trace ID
 
-        let result = tracker.reserve(ObligationFlow::Publish, massive_payload.clone(), 1000, &huge_trace_id);
+        let result = tracker.reserve(
+            ObligationFlow::Publish,
+            massive_payload.clone(),
+            1000,
+            &huge_trace_id,
+        );
 
         match result {
             Ok(id) => {
@@ -2320,7 +2340,7 @@ pub mod conformance {
                 let obligation = tracker.get_obligation(&id).unwrap();
                 assert_eq!(obligation.payload.len(), massive_payload.len());
                 let _ = tracker.rollback(&id, 1100, "massive-cleanup");
-            },
+            }
             Err(_) => {
                 // Memory limit rejection is acceptable
             }
@@ -2336,17 +2356,19 @@ pub mod conformance {
                 ObligationFlow::Quarantine,
                 large_payload,
                 1000 + cycle as u64,
-                &large_trace
+                &large_trace,
             );
 
             match result {
                 Ok(id) => {
                     created_obligations.push(id);
-                },
+                }
                 Err(e) => {
                     // Budget/capacity limits hit - this is expected behavior
-                    assert!(e.contains("ERR_OBL_") &&
-                           (e.contains("BUDGET_EXCEEDED") || e.contains("CAPACITY_EXCEEDED")));
+                    assert!(
+                        e.contains("ERR_OBL_")
+                            && (e.contains("BUDGET_EXCEEDED") || e.contains("CAPACITY_EXCEEDED"))
+                    );
                     break;
                 }
             }
@@ -2368,21 +2390,52 @@ pub mod conformance {
         let mut tracker = ObligationTracker::new();
 
         // Create obligations with different states
-        let reserved_ids: Vec<_> = (0..10).map(|i| {
-            tracker.reserve(ObligationFlow::Publish, vec![i], 1000 + i, &format!("timing-{}", i)).unwrap()
-        }).collect();
+        let reserved_ids: Vec<_> = (0..10)
+            .map(|i| {
+                tracker
+                    .reserve(
+                        ObligationFlow::Publish,
+                        vec![i],
+                        1000 + i,
+                        &format!("timing-{}", i),
+                    )
+                    .unwrap()
+            })
+            .collect();
 
-        let committed_ids: Vec<_> = (0..5).map(|i| {
-            let id = tracker.reserve(ObligationFlow::Revoke, vec![i + 10], 1100 + i, &format!("committed-{}", i)).unwrap();
-            tracker.commit(&id, 1200 + i, &format!("committed-{}", i)).unwrap();
-            id
-        }).collect();
+        let committed_ids: Vec<_> = (0..5)
+            .map(|i| {
+                let id = tracker
+                    .reserve(
+                        ObligationFlow::Revoke,
+                        vec![i + 10],
+                        1100 + i,
+                        &format!("committed-{}", i),
+                    )
+                    .unwrap();
+                tracker
+                    .commit(&id, 1200 + i, &format!("committed-{}", i))
+                    .unwrap();
+                id
+            })
+            .collect();
 
-        let rolled_back_ids: Vec<_> = (0..5).map(|i| {
-            let id = tracker.reserve(ObligationFlow::Quarantine, vec![i + 20], 1300 + i, &format!("rolled-{}", i)).unwrap();
-            tracker.rollback(&id, 1400 + i, &format!("rolled-{}", i)).unwrap();
-            id
-        }).collect();
+        let rolled_back_ids: Vec<_> = (0..5)
+            .map(|i| {
+                let id = tracker
+                    .reserve(
+                        ObligationFlow::Quarantine,
+                        vec![i + 20],
+                        1300 + i,
+                        &format!("rolled-{}", i),
+                    )
+                    .unwrap();
+                tracker
+                    .rollback(&id, 1400 + i, &format!("rolled-{}", i))
+                    .unwrap();
+                id
+            })
+            .collect();
 
         // Test timing consistency across different states
         let all_ids = [&reserved_ids[..], &committed_ids[..], &rolled_back_ids[..]].concat();
@@ -2402,7 +2455,11 @@ pub mod conformance {
             let timing_ratio = max_timing.as_nanos() as f64 / min_timing.as_nanos().max(1) as f64;
 
             // Allow reasonable variance but prevent timing attacks
-            assert!(timing_ratio < 10.0, "Obligation query timing variance too high: {}", timing_ratio);
+            assert!(
+                timing_ratio < 10.0,
+                "Obligation query timing variance too high: {}",
+                timing_ratio
+            );
         }
 
         // Test timing attacks on nonexistent vs. existing obligations
@@ -2423,11 +2480,24 @@ pub mod conformance {
         }
 
         // Average timings should not reveal existence information
-        let avg_existing: f64 = existing_timings.iter().map(|d| d.as_nanos() as f64).sum::<f64>() / existing_timings.len() as f64;
-        let avg_nonexistent: f64 = nonexistent_timings.iter().map(|d| d.as_nanos() as f64).sum::<f64>() / nonexistent_timings.len() as f64;
+        let avg_existing: f64 = existing_timings
+            .iter()
+            .map(|d| d.as_nanos() as f64)
+            .sum::<f64>()
+            / existing_timings.len() as f64;
+        let avg_nonexistent: f64 = nonexistent_timings
+            .iter()
+            .map(|d| d.as_nanos() as f64)
+            .sum::<f64>()
+            / nonexistent_timings.len() as f64;
 
-        let timing_difference_ratio = avg_existing.max(avg_nonexistent) / avg_existing.min(avg_nonexistent).max(1.0);
-        assert!(timing_difference_ratio < 5.0, "Existence timing difference too high: {}", timing_difference_ratio);
+        let timing_difference_ratio =
+            avg_existing.max(avg_nonexistent) / avg_existing.min(avg_nonexistent).max(1.0);
+        assert!(
+            timing_difference_ratio < 5.0,
+            "Existence timing difference too high: {}",
+            timing_difference_ratio
+        );
     }
 
     /// Negative test: Race conditions in concurrent reserve/commit/rollback operations
@@ -2459,17 +2529,23 @@ pub mod conformance {
                         flow,
                         format!("thread-{}-op-{}", thread_id, operation).into_bytes(),
                         1000 + operation as u64,
-                        &format!("concurrent-{}-{}", thread_id, operation)
+                        &format!("concurrent-{}-{}", thread_id, operation),
                     );
 
                     if let Ok(id) = reserve_result {
                         // Randomly commit or rollback
                         let action_result = if operation % 2 == 0 {
-                            tracker_clone.lock().unwrap().commit(&id, 1100 + operation as u64,
-                                &format!("concurrent-commit-{}-{}", thread_id, operation))
+                            tracker_clone.lock().unwrap().commit(
+                                &id,
+                                1100 + operation as u64,
+                                &format!("concurrent-commit-{}-{}", thread_id, operation),
+                            )
                         } else {
-                            tracker_clone.lock().unwrap().rollback(&id, 1100 + operation as u64,
-                                &format!("concurrent-rollback-{}-{}", thread_id, operation))
+                            tracker_clone.lock().unwrap().rollback(
+                                &id,
+                                1100 + operation as u64,
+                                &format!("concurrent-rollback-{}-{}", thread_id, operation),
+                            )
                         };
                         results.push((id, action_result.is_ok()));
                     }
@@ -2507,10 +2583,20 @@ pub mod conformance {
         let near_max_timestamp = u64::MAX - 1000;
         let max_timestamp = u64::MAX;
 
-        let result1 = tracker.reserve(ObligationFlow::Publish, vec![1], near_max_timestamp, "near-max");
+        let result1 = tracker.reserve(
+            ObligationFlow::Publish,
+            vec![1],
+            near_max_timestamp,
+            "near-max",
+        );
         assert!(result1.is_ok(), "Should handle near-maximum timestamps");
 
-        let result2 = tracker.reserve(ObligationFlow::Revoke, vec![2], max_timestamp, "max-timestamp");
+        let result2 = tracker.reserve(
+            ObligationFlow::Revoke,
+            vec![2],
+            max_timestamp,
+            "max-timestamp",
+        );
         assert!(result2.is_ok(), "Should handle maximum timestamp");
 
         if let (Ok(id1), Ok(id2)) = (result1, result2) {
@@ -2539,7 +2625,14 @@ pub mod conformance {
 
         // Test timestamp arithmetic in duration calculations
         let overflow_tracker = ObligationTracker::with_leak_timeout(DEFAULT_LEAK_TIMEOUT_SECS);
-        let id = overflow_tracker.reserve(ObligationFlow::Fencing, vec![99], u64::MAX - 1000, "overflow-duration").unwrap();
+        let id = overflow_tracker
+            .reserve(
+                ObligationFlow::Fencing,
+                vec![99],
+                u64::MAX - 1000,
+                "overflow-duration",
+            )
+            .unwrap();
 
         // Scan at timestamp that would cause overflow in duration calculation
         let scan_result = overflow_tracker.run_leak_scan(1000, "past-timestamp");
@@ -2564,25 +2657,33 @@ pub mod conformance {
                     flow.clone(),
                     format!("budget-test-{}-{}", flow.as_str(), attempt).into_bytes(),
                     1000 + attempt as u64,
-                    &format!("budget-trace-{}-{}", flow.as_str(), attempt)
+                    &format!("budget-trace-{}-{}", flow.as_str(), attempt),
                 );
 
                 match result {
                     Ok(id) => {
                         flow_obligations.push(id);
                         successful_reserves += 1;
-                    },
+                    }
                     Err(e) => {
                         // Should hit budget limit
-                        assert!(e.contains("ERR_OBL_BUDGET_EXCEEDED") || e.contains("ERR_OBL_CAPACITY_EXCEEDED"));
+                        assert!(
+                            e.contains("ERR_OBL_BUDGET_EXCEEDED")
+                                || e.contains("ERR_OBL_CAPACITY_EXCEEDED")
+                        );
                         break;
                     }
                 }
             }
 
             // Should not exceed budget
-            assert!(successful_reserves <= DEFAULT_FLOW_BUDGET,
-                   "Flow {} exceeded budget: {} > {}", flow.as_str(), successful_reserves, DEFAULT_FLOW_BUDGET);
+            assert!(
+                successful_reserves <= DEFAULT_FLOW_BUDGET,
+                "Flow {} exceeded budget: {} > {}",
+                flow.as_str(),
+                successful_reserves,
+                DEFAULT_FLOW_BUDGET
+            );
 
             // Clean up flow obligations
             for id in flow_obligations {
@@ -2600,25 +2701,31 @@ pub mod conformance {
                 flow,
                 format!("global-{}", global_attempt).into_bytes(),
                 3000 + global_attempt as u64,
-                &format!("global-trace-{}", global_attempt)
+                &format!("global-trace-{}", global_attempt),
             );
 
             match result {
                 Ok(id) => {
                     global_obligations.push(id);
                     total_successful += 1;
-                },
+                }
                 Err(e) => {
-                    assert!(e.contains("ERR_OBL_") &&
-                           (e.contains("CAPACITY_EXCEEDED") || e.contains("BUDGET_EXCEEDED")));
+                    assert!(
+                        e.contains("ERR_OBL_")
+                            && (e.contains("CAPACITY_EXCEEDED") || e.contains("BUDGET_EXCEEDED"))
+                    );
                     break;
                 }
             }
         }
 
         // Should not exceed global capacity
-        assert!(total_successful <= MAX_OBLIGATIONS,
-               "Global capacity exceeded: {} > {}", total_successful, MAX_OBLIGATIONS);
+        assert!(
+            total_successful <= MAX_OBLIGATIONS,
+            "Global capacity exceeded: {} > {}",
+            total_successful,
+            MAX_OBLIGATIONS
+        );
 
         // Test budget manipulation through rapid commit/rollback cycles
         for manipulation_cycle in 0..50 {
@@ -2626,14 +2733,18 @@ pub mod conformance {
                 ObligationFlow::Migration,
                 vec![manipulation_cycle],
                 4000 + manipulation_cycle,
-                &format!("manipulation-{}", manipulation_cycle)
+                &format!("manipulation-{}", manipulation_cycle),
             ) {
                 Ok(id) => id,
                 Err(_) => break, // Hit capacity, expected
             };
 
             // Immediate commit to free budget
-            let _ = tracker.commit(&id, 4001 + manipulation_cycle, &format!("manipulation-commit-{}", manipulation_cycle));
+            let _ = tracker.commit(
+                &id,
+                4001 + manipulation_cycle,
+                &format!("manipulation-commit-{}", manipulation_cycle),
+            );
         }
 
         // Verify tracker remains in consistent state after manipulation attempts
@@ -2659,7 +2770,7 @@ pub mod conformance {
                 ObligationFlow::Publish,
                 format!("audit-test-{}", i).into_bytes(),
                 1000 + i as u64,
-                malicious_trace
+                malicious_trace,
             ) {
                 Ok(id) => id,
                 Err(_) => continue, // Trace ID rejection is acceptable
@@ -2677,8 +2788,11 @@ pub mod conformance {
                 Ok(_) => {
                     // Verify obligation reached terminal state
                     let obligation = tracker.get_obligation(&id).unwrap();
-                    assert!(matches!(obligation.state, ObligationState::Committed | ObligationState::RolledBack));
-                },
+                    assert!(matches!(
+                        obligation.state,
+                        ObligationState::Committed | ObligationState::RolledBack
+                    ));
+                }
                 Err(_) => {
                     // Clean failure is acceptable
                 }
@@ -2701,7 +2815,10 @@ pub mod conformance {
 
         // Verify tracker remains functional after audit corruption attempts
         let final_id = tracker.reserve(ObligationFlow::Fencing, vec![255], 6000, "final-test");
-        assert!(final_id.is_ok(), "Tracker should remain functional after audit corruption attempts");
+        assert!(
+            final_id.is_ok(),
+            "Tracker should remain functional after audit corruption attempts"
+        );
     }
 
     /// Negative test: Resource exhaustion through obligation flooding
@@ -2723,15 +2840,17 @@ pub mod conformance {
                 flow,
                 vec![flood_round as u8],
                 flood_round as u64,
-                &format!("flood-{}", flood_round)
+                &format!("flood-{}", flood_round),
             );
 
             match result {
                 Ok(id) => flood_obligations.push(id),
                 Err(e) => {
                     // Should hit rate limits or capacity limits
-                    assert!(e.contains("ERR_OBL_BUDGET_EXCEEDED") ||
-                           e.contains("ERR_OBL_CAPACITY_EXCEEDED"));
+                    assert!(
+                        e.contains("ERR_OBL_BUDGET_EXCEEDED")
+                            || e.contains("ERR_OBL_CAPACITY_EXCEEDED")
+                    );
                     break;
                 }
             }
@@ -2753,12 +2872,14 @@ pub mod conformance {
 
         // Verify final state consistency
         let final_status = tracker.get_status();
-        let committed_count = flood_obligations.iter()
+        let committed_count = flood_obligations
+            .iter()
             .filter_map(|id| tracker.get_obligation(id).ok())
             .filter(|obl| obl.state == ObligationState::Committed)
             .count();
 
-        let rolled_back_count = flood_obligations.iter()
+        let rolled_back_count = flood_obligations
+            .iter()
             .filter_map(|id| tracker.get_obligation(id).ok())
             .filter(|obl| obl.state == ObligationState::RolledBack)
             .count();

