@@ -429,13 +429,13 @@ impl AntiEntropyReconciler {
             };
 
             match local.get(&id) {
-                None => delta.push(remote_record.clone()),
+                None => push_bounded_fn(&mut delta, remote_record.clone(), MAX_TRUST_RECORDS),
                 Some(local_record) => {
                     if matches!(
                         Self::resolve_conflict(local_record, remote_record),
                         ConflictResolution::TakeRemote
                     ) {
-                        delta.push(remote_record.clone());
+                        push_bounded_fn(&mut delta, remote_record.clone(), MAX_TRUST_RECORDS);
                     }
                 }
             }
