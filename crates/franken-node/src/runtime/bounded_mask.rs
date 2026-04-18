@@ -11,6 +11,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use sha2::{Sha256, Digest};
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
 
@@ -2048,11 +2049,10 @@ mod bounded_mask_comprehensive_negative_tests {
                 let start = Instant::now();
                 let mut hash_count = 0u64;
                 while start.elapsed() < duration {
-                    use std::collections::hash_map::DefaultHasher;
-                    use std::hash::{Hash, Hasher};
-                    let mut hasher = DefaultHasher::new();
-                    hash_count.hash(&mut hasher);
-                    let _ = hasher.finish();
+                    // Use SHA-256 for secure hashing instead of DefaultHasher
+                    let mut hasher = Sha256::new();
+                    hasher.update(&hash_count.to_le_bytes());
+                    let _ = hasher.finalize();
                     hash_count = hash_count.wrapping_add(1);
                 }
                 hash_count

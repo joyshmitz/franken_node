@@ -38,6 +38,7 @@
 //! - `INV-GOVERNOR-ENGINE-BOUNDARY`
 
 use serde::{Deserialize, Serialize};
+use sha2::{Sha256, Digest};
 use std::collections::HashSet;
 
 use crate::capacity_defaults::aliases::MAX_AUDIT_TRAIL_ENTRIES;
@@ -3915,9 +3916,10 @@ mod tests {
             for proposal in proposals {
                 let result = gate.submit(proposal);
 
-                // Track potential collisions
-                let hash_key = format!("{:x}",
-                    std::collections::hash_map::DefaultHasher::new().finish());
+                // Track potential collisions using secure SHA-256 hash
+                let mut hasher = Sha256::new();
+                hasher.update(b"collision_tracking");
+                let hash_key = format!("{:02x}", hasher.finalize());
                 *collision_attempts.entry(hash_key).or_insert(0) += 1;
             }
 
