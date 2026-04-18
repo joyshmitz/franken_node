@@ -159,37 +159,30 @@ impl AudienceBoundToken {
         let mut hasher = Sha256::new();
         hasher.update(b"audience_auth_v1:");
         let tid = self.token_id.as_str();
-        hasher.update((tid.len() as u64).to_le_bytes());
-        hasher.update(tid.as_bytes());
-        hasher.update((self.issuer.len() as u64).to_le_bytes());
-        hasher.update(self.issuer.as_bytes());
-        hasher.update((self.audience.len() as u64).to_le_bytes());
+        update_len_prefixed(&mut hasher, tid);
+        update_len_prefixed(&mut hasher, &self.issuer);
+        hasher.update(len_to_u64(self.audience.len()).to_le_bytes());
         for aud in &self.audience {
-            hasher.update((aud.len() as u64).to_le_bytes());
-            hasher.update(aud.as_bytes());
+            update_len_prefixed(&mut hasher, aud);
         }
-        hasher.update((self.capabilities.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(self.capabilities.len()).to_le_bytes());
         for cap in &self.capabilities {
             let label = cap.label();
-            hasher.update((label.len() as u64).to_le_bytes());
-            hasher.update(label.as_bytes());
+            update_len_prefixed(&mut hasher, label);
         }
         hasher.update(self.issued_at.to_le_bytes());
         hasher.update(self.expires_at.to_le_bytes());
-        hasher.update((self.nonce.len() as u64).to_le_bytes());
-        hasher.update(self.nonce.as_bytes());
+        update_len_prefixed(&mut hasher, &self.nonce);
         match &self.parent_token_hash {
             Some(ph) => {
                 hasher.update(1u8.to_le_bytes());
-                hasher.update((ph.len() as u64).to_le_bytes());
-                hasher.update(ph.as_bytes());
+                update_len_prefixed(&mut hasher, ph);
             }
             None => {
                 hasher.update(0u8.to_le_bytes());
             }
         }
-        hasher.update((self.signature.len() as u64).to_le_bytes());
-        hasher.update(self.signature.as_bytes());
+        update_len_prefixed(&mut hasher, &self.signature);
         hasher.update([self.max_delegation_depth]);
         format!("{:x}", hasher.finalize())
     }
@@ -215,6 +208,15 @@ impl AudienceBoundToken {
             acc | crate::security::constant_time::ct_eq(a, service_id)
         })
     }
+}
+
+fn len_to_u64(len: usize) -> u64 {
+    u64::try_from(len).unwrap_or(u64::MAX)
+}
+
+fn update_len_prefixed(hasher: &mut Sha256, value: &str) {
+    hasher.update(len_to_u64(value.len()).to_le_bytes());
+    hasher.update(value.as_bytes());
 }
 
 /// Error type for audience-bound token operations.
@@ -411,7 +413,7 @@ impl TokenChain {
         }
 
         let root = &self.tokens[0];
-        let max_chain_len = root.max_delegation_depth as usize + 1;
+        let max_chain_len = usize::from(root.max_delegation_depth).saturating_add(1);
         if self.tokens.len() >= max_chain_len {
             return Err(TokenError::new(
                 ERR_ABT_ATTENUATION_VIOLATION,
@@ -892,6 +894,8 @@ fn _assert_send_sync() {
 
 #[cfg(test)]
 mod tests {
+    use crate::security::constant_time::ct_eq_bytes;
+
     use super::*;
 
     // -- Helpers --
@@ -922,7 +926,7 @@ mod tests {
             issuer: "delegator-1".to_string(),
             audience,
             capabilities,
-            issued_at: parent.issued_at + 100,
+            issued_at: parent.issued_at.saturating_add(100),
             expires_at: parent.expires_at,
             nonce: format!("nonce-{}", id),
             parent_token_hash: Some(parent.hash()),
@@ -1007,14 +1011,69 @@ mod tests {
     fn test_token_hash_deterministic() {
         let t1 = root_token("root-1", 3);
         let t2 = root_token("root-1", 3);
-        assert_eq!(t1.hash(), t2.hash());
+        assert!(ct_eq_bytes(t1.hash().as_bytes(), t2.hash().as_bytes()));
     }
 
     #[test]
     fn test_token_hash_changes_with_id() {
         let t1 = root_token("root-1", 3);
         let t2 = root_token("root-2", 3);
-        assert_ne!(t1.hash(), t2.hash());
+        assert!(!ct_eq_bytes(t1.hash().as_bytes(), t2.hash().as_bytes()));
+    }
+
+    #[test]
+    fn len_to_u64_converts_representative_lengths_without_unchecked_casts() {
+        assert_eq!(len_to_u64(0), 0);
+        assert_eq!(len_to_u64(1), 1);
+        assert_eq!(len_to_u64(usize::from(u16::MAX)), u64::from(u16::MAX));
+    }
+
+    #[test]
+    fn token_hash_length_prefix_distinguishes_ambiguous_field_boundaries() {
+        let mut left = root_token("ab", 3);
+        left.issuer = "c".to_string();
+        let mut right = root_token("a", 3);
+        right.issuer = "bc".to_string();
+        right.nonce = left.nonce.clone();
+        right.signature = left.signature.clone();
+
+        assert_eq!(
+            format!("{}{}", left.token_id.as_str(), left.issuer),
+            format!("{}{}", right.token_id.as_str(), right.issuer)
+        );
+        assert!(!ct_eq_bytes(
+            left.hash().as_bytes(),
+            right.hash().as_bytes()
+        ));
+    }
+
+    #[test]
+    fn token_hash_length_prefix_distinguishes_collection_boundaries() {
+        let mut single = root_token("root-audience-boundary", 3);
+        single.audience = vec!["kernel-Akernel-B".to_string()];
+        let mut split = root_token("root-audience-boundary", 3);
+        split.audience = vec!["kernel-A".to_string(), "kernel-B".to_string()];
+
+        assert_eq!(single.audience.concat(), split.audience.concat());
+        assert!(!ct_eq_bytes(
+            single.hash().as_bytes(),
+            split.hash().as_bytes()
+        ));
+    }
+
+    #[test]
+    fn delegate_token_issued_at_saturates_instead_of_wrapping() {
+        let mut root = root_token("root-max-issued-at", 3);
+        root.issued_at = u64::MAX;
+
+        let child = delegate_token(
+            &root,
+            "child-max-issued-at",
+            vec!["kernel-A".to_string()],
+            narrow_caps(),
+        );
+
+        assert_eq!(child.issued_at, u64::MAX);
     }
 
     #[test]
