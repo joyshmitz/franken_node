@@ -3392,7 +3392,7 @@ mod tests {
                 .actions
                 .lock()
                 .map_err(|_| FleetTransportError::lock_contention("actions lock poisoned"))?;
-            actions.push(action.clone());
+            push_bounded(&mut actions, action.clone(), MAX_FLEET_EVENTS);
             Ok(action.clone())
         }
 
