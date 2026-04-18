@@ -13,6 +13,10 @@ use crate::capacity_defaults::aliases::MAX_EVENTS;
 /// Report schema version.
 pub const SCHEMA_VERSION: &str = "incident-lab-v1.0";
 
+fn len_to_u64(len: usize) -> u64 {
+    u64::try_from(len).unwrap_or(u64::MAX)
+}
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -280,21 +284,21 @@ impl IncidentLab {
     fn compute_trace_digest(trace: &IncidentTrace) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(b"incident_lab_trace_v1:");
-        hasher.update((trace.trace_id.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(trace.trace_id.len()).to_le_bytes());
         hasher.update(trace.trace_id.as_bytes());
-        hasher.update((trace.metadata.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(trace.metadata.len()).to_le_bytes());
         for (key, value) in &trace.metadata {
-            hasher.update((key.len() as u64).to_le_bytes());
+            hasher.update(len_to_u64(key.len()).to_le_bytes());
             hasher.update(key.as_bytes());
-            hasher.update((value.len() as u64).to_le_bytes());
+            hasher.update(len_to_u64(value.len()).to_le_bytes());
             hasher.update(value.as_bytes());
         }
-        hasher.update((trace.events.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(trace.events.len()).to_le_bytes());
         for ev in &trace.events {
             hasher.update(ev.seq.to_le_bytes());
-            hasher.update((ev.label.len() as u64).to_le_bytes());
+            hasher.update(len_to_u64(ev.label.len()).to_le_bytes());
             hasher.update(ev.label.as_bytes());
-            hasher.update((ev.payload_hex.len() as u64).to_le_bytes());
+            hasher.update(len_to_u64(ev.payload_hex.len()).to_le_bytes());
             hasher.update(ev.payload_hex.as_bytes());
             hasher.update(ev.timestamp_ms.to_le_bytes());
         }
@@ -734,12 +738,12 @@ impl IncidentLab {
 
         let mut hasher = Sha256::new();
         hasher.update(b"incident_lab_replay_v1:");
-        hasher.update((trace.events.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(trace.events.len()).to_le_bytes());
         for ev in &trace.events {
             hasher.update(ev.seq.to_le_bytes());
-            hasher.update((ev.label.len() as u64).to_le_bytes());
+            hasher.update(len_to_u64(ev.label.len()).to_le_bytes());
             hasher.update(ev.label.as_bytes());
-            hasher.update((ev.payload_hex.len() as u64).to_le_bytes());
+            hasher.update(len_to_u64(ev.payload_hex.len()).to_le_bytes());
             hasher.update(ev.payload_hex.as_bytes());
             hasher.update(ev.timestamp_ms.to_le_bytes());
         }
@@ -748,7 +752,7 @@ impl IncidentLab {
         Ok(IncidentReplay {
             trace_id: trace.trace_id.clone(),
             replay_digest,
-            events_replayed: trace.events.len() as u64,
+            events_replayed: len_to_u64(trace.events.len()),
             event_code: event_codes::ILAB_002.to_string(),
         })
     }
@@ -937,11 +941,11 @@ impl IncidentLab {
     fn sign_contract(contract_id: &str, plan_id: &str, signer_id: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"incident_lab_contract_v1:");
-        hasher.update((contract_id.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(contract_id.len()).to_le_bytes());
         hasher.update(contract_id.as_bytes());
-        hasher.update((plan_id.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(plan_id.len()).to_le_bytes());
         hasher.update(plan_id.as_bytes());
-        hasher.update((signer_id.len() as u64).to_le_bytes());
+        hasher.update(len_to_u64(signer_id.len()).to_le_bytes());
         hasher.update(signer_id.as_bytes());
         hex::encode(hasher.finalize())
     }
@@ -959,10 +963,10 @@ mod tests {
     pub fn make_test_trace(trace_id: &str, n_events: usize) -> IncidentTrace {
         let events: Vec<TraceEvent> = (0..n_events)
             .map(|i| TraceEvent {
-                seq: i as u64,
+                seq: len_to_u64(i),
                 label: format!("event_{i}"),
                 payload_hex: hex::encode(format!("payload_{i}")),
-                timestamp_ms: 1_000_000 + (i as u64) * 1000,
+                timestamp_ms: 1_000_000_u64.saturating_add(len_to_u64(i).saturating_mul(1000)),
             })
             .collect();
         let mut trace = IncidentTrace {
@@ -1241,7 +1245,7 @@ mod tests {
     fn test_trace_timestamp_decrease_rejected() {
         let lab = lab();
         let mut trace = make_test_trace("t-ts-order", 3);
-        trace.events[1].timestamp_ms = trace.events[0].timestamp_ms - 1;
+        trace.events[1].timestamp_ms = trace.events[0].timestamp_ms.saturating_sub(1);
         trace.integrity_hash = IncidentLab::compute_trace_hash(&trace);
         let err = lab.validate_trace(&trace).expect_err("should fail");
         assert_eq!(err.code, error_codes::ERR_ILAB_EVENT_INVALID);
@@ -1359,6 +1363,45 @@ mod tests {
             IncidentLab::compute_trace_hash(&t2),
         );
     }
+
+    #[test]
+    fn test_len_to_u64_saturates_without_truncating() {
+        assert_eq!(len_to_u64(0), 0);
+        assert_eq!(len_to_u64(1), 1);
+        assert_eq!(
+            len_to_u64(MAX_EVENTS),
+            u64::try_from(MAX_EVENTS).unwrap_or(u64::MAX)
+        );
+        assert_eq!(
+            len_to_u64(usize::MAX),
+            u64::try_from(usize::MAX).unwrap_or(u64::MAX)
+        );
+    }
+
+    #[test]
+    fn test_trace_hash_length_prefixes_metadata_fields() {
+        let mut left = make_test_trace("t-prefix-left", 1);
+        left.metadata.insert("ab".to_string(), "c".to_string());
+        left.integrity_hash = IncidentLab::compute_trace_hash(&left);
+
+        let mut right = make_test_trace("t-prefix-left", 1);
+        right.metadata.insert("a".to_string(), "bc".to_string());
+        right.integrity_hash = IncidentLab::compute_trace_hash(&right);
+
+        assert!(!crate::security::constant_time::ct_eq(
+            &left.integrity_hash,
+            &right.integrity_hash,
+        ));
+    }
+
+    #[test]
+    fn test_contract_signature_length_prefixes_plan_and_signer() {
+        let left = IncidentLab::sign_contract("rollout", "ab", "c");
+        let right = IncidentLab::sign_contract("rollout", "a", "bc");
+
+        assert!(!crate::security::constant_time::ct_eq(&left, &right));
+    }
+
     #[test]
     fn test_trace_hash_changes_with_trace_id() {
         let mut trace = make_test_trace("t-trace-hash", 3);
@@ -1543,10 +1586,32 @@ mod tests {
         assert_ne!(replay_base.replay_digest, replay_label.replay_digest);
 
         let mut ts_trace = trace.clone();
-        ts_trace.events[0].timestamp_ms += 1;
+        ts_trace.events[0].timestamp_ms = ts_trace.events[0].timestamp_ms.saturating_add(1);
         ts_trace.integrity_hash = IncidentLab::compute_trace_hash(&ts_trace);
         let replay_ts = lab.replay_trace(&ts_trace).expect("should succeed");
         assert_ne!(replay_base.replay_digest, replay_ts.replay_digest);
+    }
+
+    #[test]
+    fn test_replay_digest_length_prefixes_event_fields() {
+        let lab = lab();
+        let mut left = make_test_trace("t-replay-prefix", 1);
+        left.events[0].label = "ab".to_string();
+        left.events[0].payload_hex = hex::encode("c");
+        left.integrity_hash = IncidentLab::compute_trace_hash(&left);
+
+        let mut right = make_test_trace("t-replay-prefix", 1);
+        right.events[0].label = "a".to_string();
+        right.events[0].payload_hex = hex::encode("bc");
+        right.integrity_hash = IncidentLab::compute_trace_hash(&right);
+
+        let left_replay = lab.replay_trace(&left).expect("left trace should replay");
+        let right_replay = lab.replay_trace(&right).expect("right trace should replay");
+
+        assert!(!crate::security::constant_time::ct_eq(
+            &left_replay.replay_digest,
+            &right_replay.replay_digest,
+        ));
     }
 
     #[test]
