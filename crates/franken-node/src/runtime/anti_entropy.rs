@@ -4200,7 +4200,7 @@ mod tests {
 
         #[test]
         fn test_compute_delta_vec_push_unbounded_growth_attacks() {
-            // Test for Vec::push without push_bounded in compute_delta (lines 432, 438)
+            // Test verifies compute_delta uses push_delta_bounded_fn (secure)
             let config = ReconciliationConfig::default();
             let reconciler = Reconciler::new(config);
 
@@ -4255,7 +4255,7 @@ mod tests {
 
         #[test]
         fn test_reconcile_accepted_vec_push_unbounded_growth_attacks() {
-            // Test for Vec::push without push_bounded in reconcile (line 605)
+            // Test verifies reconcile uses push_bounded for accepted vector (secure)
             let config = ReconciliationConfig {
                 max_delta_batch: 5000, // Large but bounded
                 proof_required: false, // Disable proofs for this test
@@ -4279,7 +4279,7 @@ mod tests {
                 push_bounded(&mut large_delta, record, 5000);
             }
 
-            // reconcile uses accepted.push() without bounds checking (line 605)
+            // reconcile now uses push_bounded for accepted vector (secure since line 857)
             let result = reconciler.reconcile(&mut local_state, large_delta.clone());
 
             match result {
