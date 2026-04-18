@@ -309,6 +309,41 @@ pub fn all_versions() -> Vec<(&'static str, &'static str)> {
 mod tests {
     use super::*;
 
+    /// Maximum timing samples to prevent memory exhaustion in timing tests.
+    const MAX_TIMING_SAMPLES: usize = 1000;
+
+    /// Maximum test results per thread to prevent memory exhaustion in concurrent tests.
+    const MAX_THREAD_RESULTS: usize = 1000;
+
+    /// Maximum accumulated results to prevent memory exhaustion when collecting from all threads.
+    const MAX_TOTAL_RESULTS: usize = 8000;
+
+    /// Push item to vector with bounded capacity to prevent memory exhaustion.
+    /// When capacity is exceeded, removes oldest entries to maintain the limit.
+    fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+        if cap == 0 {
+            items.clear();
+            return;
+        }
+        if items.len() >= cap {
+            let overflow = items.len().saturating_sub(cap).saturating_add(1);
+            items.drain(0..overflow);
+        }
+        items.push(item);
+    }
+
+    /// Extend vector with bounded capacity to prevent memory exhaustion.
+    /// When capacity would be exceeded, removes oldest entries to maintain the limit.
+    fn extend_bounded<T>(items: &mut Vec<T>, new_items: Vec<T>, cap: usize) {
+        if cap == 0 {
+            items.clear();
+            return;
+        }
+        for item in new_items {
+            push_bounded(items, item, cap);
+        }
+    }
+
     fn lookup(name: &str) -> Option<&'static str> {
         all_versions()
             .into_iter()
@@ -1093,13 +1128,13 @@ mod tests {
                     let start = std::time::Instant::now();
                     let _ = lookup(case);
                     let elapsed = start.elapsed();
-                    case_timings.push(elapsed);
+                    push_bounded(&mut case_timings, elapsed, MAX_TIMING_SAMPLES);
                 }
 
                 let sample_count =
                     u32::try_from(case_timings.len()).expect("timing sample count fits u32");
                 let avg_time = case_timings.iter().sum::<std::time::Duration>() / sample_count;
-                timings.push((case, avg_time));
+                push_bounded(&mut timings, (case, avg_time), test_cases.len());
             }
 
             // Verify timing variations are not excessive (potential timing attack resistance)
@@ -1126,22 +1161,22 @@ mod tests {
                             0 => {
                                 // Test valid lookups
                                 let result = lookup("lane_scheduler");
-                                results.push(("valid_lookup", result.is_some()));
+                                push_bounded(&mut results, ("valid_lookup", result.is_some()), MAX_THREAD_RESULTS);
                             }
                             1 => {
                                 // Test invalid lookups
                                 let result = lookup(&format!("invalid_{thread_id}_{op_id}"));
-                                results.push(("invalid_lookup", result.is_none()));
+                                push_bounded(&mut results, ("invalid_lookup", result.is_none()), MAX_THREAD_RESULTS);
                             }
                             2 => {
                                 // Test all_versions consistency
                                 let versions = all_versions();
-                                results.push(("all_versions", !versions.is_empty()));
+                                push_bounded(&mut results, ("all_versions", !versions.is_empty()), MAX_THREAD_RESULTS);
                             }
                             _ => {
                                 // Test semver validation
                                 let result = is_semver_triplet("1.0.0");
-                                results.push(("semver_valid", result));
+                                push_bounded(&mut results, ("semver_valid", result), MAX_THREAD_RESULTS);
                             }
                         }
                     }
@@ -1154,7 +1189,7 @@ mod tests {
             let mut all_results = Vec::new();
             for thread in threads {
                 let thread_results = thread.join().expect("thread join");
-                all_results.extend(thread_results);
+                extend_bounded(&mut all_results, thread_results, MAX_TOTAL_RESULTS);
             }
 
             // Verify consistent behavior across concurrent access
