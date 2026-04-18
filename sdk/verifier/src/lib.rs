@@ -992,22 +992,22 @@ mod tests {
             ("vsdk-v1.0", "baseline"),
 
             // Repeated patterns that might stress string comparison
-            ("vsdk-v1.0" + &"x".repeat(1000), "long_suffix"),
-            ("v".repeat(1000) + "sdk-v1.0", "long_prefix"),
-            ("vs".repeat(500) + "dk-v1.0", "repeated_prefix"),
+            (&("vsdk-v1.0".to_owned() + &"x".repeat(1000)), "long_suffix"),
+            (&("v".repeat(1000) + "sdk-v1.0"), "long_prefix"),
+            (&("vs".repeat(500) + "dk-v1.0"), "repeated_prefix"),
 
             // Patterns that might stress specific algorithms
-            ("vsdk-".to_string() + &"a".repeat(1000), "no_version"),
-            ("vsdk-v".to_string() + &"1".repeat(500), "repeated_digits"),
-            ("vsdk-v1.".to_string() + &"0".repeat(500), "repeated_zeros"),
+            (&("vsdk-".to_string() + &"a".repeat(1000)), "no_version"),
+            (&("vsdk-v".to_string() + &"1".repeat(500)), "repeated_digits"),
+            (&("vsdk-v1.".to_string() + &"0".repeat(500)), "repeated_zeros"),
 
             // Unicode complexity
             ("vsdk-v1🚀.0🔥", "unicode_emoji"),
-            ("vsdk-v1".to_string() + &"\u{0300}".repeat(100) + ".0", "combining_chars"),
+            (&("vsdk-v1".to_string() + &"\u{0300}".repeat(100) + ".0"), "combining_chars"),
 
             // Nested structure patterns
-            ("vsdk-v".to_string() + &"(())".repeat(250), "nested_parens"),
-            ("{".repeat(500) + "vsdk-v1.0" + &"}".repeat(500), "nested_braces"),
+            (&("vsdk-v".to_string() + &"(())".repeat(250)), "nested_parens"),
+            (&("{".repeat(500) + "vsdk-v1.0" + &"}".repeat(500)), "nested_braces"),
         ];
 
         let mut timing_samples = std::collections::HashMap::new();
