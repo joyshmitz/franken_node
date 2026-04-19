@@ -264,11 +264,7 @@ pub struct ObligationChannel<T: Clone + Serialize> {
 
 impl<T: Clone + Serialize> ObligationChannel<T> {
     fn emit_audit(&mut self, record: ChannelAuditRecord) {
-        if self.audit_log.len() >= MAX_AUDIT_LOG_ENTRIES {
-            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES + 1;
-            self.audit_log.drain(0..overflow);
-        }
-        self.audit_log.push(record);
+        push_bounded(&mut self.audit_log, record, MAX_AUDIT_LOG_ENTRIES);
     }
 
     fn evict_oldest_terminal_obligation(&mut self) -> bool {
@@ -377,7 +373,7 @@ impl<T: Clone + Serialize> ObligationChannel<T> {
             detail: "obligation sent to receiver".to_string(),
         });
 
-        self.queue.push((obligation, message));
+        push_bounded(&mut self.queue, (obligation, message), MAX_QUEUE_ENTRIES);
         Ok(obligation_id)
     }
 
@@ -571,11 +567,7 @@ pub struct ObligationLedger {
 
 impl ObligationLedger {
     fn emit_audit(&mut self, record: ChannelAuditRecord) {
-        if self.audit_log.len() >= MAX_AUDIT_LOG_ENTRIES {
-            let overflow = self.audit_log.len() - MAX_AUDIT_LOG_ENTRIES + 1;
-            self.audit_log.drain(0..overflow);
-        }
-        self.audit_log.push(record);
+        push_bounded(&mut self.audit_log, record, MAX_AUDIT_LOG_ENTRIES);
     }
 
     /// Create an empty ledger.
@@ -740,11 +732,7 @@ pub struct TwoPhaseFlow {
 
 impl TwoPhaseFlow {
     fn emit_flow_audit(&mut self, record: ChannelAuditRecord) {
-        if self.flow_audit_log.len() >= MAX_AUDIT_LOG_ENTRIES {
-            let overflow = self.flow_audit_log.len() - MAX_AUDIT_LOG_ENTRIES + 1;
-            self.flow_audit_log.drain(0..overflow);
-        }
-        self.flow_audit_log.push(record);
+        push_bounded(&mut self.flow_audit_log, record, MAX_AUDIT_LOG_ENTRIES);
     }
 
     /// Create a new two-phase flow.

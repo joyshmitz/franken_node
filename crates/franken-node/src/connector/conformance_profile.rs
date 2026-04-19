@@ -103,14 +103,11 @@ impl ProfileMatrix {
                     "{profile} has no required capabilities"
                 )));
             }
-            if caps
-                .iter()
-                .any(|capability| {
-                    capability.trim().is_empty()
-                        || capability.trim() != capability
-                        || contains_nul(capability)
-                })
-            {
+            if caps.iter().any(|capability| {
+                capability.trim().is_empty()
+                    || capability.trim() != capability
+                    || contains_nul(capability)
+            }) {
                 return Err(ProfileError::InvalidMatrix(format!(
                     "{profile} has empty or non-canonical required capabilities"
                 )));
