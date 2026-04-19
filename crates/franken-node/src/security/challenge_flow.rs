@@ -22,6 +22,24 @@ use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
 /// terminal-state (Denied / Promoted) challenges are evicted first.
 const MAX_CHALLENGES: usize = 4096;
 
+/// Maximum proof submissions per challenge to prevent DoS attacks.
+const MAX_RECEIVED_PROOFS_PER_CHALLENGE: usize = 64;
+
+/// Maximum timeout operations per batch to bound memory usage.
+const MAX_TIMEOUT_BATCH_SIZE: usize = 1024;
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
+    if items.len() >= cap {
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow);
+    }
+    items.push(item);
+}
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -470,7 +488,7 @@ impl ChallengeFlowController {
 
         let artifact_id = challenge.artifact_id.clone();
         let old_state = challenge.state;
-        challenge.received_proofs.push(proof);
+        push_bounded(&mut challenge.received_proofs, proof, MAX_RECEIVED_PROOFS_PER_CHALLENGE);
         challenge.state = ChallengeState::ProofReceived;
 
         self.log_transition(
@@ -645,7 +663,7 @@ impl ChallengeFlowController {
                     "Challenge timed out, denied by policy",
                 );
 
-                denied_ids.push(cid);
+                push_bounded(&mut denied_ids, cid, MAX_TIMEOUT_BATCH_SIZE);
             }
         }
 

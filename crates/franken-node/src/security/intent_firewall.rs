@@ -10,6 +10,25 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+// ── Capacity constants ──────────────────────────────────────────────────
+
+/// Maximum audit events to retain in memory (prevents unbounded growth).
+const MAX_AUDIT_LOG_ENTRIES: usize = 2000;
+
+/// Push item to vector with bounded capacity to prevent memory exhaustion.
+/// When capacity is exceeded, removes oldest entries to maintain the limit.
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
+    if items.len() >= cap {
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow);
+    }
+    items.push(item);
+}
+
 // ── Schema version ──────────────────────────────────────────────────
 
 /// Schema version for the intent firewall module.
@@ -386,11 +405,11 @@ impl TrafficPolicyRule {
         if let Some(suffix) = pattern.strip_prefix("*.") {
             return target_host.len() > suffix.len()
                 && target_host
-                    .get(target_host.len() - suffix.len()..)
+                    .get(target_host.len().saturating_sub(suffix.len())..)
                     .is_some_and(|tail| tail.eq_ignore_ascii_case(suffix))
                 && target_host
                     .as_bytes()
-                    .get(target_host.len() - suffix.len() - 1)
+                    .get(target_host.len().saturating_sub(suffix.len()).saturating_sub(1))
                     == Some(&b'.');
         }
 
@@ -889,13 +908,13 @@ impl EffectsFirewall {
         detail: &str,
         timestamp: &str,
     ) {
-        self.audit_log.push(FirewallAuditEvent {
+        push_bounded(&mut self.audit_log, FirewallAuditEvent {
             event_code: event_code.to_string(),
             effect_id: effect_id.to_string(),
             trace_id: trace_id.to_string(),
             detail: detail.to_string(),
             timestamp: timestamp.to_string(),
-        });
+        }, MAX_AUDIT_LOG_ENTRIES);
     }
 
     /// Return the audit log.
