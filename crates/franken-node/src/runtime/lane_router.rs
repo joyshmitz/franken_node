@@ -969,6 +969,14 @@ fn map_bulkhead_err(err: BulkheadError) -> LaneRouterError {
                 permit_id, existing_operation_id, requested_operation_id
             ),
         },
+        BulkheadError::PermitIdExhausted {
+            requested_operation_id,
+        } => LaneRouterError::InvalidConfig {
+            detail: format!(
+                "bulkhead permit ids exhausted requested_operation_id={}",
+                requested_operation_id
+            ),
+        },
         BulkheadError::PermitOperationMismatch {
             permit_id,
             expected_operation_id,

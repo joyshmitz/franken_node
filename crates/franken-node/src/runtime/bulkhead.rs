@@ -32,6 +32,7 @@ pub mod error_codes {
     pub const BULKHEAD_OVERLOAD: &str = "BULKHEAD_OVERLOAD";
     pub const BULKHEAD_UNKNOWN_PERMIT: &str = "BULKHEAD_UNKNOWN_PERMIT";
     pub const BULKHEAD_PERMIT_ID_REUSED: &str = "BULKHEAD_PERMIT_ID_REUSED";
+    pub const BULKHEAD_PERMIT_ID_EXHAUSTED: &str = "BULKHEAD_PERMIT_ID_EXHAUSTED";
     pub const BULKHEAD_PERMIT_OPERATION_MISMATCH: &str = "BULKHEAD_PERMIT_OPERATION_MISMATCH";
     pub const BULKHEAD_INVALID_CONFIG: &str = "BULKHEAD_INVALID_CONFIG";
 }
@@ -68,6 +69,9 @@ pub enum BulkheadError {
         existing_operation_id: String,
         requested_operation_id: String,
     },
+    PermitIdExhausted {
+        requested_operation_id: String,
+    },
     PermitOperationMismatch {
         permit_id: String,
         expected_operation_id: String,
@@ -85,6 +89,7 @@ impl BulkheadError {
             Self::BulkheadOverload { .. } => error_codes::BULKHEAD_OVERLOAD,
             Self::UnknownPermit { .. } => error_codes::BULKHEAD_UNKNOWN_PERMIT,
             Self::PermitIdReused { .. } => error_codes::BULKHEAD_PERMIT_ID_REUSED,
+            Self::PermitIdExhausted { .. } => error_codes::BULKHEAD_PERMIT_ID_EXHAUSTED,
             Self::PermitOperationMismatch { .. } => error_codes::BULKHEAD_PERMIT_OPERATION_MISMATCH,
             Self::InvalidConfig { .. } => error_codes::BULKHEAD_INVALID_CONFIG,
         }
@@ -121,6 +126,14 @@ impl fmt::Display for BulkheadError {
                 existing_operation_id,
                 requested_operation_id
             ),
+            Self::PermitIdExhausted {
+                requested_operation_id,
+            } => write!(
+                f,
+                "{}: requested_operation_id={}",
+                self.code(),
+                requested_operation_id
+            ),
             Self::PermitOperationMismatch {
                 permit_id,
                 expected_operation_id,
@@ -146,6 +159,7 @@ pub struct GlobalBulkhead {
     retry_after_ms: u64,
     in_flight: usize,
     next_permit_seq: u64,
+    permit_ids_exhausted: bool,
     active_permits: BTreeMap<String, String>,
     rejection_count: u64,
     events: Vec<BulkheadEvent>,
@@ -169,6 +183,7 @@ impl GlobalBulkhead {
             retry_after_ms,
             in_flight: 0,
             next_permit_seq: 1,
+            permit_ids_exhausted: false,
             active_permits: BTreeMap::new(),
             rejection_count: 0,
             events: Vec::new(),
@@ -229,6 +244,12 @@ impl GlobalBulkhead {
             });
         }
 
+        if self.permit_ids_exhausted {
+            return Err(BulkheadError::PermitIdExhausted {
+                requested_operation_id: operation_id.to_string(),
+            });
+        }
+
         let permit_id = format!("permit-{:08}", self.next_permit_seq);
         if let Some(existing_operation_id) = self.active_permits.get(&permit_id) {
             return Err(BulkheadError::PermitIdReused {
@@ -240,7 +261,11 @@ impl GlobalBulkhead {
 
         self.active_permits
             .insert(permit_id.clone(), operation_id.to_string());
-        self.next_permit_seq = self.next_permit_seq.saturating_add(1);
+        if self.next_permit_seq == u64::MAX {
+            self.permit_ids_exhausted = true;
+        } else {
+            self.next_permit_seq = self.next_permit_seq.saturating_add(1);
+        }
         self.in_flight = self.in_flight.saturating_add(1);
 
         self.emit_event(BulkheadEvent {
@@ -670,7 +695,7 @@ mod tests {
     }
 
     #[test]
-    fn saturated_permit_sequence_reuse_does_not_increment_in_flight() {
+    fn terminal_permit_id_is_issued_once_then_acquire_fails_closed() {
         let mut b = GlobalBulkhead::new(2, 10).expect("bulkhead");
         b.next_permit_seq = u64::MAX;
         let permit = b
@@ -679,14 +704,26 @@ mod tests {
 
         let err = b
             .try_acquire("op-max-seq-reuse", 2)
-            .expect_err("saturated sequence should reuse active permit id");
+            .expect_err("exhausted permit sequence must fail closed");
 
         assert_eq!(permit.permit_id, format!("permit-{}", u64::MAX));
-        assert_eq!(err.code(), error_codes::BULKHEAD_PERMIT_ID_REUSED);
+        assert_eq!(err.code(), error_codes::BULKHEAD_PERMIT_ID_EXHAUSTED);
+        assert!(matches!(
+            err,
+            BulkheadError::PermitIdExhausted {
+                ref requested_operation_id
+            } if requested_operation_id == "op-max-seq-reuse"
+        ));
         assert_eq!(b.in_flight(), 1);
         assert_eq!(b.events().len(), 1);
         b.release(&permit.permit_id, "op-max-seq", 3)
             .expect("active max permit should remain releasable");
+
+        let err = b
+            .try_acquire("op-after-terminal-release", 4)
+            .expect_err("released terminal permit id must not be reissued");
+        assert_eq!(err.code(), error_codes::BULKHEAD_PERMIT_ID_EXHAUSTED);
+        assert_eq!(b.in_flight(), 0);
     }
 
     #[test]
