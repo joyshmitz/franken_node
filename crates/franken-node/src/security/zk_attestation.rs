@@ -2428,8 +2428,8 @@ mod tests {
         }
 
         // Calculate average times
-        let avg_legit = legit_times.iter().sum::<std::time::Duration>() / legit_times.len() as u32;
-        let avg_forged = forged_times.iter().sum::<std::time::Duration>() / forged_times.len() as u32;
+        let avg_legit = legit_times.iter().sum::<std::time::Duration>() / u32::try_from(legit_times.len()).unwrap_or(u32::MAX);
+        let avg_forged = forged_times.iter().sum::<std::time::Duration>() / u32::try_from(forged_times.len()).unwrap_or(u32::MAX);
 
         // Timing should not reveal internal verification details
         // Allow some variance but flag excessive timing differences
