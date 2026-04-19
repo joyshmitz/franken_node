@@ -1774,7 +1774,7 @@ mod tests {
         // Test event log with malicious content in all fields
         let malicious_events = vec![
             ("code\r\n\x1b[31mRED\x1b[0m", "tier\u{202E}spoofed", Some("id\x00null"), "detail\"quotes"),
-            ("code\u{FEFF}bom", "tier\u{200B}zw", Some("id\u{10FFFF}high"), "detail\u{D800}\u{DFFF}surr"),
+            ("code\u{FEFF}bom", "tier\u{200B}zw", Some("id\u{10FFFF}high"), "detail\u{FFFD}\u{FFFD}repl"),
             ("code\n\rHTTP/1.1 200 OK\r\n\r\n", "tier' OR '1'='1' --", Some("id<script>"), "detail\\\"escape"),
         ];
 

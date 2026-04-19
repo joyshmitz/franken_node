@@ -1553,7 +1553,7 @@ mod authority_audit_comprehensive_negative_tests {
             ),
             (
                 "trace' OR '1'='1' --",
-                "principal\u{D800}\u{DFFF}",
+                "principal\u{FFFD}\u{FFFD}",
             ),
             (
                 "trace\x00\x01\x02\x03\x04",
@@ -1682,7 +1682,7 @@ mod authority_audit_comprehensive_negative_tests {
                 error_code: "ERR_AA\u{10FFFF}\u{E000}UNICODE".to_string(),
             },
             AmbientAuthorityViolation {
-                module_path: "crate::security\u{D800}\u{DFFF}surrogate".to_string(),
+                module_path: "crate::security\u{FFFD}\u{FFFD}surrogate".to_string(),
                 pattern_id: "AA-PAT\u{202A}bidi\u{202B}isolate\u{202C}".to_string(),
                 description: "Unicode\u{FDD0}nonchar\u{FFFE}injection".to_string(),
                 location: None,
@@ -1768,7 +1768,7 @@ mod authority_audit_comprehensive_negative_tests {
                 severity: "high\r\nHTTP/1.1 200 OK\r\n\r\n".to_string(),
             },
             AmbientAuthorityPattern {
-                id: "AA-PAT\u{D800}\u{DFFF}".to_string(),
+                id: "AA-PAT\u{FFFD}\u{FFFD}".to_string(),
                 description: "Unicode\u{FDD0}nonchar\u{FFFE}pattern".to_string(),
                 pattern: r"std::(fs|net)::\b".to_string(),
                 severity: "medium' OR '1'='1' --".to_string(),
@@ -1817,7 +1817,7 @@ mod authority_audit_comprehensive_negative_tests {
             },
             AuditEvent {
                 event_code: "FN-AA\x00\x01\x02\x03\x04".to_string(),
-                module_path: "crate::security\u{D800}\u{DFFF}".to_string(),
+                module_path: "crate::security\u{FFFD}\u{FFFD}".to_string(),
                 detail: "Control\u{FDD0}chars\u{FFFE}detail".to_string(),
                 trace_id: "trace\u{10FFFF}\u{E000}".to_string(),
             },
@@ -1927,7 +1927,7 @@ mod authority_audit_comprehensive_negative_tests {
                         pattern_id: "AA-PAT\u{202A}bidi\u{202C}".to_string(),
                         description: "Malicious\u{FDD0}violation".to_string(),
                         location: Some("evil.rs:1337\u{200B}".to_string()),
-                        error_code: "ERR_AA_EVIL\u{D800}\u{DFFF}".to_string(),
+                        error_code: "ERR_AA_EVIL\u{FFFD}\u{FFFD}".to_string(),
                     }),
                 },
             );
@@ -2089,7 +2089,7 @@ mod authority_audit_comprehensive_negative_tests {
                 granted
             },
             trace_id: "trace\u{10FFFF}".repeat(10000), // ~40KB trace ID
-            principal: "principal\u{D800}\u{DFFF}".repeat(5000), // ~20KB principal
+            principal: "principal\u{FFFD}\u{FFFD}".repeat(5000), // ~20KB principal
         };
 
         // Generate report in both strict and advisory modes

@@ -2614,8 +2614,8 @@ mod tests {
             "/proc/version",
 
             // Binary data
-            "\xFF\xFE\xFD-01-01T00:00:00Z",
-            "2026-01-01T00:00:00\x00\x01\x02",
+            &format!("{}-01-01T00:00:00Z", String::from_utf8_lossy(&[0xFF, 0xFE, 0xFD])),
+            &format!("2026-01-01T00:00:00{}", String::from_utf8_lossy(&[0x00, 0x01, 0x02])),
 
             // Extremely long timestamps
             &"2026-01-01T00:00:00".repeat(10000),
@@ -2683,4 +2683,3 @@ mod tests {
             // Event fields should not be corrupted by malicious clock values
         }
     }
-}

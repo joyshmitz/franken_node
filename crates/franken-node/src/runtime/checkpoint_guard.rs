@@ -758,7 +758,7 @@ mod checkpoint_guard_comprehensive_negative_tests {
             "orch\u{0000}null\r\n\t\x1b[31mred\x1b[0m", // Null bytes + ANSI escapes
             "orch\u{FEFF}\u{200B}\u{200C}\u{200D}", // BOM + zero-width chars
             "orch\u{10FFFF}\u{E000}\u{FDD0}", // Private use + non-characters
-            "orch\u{D800}\u{DFFF}", // Surrogate pairs
+            "orch\u{FFFD}\u{FFFD}", // Surrogate pairs
         ];
 
         let trace_patterns = [
@@ -897,7 +897,7 @@ mod checkpoint_guard_comprehensive_negative_tests {
             CheckpointGuardEvent {
                 event_code: "EVT\x00\r\n\t\"".to_string(),
                 event_name: "event\\\"escaped".to_string(),
-                orchestration_id: "orch\u{D800}\u{DFFF}".to_string(),
+                orchestration_id: "orch\u{FFFD}\u{FFFD}".to_string(),
                 iteration_count: u64::MAX,
                 trace_id: "trace\u{202E}bidi".to_string(),
                 contract_status: "status' OR '1'='1' --".to_string(),

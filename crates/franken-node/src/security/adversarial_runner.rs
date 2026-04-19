@@ -1535,7 +1535,7 @@ mod tests {
             "campaign\x01\x02control",    // Control characters
             "campaign\r\nlinebreak",      // Line breaks
             "campaign\t\x0Btab",          // Tab and vertical tab
-            "campaign\x7F\x80\xFF",       // DEL and high bytes
+            "campaign\x7F\u{80}\u{FF}",       // DEL and high bytes
             "",                           // Empty string
             "\0\0\0",                     // Only null bytes
         ];

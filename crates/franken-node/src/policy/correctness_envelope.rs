@@ -1118,7 +1118,7 @@ mod correctness_envelope_comprehensive_negative_tests {
             "INV\u{10FFFF}\u{E000}\u{FDD0}extreme",       // Private use + non-chars
             "INV\"quotes'apostrophe\\backslash",           // Quote injection
             "INV<script>alert('xss')</script>",           // XSS pattern
-            "INV\u{D800}\u{DFFF}surrogate",               // Surrogate pairs
+            "INV\u{FFFD}\u{FFFD}surrogate",               // Surrogate pairs
             "../../../etc/passwd\x00malicious",           // Path traversal
         ];
 
@@ -1198,7 +1198,7 @@ mod correctness_envelope_comprehensive_negative_tests {
             EnvelopeViolation {
                 invariant_id: InvariantId::new("INV\"quotes'apostrophe\\backslash"),
                 invariant_name: "Name\u{10FFFF}\u{E000}\u{FDD0}unicode".to_string(),
-                proposal_field: "field\u{D800}\u{DFFF}surrogate".to_string(),
+                proposal_field: "field\u{FFFD}\u{FFFD}surrogate".to_string(),
                 reason: "HTTP/1.1 200 OK\r\n\r\n<html>injection".to_string(),
             },
             EnvelopeViolation {
@@ -1248,7 +1248,7 @@ mod correctness_envelope_comprehensive_negative_tests {
                 enforcement: EnforcementMode::Compile,
             },
             Invariant {
-                id: InvariantId::new("INV\u{D800}\u{DFFF}\u{10FFFF}"),
+                id: InvariantId::new("INV\u{FFFD}\u{FFFD}\u{10FFFF}"),
                 name: "Unicode\u{FDD0}nonchar\u{FFFE}name".to_string(),
                 description: "Description\u{0000}null\x01\x02\x03".to_string(),
                 owner_track: SectionId::new("10.14' OR '1'='1' --"),
@@ -1465,7 +1465,7 @@ mod correctness_envelope_comprehensive_negative_tests {
                 enforcement: EnforcementMode::Compile,
             },
             Invariant {
-                id: InvariantId::new("INV\u{D800}\u{DFFF}"),
+                id: InvariantId::new("INV\u{FFFD}\u{FFFD}"),
                 name: "Name\u{FDD0}nonchar\u{FFFE}".to_string(),
                 description: "Description\u{202A}bidi\u{202B}isolate\u{202C}".to_string(),
                 owner_track: SectionId::new("../../../etc/passwd"),
@@ -1476,7 +1476,7 @@ mod correctness_envelope_comprehensive_negative_tests {
         let malicious_fields = vec![
             ("field\x00null".to_string(), InvariantId::new("INV\u{202E}spoofed\u{202D}")),
             ("field<script>".to_string(), InvariantId::new("INV\u{10FFFF}\u{E000}")),
-            ("field\u{D800}\u{DFFF}".to_string(), InvariantId::new("INV\u{D800}\u{DFFF}")),
+            ("field\u{FFFD}\u{FFFD}".to_string(), InvariantId::new("INV\u{FFFD}\u{FFFD}")),
         ];
 
         let malicious_env = CorrectnessEnvelope {
@@ -1542,7 +1542,7 @@ mod correctness_envelope_comprehensive_negative_tests {
                     "unicode\u{FEFF}\u{200B}": "value\u{10FFFF}\u{E000}",
                     "<script>alert('json')</script>": "value\r\nHTTP/1.1 200 OK\r\n\r\n"
                 }),
-                new_value: serde_json::json!("value\u{D800}\u{DFFF}\u{FDD0}\u{FFFE}"),
+                new_value: serde_json::json!("value\u{FFFD}\u{FFFD}\u{FDD0}\u{FFFE}"),
             },
         ];
 

@@ -1029,7 +1029,7 @@ mod revocation_registry_comprehensive_negative_tests {
 
         let malicious_artifacts = vec![
             "artifact\x00injection", // Null byte
-            "artifact\x7f\x80\x9f", // Control characters
+            &format!("artifact{}", String::from_utf8_lossy(&[0x7f, 0x80, 0x9f])), // Control characters
             "artifact\u{202e}reverse", // Text direction manipulation
             "artifact\u{034f}combining", // Combining grapheme joiner
             "artifact\u{180e}mongolian", // Mongolian vowel separator

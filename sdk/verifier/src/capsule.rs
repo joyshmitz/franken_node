@@ -1660,7 +1660,7 @@ mod tests {
 
         // Attacker tries to inject fake length prefixes in payload
         let attack_payloads = vec![
-            format!("{}{}key1{}value1",
+            format!("{}{}key1{}value1{}",
                     "payload".len().to_le_bytes().iter().map(|&b| b as char).collect::<String>(),
                     "payload",
                     "key1".len().to_le_bytes().iter().map(|&b| b as char).collect::<String>(),
@@ -2430,9 +2430,9 @@ mod tests {
         let reference_bytes = reference_string.as_bytes();
 
         for (test_string, test_name) in &[
-            ("0".repeat(64), "byte_zeros"),
-            (format!("x{}", &reference_string[1..]), "byte_first_diff"),
-            (reference_string.clone(), "byte_identical"),
+            ("0".repeat(64), "byte_zeros".to_string()),
+            (format!("x{}", &reference_string[1..]), "byte_first_diff".to_string()),
+            (reference_string.to_string(), "byte_identical".to_string()),
         ] {
             let test_bytes = test_string.as_bytes();
             let mut byte_timings = Vec::new();
@@ -2470,16 +2470,16 @@ mod tests {
             (format!("{}x", &base_input[..base_input.len()-1]), "bit_flip_last"),
 
             // Multiple bit flips
-            ("cryptographic_differential_analysis_basz", "two_bit_flip"),
-            ("cryptographic_differential_analysis_basf", "hex_bit_pattern"),
+            ("cryptographic_differential_analysis_basz".to_string(), "two_bit_flip"),
+            ("cryptographic_differential_analysis_basf".to_string(), "hex_bit_pattern"),
 
             // Byte boundary tests
-            ("cryptographic_differential_analysis_bas\x00", "null_byte_append"),
-            ("cryptographic_differential_analysis_bas\u{FF}", "high_byte_append"),
+            ("cryptographic_differential_analysis_bas\x00".to_string(), "null_byte_append"),
+            ("cryptographic_differential_analysis_bas\u{FF}".to_string(), "high_byte_append"),
 
             // Length variations
-            ("cryptographic_differential_analysis_bas", "truncated"),
-            ("cryptographic_differential_analysis_baseX", "extended"),
+            ("cryptographic_differential_analysis_bas".to_string(), "truncated"),
+            ("cryptographic_differential_analysis_baseX".to_string(), "extended"),
         ];
 
         let mut hash_relationships = Vec::new();
@@ -2547,7 +2547,7 @@ mod tests {
             "0000000000000000000000000000000000000000000000000000000000000000",
             "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
             "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-            base_hash.clone(),
+            &base_hash,
         ];
 
         for target_hash in target_hashes {
@@ -2631,9 +2631,9 @@ mod tests {
             format!("verifier://{}", "aaaaaaaa".repeat(12500)), // 100k chars
 
             // Empty components after parsing
-            "verifier://   ",
-            "verifier://\t\n\r   \x20",
-            "verifier://\u{00A0}\u{2000}\u{2001}", // Various Unicode spaces
+            "verifier://   ".to_string(),
+            "verifier://\t\n\r   \x20".to_string(),
+            "verifier://\u{00A0}\u{2000}\u{2001}".to_string(), // Various Unicode spaces
 
             // Boundary length conditions
             format!("verifier://{}", "a".repeat(1)),      // Minimum

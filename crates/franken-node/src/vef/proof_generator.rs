@@ -1911,7 +1911,7 @@ mod tests {
                     format!("value_{i}"),
                 );
                 entry.receipt.capability_context.insert(
-                    format!("\xFF{i}"), // High byte prefix
+                    format!("{}{i}", String::from_utf8_lossy(&[0xFF])), // High byte prefix
                     format!("value_{i}"),
                 );
             }
@@ -2195,10 +2195,10 @@ mod tests {
                     // Pattern 3: Binary data in hash
                     ReceiptChainEntry {
                         index: u64::MAX / 2,
-                        chain_hash: "\x00\x01\x02\x03\xFF\xFE\xFD\xFC".to_string(),
+                        chain_hash: String::from_utf8_lossy(&[0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0xFD, 0xFC]).to_string(),
                         receipt: receipt(ExecutionActionType::PolicyQuery, 12345),
                         timestamp_millis: u64::MAX / 2,
-                        trace_id: "trace\x00binary\xFF".to_string(),
+                        trace_id: format!("trace{}binary{}", '\0', String::from_utf8_lossy(&[0xFF])),
                     },
                     // Pattern 4: Unicode attacks in hash
                     ReceiptChainEntry {
@@ -3147,7 +3147,10 @@ mod tests {
 
                     // Pattern 3: Binary-similar patterns
                     ("\x01\x02\x03\x04", "\x01\x02\x03\x05"),
-                    ("\xFF\xFE\xFD\xFC", "\xFF\xFE\xFD\xFB"),
+                    (
+                        &String::from_utf8_lossy(&[0xFF, 0xFE, 0xFD, 0xFC]),
+                        &String::from_utf8_lossy(&[0xFF, 0xFE, 0xFD, 0xFB])
+                    ),
 
                     // Pattern 4: Length extension patterns
                     ("short", "short_extended"),

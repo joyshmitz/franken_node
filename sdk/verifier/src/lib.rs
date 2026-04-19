@@ -336,8 +336,8 @@ mod tests {
             "",                                    // Empty detail
             "\0null\x01control\x7fchars",         // Control characters
             "detail\nwith\nnewlines",             // Multiline content
-            "🚀🔥💀".to_string(),                  // Unicode emoji
-            "\u{FFFF}\u{10FFFF}".to_string(),     // Max Unicode codepoints
+            "🚀🔥💀",                  // Unicode emoji
+            "\u{FFFF}\u{10FFFF}",     // Max Unicode codepoints
             "x".repeat(10_000),                   // Very long detail
             "{\"malicious\": \"json\"}",          // Potential JSON injection
             "<script>alert('xss')</script>",      // Potential XSS
@@ -485,11 +485,11 @@ mod tests {
     fn negative_sdk_version_check_with_integer_overflow_patterns() {
         // Test version strings that could cause integer overflow in parsing
         let overflow_versions = vec![
-            "vsdk-v18446744073709551615.0",    // u64::MAX
-            "vsdk-v999999999999999999.0",      // Large number
-            "vsdk-v1.18446744073709551615",    // u64::MAX as minor
-            "vsdk-v1.999999999999999999",      // Large minor number
-            "vsdk-v0.4294967295",              // u32::MAX as minor
+            "vsdk-v18446744073709551615.0".to_string(),    // u64::MAX
+            "vsdk-v999999999999999999.0".to_string(),      // Large number
+            "vsdk-v1.18446744073709551615".to_string(),    // u64::MAX as minor
+            "vsdk-v1.999999999999999999".to_string(),      // Large minor number
+            "vsdk-v0.4294967295".to_string(),              // u32::MAX as minor
             format!("vsdk-v{}.0", i64::MAX),  // i64::MAX
             format!("vsdk-v{}.0", u128::MAX), // u128::MAX (would be huge)
         ];
@@ -554,11 +554,11 @@ mod tests {
     fn negative_version_check_with_null_byte_and_binary_data() {
         // Test version strings containing null bytes and binary data
         let binary_versions = vec![
-            "vsdk-v1\x00.0",                           // Null byte in middle
-            "\x00vsdk-v1.0",                           // Null byte at start
-            "vsdk-v1.0\x00",                           // Null byte at end
-            "vsdk-v1\u{FF}\u{FE}.0",                   // Binary data (BOM-like)
-            "vsdk-v1.\u{80}\u{81}\u{82}",              // High-bit bytes
+            "vsdk-v1\x00.0".to_string(),                           // Null byte in middle
+            "\x00vsdk-v1.0".to_string(),                           // Null byte at start
+            "vsdk-v1.0\x00".to_string(),                           // Null byte at end
+            "vsdk-v1\u{FF}\u{FE}.0".to_string(),                   // Binary data (BOM-like)
+            "vsdk-v1.\u{80}\u{81}\u{82}".to_string(),              // High-bit bytes
             String::from_utf8_lossy(&[118, 115, 100, 107, 45, 118, 49, 0, 46, 48]).into_owned(), // Null in UTF-8
         ];
 
@@ -898,9 +898,9 @@ mod tests {
             format!("vsdk-v0.{}", u32::MAX as u64 + 1),
 
             // Scientific notation overflow attempts
-            "vsdk-v1e308.0",
-            "vsdk-v1.1e308",
-            "vsdk-v999999999999999999999999.0",
+            "vsdk-v1e308.0".to_string(),
+            "vsdk-v1.1e308".to_string(),
+            "vsdk-v999999999999999999999999.0".to_string(),
 
             // Leading zeros that could cause octal interpretation
             format!("vsdk-v{:020}.0", 1), // Leading zeros
@@ -1042,7 +1042,7 @@ mod tests {
         let baseline_avg = timing_samples.get(&"baseline").unwrap().0;
 
         for (test_name, (avg, max, min)) in &timing_samples {
-            if *test_name == "baseline" { continue; }
+            if **test_name == "baseline" { continue; }
 
             let timing_ratio = avg / baseline_avg;
 
@@ -1181,7 +1181,7 @@ mod tests {
         // Analyze for timing attack vulnerabilities
         let times: Vec<f64> = timing_results.values().map(|(median, _, _)| *median).collect();
         let avg_time = times.iter().sum::<f64>() / times.len() as f64;
-        let max_time = times.iter().fold(0.0, |acc, &x| acc.max(x));
+        let max_time = times.iter().fold(0.0_f64, |acc, &x| acc.max(x));
         let min_time = times.iter().fold(f64::INFINITY, |acc, &x| acc.min(x));
 
         // All comparisons should take similar time (constant-time comparison)

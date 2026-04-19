@@ -1866,7 +1866,7 @@ mod adversary_graph_comprehensive_attack_resistance_and_boundary_tests {
                     posterior: 0.1,
                     evidence_count: 1,
                     last_trace_id: "trace_\u{FEFF}\u{200B}\u{200C}".to_string(),
-                    evidence_hash: "hash_\u{D800}\u{DFFF}_test".to_string(),
+                    evidence_hash: "hash_\u{FFFD}\u{FFFD}_test".to_string(),
                 },
             ],
         };
