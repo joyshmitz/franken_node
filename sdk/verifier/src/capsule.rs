@@ -1369,7 +1369,7 @@ mod tests {
         // Create potentially invalid UTF-8 sequences (would be caught at string creation)
         let invalid_utf8_attempts = vec![
             "valid\u{FFFD}replacement".to_string(),     // Replacement character
-            "incomplete\u{D800}surrogate".to_string(),   // Invalid surrogate (if it gets through)
+            r#"incomplete\uD800surrogate"#.to_string(),  // Raw string with surrogate escape
         ];
 
         for invalid_sequence in invalid_utf8_attempts {
@@ -1811,7 +1811,7 @@ mod tests {
             "\x21".to_string(),              // Exclamation
             "\x7E".to_string(),              // Tilde (near maximum printable ASCII)
             "\x7F".to_string(),              // DEL character
-            "\xFF".to_string(),              // Maximum 8-bit value
+            "\u{FF}".to_string(),            // Maximum 8-bit value
             // Length-based potential collisions
             "a".to_string(),
             "aa".to_string(),
@@ -2463,7 +2463,7 @@ mod tests {
 
             // Byte boundary tests
             ("cryptographic_differential_analysis_bas\x00", "null_byte_append"),
-            ("cryptographic_differential_analysis_bas\xFF", "high_byte_append"),
+            ("cryptographic_differential_analysis_bas\u{FF}", "high_byte_append"),
 
             // Length variations
             ("cryptographic_differential_analysis_bas", "truncated"),

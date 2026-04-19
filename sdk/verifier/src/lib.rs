@@ -557,8 +557,8 @@ mod tests {
             "vsdk-v1\x00.0",                           // Null byte in middle
             "\x00vsdk-v1.0",                           // Null byte at start
             "vsdk-v1.0\x00",                           // Null byte at end
-            "vsdk-v1\xFF\xFE.0",                       // Binary data (BOM-like)
-            "vsdk-v1.\x80\x81\x82",                    // High-bit bytes
+            "vsdk-v1\u{FF}\u{FE}.0",                   // Binary data (BOM-like)
+            "vsdk-v1.\u{80}\u{81}\u{82}",              // High-bit bytes
             String::from_utf8_lossy(&[118, 115, 100, 107, 45, 118, 49, 0, 46, 48]).into_owned(), // Null in UTF-8
         ];
 
@@ -582,8 +582,8 @@ mod tests {
             "\u{0}",                                    // Null character as Unicode
             "\u{FFFF}",                                 // Maximum BMP character
             "\u{10FFFF}",                               // Maximum Unicode codepoint
-            "\u{D800}",                                 // High surrogate (invalid in UTF-8)
-            "\u{DFFF}",                                 // Low surrogate (invalid in UTF-8)
+            r#"\uD800"#,                                // Raw string with high surrogate escape
+            r#"\uDFFF"#,                                // Raw string with low surrogate escape
             "\u{1F4A9}\u{200D}\u{1F525}",              // Complex emoji sequence
             "\u{0301}\u{0302}\u{0303}",                // Combining characters only
             "a\u{0300}\u{0301}\u{0302}\u{0303}b",      // Heavily accented character
