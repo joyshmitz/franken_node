@@ -1984,7 +1984,7 @@ mod tests {
         }
 
         // Statistical analysis for timing attack resistance
-        let mean_time = timing_samples.iter().sum::<std::time::Duration>() / timing_samples.len() as u32;
+        let mean_time = timing_samples.iter().sum::<std::time::Duration>() / u32::try_from(timing_samples.len()).unwrap_or(u32::MAX);
         let variance = timing_samples.iter()
             .map(|&t| {
                 let diff = if t > mean_time { t - mean_time } else { mean_time - t };
@@ -2643,7 +2643,7 @@ mod tests {
             }
 
             // Statistical analysis for timing consistency
-            let mean_time = comparison_times.iter().sum::<std::time::Duration>() / comparison_times.len() as u32;
+            let mean_time = comparison_times.iter().sum::<std::time::Duration>() / u32::try_from(comparison_times.len()).unwrap_or(u32::MAX);
             let max_time = comparison_times.iter().max().unwrap();
             let min_time = comparison_times.iter().min().unwrap();
             let time_range = max_time.saturating_sub(*min_time);
@@ -2689,7 +2689,7 @@ mod tests {
             }
 
             // Check for timing consistency
-            let mean_time = verification_times.iter().sum::<std::time::Duration>() / verification_times.len() as u32;
+            let mean_time = verification_times.iter().sum::<std::time::Duration>() / u32::try_from(verification_times.len()).unwrap_or(u32::MAX);
             let max_time = verification_times.iter().max().unwrap();
             let min_time = verification_times.iter().min().unwrap();
             let time_variance = max_time.saturating_sub(*min_time);
@@ -2726,7 +2726,7 @@ mod tests {
             }
 
             // Verify hash computation timing is reasonable
-            let mean_time = hash_times.iter().sum::<std::time::Duration>() / hash_times.len() as u32;
+            let mean_time = hash_times.iter().sum::<std::time::Duration>() / u32::try_from(hash_times.len()).unwrap_or(u32::MAX);
             let max_time = hash_times.iter().max().unwrap();
 
             // Hash computation time should scale reasonably with input size
