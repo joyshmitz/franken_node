@@ -13,6 +13,24 @@ use frankenengine_extension_host::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::capacity_defaults::aliases::MAX_CHAIN_ENTRIES;
+
+/// Maximum capabilities per manifest to prevent memory exhaustion.
+const MAX_CAPABILITIES: usize = 1024;
+
+/// Add item to Vec with bounded capacity. When capacity is exceeded, removes oldest entries.
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
+    if items.len() >= cap {
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow);
+    }
+    items.push(item);
+}
+
 pub const MANIFEST_SCHEMA_VERSION: &str = "1.0";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -572,7 +590,7 @@ mod tests {
     #[test]
     fn duplicate_capability_fails() {
         let mut manifest = valid_manifest();
-        manifest.capabilities.push(cap("fs_read"));
+        push_bounded(&mut manifest.capabilities, cap("fs_read"), MAX_CAPABILITIES);
 
         let error = validate_signed_manifest(&manifest).expect_err("should fail");
         assert_eq!(error.code(), "EMS_DUPLICATE_CAPABILITY");
@@ -1046,11 +1064,11 @@ mod tests {
     #[test]
     fn second_attestation_blank_digest_reports_second_index() {
         let mut manifest = valid_manifest();
-        manifest.provenance.attestation_chain.push(AttestationRef {
+        push_bounded(&mut manifest.provenance.attestation_chain, AttestationRef {
             id: "att-02".to_string(),
             attestation_type: "slsa".to_string(),
             digest: " \t".to_string(),
-        });
+        }, MAX_CHAIN_ENTRIES);
 
         let error = validate_signed_manifest(&manifest).expect_err("should fail");
 
@@ -1178,11 +1196,11 @@ mod tests {
         // Create massive attestation chain (1000 entries)
         let mut massive_chain = Vec::new();
         for i in 0..1000 {
-            massive_chain.push(AttestationRef {
+            push_bounded(&mut massive_chain, AttestationRef {
                 id: format!("attestation-{:04}", i),
                 attestation_type: "slsa".to_string(),
                 digest: format!("sha256:{:064x}", i),
-            });
+            }, MAX_CHAIN_ENTRIES);
         }
         manifest.provenance.attestation_chain = massive_chain;
 
