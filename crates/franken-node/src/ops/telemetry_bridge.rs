@@ -3211,7 +3211,7 @@ mod tests {
         // Create event with malicious JSON injection in payload
         let malicious_payload = serde_json::json!({
             "normal_field": "value",
-            "injection_attempt": "\"},\"injected_field\":\"malicious\",\"another_injection":{\"nested\":true",
+            "injection_attempt": r#""},"injected_field":"malicious","another_injection":{"nested":true"#,
             "script_injection": "<script>alert('XSS')</script>",
             "sql_injection": "'; DROP TABLE events; --",
             "command_injection": "; cat /etc/passwd #",

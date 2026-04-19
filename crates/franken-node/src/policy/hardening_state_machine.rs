@@ -1495,17 +1495,15 @@ mod hardening_state_machine_comprehensive_negative_tests {
         // Timing differences should be minimal (no timing-based information leakage)
         let max_timing = timing_results.iter().max().unwrap();
         let min_timing = timing_results.iter().min().unwrap();
-        let timing_ratio = max_timing.as_nanos() as f64 / min_timing.as_nanos().max(1) as f64;
-        assert!(
-            timing_ratio.is_finite(),
-            "Validation timing ratio must remain finite"
-        );
+        let max_timing_nanos = max_timing.as_nanos();
+        let min_timing_nanos = min_timing.as_nanos().max(1);
 
         // Allow reasonable variance but prevent timing attacks
         assert!(
-            timing_ratio < 5.0,
-            "Validation timing variance too high: {}",
-            timing_ratio
+            max_timing_nanos < min_timing_nanos.saturating_mul(5),
+            "Validation timing variance too high: max={}ns min={}ns",
+            max_timing_nanos,
+            min_timing_nanos
         );
 
         // Test artifact ID comparison timing
@@ -1536,17 +1534,14 @@ mod hardening_state_machine_comprehensive_negative_tests {
         // ID validation timing should also be consistent
         let max_id_timing = id_timing_results.iter().max().unwrap();
         let min_id_timing = id_timing_results.iter().min().unwrap();
-        let id_timing_ratio =
-            max_id_timing.as_nanos() as f64 / min_id_timing.as_nanos().max(1) as f64;
-        assert!(
-            id_timing_ratio.is_finite(),
-            "Artifact ID validation timing ratio must remain finite"
-        );
+        let max_id_timing_nanos = max_id_timing.as_nanos();
+        let min_id_timing_nanos = min_id_timing.as_nanos().max(1);
 
         assert!(
-            id_timing_ratio < 4.0,
-            "Artifact ID validation timing variance too high: {}",
-            id_timing_ratio
+            max_id_timing_nanos < min_id_timing_nanos.saturating_mul(4),
+            "Artifact ID validation timing variance too high: max={}ns min={}ns",
+            max_id_timing_nanos,
+            min_id_timing_nanos
         );
     }
 

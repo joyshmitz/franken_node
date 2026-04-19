@@ -980,7 +980,7 @@ mod tests {
             // Object injection attacks
             (serde_json::json!({
                 "legitimate": "data",
-                "injected\": \"evil\", \"admin": true, \"dummy": "value"
+                "injected": "evil", "admin": true, "dummy": "value"
             }), "Object key injection"),
 
             // Array injection attacks
@@ -1012,7 +1012,7 @@ mod tests {
 
             // Binary data injection
             (serde_json::json!({
-                "binary": "\x00\x01\x02\x03\x04\xFF\xFE\xFD",
+                "binary": "\x00\x01\x02\x03\x04\u{FF}\u{FE}\u{FD}",
                 "control": "\r\n\t\x1f\x7f"
             }), "Binary data injection"),
 

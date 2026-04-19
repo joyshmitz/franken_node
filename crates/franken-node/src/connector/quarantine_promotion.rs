@@ -801,7 +801,7 @@ mod quarantine_promotion_comprehensive_negative_tests {
         let malicious_objects = [
             "obj\"\\\r\n\t\x08\x0c",  // JSON control chars
             "obj\\u0000\\x00\\n\\r\\t", // Escaped null and control
-            "obj\u{D800}\u{DFFF}",      // Surrogate pairs
+            r#"obj\uD800\uDFFF"#,      // Raw string with surrogate pair escapes
             "obj\\\"quotes\\\"",         // Escaped quotes
             "obj\\\\backslashes\\\\",    // Escaped backslashes
         ];
