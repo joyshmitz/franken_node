@@ -460,8 +460,8 @@ impl DeterministicSeedDeriver {
             // Test: Bump record capacity boundary attacks (bump flooding)
             let mut deriver = DeterministicSeedDeriver::new();
             // Generate more bump records than capacity
-            for i in 0..MAX_BUMP_RECORDS + 10 {
-                let flood_config = ScheduleConfig::new(i as u32 + 1).with_param("flood", &format!("version_{}", i));
+            for i in 0..MAX_BUMP_RECORDS.saturating_add(10) {
+                let flood_config = ScheduleConfig::new((i as u32).saturating_add(1)).with_param("flood", &format!("version_{}", i));
                 let test_domain = &DomainTag::Encoding;
                 let flood_hash = ContentHash::from_bytes([i as u8; 32]);
                 let _ = deriver.derive_seed(test_domain, &flood_hash, &flood_config);
@@ -804,7 +804,7 @@ mod tests {
     fn test_domain_tag_prefixes_unique() {
         let domains = DomainTag::all();
         for i in 0..domains.len() {
-            for j in (i + 1)..domains.len() {
+            for j in i.saturating_add(1)..domains.len() {
                 assert_ne!(
                     domains[i].prefix(),
                     domains[j].prefix(),
@@ -1360,7 +1360,7 @@ mod tests {
             let mut deriver = DeterministicSeedDeriver::new();
             let content_hash = ContentHash([0x7d; 32]);
 
-            for version in 1..=(MAX_BUMP_RECORDS + 8) {
+            for version in 1..=MAX_BUMP_RECORDS.saturating_add(8) {
                 let config = ScheduleConfig::new(
                     u32::try_from(version).unwrap_or(u32::MAX),
                 )
@@ -1382,7 +1382,7 @@ mod tests {
                     .last()
                     .expect("bounded buffer should retain the newest record")
                     .new_version,
-                u32::try_from(MAX_BUMP_RECORDS + 8).unwrap_or(u32::MAX)
+                u32::try_from(MAX_BUMP_RECORDS.saturating_add(8)).unwrap_or(u32::MAX)
             );
         }
 
@@ -1867,7 +1867,7 @@ mod additional_negative_path_tests {
 
         // Generate many bump records to stress clear operation
         for i in 0..MAX_BUMP_RECORDS {
-            let config_i = ScheduleConfig::new(i as u32 + 1).with_param("iteration", &i.to_string());
+            let config_i = ScheduleConfig::new((i as u32).saturating_add(1)).with_param("iteration", &i.to_string());
             let (_, _) = deriver.derive_seed(&DomainTag::Encoding, &content_hash, &config_i);
         }
 
