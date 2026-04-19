@@ -378,8 +378,32 @@ impl HardeningStateMachine {
     ///
     /// INV-HARDEN-DURABLE: replay produces identical state as live execution.
     pub fn replay_transitions(log: &[TransitionRecord]) -> Self {
-        let mut machine = Self::new();
+        let Some(first_record) = log.first() else {
+            return Self::new();
+        };
+
+        let mut machine = Self::with_level(first_record.from_level);
         for record in log {
+            if record.from_level != machine.current_level {
+                continue;
+            }
+
+            let transition_is_valid = match &record.trigger {
+                TransitionTrigger::Escalation => record.to_level > record.from_level,
+                TransitionTrigger::GovernanceRollback {
+                    artifact_id,
+                    approver_id,
+                } => {
+                    record.to_level < record.from_level
+                        && invalid_artifact_id_reason(artifact_id).is_none()
+                        && !approver_id.trim().is_empty()
+                }
+            };
+
+            if !transition_is_valid {
+                continue;
+            }
+
             machine.current_level = record.to_level;
             push_bounded(
                 &mut machine.transition_log,
@@ -1051,7 +1075,6 @@ mod tests {
 #[cfg(test)]
 mod hardening_state_machine_comprehensive_negative_tests {
     use super::*;
-    use std::collections::HashMap;
 
     /// Negative test: Unicode injection and malicious content in governance artifacts
     #[test]
@@ -1079,7 +1102,7 @@ mod hardening_state_machine_comprehensive_negative_tests {
             Ok(_) => {
                 // Unicode was accepted and properly processed
                 assert_eq!(sm.current_level(), HardeningLevel::Standard);
-            },
+            }
             Err(e) => {
                 // Unicode caused validation failure, which is also acceptable
                 assert_eq!(e.code(), "HARDEN_INVALID_ARTIFACT");
@@ -1109,11 +1132,15 @@ mod hardening_state_machine_comprehensive_negative_tests {
                 // Verify Unicode didn't corrupt the transition record
                 assert_eq!(record.from_level, HardeningLevel::Maximum);
                 assert_eq!(record.to_level, HardeningLevel::Enhanced);
-                if let TransitionTrigger::GovernanceRollback { artifact_id, approver_id } = &record.trigger {
+                if let TransitionTrigger::GovernanceRollback {
+                    artifact_id,
+                    approver_id,
+                } = &record.trigger
+                {
                     assert_eq!(artifact_id, "GOV-2026-002");
                     assert!(approver_id.contains("admin") && approver_id.contains("franken.io"));
                 }
-            },
+            }
             Err(_) => {
                 // Unicode validation rejection is also acceptable
                 assert_eq!(sm.current_level(), HardeningLevel::Maximum);
@@ -1124,7 +1151,7 @@ mod hardening_state_machine_comprehensive_negative_tests {
         let control_char_artifact = GovernanceRollbackArtifact {
             artifact_id: "GOV\x00\x01\x02-2026-003".to_string(),
             approver_id: "admin@franken.io".to_string(),
-            reason: "Control\x7f\x80\x9fcharacters".to_string(),
+            reason: "Control\u{7f}\u{80}\u{9f}characters".to_string(),
             timestamp: 2002,
             signature: "signature".to_string(),
         };
@@ -1132,7 +1159,7 @@ mod hardening_state_machine_comprehensive_negative_tests {
         let validation_result = control_char_artifact.validate();
         // Should either accept or properly reject control characters
         match validation_result {
-            Ok(_) => {}, // Accepted gracefully
+            Ok(_) => {}                                                // Accepted gracefully
             Err(e) => assert_eq!(e.code(), "HARDEN_INVALID_ARTIFACT"), // Properly rejected
         }
     }
@@ -1166,7 +1193,10 @@ mod hardening_state_machine_comprehensive_negative_tests {
             0, // Timestamp rollover
             "trace-timestamp-rollover",
         );
-        assert!(result.is_ok(), "Should handle timestamp rollover gracefully");
+        assert!(
+            result.is_ok(),
+            "Should handle timestamp rollover gracefully"
+        );
 
         // Verify transition log handles overflow correctly
         let log = sm.transition_log();
@@ -1190,7 +1220,10 @@ mod hardening_state_machine_comprehensive_negative_tests {
             u64::MAX,
             "trace-overflow-rollback",
         );
-        assert!(result.is_ok(), "Should handle overflow timestamps in governance artifacts");
+        assert!(
+            result.is_ok(),
+            "Should handle overflow timestamps in governance artifacts"
+        );
 
         // Test massive transition log that could cause capacity overflow
         let mut massive_sm = HardeningStateMachine::new();
@@ -1203,7 +1236,9 @@ mod hardening_state_machine_comprehensive_negative_tests {
             };
 
             if level > massive_sm.current_level() {
-                let _ = massive_sm.escalate(level, i as u64, &format!("trace-overflow-{}", i));
+                massive_sm
+                    .escalate(level, i as u64, &format!("trace-overflow-{}", i))
+                    .expect("monotonic overflow stress escalation should succeed");
             }
         }
 
@@ -1225,7 +1260,10 @@ mod hardening_state_machine_comprehensive_negative_tests {
 
         // Test escalation with massive trace ID
         let result = sm.escalate(HardeningLevel::Standard, 1000, &huge_trace_id);
-        assert!(result.is_ok(), "Should handle large trace IDs without memory exhaustion");
+        assert!(
+            result.is_ok(),
+            "Should handle large trace IDs without memory exhaustion"
+        );
 
         // Test governance rollback with massive artifact content
         let massive_artifact = GovernanceRollbackArtifact {
@@ -1236,7 +1274,8 @@ mod hardening_state_machine_comprehensive_negative_tests {
             signature: "signature".to_string(),
         };
 
-        sm.escalate(HardeningLevel::Enhanced, 1500, "trace-before-rollback").unwrap();
+        sm.escalate(HardeningLevel::Enhanced, 1500, "trace-before-rollback")
+            .unwrap();
 
         let result = sm.governance_rollback(
             HardeningLevel::Standard,
@@ -1251,29 +1290,37 @@ mod hardening_state_machine_comprehensive_negative_tests {
         assert!(log.len() <= 3); // Should not have excessive entries
 
         // Test rapid escalation/rollback cycles to stress memory
-        for cycle in 0..1000 {
+        for cycle in 0_u64..1000 {
             let escalate_trace = format!("escalate-cycle-{}-{}", cycle, "x".repeat(1000));
             let rollback_trace = format!("rollback-cycle-{}-{}", cycle, "y".repeat(1000));
+            let escalate_timestamp = 3000_u64.saturating_add(cycle);
+            let rollback_timestamp = 3001_u64.saturating_add(cycle);
 
             if sm.current_level() < HardeningLevel::Enhanced {
-                let _ = sm.escalate(HardeningLevel::Enhanced, 3000 + cycle, &escalate_trace);
+                sm.escalate(
+                    HardeningLevel::Enhanced,
+                    escalate_timestamp,
+                    &escalate_trace,
+                )
+                .expect("cycle escalation should succeed");
             }
 
             let cycle_artifact = GovernanceRollbackArtifact {
                 artifact_id: format!("CYCLE-{}-{}", cycle, "z".repeat(500)),
                 approver_id: format!("admin-{}-{}", cycle, "a".repeat(200)),
                 reason: format!("Cycle-{}-{}", cycle, "b".repeat(300)),
-                timestamp: 3001 + cycle,
+                timestamp: rollback_timestamp,
                 signature: format!("sig-{}", cycle),
             };
 
             if sm.current_level() > HardeningLevel::Baseline {
-                let _ = sm.governance_rollback(
+                sm.governance_rollback(
                     HardeningLevel::Baseline,
                     &cycle_artifact,
-                    3001 + cycle,
+                    rollback_timestamp,
                     &rollback_trace,
-                );
+                )
+                .expect("cycle rollback should succeed");
             }
         }
 
@@ -1294,20 +1341,29 @@ mod hardening_state_machine_comprehensive_negative_tests {
         ];
 
         // Verify state consistency despite concurrent attempts
-        let mut success_count = 0;
-        let mut regression_errors = 0;
+        let mut success_count = 0_usize;
+        let mut regression_errors = 0_usize;
 
         for result in concurrent_results {
             match result {
-                Ok(_) => success_count += 1,
-                Err(e) if e.code() == "HARDEN_ILLEGAL_REGRESSION" => regression_errors += 1,
+                Ok(_) => success_count = success_count.saturating_add(1),
+                Err(e) if e.code() == "HARDEN_ILLEGAL_REGRESSION" => {
+                    regression_errors = regression_errors.saturating_add(1);
+                }
                 Err(_) => {} // Other errors
             }
         }
 
         // Should have progressed monotonically
         assert!(success_count > 0, "At least one escalation should succeed");
-        assert!(sm.current_level() >= HardeningLevel::Enhanced, "Should have progressed");
+        assert_eq!(
+            regression_errors, 0,
+            "Sequential concurrent simulation should not hide regression errors"
+        );
+        assert!(
+            sm.current_level() >= HardeningLevel::Enhanced,
+            "Should have progressed"
+        );
 
         // Test concurrent rollbacks with different artifacts
         let artifacts = vec![
@@ -1329,16 +1385,32 @@ mod hardening_state_machine_comprehensive_negative_tests {
 
         let initial_level = sm.current_level();
         let rollback_results = vec![
-            sm.governance_rollback(HardeningLevel::Standard, &artifacts[0], 2000, "trace-rollback-1"),
-            sm.governance_rollback(HardeningLevel::Baseline, &artifacts[1], 2000, "trace-rollback-2"),
+            sm.governance_rollback(
+                HardeningLevel::Standard,
+                &artifacts[0],
+                2000,
+                "trace-rollback-1",
+            ),
+            sm.governance_rollback(
+                HardeningLevel::Baseline,
+                &artifacts[1],
+                2000,
+                "trace-rollback-2",
+            ),
         ];
 
         // Verify state remains consistent after concurrent operations
-        assert!(sm.current_level() <= initial_level, "State should not have illegally escalated");
+        assert!(
+            sm.current_level() <= initial_level,
+            "State should not have illegally escalated"
+        );
 
         // At most one rollback should succeed
         let rollback_successes = rollback_results.iter().filter(|r| r.is_ok()).count();
-        assert!(rollback_successes <= 1, "At most one rollback should succeed from same state");
+        assert!(
+            rollback_successes <= 1,
+            "At most one rollback should succeed from same state"
+        );
 
         // Verify audit trail integrity under concurrent operations
         let log = sm.transition_log();
@@ -1349,10 +1421,12 @@ mod hardening_state_machine_comprehensive_negative_tests {
 
             // Timestamps should be reasonable (allowing for concurrent same-time operations)
             if i > 0 {
-                let prev = &log[i-1];
-                assert!(record.timestamp >= prev.timestamp ||
-                       record.timestamp.abs_diff(prev.timestamp) <= 1000,
-                       "Timestamp ordering should be reasonable");
+                let prev = &log[i - 1];
+                assert!(
+                    record.timestamp >= prev.timestamp
+                        || record.timestamp.abs_diff(prev.timestamp) <= 1000,
+                    "Timestamp ordering should be reasonable"
+                );
             }
         }
     }
@@ -1421,10 +1495,18 @@ mod hardening_state_machine_comprehensive_negative_tests {
         // Timing differences should be minimal (no timing-based information leakage)
         let max_timing = timing_results.iter().max().unwrap();
         let min_timing = timing_results.iter().min().unwrap();
-        let timing_ratio = max_timing.as_nanos() as f64 / min_timing.as_nanos() as f64;
+        let timing_ratio = max_timing.as_nanos() as f64 / min_timing.as_nanos().max(1) as f64;
+        assert!(
+            timing_ratio.is_finite(),
+            "Validation timing ratio must remain finite"
+        );
 
         // Allow reasonable variance but prevent timing attacks
-        assert!(timing_ratio < 5.0, "Validation timing variance too high: {}", timing_ratio);
+        assert!(
+            timing_ratio < 5.0,
+            "Validation timing variance too high: {}",
+            timing_ratio
+        );
 
         // Test artifact ID comparison timing
         let similar_ids = vec![
@@ -1454,9 +1536,18 @@ mod hardening_state_machine_comprehensive_negative_tests {
         // ID validation timing should also be consistent
         let max_id_timing = id_timing_results.iter().max().unwrap();
         let min_id_timing = id_timing_results.iter().min().unwrap();
-        let id_timing_ratio = max_id_timing.as_nanos() as f64 / min_id_timing.as_nanos() as f64;
+        let id_timing_ratio =
+            max_id_timing.as_nanos() as f64 / min_id_timing.as_nanos().max(1) as f64;
+        assert!(
+            id_timing_ratio.is_finite(),
+            "Artifact ID validation timing ratio must remain finite"
+        );
 
-        assert!(id_timing_ratio < 4.0, "Artifact ID validation timing variance too high: {}", id_timing_ratio);
+        assert!(
+            id_timing_ratio < 4.0,
+            "Artifact ID validation timing variance too high: {}",
+            id_timing_ratio
+        );
     }
 
     /// Negative test: State machine replay corruption and inconsistency attacks
@@ -1490,19 +1581,17 @@ mod hardening_state_machine_comprehensive_negative_tests {
                 trigger: TransitionTrigger::Escalation,
                 trace_id: "corrupted-001".to_string(),
             }],
-
             // Invalid level progression (downward escalation)
             vec![
                 legitimate_log[0].clone(),
                 TransitionRecord {
                     from_level: HardeningLevel::Enhanced, // Skips Standard
-                    to_level: HardeningLevel::Baseline, // Illegal downward
+                    to_level: HardeningLevel::Baseline,   // Illegal downward
                     timestamp: 1001,
                     trigger: TransitionTrigger::Escalation, // Wrong trigger for downward
                     trace_id: "corrupted-002".to_string(),
-                }
+                },
             ],
-
             // Timestamp manipulation
             vec![
                 TransitionRecord {
@@ -1518,9 +1607,8 @@ mod hardening_state_machine_comprehensive_negative_tests {
                     timestamp: 0, // Timestamp rollover
                     trigger: TransitionTrigger::Escalation,
                     trace_id: "corrupted-rollover".to_string(),
-                }
+                },
             ],
-
             // Malformed trace IDs
             vec![TransitionRecord {
                 from_level: HardeningLevel::Baseline,
@@ -1529,14 +1617,13 @@ mod hardening_state_machine_comprehensive_negative_tests {
                 trigger: TransitionTrigger::Escalation,
                 trace_id: "\u{202e}malicious\u{0000}trace".to_string(), // Unicode attacks
             }],
-
             // Malformed governance trigger
             vec![TransitionRecord {
                 from_level: HardeningLevel::Enhanced,
                 to_level: HardeningLevel::Standard,
                 timestamp: 1000,
                 trigger: TransitionTrigger::GovernanceRollback {
-                    artifact_id: "".to_string(), // Empty artifact ID
+                    artifact_id: "".to_string(),                        // Empty artifact ID
                     approver_id: "\u{202e}evil@domain.com".to_string(), // Unicode attack
                 },
                 trace_id: "corrupted-governance".to_string(),
@@ -1549,24 +1636,15 @@ mod hardening_state_machine_comprehensive_negative_tests {
             // Replay should complete without panic even with corrupted data
             assert!(
                 replayed_sm.current_level() <= HardeningLevel::Critical,
-                "Corrupted log {} should not result in invalid level", i
+                "Corrupted log {} should not result in invalid level",
+                i
             );
 
-            // Transition count should match input (replay is forgiving)
-            assert_eq!(
-                replayed_sm.transition_count(),
-                corrupted_log.len(),
-                "Corrupted log {} should preserve transition count", i
+            assert!(
+                replayed_sm.transition_count() <= corrupted_log.len(),
+                "Corrupted log {} should not apply extra transitions",
+                i
             );
-
-            // Final level should match last transition target
-            if !corrupted_log.is_empty() {
-                assert_eq!(
-                    replayed_sm.current_level(),
-                    corrupted_log.last().unwrap().to_level,
-                    "Corrupted log {} should end at last transition target", i
-                );
-            }
         }
 
         // Test massive corrupted log that could cause memory issues
@@ -1582,9 +1660,44 @@ mod hardening_state_machine_comprehensive_negative_tests {
 
         let massive_replayed = HardeningStateMachine::replay_transitions(&massive_corrupted_log);
 
-        // Should handle massive log without memory exhaustion
+        // Should handle massive log without memory exhaustion while rejecting stale from-levels.
         assert_eq!(massive_replayed.current_level(), HardeningLevel::Critical);
         assert!(massive_replayed.transition_count() <= MAX_TRANSITION_LOG_ENTRIES);
+    }
+
+    #[test]
+    fn replay_valid_log_from_nonbaseline_initial_level() {
+        let log = vec![TransitionRecord {
+            from_level: HardeningLevel::Enhanced,
+            to_level: HardeningLevel::Standard,
+            timestamp: 2000,
+            trigger: TransitionTrigger::GovernanceRollback {
+                artifact_id: "GOV-VALID-REPLAY".to_string(),
+                approver_id: "admin@franken.io".to_string(),
+            },
+            trace_id: "valid-nonbaseline-replay".to_string(),
+        }];
+
+        let replayed = HardeningStateMachine::replay_transitions(&log);
+
+        assert_eq!(replayed.current_level(), HardeningLevel::Standard);
+        assert_eq!(replayed.transition_count(), 1);
+    }
+
+    #[test]
+    fn replay_rejects_downward_escalation_record() {
+        let log = vec![TransitionRecord {
+            from_level: HardeningLevel::Enhanced,
+            to_level: HardeningLevel::Standard,
+            timestamp: 2000,
+            trigger: TransitionTrigger::Escalation,
+            trace_id: "invalid-downward-escalation".to_string(),
+        }];
+
+        let replayed = HardeningStateMachine::replay_transitions(&log);
+
+        assert_eq!(replayed.current_level(), HardeningLevel::Enhanced);
+        assert_eq!(replayed.transition_count(), 0);
     }
 
     /// Negative test: Hardening level boundary and ordering attacks
@@ -1601,15 +1714,31 @@ mod hardening_state_machine_comprehensive_negative_tests {
 
                 if to_level <= from_level {
                     // Should reject same or lower level
-                    assert!(result.is_err(),
-                           "Escalation from {:?} to {:?} should be rejected", from_level, to_level);
+                    assert!(
+                        result.is_err(),
+                        "Escalation from {:?} to {:?} should be rejected",
+                        from_level,
+                        to_level
+                    );
                     assert_eq!(result.unwrap_err().code(), "HARDEN_ILLEGAL_REGRESSION");
-                    assert_eq!(sm.current_level(), from_level, "State should be unchanged after rejection");
+                    assert_eq!(
+                        sm.current_level(),
+                        from_level,
+                        "State should be unchanged after rejection"
+                    );
                 } else {
                     // Should accept higher level
-                    assert!(result.is_ok(),
-                           "Escalation from {:?} to {:?} should succeed", from_level, to_level);
-                    assert_eq!(sm.current_level(), to_level, "State should update on success");
+                    assert!(
+                        result.is_ok(),
+                        "Escalation from {:?} to {:?} should succeed",
+                        from_level,
+                        to_level
+                    );
+                    assert_eq!(
+                        sm.current_level(),
+                        to_level,
+                        "State should update on success"
+                    );
                     // Reset for next test
                     sm = HardeningStateMachine::with_level(from_level);
                 }
@@ -1629,19 +1758,40 @@ mod hardening_state_machine_comprehensive_negative_tests {
             let mut sm = HardeningStateMachine::with_level(from_level);
 
             for &to_level in all_levels {
-                let result = sm.governance_rollback(to_level, &valid_artifact, 2000, "trace-rollback-boundary");
+                let result = sm.governance_rollback(
+                    to_level,
+                    &valid_artifact,
+                    2000,
+                    "trace-rollback-boundary",
+                );
 
                 if to_level >= from_level {
                     // Should reject same or higher level for rollback
-                    assert!(result.is_err(),
-                           "Rollback from {:?} to {:?} should be rejected", from_level, to_level);
+                    assert!(
+                        result.is_err(),
+                        "Rollback from {:?} to {:?} should be rejected",
+                        from_level,
+                        to_level
+                    );
                     assert_eq!(result.unwrap_err().code(), "HARDEN_INVALID_ROLLBACK_TARGET");
-                    assert_eq!(sm.current_level(), from_level, "State should be unchanged after rollback rejection");
+                    assert_eq!(
+                        sm.current_level(),
+                        from_level,
+                        "State should be unchanged after rollback rejection"
+                    );
                 } else {
                     // Should accept lower level for rollback
-                    assert!(result.is_ok(),
-                           "Rollback from {:?} to {:?} should succeed", from_level, to_level);
-                    assert_eq!(sm.current_level(), to_level, "State should update on rollback success");
+                    assert!(
+                        result.is_ok(),
+                        "Rollback from {:?} to {:?} should succeed",
+                        from_level,
+                        to_level
+                    );
+                    assert_eq!(
+                        sm.current_level(),
+                        to_level,
+                        "State should update on rollback success"
+                    );
                     // Reset for next test
                     sm = HardeningStateMachine::with_level(from_level);
                 }
@@ -1651,24 +1801,32 @@ mod hardening_state_machine_comprehensive_negative_tests {
         // Test rank consistency
         for level in all_levels {
             assert!(level.rank() <= 4, "Rank should be within expected range");
-            assert_eq!(level.rank() as usize, *level as usize, "Rank should match enum discriminant");
+            assert_eq!(
+                level.rank() as usize,
+                *level as usize,
+                "Rank should match enum discriminant"
+            );
         }
 
         // Test level parsing attacks
         let malicious_labels = vec![
-            "critical\0", // Null byte
-            "CRITICAL", // Case variant
-            " critical", // Leading space
-            "critical ", // Trailing space
-            "critical\n", // Newline
+            "critical\0",            // Null byte
+            "CRITICAL",              // Case variant
+            " critical",             // Leading space
+            "critical ",             // Trailing space
+            "critical\n",            // Newline
             "baseline\x00injection", // Null injection
-            "\u{202e}critical", // Unicode direction override
-            "maximum\u{200b}", // Zero-width space
+            "\u{202e}critical",      // Unicode direction override
+            "maximum\u{200b}",       // Zero-width space
         ];
 
         for malicious_label in malicious_labels {
             let parsed = HardeningLevel::from_label(&malicious_label);
-            assert!(parsed.is_none(), "Malicious label '{}' should not parse", malicious_label);
+            assert!(
+                parsed.is_none(),
+                "Malicious label '{}' should not parse",
+                malicious_label
+            );
         }
     }
 }
