@@ -231,7 +231,12 @@ impl GaussianSuffStats {
             *self = Self::new();
         }
         // Hardening: use saturating arithmetic for counter operations
-        self.n = self.n.saturating_add(1.0);
+        self.n = if self.n >= f64::MAX - 1.0 {
+            f64::MAX
+        } else {
+            let result = self.n + 1.0;
+            if !result.is_finite() { f64::MAX } else { result }
+        };
         let delta = x - self.mean;
         self.mean = self.mean + (delta / self.n);
         if !self.mean.is_finite() {
@@ -411,14 +416,19 @@ impl PoissonSuffStats {
     }
 
     fn update(&mut self, x: f64) {
-        if !x.is_finite() || x < 0.0 || x.fract() != 0.0 || x >= u64::MAX as f64 {
+        if !x.is_finite() || x < 0.0 || x.fract() != 0.0 || x >= (1u64 << 53) as f64 {
             return;
         }
         if !self.n.is_finite() || self.n < 0.0 || !self.sum.is_finite() || self.sum < 0.0 {
             *self = Self::new();
         }
         // Hardening: use saturating arithmetic for counter operations
-        self.n = self.n.saturating_add(1.0);
+        self.n = if self.n >= f64::MAX - 1.0 {
+            f64::MAX
+        } else {
+            let result = self.n + 1.0;
+            if !result.is_finite() { f64::MAX } else { result }
+        };
         // Hardening: use safe addition with overflow detection
         let old_sum = self.sum;
         self.sum = old_sum + x;
@@ -433,7 +443,7 @@ impl PoissonSuffStats {
 impl PoissonModel {
     /// Negative binomial predictive probability.
     pub(crate) fn predictive_prob(&self, stats: &PoissonSuffStats, x: f64) -> f64 {
-        if x < 0.0 || !x.is_finite() || x.fract() != 0.0 || x >= u64::MAX as f64 {
+        if x < 0.0 || !x.is_finite() || x.fract() != 0.0 || x >= (1u64 << 53) as f64 {
             return 0.0;
         }
         if !self.alpha0.is_finite()
@@ -477,14 +487,19 @@ fn neg_binomial_pmf(k: u64, r: f64, p: f64) -> f64 {
     if !p.is_finite() || !r.is_finite() || p <= 0.0 || p >= 1.0 || r <= 0.0 {
         return 1e-300;
     }
-    let log_coeff = ln_gamma(k as f64 + r) - ln_gamma(k as f64 + 1.0) - ln_gamma(r);
-    let log_prob = r * p.ln() + (k as f64) * (1.0 - p).ln();
+    let k_f64 = if k <= (1u64 << 53) {
+        k as f64
+    } else {
+        (1u64 << 53) as f64 // Cap to prevent precision loss
+    };
+    let log_coeff = ln_gamma(k_f64 + r) - ln_gamma(k_f64 + 1.0) - ln_gamma(r);
+    let log_prob = r * p.ln() + k_f64 * (1.0 - p).ln();
     let result = (log_coeff + log_prob).exp().max(1e-300);
     if result.is_finite() { result } else { 1e-300 }
 }
 
 fn poisson_count(x: f64) -> Option<f64> {
-    if !x.is_finite() || x < 0.0 || x.fract() != 0.0 || x >= u64::MAX as f64 {
+    if !x.is_finite() || x < 0.0 || x.fract() != 0.0 || x >= (1u64 << 53) as f64 {
         None
     } else {
         Some(x)
@@ -522,12 +537,14 @@ impl CategoricalSuffStats {
     fn update(&mut self, category: usize) {
         if category < self.counts.len() {
             // Hardening: use safe counter increment with overflow detection
-            let old_count = if self.counts[category].is_finite() && self.counts[category] >= 0.0 {
-                self.counts[category]
+            // Hardening: use saturating arithmetic for counter operations
+            let old_count = self.counts[category];
+            self.counts[category] = if old_count >= f64::MAX - 1.0 {
+                f64::MAX
             } else {
-                0.0
+                let result = old_count + 1.0;
+                if !result.is_finite() { f64::MAX } else { result }
             };
-            self.counts[category] = old_count.saturating_add(1.0);
         }
     }
 }
@@ -865,8 +882,15 @@ impl BocpdDetector {
             self.current_regime_sum = if x >= 0.0 { f64::MAX } else { -f64::MAX };
         }
 
-        // Hardening: use saturating arithmetic for counter operations
-        self.current_regime_count = self.current_regime_count.saturating_add(1.0);
+        let old_count = self.current_regime_count;
+        self.current_regime_count = if old_count >= f64::MAX - 1.0 {
+            f64::MAX // Saturated
+        } else {
+            old_count + 1.0
+        };
+        if !self.current_regime_count.is_finite() {
+            self.current_regime_count = f64::MAX;
+        }
 
         // Step 5: Check for changepoint.
         let cp_prob = self.run_length_probs[0];
@@ -3459,8 +3483,12 @@ mod tests {
         for config in extreme_configs {
             // All invalid configs should be rejected by validation
             let result = config.validate();
-            assert!(result.is_err(), "Config should be invalid: hazard_lambda={}, threshold={}",
-                    config.hazard_lambda, config.changepoint_threshold);
+            assert!(
+                result.is_err(),
+                "Config should be invalid: hazard_lambda={}, threshold={}",
+                config.hazard_lambda,
+                config.changepoint_threshold
+            );
 
             match result.unwrap_err() {
                 BocpdError::InvalidConfig(msg) => {
@@ -3505,13 +3533,16 @@ mod tests {
             let result = config.validate();
 
             // Zero min/max run length and min > max should be invalid
-            if config.min_run_length == 0 || config.max_run_length == 0 || config.min_run_length > config.max_run_length {
+            if config.min_run_length == 0
+                || config.max_run_length == 0
+                || config.min_run_length > config.max_run_length
+            {
                 assert!(result.is_err(), "Should reject invalid run length config");
             } else {
                 // Other boundary cases might be valid
                 match result {
-                    Ok(_) => {}, // Valid configuration
-                    Err(_) => {}, // Implementation may reject extreme values
+                    Ok(_) => {}  // Valid configuration
+                    Err(_) => {} // Implementation may reject extreme values
                 }
             }
         }
@@ -3521,13 +3552,15 @@ mod tests {
     fn negative_hazard_function_with_invalid_parameters() {
         // Test HazardFunction evaluation with invalid parameters
         let invalid_hazards = vec![
-            HazardFunction::Constant { lambda: 0.0 }, // Zero lambda
-            HazardFunction::Constant { lambda: -1.0 }, // Negative lambda
+            HazardFunction::Constant { lambda: 0.0 },      // Zero lambda
+            HazardFunction::Constant { lambda: -1.0 },     // Negative lambda
             HazardFunction::Constant { lambda: f64::NAN }, // NaN lambda
-            HazardFunction::Constant { lambda: f64::INFINITY }, // Infinite lambda
-            HazardFunction::Geometric { p: -0.5 }, // Negative probability
-            HazardFunction::Geometric { p: 1.5 }, // Probability > 1.0
-            HazardFunction::Geometric { p: f64::NAN }, // NaN probability
+            HazardFunction::Constant {
+                lambda: f64::INFINITY,
+            }, // Infinite lambda
+            HazardFunction::Geometric { p: -0.5 },         // Negative probability
+            HazardFunction::Geometric { p: 1.5 },          // Probability > 1.0
+            HazardFunction::Geometric { p: f64::NAN },     // NaN probability
             HazardFunction::Geometric { p: f64::INFINITY }, // Infinite probability
         ];
 
@@ -3538,7 +3571,10 @@ mod tests {
             let rate3 = hazard.evaluate(usize::MAX);
 
             for rate in [rate1, rate2, rate3] {
-                assert!(rate.is_finite(), "Hazard rate should be finite for invalid parameters");
+                assert!(
+                    rate.is_finite(),
+                    "Hazard rate should be finite for invalid parameters"
+                );
                 assert!(rate >= 0.0, "Hazard rate should be non-negative");
                 assert!(rate <= 1.0, "Hazard rate should not exceed 1.0");
             }
@@ -3546,18 +3582,23 @@ mod tests {
 
         // Test with valid edge case parameters
         let valid_edge_hazards = vec![
-            HazardFunction::Constant { lambda: f64::EPSILON }, // Very small lambda
+            HazardFunction::Constant {
+                lambda: f64::EPSILON,
+            }, // Very small lambda
             HazardFunction::Constant { lambda: 1e-100 }, // Extremely small lambda
-            HazardFunction::Constant { lambda: 1e100 }, // Very large lambda
-            HazardFunction::Geometric { p: 0.0 }, // Zero probability
-            HazardFunction::Geometric { p: 1.0 }, // Maximum probability
+            HazardFunction::Constant { lambda: 1e100 },  // Very large lambda
+            HazardFunction::Geometric { p: 0.0 },        // Zero probability
+            HazardFunction::Geometric { p: 1.0 },        // Maximum probability
             HazardFunction::Geometric { p: f64::EPSILON }, // Very small probability
         ];
 
         for hazard in valid_edge_hazards {
             let rate = hazard.evaluate(50);
             assert!(rate.is_finite(), "Valid hazard should produce finite rate");
-            assert!(rate >= 0.0 && rate <= 1.0, "Valid hazard rate should be in [0,1]");
+            assert!(
+                rate >= 0.0 && rate <= 1.0,
+                "Valid hazard rate should be in [0,1]"
+            );
         }
     }
 
@@ -3713,10 +3754,10 @@ mod tests {
     fn negative_observation_model_type_safety_and_edge_cases() {
         // Test ObservationModel variants with edge cases
         let gaussian_model = GaussianModel {
-            mu0: 1e100, // Very large prior mean
+            mu0: 1e100,     // Very large prior mean
             kappa0: 1e-100, // Very small precision
-            alpha0: 1e100, // Very large shape
-            beta0: 1e-100, // Very small rate
+            alpha0: 1e100,  // Very large shape
+            beta0: 1e-100,  // Very small rate
         };
 
         let extreme_observation = ObservationModel::Gaussian(gaussian_model);
@@ -3758,8 +3799,16 @@ mod tests {
 
         for constant in &event_constants {
             assert!(!constant.is_empty());
-            assert!(constant.starts_with("BCP-"), "Event constant should start with BCP-: {}", constant);
-            assert!(constant.is_ascii(), "Event constant should be ASCII: {}", constant);
+            assert!(
+                constant.starts_with("BCP-"),
+                "Event constant should start with BCP-: {}",
+                constant
+            );
+            assert!(
+                constant.is_ascii(),
+                "Event constant should be ASCII: {}",
+                constant
+            );
         }
 
         // Test error constants
@@ -3771,8 +3820,16 @@ mod tests {
 
         for constant in &error_constants {
             assert!(!constant.is_empty());
-            assert!(constant.starts_with("ERR_BCP_"), "Error constant should start with ERR_BCP_: {}", constant);
-            assert!(constant.is_ascii(), "Error constant should be ASCII: {}", constant);
+            assert!(
+                constant.starts_with("ERR_BCP_"),
+                "Error constant should start with ERR_BCP_: {}",
+                constant
+            );
+            assert!(
+                constant.is_ascii(),
+                "Error constant should be ASCII: {}",
+                constant
+            );
         }
 
         // Test invariant constants
@@ -3785,8 +3842,16 @@ mod tests {
 
         for constant in &invariant_constants {
             assert!(!constant.is_empty());
-            assert!(constant.starts_with("INV-BCP-"), "Invariant should start with INV-BCP-: {}", constant);
-            assert!(constant.is_ascii(), "Invariant constant should be ASCII: {}", constant);
+            assert!(
+                constant.starts_with("INV-BCP-"),
+                "Invariant should start with INV-BCP-: {}",
+                constant
+            );
+            assert!(
+                constant.is_ascii(),
+                "Invariant constant should be ASCII: {}",
+                constant
+            );
         }
 
         // Test capacity constants
@@ -3804,7 +3869,7 @@ mod tests {
             (f64::EPSILON, "epsilon"),
             (f64::MIN_POSITIVE, "min_positive"),
             (PI, "pi"),
-            (1.0 / 0.0, "positive_infinity"), // This creates +inf
+            (1.0 / 0.0, "positive_infinity"),  // This creates +inf
             (-1.0 / 0.0, "negative_infinity"), // This creates -inf
         ];
 
@@ -3813,8 +3878,12 @@ mod tests {
             if value.is_finite() && value > 0.0 {
                 let hazard = HazardFunction::Constant { lambda: value };
                 let rate = hazard.evaluate(10);
-                assert!(rate.is_finite() && rate >= 0.0,
-                        "Hazard rate should be valid for {}: {}", description, rate);
+                assert!(
+                    rate.is_finite() && rate >= 0.0,
+                    "Hazard rate should be valid for {}: {}",
+                    description,
+                    rate
+                );
             }
 
             // Test as probability bound
@@ -3823,16 +3892,19 @@ mod tests {
                     changepoint_threshold: value,
                     ..Default::default()
                 };
-                assert!(config.validate().is_ok(),
-                        "Valid threshold should be accepted: {}", description);
+                assert!(
+                    config.validate().is_ok(),
+                    "Valid threshold should be accepted: {}",
+                    description
+                );
             }
         }
 
         // Test problematic mathematical operations that could occur in BOCPD
         let problematic_ops = vec![
-            (0.0 / 0.0, "zero_div_zero"), // NaN
+            (0.0 / 0.0, "zero_div_zero"),                     // NaN
             (f64::INFINITY - f64::INFINITY, "inf_minus_inf"), // NaN
-            (0.0 * f64::INFINITY, "zero_times_inf"), // NaN
+            (0.0 * f64::INFINITY, "zero_times_inf"),          // NaN
         ];
 
         for (result, description) in problematic_ops {
@@ -3842,8 +3914,11 @@ mod tests {
                     hazard_lambda: result,
                     ..Default::default()
                 };
-                assert!(config.validate().is_err(),
-                        "NaN hazard should be rejected: {}", description);
+                assert!(
+                    config.validate().is_err(),
+                    "NaN hazard should be rejected: {}",
+                    description
+                );
             }
         }
     }
@@ -3903,7 +3978,11 @@ mod tests {
         let mut correlator = MultiStreamCorrelator::new(60);
         let mut invalid_retained = valid_shift("invalid-retained");
         invalid_retained.confidence = f64::NAN;
-        push_bounded(&mut correlator.recent_shifts, invalid_retained, MAX_RECENT_SHIFTS);
+        push_bounded(
+            &mut correlator.recent_shifts,
+            invalid_retained,
+            MAX_RECENT_SHIFTS,
+        );
 
         let correlated = correlator.record_shift(valid_shift("fresh-stream"));
 
@@ -4029,7 +4108,11 @@ mod tests {
     #[test]
     fn negative_invalid_current_shift_does_not_prune_existing_history() {
         let mut correlator = MultiStreamCorrelator::new(0);
-        assert!(correlator.record_shift(valid_shift("retained-stream")).is_empty());
+        assert!(
+            correlator
+                .record_shift(valid_shift("retained-stream"))
+                .is_empty()
+        );
         let mut invalid = valid_shift("invalid-current");
         invalid.confidence = f64::INFINITY;
         invalid.timestamp = 10_000;
@@ -4126,7 +4209,9 @@ mod tests {
 
     #[test]
     fn negative_geometric_hazard_with_subnormal_probability_returns_safe_zero() {
-        let hazard = HazardFunction::Geometric { p: f64::MIN_POSITIVE / 2.0 };
+        let hazard = HazardFunction::Geometric {
+            p: f64::MIN_POSITIVE / 2.0,
+        };
 
         // Should handle subnormal values gracefully
         assert_eq!(hazard.evaluate(100), 0.0);
@@ -4268,21 +4353,31 @@ mod tests {
 
             // Check if memory usage is becoming problematic
             if i % 1000 == 0 {
-                assert!(correlator.recent_shifts.len() <= 5000,
-                       "recent_shifts should be bounded to prevent memory exhaustion: {} items",
-                       correlator.recent_shifts.len());
+                assert!(
+                    correlator.recent_shifts.len() <= 5000,
+                    "recent_shifts should be bounded to prevent memory exhaustion: {} items",
+                    correlator.recent_shifts.len()
+                );
             }
         }
 
         // Final verification - should not have unbounded growth
-        assert!(correlator.recent_shifts.len() <= 5000,
-               "recent_shifts grew too large: {} items", correlator.recent_shifts.len());
+        assert!(
+            correlator.recent_shifts.len() <= 5000,
+            "recent_shifts grew too large: {} items",
+            correlator.recent_shifts.len()
+        );
 
         // Verify oldest entries are evicted when capacity is exceeded
         if correlator.recent_shifts.len() > 1000 {
             // Recent entries should still be present
-            assert!(correlator.recent_shifts.iter().any(|s| s.stream_name.contains("attack_stream_9")),
-                   "Recent entries should be retained");
+            assert!(
+                correlator
+                    .recent_shifts
+                    .iter()
+                    .any(|s| s.stream_name.contains("attack_stream_9")),
+                "Recent entries should be retained"
+            );
         }
     }
 
@@ -4306,8 +4401,13 @@ mod tests {
 
             let result = config.validate();
             match (should_fail, result) {
-                (true, Ok(_)) => panic!("Boundary attack should fail ({}): {}", description, lambda),
-                (false, Err(e)) => panic!("Valid boundary should pass ({}): {} - {}", description, lambda, e),
+                (true, Ok(_)) => {
+                    panic!("Boundary attack should fail ({}): {}", description, lambda)
+                }
+                (false, Err(e)) => panic!(
+                    "Valid boundary should pass ({}): {} - {}",
+                    description, lambda, e
+                ),
                 _ => {} // Correct behavior
             }
         }
@@ -4328,8 +4428,14 @@ mod tests {
 
             let result = config.validate();
             match (should_fail, result) {
-                (true, Ok(_)) => panic!("Invalid config should fail ({}): min={} max={}", description, min_len, max_len),
-                (false, Err(e)) => panic!("Valid config should pass ({}): min={} max={} - {}", description, min_len, max_len, e),
+                (true, Ok(_)) => panic!(
+                    "Invalid config should fail ({}): min={} max={}",
+                    description, min_len, max_len
+                ),
+                (false, Err(e)) => panic!(
+                    "Valid config should pass ({}): min={} max={} - {}",
+                    description, min_len, max_len, e
+                ),
                 _ => {} // Correct behavior
             }
         }
@@ -4373,7 +4479,11 @@ mod tests {
             let prob = malicious_gaussian.predictive_prob(&stats, 1.0);
             if !prob.is_finite() {
                 // Expected for non-finite inputs
-                assert!(prob.is_nan() || prob.is_infinite(), "Should propagate non-finite values ({})", attack_type);
+                assert!(
+                    prob.is_nan() || prob.is_infinite(),
+                    "Should propagate non-finite values ({})",
+                    attack_type
+                );
             }
 
             // Test PoissonModel with malicious parameters
@@ -4382,13 +4492,19 @@ mod tests {
                 beta0: malicious_value.abs(),
             };
 
-            let poisson_stats = PoissonSuffStats { sum: 10.0, count: 5 };
+            let poisson_stats = PoissonSuffStats {
+                sum: 10.0,
+                count: 5,
+            };
             let poisson_prob = malicious_poisson.predictive_prob(&poisson_stats, 3);
 
             if !malicious_value.is_finite() {
                 // Should handle non-finite parameters
-                assert!(!poisson_prob.is_finite() || poisson_prob == 1e-300,
-                       "Should handle non-finite Poisson parameters ({})", attack_type);
+                assert!(
+                    !poisson_prob.is_finite() || poisson_prob == 1e-300,
+                    "Should handle non-finite Poisson parameters ({})",
+                    attack_type
+                );
             }
 
             // Test CategoricalModel with malicious alpha0
@@ -4405,8 +4521,12 @@ mod tests {
                 let cat_prob = malicious_categorical.predictive_prob(&cat_stats, 0);
 
                 // Should produce bounded result
-                assert!(cat_prob >= 0.0 && (cat_prob <= 1.0 || cat_prob == 1e-300),
-                       "Categorical probability should be bounded ({}): {}", attack_type, cat_prob);
+                assert!(
+                    cat_prob >= 0.0 && (cat_prob <= 1.0 || cat_prob == 1e-300),
+                    "Categorical probability should be bounded ({}): {}",
+                    attack_type,
+                    cat_prob
+                );
             }
         }
     }
@@ -4439,38 +4559,58 @@ mod tests {
             match result {
                 Ok(Some(shift)) => {
                     // Verify shift properties are bounded
-                    assert!(shift.confidence >= 0.0 && shift.confidence <= 1.0,
-                           "Shift confidence should be bounded: {}", shift.confidence);
-                    assert!(!shift.stream_name.is_empty(), "Stream name should not be empty");
-                    assert!(shift.strength >= 0.0, "Shift strength should be non-negative");
-                },
+                    assert!(
+                        shift.confidence >= 0.0 && shift.confidence <= 1.0,
+                        "Shift confidence should be bounded: {}",
+                        shift.confidence
+                    );
+                    assert!(
+                        !shift.stream_name.is_empty(),
+                        "Stream name should not be empty"
+                    );
+                    assert!(
+                        shift.strength >= 0.0,
+                        "Shift strength should be non-negative"
+                    );
+                }
                 Ok(None) => {
                     // No shift detected - acceptable
-                },
+                }
                 Err(e) => {
                     // Should handle errors gracefully
-                    assert!(e.to_string().len() < 1000, "Error message should be bounded");
+                    assert!(
+                        e.to_string().len() < 1000,
+                        "Error message should be bounded"
+                    );
                 }
             }
 
             // Check memory usage periodically
             if i % 100 == 0 {
                 // Posterior should be bounded by max_run_length
-                assert!(bocpd.posterior.len() <= config.max_run_length + 10,
-                       "Posterior size should be bounded: {} vs max {}",
-                       bocpd.posterior.len(), config.max_run_length);
+                assert!(
+                    bocpd.posterior.len() <= config.max_run_length + 10,
+                    "Posterior size should be bounded: {} vs max {}",
+                    bocpd.posterior.len(),
+                    config.max_run_length
+                );
             }
         }
 
         // Final state verification
-        assert!(bocpd.posterior.len() <= config.max_run_length + 10,
-               "Final posterior size should be bounded");
+        assert!(
+            bocpd.posterior.len() <= config.max_run_length + 10,
+            "Final posterior size should be bounded"
+        );
 
         // Posterior probabilities should sum to approximately 1.0
         let posterior_sum: f64 = bocpd.posterior.iter().sum();
         if posterior_sum.is_finite() {
-            assert!(posterior_sum >= 0.9 && posterior_sum <= 1.1,
-                   "Posterior should approximately sum to 1.0: {}", posterior_sum);
+            assert!(
+                posterior_sum >= 0.9 && posterior_sum <= 1.1,
+                "Posterior should approximately sum to 1.0: {}",
+                posterior_sum
+            );
         }
     }
 
@@ -4521,21 +4661,33 @@ mod tests {
             // Verify correlation logic respects window boundaries
             if timestamp <= base_time + window_secs {
                 // Should potentially correlate within window
-                assert!(correlated.len() <= correlator.recent_shifts.len(),
-                       "Correlated shifts should not exceed recent shifts ({})", description);
+                assert!(
+                    correlated.len() <= correlator.recent_shifts.len(),
+                    "Correlated shifts should not exceed recent shifts ({})",
+                    description
+                );
             } else {
                 // Should not correlate outside window
                 // (correlation behavior depends on implementation details)
             }
 
             // Verify state consistency
-            assert!(correlator.recent_shifts.len() <= 1000,
-                   "Recent shifts should be bounded ({}): {}", description, correlator.recent_shifts.len());
+            assert!(
+                correlator.recent_shifts.len() <= 1000,
+                "Recent shifts should be bounded ({}): {}",
+                description,
+                correlator.recent_shifts.len()
+            );
 
             for shift in &correlator.recent_shifts {
-                assert!(!shift.stream_name.is_empty(), "Stream names should not be empty");
-                assert!(shift.confidence >= 0.0 && shift.confidence <= 1.0,
-                       "Confidence should be bounded");
+                assert!(
+                    !shift.stream_name.is_empty(),
+                    "Stream names should not be empty"
+                );
+                assert!(
+                    shift.confidence >= 0.0 && shift.confidence <= 1.0,
+                    "Confidence should be bounded"
+                );
                 assert!(shift.strength >= 0.0, "Strength should be non-negative");
             }
         }

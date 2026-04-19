@@ -27,9 +27,13 @@ const MAX_QUEUE_ENTRIES: usize = 4096;
 const MAX_OBLIGATION_IDS: usize = 4096;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
-        items.drain(0..overflow);
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow.min(items.len()));
     }
     items.push(item);
 }
@@ -800,7 +804,7 @@ impl TwoPhaseFlow {
         // Check deadlines
         for id in &self.obligation_ids {
             if let Some(o) = self.ledger.get(id)
-                && now_ms >= o.deadline
+                && now_ms > o.deadline
             {
                 return PrepareResult::Failed {
                     flow_id: self.flow_id.clone(),
@@ -2116,7 +2120,7 @@ mod tests {
             Ok(proof) => {
                 // Proof should handle large datasets without memory exhaustion
                 assert!(!proof.proof_id.is_empty());
-                assert!(proof.total_obligations <= obligation_ids.len() as u32);
+                assert!(proof.total_obligations <= u32::try_from(obligation_ids.len()).unwrap_or(u32::MAX));
                 assert!(proof.fulfilled_count <= proof.total_obligations);
                 assert!(proof.rejected_count <= proof.total_obligations);
                 assert!(proof.cancelled_count <= proof.total_obligations);

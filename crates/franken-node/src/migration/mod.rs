@@ -16,6 +16,16 @@ pub mod bpet_migration_gate;
 pub mod dgis_migration_gate;
 
 const MAX_FINDINGS_PER_CATEGORY: usize = 16;
+const MAX_PROJECT_FILES: usize = 100_000;
+const MAX_PENDING_DIRS: usize = 10_000;
+const MAX_TOTAL_FINDINGS: usize = 1_000;
+
+/// Push item to vector with capacity bounds checking to prevent memory exhaustion.
+fn push_bounded<T>(vec: &mut Vec<T>, item: T, max_cap: usize) {
+    if vec.len() < max_cap {
+        vec.push(item);
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuditOutputFormat {
@@ -317,13 +327,13 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
             Ok(content) => content,
             Err(err) => {
                 manual_review_items = manual_review_items.saturating_add(1);
-                entries.push(MigrationRewriteEntry {
+                push_bounded(&mut entries, MigrationRewriteEntry {
                     id: String::new(),
                     path: Some(relative_path),
                     action: MigrationRewriteAction::ManifestReadError,
                     detail: format!("unable to read package manifest: {err}"),
                     applied: false,
-                });
+                }, MAX_TOTAL_FINDINGS);
                 continue;
             }
         };
@@ -332,26 +342,26 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
             Ok(value) => value,
             Err(err) => {
                 manual_review_items = manual_review_items.saturating_add(1);
-                entries.push(MigrationRewriteEntry {
+                push_bounded(&mut entries, MigrationRewriteEntry {
                     id: String::new(),
                     path: Some(relative_path),
                     action: MigrationRewriteAction::ManifestParseError,
                     detail: format!("package manifest JSON parse failed: {err}"),
                     applied: false,
-                });
+                }, MAX_TOTAL_FINDINGS);
                 continue;
             }
         };
 
         for script_name in collect_risky_script_names(&manifest) {
             manual_review_items = manual_review_items.saturating_add(1);
-            entries.push(MigrationRewriteEntry {
+            push_bounded(&mut entries, MigrationRewriteEntry {
                 id: String::new(),
                 path: Some(relative_path.clone()),
                 action: MigrationRewriteAction::ManualScriptReview,
                 detail: format!("script `{script_name}` requires manual hardening review"),
                 applied: false,
-            });
+            }, MAX_TOTAL_FINDINGS);
         }
 
         if ensure_node_engine_pin(&mut manifest) {
@@ -375,31 +385,31 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
                 rewrites_applied = rewrites_applied.saturating_add(1);
             }
 
-            entries.push(MigrationRewriteEntry {
+            push_bounded(&mut entries, MigrationRewriteEntry {
                 id: String::new(),
                 path: Some(relative_path.clone()),
                 action: MigrationRewriteAction::PinNodeEngine,
                 detail: "set engines.node to >=20 <23 to reduce migration runtime drift"
                     .to_string(),
                 applied: apply,
-            });
-            rollback_entries.push(MigrationRollbackEntry {
+            }, MAX_TOTAL_FINDINGS);
+            push_bounded(&mut rollback_entries, MigrationRollbackEntry {
                 path: relative_path,
                 original_content: raw,
                 rewritten_content: rewritten,
-            });
+            }, MAX_TOTAL_FINDINGS);
         }
     }
 
     if package_manifests_scanned == 0 {
         manual_review_items = manual_review_items.saturating_add(1);
-        entries.push(MigrationRewriteEntry {
+        push_bounded(&mut entries, MigrationRewriteEntry {
             id: String::new(),
             path: None,
             action: MigrationRewriteAction::NoPackageManifest,
             detail: "no package.json files found; nothing to rewrite".to_string(),
             applied: false,
-        });
+        }, MAX_TOTAL_FINDINGS);
     }
 
     entries.sort_by(|left, right| {
@@ -409,7 +419,7 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
             .then_with(|| left.detail.cmp(&right.detail))
     });
     for (index, entry) in entries.iter_mut().enumerate() {
-        entry.id = format!("mig-rewrite-{:03}", index + 1);
+        entry.id = format!("mig-rewrite-{:03}", index.saturating_add(1));
     }
 
     Ok(MigrationRewriteReport {
@@ -635,9 +645,9 @@ fn collect_project_files(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
                 if should_skip_dir(&path) {
                     continue;
                 }
-                pending.push(path);
+                push_bounded(&mut pending, path, MAX_PENDING_DIRS);
             } else if file_type.is_file() {
-                files.push(path);
+                push_bounded(&mut files, path, MAX_PROJECT_FILES);
             }
         }
     }
@@ -679,7 +689,7 @@ fn inspect_package_manifest(
     let raw = match std::fs::read_to_string(manifest_path) {
         Ok(content) => content,
         Err(err) => {
-            findings.push(MigrationAuditFinding {
+            push_bounded(findings, MigrationAuditFinding {
                 id: String::new(),
                 category: MigrationCategory::Project,
                 severity: MigrationSeverity::Medium,
@@ -689,7 +699,7 @@ fn inspect_package_manifest(
                     "Ensure package.json is readable so migration audit can classify dependencies."
                         .to_string(),
                 ),
-            });
+            }, MAX_TOTAL_FINDINGS);
             return;
         }
     };
@@ -697,7 +707,7 @@ fn inspect_package_manifest(
     let parsed: serde_json::Value = match serde_json::from_str(&raw) {
         Ok(value) => value,
         Err(err) => {
-            findings.push(MigrationAuditFinding {
+            push_bounded(findings, MigrationAuditFinding {
                 id: String::new(),
                 category: MigrationCategory::Project,
                 severity: MigrationSeverity::High,
@@ -707,7 +717,7 @@ fn inspect_package_manifest(
                     "Fix package.json syntax before running migration rewrite/validate."
                         .to_string(),
                 ),
-            });
+            }, MAX_TOTAL_FINDINGS);
             return;
         }
     };
@@ -771,14 +781,14 @@ fn push_capped_script_finding(
         ),
     };
 
-    findings.push(MigrationAuditFinding {
+    push_bounded(findings, MigrationAuditFinding {
         id: String::new(),
         category,
         severity,
         message,
         path: Some(relative_path.to_string()),
         recommendation: Some(recommendation),
-    });
+    }, MAX_TOTAL_FINDINGS);
 }
 
 fn is_risky_script(script_name: &str, command: &str) -> bool {
@@ -847,7 +857,7 @@ fn append_summary_findings(
     findings: &mut Vec<MigrationAuditFinding>,
 ) {
     if summary.package_manifests == 0 {
-        findings.push(MigrationAuditFinding {
+        push_bounded(findings, MigrationAuditFinding {
             id: String::new(),
             category: MigrationCategory::Project,
             severity: MigrationSeverity::High,
@@ -857,20 +867,20 @@ fn append_summary_findings(
                 "Initialize a package manifest before running migrate rewrite/validate."
                     .to_string(),
             ),
-        });
+        }, MAX_TOTAL_FINDINGS);
     } else {
-        findings.push(MigrationAuditFinding {
+        push_bounded(findings, MigrationAuditFinding {
             id: String::new(),
             category: MigrationCategory::Project,
             severity: MigrationSeverity::Info,
             message: format!("detected {} package manifest(s)", summary.package_manifests),
             path: None,
             recommendation: None,
-        });
+        }, MAX_TOTAL_FINDINGS);
     }
 
     if summary.lockfiles.is_empty() {
-        findings.push(MigrationAuditFinding {
+        push_bounded(findings, MigrationAuditFinding {
             id: String::new(),
             category: MigrationCategory::Dependencies,
             severity: MigrationSeverity::Medium,
@@ -880,20 +890,20 @@ fn append_summary_findings(
                 "Generate and commit a lockfile (package-lock.json, pnpm-lock.yaml, yarn.lock, or bun.lockb) before migration."
                     .to_string(),
             ),
-        });
+        }, MAX_TOTAL_FINDINGS);
     } else {
-        findings.push(MigrationAuditFinding {
+        push_bounded(findings, MigrationAuditFinding {
             id: String::new(),
             category: MigrationCategory::Dependencies,
             severity: MigrationSeverity::Info,
             message: format!("detected {} lockfile(s)", summary.lockfiles.len()),
             path: None,
             recommendation: None,
-        });
+        }, MAX_TOTAL_FINDINGS);
     }
 
     if summary.js_files == 0 && summary.ts_files == 0 {
-        findings.push(MigrationAuditFinding {
+        push_bounded(findings, MigrationAuditFinding {
             id: String::new(),
             category: MigrationCategory::Runtime,
             severity: MigrationSeverity::Low,
@@ -903,9 +913,9 @@ fn append_summary_findings(
                 "Confirm the migration target path points to the intended JS/TS project."
                     .to_string(),
             ),
-        });
+        }, MAX_TOTAL_FINDINGS);
     } else if summary.js_files > 0 && summary.ts_files == 0 {
-        findings.push(MigrationAuditFinding {
+        push_bounded(findings, MigrationAuditFinding {
             id: String::new(),
             category: MigrationCategory::Runtime,
             severity: MigrationSeverity::Medium,
@@ -918,9 +928,9 @@ fn append_summary_findings(
                 "Prioritize lockstep validation coverage because runtime assumptions are untyped."
                     .to_string(),
             ),
-        });
+        }, MAX_TOTAL_FINDINGS);
     } else {
-        findings.push(MigrationAuditFinding {
+        push_bounded(findings, MigrationAuditFinding {
             id: String::new(),
             category: MigrationCategory::Runtime,
             severity: MigrationSeverity::Info,
@@ -930,11 +940,11 @@ fn append_summary_findings(
             ),
             path: None,
             recommendation: None,
-        });
+        }, MAX_TOTAL_FINDINGS);
     }
 
     if summary.risky_scripts > 0 {
-        findings.push(MigrationAuditFinding {
+        push_bounded(findings, MigrationAuditFinding {
             id: String::new(),
             category: MigrationCategory::Scripts,
             severity: MigrationSeverity::High,
@@ -947,11 +957,11 @@ fn append_summary_findings(
                 "Review and harden install/build scripts before enabling strict trust policy."
                     .to_string(),
             ),
-        });
+        }, MAX_TOTAL_FINDINGS);
     }
 
     if engine_gaps > 0 {
-        findings.push(MigrationAuditFinding {
+        push_bounded(findings, MigrationAuditFinding {
             id: String::new(),
             category: MigrationCategory::Runtime,
             severity: MigrationSeverity::Low,
@@ -960,7 +970,7 @@ fn append_summary_findings(
             recommendation: Some(
                 "Pin engines.node across packages to improve migration determinism.".to_string(),
             ),
-        });
+        }, MAX_TOTAL_FINDINGS);
     }
 }
 
@@ -976,7 +986,7 @@ fn sort_and_assign_ids(findings: &mut [MigrationAuditFinding]) {
     });
 
     for (index, finding) in findings.iter_mut().enumerate() {
-        finding.id = format!("mig-audit-{:03}", index + 1);
+        finding.id = format!("mig-audit-{:03}", index.saturating_add(1));
     }
 }
 
@@ -1579,7 +1589,7 @@ mod tests {
                 .recommendation
                 .as_deref()
                 .is_some_and(|text| text.contains("lockstep validation coverage"))
-        });
+        }, MAX_TOTAL_FINDINGS);
 
         assert!(report.is_pass());
         assert!(!has_lockstep_warning);
