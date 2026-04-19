@@ -1,7 +1,7 @@
 //! Domain-separated interface-hash verification and admission telemetry (bd-3n58).
 //!
-//! Hash derivation uses domain separation: `H(domain || ":" || data)` to
-//! prevent cross-domain collisions. Invalid hashes block admission.
+//! Hash derivation uses domain separation plus length-prefixed fields to prevent
+//! cross-domain and transcript-boundary collisions. Invalid hashes block admission.
 //! Telemetry tracks rejection code distribution.
 
 use serde::{Deserialize, Serialize};
@@ -13,16 +13,18 @@ use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
 
 // ── Domain-separated hash ───────────────────────────────────────────
 
-/// Compute a domain-separated hash: H(domain || ":" || data).
+/// Compute a domain-separated hash over length-prefixed domain and data fields.
 ///
 /// Uses full-width SHA-256 output to preserve collision resistance.
 pub fn compute_hash(domain: &str, data: &[u8]) -> InterfaceHash {
     let mut hasher = sha2::Sha256::new();
-    // Domain separation: hash domain tag first, then length-prefixed domain, then data
+    // Domain separation: hash domain tag first, then length-prefixed fields.
     sha2::Digest::update(&mut hasher, b"interface_hash_v1:");
     let domain_len = u64::try_from(domain.len()).unwrap_or(u64::MAX);
     sha2::Digest::update(&mut hasher, domain_len.to_le_bytes());
     sha2::Digest::update(&mut hasher, domain.as_bytes());
+    let data_len = u64::try_from(data.len()).unwrap_or(u64::MAX);
+    sha2::Digest::update(&mut hasher, data_len.to_le_bytes());
     sha2::Digest::update(&mut hasher, data);
     let hash_hex = format!("{:x}", sha2::Digest::finalize(hasher));
 
@@ -274,6 +276,44 @@ mod tests {
         let h = compute_hash("test", b"data");
         assert_eq!(h.hash_hex.len(), 64);
         assert!(h.hash_hex.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn compute_hash_length_prefixes_data_field() {
+        let domain = "connector.v1";
+        let data = b"payload";
+        let h = compute_hash(domain, data);
+
+        let mut expected = sha2::Sha256::new();
+        sha2::Digest::update(&mut expected, b"interface_hash_v1:");
+        sha2::Digest::update(
+            &mut expected,
+            u64::try_from(domain.len())
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
+        sha2::Digest::update(&mut expected, domain.as_bytes());
+        sha2::Digest::update(
+            &mut expected,
+            u64::try_from(data.len()).unwrap_or(u64::MAX).to_le_bytes(),
+        );
+        sha2::Digest::update(&mut expected, data);
+        let expected_hash_hex = format!("{:x}", sha2::Digest::finalize(expected));
+
+        let mut legacy_without_data_len = sha2::Sha256::new();
+        sha2::Digest::update(&mut legacy_without_data_len, b"interface_hash_v1:");
+        sha2::Digest::update(
+            &mut legacy_without_data_len,
+            u64::try_from(domain.len())
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
+        sha2::Digest::update(&mut legacy_without_data_len, domain.as_bytes());
+        sha2::Digest::update(&mut legacy_without_data_len, data);
+        let legacy_hash_hex = format!("{:x}", sha2::Digest::finalize(legacy_without_data_len));
+
+        assert_eq!(h.hash_hex, expected_hash_hex);
+        assert_ne!(h.hash_hex, legacy_hash_hex);
     }
 
     // === verify_hash ===
