@@ -188,13 +188,62 @@ impl fmt::Display for EquivalenceLevel {
     }
 }
 
+fn invalid_platform_field(field: &str, value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Some(format!("{field} must not be empty"));
+    }
+    if trimmed != value {
+        return Some(format!("{field} contains leading or trailing whitespace"));
+    }
+    if value.contains('\0') {
+        return Some(format!("{field} must not contain null bytes"));
+    }
+    if value.chars().any(char::is_control) {
+        return Some(format!("{field} must not contain control characters"));
+    }
+    None
+}
+
+fn validate_platform_capabilities(caps: &PlatformCapabilities) -> Result<(), IsolationError> {
+    if let Some(reason) = invalid_platform_field("os", &caps.os) {
+        return Err(IsolationError::ProbeFailed { reason });
+    }
+    if let Some(reason) = invalid_platform_field("arch", &caps.arch) {
+        return Err(IsolationError::ProbeFailed { reason });
+    }
+
+    let linux = caps.os == "linux";
+    let macos = caps.os == "macos";
+    if caps.has_kvm && !linux {
+        return Err(IsolationError::ProbeFailed {
+            reason: "kvm capability is only valid on linux".to_string(),
+        });
+    }
+    if (caps.has_seccomp || caps.has_namespaces || caps.has_cgroups) && !linux {
+        return Err(IsolationError::ProbeFailed {
+            reason: "linux sandbox capabilities require os=linux".to_string(),
+        });
+    }
+    if caps.has_macos_sandbox && !macos {
+        return Err(IsolationError::ProbeFailed {
+            reason: "macos sandbox capability requires os=macos".to_string(),
+        });
+    }
+    Ok(())
+}
+
 /// Select the best isolation backend for the given platform capabilities.
 pub fn select_backend(caps: &PlatformCapabilities) -> Result<BackendSelection, IsolationError> {
-    let (backend, equivalence) = if caps.has_kvm {
+    validate_platform_capabilities(caps)?;
+
+    let linux = caps.os == "linux";
+    let macos = caps.os == "macos";
+    let (backend, equivalence) = if linux && caps.has_kvm {
         (IsolationBackend::MicroVm, EquivalenceLevel::Full)
-    } else if caps.has_seccomp && caps.has_namespaces && caps.has_cgroups {
+    } else if linux && caps.has_seccomp && caps.has_namespaces && caps.has_cgroups {
         (IsolationBackend::Hardened, EquivalenceLevel::Equivalent)
-    } else if caps.has_macos_sandbox {
+    } else if macos && caps.has_macos_sandbox {
         (IsolationBackend::OsSandbox, EquivalenceLevel::Equivalent)
     } else if caps.has_oci_runtime {
         (IsolationBackend::Container, EquivalenceLevel::Baseline)
@@ -395,6 +444,72 @@ mod tests {
     fn no_backend_available() {
         let err = select_backend(&no_caps()).unwrap_err();
         assert!(matches!(err, IsolationError::BackendUnavailable { .. }));
+    }
+
+    #[test]
+    fn reject_non_linux_kvm_claim_before_full_isolation() {
+        let caps = PlatformCapabilities::from_values(
+            "windows", "x86_64", true, false, false, false, false, true,
+        );
+
+        let err = select_backend(&caps).expect_err("non-linux kvm claim must fail closed");
+
+        assert!(matches!(
+            err,
+            IsolationError::ProbeFailed { ref reason } if reason.contains("kvm")
+        ));
+    }
+
+    #[test]
+    fn reject_linux_claim_with_macos_sandbox_flag() {
+        let caps = PlatformCapabilities::from_values(
+            "linux", "x86_64", false, false, false, false, true, false,
+        );
+
+        let err = select_backend(&caps).expect_err("macos sandbox flag on linux is corrupted");
+
+        assert!(matches!(
+            err,
+            IsolationError::ProbeFailed { ref reason } if reason.contains("macos sandbox")
+        ));
+    }
+
+    #[test]
+    fn reject_platform_strings_with_null_or_control_characters() {
+        let bad_os = PlatformCapabilities::from_values(
+            "linux\0bad",
+            "x86_64",
+            true,
+            true,
+            true,
+            true,
+            false,
+            true,
+        );
+        let bad_arch = PlatformCapabilities::from_values(
+            "linux",
+            "x86_64\r\n",
+            true,
+            true,
+            true,
+            true,
+            false,
+            true,
+        );
+
+        let err_os =
+            select_backend(&bad_os).expect_err("os with null byte must fail validation");
+        assert!(matches!(
+            err_os,
+            IsolationError::ProbeFailed { ref reason } if reason.contains("os")
+        ));
+
+        let err_arch =
+            select_backend(&bad_arch).expect_err("arch with control chars must fail validation");
+        assert!(matches!(
+            err_arch,
+            IsolationError::ProbeFailed { ref reason } if reason.contains("arch")
+        ));
     }
 
     #[test]
