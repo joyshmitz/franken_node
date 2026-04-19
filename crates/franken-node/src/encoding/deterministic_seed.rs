@@ -601,7 +601,7 @@ impl DeterministicSeedDeriver {
 
             for (i, domain) in DomainTag::all().iter().enumerate() {
                 let (_, _) = deriver.derive_seed(domain, &tracking_hash, &tracking_config);
-                assert_eq!(deriver.tracked_domains(), i + 1, "Should increment tracked domain count");
+                assert_eq!(deriver.tracked_domains(), i.saturating_add(1), "Should increment tracked domain count");
             }
 
             assert_eq!(deriver.tracked_domains(), DomainTag::all().len(), "Should track all domains");
@@ -779,7 +779,7 @@ mod tests {
         let cfg = test_config_v1();
         let domains = DomainTag::all();
         for i in 0..domains.len() {
-            for j in (i + 1)..domains.len() {
+            for j in i.saturating_add(1)..domains.len() {
                 let s_i = derive_seed(&domains[i], &ch, &cfg);
                 let s_j = derive_seed(&domains[j], &ch, &cfg);
                 assert_ne!(
@@ -1362,7 +1362,7 @@ mod tests {
 
             for version in 1..=(MAX_BUMP_RECORDS + 8) {
                 let config = ScheduleConfig::new(
-                    u32::try_from(version).expect("test version should fit in u32"),
+                    u32::try_from(version).unwrap_or(u32::MAX),
                 )
                 .with_param("salt", format!("mutation-{version:04}"));
                 deriver.derive_seed(&DomainTag::Encoding, &content_hash, &config);
@@ -1382,7 +1382,7 @@ mod tests {
                     .last()
                     .expect("bounded buffer should retain the newest record")
                     .new_version,
-                u32::try_from(MAX_BUMP_RECORDS + 8).expect("test cap should fit in u32")
+                u32::try_from(MAX_BUMP_RECORDS + 8).unwrap_or(u32::MAX)
             );
         }
 
