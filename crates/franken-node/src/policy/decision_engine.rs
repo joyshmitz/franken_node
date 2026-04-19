@@ -1348,7 +1348,7 @@ mod tests {
 
     #[test]
     fn test_security_unicode_injection_in_guardrail_ids_and_candidates() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let engine = engine();
         let mut system_state = healthy_state();
@@ -1371,7 +1371,7 @@ mod tests {
             DecisionReason::TopCandidateBlockedFallbackUsed { .. } => {
                 if let Some(chosen) = &decision.chosen {
                     // Chosen candidate should not be manipulated by Unicode normalization
-                    assert!(!ct_eq(chosen.as_str().as_bytes(), b"malicious"),
+                    assert!(!constant_time::ct_eq(chosen.as_str().as_bytes(), b"malicious"),
                            "Unicode injection should not create malicious candidates");
                 }
             },
@@ -1389,7 +1389,7 @@ mod tests {
 
             // Guardrail IDs should not be manipulated
             for guardrail_id in &blocked.blocked_by {
-                assert!(!ct_eq(guardrail_id.as_str().as_bytes(), b"bypass"),
+                assert!(!constant_time::ct_eq(guardrail_id.as_str().as_bytes(), b"bypass"),
                        "Unicode injection should not create bypass guardrails");
             }
         }

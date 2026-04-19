@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 use crate::remote::virtual_transport_faults::{
     self, CampaignResult, FaultClass, FaultConfig, VirtualTransportFaultHarness,
 };
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -777,11 +777,11 @@ impl TransportFaultGate {
             serde_json::json!({
                 "hash_1": r1.content_hash,
                 "hash_2": r2.content_hash,
-                "match": ct_eq(&r1.content_hash, &r2.content_hash),
+                "match": constant_time::ct_eq(&r1.content_hash, &r2.content_hash),
             }),
         );
 
-        if ct_eq(&r1.content_hash, &r2.content_hash) {
+        if constant_time::ct_eq(&r1.content_hash, &r2.content_hash) {
             Ok(())
         } else {
             Err(TransportFaultGateError::SeedUnstable {
@@ -1337,7 +1337,7 @@ mod tests {
         }
         let expected = format!("{:x}", h.finalize());
 
-        assert!(ct_eq(&verdict.content_hash, &expected));
+        assert!(constant_time::ct_eq(&verdict.content_hash, &expected));
     }
 
     fn campaign_with_faults(
@@ -1713,7 +1713,7 @@ mod transport_fault_gate_extreme_adversarial_negative_tests {
                 protocol.name(), fault_mode, seed);
 
             // Verify constant-time comparison for security
-            assert!(ct_eq(&result1.content_hash, &result2.content_hash));
+            assert!(constant_time::ct_eq(&result1.content_hash, &result2.content_hash));
         }
 
         // Verify different inputs produce different hashes
@@ -1722,7 +1722,7 @@ mod transport_fault_gate_extreme_adversarial_negative_tests {
 
         assert_ne!(result_a.content_hash, result_b.content_hash,
             "different seeds should produce different hashes");
-        assert!(!ct_eq(&result_a.content_hash, &result_b.content_hash));
+        assert!(!constant_time::ct_eq(&result_a.content_hash, &result_b.content_hash));
     }
 
     #[test]
@@ -1862,7 +1862,7 @@ mod transport_fault_gate_extreme_adversarial_negative_tests {
             ) {
                 // Hashes should be identical for same seed
                 assert_eq!(hash1, hash2);
-                assert!(ct_eq(hash1, hash2));
+                assert!(constant_time::ct_eq(hash1, hash2));
             }
         }
     }

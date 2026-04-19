@@ -890,7 +890,7 @@ mod tests {
         // Even tiny differences should be detectable without timing leaks
         assert_ne!(hash1_bytes.as_slice(), similar_hash_bytes.as_slice(), "Tiny differences should be detected");
 
-        // Production code should use: ct_eq_bytes(&hash1_bytes, &hash2_bytes) ✓
+        // Production code should use: constant_time::ct_eq_bytes(&hash1_bytes, &hash2_bytes) ✓
         // NOT: hash1_bytes == hash2_bytes ✗ (timing attack vulnerable)
     }
 
@@ -1020,6 +1020,7 @@ mod tests {
         // Test that hash operations include domain separators to prevent collision attacks
         // Without domain separation, different data types can produce identical hashes
         use sha2::{Digest, Sha256};
+        use crate::security::constant_time;
 
         let evidence = test_evidence();
         let capsule = sealed_capsule();

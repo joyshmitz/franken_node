@@ -21,7 +21,7 @@
 //! - **INV-FSA-CONCURRENT-SAFE**: Concurrent access causes no corruption
 //! - **INV-FSA-SCHEMA-VERSIONED**: Schema migrations are versioned and reversible
 
-use crate::security::constant_time::ct_eq_bytes;
+use crate::security::constant_time;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -441,7 +441,7 @@ impl FrankensqliteAdapter {
         let mut results = Vec::new();
         for (key, expected) in &log_snapshot {
             let stored = self.store.get(&(PersistenceClass::AuditLog, key.clone()));
-            let matches = stored.is_some_and(|v| ct_eq_bytes(v, expected));
+            let matches = stored.is_some_and(|v| constant_time::ct_eq_bytes(v, expected));
             if !matches {
                 self.replay_mismatches = self.replay_mismatches.saturating_add(1);
                 self.emit_event(
@@ -1173,7 +1173,7 @@ mod tests {
             .store
             .get(&(PersistenceClass::AuditLog, "audit-1".to_string()))
             .expect("original audit entry should remain");
-        assert!(ct_eq_bytes(stored, b"original"));
+        assert!(constant_time::ct_eq_bytes(stored, b"original"));
     }
 
     #[test]

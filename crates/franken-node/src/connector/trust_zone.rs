@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
@@ -388,8 +388,8 @@ impl ZoneSegmentationEngine {
         // Convention: dual-owner proof contains both zone IDs separated by ":".
         // Use segment-exact matching to prevent substring false positives.
         let proof_segments: Vec<&str> = req.authorization_proof.split(':').collect();
-        if !proof_segments.iter().any(|s| ct_eq(s, &req.source_zone))
-            || !proof_segments.iter().any(|s| ct_eq(s, &req.target_zone))
+        if !proof_segments.iter().any(|s| constant_time::ct_eq(s, &req.source_zone))
+            || !proof_segments.iter().any(|s| constant_time::ct_eq(s, &req.target_zone))
         {
             return Err(SegmentationError::BridgeAuthIncomplete {
                 detail: format!(

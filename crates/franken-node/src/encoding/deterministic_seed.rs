@@ -804,7 +804,7 @@ fn _assert_send_sync() {
 mod tests {
     use super::*;
 
-    fn test_content_hash() -> ContentHash {
+    fn content_hash() -> ContentHash {
         let mut h = [0u8; 32];
         for (i, b) in h.iter_mut().enumerate() {
             *b = u8::try_from(i).expect("test hash index must fit in u8");
@@ -830,7 +830,7 @@ mod tests {
 
     #[test]
     fn test_derive_seed_deterministic() {
-        let ch = test_content_hash();
+        let ch = content_hash();
         let cfg = test_config_v1();
         let s1 = derive_seed(&DomainTag::Encoding, &ch, &cfg);
         let s2 = derive_seed(&DomainTag::Encoding, &ch, &cfg);
@@ -844,7 +844,7 @@ mod tests {
     fn test_derive_seed_is_32_bytes() {
         let s = derive_seed(
             &DomainTag::Encoding,
-            &test_content_hash(),
+            &content_hash(),
             &test_config_v1(),
         );
         assert_eq!(s.bytes.len(), 32);
@@ -854,7 +854,7 @@ mod tests {
     fn test_derive_seed_nonzero() {
         let s = derive_seed(
             &DomainTag::Encoding,
-            &test_content_hash(),
+            &content_hash(),
             &test_config_v1(),
         );
         assert_ne!(s.bytes, [0u8; 32], "seed should not be all zeros");
@@ -864,7 +864,7 @@ mod tests {
 
     #[test]
     fn test_domain_separation_encoding_vs_repair() {
-        let ch = test_content_hash();
+        let ch = content_hash();
         let cfg = test_config_v1();
         let s_enc = derive_seed(&DomainTag::Encoding, &ch, &cfg);
         let s_rep = derive_seed(&DomainTag::Repair, &ch, &cfg);
@@ -876,7 +876,7 @@ mod tests {
 
     #[test]
     fn test_domain_separation_all_pairs() {
-        let ch = test_content_hash();
+        let ch = content_hash();
         let cfg = test_config_v1();
         let domains = DomainTag::all();
         for i in 0..domains.len() {
@@ -950,7 +950,7 @@ mod tests {
 
     #[test]
     fn test_different_config_different_seed() {
-        let ch = test_content_hash();
+        let ch = content_hash();
         let s1 = derive_seed(&DomainTag::Encoding, &ch, &test_config_v1());
         let s2 = derive_seed(&DomainTag::Encoding, &ch, &test_config_v2());
         assert_ne!(s1.bytes, s2.bytes, "config change must change seed");
@@ -958,7 +958,7 @@ mod tests {
 
     #[test]
     fn test_config_version_changes_seed() {
-        let ch = test_content_hash();
+        let ch = content_hash();
         let c1 = ScheduleConfig::new(1).with_param("k", "4");
         let c2 = ScheduleConfig::new(2).with_param("k", "4");
         let s1 = derive_seed(&DomainTag::Encoding, &ch, &c1);
@@ -968,7 +968,7 @@ mod tests {
 
     #[test]
     fn test_config_param_order_irrelevant() {
-        let ch = test_content_hash();
+        let ch = content_hash();
         // BTreeMap sorts keys, so insertion order should not matter
         let c1 = ScheduleConfig::new(1)
             .with_param("a", "1")
@@ -1003,7 +1003,7 @@ mod tests {
 
     #[test]
     fn test_empty_config_params() {
-        let ch = test_content_hash();
+        let ch = content_hash();
         let cfg = ScheduleConfig::new(1);
         let s = derive_seed(&DomainTag::Encoding, &ch, &cfg);
         assert_ne!(s.bytes, [0u8; 32]);
@@ -1012,32 +1012,32 @@ mod tests {
     #[test]
     fn test_max_version() {
         let cfg = ScheduleConfig::new(u32::MAX);
-        let s = derive_seed(&DomainTag::Encoding, &test_content_hash(), &cfg);
+        let s = derive_seed(&DomainTag::Encoding, &content_hash(), &cfg);
         assert_ne!(s.bytes, [0u8; 32]);
     }
 
     // -- ContentHash methods ------------------------------------------------
 
     #[test]
-    fn test_content_hash_from_hex() {
+    fn content_hash_from_hex() {
         let hex_str = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
         let ch = ContentHash::from_hex(hex_str).expect("from_hex should succeed");
         assert_eq!(ch.to_hex(), hex_str);
     }
 
     #[test]
-    fn test_content_hash_from_hex_invalid_length() {
+    fn content_hash_from_hex_invalid_length() {
         assert!(ContentHash::from_hex("aabb").is_err());
     }
 
     #[test]
-    fn test_content_hash_from_hex_invalid_chars() {
+    fn content_hash_from_hex_invalid_chars() {
         assert!(ContentHash::from_hex("zzzz").is_err());
     }
 
     #[test]
-    fn test_content_hash_prefix_hex() {
-        let ch = test_content_hash();
+    fn content_hash_prefix_hex() {
+        let ch = content_hash();
         let p = ch.prefix_hex();
         assert_eq!(p.len(), 8);
         assert_eq!(&p, &ch.to_hex()[..8]);
@@ -1049,7 +1049,7 @@ mod tests {
     fn test_seed_to_hex_length() {
         let s = derive_seed(
             &DomainTag::Encoding,
-            &test_content_hash(),
+            &content_hash(),
             &test_config_v1(),
         );
         assert_eq!(s.to_hex().len(), 64);
@@ -1059,7 +1059,7 @@ mod tests {
     fn test_seed_prefix_hex() {
         let s = derive_seed(
             &DomainTag::Encoding,
-            &test_content_hash(),
+            &content_hash(),
             &test_config_v1(),
         );
         assert_eq!(s.prefix_hex().len(), 8);
@@ -1067,14 +1067,14 @@ mod tests {
 
     #[test]
     fn test_seed_domain_preserved() {
-        let s = derive_seed(&DomainTag::Repair, &test_content_hash(), &test_config_v1());
+        let s = derive_seed(&DomainTag::Repair, &content_hash(), &test_config_v1());
         assert_eq!(s.domain, DomainTag::Repair);
     }
 
     #[test]
     fn test_seed_config_version_preserved() {
         let cfg = test_config_v1();
-        let s = derive_seed(&DomainTag::Encoding, &test_content_hash(), &cfg);
+        let s = derive_seed(&DomainTag::Encoding, &content_hash(), &cfg);
         assert_eq!(s.config_version, 1);
     }
 
@@ -1084,7 +1084,7 @@ mod tests {
     fn test_seed_serialization_roundtrip() {
         let s = derive_seed(
             &DomainTag::Encoding,
-            &test_content_hash(),
+            &content_hash(),
             &test_config_v1(),
         );
         let json = serde_json::to_string(&s).expect("to_string should succeed");
@@ -1095,8 +1095,8 @@ mod tests {
     }
 
     #[test]
-    fn test_content_hash_serialization_roundtrip() {
-        let ch = test_content_hash();
+    fn content_hash_serialization_roundtrip() {
+        let ch = content_hash();
         let json = serde_json::to_string(&ch).expect("to_string should succeed");
         let ch2: ContentHash = serde_json::from_str(&json).expect("from_str should succeed");
         assert_eq!(ch.0, ch2.0);
@@ -1145,7 +1145,7 @@ mod tests {
         let mut d = DeterministicSeedDeriver::new();
         let (seed, bump) = d.derive_seed(
             &DomainTag::Encoding,
-            &test_content_hash(),
+            &content_hash(),
             &test_config_v1(),
         );
         assert!(bump.is_none(), "first call should not produce a bump");
@@ -1157,7 +1157,7 @@ mod tests {
     fn test_deriver_same_config_no_bump() {
         let mut d = DeterministicSeedDeriver::new();
         let cfg = test_config_v1();
-        let ch = test_content_hash();
+        let ch = content_hash();
         d.derive_seed(&DomainTag::Encoding, &ch, &cfg);
         let (_, bump) = d.derive_seed(&DomainTag::Encoding, &ch, &cfg);
         assert!(bump.is_none(), "same config should not produce a bump");
@@ -1166,7 +1166,7 @@ mod tests {
     #[test]
     fn test_deriver_config_change_triggers_bump() {
         let mut d = DeterministicSeedDeriver::new();
-        let ch = test_content_hash();
+        let ch = content_hash();
         d.derive_seed(&DomainTag::Encoding, &ch, &test_config_v1());
         let (_, bump) = d.derive_seed(&DomainTag::Encoding, &ch, &test_config_v2());
         assert!(bump.is_some(), "config change must trigger a version bump");
@@ -1180,7 +1180,7 @@ mod tests {
     #[test]
     fn test_deriver_bump_records_accumulate() {
         let mut d = DeterministicSeedDeriver::new();
-        let ch = test_content_hash();
+        let ch = content_hash();
         d.derive_seed(&DomainTag::Encoding, &ch, &test_config_v1());
         d.derive_seed(&DomainTag::Encoding, &ch, &test_config_v2());
         assert_eq!(d.bump_records().len(), 1);
@@ -1193,7 +1193,7 @@ mod tests {
     #[test]
     fn test_deriver_clear_bump_records() {
         let mut d = DeterministicSeedDeriver::new();
-        let ch = test_content_hash();
+        let ch = content_hash();
         d.derive_seed(&DomainTag::Encoding, &ch, &test_config_v1());
         d.derive_seed(&DomainTag::Encoding, &ch, &test_config_v2());
         assert_eq!(d.bump_records().len(), 1);
@@ -1204,7 +1204,7 @@ mod tests {
     #[test]
     fn test_deriver_independent_domains() {
         let mut d = DeterministicSeedDeriver::new();
-        let ch = test_content_hash();
+        let ch = content_hash();
         let cfg = test_config_v1();
         d.derive_seed(&DomainTag::Encoding, &ch, &cfg);
         let (_, bump) = d.derive_seed(&DomainTag::Repair, &ch, &cfg);
@@ -1319,7 +1319,7 @@ mod tests {
 
     #[test]
     fn test_no_collisions_across_domains() {
-        let ch = test_content_hash();
+        let ch = content_hash();
         let cfg = test_config_v1();
         let mut seen = std::collections::BTreeSet::new();
         for domain in DomainTag::all() {
@@ -1333,7 +1333,7 @@ mod tests {
 
         #[test]
         fn config_hash_length_prefixes_prevent_key_value_concatenation_collision() {
-            let content_hash = test_content_hash();
+            let content_hash = content_hash();
             let cfg_left = ScheduleConfig::new(1).with_param("ab", "c");
             let cfg_right = ScheduleConfig::new(1).with_param("a", "bc");
 
@@ -1346,7 +1346,7 @@ mod tests {
 
         #[test]
         fn config_hash_distinguishes_empty_key_from_empty_value() {
-            let content_hash = test_content_hash();
+            let content_hash = content_hash();
             let cfg_empty_key = ScheduleConfig::new(1).with_param("", "abc");
             let cfg_empty_value = ScheduleConfig::new(1).with_param("abc", "");
 
@@ -1359,7 +1359,7 @@ mod tests {
 
         #[test]
         fn duplicate_param_insertion_is_deterministic_last_write_wins() {
-            let content_hash = test_content_hash();
+            let content_hash = content_hash();
             let duplicate_write = ScheduleConfig::new(7)
                 .with_param("fanout", "first")
                 .with_param("fanout", "second");
@@ -1525,6 +1525,13 @@ mod additional_negative_path_tests {
 
     fn content_hash() -> ContentHash {
         ContentHash([0x2a; 32])
+    }
+
+    fn test_config_v1() -> ScheduleConfig {
+        ScheduleConfig::new(1)
+            .with_param("chunk_size", "65536")
+            .with_param("erasure_k", "4")
+            .with_param("erasure_m", "2")
     }
 
     #[test]
@@ -1893,7 +1900,7 @@ mod additional_negative_path_tests {
     fn negative_domain_separation_loop_bounds_with_overflow_potential() {
         // Test loop bounds in domain separation verification
         // Line 782: (i + 1)..domains.len() could overflow with extreme indices
-        let ch = test_content_hash();
+        let ch = content_hash();
         let cfg = test_config_v1();
         let domains = DomainTag::all();
 
@@ -1931,7 +1938,7 @@ mod additional_negative_path_tests {
     }
 
     #[test]
-    fn negative_test_content_hash_generation_with_index_overflow() {
+    fn negative_content_hash_generation_with_index_overflow() {
         // Test potential overflow in test helper functions
         // Line 709: u8::try_from(i) with potential index overflow
 
@@ -1968,7 +1975,7 @@ mod additional_negative_path_tests {
         }
 
         // Test the original helper function behavior
-        let test_hash = test_content_hash();
+        let test_hash = content_hash();
         assert_eq!(test_hash.0.len(), 32, "Test hash should be 32 bytes");
 
         // Verify incrementing pattern in test hash

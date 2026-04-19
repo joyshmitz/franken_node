@@ -846,6 +846,7 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     fn make_snapshot(version: &str) -> StateSnapshot {
         let mut config = BTreeMap::new();

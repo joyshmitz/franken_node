@@ -1965,6 +1965,7 @@ pub fn run_full_pipeline(cohort: &CohortDefinition) -> Result<PipelineState, Pip
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     // ── Helpers ──────────────────────────────────────────────────────────
 

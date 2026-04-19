@@ -1271,15 +1271,15 @@ mod surface_fingerprint_hex_negative_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::security::constant_time::ct_eq_bytes;
+    use crate::security::constant_time;
     use std::collections::BTreeSet;
 
     fn assert_fingerprint_eq(left: &str, right: &str) {
-        assert!(ct_eq_bytes(left.as_bytes(), right.as_bytes()));
+        assert!(constant_time::ct_eq_bytes(left.as_bytes(), right.as_bytes()));
     }
 
     fn assert_fingerprint_ne(left: &str, right: &str) {
-        assert!(!ct_eq_bytes(left.as_bytes(), right.as_bytes()));
+        assert!(!constant_time::ct_eq_bytes(left.as_bytes(), right.as_bytes()));
     }
 
     #[test]
@@ -1449,14 +1449,14 @@ mod tests {
 #[cfg(test)]
 mod atc_surface_additional_negative_tests {
     use super::*;
-    use crate::security::constant_time::ct_eq_bytes;
+    use crate::security::constant_time;
 
     fn assert_fingerprint_ne(left: &str, right: &str) {
-        assert!(!ct_eq_bytes(left.as_bytes(), right.as_bytes()));
+        assert!(!constant_time::ct_eq_bytes(left.as_bytes(), right.as_bytes()));
     }
 
     fn assert_fingerprint_eq(left: &str, right: &str) {
-        assert!(ct_eq_bytes(left.as_bytes(), right.as_bytes()));
+        assert!(constant_time::ct_eq_bytes(left.as_bytes(), right.as_bytes()));
     }
 
     #[test]
@@ -1715,10 +1715,10 @@ mod atc_surface_additional_negative_tests {
 #[cfg(test)]
 mod atc_comprehensive_negative_edge_cases {
     use super::*;
-    use crate::security::constant_time::ct_eq_bytes;
+    use crate::security::constant_time;
 
     fn assert_fingerprint_ne(left: &str, right: &str) {
-        assert!(!ct_eq_bytes(left.as_bytes(), right.as_bytes()));
+        assert!(!constant_time::ct_eq_bytes(left.as_bytes(), right.as_bytes()));
     }
 
     // =========================================================================
@@ -2018,10 +2018,10 @@ mod atc_comprehensive_negative_edge_cases {
 #[cfg(test)]
 mod atc_extreme_adversarial_negative_tests {
     use super::*;
-    use crate::security::constant_time::ct_eq_bytes;
+    use crate::security::constant_time;
 
     fn assert_fingerprint_ne(left: &str, right: &str) {
-        assert!(!ct_eq_bytes(left.as_bytes(), right.as_bytes()));
+        assert!(!constant_time::ct_eq_bytes(left.as_bytes(), right.as_bytes()));
     }
 
     // =========================================================================
@@ -2220,12 +2220,12 @@ mod atc_extreme_adversarial_negative_tests {
             assert_fingerprint_ne(&fp1, &fp2);
 
             // Self-comparison should be consistent
-            assert!(ct_eq_bytes(fp1.as_bytes(), fp1.as_bytes()));
-            assert!(ct_eq_bytes(fp2.as_bytes(), fp2.as_bytes()));
+            assert!(constant_time::ct_eq_bytes(fp1.as_bytes(), fp1.as_bytes()));
+            assert!(constant_time::ct_eq_bytes(fp2.as_bytes(), fp2.as_bytes()));
 
             // Cross-comparison should be consistent
-            let comparison1 = ct_eq_bytes(fp1.as_bytes(), fp2.as_bytes());
-            let comparison2 = ct_eq_bytes(fp1.as_bytes(), fp2.as_bytes());
+            let comparison1 = constant_time::ct_eq_bytes(fp1.as_bytes(), fp2.as_bytes());
+            let comparison2 = constant_time::ct_eq_bytes(fp1.as_bytes(), fp2.as_bytes());
             assert_eq!(comparison1, comparison2);
         }
     }

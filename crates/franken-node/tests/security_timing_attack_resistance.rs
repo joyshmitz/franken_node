@@ -21,7 +21,7 @@ fn test_ct_eq_timing_independence() {
 
     // Warm up CPU to get consistent timing
     for _ in 0..1000 {
-        ct_eq(secret, correct);
+        let _ = ct_eq(secret, correct);
     }
 
     // Measure timing for correct match
@@ -66,7 +66,7 @@ fn test_ct_eq_bytes_timing_independence() {
 
     // Warm up
     for _ in 0..1000 {
-        ct_eq_bytes(secret_hash, correct_hash);
+        let _ = ct_eq_bytes(secret_hash, correct_hash);
     }
 
     let trials = 10000;

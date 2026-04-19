@@ -1713,6 +1713,7 @@ mod tests {
     #[test]
     fn test_bootstrap_path_traversal_protection() {
         use std::path::PathBuf;
+        use crate::security::constant_time;
 
         // Create temp directory structure
         let base_dir = TempDir::new().expect("tempdir");

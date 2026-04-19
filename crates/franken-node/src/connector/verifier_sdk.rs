@@ -1401,6 +1401,7 @@ pub fn generate_reference_verification_result() -> Result<VerificationResult, Ve
 mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
+    use crate::security::constant_time;
 
     // ── Reference generators ────────────────────────────────────────
 

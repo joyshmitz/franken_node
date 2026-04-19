@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -571,14 +571,14 @@ impl EcosystemRegistry {
         let first_expected = self.chain_anchor_hash.as_ref().unwrap_or(&genesis);
         let mut expected_prev = first_expected.clone();
         for entry in &self.audit_trail {
-            if !ct_eq(&entry.prev_hash, &expected_prev) {
+            if !constant_time::ct_eq(&entry.prev_hash, &expected_prev) {
                 return Err(RegistryError::AuthFailure(format!(
                     "audit chain broken at seq {}: expected prev_hash {}, got {}",
                     entry.sequence, expected_prev, entry.prev_hash
                 )));
             }
             let computed = compute_audit_hash(entry);
-            if !ct_eq(&computed, &entry.entry_hash) {
+            if !constant_time::ct_eq(&computed, &entry.entry_hash) {
                 return Err(RegistryError::AuthFailure(format!(
                     "audit entry {} hash mismatch: expected {}, got {}",
                     entry.sequence, computed, entry.entry_hash

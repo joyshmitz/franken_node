@@ -678,6 +678,7 @@ impl BenchmarkMethodology {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     fn trace() -> String {
         Uuid::now_v7().to_string()

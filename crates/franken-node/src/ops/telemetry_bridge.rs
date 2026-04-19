@@ -3130,7 +3130,7 @@ mod tests {
 
     #[test]
     fn test_negative_bridge_id_with_unicode_injection_attacks() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let bridge = TelemetryBridge::new(
             "/tmp/test-unicode-bridge.sock",
@@ -3158,7 +3158,7 @@ mod tests {
         );
         let other_id = other_bridge.snapshot().bridge_id;
 
-        assert!(!ct_eq(&snapshot.bridge_id, &other_id), "bridge IDs should be unique");
+        assert!(!constant_time::ct_eq(&snapshot.bridge_id, &other_id), "bridge IDs should be unique");
     }
 
     #[test]

@@ -838,6 +838,7 @@ pub fn deterministic_decision(seed: u64, tick: u64, input: &[u8]) -> ControlDeci
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     // -- Helper ---------------------------------------------------------------
 

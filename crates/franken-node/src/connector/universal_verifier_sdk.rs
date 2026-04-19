@@ -789,6 +789,7 @@ pub fn build_reference_session() -> Result<VerificationSession, VsdkError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     // ── Schema version ─────────────────────────────────────────────
 

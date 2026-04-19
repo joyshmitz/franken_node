@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
 
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 /// The state model type declared by each connector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -78,7 +78,7 @@ impl StateRoot {
 
     /// Verify that the stored root_hash matches the computed hash of head.
     pub fn verify_integrity(&self) -> bool {
-        ct_eq(&self.root_hash, &compute_hash(&self.head))
+        constant_time::ct_eq(&self.root_hash, &compute_hash(&self.head))
     }
 }
 
@@ -192,7 +192,7 @@ pub fn detect_divergence(local: &StateRoot, canonical: &StateRoot) -> Divergence
     } else if !local.verify_integrity()
         || local.connector_id != canonical.connector_id
         || local.state_model != canonical.state_model
-        || !ct_eq(&local.root_hash, &canonical.root_hash)
+        || !constant_time::ct_eq(&local.root_hash, &canonical.root_hash)
     {
         DivergenceType::HashMismatch
     } else {

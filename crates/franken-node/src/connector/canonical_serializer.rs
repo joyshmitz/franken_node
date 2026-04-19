@@ -1853,7 +1853,7 @@ mod tests {
             // Same data should produce same hash (deterministic)
             let prefix2 = content_hash_prefix(data);
             assert!(
-                crate::security::constant_time::ct_eq_bytes(prefix1.as_bytes(), prefix2.as_bytes()),
+                constant_time::ct_eq_bytes(prefix1.as_bytes(), prefix2.as_bytes()),
                 "prefix should be deterministic"
             );
         }
@@ -3808,7 +3808,7 @@ mod canonical_serializer_comprehensive_attack_vector_and_boundary_tests {
 
     #[test]
     fn test_security_unicode_injection_in_trust_object_serialization() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let serializer = CanonicalSerializer::new();
 
@@ -3862,7 +3862,7 @@ mod canonical_serializer_comprehensive_attack_vector_and_boundary_tests {
 
                     // Unicode should not create admin privileges through normalization
                     if let Some(issuer) = deserialized.metadata.get("issuer") {
-                        assert!(!ct_eq(issuer.as_bytes(), b"admin"),
+                        assert!(!constant_time::ct_eq(issuer.as_bytes(), b"admin"),
                                "Unicode injection should not create admin privileges");
                     }
                 },
@@ -4026,7 +4026,7 @@ mod canonical_serializer_comprehensive_attack_vector_and_boundary_tests {
 
     #[test]
     fn test_security_domain_tag_manipulation_resistance() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         // Verify domain tags cannot be manipulated to create collisions
         let mut observed_domain_tags = std::collections::HashSet::new();
@@ -4051,7 +4051,7 @@ mod canonical_serializer_comprehensive_attack_vector_and_boundary_tests {
                     // Modified tags should not match any legitimate domain tag
                     let mut is_legitimate = false;
                     for legitimate_type in TrustObjectType::all() {
-                        if ct_eq(&modified_tag, &legitimate_type.domain_tag()) {
+                        if constant_time::ct_eq(&modified_tag, &legitimate_type.domain_tag()) {
                             is_legitimate = true;
                             break;
                         }

@@ -1980,6 +1980,7 @@ mod tests {
     fn negative_constants_validation_and_naming_consistency() {
         // Test that all event constants are well-formed
         use event_codes::*;
+        use crate::security::constant_time;
 
         let event_constants = [
             STAKE_001_DEPOSITED,

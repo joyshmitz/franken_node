@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
 use sha2::{Digest, Sha256};
 
-use crate::security::constant_time::ct_eq_bytes;
+use crate::security::constant_time;
 
 const MAX_TRANSITIONS: usize = 4096;
 
@@ -447,7 +447,7 @@ pub fn verify_release(
                             entry.size_bytes, actual_size
                         )),
                     });
-                } else if !ct_eq_bytes(actual_hash.as_bytes(), entry.sha256.as_bytes()) {
+                } else if !constant_time::ct_eq_bytes(actual_hash.as_bytes(), entry.sha256.as_bytes()) {
                     results.push(ArtifactVerificationResult {
                         artifact_name: name.clone(),
                         passed: false,
@@ -1200,7 +1200,7 @@ mod tests {
         let hash = "A".repeat(64);
         let parsed = ChecksumManifest::parse_canonical(&format!("{hash}  artifact.bin  1024\n"));
         assert_eq!(parsed.len(), 1);
-        assert!(ct_eq_bytes(parsed[0].sha256.as_bytes(), hash.as_bytes()));
+        assert!(constant_time::ct_eq_bytes(parsed[0].sha256.as_bytes(), hash.as_bytes()));
     }
 
     #[test]
@@ -1244,7 +1244,7 @@ mod tests {
         let plain_digest = Sha256::digest(b"release payload");
         let domain_digest = sha256_hex(b"release payload");
         let plain_digest = hex::encode(plain_digest);
-        assert!(!ct_eq_bytes(
+        assert!(!constant_time::ct_eq_bytes(
             domain_digest.as_bytes(),
             plain_digest.as_bytes()
         ));
@@ -1256,7 +1256,7 @@ mod tests {
         let plain_digest = Sha256::digest(vk.as_bytes());
         let plain_key_id = hex::encode(&plain_digest[..8]);
         let domain_key_id = KeyId::from_verifying_key(&vk).0;
-        assert!(!ct_eq_bytes(
+        assert!(!constant_time::ct_eq_bytes(
             domain_key_id.as_bytes(),
             plain_key_id.as_bytes()
         ));
@@ -1428,7 +1428,7 @@ mod tests {
             forward_manifest.canonical_bytes(),
             reverse_manifest.canonical_bytes()
         );
-        assert!(ct_eq_bytes(
+        assert!(constant_time::ct_eq_bytes(
             forward_manifest.signature.as_slice(),
             reverse_manifest.signature.as_slice()
         ));
@@ -1547,7 +1547,7 @@ mod tests {
             .get(second_name)
             .expect("second manifest entry should exist");
 
-        assert!(ct_eq_bytes(
+        assert!(constant_time::ct_eq_bytes(
             first_entry.sha256.as_bytes(),
             second_entry.sha256.as_bytes()
         ));
@@ -1733,9 +1733,9 @@ mod artifact_signing_boundary_negative_tests {
         let kid2 = KeyId::from_verifying_key(&vk2);
 
         // Same key should produce identical IDs (deterministic)
-        assert!(ct_eq_bytes(kid1_a.0.as_bytes(), kid1_b.0.as_bytes()));
+        assert!(constant_time::ct_eq_bytes(kid1_a.0.as_bytes(), kid1_b.0.as_bytes()));
         // Different keys should produce different IDs (but timing-safe comparison)
-        assert!(!ct_eq_bytes(kid1_a.0.as_bytes(), kid2.0.as_bytes()));
+        assert!(!constant_time::ct_eq_bytes(kid1_a.0.as_bytes(), kid2.0.as_bytes()));
     }
 
     #[test]
@@ -1753,8 +1753,8 @@ mod artifact_signing_boundary_negative_tests {
         let plain_keyid = hex::encode(&Sha256::digest(keyid_vk.as_bytes())[..8]);
 
         // Domain-separated hashes must differ from plain hashes
-        assert!(!ct_eq_bytes(artifact_hash.as_bytes(), plain_hash.as_bytes()));
-        assert!(!ct_eq_bytes(keyid_hash.as_bytes(), plain_keyid.as_bytes()));
+        assert!(!constant_time::ct_eq_bytes(artifact_hash.as_bytes(), plain_hash.as_bytes()));
+        assert!(!constant_time::ct_eq_bytes(keyid_hash.as_bytes(), plain_keyid.as_bytes()));
     }
 
     #[test]

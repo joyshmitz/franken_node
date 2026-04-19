@@ -3274,6 +3274,7 @@ mod tests {
         // patterns to infer information about fragment contents or system state
 
         use std::time::{Duration, Instant};
+        use crate::security::constant_time;
 
         let mut decoder = decoder();
         let mut verifier_api = verifier("timing-secret");

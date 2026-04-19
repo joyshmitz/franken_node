@@ -2228,6 +2228,7 @@ mod tests {
     fn negative_resource_exhaustion_concurrent_access_and_race_condition_attacks() {
         use std::sync::{Arc, Mutex};
         use std::thread;
+        use crate::security::constant_time;
 
         // Test 1: Concurrent gate operation attacks and race condition exploitation
         let gate = Arc::new(Mutex::new(ControlPlaneDivergenceGate::new("concurrent-test")));

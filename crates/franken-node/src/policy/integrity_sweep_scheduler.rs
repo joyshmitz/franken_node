@@ -1344,7 +1344,7 @@ mod tests {
     #[test]
     fn test_hash_comparison_uses_constant_time_pattern() {
         // Test for == on hashes - should use ct_eq_bytes for timing safety
-        use crate::security::constant_time::ct_eq_bytes;
+        use crate::security::constant_time;
 
         // Simulate hash/signature comparison scenarios
         let hash1 = b"integrity_sweep_hash_v1_abcdef123456";
@@ -1352,8 +1352,8 @@ mod tests {
         let hash3 = b"integrity_sweep_hash_v1_abcdef123457"; // Different by one char
 
         // Correct pattern: use constant-time comparison
-        assert!(ct_eq_bytes(hash1, hash2), "Identical hashes should match");
-        assert!(!ct_eq_bytes(hash1, hash3), "Different hashes should not match");
+        assert!(constant_time::ct_eq_bytes(hash1, hash2), "Identical hashes should match");
+        assert!(!constant_time::ct_eq_bytes(hash1, hash3), "Different hashes should not match");
 
         // Anti-pattern demonstration (don't actually use this in production)
         let timing_vulnerable = hash1 == hash3; // This could leak timing info
@@ -1362,12 +1362,12 @@ mod tests {
         // Test with empty hashes
         let empty1 = b"";
         let empty2 = b"";
-        assert!(ct_eq_bytes(empty1, empty2), "Empty hashes should match");
+        assert!(constant_time::ct_eq_bytes(empty1, empty2), "Empty hashes should match");
 
         // Test with different lengths (should fail fast)
         let short_hash = b"short";
         let long_hash = b"much_longer_hash";
-        assert!(!ct_eq_bytes(short_hash, long_hash), "Different length hashes should not match");
+        assert!(!constant_time::ct_eq_bytes(short_hash, long_hash), "Different length hashes should not match");
     }
 
     #[test]

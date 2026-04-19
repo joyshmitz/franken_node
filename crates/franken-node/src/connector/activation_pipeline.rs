@@ -138,12 +138,6 @@ pub struct EphemeralSecretTracker {
 
 impl EphemeralSecretTracker {
     pub fn mount(&mut self, secret_ref: &str) -> Result<(), String> {
-        if self.mounted.len() >= MAX_MOUNTED_SECRETS {
-            return Err(format!(
-                "mounted secret tracker exhausted at {} entries",
-                MAX_MOUNTED_SECRETS
-            ));
-        }
         push_bounded(&mut self.mounted, secret_ref.to_string(), MAX_MOUNTED_SECRETS);
         self.cleaned = false;
         Ok(())
@@ -1723,7 +1717,7 @@ mod tests {
 
     #[test]
     fn test_security_unicode_injection_in_activation_inputs() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         // Unicode injection attempts in various activation input fields
         let malicious_inputs = vec![
@@ -1755,14 +1749,14 @@ mod tests {
 
                     // Unicode should not create privileged identifiers
                     assert!(
-                        !ct_eq(transcript.connector_id.as_bytes(), b"admin"),
+                        !constant_time::ct_eq(transcript.connector_id.as_bytes(), b"admin"),
                         "Unicode injection should not create admin connector"
                     );
 
                     // Check secret refs and capabilities don't contain dangerous content
                     for secret_ref in &malicious_input.secret_refs {
                         assert!(
-                            !ct_eq(secret_ref.as_bytes(), b"admin"),
+                            !constant_time::ct_eq(secret_ref.as_bytes(), b"admin"),
                             "Unicode injection should not create admin secrets"
                         );
                         assert!(
@@ -1773,7 +1767,7 @@ mod tests {
 
                     for capability in &malicious_input.capabilities {
                         assert!(
-                            !ct_eq(capability.as_bytes(), b"root"),
+                            !constant_time::ct_eq(capability.as_bytes(), b"root"),
                             "Unicode injection should not create root capabilities"
                         );
                         assert!(

@@ -3178,7 +3178,7 @@ mod tests {
 
         #[test]
         fn test_security_unicode_injection_in_trust_record_identifiers() {
-            use crate::security::constant_time::ct_eq;
+            use crate::security::constant_time;
 
             let mut state = TrustState::new();
 
@@ -3226,11 +3226,11 @@ mod tests {
                     if let Some(inserted_record) = records.iter().find(|r| r.id == record_id) {
                         // Unicode should not create privileged identifiers
                         assert!(
-                            !ct_eq(inserted_record.id.as_bytes(), b"admin"),
+                            !constant_time::ct_eq(inserted_record.id.as_bytes(), b"admin"),
                             "Unicode injection should not create admin records"
                         );
                         assert!(
-                            !ct_eq(inserted_record.origin_node_id.as_bytes(), b"admin"),
+                            !constant_time::ct_eq(inserted_record.origin_node_id.as_bytes(), b"admin"),
                             "Unicode injection should not create admin origins"
                         );
 
@@ -3324,7 +3324,7 @@ mod tests {
 
         #[test]
         fn test_security_mmr_proof_manipulation_and_verification_bypass() {
-            use crate::security::constant_time::ct_eq;
+            use crate::security::constant_time;
 
             let mut state = TrustState::new();
             let config = ReconciliationConfig {
@@ -3411,7 +3411,7 @@ mod tests {
                         {
                             // Should not have gained privileges through proof manipulation
                             assert!(
-                                !ct_eq(inserted.origin_node_id.as_bytes(), b"admin"),
+                                !constant_time::ct_eq(inserted.origin_node_id.as_bytes(), b"admin"),
                                 "Proof manipulation should not grant admin privileges"
                             );
                         }
@@ -3525,7 +3525,7 @@ mod tests {
 
         #[test]
         fn test_security_fork_detection_evasion_attempts() {
-            use crate::security::constant_time::ct_eq;
+            use crate::security::constant_time;
 
             let mut state1 = TrustState::new();
             let mut state2 = TrustState::new();
@@ -3585,7 +3585,7 @@ mod tests {
                     // States should still show divergence
                     if evasion_record.id == "shared" {
                         assert!(
-                            !ct_eq(digest1.as_bytes(), digest2.as_bytes()),
+                            !constant_time::ct_eq(digest1.as_bytes(), digest2.as_bytes()),
                             "Fork should still be detectable despite evasion attempts"
                         );
                     }
@@ -3682,7 +3682,7 @@ mod tests {
 
         #[test]
         fn test_security_hash_collision_resistance() {
-            use crate::security::constant_time::ct_eq;
+            use crate::security::constant_time;
 
             let mut state = TrustState::new();
 
@@ -3756,7 +3756,7 @@ mod tests {
                 // Different records should produce different digests
                 if record1.id != record2.id || record1.payload != record2.payload {
                     assert!(
-                        !ct_eq(digest1.as_bytes(), digest2.as_bytes()),
+                        !constant_time::ct_eq(digest1.as_bytes(), digest2.as_bytes()),
                         "Different records should have different digests: {} vs {}",
                         digest1,
                         digest2
@@ -3954,7 +3954,7 @@ mod tests {
 
         #[test]
         fn test_security_trust_record_tampering_detection() {
-            use crate::security::constant_time::ct_eq;
+            use crate::security::constant_time;
 
             let mut state = TrustState::new();
 
@@ -4008,7 +4008,7 @@ mod tests {
                             "Original epoch should be preserved"
                         );
                         assert!(
-                            ct_eq(
+                            constant_time::ct_eq(
                                 found_record.origin_node_id.as_bytes(),
                                 legitimate_record.origin_node_id.as_bytes()
                             ),
@@ -4021,7 +4021,7 @@ mod tests {
                     } else if insert_result {
                         // If tampered record was inserted, it should be distinguishable
                         assert!(
-                            !ct_eq(found_record.payload.as_slice(), original_payload.as_slice()),
+                            !constant_time::ct_eq(found_record.payload.as_slice(), original_payload.as_slice()),
                             "Tampered payload should be distinguishable from original"
                         );
                     }

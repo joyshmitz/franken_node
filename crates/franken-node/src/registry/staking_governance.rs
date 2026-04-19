@@ -32,7 +32,7 @@ use std::fmt;
 // ---------------------------------------------------------------------------
 
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
-use crate::security::constant_time::ct_eq_bytes;
+use crate::security::constant_time;
 /// Maximum slash events before oldest-first eviction.
 const MAX_SLASH_EVENTS: usize = 4096;
 /// Maximum appeal records before oldest-first eviction.
@@ -883,7 +883,7 @@ impl StakingLedger {
         // INV-STAKE-NO-DOUBLE-SLASH: check evidence hash not already used
         let evidence_hash = evidence.evidence_hash.clone();
         for existing in &self.state.slash_events {
-            if ct_eq_bytes(
+            if constant_time::ct_eq_bytes(
                 existing.evidence.evidence_hash.as_bytes(),
                 evidence_hash.as_bytes(),
             ) && existing.publisher_id == record.publisher_id

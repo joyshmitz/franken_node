@@ -1983,7 +1983,7 @@ mod tests {
     #[test]
     fn test_hash_comparison_should_use_constant_time_pattern() {
         // Test for == on [u8] hashes - should use ct_eq_bytes for timing safety
-        use crate::security::constant_time::ct_eq_bytes;
+        use crate::security::constant_time;
 
         // Simulate hash comparison scenarios in proof scheduling context
         let job_hash_1 = b"proof_job_hash_v1_abcdef123456789";
@@ -1991,21 +1991,21 @@ mod tests {
         let job_hash_3 = b"proof_job_hash_v1_abcdef123456788"; // Different by one byte
 
         // Correct pattern: use constant-time comparison for hash verification
-        assert!(ct_eq_bytes(job_hash_1, job_hash_2), "Identical job hashes should match");
-        assert!(!ct_eq_bytes(job_hash_1, job_hash_3), "Different job hashes should not match");
+        assert!(constant_time::ct_eq_bytes(job_hash_1, job_hash_2), "Identical job hashes should match");
+        assert!(!constant_time::ct_eq_bytes(job_hash_1, job_hash_3), "Different job hashes should not match");
 
         // Test with different length hashes (should fail fast but still constant-time)
         let short_hash = b"short_hash";
         let long_hash = b"much_longer_proof_job_hash_value";
-        assert!(!ct_eq_bytes(short_hash, long_hash), "Different length hashes should not match");
+        assert!(!constant_time::ct_eq_bytes(short_hash, long_hash), "Different length hashes should not match");
 
         // Test with proof window ID comparison (could be security-sensitive)
         let window_id_1 = b"proof_window_12345";
         let window_id_2 = b"proof_window_12345";
         let window_id_3 = b"proof_window_12346";
 
-        assert!(ct_eq_bytes(window_id_1, window_id_2), "Identical window IDs should match");
-        assert!(!ct_eq_bytes(window_id_1, window_id_3), "Different window IDs should not match");
+        assert!(constant_time::ct_eq_bytes(window_id_1, window_id_2), "Identical window IDs should match");
+        assert!(!constant_time::ct_eq_bytes(window_id_1, window_id_3), "Different window IDs should not match");
     }
 
     #[test]

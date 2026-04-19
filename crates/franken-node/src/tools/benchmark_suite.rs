@@ -1108,6 +1108,7 @@ pub fn render_human_summary(report: &BenchmarkReport) -> String {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+    use crate::security::constant_time;
 
     #[test]
     fn test_scoring_lower_is_better_perfect() {

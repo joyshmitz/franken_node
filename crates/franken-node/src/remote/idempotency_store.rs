@@ -647,6 +647,7 @@ impl Default for IdempotencyDedupeStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     /// Deterministic key for testing.
     fn test_key(seed: u8) -> IdempotencyKey {

@@ -955,6 +955,7 @@ impl IncidentLab {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     // Test helpers
     // ---------------------------------------------------------------------------

@@ -1525,6 +1525,7 @@ mod interface_hash_comprehensive_negative_tests {
 #[cfg(test)]
 mod interface_hash_advanced_negative_tests {
     use super::*;
+    use crate::security::constant_time;
 
     #[test]
     fn negative_verify_hash_with_lookalike_unicode_hex_characters() {

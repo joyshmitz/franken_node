@@ -16,7 +16,7 @@ use std::fmt;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 use crate::capacity_defaults::aliases::MAX_ENTRIES;
 /// Maximum number of exported bundles before oldest-first eviction.
@@ -458,7 +458,7 @@ pub fn replay_bundle(bundle: &ReproBundle) -> ReplayOutcome {
         &bundle.evidence_refs,
         &bundle.config.entries,
     );
-    if !ct_eq(&bundle.bundle_id, &expected_bundle_id) {
+    if !constant_time::ct_eq(&bundle.bundle_id, &expected_bundle_id) {
         ReplayOutcome::Divergence {
             divergence_point: bundle.event_trace.len(),
             expected: expected_bundle_id,
@@ -660,7 +660,7 @@ impl ReproBundleExporter {
 
     /// Find a bundle by ID.
     pub fn find_bundle(&self, bundle_id: &str) -> Option<&ReproBundle> {
-        self.bundles.iter().find(|b| ct_eq(&b.bundle_id, bundle_id))
+        self.bundles.iter().find(|b| constant_time::ct_eq(&b.bundle_id, bundle_id))
     }
 
     /// Export bundles for a time range (manual export).

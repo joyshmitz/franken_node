@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use frankenengine_node::capacity_defaults::aliases::MAX_EVENTS;
+use crate::capacity_defaults::aliases::MAX_EVENTS;
 
 /// Stable event codes for BPET migration stability gates.
 pub mod event_codes {
@@ -1447,9 +1447,39 @@ mod tests {
         // Should handle boundary cases without floating-point comparison issues
     }
 
+    // Test helper types for rollout plan validation
+    #[derive(Debug, Clone, PartialEq)]
+    struct RolloutPlan {
+        canary: RolloutStep,
+        limited: RolloutStep,
+        progressive: RolloutStep,
+        general: RolloutStep,
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct RolloutStep {
+        phase: RolloutPhase,
+        max_instability_score: f64,
+        max_regime_shift_probability: f64,
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    enum RolloutPhase {
+        Canary,
+        Limited,
+        Progressive,
+        General,
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct RolloutHealth {
+        stability_score: f64,
+        risk_level: f64,
+    }
+
     #[test]
     fn test_negative_trace_id_with_unicode_injection_attacks() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let malicious_trace_ids = [
             "trace\u{202E}fake\u{202C}",           // BiDi override attack
@@ -1494,7 +1524,7 @@ mod tests {
 
             // Test constant-time comparison for trace IDs
             let normal_trace = "normal-trace-123";
-            assert!(!ct_eq(malicious_trace_id, normal_trace), "trace ID comparison should be constant-time");
+            assert!(!constant_time::ct_eq(malicious_trace_id, normal_trace), "trace ID comparison should be constant-time");
 
             // Test rollout evaluation with malicious trace ID
             let rollout = RolloutPlan {

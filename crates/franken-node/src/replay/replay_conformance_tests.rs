@@ -18,6 +18,7 @@ mod tests {
         security::constant_time::ct_eq,
     };
     use std::collections::BTreeMap;
+    use crate::security::constant_time;
 
     // ── Test Utilities ───────────────────────────────────────────────────────────
 

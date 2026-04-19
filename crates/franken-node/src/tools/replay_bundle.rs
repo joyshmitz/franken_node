@@ -18,6 +18,8 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+use crate::security::constant_time;
+
 pub(crate) const MAX_BUNDLE_BYTES: usize = 10 * 1024 * 1024;
 pub(crate) const MAX_CHUNKS_PER_BUNDLE: usize = 1000; // Hardening: prevent unbounded chunk growth
 pub(crate) const MAX_EVENT_LOG: usize = 50000; // Hardening: prevent unbounded event log growth
@@ -707,7 +709,7 @@ pub fn generate_replay_bundle(
 pub fn validate_bundle_integrity(bundle: &ReplayBundle) -> Result<bool, ReplayBundleError> {
     validate_bundle_structure(bundle)?;
     let recomputed = compute_integrity_hash(bundle)?;
-    Ok(crate::security::constant_time::ct_eq(
+    Ok(constant_time::ct_eq(
         &recomputed,
         &bundle.integrity_hash,
     ))
@@ -727,7 +729,7 @@ pub fn replay_bundle(bundle: &ReplayBundle) -> Result<ReplayOutcome, ReplayBundl
     Ok(ReplayOutcome {
         incident_id: bundle.incident_id.clone(),
         expected_sequence_hash: bundle.manifest.decision_sequence_hash.clone(),
-        matched: crate::security::constant_time::ct_eq(
+        matched: constant_time::ct_eq(
             &replayed_sequence_hash,
             &bundle.manifest.decision_sequence_hash,
         ),
@@ -1854,7 +1856,7 @@ mod tests {
 
     #[test]
     fn test_negative_incident_id_with_unicode_injection_attacks() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let malicious_incident_ids = [
             "incident\u{202E}fake_id\u{202C}",  // BiDi override attack
@@ -1905,7 +1907,7 @@ mod tests {
             // Verify constant-time comparison works for incident IDs
             let normal_id = "normal_incident_123";
             assert!(
-                !ct_eq(malicious_id, normal_id),
+                !constant_time::ct_eq(malicious_id, normal_id),
                 "incident ID comparison should be constant-time"
             );
         }
@@ -2220,7 +2222,7 @@ mod tests {
 
     #[test]
     fn test_negative_bundle_id_collision_resistance() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         // Create multiple bundles with same incident_id to test collision resistance
         let incident_id = "collision-test";
@@ -2246,7 +2248,7 @@ mod tests {
                 let left = bundle_ids[i].to_string();
                 let right = bundle_ids[j].to_string();
                 assert!(
-                    !ct_eq(&left, &right),
+                    !constant_time::ct_eq(&left, &right),
                     "bundle IDs should be unique: {} vs {}",
                     bundle_ids[i],
                     bundle_ids[j]

@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
 
@@ -199,7 +199,7 @@ impl SnapshotTracker {
         snapshot: &SnapshotRecord,
         chain_head_hash: &str,
     ) -> Result<(), SnapshotError> {
-        if !ct_eq(&snapshot.root_hash, chain_head_hash) {
+        if !constant_time::ct_eq(&snapshot.root_hash, chain_head_hash) {
             return Err(SnapshotError::SnapshotHashMismatch {
                 expected: chain_head_hash.to_string(),
                 actual: snapshot.root_hash.clone(),

@@ -6,6 +6,7 @@ mod tests {
         ActivationDecision, BaselineMode, GuardConfig, GuardFailureReason, ProofExecutor,
         SpeculationTransform, deterministic_baseline_digest, make_receipt,
     };
+    use crate::security::constant_time;
 
     const APPROVED_INTERFACE: &str = "franken_engine::speculative_hotpath";
     const ACCEPTED_SIGNER: &str = "validator-A";

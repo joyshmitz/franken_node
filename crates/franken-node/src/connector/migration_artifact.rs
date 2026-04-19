@@ -582,6 +582,7 @@ pub struct MigrationArtifactEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     // ── Reference artifact ────────────────────────────────────────────
 

@@ -1387,7 +1387,7 @@ mod tests {
     /// Test constant-time comparison for hash/signature verification
     #[test]
     fn hardening_constant_time_hash_comparison() {
-        use crate::security::constant_time::ct_eq_bytes;
+        use crate::security::constant_time;
 
         let guard = EpochGuard::new();
         let root_secret = RootSecret::generate_for_test();
@@ -1405,8 +1405,8 @@ mod tests {
         let hash_a_copy = b"hash-value-a-32-bytes-long-test!";
 
         // Verify ct_eq_bytes usage patterns
-        assert!(!ct_eq_bytes(hash_a, hash_b), "Different hashes should not be equal");
-        assert!(ct_eq_bytes(hash_a, hash_a_copy), "Identical hashes should be equal");
+        assert!(!constant_time::ct_eq_bytes(hash_a, hash_b), "Different hashes should not be equal");
+        assert!(constant_time::ct_eq_bytes(hash_a, hash_a_copy), "Identical hashes should be equal");
 
         // Test with various hash lengths
         for hash_len in [16, 32, 64] {
@@ -1414,8 +1414,8 @@ mod tests {
             let hash2 = vec![0xBB; hash_len];
             let hash1_copy = vec![0xAA; hash_len];
 
-            assert!(!ct_eq_bytes(&hash1, &hash2), "Different {}-byte hashes should not be equal", hash_len);
-            assert!(ct_eq_bytes(&hash1, &hash1_copy), "Identical {}-byte hashes should be equal", hash_len);
+            assert!(!constant_time::ct_eq_bytes(&hash1, &hash2), "Different {}-byte hashes should not be equal", hash_len);
+            assert!(constant_time::ct_eq_bytes(&hash1, &hash1_copy), "Identical {}-byte hashes should be equal", hash_len);
         }
     }
 

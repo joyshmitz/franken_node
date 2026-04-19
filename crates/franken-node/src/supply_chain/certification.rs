@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::reputation::ReputationTier;
-use crate::security::constant_time::ct_eq_bytes;
+use crate::security::constant_time;
 
 const MAX_AUDIT_TRAIL: usize = 4096;
 
@@ -810,11 +810,11 @@ impl CertificationRegistry {
             } else {
                 &self.audit_trail[i - 1].entry_hash
             };
-            if !ct_eq_bytes(entry.prev_hash.as_bytes(), expected_prev.as_bytes()) {
+            if !constant_time::ct_eq_bytes(entry.prev_hash.as_bytes(), expected_prev.as_bytes()) {
                 return Err(CertificationError::AuditIntegrityViolation);
             }
             let computed = compute_entry_hash(entry);
-            if !ct_eq_bytes(computed.as_bytes(), entry.entry_hash.as_bytes()) {
+            if !constant_time::ct_eq_bytes(computed.as_bytes(), entry.entry_hash.as_bytes()) {
                 return Err(CertificationError::AuditIntegrityViolation);
             }
         }
@@ -2029,7 +2029,7 @@ mod tests {
         refs[0].verification_receipt_hash = "c".repeat(64);
         let changed = compute_derivation_hash(&refs, 42);
 
-        assert!(!ct_eq_bytes(original.as_bytes(), changed.as_bytes()));
+        assert!(!constant_time::ct_eq_bytes(original.as_bytes(), changed.as_bytes()));
     }
 
     #[test]

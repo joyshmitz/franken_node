@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::fmt;
 
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 /// Maximum transition history entries before oldest-first eviction.
 const MAX_TRANSITIONS: usize = 4096;
@@ -186,7 +186,7 @@ impl EpochTransition {
             &self.manifest_hash,
             &self.trace_id,
         );
-        ct_eq(&self.event_mac, &expected)
+        constant_time::ct_eq(&self.event_mac, &expected)
     }
 }
 
@@ -1754,16 +1754,16 @@ mod tests {
 
         // Test ct_eq correctness
         assert!(
-            ct_eq("identical", "identical"),
+            constant_time::ct_eq("identical", "identical"),
             "Identical strings should match"
         );
         assert!(
-            !ct_eq("different", "differing"),
+            !constant_time::ct_eq("different", "differing"),
             "Different strings should not match"
         );
-        assert!(ct_eq("", ""), "Empty strings should match");
-        assert!(!ct_eq("a", ""), "Different lengths should not match");
-        assert!(!ct_eq("", "b"), "Different lengths should not match");
+        assert!(constant_time::ct_eq("", ""), "Empty strings should match");
+        assert!(!constant_time::ct_eq("a", ""), "Different lengths should not match");
+        assert!(!constant_time::ct_eq("", "b"), "Different lengths should not match");
 
         // Test timing-sensitive scenarios
         let reference = "epoch:1234567890abcdef";
@@ -1777,7 +1777,7 @@ mod tests {
         ];
 
         for (test_string, description) in &timing_attack_cases {
-            let result = ct_eq(reference, test_string);
+            let result = constant_time::ct_eq(reference, test_string);
             let expected = reference == *test_string;
 
             assert_eq!(
@@ -1841,7 +1841,7 @@ mod tests {
 
         assert!(transition.verify(), "Valid transition should verify");
 
-        // Production code should use: ct_eq(mac1, mac2) ✓
+        // Production code should use: constant_time::ct_eq(mac1, mac2) ✓
         // NOT: mac1 == mac2 ✗ (timing attack vulnerable for cryptographic values)
     }
 

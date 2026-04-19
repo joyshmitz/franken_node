@@ -1067,6 +1067,7 @@ mod tests {
     fn concurrent_key_derivation_and_race_condition_safety_validation() {
         use std::sync::{Arc, Mutex};
         use std::thread;
+        use crate::security::constant_time;
 
         let secret = Arc::new(root_secret());
         let results = Arc::new(Mutex::new(Vec::new()));

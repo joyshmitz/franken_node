@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::security::constant_time::ct_eq_bytes;
+use crate::security::constant_time;
 use crate::storage::models::SchemaMigrationRecord;
 
 const MAX_HINTS: usize = 4096;
@@ -555,7 +555,7 @@ pub fn execute_plan(
         &state.canonical_state,
     ) {
         Ok(actual_initial_hash) => {
-            if !ct_eq_bytes(
+            if !constant_time::ct_eq_bytes(
                 actual_initial_hash.as_bytes(),
                 initial_state_hash.as_bytes(),
             ) {
@@ -1297,7 +1297,7 @@ fn replay_proven_prefix_len(state: &ConnectorState, steps: &[ExecutableMigration
         }
 
         if suffix.last().is_some_and(|record| {
-            ct_eq_bytes(record.checksum.as_bytes(), state.state_hash.as_bytes())
+            constant_time::ct_eq_bytes(record.checksum.as_bytes(), state.state_hash.as_bytes())
         }) {
             return prefix_len;
         }
@@ -1331,7 +1331,7 @@ fn already_applied_step_result(
 
 fn step_matches_record(record: &SchemaMigrationRecord, step: &ExecutableMigrationStep) -> bool {
     step.idempotent
-        && ct_eq_bytes(record.migration_id.as_bytes(), step.step_id.as_bytes())
+        && constant_time::ct_eq_bytes(record.migration_id.as_bytes(), step.step_id.as_bytes())
         && record.version_from == step.from_version.to_string()
         && record.version_to == step.to_version.to_string()
 }
@@ -1514,7 +1514,7 @@ fn rollback_or_fail_receipt(
         &original_state.schema_version,
         &original_state.canonical_state,
     ) {
-        Ok(hash) if ct_eq_bytes(hash.as_bytes(), original_state.state_hash.as_bytes()) => hash,
+        Ok(hash) if constant_time::ct_eq_bytes(hash.as_bytes(), original_state.state_hash.as_bytes()) => hash,
         Ok(_) | Err(_) => {
             return failed_receipt(
                 plan,
@@ -1841,7 +1841,7 @@ mod tests {
         assert_eq!(state.schema_version, v(1, 0, 1));
         assert!(!state.canonical_state.contains_key("profile_version"));
         assert_eq!(state.migration_journal.len(), 1);
-        assert!(ct_eq_bytes(
+        assert!(constant_time::ct_eq_bytes(
             receipt.final_state_hash.as_bytes(),
             state.state_hash.as_bytes()
         ));
@@ -1884,7 +1884,7 @@ mod tests {
             Some("MIGRATION_STATE_CONFLICT")
         );
         assert!(state.migration_journal.is_empty());
-        assert!(ct_eq_bytes(
+        assert!(constant_time::ct_eq_bytes(
             state.state_hash.as_bytes(),
             original_hash.as_bytes()
         ));
@@ -1938,13 +1938,13 @@ mod tests {
         assert_eq!(state.schema_version, v(1, 0, 0));
         assert_eq!(state.canonical_state, original_state);
         assert!(state.migration_journal.is_empty());
-        assert!(ct_eq_bytes(
+        assert!(constant_time::ct_eq_bytes(
             state.state_hash.as_bytes(),
             original_hash.as_bytes()
         ));
         assert!(receipt.step_results.iter().any(|result| {
             result.status == MigrationStepStatus::RolledBack
-                && ct_eq_bytes(result.post_state_hash.as_bytes(), original_hash.as_bytes())
+                && constant_time::ct_eq_bytes(result.post_state_hash.as_bytes(), original_hash.as_bytes())
         }));
         assert!(receipt.step_results.iter().any(|result| {
             result.status == MigrationStepStatus::Failed && result.error_detail.is_some()
@@ -1972,12 +1972,12 @@ mod tests {
         assert_eq!(receipt.steps_already_applied, 0);
         assert_eq!(receipt.steps_rolled_back, 0);
         assert!(receipt.step_results.is_empty());
-        assert!(ct_eq_bytes(
+        assert!(constant_time::ct_eq_bytes(
             receipt.initial_state_hash.as_bytes(),
             stale_hash.as_bytes()
         ));
         assert!(state.canonical_state.contains_key("tampered"));
-        assert!(ct_eq_bytes(
+        assert!(constant_time::ct_eq_bytes(
             state.state_hash.as_bytes(),
             stale_hash.as_bytes()
         ));
@@ -2054,7 +2054,7 @@ mod tests {
 
         assert_eq!(first_receipt.outcome, MigrationOutcome::Applied);
         assert_eq!(second_receipt.outcome, MigrationOutcome::Applied);
-        assert!(ct_eq_bytes(
+        assert!(constant_time::ct_eq_bytes(
             first_receipt.receipt_id.as_bytes(),
             second_receipt.receipt_id.as_bytes()
         ));
@@ -2073,7 +2073,7 @@ mod tests {
 
         assert_eq!(first_receipt.outcome, MigrationOutcome::Applied);
         assert_eq!(second_receipt.outcome, MigrationOutcome::Applied);
-        assert!(!ct_eq_bytes(
+        assert!(!constant_time::ct_eq_bytes(
             first_receipt.receipt_id.as_bytes(),
             second_receipt.receipt_id.as_bytes()
         ));
@@ -2111,11 +2111,11 @@ mod tests {
 
         assert_eq!(first_receipt.outcome, MigrationOutcome::Applied);
         assert_eq!(second_receipt.outcome, MigrationOutcome::Applied);
-        assert!(!ct_eq_bytes(
+        assert!(!constant_time::ct_eq_bytes(
             first_receipt.plan_id.as_bytes(),
             second_receipt.plan_id.as_bytes()
         ));
-        assert!(!ct_eq_bytes(
+        assert!(!constant_time::ct_eq_bytes(
             first_receipt.receipt_id.as_bytes(),
             second_receipt.receipt_id.as_bytes()
         ));
@@ -2238,11 +2238,11 @@ mod tests {
         assert_eq!(second.steps_applied, 0);
         assert_eq!(second.steps_already_applied, 3);
         assert_eq!(second.steps_rolled_back, 0);
-        assert!(ct_eq_bytes(
+        assert!(constant_time::ct_eq_bytes(
             second.initial_state_hash.as_bytes(),
             state.state_hash.as_bytes()
         ));
-        assert!(ct_eq_bytes(
+        assert!(constant_time::ct_eq_bytes(
             second.final_state_hash.as_bytes(),
             state.state_hash.as_bytes()
         ));
@@ -2251,11 +2251,11 @@ mod tests {
         assert!(second.step_results.iter().all(|result| {
             result.status == MigrationStepStatus::AlreadyApplied
                 && result.journal_record_id.as_ref() == Some(&result.step_id)
-                && ct_eq_bytes(
+                && constant_time::ct_eq_bytes(
                     result.pre_state_hash.as_bytes(),
                     state.state_hash.as_bytes(),
                 )
-                && ct_eq_bytes(
+                && constant_time::ct_eq_bytes(
                     result.post_state_hash.as_bytes(),
                     state.state_hash.as_bytes(),
                 )

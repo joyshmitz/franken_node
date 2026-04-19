@@ -3668,6 +3668,7 @@ mod tests {
     mod replay_capsule_comprehensive_security_and_boundary_tests {
         use super::*;
         use std::collections::HashMap;
+        use crate::security::constant_time;
 
         #[test]
         fn test_capsule_input_data_injection_and_overflow_attacks() {

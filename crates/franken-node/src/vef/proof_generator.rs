@@ -3227,6 +3227,7 @@ mod tests {
 
                 // Test concurrent state modifications
                 use std::thread;
+                use crate::security::constant_time;
 
                 let generator1 = Arc::clone(&generator);
                 let generator2 = Arc::clone(&generator);

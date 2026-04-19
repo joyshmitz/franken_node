@@ -1095,7 +1095,7 @@ impl SafeModeController {
         // 4. Compare computed digest against claimed trust state hash.
         if !input.trust_state_hash.is_empty()
             && !input.evidence_entries.is_empty()
-            && !crate::security::constant_time::ct_eq(&input.trust_state_hash, &computed_digest)
+            && !constant_time::ct_eq(&input.trust_state_hash, &computed_digest)
         {
             inconsistencies.push(format!(
                 "trust state hash mismatch: expected {}, computed {}",
@@ -2909,7 +2909,7 @@ mod tests {
 
     #[test]
     fn test_security_unicode_injection_in_flag_parsing() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         // BiDi override + zero-width characters in flag names
         let malicious_args = vec![
@@ -2925,7 +2925,7 @@ mod tests {
 
             if let Err(SafeModeError::UnknownFlag { flag, .. }) = result {
                 // Ensure error message doesn't contain injected Unicode
-                assert!(!ct_eq(flag.as_bytes(), b"--safe-mode"),
+                assert!(!constant_time::ct_eq(flag.as_bytes(), b"--safe-mode"),
                        "Flag parsing vulnerable to Unicode normalization");
             }
         }
@@ -2987,7 +2987,7 @@ mod tests {
 
     #[test]
     fn test_security_config_corruption_detection() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         // Test malformed JSON with injection attempts
         let malicious_configs = vec![
@@ -3006,7 +3006,7 @@ mod tests {
                        "Threshold should be bounded to prevent DoS");
                 assert!(!config.env_var_name.contains('\0'),
                        "Environment variable name should not contain null bytes");
-                assert!(ct_eq(config.env_var_name.as_bytes(), b"FRANKEN_SAFE_MODE") ||
+                assert!(constant_time::ct_eq(config.env_var_name.as_bytes(), b"FRANKEN_SAFE_MODE") ||
                        config.env_var_name.chars().all(|c| c.is_alphanumeric() || c == '_'),
                        "Environment variable name should be sanitized");
             }
@@ -3015,7 +3015,7 @@ mod tests {
 
     #[test]
     fn test_security_entry_receipt_verification_bypass() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         // Attempt to forge receipts with malicious data
         let receipt = SafeModeEntryReceipt::new(
@@ -3041,7 +3041,7 @@ mod tests {
         }
 
         // Constant-time comparison of trust hashes should be used
-        assert!(!ct_eq(receipt.trust_state_hash.as_bytes(), b"sha256:real"),
+        assert!(!constant_time::ct_eq(receipt.trust_state_hash.as_bytes(), b"sha256:real"),
                "Hash comparison should not extract injected content");
     }
 
@@ -3177,7 +3177,7 @@ mod tests {
 
     #[test]
     fn test_security_trust_verification_attacks() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let mut ctrl = SafeModeController::with_default_config();
 
@@ -3208,9 +3208,9 @@ mod tests {
         assert!(!json.contains("\0"), "Null bytes should be handled");
 
         // Trust state hash should use constant-time comparison
-        assert!(!ct_eq(receipt.trust_state_hash.as_bytes(), b"sha256:real"),
+        assert!(!constant_time::ct_eq(receipt.trust_state_hash.as_bytes(), b"sha256:real"),
                "Should not match unrelated hash");
-        assert!(ct_eq(receipt.trust_state_hash.as_bytes(), b"sha256:compromised"),
+        assert!(constant_time::ct_eq(receipt.trust_state_hash.as_bytes(), b"sha256:compromised"),
                "Should match actual hash with constant-time comparison");
     }
 
@@ -3484,7 +3484,7 @@ mod tests {
 
                         // Hash comparison should use constant-time
                         let test_hash = "sha256:test";
-                        assert!(!ct_eq(receipt.trust_state_hash.as_bytes(), test_hash.as_bytes()));
+                        assert!(!constant_time::ct_eq(receipt.trust_state_hash.as_bytes(), test_hash.as_bytes()));
                     },
                     Err(_) => {
                         // Expected for malformed hashes

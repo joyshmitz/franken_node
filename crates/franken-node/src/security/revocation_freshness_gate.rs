@@ -2161,6 +2161,7 @@ mod tests {
     fn concurrent_access_and_race_condition_safety_validation() {
         use std::sync::{Arc, Mutex};
         use std::thread;
+        use crate::security::constant_time;
 
         let gate_mutex = Arc::new(Mutex::new(gate()));
         let results = Arc::new(Mutex::new(Vec::new()));

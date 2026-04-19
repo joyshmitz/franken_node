@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::security::constant_time::ct_eq_bytes;
+use crate::security::constant_time;
 
 // ---------------------------------------------------------------------------
 // Event codes
@@ -78,7 +78,7 @@ fn content_digest_matches(observed: &str, expected: &str) -> bool {
             if !is_canonical_sha256_hex_digest(expected) {
                 return false;
             }
-            ct_eq_bytes(&observed_bytes, &expected_bytes)
+            constant_time::ct_eq_bytes(&observed_bytes, &expected_bytes)
         }
         _ => false,
     }
@@ -802,11 +802,11 @@ mod tests {
     }
 
     fn assert_hash_eq(left: &str, right: &str) {
-        assert!(ct_eq_bytes(left.as_bytes(), right.as_bytes()));
+        assert!(constant_time::ct_eq_bytes(left.as_bytes(), right.as_bytes()));
     }
 
     fn assert_hash_ne(left: &str, right: &str) {
-        assert!(!ct_eq_bytes(left.as_bytes(), right.as_bytes()));
+        assert!(!constant_time::ct_eq_bytes(left.as_bytes(), right.as_bytes()));
     }
 
     // -- Config defaults --
@@ -2972,7 +2972,7 @@ mod storage_migration_integration_tests {
 
     #[test]
     fn test_security_unicode_injection_in_artifact_segment_ids() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let mut gate = make_gate();
 
@@ -3005,9 +3005,9 @@ mod storage_migration_integration_tests {
             gate.register_target(&artifact_id, &segment_id, &good_state(&test_hash));
 
             // Verify Unicode doesn't create privileged identifiers
-            assert!(!ct_eq(artifact_id.0.as_bytes(), b"admin"),
+            assert!(!constant_time::ct_eq(artifact_id.0.as_bytes(), b"admin"),
                    "Unicode injection should not create admin artifacts");
-            assert!(!ct_eq(segment_id.0.as_bytes(), b"admin"),
+            assert!(!constant_time::ct_eq(segment_id.0.as_bytes(), b"admin"),
                    "Unicode injection should not create admin segments");
 
             // Verify null bytes don't appear in identifiers
@@ -3104,7 +3104,7 @@ mod storage_migration_integration_tests {
 
     #[test]
     fn test_security_content_digest_collision_attacks() {
-        use crate::security::constant_time::ct_eq_bytes;
+        use crate::security::constant_time;
 
         let mut gate = make_gate();
 
@@ -3132,7 +3132,7 @@ mod storage_migration_integration_tests {
 
             // Different payloads should produce different hashes
             if payload1 != payload2 {
-                assert!(!ct_eq_bytes(hash1.as_bytes(), hash2.as_bytes()),
+                assert!(!constant_time::ct_eq_bytes(hash1.as_bytes(), hash2.as_bytes()),
                        "Different payloads should have different hashes: {} vs {}", hash1, hash2);
             }
 

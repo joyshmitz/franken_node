@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -637,7 +637,7 @@ impl PolicyChangeEngine {
                 &self.audit_ledger[i - 1].entry_hash
             };
 
-            if !ct_eq(&entry.prev_hash, expected_prev) {
+            if !constant_time::ct_eq(&entry.prev_hash, expected_prev) {
                 return Err(PolicyChangeError::with_index(
                     ERR_AUDIT_CHAIN_BROKEN,
                     format!("Audit chain broken at index {i}: prev_hash mismatch"),
@@ -646,7 +646,7 @@ impl PolicyChangeEngine {
             }
 
             let computed = compute_entry_hash(entry);
-            if !ct_eq(&entry.entry_hash, &computed) {
+            if !constant_time::ct_eq(&entry.entry_hash, &computed) {
                 return Err(PolicyChangeError::with_index(
                     ERR_AUDIT_CHAIN_BROKEN,
                     format!("Audit chain broken at index {i}: entry_hash mismatch"),

@@ -15,7 +15,7 @@
 //! - INV-REPAIR-PROOF-BINDING: Proof binds input fragments to output via signed attestation.
 //! - INV-REPAIR-PROOF-DETERMINISTIC: Same inputs produce identical proof structure.
 
-use crate::security::constant_time::ct_eq_bytes;
+use crate::security::constant_time;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -1892,7 +1892,7 @@ impl ProofVerificationApi {
             .zip(original_fragment_hashes.iter())
             .enumerate()
         {
-            if !ct_eq_bytes(proof_hash.as_bytes(), original_hash.as_bytes()) {
+            if !constant_time::ct_eq_bytes(proof_hash.as_bytes(), original_hash.as_bytes()) {
                 return VerificationResult::InvalidFragmentHash {
                     index: i,
                     expected: original_hash.clone(),
@@ -1909,7 +1909,7 @@ impl ProofVerificationApi {
         }
 
         // (c) Check output hash matches recomputed value
-        if !ct_eq_bytes(
+        if !constant_time::ct_eq_bytes(
             proof.output_hash.as_bytes(),
             recomputed_output_hash.as_bytes(),
         ) {
@@ -1931,7 +1931,7 @@ impl ProofVerificationApi {
             &proof.trace_id,
         );
 
-        if !ct_eq_bytes(
+        if !constant_time::ct_eq_bytes(
             proof.attestation.payload_hash.as_bytes(),
             expected_payload_hash.as_bytes(),
         ) {
@@ -1940,7 +1940,7 @@ impl ProofVerificationApi {
 
         let expected_signature = signature_hex(&self.signing_secret, &expected_payload_hash);
 
-        if !ct_eq_bytes(
+        if !constant_time::ct_eq_bytes(
             proof.attestation.signature.as_bytes(),
             expected_signature.as_bytes(),
         ) {
@@ -2016,11 +2016,11 @@ mod tests {
     }
 
     fn assert_digest_eq(left: &[u8], right: &[u8]) {
-        assert!(ct_eq_bytes(left, right));
+        assert!(constant_time::ct_eq_bytes(left, right));
     }
 
     fn assert_digest_ne(left: &[u8], right: &[u8]) {
-        assert!(!ct_eq_bytes(left, right));
+        assert!(!constant_time::ct_eq_bytes(left, right));
     }
 
     fn assert_hash_eq(left: &str, right: &str) {
@@ -4666,7 +4666,7 @@ mod tests {
 #[cfg(test)]
 mod proof_carrying_decode_comprehensive_attack_resistance_tests {
     use super::*;
-    use crate::security::constant_time::ct_eq_bytes;
+    use crate::security::constant_time;
     use std::collections::{HashMap, HashSet};
     use std::sync::{Arc, Mutex};
     use std::thread;

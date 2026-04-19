@@ -450,6 +450,7 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     fn ts(n: u32) -> String {
         format!("2026-01-{n:02}T00:00:00Z")

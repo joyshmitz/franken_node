@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use crate::control_plane::control_epoch::{
     ControlEpoch, EpochArtifactEvent, EpochRejection, ValidityWindowPolicy, check_artifact_epoch,
 };
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 const RESERVED_ARTIFACT_ID: &str = "<unknown>";
 
@@ -332,7 +332,7 @@ impl ArtifactStore {
                     reason: format!("artifact not found: {artifact_id}"),
                 })?;
 
-        if !ct_eq(&artifact.payload_hash, payload_hash) {
+        if !constant_time::ct_eq(&artifact.payload_hash, payload_hash) {
             return Err(PersistenceError::ReplayMismatch {
                 artifact_id: artifact_id.to_string(),
                 expected_hash: artifact.payload_hash.clone(),
@@ -922,7 +922,7 @@ mod tests {
         let stored = store.get("a1").unwrap();
 
         assert_eq!(err.code(), "PRA_DUPLICATE");
-        assert!(ct_eq(&stored.payload_hash, "original-hash"));
+        assert!(constant_time::ct_eq(&stored.payload_hash, "original-hash"));
         assert_eq!(stored.trace_id, "tr-original");
         assert_eq!(stored.stored_at, 1000);
         assert!(store.verify_replay("a1", "replacement-hash").is_err());
@@ -1092,7 +1092,7 @@ mod tests {
 
         assert_eq!(err.code(), "PRA_REPLAY_MISMATCH");
         assert_eq!(store.total_count(), 1);
-        assert!(ct_eq(&stored.payload_hash, "expected-digest"));
+        assert!(constant_time::ct_eq(&stored.payload_hash, "expected-digest"));
         assert_eq!(hooks.len(), 1);
         assert_eq!(hooks[0].artifact_id, "receipt-1");
         assert_eq!(hooks[0].replay_order, 0);
@@ -1316,7 +1316,7 @@ mod tests {
 
         assert!(matches!(err, PersistenceError::EpochRejected { .. }));
         let stored = store.get("epoch-dup").unwrap();
-        assert!(ct_eq(&stored.payload_hash, "h-original"));
+        assert!(constant_time::ct_eq(&stored.payload_hash, "h-original"));
         assert_eq!(stored.trace_id, "tr-original");
         assert_eq!(store.count_by_type(ArtifactType::Receipt), 1);
     }
@@ -1366,7 +1366,7 @@ mod tests {
                 ref expected_hash,
                 ref got_hash,
                 ..
-            } if ct_eq(expected_hash, "deadbeef") && ct_eq(got_hash, "DEADBEEF")
+            } if constant_time::ct_eq(expected_hash, "deadbeef") && constant_time::ct_eq(got_hash, "DEADBEEF")
         ));
     }
 

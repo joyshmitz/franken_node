@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use uuid::Uuid;
 
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 // ---------------------------------------------------------------------------
 // Event codes (structured logging)
@@ -816,7 +816,7 @@ impl BarrierEngine {
                     matched_barrier = Some(barrier.clone());
                 }
 
-                if !ct_eq(&cfg.expected_digest, artifact_digest) {
+                if !constant_time::ct_eq(&cfg.expected_digest, artifact_digest) {
                     let receipt = BarrierAuditReceipt::new(
                         event_codes::FORK_PIN_REJECTED,
                         &barrier,

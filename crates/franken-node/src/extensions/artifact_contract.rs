@@ -1908,6 +1908,7 @@ mod tests {
 
     mod artifact_contract_comprehensive_negative_tests {
         use super::*;
+        use crate::security::constant_time;
 
         #[test]
         fn identifier_injection_in_artifact_identifiers() {

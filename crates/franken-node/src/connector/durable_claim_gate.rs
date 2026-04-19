@@ -594,6 +594,7 @@ fn push_bounded<T>(vec: &mut Vec<T>, item: T, max: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     fn base_claim() -> DurableClaim {
         DurableClaim {

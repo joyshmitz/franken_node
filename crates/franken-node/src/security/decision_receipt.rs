@@ -598,6 +598,7 @@ fn ensure_parent_dir(path: &Path) -> Result<(), ReceiptError> {
 mod tests {
     use super::*;
     use serde_json::json;
+    use crate::security::constant_time;
 
     fn make_receipt(action_name: &str, decision: Decision) -> Receipt {
         Receipt::new(

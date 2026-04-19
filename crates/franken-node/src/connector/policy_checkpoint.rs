@@ -27,7 +27,7 @@ use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
-use crate::security::constant_time::ct_eq_bytes;
+use crate::security::constant_time;
 const MAX_CHECKPOINTS: usize = 4096;
 
 // ---------------------------------------------------------------------------
@@ -269,7 +269,7 @@ impl PolicyCheckpoint {
             self.timestamp,
             &self.signer,
         );
-        ct_eq_bytes(computed.as_bytes(), self.checkpoint_hash.as_bytes())
+        constant_time::ct_eq_bytes(computed.as_bytes(), self.checkpoint_hash.as_bytes())
     }
 
     /// Short hash prefix for logging (first 16 hex chars).
@@ -338,7 +338,7 @@ impl PolicyCheckpointChain {
                 let actual_head = self.head_hash.as_deref();
                 let head_matches = match (expected_head, actual_head) {
                     (Some(expected), Some(actual)) => {
-                        ct_eq_bytes(expected.as_bytes(), actual.as_bytes())
+                        constant_time::ct_eq_bytes(expected.as_bytes(), actual.as_bytes())
                     }
                     (None, None) => true,
                     _ => false,
@@ -585,7 +585,7 @@ impl PolicyCheckpointChain {
 
         // INV-PCK-PARENT-CHAIN
         let parent_match = match (&checkpoint.parent_hash, &self.head_hash) {
-            (Some(a), Some(b)) => ct_eq_bytes(a.as_bytes(), b.as_bytes()),
+            (Some(a), Some(b)) => constant_time::ct_eq_bytes(a.as_bytes(), b.as_bytes()),
             (None, None) => true,
             _ => false,
         };
@@ -701,7 +701,7 @@ impl PolicyCheckpointChain {
             let expected_parent = prev_hash;
             let actual_parent = cp.parent_hash.as_deref();
             let parent_match = match (expected_parent, actual_parent) {
-                (Some(a), Some(b)) => ct_eq_bytes(a.as_bytes(), b.as_bytes()),
+                (Some(a), Some(b)) => constant_time::ct_eq_bytes(a.as_bytes(), b.as_bytes()),
                 (None, None) => true,
                 _ => false,
             };

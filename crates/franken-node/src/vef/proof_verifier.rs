@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 use crate::capacity_defaults::aliases::MAX_EVENTS;
 const MAX_REPORTS: usize = 2048;
 
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -478,7 +478,7 @@ impl ProofVerifier {
 
         // Check 6: Policy version binding
         let policy_version_satisfied = if self.config.enforce_policy_version {
-            ct_eq(&proof.policy_version_hash, &predicate.policy_version_hash)
+            constant_time::ct_eq(&proof.policy_version_hash, &predicate.policy_version_hash)
         } else {
             true
         };

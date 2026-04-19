@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 use crate::capacity_defaults::aliases::MAX_REFERENCE_RUNTIMES;
 const MAX_DIVERGENCES: usize = 4096;
@@ -224,7 +224,7 @@ pub fn classify_divergence(
     // If all references agree and disagree with franken_engine → high risk.
     // If references themselves disagree → medium risk.
     // If digests match → would not be called, but treat as low.
-    if ct_eq(franken_digest, reference_digest) {
+    if constant_time::ct_eq(franken_digest, reference_digest) {
         return RiskTier::Low;
     }
     if !references_agree || reference_count <= 1 {
@@ -288,11 +288,11 @@ pub fn run_harness(
             let first_ref_digest = &available_refs[0].1;
             available_refs
                 .iter()
-                .all(|(_, d)| ct_eq(first_ref_digest, d))
+                .all(|(_, d)| constant_time::ct_eq(first_ref_digest, d))
         };
 
         for (rt, ref_digest) in available_refs {
-            if !ct_eq(&fe_digest, &ref_digest) {
+            if !constant_time::ct_eq(&fe_digest, &ref_digest) {
                 div_counter = div_counter.saturating_add(1);
                 let risk_tier = classify_divergence(
                     &sample.boundary_name,
@@ -1061,7 +1061,7 @@ mod tests {
             let empty_digest = digest_bytes(b"");
             let zero_digest = digest_bytes(&[0]);
 
-            assert!(!ct_eq(&empty_digest, &zero_digest));
+            assert!(!constant_time::ct_eq(&empty_digest, &zero_digest));
         }
 
         #[test]
@@ -1069,7 +1069,7 @@ mod tests {
             let joined_digest = digest_bytes(b"ab");
             let separated_digest = digest_bytes(b"a\0b");
 
-            assert!(!ct_eq(&joined_digest, &separated_digest));
+            assert!(!constant_time::ct_eq(&joined_digest, &separated_digest));
         }
 
         #[test]

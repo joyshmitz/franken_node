@@ -1782,7 +1782,7 @@ mod tests {
 
     #[test]
     fn test_negative_trace_id_with_unicode_injection_attacks() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let mut gate = OverheadGate::with_default_policy();
         let result = within_budget_result(HotPath::HealthGateEvaluation);
@@ -1808,7 +1808,7 @@ mod tests {
 
         // Should use constant-time comparison for generated trace IDs
         let expected_prefix = "perf-health_gate_evaluation";
-        assert!(ct_eq(trace_id.as_str(), expected_prefix),
+        assert!(constant_time::ct_eq(trace_id.as_str(), expected_prefix),
                "trace ID comparison must be constant-time");
     }
 

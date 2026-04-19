@@ -674,6 +674,7 @@ pub fn parse_baseline_csv(csv: &str) -> Vec<BaselineRow> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     fn sample_baseline() -> Vec<BaselineRow> {
         vec![

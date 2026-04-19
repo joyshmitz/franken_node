@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 const MAX_HISTORY_ENTRIES: usize = 4096;
 const MAX_BET_ENTRIES: usize = 4096;
@@ -643,7 +643,7 @@ impl ReportingPipeline {
         // Verify hash if content is provided.
         if let Some(content) = &input.content {
             let computed = sha256_hex(content.as_bytes());
-            if !ct_eq(&computed, &input.sha256_hash) {
+            if !constant_time::ct_eq(&computed, &input.sha256_hash) {
                 return Err(CategoryShiftError::HashMismatch(
                     input.artifact_path.clone(),
                 ));
@@ -1424,7 +1424,7 @@ mod tests {
         claim.value = 123.0;
         let tampered_hash = compute_report_hash(&report).expect("tampered report should hash");
 
-        assert!(!ct_eq(&original_hash, &tampered_hash));
+        assert!(!constant_time::ct_eq(&original_hash, &tampered_hash));
     }
 
     #[test]
@@ -1439,7 +1439,7 @@ mod tests {
         manifest.sha256_hash = sha256_hex(b"forged manifest content");
         let tampered_hash = compute_report_hash(&report).expect("tampered report should hash");
 
-        assert!(!ct_eq(&original_hash, &tampered_hash));
+        assert!(!constant_time::ct_eq(&original_hash, &tampered_hash));
     }
 
     #[test]

@@ -33,7 +33,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 // ---------------------------------------------------------------------------
 // Schema version
@@ -483,7 +483,7 @@ impl WorkflowTrace {
 
         // INV-TTR-TRACE-COMPLETE: verify digest integrity
         let recomputed = Self::compute_digest(&self.steps);
-        if !ct_eq(&recomputed, &self.trace_digest) {
+        if !constant_time::ct_eq(&recomputed, &self.trace_digest) {
             return Err(TimeTravelError::DigestMismatch {
                 trace_id: self.trace_id.clone(),
                 expected: self.trace_digest.clone(),
@@ -888,8 +888,8 @@ impl ReplayEngine {
                 hex::encode(hasher.finalize())
             };
 
-            let output_match = ct_eq(&original_output_digest, &replayed_output_digest);
-            let effects_match = ct_eq(&original_effects_digest, &replayed_effects_digest);
+            let output_match = constant_time::ct_eq(&original_output_digest, &replayed_output_digest);
+            let effects_match = constant_time::ct_eq(&original_effects_digest, &replayed_effects_digest);
 
             if output_match && effects_match {
                 // TTR-005: step identical
@@ -1647,7 +1647,7 @@ mod tests {
 
         assert_eq!(divergent.verdict, ReplayVerdict::Diverged(2));
         assert_eq!(identity.verdict, ReplayVerdict::Identical);
-        assert!(ct_eq(&stored_trace.trace_digest, &original_digest));
+        assert!(constant_time::ct_eq(&stored_trace.trace_digest, &original_digest));
     }
 
     #[test]
@@ -2348,7 +2348,7 @@ mod tests {
                             assert!(!divergence.actual_hash.is_empty());
 
                             // Expected and actual should be different
-                            assert!(!ct_eq(
+                            assert!(!constant_time::ct_eq(
                                 divergence.expected_hash.as_bytes(),
                                 divergence.actual_hash.as_bytes()
                             ));
@@ -2915,7 +2915,7 @@ mod tests {
         );
 
         // The positive aspect: line 486 correctly uses ct_eq for digest comparison
-        // if !ct_eq(&recomputed, &self.trace_digest) prevents timing attacks ✓
+        // if !constant_time::ct_eq(&recomputed, &self.trace_digest) prevents timing attacks ✓
     }
 
     #[test]

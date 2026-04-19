@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
 
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 /// Schema version for compiled claims and scoreboard snapshots.
 pub const SCHEMA_VERSION: &str = "claim-compiler-v1.0";
@@ -589,7 +589,7 @@ impl ClaimCompiler {
         for claim in claims {
             let expected_digest =
                 compute_compilation_digest(&claim.normalised_text, &claim.evidence_links);
-            if !ct_eq(&claim.compilation_digest, &expected_digest) {
+            if !constant_time::ct_eq(&claim.compilation_digest, &expected_digest) {
                 self.emit(
                     event_codes::CLMC_006,
                     &claim.claim_id,
@@ -665,7 +665,7 @@ impl ClaimCompiler {
         snapshot: &ScoreboardSnapshot,
     ) -> Result<bool, ClaimCompilerError> {
         let computed = compute_scoreboard_digest(&snapshot.entries);
-        if !ct_eq(&computed, &snapshot.snapshot_digest) {
+        if !constant_time::ct_eq(&computed, &snapshot.snapshot_digest) {
             return Err(ClaimCompilerError::DigestMismatch {
                 expected: snapshot.snapshot_digest.clone(),
                 actual: computed,

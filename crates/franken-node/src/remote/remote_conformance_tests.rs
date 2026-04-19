@@ -8,7 +8,7 @@
 //! - idempotency_store: at-most-once execution semantics
 //! - remote_bulkhead: concurrency limiting with backpressure
 
-#[cfg(test)]
+#[cfg(all(test, feature = "extended-surfaces"))]
 mod tests {
     use super::super::{
         computation_registry::*, eviction_saga::*, idempotency::*, idempotency_store::*,
@@ -24,6 +24,7 @@ mod tests {
     };
     use serde_json::Value;
     use std::collections::{BTreeMap, BTreeSet};
+    use crate::security::constant_time;
 
     // ── Virtual Transport Faults Edge Cases ─────────────────────────────────────
 

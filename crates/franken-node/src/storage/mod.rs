@@ -17,7 +17,7 @@ mod negative_path_tests {
         RG_PROOF_FAILED, RetrievabilityConfig, RetrievabilityGate, SegmentId, StorageTier,
         TargetTierState,
     };
-    use crate::security::constant_time::ct_eq_bytes;
+    use crate::security::constant_time;
 
     fn artifact(value: &str) -> ArtifactId {
         ArtifactId(value.to_string())
@@ -284,8 +284,8 @@ mod negative_path_tests {
         let ProofFailureReason::HashMismatch { expected, actual } = err.reason else {
             panic!("expected hash mismatch reason");
         };
-        assert!(ct_eq_bytes(expected.as_bytes(), b"expected-digest"));
-        assert!(ct_eq_bytes(actual.as_bytes(), b"actual-digest"));
+        assert!(constant_time::ct_eq_bytes(expected.as_bytes(), b"expected-digest"));
+        assert!(constant_time::ct_eq_bytes(actual.as_bytes(), b"actual-digest"));
     }
 
     #[test]

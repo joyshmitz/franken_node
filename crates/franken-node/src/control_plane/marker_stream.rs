@@ -678,6 +678,7 @@ impl Default for MarkerStream {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     fn trace(n: u32) -> String {
         format!("trace-{n:04}")

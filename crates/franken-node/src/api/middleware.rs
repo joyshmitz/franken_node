@@ -16,7 +16,7 @@
 //! 6. Structured response + telemetry emission
 
 #[cfg(any(test, feature = "extended-surfaces"))]
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 use serde::{Deserialize, Serialize};
 #[cfg(any(test, feature = "extended-surfaces"))]
 use std::collections::BTreeMap;
@@ -155,7 +155,7 @@ fn contains_authorized_key_constant_time(
 ) -> bool {
     authorized_keys
         .iter()
-        .fold(false, |acc, authorized| acc | ct_eq(authorized, candidate))
+        .fold(false, |acc, authorized| acc | constant_time::ct_eq(authorized, candidate))
 }
 
 // ── Authentication ─────────────────────────────────────────────────────────

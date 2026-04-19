@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeSet, VecDeque};
 
+use crate::security::constant_time;
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -205,7 +207,7 @@ impl AudienceBoundToken {
     /// Check if audience contains a specific service identity.
     pub fn audience_contains(&self, service_id: &str) -> bool {
         self.audience.iter().fold(false, |acc, a| {
-            acc | crate::security::constant_time::ct_eq(a, service_id)
+            acc | constant_time::ct_eq(a, service_id)
         })
     }
 }
@@ -353,7 +355,7 @@ impl TokenChain {
         // Check parent_token_hash links to parent.
         let parent_hash = parent.hash();
         match &token.parent_token_hash {
-            Some(h) if crate::security::constant_time::ct_eq(h, &parent_hash) => {}
+            Some(h) if constant_time::ct_eq(h, &parent_hash) => {}
             Some(h) => {
                 return Err(TokenError::new(
                     ERR_ABT_ATTENUATION_VIOLATION,
@@ -741,7 +743,7 @@ impl TokenValidator {
         for i in 1..tokens.len() {
             let parent_hash = tokens[i - 1].hash();
             match &tokens[i].parent_token_hash {
-                Some(h) if crate::security::constant_time::ct_eq(h, &parent_hash) => {}
+                Some(h) if constant_time::ct_eq(h, &parent_hash) => {}
                 _ => {
                     self.tokens_rejected = self.tokens_rejected.saturating_add(1);
                     return Err(TokenError::new(
@@ -894,7 +896,7 @@ fn _assert_send_sync() {
 
 #[cfg(test)]
 mod tests {
-    use crate::security::constant_time::ct_eq_bytes;
+    use crate::security::constant_time;
 
     use super::*;
 
@@ -1011,14 +1013,14 @@ mod tests {
     fn test_token_hash_deterministic() {
         let t1 = root_token("root-1", 3);
         let t2 = root_token("root-1", 3);
-        assert!(ct_eq_bytes(t1.hash().as_bytes(), t2.hash().as_bytes()));
+        assert!(constant_time::ct_eq_bytes(t1.hash().as_bytes(), t2.hash().as_bytes()));
     }
 
     #[test]
     fn test_token_hash_changes_with_id() {
         let t1 = root_token("root-1", 3);
         let t2 = root_token("root-2", 3);
-        assert!(!ct_eq_bytes(t1.hash().as_bytes(), t2.hash().as_bytes()));
+        assert!(!constant_time::ct_eq_bytes(t1.hash().as_bytes(), t2.hash().as_bytes()));
     }
 
     #[test]
@@ -1041,7 +1043,7 @@ mod tests {
             format!("{}{}", left.token_id.as_str(), left.issuer),
             format!("{}{}", right.token_id.as_str(), right.issuer)
         );
-        assert!(!ct_eq_bytes(
+        assert!(!constant_time::ct_eq_bytes(
             left.hash().as_bytes(),
             right.hash().as_bytes()
         ));
@@ -1055,7 +1057,7 @@ mod tests {
         split.audience = vec!["kernel-A".to_string(), "kernel-B".to_string()];
 
         assert_eq!(single.audience.concat(), split.audience.concat());
-        assert!(!ct_eq_bytes(
+        assert!(!constant_time::ct_eq_bytes(
             single.hash().as_bytes(),
             split.hash().as_bytes()
         ));

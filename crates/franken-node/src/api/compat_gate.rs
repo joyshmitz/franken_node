@@ -399,7 +399,7 @@ impl CompatGateService {
                 capacity: MAX_SHIMS,
             });
         }
-        self.shims.push(shim);
+        push_bounded(&mut self.shims, shim, MAX_SHIMS);
         Ok(())
     }
 
@@ -415,7 +415,7 @@ impl CompatGateService {
                 capacity: MAX_PREDICATES,
             });
         }
-        self.predicates.push(predicate);
+        push_bounded(&mut self.predicates, predicate, MAX_PREDICATES);
         Ok(())
     }
 

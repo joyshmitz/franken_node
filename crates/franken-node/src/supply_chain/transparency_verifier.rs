@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
 
-use crate::security::constant_time::ct_eq_bytes;
+use crate::security::constant_time;
 
 const RESERVED_ARTIFACT_ID: &str = "<unknown>";
 
@@ -72,7 +72,7 @@ impl TransparencyPolicy {
     pub fn is_checkpoint_pinned(&self, tree_size: u64, root_hash: &str) -> bool {
         self.pinned_roots.iter().fold(false, |acc, r| {
             let size_match = r.tree_size == tree_size;
-            let hash_match = ct_eq_bytes(r.root_hash.as_bytes(), root_hash.as_bytes());
+            let hash_match = constant_time::ct_eq_bytes(r.root_hash.as_bytes(), root_hash.as_bytes());
             acc | (size_match & hash_match)
         })
     }
@@ -241,7 +241,7 @@ pub fn verify_inclusion(
     }
 
     // Check leaf hash matches artifact hash
-    if !ct_eq_bytes(proof.leaf_hash.as_bytes(), artifact_hash.as_bytes()) {
+    if !constant_time::ct_eq_bytes(proof.leaf_hash.as_bytes(), artifact_hash.as_bytes()) {
         return ProofReceipt {
             connector_id: connector_id.into(),
             artifact_id: artifact_id.into(),

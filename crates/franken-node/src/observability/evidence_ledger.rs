@@ -2056,7 +2056,7 @@ mod tests {
 
         #[test]
         fn test_negative_decision_id_with_unicode_injection_attacks() {
-            use crate::security::constant_time::ct_eq;
+            use crate::security::constant_time;
 
             let ledger = EvidenceLedger::new(100, 1_000_000, false);
 
@@ -2114,7 +2114,7 @@ mod tests {
 
                 // Test constant-time comparison for decision IDs
                 let normal_id = "normal-decision-123";
-                assert!(!ct_eq(malicious_id, normal_id), "decision ID comparison should be constant-time");
+                assert!(!constant_time::ct_eq(malicious_id, normal_id), "decision ID comparison should be constant-time");
             }
 
             // Test with decision IDs that might bypass audit trails
@@ -2783,7 +2783,7 @@ mod tests {
 
     #[test]
     fn test_security_unicode_injection_in_evidence_entry_fields() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let config = EvidenceLedgerConfig {
             max_entries: 100,
@@ -2841,15 +2841,15 @@ mod tests {
                         e.decision_id == malicious_entry.decision_id
                     }) {
                         // Unicode should not create privileged identifiers
-                        assert!(!ct_eq(found_entry.decision_id.as_bytes(), b"admin"),
+                        assert!(!constant_time::ct_eq(found_entry.decision_id.as_bytes(), b"admin"),
                                "Unicode injection should not create admin decisions");
 
                         if let Some(ref entry_id_str) = found_entry.entry_id {
-                            assert!(!ct_eq(entry_id_str.as_bytes(), b"admin"),
+                            assert!(!constant_time::ct_eq(entry_id_str.as_bytes(), b"admin"),
                                    "Unicode injection should not create admin entry IDs");
                         }
 
-                        assert!(!ct_eq(found_entry.trace_id.as_bytes(), b"admin"),
+                        assert!(!constant_time::ct_eq(found_entry.trace_id.as_bytes(), b"admin"),
                                "Unicode injection should not create admin trace IDs");
 
                         // Null bytes should not appear in string fields

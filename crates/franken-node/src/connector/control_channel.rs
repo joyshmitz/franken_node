@@ -8,7 +8,7 @@
 //! The `!token.is_empty()` shortcut is gone; real verification is mandatory.
 
 use crate::control_plane::control_epoch::ControlEpoch;
-use crate::security::constant_time::ct_eq_bytes;
+use crate::security::constant_time;
 use crate::security::epoch_scoped_keys::{RootSecret, SIGNATURE_LEN, derive_epoch_key};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -412,7 +412,7 @@ impl ControlChannel {
         let preimage = build_transcript_preimage(&fields);
         let expected = compute_transcript_mac(&preimage, msg.credential.epoch, &self.root_secret);
 
-        if !ct_eq_bytes(&msg.credential.mac, &expected) {
+        if !constant_time::ct_eq_bytes(&msg.credential.mac, &expected) {
             return Err("transcript_mac_mismatch".into());
         }
         Ok(())

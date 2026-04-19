@@ -28,7 +28,7 @@ use crate::connector::verifier_sdk::{
     replay_capsule_signature_payload, verify_ed25519_signature_hex,
     verify_ed25519_signature_with_key_hex,
 };
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 const REPLAY_CAPSULE_SCHEMA_VERSION: &str = "vep-replay-capsule-v2";
 const DEFAULT_REPLAY_CAPSULE_FRESHNESS_SECS: i64 = 3600;
@@ -103,7 +103,7 @@ fn canonicalized_ed25519_public_keys_match(expected_key: &str, actual_key: &str)
         canonicalize_ed25519_public_key_hex(expected_key),
         canonicalize_ed25519_public_key_hex(actual_key),
     ) {
-        (Ok(expected), Ok(actual)) => ct_eq(&expected, &actual),
+        (Ok(expected), Ok(actual)) => constant_time::ct_eq(&expected, &actual),
         _ => false,
     }
 }
@@ -875,7 +875,7 @@ impl VerifierEconomyRegistry {
         let canonical_trace_hash = match canonicalize_sha256_prefixed_hex(
             &submission.evidence.execution_trace_hash,
         ) {
-            Some(hash) if ct_eq(&hash, &submission.evidence.execution_trace_hash) => hash,
+            Some(hash) if constant_time::ct_eq(&hash, &submission.evidence.execution_trace_hash) => hash,
             _ => {
                 self.emit(
                     VEP_008,
@@ -1493,7 +1493,7 @@ impl VerifierEconomyRegistry {
         }
         let expected_trace_root = compute_trace_commitment_root(&capsule.trace_chunk_hashes)
             .ok_or(CapsuleVerificationFailure::TraceCommitmentMismatch)?;
-        if !ct_eq(&capsule.trace_commitment_root, &expected_trace_root) {
+        if !constant_time::ct_eq(&capsule.trace_commitment_root, &expected_trace_root) {
             return Err(CapsuleVerificationFailure::TraceCommitmentMismatch);
         }
 
@@ -1511,7 +1511,7 @@ impl VerifierEconomyRegistry {
             &capsule.expected_result_hash,
         );
 
-        if !ct_eq(&capsule.integrity_hash, &expected_integrity) {
+        if !constant_time::ct_eq(&capsule.integrity_hash, &expected_integrity) {
             return Err(CapsuleVerificationFailure::IntegrityHashMismatch);
         }
         Ok(())
@@ -1549,7 +1549,7 @@ impl VerifierEconomyRegistry {
         if attestation_verifier_id != capsule.verifier_id {
             return Err(CapsuleVerificationFailure::VerifierMismatch);
         }
-        if !ct_eq(&capsule.claim_metadata_hash, &expected_claim_metadata_hash) {
+        if !constant_time::ct_eq(&capsule.claim_metadata_hash, &expected_claim_metadata_hash) {
             return Err(CapsuleVerificationFailure::ClaimMetadataMismatch);
         }
 

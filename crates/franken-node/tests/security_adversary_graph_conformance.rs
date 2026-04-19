@@ -177,7 +177,7 @@ fn test_bayesian_update_increases_risk_with_high_likelihood() {
 
     // Add high-likelihood observation
     let obs = make_observation("ext:suspicious", 0.95, 10, "malware-detected", "trace-1");
-    graph.update_from_observation(&obs);
+    let _ = graph.ingest(&obs);
 
     let updated_risk = graph.get_risk_posterior("ext:suspicious");
     assert!(updated_risk > initial_risk);
@@ -190,13 +190,13 @@ fn test_bayesian_update_decreases_risk_with_low_likelihood() {
 
     // First add a high-risk observation to establish some risk
     let high_risk = make_observation("ext:test", 0.9, 5, "initial-risk", "trace-1");
-    graph.update_from_observation(&high_risk);
+    let _ = graph.ingest(&high_risk);
     let elevated_risk = graph.get_risk_posterior("ext:test");
 
     // Then add low-likelihood observations that should reduce risk
     for i in 0..5 {
         let low_risk = make_observation("ext:test", 0.05, 3, &format!("clean-{i}"), &format!("trace-{i}"));
-        graph.update_from_observation(&low_risk);
+        let _ = graph.ingest(&low_risk);
     }
 
     let final_risk = graph.get_risk_posterior("ext:test");
@@ -212,11 +212,17 @@ fn test_evidence_weight_affects_update_magnitude() {
     let light_evidence = make_observation("ext:test", 0.8, 1, "light-ev", "trace-1");
     let heavy_evidence = make_observation("ext:test", 0.8, 20, "heavy-ev", "trace-1");
 
-    graph1.update_from_observation(&light_evidence);
-    graph2.update_from_observation(&heavy_evidence);
+    graph1.ingest(&light_evidence).expect("ingest");
+    graph2.ingest(&heavy_evidence).expect("ingest");
 
-    let risk1 = graph1.get_risk_posterior("ext:test");
-    let risk2 = graph2.get_risk_posterior("ext:test");
+    let risk1 = graph1.posteriors().into_iter()
+        .find(|p| p.principal_id == "ext:test")
+        .map(|p| p.posterior)
+        .unwrap_or(0.0);
+    let risk2 = graph2.posteriors().into_iter()
+        .find(|p| p.principal_id == "ext:test")
+        .map(|p| p.posterior)
+        .unwrap_or(0.0);
 
     assert!(risk2 > risk1); // Higher weight should lead to greater update
 }
@@ -224,15 +230,21 @@ fn test_evidence_weight_affects_update_magnitude() {
 #[test]
 fn test_multiple_observations_accumulate_evidence() {
     let mut graph = AdversaryGraph::new();
-    let initial_risk = graph.get_risk_posterior("ext:accumulator");
+    let initial_risk = graph.posteriors().into_iter()
+        .find(|p| p.principal_id == "ext:accumulator")
+        .map(|p| p.posterior)
+        .unwrap_or(0.1); // Default prior risk
 
     // Add multiple moderate-risk observations
     for i in 0..10 {
         let obs = make_observation("ext:accumulator", 0.7, 3, &format!("evidence-{i}"), &format!("trace-{i}"));
-        graph.update_from_observation(&obs);
+        graph.ingest(&obs).expect("ingest");
     }
 
-    let final_risk = graph.get_risk_posterior("ext:accumulator");
+    let final_risk = graph.posteriors().into_iter()
+        .find(|p| p.principal_id == "ext:accumulator")
+        .map(|p| p.posterior)
+        .unwrap_or(0.0);
     assert!(final_risk > initial_risk);
     assert!(final_risk > 0.5); // Should accumulate to significant risk
 }
@@ -247,7 +259,7 @@ fn test_state_hash_changes_with_updates() {
     let initial_hash = graph.export_state_hash();
 
     let obs = make_observation("ext:test", 0.5, 5, "evidence", "trace");
-    graph.update_from_observation(&obs);
+    let _ = graph.ingest(&obs);
 
     let updated_hash = graph.export_state_hash();
     assert_ne!(initial_hash, updated_hash);
@@ -259,12 +271,12 @@ fn test_state_hash_deterministic_across_instances() {
     let obs2 = make_observation("ext:b", 0.3, 8, "ev-2", "trace-2");
 
     let mut graph1 = AdversaryGraph::new();
-    graph1.update_from_observation(&obs1);
-    graph1.update_from_observation(&obs2);
+    let _ = graph1.ingest(&obs1);
+    let _ = graph1.ingest(&obs2);
 
     let mut graph2 = AdversaryGraph::new();
-    graph2.update_from_observation(&obs1);
-    graph2.update_from_observation(&obs2);
+    let _ = graph2.ingest(&obs1);
+    let _ = graph2.ingest(&obs2);
 
     assert_eq!(graph1.export_state_hash(), graph2.export_state_hash());
 }
@@ -433,7 +445,7 @@ fn test_risk_posterior_bounded() {
     ];
 
     for obs in scenarios {
-        graph.update_from_observation(&obs);
+        let _ = graph.ingest(&obs);
     }
 
     // All risk values must be in [0, 1] range

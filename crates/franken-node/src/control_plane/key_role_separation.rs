@@ -12,7 +12,7 @@
 //! - INV-KRS-ROLE-GUARD: Using a key outside its registered role is rejected.
 //! - INV-KRS-ROTATION-ATOMIC: Key rotation atomically revokes old and binds new.
 
-use crate::security::constant_time::ct_eq_bytes;
+use crate::security::constant_time;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -380,7 +380,7 @@ impl KeyRoleRegistry {
         if let Some((existing_role, material_matches)) = self
             .active
             .get(key_id)
-            .map(|b| (b.role, ct_eq_bytes(&b.public_key_bytes, &public_key_bytes)))
+            .map(|b| (b.role, constant_time::ct_eq_bytes(&b.public_key_bytes, &public_key_bytes)))
         {
             if existing_role != role {
                 self.push_event(KeyRoleEvent::violation(
@@ -2343,7 +2343,7 @@ mod tests {
     #[test]
     fn test_key_id_comparison_uses_constant_time_pattern() {
         // Test for == on [u8] hashes - should use ct_eq_bytes for timing safety
-        use crate::security::constant_time::ct_eq_bytes;
+        use crate::security::constant_time;
 
         // Simulate key ID comparison scenarios in key role separation
         let key_id_1 = b"control_plane_signing_key_v1_abcdef123456";
@@ -2351,8 +2351,8 @@ mod tests {
         let key_id_3 = b"control_plane_signing_key_v1_abcdef123457"; // Different by one
 
         // Correct pattern: use constant-time comparison for key verification
-        assert!(ct_eq_bytes(key_id_1, key_id_2), "Identical key IDs should match");
-        assert!(!ct_eq_bytes(key_id_1, key_id_3), "Different key IDs should not match");
+        assert!(constant_time::ct_eq_bytes(key_id_1, key_id_2), "Identical key IDs should match");
+        assert!(!constant_time::ct_eq_bytes(key_id_1, key_id_3), "Different key IDs should not match");
 
         // Test with role tag comparison (security-sensitive)
         let role_tag_1 = KeyRole::Signing.tag();
@@ -2363,13 +2363,13 @@ mod tests {
         let role_tag_2_bytes = role_tag_2.as_slice();
         let role_tag_3_bytes = role_tag_3.as_slice();
 
-        assert!(ct_eq_bytes(role_tag_1_bytes, role_tag_2_bytes), "Identical role tags should match");
-        assert!(!ct_eq_bytes(role_tag_1_bytes, role_tag_3_bytes), "Different role tags should not match");
+        assert!(constant_time::ct_eq_bytes(role_tag_1_bytes, role_tag_2_bytes), "Identical role tags should match");
+        assert!(!constant_time::ct_eq_bytes(role_tag_1_bytes, role_tag_3_bytes), "Different role tags should not match");
 
         // Test with different length key IDs
         let short_key = b"short_key";
         let long_key = b"much_longer_control_plane_key_identifier";
-        assert!(!ct_eq_bytes(short_key, long_key), "Different length keys should not match");
+        assert!(!constant_time::ct_eq_bytes(short_key, long_key), "Different length keys should not match");
     }
 
     #[test]

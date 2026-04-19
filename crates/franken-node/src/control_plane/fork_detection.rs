@@ -703,6 +703,7 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
 mod tests {
     use super::*;
     use crate::control_plane::marker_stream::{MarkerEventType, MarkerStream};
+    use crate::security::constant_time;
 
     fn make_sv(epoch: u64, hash_seed: &str, parent_seed: &str, node: &str) -> StateVector {
         StateVector {

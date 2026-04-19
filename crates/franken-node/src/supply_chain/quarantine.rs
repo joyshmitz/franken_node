@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 /// Maximum audit trail entries before oldest are evicted.
 const MAX_AUDIT_TRAIL: usize = 4096;
@@ -827,7 +827,7 @@ impl QuarantineRegistry {
             code: ERR_RECALL_WITHOUT_QUARANTINE.to_owned(),
             message: format!("Cannot record recall receipt: order {order_id} has no recall order"),
         })?;
-        if !ct_eq(&receipt.recall_id, &expected_recall_id.recall_id) {
+        if !constant_time::ct_eq(&receipt.recall_id, &expected_recall_id.recall_id) {
             return Err(QuarantineError {
                 code: ERR_RECALL_RECEIPT_MISMATCH.to_owned(),
                 message: format!(
@@ -1033,7 +1033,7 @@ impl QuarantineRegistry {
                 &self.audit_trail[i - 1].entry_hash
             };
 
-            if !ct_eq(&entry.prev_hash, expected_prev) {
+            if !constant_time::ct_eq(&entry.prev_hash, expected_prev) {
                 return Err(QuarantineError {
                     code: ERR_AUDIT_CHAIN_BROKEN.to_owned(),
                     message: format!("Audit chain broken at index {i}: prev_hash mismatch"),
@@ -1042,7 +1042,7 @@ impl QuarantineRegistry {
 
             // Verify entry hash.
             let computed = compute_entry_hash(entry);
-            if !ct_eq(&entry.entry_hash, &computed) {
+            if !constant_time::ct_eq(&entry.entry_hash, &computed) {
                 return Err(QuarantineError {
                     code: ERR_AUDIT_CHAIN_BROKEN.to_owned(),
                     message: format!("Audit chain broken at index {i}: entry_hash mismatch"),
@@ -2918,9 +2918,9 @@ mod tests {
             let test_string2 = "sensitive_data_2";
             let test_string3 = "sensitive_data_1"; // Same as first
 
-            assert!(!ct_eq(test_string1, test_string2), "Different strings should not match");
-            assert!(ct_eq(test_string1, test_string3), "Identical strings should match");
-            assert!(ct_eq(test_string1, test_string1), "String should match itself");
+            assert!(!constant_time::ct_eq(test_string1, test_string2), "Different strings should not match");
+            assert!(constant_time::ct_eq(test_string1, test_string3), "Identical strings should match");
+            assert!(constant_time::ct_eq(test_string1, test_string1), "String should match itself");
         }
 
         // -- Hardening Negative Path Tests --

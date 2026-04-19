@@ -28,7 +28,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 pub mod event_codes {
     pub const MVC_COHORT_CREATED: &str = "MVC-001";
@@ -311,7 +311,7 @@ impl MigrationValidationCohorts {
             .map(|r| r.outcome_hash.as_str())
             .collect();
 
-        let det = prior_hashes.is_empty() || prior_hashes.iter().all(|h| ct_eq(h, outcome_hash));
+        let det = prior_hashes.is_empty() || prior_hashes.iter().all(|h| constant_time::ct_eq(h, outcome_hash));
         let run = self
             .runs
             .iter_mut()

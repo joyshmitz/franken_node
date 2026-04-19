@@ -1533,7 +1533,7 @@ mod tests {
 
     #[test]
     fn test_negative_cancellation_id_with_unicode_injection_attacks() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let mut proto = CancellationProtocol::new(
             Duration::from_millis(1000),
@@ -1574,7 +1574,7 @@ mod tests {
 
             // Test constant-time comparison for cancellation IDs
             let normal_id = "normal-cancel-123";
-            assert!(!ct_eq(malicious_id, normal_id), "ID comparison should be constant-time");
+            assert!(!constant_time::ct_eq(malicious_id, normal_id), "ID comparison should be constant-time");
 
             // Complete cancellation to clean up for next iteration
             let _ = proto.start_drain(malicious_id, "test-trace");
@@ -1928,7 +1928,7 @@ mod tests {
 
     #[test]
     fn test_negative_trace_id_with_massive_forensic_payloads() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let mut proto = CancellationProtocol::new(
             Duration::from_millis(1000),
@@ -1977,7 +1977,7 @@ mod tests {
 
             // Test constant-time comparison for trace IDs
             let normal_trace = "normal-trace-123";
-            assert!(!ct_eq(injection_trace_id, normal_trace),
+            assert!(!constant_time::ct_eq(injection_trace_id, normal_trace),
                    "trace ID comparison should be constant-time");
 
             // Verify injection is contained in audit log

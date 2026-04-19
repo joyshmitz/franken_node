@@ -1992,6 +1992,7 @@ mod tests {
     fn negative_canonical_json_handles_problematic_value_types() {
         // Test that problematic serde_json::Value types are handled
         use serde_json::{Map, Value};
+        use crate::security::constant_time;
 
         // Create deeply nested JSON structure
         let mut deep_nested = Value::Object(Map::new());

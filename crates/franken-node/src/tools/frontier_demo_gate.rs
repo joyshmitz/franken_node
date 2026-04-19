@@ -550,6 +550,7 @@ pub fn sha256_fingerprint(data: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     // -- helpers --
 

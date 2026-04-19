@@ -2151,7 +2151,7 @@ mod tests {
 
     #[test]
     fn test_security_unicode_injection_in_effect_descriptors() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         // BiDi override and zero-width characters in effect fields
         let malicious_effects = vec![
@@ -2185,7 +2185,7 @@ mod tests {
                 }
 
                 // Target host should not be manipulated by Unicode
-                assert!(!ct_eq(effect.target_host.as_bytes(), b"api.example.com"),
+                assert!(!constant_time::ct_eq(effect.target_host.as_bytes(), b"api.example.com"),
                        "Host parsing vulnerable to Unicode normalization");
             }
         }
@@ -2230,7 +2230,7 @@ mod tests {
 
     #[test]
     fn test_security_intent_classification_bypass_attempts() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         // Attempt to disguise risky intents as benign
         let bypass_attempts = vec![
@@ -2338,7 +2338,7 @@ mod tests {
 
     #[test]
     fn test_security_decision_receipt_forgery_resistance() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let mut firewall = make_firewall();
         let effect = make_effect("test", "ext-001");
@@ -2359,7 +2359,7 @@ mod tests {
 
             if let Ok(forged_receipt) = parse_result {
                 // Verify receipt integrity checks would catch forgery
-                assert!(!ct_eq(forged_receipt.receipt_id.as_bytes(), decision.receipt_id.as_bytes()) ||
+                assert!(!constant_time::ct_eq(forged_receipt.receipt_id.as_bytes(), decision.receipt_id.as_bytes()) ||
                        forged_receipt == decision,
                        "Forged receipts should be detectable");
 
@@ -2371,7 +2371,7 @@ mod tests {
 
     #[test]
     fn test_security_extension_id_spoofing_prevention() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let mut firewall = make_firewall();
         firewall.register_extension("legitimate-ext");
@@ -2404,7 +2404,7 @@ mod tests {
                 Ok(decision) => {
                     // If processed, should not be treated as legitimate extension
                     if let TrafficOrigin::Extension { extension_id } = &decision.effect_origin {
-                        assert!(!ct_eq(extension_id.as_bytes(), b"legitimate-ext"),
+                        assert!(!constant_time::ct_eq(extension_id.as_bytes(), b"legitimate-ext"),
                                "Spoofed extension ID should not match legitimate extension");
                     }
                 },

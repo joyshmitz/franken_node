@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::control_plane::marker_stream::MarkerStream;
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 /// Maximum leaf hashes before oldest-first eviction.
 const MAX_LEAF_HASHES: usize = 4096;
@@ -268,7 +268,7 @@ pub fn mmr_inclusion_proof(
         merkle_root_from_leaf_hashes(&leaf_hashes).ok_or(ProofError::EmptyCheckpoint)?;
     let checkpoint_root = checkpoint_root_or_err(checkpoint)?;
     if checkpoint_root.tree_size != stream_size
-        || !ct_eq(&checkpoint_root.root_hash, &current_root_hash)
+        || !constant_time::ct_eq(&checkpoint_root.root_hash, &current_root_hash)
     {
         return Err(ProofError::CheckpointStale {
             checkpoint_tree_size: checkpoint_root.tree_size,
@@ -333,7 +333,7 @@ pub fn verify_inclusion(
     }
 
     let expected_leaf = marker_leaf_hash(marker_hash);
-    if !ct_eq(&expected_leaf, &proof.leaf_hash) {
+    if !constant_time::ct_eq(&expected_leaf, &proof.leaf_hash) {
         return Err(ProofError::LeafMismatch {
             expected: expected_leaf,
             actual: proof.leaf_hash.clone(),
@@ -351,7 +351,7 @@ pub fn verify_inclusion(
         index /= 2;
     }
 
-    if !ct_eq(&current, &root.root_hash) {
+    if !constant_time::ct_eq(&current, &root.root_hash) {
         return Err(ProofError::RootMismatch {
             expected: root.root_hash.clone(),
             actual: current,
@@ -390,7 +390,7 @@ pub fn mmr_prefix_proof(
     let prefix_root_from_super =
         merkle_root_from_leaf_hashes(&checkpoint_b.leaf_hashes[..prefix_size])
             .ok_or(ProofError::EmptyCheckpoint)?;
-    if !ct_eq(&prefix_root_from_super, &root_a.root_hash) {
+    if !constant_time::ct_eq(&prefix_root_from_super, &root_a.root_hash) {
         return Err(ProofError::InvalidProof {
             reason: "super-checkpoint retained window does not witness the requested prefix"
                 .to_string(),
@@ -425,21 +425,21 @@ pub fn verify_prefix(
         });
     }
 
-    if !ct_eq(&proof.prefix_root_hash, &root_a.root_hash) {
+    if !constant_time::ct_eq(&proof.prefix_root_hash, &root_a.root_hash) {
         return Err(ProofError::RootMismatch {
             expected: root_a.root_hash.clone(),
             actual: proof.prefix_root_hash.clone(),
         });
     }
 
-    if !ct_eq(&proof.super_root_hash, &root_b.root_hash) {
+    if !constant_time::ct_eq(&proof.super_root_hash, &root_b.root_hash) {
         return Err(ProofError::RootMismatch {
             expected: root_b.root_hash.clone(),
             actual: proof.super_root_hash.clone(),
         });
     }
 
-    if !ct_eq(&proof.prefix_root_from_super, &root_a.root_hash) {
+    if !constant_time::ct_eq(&proof.prefix_root_from_super, &root_a.root_hash) {
         return Err(ProofError::RootMismatch {
             expected: root_a.root_hash.clone(),
             actual: proof.prefix_root_from_super.clone(),

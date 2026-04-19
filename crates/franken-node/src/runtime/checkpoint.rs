@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::runtime::bounded_mask::{CancellationState, CapabilityContext, MaskError, bounded_mask};
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
 
@@ -50,13 +50,13 @@ fn checkpoint_progress_violation(
 fn checkpoint_is_exact_replay(latest: &CheckpointMeta, record: &CheckpointRecord) -> bool {
     latest.iteration_count == record.iteration_count
         && latest.epoch == record.epoch
-        && ct_eq(&latest.checkpoint_id, &record.checkpoint_id)
-        && ct_eq(&latest.progress_state_hash, &record.progress_state_hash)
+        && constant_time::ct_eq(&latest.checkpoint_id, &record.checkpoint_id)
+        && constant_time::ct_eq(&latest.progress_state_hash, &record.progress_state_hash)
         && match (
             &latest.previous_checkpoint_hash,
             &record.previous_checkpoint_hash,
         ) {
-            (Some(a), Some(b)) => ct_eq(a, b),
+            (Some(a), Some(b)) => constant_time::ct_eq(a, b),
             (None, None) => true,
             _ => false,
         }
@@ -470,7 +470,7 @@ impl<B: CheckpointBackend> CheckpointContract for CheckpointWriter<B> {
         if let Some(latest) = existing.latest.as_ref()
             && latest.iteration_count == iteration_count
             && latest.epoch == epoch
-            && ct_eq(&latest.progress_state_hash, &progress_state_hash)
+            && constant_time::ct_eq(&latest.progress_state_hash, &progress_state_hash)
         {
             let checkpoint_id = latest.checkpoint_id.clone();
             let previous_checkpoint_hash = latest.previous_checkpoint_hash.clone();
@@ -691,11 +691,11 @@ fn verify_chain(
             record.previous_checkpoint_hash.as_deref(),
         );
 
-        let valid_orchestration = ct_eq(&record.orchestration_id, orchestration_id);
-        let valid_state_hash = ct_eq(&computed_state_hash, &record.progress_state_hash);
-        let valid_id = ct_eq(&computed_id, &record.checkpoint_id);
+        let valid_orchestration = constant_time::ct_eq(&record.orchestration_id, orchestration_id);
+        let valid_state_hash = constant_time::ct_eq(&computed_state_hash, &record.progress_state_hash);
+        let valid_id = constant_time::ct_eq(&computed_id, &record.checkpoint_id);
         let valid_prev = match (&record.previous_checkpoint_hash, &last_valid_id) {
-            (Some(a), Some(b)) => ct_eq(a, b),
+            (Some(a), Some(b)) => constant_time::ct_eq(a, b),
             (None, None) => true,
             _ => false,
         };

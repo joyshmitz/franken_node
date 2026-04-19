@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::security::constant_time::ct_eq;
+use crate::security::constant_time;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -697,14 +697,14 @@ impl ReputationRegistry {
         let first_expected = self.chain_anchor_hash.as_ref().unwrap_or(&genesis);
         let mut expected_prev = first_expected.clone();
         for entry in &self.audit_trail {
-            if !ct_eq(&entry.prev_hash, &expected_prev) {
+            if !constant_time::ct_eq(&entry.prev_hash, &expected_prev) {
                 return Err(ReputationError::AuditIntegrityViolation {
                     expected: expected_prev,
                     actual: entry.prev_hash.clone(),
                 });
             }
             let computed = compute_entry_hash(entry);
-            if !ct_eq(&computed, &entry.entry_hash) {
+            if !constant_time::ct_eq(&computed, &entry.entry_hash) {
                 return Err(ReputationError::AuditIntegrityViolation {
                     expected: computed,
                     actual: entry.entry_hash.clone(),

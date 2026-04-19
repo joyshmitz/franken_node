@@ -1881,6 +1881,7 @@ mod tests {
 mod remote_cap_comprehensive_negative_tests {
     use super::*;
     use std::collections::HashMap;
+    use crate::security::constant_time;
 
     /// Negative test: Unicode injection and encoding attacks in capability tokens
     #[test]

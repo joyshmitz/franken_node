@@ -994,7 +994,7 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
 mod tests {
     use super::*;
     use crate::control_plane::control_epoch::ControlEpoch;
-    use crate::security::constant_time::ct_eq_bytes;
+    use crate::security::constant_time;
     use crate::security::epoch_scoped_keys::{
         RootSecret, derive_epoch_key, sign_epoch_artifact, verify_epoch_signature,
     };
@@ -1818,13 +1818,13 @@ mod tests {
         let final_epoch = derive_epoch_key(&root, ControlEpoch::new(u64::MAX), "barrier");
 
         assert!(
-            !ct_eq_bytes(previous.as_bytes(), final_epoch.as_bytes()),
+            !constant_time::ct_eq_bytes(previous.as_bytes(), final_epoch.as_bytes()),
             "adjacent rollover-boundary epochs must derive distinct keys"
         );
         let previous_fingerprint = previous.fingerprint();
         let final_fingerprint = final_epoch.fingerprint();
         assert!(
-            !ct_eq_bytes(
+            !constant_time::ct_eq_bytes(
                 previous_fingerprint.as_bytes(),
                 final_fingerprint.as_bytes()
             ),

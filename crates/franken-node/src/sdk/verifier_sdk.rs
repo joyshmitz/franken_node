@@ -6454,6 +6454,7 @@ mod verifier_sdk_comprehensive_attack_vector_tests {
         // Test: Concurrent error handling
         use std::sync::{Arc, Mutex};
         use std::thread;
+        use crate::security::constant_time;
 
         let shared_sdk = Arc::new(test_sdk());
         let results = Arc::new(Mutex::new(Vec::new()));

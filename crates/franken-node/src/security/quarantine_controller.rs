@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::security::adversary_graph::AdversaryPosterior;
+use crate::security::constant_time;
 
 pub const EVD_QUAR_CTRL_001: &str = "EVD-QUAR-CTRL-001";
 pub const EVD_QUAR_CTRL_002: &str = "EVD-QUAR-CTRL-002";
@@ -236,7 +237,7 @@ impl QuarantineController {
             entry.posterior,
             &entry.trace_id,
         );
-        crate::security::constant_time::ct_eq(&entry.signature, &expected)
+        constant_time::ct_eq(&entry.signature, &expected)
     }
 
     fn sign_evidence(
@@ -893,7 +894,7 @@ mod quarantine_controller_additional_negative_tests {
 
     #[test]
     fn test_security_unicode_injection_in_principal_trace_ids() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let controller = controller();
 
@@ -939,7 +940,7 @@ mod quarantine_controller_additional_negative_tests {
                 assert!(evidence.action != ControlAction::Revoke || malicious_posterior.posterior >= 0.90);
 
                 // Principal ID should not be normalized in a way that bypasses security
-                assert!(!ct_eq(evidence.principal_id.as_bytes(), b"admin"),
+                assert!(!constant_time::ct_eq(evidence.principal_id.as_bytes(), b"admin"),
                        "Unicode injection should not create admin privileges");
 
                 // Trace ID should preserve injection detection
@@ -1016,7 +1017,7 @@ mod quarantine_controller_additional_negative_tests {
 
     #[test]
     fn test_security_signature_verification_bypass_attempts() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let controller = controller();
         let posterior = posterior("user001", 0.8, "trace001");
@@ -1059,7 +1060,7 @@ mod quarantine_controller_additional_negative_tests {
                        "Evidence modification should be detectable");
             } else {
                 // Signature was modified - should be detectable through verification
-                assert!(!ct_eq(forged_evidence.signature.as_bytes(), original_signature.as_bytes()),
+                assert!(!constant_time::ct_eq(forged_evidence.signature.as_bytes(), original_signature.as_bytes()),
                        "Signature tampering should be detectable");
             }
         }

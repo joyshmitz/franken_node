@@ -1947,6 +1947,7 @@ pub fn generate_compat_report(evaluator: &CompatGateEvaluator) -> CompatGateRepo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     // ── Helpers ──
 

@@ -769,7 +769,7 @@ mod tests {
 
     #[test]
     fn test_negative_computation_name_with_unicode_injection_attacks() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let malicious_computation_names = [
             "compute\u{202E}fake\u{202C}",        // BiDi override attack
@@ -796,7 +796,7 @@ mod tests {
 
             // Verify each computation name produces a different key (domain separation)
             for (i, existing_key) in derived_keys.iter().enumerate() {
-                assert!(!ct_eq(
+                assert!(!constant_time::ct_eq(
                     &key.to_hex(),
                     &existing_key.to_hex()
                 ), "computation names '{}' and '{}' should produce different keys",
@@ -838,7 +838,7 @@ mod tests {
 
         // Should produce different key than normal names
         let normal_key = derive_idempotency_key("normal", test_epoch, test_request);
-        assert!(!ct_eq(&massive_key.to_hex(), &normal_key.to_hex()),
+        assert!(!constant_time::ct_eq(&massive_key.to_hex(), &normal_key.to_hex()),
                "massive name should produce different key");
     }
 
@@ -876,7 +876,7 @@ mod tests {
 
             // Verify each request produces a unique key (collision resistance)
             for (j, existing_key) in derived_keys.iter().enumerate() {
-                assert!(!ct_eq(
+                assert!(!constant_time::ct_eq(
                     &key.to_hex(),
                     &existing_key.to_hex()
                 ), "request {} and {} should produce different keys", i, j);
@@ -901,7 +901,7 @@ mod tests {
         let original_key = derive_idempotency_key(computation_name, epoch, original_request);
         let reversed_key = derive_idempotency_key(computation_name, epoch, reversed_request);
 
-        assert!(!ct_eq(&original_key.to_hex(), &reversed_key.to_hex()),
+        assert!(!constant_time::ct_eq(&original_key.to_hex(), &reversed_key.to_hex()),
                "byte order should affect key derivation");
 
         // Test that similar requests with small differences produce different keys
@@ -911,7 +911,7 @@ mod tests {
         let key_a = derive_idempotency_key(computation_name, epoch, request_a);
         let key_b = derive_idempotency_key(computation_name, epoch, request_b);
 
-        assert!(!ct_eq(&key_a.to_hex(), &key_b.to_hex()),
+        assert!(!constant_time::ct_eq(&key_a.to_hex(), &key_b.to_hex()),
                "similar requests should produce different keys");
     }
 
@@ -941,7 +941,7 @@ mod tests {
 
             // Verify each epoch produces a unique key (epoch binding)
             for (existing_epoch, existing_key) in &epoch_keys {
-                assert!(!ct_eq(
+                assert!(!constant_time::ct_eq(
                     &key.to_hex(),
                     &existing_key.to_hex()
                 ), "epochs {} and {} should produce different keys", epoch, existing_epoch);
@@ -977,7 +977,7 @@ mod tests {
             let key_a = derive_idempotency_key(computation_name, epoch_a, request_bytes);
             let key_b = derive_idempotency_key(computation_name, epoch_b, request_bytes);
 
-            assert!(!ct_eq(&key_a.to_hex(), &key_b.to_hex()),
+            assert!(!constant_time::ct_eq(&key_a.to_hex(), &key_b.to_hex()),
                    "boundary epochs {} and {} should produce different keys", epoch_a, epoch_b);
         }
     }
@@ -1039,7 +1039,7 @@ mod tests {
 
     #[test]
     fn test_negative_trace_id_with_injection_patterns() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let malicious_trace_ids = [
             "trace\u{202E}fake\u{202C}",           // BiDi override attack
@@ -1084,7 +1084,7 @@ mod tests {
 
             // Test constant-time comparison for trace IDs
             let normal_trace = "normal-trace-123";
-            assert!(!ct_eq(malicious_trace_id, normal_trace),
+            assert!(!constant_time::ct_eq(malicious_trace_id, normal_trace),
                    "trace ID comparison should be constant-time");
 
             // Test other event types with malicious trace ID
@@ -1121,7 +1121,7 @@ mod tests {
 
     #[test]
     fn test_negative_key_fingerprint_collision_resistance() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         // Generate many keys to test fingerprint collision resistance
         let mut fingerprints = std::collections::BTreeSet::new();
@@ -1159,7 +1159,7 @@ mod tests {
         let fingerprint1 = key_fingerprint(&base_key);
         let fingerprint2 = key_fingerprint(&similar_key);
 
-        assert!(!ct_eq(&fingerprint1, &fingerprint2),
+        assert!(!constant_time::ct_eq(&fingerprint1, &fingerprint2),
                "similar keys should have different fingerprints");
 
         // Test fingerprints with identical first bytes (collision resistance)
@@ -1237,7 +1237,7 @@ mod tests {
             let key2 = derive_idempotency_key(name2, epoch, request_bytes);
 
             // Domain separation should ensure different computation names produce different keys
-            assert!(!ct_eq(
+            assert!(!constant_time::ct_eq(
                 &key1.to_hex(),
                 &key2.to_hex()
             ), "computation names '{}' and '{}' should produce different keys (domain separation)",
@@ -1259,7 +1259,7 @@ mod tests {
             let key1 = derive_idempotency_key(&name1, epoch, request_bytes);
             let key2 = derive_idempotency_key(&name2, epoch, request_bytes);
 
-            assert!(!ct_eq(&key1.to_hex(), &key2.to_hex()),
+            assert!(!constant_time::ct_eq(&key1.to_hex(), &key2.to_hex()),
                    "sequential computation names should produce different keys: {} vs {}", name1, name2);
         }
     }
@@ -1300,7 +1300,7 @@ mod tests {
             // Each unique input should produce a unique key
             for (existing_comp, existing_req, existing_key) in &derived_keys {
                 if computation_name != *existing_comp || request_bytes != existing_req.as_slice() {
-                    assert!(!ct_eq(
+                    assert!(!constant_time::ct_eq(
                         &key.to_hex(),
                         &existing_key.to_hex()
                     ), "different inputs should produce different keys: ('{}', {:?}) vs ('{}', {:?})",
@@ -1320,9 +1320,9 @@ mod tests {
         let prefixed_comp_key = derive_idempotency_key(&format!("prefix_{}", base_comp), epoch, base_req);
         let suffixed_comp_key = derive_idempotency_key(&format!("{}_suffix", base_comp), epoch, base_req);
 
-        assert!(!ct_eq(&base_key.to_hex(), &prefixed_comp_key.to_hex()),
+        assert!(!constant_time::ct_eq(&base_key.to_hex(), &prefixed_comp_key.to_hex()),
                "prefixed computation name should produce different key");
-        assert!(!ct_eq(&base_key.to_hex(), &suffixed_comp_key.to_hex()),
+        assert!(!constant_time::ct_eq(&base_key.to_hex(), &suffixed_comp_key.to_hex()),
                "suffixed computation name should produce different key");
 
         // Prepend/append to request bytes
@@ -1334,9 +1334,9 @@ mod tests {
         suffixed_req.extend_from_slice(b"_suffix");
         let suffixed_req_key = derive_idempotency_key(base_comp, epoch, &suffixed_req);
 
-        assert!(!ct_eq(&base_key.to_hex(), &prefixed_req_key.to_hex()),
+        assert!(!constant_time::ct_eq(&base_key.to_hex(), &prefixed_req_key.to_hex()),
                "prefixed request should produce different key");
-        assert!(!ct_eq(&base_key.to_hex(), &suffixed_req_key.to_hex()),
+        assert!(!constant_time::ct_eq(&base_key.to_hex(), &suffixed_req_key.to_hex()),
                "suffixed request should produce different key");
     }
 }

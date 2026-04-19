@@ -18,6 +18,7 @@ use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 
 use super::certification::{DerivationMetadata, VerifiedEvidenceRef};
+use crate::security::constant_time;
 
 const MAX_TELEMETRY: usize = 4096;
 const MAX_CARD_VERSIONS: usize = 512;
@@ -1254,7 +1255,7 @@ pub fn render_comparison_human(comparison: &TrustCardComparison) -> String {
 
 pub fn verify_card_signature(card: &TrustCard, registry_key: &[u8]) -> Result<(), TrustCardError> {
     let expected_hash = compute_card_hash(card)?;
-    if !crate::security::constant_time::ct_eq(&card.card_hash, &expected_hash) {
+    if !constant_time::ct_eq(&card.card_hash, &expected_hash) {
         return Err(TrustCardError::CardHashMismatch(
             card.extension.extension_id.clone(),
         ));
@@ -1265,7 +1266,7 @@ pub fn verify_card_signature(card: &TrustCard, registry_key: &[u8]) -> Result<()
     mac.update(b"trust_card_registry_sig_v1:");
     mac.update(card.card_hash.as_bytes());
     let expected_signature = hex::encode(mac.finalize().into_bytes());
-    if !crate::security::constant_time::ct_eq(&card.registry_signature, &expected_signature) {
+    if !constant_time::ct_eq(&card.registry_signature, &expected_signature) {
         return Err(TrustCardError::SignatureInvalid(
             card.extension.extension_id.clone(),
         ));
@@ -2632,7 +2633,7 @@ mod tests {
 
     #[test]
     fn test_negative_publisher_id_with_unicode_injection_attacks() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let malicious_publisher_ids = [
             "publisher\u{202E}fake\u{202C}",       // BiDi override attack
@@ -2677,7 +2678,7 @@ mod tests {
 
             // Verify constant-time comparison works for publisher IDs
             let normal_id = "normal-publisher-123";
-            assert!(!ct_eq(&parsed.publisher_id, normal_id), "publisher ID comparison should be constant-time");
+            assert!(!constant_time::ct_eq(&parsed.publisher_id, normal_id), "publisher ID comparison should be constant-time");
         }
     }
 
@@ -2898,7 +2899,7 @@ mod tests {
 
     #[test]
     fn test_negative_trust_card_registry_hmac_key_injection() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         let malicious_keys = [
             b"key\0null".as_slice(),                    // Null byte injection
@@ -2961,7 +2962,7 @@ mod tests {
         let result2 = mac2.finalize().into_bytes();
 
         // Different keys should produce different outputs
-        assert!(!ct_eq(
+        assert!(!constant_time::ct_eq(
             &hex::encode(&result1),
             &hex::encode(&result2)
         ), "different keys should produce different HMAC outputs");
@@ -3040,7 +3041,7 @@ mod tests {
 
     #[test]
     fn test_negative_evidence_ref_with_hash_collision_simulation() {
-        use crate::security::constant_time::ct_eq;
+        use crate::security::constant_time;
 
         // Create evidence refs with potential hash collisions
         let collision_candidates = vec![
@@ -3088,7 +3089,7 @@ mod tests {
         let different_refs = vec![collision_candidates[0].clone()]; // Just one ref
         let hash_different = compute_trust_card_derivation_hash(&different_refs, 123);
 
-        assert!(!ct_eq(&hash1, &hash_different), "different refs should produce different hashes");
+        assert!(!constant_time::ct_eq(&hash1, &hash_different), "different refs should produce different hashes");
 
         // Test with malicious evidence IDs that might cause hash collisions
         let malicious_refs = vec![

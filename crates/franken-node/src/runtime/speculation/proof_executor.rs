@@ -364,6 +364,7 @@ pub fn make_receipt(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     fn executor(now_epoch_ms: u64) -> ProofExecutor {
         let cfg = GuardConfig::new(now_epoch_ms)

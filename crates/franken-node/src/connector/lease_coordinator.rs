@@ -346,6 +346,7 @@ pub fn compute_test_signature(signer_id: &str, content_hash: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::constant_time;
 
     fn candidates() -> Vec<CoordinatorCandidate> {
         vec![

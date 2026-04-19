@@ -29,7 +29,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::connector::control_channel::Direction;
 use crate::control_plane::control_epoch::ControlEpoch;
 use crate::control_plane::key_role_separation::KeyRole;
-use crate::security::constant_time::ct_eq_bytes;
+use crate::security::constant_time;
 use crate::security::epoch_scoped_keys::{RootSecret, SIGNATURE_LEN, derive_epoch_key};
 
 type HmacSha256 = Hmac<Sha256>;
@@ -876,7 +876,7 @@ impl SessionManager {
         );
         let expected_mac = compute_handshake_mac(&preimage, self.epoch, &self.root_secret);
 
-        if !ct_eq_bytes(&handshake_mac, &expected_mac) {
+        if !constant_time::ct_eq_bytes(&handshake_mac, &expected_mac) {
             self.push_event(SessionEvent {
                 event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
                 session_id: session_id.clone(),
@@ -1051,7 +1051,7 @@ impl SessionManager {
             &self.root_secret,
         );
 
-        if !ct_eq_bytes(message_mac, &expected_mac) {
+        if !constant_time::ct_eq_bytes(message_mac, &expected_mac) {
             self.push_event(SessionEvent {
                 event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
                 session_id: session_id.to_string(),
@@ -3753,7 +3753,7 @@ mod tests {
         let first = sign_handshake("s1", "client", "server", "enc", "sign", epoch, 1, &root);
         let second = sign_handshake("s2", "client", "server", "enc", "sign", epoch, 1, &root);
 
-        assert!(!ct_eq_bytes(&first, &second));
+        assert!(!constant_time::ct_eq_bytes(&first, &second));
     }
 
     #[test]
@@ -3780,7 +3780,7 @@ mod tests {
             &test_root_secret(),
         );
 
-        assert!(!ct_eq_bytes(&first, &second));
+        assert!(!constant_time::ct_eq_bytes(&first, &second));
     }
 
     #[test]

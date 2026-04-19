@@ -182,6 +182,46 @@ impl AdversaryGraph {
             posteriors: self.posteriors(),
         }
     }
+
+    /// Export state hash for deterministic graph comparison
+    #[must_use]
+    pub fn export_state_hash(&self) -> String {
+        let posteriors = self.posteriors();
+
+        // Hardening: length-prefixed hash inputs to prevent collision attacks
+        let mut hasher = Sha256::new();
+        hasher.update(b"adversary_graph_state_v1:"); // domain separator
+
+        for posterior in &posteriors {
+            hasher.update((u64::try_from(posterior.principal_id.len()).unwrap_or(u64::MAX)).to_le_bytes());
+            hasher.update(posterior.principal_id.as_bytes());
+            hasher.update(posterior.alpha.to_le_bytes());
+            hasher.update(posterior.beta.to_le_bytes());
+            hasher.update(posterior.evidence_count.to_le_bytes());
+            hasher.update((u64::try_from(posterior.evidence_hash.len()).unwrap_or(u64::MAX)).to_le_bytes());
+            hasher.update(posterior.evidence_hash.as_bytes());
+        }
+
+        let digest = hasher.finalize();
+        format!("sha256:{digest:x}")
+    }
+
+    /// Get risk posterior for a principal (defaults to prior if no observations)
+    #[must_use]
+    pub fn get_risk_posterior(&self, principal_id: &str) -> f64 {
+        if let Some(node) = self.nodes.get(principal_id) {
+            let total = node.alpha.saturating_add(node.beta);
+            if total > 0 {
+                (node.alpha as f64) / (total as f64)
+            } else {
+                // fail-safe: uninformative prior when both alpha and beta are zero
+                0.5
+            }
+        } else {
+            // Default prior: alpha=1, beta=9 gives posterior of 0.1
+            (DEFAULT_PRIOR_ALPHA as f64) / ((DEFAULT_PRIOR_ALPHA + DEFAULT_PRIOR_BETA) as f64)
+        }
+    }
 }
 
 fn validate_observation(likelihood: f64, evidence_weight: u64) -> Result<(), AdversaryGraphError> {
@@ -617,7 +657,7 @@ mod tests {
 
     mod adversary_graph_additional_negative_tests {
         use super::*;
-        use crate::security::constant_time::ct_eq_bytes;
+        use crate::security::constant_time;
 
         fn raw_observation(
             likelihood_compromise: f64,
@@ -706,7 +746,7 @@ mod tests {
 
             assert!(left.starts_with("sha256:"));
             assert!(right.starts_with("sha256:"));
-            assert!(!ct_eq_bytes(left.as_bytes(), right.as_bytes()));
+            assert!(!constant_time::ct_eq_bytes(left.as_bytes(), right.as_bytes()));
         }
 
         #[test]
@@ -714,7 +754,7 @@ mod tests {
             let left = chain_evidence_hash("", "ev", "trace-a", 0.75, 8);
             let right = chain_evidence_hash("", "evtrace-", "a", 0.75, 8);
 
-            assert!(!ct_eq_bytes(left.as_bytes(), right.as_bytes()));
+            assert!(!constant_time::ct_eq_bytes(left.as_bytes(), right.as_bytes()));
         }
 
         #[test]
@@ -871,7 +911,7 @@ mod tests {
         let hash_nfd = chain_evidence_hash("", nfd_evidence, "trace", 0.5, 1);
 
         assert_ne!(hash_nfc, hash_nfd);
-        assert!(!ct_eq_bytes(hash_nfc.as_bytes(), hash_nfd.as_bytes()));
+        assert!(!constant_time::ct_eq_bytes(hash_nfc.as_bytes(), hash_nfd.as_bytes()));
     }
 
     #[test]

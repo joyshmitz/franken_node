@@ -9,7 +9,7 @@ use hex::encode as hex_encode;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, VecDeque};
 
-use crate::security::constant_time::ct_eq_bytes;
+use crate::security::constant_time;
 
 use crate::capacity_defaults::aliases::{MAX_AUDIT_TRAIL_ENTRIES, MAX_EVENTS};
 const MAX_MISSING_SOURCES: usize = 256;
@@ -244,7 +244,7 @@ impl RollbackProof {
         if self.rollback_spec.is_empty() {
             return Err(OIError::RollbackFailed("empty rollback spec".into()));
         }
-        if ct_eq_bytes(&self.pre_state_hash, &self.post_state_hash) {
+        if constant_time::ct_eq_bytes(&self.pre_state_hash, &self.post_state_hash) {
             return Err(OIError::RollbackFailed(
                 "pre and post states identical".into(),
             ));
@@ -834,7 +834,7 @@ impl RecommendationEngine {
             )
         };
 
-        if !ct_eq_bytes(&expected_context_fp, &context_fp) {
+        if !constant_time::ct_eq_bytes(&expected_context_fp, &context_fp) {
             return Err(OIError::ReplayMismatch {
                 expected: hex_encode(expected_context_fp),
                 actual: hex_encode(context_fp),
