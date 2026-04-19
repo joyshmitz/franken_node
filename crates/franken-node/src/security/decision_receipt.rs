@@ -119,6 +119,8 @@ pub enum ReceiptError {
         path: String,
         source: std::io::Error,
     },
+    #[error("unsafe path '{path}': {reason}")]
+    UnsafePath { path: String, reason: String },
 }
 
 impl Receipt {
@@ -403,6 +405,7 @@ pub fn export_receipts_to_path(
     filter: &ReceiptQuery,
     path: &Path,
 ) -> Result<(), ReceiptError> {
+    validate_safe_path(path)?;
     ensure_parent_dir(path)?;
     if path.extension().and_then(std::ffi::OsStr::to_str) == Some("cbor") {
         let bytes = export_receipts_cbor(receipts, filter)?;
@@ -448,6 +451,7 @@ pub fn write_receipts_markdown(
     receipts: &[SignedReceipt],
     path: &Path,
 ) -> Result<(), ReceiptError> {
+    validate_safe_path(path)?;
     ensure_parent_dir(path)?;
     let markdown = render_receipts_markdown(receipts);
     std::fs::write(path, markdown).map_err(|source| ReceiptError::WriteFailed {
@@ -533,6 +537,49 @@ fn compute_chain_hash(previous_hash: Option<&str>, payload: &str) -> String {
     );
     hasher.update(payload.as_bytes());
     hex::encode(hasher.finalize())
+}
+
+fn validate_safe_path(path: &Path) -> Result<(), ReceiptError> {
+    let path_str = path.to_string_lossy();
+
+    // Reject null bytes
+    if path_str.contains('\0') {
+        return Err(ReceiptError::UnsafePath {
+            path: path_str.to_string(),
+            reason: "contains null bytes".to_string(),
+        });
+    }
+
+    // Reject absolute paths (leading /)
+    if path.is_absolute() {
+        return Err(ReceiptError::UnsafePath {
+            path: path_str.to_string(),
+            reason: "absolute paths not allowed".to_string(),
+        });
+    }
+
+    // Check each path component for traversal attempts
+    for component in path.components() {
+        let component_str = component.as_os_str().to_string_lossy();
+
+        // Reject parent directory traversal
+        if component_str == ".." {
+            return Err(ReceiptError::UnsafePath {
+                path: path_str.to_string(),
+                reason: "path traversal with '..' not allowed".to_string(),
+            });
+        }
+
+        // Reject backslashes on Unix (potential Windows-style traversal)
+        if component_str.contains('\\') {
+            return Err(ReceiptError::UnsafePath {
+                path: path_str.to_string(),
+                reason: "backslashes not allowed in path components".to_string(),
+            });
+        }
+    }
+
+    Ok(())
 }
 
 fn ensure_parent_dir(path: &Path) -> Result<(), ReceiptError> {
@@ -1224,7 +1271,51 @@ mod tests {
         let err = export_receipts_to_path(&[signed], &ReceiptQuery::default(), invalid_path)
             .expect_err("invalid path should fail");
 
-        assert!(matches!(err, ReceiptError::WriteFailed { .. }));
+        assert!(matches!(err, ReceiptError::UnsafePath { .. }));
+    }
+
+    #[test]
+    fn validate_safe_path_rejects_null_bytes() {
+        let err = validate_safe_path(std::path::Path::new("file\0name.json"))
+            .expect_err("null bytes should be rejected");
+
+        assert!(matches!(err, ReceiptError::UnsafePath { reason, .. } if reason.contains("null bytes")));
+    }
+
+    #[test]
+    fn validate_safe_path_rejects_absolute_paths() {
+        let err = validate_safe_path(std::path::Path::new("/etc/passwd"))
+            .expect_err("absolute paths should be rejected");
+
+        assert!(matches!(err, ReceiptError::UnsafePath { reason, .. } if reason.contains("absolute paths")));
+    }
+
+    #[test]
+    fn validate_safe_path_rejects_parent_directory_traversal() {
+        let err = validate_safe_path(std::path::Path::new("../../../etc/passwd"))
+            .expect_err("parent directory traversal should be rejected");
+
+        assert!(matches!(err, ReceiptError::UnsafePath { reason, .. } if reason.contains("path traversal")));
+    }
+
+    #[test]
+    fn validate_safe_path_rejects_backslashes() {
+        let err = validate_safe_path(std::path::Path::new("directory\\filename.json"))
+            .expect_err("backslashes should be rejected");
+
+        assert!(matches!(err, ReceiptError::UnsafePath { reason, .. } if reason.contains("backslashes")));
+    }
+
+    #[test]
+    fn validate_safe_path_accepts_safe_relative_paths() {
+        validate_safe_path(std::path::Path::new("receipts/export.json"))
+            .expect("safe relative path should be accepted");
+
+        validate_safe_path(std::path::Path::new("nested/directory/file.cbor"))
+            .expect("nested safe path should be accepted");
+
+        validate_safe_path(std::path::Path::new("simple.md"))
+            .expect("simple filename should be accepted");
     }
 
     /// Negative path: hash chain computation with pathological inputs
