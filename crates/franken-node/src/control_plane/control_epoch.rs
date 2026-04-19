@@ -469,9 +469,7 @@ impl EpochStore {
         trace_id: &str,
     ) -> Result<EpochTransition, EpochError> {
         if let Some(reason) = invalid_required_text_reason("manifest_hash", manifest_hash) {
-            return Err(EpochError::InvalidManifestHash {
-                reason,
-            });
+            return Err(EpochError::InvalidManifestHash { reason });
         }
 
         let old_epoch = self.current;
@@ -521,9 +519,7 @@ impl EpochStore {
         }
 
         if let Some(reason) = invalid_required_text_reason("manifest_hash", manifest_hash) {
-            return Err(EpochError::InvalidManifestHash {
-                reason,
-            });
+            return Err(EpochError::InvalidManifestHash { reason });
         }
 
         let old_epoch = self.current;
@@ -888,7 +884,7 @@ mod tests {
     fn committed_unchanged_on_regression_attempt() {
         let mut store = EpochStore::new();
         store.epoch_advance(&mhash(1), 1000, &tid(1)).unwrap();
-        let _ = store.epoch_set(0, &mhash(2), 1001, &tid(2));
+        assert!(store.epoch_set(0, &mhash(2), 1001, &tid(2)).is_err());
         assert_eq!(store.committed_epoch(), ControlEpoch::new(1));
     }
 
@@ -980,6 +976,78 @@ mod tests {
         );
         assert_eq!(err.code(), "EPOCH_REJECT_INVALID_ARTIFACT_ID");
         assert_eq!(err.current_epoch, ControlEpoch::new(10));
+    }
+
+    #[test]
+    fn validity_window_rejects_artifact_id_with_parent_segment() {
+        let policy = ValidityWindowPolicy::new(ControlEpoch::new(10), 1);
+        let err = check_artifact_epoch(
+            "tenant/../artifact",
+            ControlEpoch::new(10),
+            &policy,
+            "trace-parent-segment",
+        )
+        .expect_err("artifact_id parent-directory segment must be rejected");
+
+        assert_eq!(
+            err.rejection_reason,
+            EpochRejectionReason::InvalidArtifactId
+        );
+        assert_eq!(err.code(), "EPOCH_REJECT_INVALID_ARTIFACT_ID");
+    }
+
+    #[test]
+    fn validity_window_rejects_artifact_id_with_leading_slash() {
+        let policy = ValidityWindowPolicy::new(ControlEpoch::new(10), 1);
+        let err = check_artifact_epoch(
+            "/artifact",
+            ControlEpoch::new(10),
+            &policy,
+            "trace-leading-slash",
+        )
+        .expect_err("artifact_id leading slash must be rejected");
+
+        assert_eq!(
+            err.rejection_reason,
+            EpochRejectionReason::InvalidArtifactId
+        );
+        assert_eq!(err.code(), "EPOCH_REJECT_INVALID_ARTIFACT_ID");
+    }
+
+    #[test]
+    fn validity_window_rejects_artifact_id_with_backslash() {
+        let policy = ValidityWindowPolicy::new(ControlEpoch::new(10), 1);
+        let err = check_artifact_epoch(
+            "tenant\\artifact",
+            ControlEpoch::new(10),
+            &policy,
+            "trace-backslash",
+        )
+        .expect_err("artifact_id backslash must be rejected");
+
+        assert_eq!(
+            err.rejection_reason,
+            EpochRejectionReason::InvalidArtifactId
+        );
+        assert_eq!(err.code(), "EPOCH_REJECT_INVALID_ARTIFACT_ID");
+    }
+
+    #[test]
+    fn validity_window_rejects_artifact_id_with_null_byte() {
+        let policy = ValidityWindowPolicy::new(ControlEpoch::new(10), 1);
+        let err = check_artifact_epoch(
+            "artifact\0shadow",
+            ControlEpoch::new(10),
+            &policy,
+            "trace-null",
+        )
+        .expect_err("artifact_id null byte must be rejected");
+
+        assert_eq!(
+            err.rejection_reason,
+            EpochRejectionReason::InvalidArtifactId
+        );
+        assert_eq!(err.code(), "EPOCH_REJECT_INVALID_ARTIFACT_ID");
     }
 
     #[test]
@@ -1272,6 +1340,32 @@ mod tests {
     }
 
     #[test]
+    fn epoch_advance_rejects_padded_manifest_hash() {
+        let mut store = EpochStore::new();
+        let err = store
+            .epoch_advance(" manifest ", 1000, &tid(1))
+            .expect_err("padded manifest hash must fail closed");
+
+        assert_eq!(err.code(), "EPOCH_INVALID_MANIFEST");
+        assert_eq!(store.epoch_read(), ControlEpoch::GENESIS);
+        assert_eq!(store.committed_epoch(), ControlEpoch::GENESIS);
+        assert_eq!(store.transition_count(), 0);
+    }
+
+    #[test]
+    fn epoch_set_rejects_null_manifest_hash_without_mutating() {
+        let mut store = EpochStore::recover(7);
+        let err = store
+            .epoch_set(8, "manifest\0shadow", 1000, &tid(1))
+            .expect_err("null-byte manifest hash must fail closed");
+
+        assert_eq!(err.code(), "EPOCH_INVALID_MANIFEST");
+        assert_eq!(store.epoch_read(), ControlEpoch::new(7));
+        assert_eq!(store.committed_epoch(), ControlEpoch::new(7));
+        assert_eq!(store.transition_count(), 0);
+    }
+
+    #[test]
     fn epoch_set_rejects_whitespace_manifest_hash_without_mutating() {
         let mut store = EpochStore::recover(7);
         let err = store
@@ -1343,7 +1437,11 @@ mod tests {
         let normal_trace = "trace-001";
 
         let mac1 = EpochTransition::compute_mac(
-            old_epoch, new_epoch, timestamp, normal_hash, normal_trace
+            old_epoch,
+            new_epoch,
+            timestamp,
+            normal_hash,
+            normal_trace,
         );
         assert!(mac1.starts_with("mac:"), "MAC should have proper format");
 
@@ -1359,24 +1457,37 @@ mod tests {
 
             // Safe conversion (what SHOULD be used)
             let safe_len = u64::try_from(field_len).unwrap_or(u64::MAX);
-            assert!(safe_len >= field_len as u64, "Safe conversion should not lose data for: {}", test_name);
+            assert!(
+                safe_len >= field_len as u64,
+                "Safe conversion should not lose data for: {}",
+                test_name
+            );
 
             // Test that extremely large fields are handled safely
             if field_len <= u64::MAX as usize {
                 let mac = EpochTransition::compute_mac(
-                    old_epoch, new_epoch, timestamp, test_field, normal_trace
+                    old_epoch,
+                    new_epoch,
+                    timestamp,
+                    test_field,
+                    normal_trace,
                 );
-                assert!(mac.starts_with("mac:"), "Should compute MAC safely for: {}", test_name);
+                assert!(
+                    mac.starts_with("mac:"),
+                    "Should compute MAC safely for: {}",
+                    test_name
+                );
             }
         }
 
         // Test boundary conditions for length casting
-        let max_safe_size = u32::MAX as usize;
-        let boundary_field = "x".repeat(max_safe_size);
-
-        let boundary_len = boundary_field.len();
+        let boundary_len = usize::try_from(u32::MAX).unwrap_or(usize::MAX);
         let safe_boundary_cast = u64::try_from(boundary_len).unwrap_or(u64::MAX);
-        assert_eq!(safe_boundary_cast, u32::MAX as u64, "Boundary conversion should be accurate");
+        assert_eq!(
+            safe_boundary_cast,
+            u32::MAX as u64,
+            "Boundary conversion should be accurate"
+        );
 
         // Demonstrate unsafe vs safe casting with simulated overflow
         let large_size: usize = (u32::MAX as usize) + 1;
@@ -1387,7 +1498,10 @@ mod tests {
 
         // Safe casting (what SHOULD be done)
         let safe_cast = u64::try_from(large_size);
-        assert!(safe_cast.is_ok(), "u64 should handle large usize values safely");
+        assert!(
+            safe_cast.is_ok(),
+            "u64 should handle large usize values safely"
+        );
 
         // Production code should use: u64::try_from(field.len()).unwrap_or(u64::MAX) ✓
         // NOT: field.len() as u64 ✗ (potential truncation on some platforms)
@@ -1395,10 +1509,8 @@ mod tests {
 
     #[test]
     fn negative_epoch_comparison_must_use_fail_closed_semantics() {
-        // Test that epoch comparisons use >= instead of > for fail-closed behavior
-        // Found in artifact_epoch_acceptable at line 349: artifact_epoch > current
         let current = ControlEpoch::new(100);
-        let acceptance_policy = EpochAcceptancePolicy::new(current, 10);
+        let acceptance_policy = ValidityWindowPolicy::new(current, 10);
 
         // Test boundary conditions for epoch acceptance
         let boundary_test_cases = [
@@ -1407,59 +1519,76 @@ mod tests {
             (ControlEpoch::new(101), "future epoch should be rejected"),
             (ControlEpoch::new(110), "far future should be rejected"),
             (ControlEpoch::new(89), "epoch at lookback boundary"),
-            (ControlEpoch::new(88), "epoch beyond lookback should be rejected"),
+            (
+                ControlEpoch::new(88),
+                "epoch beyond lookback should be rejected",
+            ),
         ];
 
         for (test_epoch, description) in &boundary_test_cases {
-            let result = acceptance_policy.artifact_epoch_acceptable("test-artifact", *test_epoch);
+            let result = check_artifact_epoch(
+                "test-artifact",
+                *test_epoch,
+                &acceptance_policy,
+                "trace-boundary",
+            );
 
             match test_epoch.value() {
                 epoch if epoch > current.value() => {
                     // Future epochs should be rejected (current behavior uses >)
-                    assert!(result.is_err(), "Future epoch should be rejected: {}", description);
+                    assert!(
+                        result.is_err(),
+                        "Future epoch should be rejected: {}",
+                        description
+                    );
                     if let Err(rejection) = result {
-                        assert_eq!(rejection.reason, EpochRejectionReason::FutureEpoch);
+                        assert_eq!(
+                            rejection.rejection_reason,
+                            EpochRejectionReason::FutureEpoch
+                        );
                     }
-                },
+                }
                 epoch if epoch == current.value() => {
-                    // Current epoch boundary - behavior depends on fail-closed semantics
-                    // With > comparison: current epoch is accepted
-                    // With >= comparison: current epoch would be rejected (fail-closed)
-                    match result {
-                        Ok(_) => {
-                            // Current implementation accepts current epoch (uses >)
-                        },
-                        Err(rejection) => {
-                            // Fail-closed implementation would reject current epoch (uses >=)
-                            assert_eq!(rejection.reason, EpochRejectionReason::FutureEpoch);
-                        }
-                    }
-                },
+                    assert!(
+                        result.is_ok(),
+                        "current epoch is inside the inclusive validity window"
+                    );
+                }
                 epoch if epoch < acceptance_policy.min_accepted_epoch().value() => {
                     // Too old epochs should be rejected
-                    assert!(result.is_err(), "Too old epoch should be rejected: {}", description);
+                    assert!(
+                        result.is_err(),
+                        "Too old epoch should be rejected: {}",
+                        description
+                    );
                     if let Err(rejection) = result {
-                        assert_eq!(rejection.reason, EpochRejectionReason::ExpiredEpoch);
+                        assert_eq!(
+                            rejection.rejection_reason,
+                            EpochRejectionReason::ExpiredEpoch
+                        );
                     }
-                },
+                }
                 _ => {
                     // Valid epoch range should be accepted
-                    assert!(result.is_ok(), "Valid epoch should be accepted: {}", description);
+                    assert!(
+                        result.is_ok(),
+                        "Valid epoch should be accepted: {}",
+                        description
+                    );
                 }
             }
         }
 
         // Test that exactly at boundaries behave correctly for fail-closed semantics
         let min_epoch = acceptance_policy.min_accepted_epoch();
-        let min_result = acceptance_policy.artifact_epoch_acceptable("boundary-test", min_epoch);
+        let min_result =
+            check_artifact_epoch("boundary-test", min_epoch, &acceptance_policy, "trace-min");
 
         // Minimum acceptable epoch should be accepted (inclusive bound)
-        assert!(min_result.is_ok(), "Minimum acceptable epoch should be accepted");
-
-        // Production code should use:
-        // if artifact_epoch >= current (fail-closed for future rejection) ✓
-        // AND artifact_epoch < min_accepted (fail-closed for expiry) ✓
-        // NOT: artifact_epoch > current ✗ (allows current epoch through)
+        assert!(
+            min_result.is_ok(),
+            "Minimum acceptable epoch should be accepted"
+        );
     }
 
     #[test]
@@ -1472,7 +1601,11 @@ mod tests {
 
         // Test that domain separator is actually effective
         let mac_with_domain = EpochTransition::compute_mac(
-            old_epoch, new_epoch, timestamp, "test-hash", "test-trace"
+            old_epoch,
+            new_epoch,
+            timestamp,
+            "test-hash",
+            "test-trace",
         );
 
         // Simulate MAC without domain separator (vulnerable)
@@ -1485,8 +1618,10 @@ mod tests {
         let mac_without_domain = format!("mac:{:x}", sha2::Digest::finalize(hasher_without_domain));
 
         // Domain separator should make hashes different
-        assert_ne!(mac_with_domain, mac_without_domain,
-                  "Domain separator should change MAC value");
+        assert_ne!(
+            mac_with_domain, mac_without_domain,
+            "Domain separator should change MAC value"
+        );
 
         // Test different domain separators for collision resistance
         let control_epoch_domain = "control_epoch_mac_v1:";
@@ -1502,23 +1637,37 @@ mod tests {
         sha2::Digest::update(&mut hasher_other, old_epoch.value().to_le_bytes());
         let other_hash = sha2::Digest::finalize(hasher_other);
 
-        assert_ne!(control_hash, other_hash,
-                  "Different domains should produce different hashes");
+        assert_ne!(
+            control_hash, other_hash,
+            "Different domains should produce different hashes"
+        );
 
         // Test length-prefixed domain separation (more robust)
         let mut length_prefixed_hasher = sha2::Sha256::new();
         let domain = control_epoch_domain;
-        sha2::Digest::update(&mut length_prefixed_hasher, (domain.len() as u64).to_le_bytes());
+        sha2::Digest::update(
+            &mut length_prefixed_hasher,
+            (domain.len() as u64).to_le_bytes(),
+        );
         sha2::Digest::update(&mut length_prefixed_hasher, domain.as_bytes());
         sha2::Digest::update(&mut length_prefixed_hasher, old_epoch.value().to_le_bytes());
         let length_prefixed_hash = sha2::Digest::finalize(length_prefixed_hasher);
 
-        assert_ne!(format!("{:x}", length_prefixed_hash), mac_with_domain.trim_start_matches("mac:"),
-                  "Length-prefixed domain should differ from simple prefix");
+        assert_ne!(
+            format!("{:x}", length_prefixed_hash),
+            mac_with_domain.trim_start_matches("mac:"),
+            "Length-prefixed domain should differ from simple prefix"
+        );
 
         // Verify the actual implementation uses proper domain separation
-        assert!(mac_with_domain.starts_with("mac:"), "MAC should have proper format");
-        assert!(mac_with_domain.len() > 70, "MAC should include domain-separated content");
+        assert!(
+            mac_with_domain.starts_with("mac:"),
+            "MAC should have proper format"
+        );
+        assert!(
+            mac_with_domain.len() > 70,
+            "MAC should include domain-separated content"
+        );
 
         // Production code should use domain separators like:
         // hasher.update(b"control_epoch_mac_v1:"); ✓ (already implemented correctly)
@@ -1536,14 +1685,20 @@ mod tests {
             let result = store.epoch_advance(
                 &format!("manifest-{:08x}", i),
                 1000 + i as u64,
-                &format!("trace-{:04}", i)
+                &format!("trace-{:04}", i),
             );
-            assert!(result.is_ok(), "Epoch advance should succeed for iteration {}", i);
+            assert!(
+                result.is_ok(),
+                "Epoch advance should succeed for iteration {}",
+                i
+            );
         }
 
         // Verify transition history is bounded
-        assert!(store.transitions().len() <= MAX_TRANSITIONS * 2,
-               "Transition history should be bounded");
+        assert!(
+            store.transitions().len() <= MAX_TRANSITIONS,
+            "Transition history should be bounded"
+        );
 
         // Test push_bounded function directly with edge cases
         let mut test_items: Vec<u32> = Vec::new();
@@ -1557,7 +1712,10 @@ mod tests {
 
         // Test with zero capacity (should clear)
         push_bounded(&mut test_items, 999, 0);
-        assert!(test_items.is_empty(), "Zero capacity should clear all items");
+        assert!(
+            test_items.is_empty(),
+            "Zero capacity should clear all items"
+        );
 
         // Test with capacity 1 (only keeps latest)
         for i in 0..5 {
@@ -1571,7 +1729,11 @@ mod tests {
         for i in 0..100 {
             push_bounded(&mut test_items, i, 1000);
         }
-        assert_eq!(test_items.len(), 100, "Large capacity should keep all items");
+        assert_eq!(
+            test_items.len(),
+            100,
+            "Large capacity should keep all items"
+        );
 
         // Verify push_bounded overflow arithmetic is safe
         let mut overflow_items: Vec<u64> = Vec::new();
@@ -1587,15 +1749,20 @@ mod tests {
 
     #[test]
     fn negative_constant_time_comparison_validation() {
-        // Test that string comparisons use constant-time ct_eq_inline function
-        // Found ct_eq_inline implementation - test its correctness and usage
+        // Test that string comparisons use the shared constant-time helper.
 
         // Test ct_eq_inline correctness
-        assert!(ct_eq_inline("identical", "identical"), "Identical strings should match");
-        assert!(!ct_eq_inline("different", "differing"), "Different strings should not match");
-        assert!(ct_eq_inline("", ""), "Empty strings should match");
-        assert!(!ct_eq_inline("a", ""), "Different lengths should not match");
-        assert!(!ct_eq_inline("", "b"), "Different lengths should not match");
+        assert!(
+            ct_eq("identical", "identical"),
+            "Identical strings should match"
+        );
+        assert!(
+            !ct_eq("different", "differing"),
+            "Different strings should not match"
+        );
+        assert!(ct_eq("", ""), "Empty strings should match");
+        assert!(!ct_eq("a", ""), "Different lengths should not match");
+        assert!(!ct_eq("", "b"), "Different lengths should not match");
 
         // Test timing-sensitive scenarios
         let reference = "epoch:1234567890abcdef";
@@ -1609,11 +1776,14 @@ mod tests {
         ];
 
         for (test_string, description) in &timing_attack_cases {
-            let result = ct_eq_inline(reference, test_string);
+            let result = ct_eq(reference, test_string);
             let expected = reference == *test_string;
 
-            assert_eq!(result, expected,
-                      "ct_eq_inline should match == operator result for: {}", description);
+            assert_eq!(
+                result, expected,
+                "ct_eq_inline should match == operator result for: {}",
+                description
+            );
 
             // In production, timing should be constant regardless of where difference occurs
             // This is hard to test in unit tests, but function should be used for all
@@ -1630,13 +1800,25 @@ mod tests {
 
         // Test MAC verification uses constant-time comparison
         let mac1 = EpochTransition::compute_mac(
-            ControlEpoch::new(1), ControlEpoch::new(2), 1000, "hash1", "trace1"
+            ControlEpoch::new(1),
+            ControlEpoch::new(2),
+            1000,
+            "hash1",
+            "trace1",
         );
         let mac2 = EpochTransition::compute_mac(
-            ControlEpoch::new(1), ControlEpoch::new(2), 1000, "hash1", "trace1"
+            ControlEpoch::new(1),
+            ControlEpoch::new(2),
+            1000,
+            "hash1",
+            "trace1",
         );
         let mac3 = EpochTransition::compute_mac(
-            ControlEpoch::new(1), ControlEpoch::new(2), 1000, "hash2", "trace1"
+            ControlEpoch::new(1),
+            ControlEpoch::new(2),
+            1000,
+            "hash2",
+            "trace1",
         );
 
         // Same inputs should produce same MAC
@@ -1680,7 +1862,10 @@ mod tests {
         // Test overflow protection
         let max_epoch = ControlEpoch::new(u64::MAX);
         let overflow_next = max_epoch.next();
-        assert!(overflow_next.is_none(), "Should detect overflow at u64::MAX");
+        assert!(
+            overflow_next.is_none(),
+            "Should detect overflow at u64::MAX"
+        );
 
         // Test length-safe MAC computation with large fields
         let large_manifest_hash = "x".repeat(10000);
@@ -1691,15 +1876,18 @@ mod tests {
             ControlEpoch::new(2),
             1000,
             &large_manifest_hash,
-            &large_trace_id
+            &large_trace_id,
         );
 
-        assert!(mac_result.starts_with("mac:"), "Should compute MAC with large fields");
+        assert!(
+            mac_result.starts_with("mac:"),
+            "Should compute MAC with large fields"
+        );
         assert!(mac_result.len() > 60, "MAC should have expected length");
 
         // Test epoch acceptance with boundary conditions
         let current = ControlEpoch::new(1000);
-        let policy = EpochAcceptancePolicy::new(current, 100);
+        let policy = ValidityWindowPolicy::new(current, 100);
 
         // Test fail-closed boundary semantics
         let boundary_cases = [
@@ -1710,20 +1898,30 @@ mod tests {
         ];
 
         for (test_epoch, description) in &boundary_cases {
-            let result = policy.artifact_epoch_acceptable("boundary-test", *test_epoch);
+            let result =
+                check_artifact_epoch("boundary-test", *test_epoch, &policy, "trace-comprehensive");
 
             // Result should be deterministic and follow fail-closed semantics
             match result {
                 Ok(_) => {
-                    assert!(test_epoch.value() <= current.value() &&
-                           test_epoch.value() >= policy.min_accepted_epoch().value(),
-                           "Accepted epoch should be in valid range: {}", description);
-                },
+                    assert!(
+                        test_epoch.value() <= current.value()
+                            && test_epoch.value() >= policy.min_accepted_epoch().value(),
+                        "Accepted epoch should be in valid range: {}",
+                        description
+                    );
+                }
                 Err(rejection) => {
-                    assert!(test_epoch.value() > current.value() ||
-                           test_epoch.value() < policy.min_accepted_epoch().value(),
-                           "Rejected epoch should be out of range: {}", description);
-                    assert!(!rejection.code().is_empty(), "Rejection should have error code");
+                    assert!(
+                        test_epoch.value() > current.value()
+                            || test_epoch.value() < policy.min_accepted_epoch().value(),
+                        "Rejected epoch should be out of range: {}",
+                        description
+                    );
+                    assert!(
+                        !rejection.code().is_empty(),
+                        "Rejection should have error code"
+                    );
                 }
             }
         }
@@ -1731,23 +1929,43 @@ mod tests {
         // Test transition storage bounds
         let initial_count = store.transition_count();
         for i in 0..50 {
-            let _ = store.epoch_advance(
-                &format!("comprehensive-hash-{:08x}", i),
-                2000 + i as u64,
-                &format!("comprehensive-trace-{:04}", i)
-            );
+            store
+                .epoch_advance(
+                    &format!("comprehensive-hash-{:08x}", i),
+                    2000 + i as u64,
+                    &format!("comprehensive-trace-{:04}", i),
+                )
+                .expect("comprehensive epoch advance should succeed");
         }
 
         let final_count = store.transition_count();
-        assert!(final_count <= initial_count + 50, "Transition count should be bounded");
+        assert!(
+            final_count <= initial_count.saturating_add(50),
+            "Transition count should be bounded"
+        );
 
         // Verify all hardening patterns work together
-        assert!(store.committed_epoch().value() > 0, "Should have committed epoch");
-        assert!(!store.transitions().is_empty(), "Should have transition history");
+        assert!(
+            store.committed_epoch().value() > 0,
+            "Should have committed epoch"
+        );
+        assert!(
+            !store.transitions().is_empty(),
+            "Should have transition history"
+        );
 
         let latest_transition = &store.transitions()[store.transitions().len() - 1];
-        assert!(latest_transition.verify(), "Latest transition should verify correctly");
-        assert!(!latest_transition.manifest_hash.is_empty(), "Should have manifest hash");
-        assert!(!latest_transition.event_mac.is_empty(), "Should have event MAC");
+        assert!(
+            latest_transition.verify(),
+            "Latest transition should verify correctly"
+        );
+        assert!(
+            !latest_transition.manifest_hash.is_empty(),
+            "Should have manifest hash"
+        );
+        assert!(
+            !latest_transition.event_mac.is_empty(),
+            "Should have event MAC"
+        );
     }
 }

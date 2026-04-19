@@ -543,6 +543,22 @@ mod tests {
         );
     }
 
+    #[test]
+    fn config_duplicate_public_keys_with_different_hex_case_invalid() {
+        let (_sks, mut config) = test_config(2, 3);
+        let pk0 = config.signer_keys[0].public_key_hex.clone();
+        config.signer_keys[1].public_key_hex = pk0.to_ascii_uppercase();
+        assert_eq!(
+            config.validate(),
+            Err(ThresholdError::ConfigInvalid {
+                reason: format!(
+                    "duplicate signer public_key_hex {}",
+                    config.signer_keys[1].public_key_hex
+                ),
+            })
+        );
+    }
+
     // === Threshold verification ===
 
     #[test]
@@ -1657,7 +1673,7 @@ mod tests {
         assert!(!result.verified);
 
         // Integer overflow in hex parsing (extreme lengths)
-        let length_attack = "ff".repeat(usize::MAX / 2);
+        let length_attack = "ff".repeat(ED25519_SIGNATURE_HEX_LEN + 1);
         artifact.signatures.push(PartialSignature {
             signer_id: "signer-2".to_string(),
             key_id: "signer-2".to_string(),
@@ -1804,7 +1820,8 @@ mod tests {
         // Attempt to substitute domain separator
         let mut fake_message = Vec::new();
         fake_message.extend_from_slice(b"fake_domain_separator:");
-        fake_message.extend_from_slice(&(raw_content.len() as u64).to_le_bytes());
+        let raw_content_len = u64::try_from(raw_content.len()).unwrap_or(u64::MAX);
+        fake_message.extend_from_slice(&raw_content_len.to_le_bytes());
         fake_message.extend_from_slice(raw_content.as_bytes());
 
         let fake_signature = sks[1].sign(&fake_message);
@@ -1925,7 +1942,7 @@ mod tests {
                 // Count failed verifications (expected due to invalid signatures)
                 if !result.verified {
                     let mut counter = counter_clone.lock().unwrap();
-                    *counter += 1;
+                    *counter = (*counter).saturating_add(1);
                 }
             });
 
@@ -1984,7 +2001,7 @@ mod tests {
                     // First two configs should fail validation
                     assert!(validation_result.is_err(), "Config {} should be invalid", i);
                     if let Err(err) = validation_result {
-                        assert_eq!(err.code(), "THRESHOLD_CONFIG_INVALID");
+                        assert!(matches!(err, ThresholdError::ConfigInvalid { .. }));
                     }
                 },
                 2 => {
@@ -2038,20 +2055,23 @@ mod tests {
                 }]
             };
 
-            let verifier = ThresholdVerifier::new(base_config.clone());
-            let result = verifier.verify(&malicious_artifact);
+            let result = verify_threshold(
+                &base_config,
+                &malicious_artifact,
+                &format!("t-malicious-id-{}", i),
+                "ts",
+            );
 
             // Should handle gracefully without panics
             assert!(!result.verified); // Should fail due to invalid signature format
-            assert!(result.failure_reasons.len() > 0);
+            assert!(result.failure_reason.is_some());
         }
     }
 
     #[test]
     fn negative_signature_hex_format_corruption_and_injection_attempts() {
         // Test various corrupted and malicious signature hex formats
-        let (signing_keys, config) = test_config(2, 3);
-        let verifier = ThresholdVerifier::new(config.clone());
+        let (_signing_keys, config) = test_config(2, 3);
 
         let malformed_signature_hex_cases = vec![
             "", // Empty signature
@@ -2079,16 +2099,23 @@ mod tests {
                 }]
             };
 
-            let result = verifier.verify(&malicious_artifact);
+            let result = verify_threshold(
+                &config,
+                &malicious_artifact,
+                &format!("t-malformed-sig-{}", i),
+                "ts",
+            );
 
             // All should fail verification with appropriate error messages
             assert!(!result.verified, "Malformed signature should fail: {}", malformed_hex);
-            assert!(result.valid_signatures == 0);
-            assert!(result.failure_reasons.len() > 0);
+            assert_eq!(result.valid_signatures, 0);
+            assert!(result.failure_reason.is_some());
 
             // Check that failure reasons contain appropriate error codes
-            let has_format_error = result.failure_reasons.iter()
-                .any(|reason| reason.contains("invalid") || reason.contains("malformed") || reason.contains("hex"));
+            let has_format_error = result.failure_reason.as_ref().is_some_and(|reason| {
+                let reason = reason.to_string().to_lowercase();
+                reason.contains("invalid") || reason.contains("malformed") || reason.contains("hex")
+            });
             assert!(has_format_error, "Should report format error for: {}", malformed_hex);
         }
     }
@@ -2125,8 +2152,6 @@ mod tests {
             signer_keys: extreme_config.signer_keys.clone(),
         };
 
-        let verifier = ThresholdVerifier::new(corrected_config);
-
         // Create artifact with maximum u32 values in counters
         let stress_artifact = PublicationArtifact {
             artifact_id: "overflow-test".to_string(),
@@ -2135,23 +2160,24 @@ mod tests {
             signatures: vec![]
         };
 
-        let result = verifier.verify(&stress_artifact);
+        let result = verify_threshold(&corrected_config, &stress_artifact, "t-overflow-boundary", "ts");
 
         // Should handle extreme values without arithmetic overflow
         assert!(!result.verified); // No signatures provided
         assert_eq!(result.valid_signatures, 0);
-        assert_eq!(result.required_threshold, 2);
+        assert_eq!(result.threshold, 2);
     }
 
     #[test]
     fn negative_duplicate_signature_injection_and_sybil_attacks() {
         // Test handling of duplicate signatures and sybil-style attacks
         let (signing_keys, config) = test_config(2, 3);
-        let verifier = ThresholdVerifier::new(config.clone());
         let message = b"test message for duplicate attack";
+        let content_hash = hex::encode(sha2::Sha256::digest(message));
 
         // Create valid signature
-        let valid_sig_hex = hex::encode(signing_keys[0].sign(message).to_bytes());
+        let valid_sig_hex = sign(&signing_keys[0], &config.signer_keys[0].key_id, &content_hash)
+            .signature_hex;
 
         // Test various duplicate signature attack patterns
         let duplicate_attack_artifacts = vec![
@@ -2159,7 +2185,7 @@ mod tests {
             PublicationArtifact {
                 artifact_id: "duplicate-same".to_string(),
                 connector_id: "test-connector".to_string(),
-                content_hash: hex::encode(sha2::Sha256::digest(message)),
+                content_hash: content_hash.clone(),
                 signatures: vec![
                     PartialSignature {
                         signer_id: "signer-0".to_string(),
@@ -2177,7 +2203,7 @@ mod tests {
             PublicationArtifact {
                 artifact_id: "identity-confusion".to_string(),
                 connector_id: "test-connector".to_string(),
-                content_hash: hex::encode(sha2::Sha256::digest(message)),
+                content_hash: content_hash.clone(),
                 signatures: vec![
                     PartialSignature {
                         signer_id: "signer-0".to_string(),
@@ -2194,7 +2220,7 @@ mod tests {
         ];
 
         for attack_artifact in duplicate_attack_artifacts {
-            let result = verifier.verify(&attack_artifact);
+            let result = verify_threshold(&config, &attack_artifact, "t-duplicate-injection", "ts");
 
             // Should only count each unique valid signature once
             assert!(result.valid_signatures <= 1,
@@ -2211,8 +2237,7 @@ mod tests {
     #[test]
     fn negative_massive_signature_collection_memory_exhaustion() {
         // Test behavior with massive number of signatures (potential DoS)
-        let (signing_keys, config) = test_config(2, 3);
-        let verifier = ThresholdVerifier::new(config.clone());
+        let (_signing_keys, config) = test_config(2, 3);
 
         // Create artifact with massive signature collection
         let massive_signature_count = 10_000;
@@ -2235,7 +2260,7 @@ mod tests {
 
         // Verification should handle massive signature count without memory exhaustion
         let start_time = std::time::Instant::now();
-        let result = verifier.verify(&massive_artifact);
+        let result = verify_threshold(&config, &massive_artifact, "t-massive-signatures", "ts");
         let duration = start_time.elapsed();
 
         // Should complete in reasonable time despite large input
@@ -2246,15 +2271,13 @@ mod tests {
         assert_eq!(result.valid_signatures, 0); // None should be valid
 
         // Should handle large failure reason collection
-        assert!(result.failure_reasons.len() > 0);
-        assert!(result.failure_reasons.len() <= massive_signature_count); // Bounded
+        assert!(result.failure_reason.is_some());
     }
 
     #[test]
     fn negative_cryptographic_timing_attack_resistance_validation() {
         // Test constant-time comparison resistance against timing attacks
         let (signing_keys, config) = test_config(3, 5);
-        let verifier = ThresholdVerifier::new(config.clone());
         let message = b"timing attack test message";
         let content_hash = hex::encode(sha2::Sha256::digest(message));
 
@@ -2287,7 +2310,7 @@ mod tests {
 
             // Measure verification timing
             let start = std::time::Instant::now();
-            let result = verifier.verify(&timing_artifact);
+            let result = verify_threshold(&config, &timing_artifact, "t-timing", "ts");
             let duration = start.elapsed();
 
             timing_measurements.push(duration.as_nanos());
@@ -2299,7 +2322,9 @@ mod tests {
         // Timing variance should be bounded (basic timing attack resistance check)
         let max_time = *timing_measurements.iter().max().unwrap();
         let min_time = *timing_measurements.iter().min().unwrap();
+        assert!(min_time > 0, "timing measurement must be non-zero");
         let variance_ratio = max_time as f64 / min_time as f64;
+        assert!(variance_ratio.is_finite(), "timing ratio must be finite");
 
         // Allow reasonable variance but flag excessive timing differences
         assert!(variance_ratio < 10.0,
@@ -2333,12 +2358,6 @@ mod tests {
                 }]
             };
 
-            // Config validation should handle malformed keys appropriately
-            let validation_result = malformed_config.validate();
-            // May pass validation (format checking might be deferred to verification)
-
-            let verifier = ThresholdVerifier::new(malformed_config);
-
             let test_artifact = PublicationArtifact {
                 artifact_id: format!("malformed-key-test-{}", i),
                 connector_id: "test-connector".to_string(),
@@ -2350,7 +2369,12 @@ mod tests {
                 }]
             };
 
-            let result = verifier.verify(&test_artifact);
+            let result = verify_threshold(
+                &malformed_config,
+                &test_artifact,
+                &format!("t-malformed-key-{}", i),
+                "ts",
+            );
 
             // Should handle malformed keys without crashing
             assert!(!result.verified, "Malformed public key should lead to verification failure");
@@ -2360,7 +2384,7 @@ mod tests {
                 .any(|reason| reason.to_lowercase().contains("key") ||
                              reason.to_lowercase().contains("invalid") ||
                              reason.to_lowercase().contains("malformed"));
-            // Error reporting may vary by implementation
+            assert!(has_key_error, "Should report key or signature validation failure");
         }
     }
 }
