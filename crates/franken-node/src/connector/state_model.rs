@@ -183,11 +183,14 @@ impl std::error::Error for StateModelError {}
 
 /// Detect divergence between a local cache and the canonical state root.
 pub fn detect_divergence(local: &StateRoot, canonical: &StateRoot) -> DivergenceCheck {
-    let divergence_type = if local.version < canonical.version {
+    let divergence_type = if !canonical.verify_integrity() {
+        DivergenceType::HashMismatch
+    } else if local.version < canonical.version {
         DivergenceType::Stale
     } else if local.version > canonical.version {
         DivergenceType::SplitBrain
-    } else if local.connector_id != canonical.connector_id
+    } else if !local.verify_integrity()
+        || local.connector_id != canonical.connector_id
         || local.state_model != canonical.state_model
         || !ct_eq(&local.root_hash, &canonical.root_hash)
     {
@@ -437,6 +440,32 @@ mod tests {
 
         assert_eq!(check.divergence_type, DivergenceType::SplitBrain);
         assert_eq!(reconcile_action(&check), ReconcileAction::FlagForReview);
+    }
+
+    #[test]
+    fn corrupt_canonical_root_blocks_pull_canonical_even_when_newer() {
+        let local = StateRoot::new("conn-1".into(), StateModelType::Document, json!({"k": "v"}));
+        let mut canonical = local.clone();
+        canonical.update_head(json!({"k": "new"}));
+        canonical.head = json!({"k": "tampered-after-hash"});
+
+        let check = detect_divergence(&local, &canonical);
+
+        assert_eq!(check.divergence_type, DivergenceType::HashMismatch);
+        assert_eq!(reconcile_action(&check), ReconcileAction::RepairHash);
+    }
+
+    #[test]
+    fn same_hash_but_tampered_local_head_is_hash_mismatch() {
+        let canonical =
+            StateRoot::new("conn-1".into(), StateModelType::Document, json!({"k": "v"}));
+        let mut local = canonical.clone();
+        local.head = json!({"k": "tampered-with-stored-hash"});
+
+        let check = detect_divergence(&local, &canonical);
+
+        assert_eq!(check.divergence_type, DivergenceType::HashMismatch);
+        assert_eq!(reconcile_action(&check), ReconcileAction::RepairHash);
     }
 
     #[test]

@@ -203,10 +203,16 @@ pub fn evaluate_claim(
     version: u32,
 ) -> Result<ClaimEvaluation, ProfileError> {
     let required = matrix.required_for(profile)?;
-    let result_map: BTreeMap<&str, &CapabilityResult> = measured
-        .iter()
-        .map(|r| (r.capability.as_str(), r))
-        .collect();
+    let mut result_map: BTreeMap<&str, CapabilityResult> = BTreeMap::new();
+    for result in measured {
+        if let Some(existing) = result_map.get_mut(result.capability.as_str()) {
+            if !result.passed {
+                *existing = result.clone();
+            }
+        } else {
+            result_map.insert(result.capability.as_str(), result.clone());
+        }
+    }
 
     let mut per_cap = Vec::new();
     let mut all_pass = true;
@@ -226,7 +232,7 @@ pub fn evaluate_claim(
                 all_pass = false;
             }
             Some(r) => {
-                push_bounded(&mut per_cap, (*r).clone(), MAX_CAPABILITY_RESULTS);
+                push_bounded(&mut per_cap, r.clone(), MAX_CAPABILITY_RESULTS);
                 if !r.passed {
                     all_pass = false;
                 }
@@ -524,6 +530,35 @@ mod tests {
             result.capability == "auth"
                 && !result.passed
                 && result.details == "latest auth run failed"
+        }));
+    }
+
+    #[test]
+    fn duplicate_measured_capability_failure_cannot_be_masked_by_later_pass() {
+        let matrix = ProfileMatrix::standard();
+        let mut results = mvp_results(true);
+        results.push(CapabilityResult {
+            capability: "auth".to_string(),
+            passed: false,
+            details: "first auth run failed".to_string(),
+        });
+        results.push(CapabilityResult {
+            capability: "auth".to_string(),
+            passed: true,
+            details: "retry passed".to_string(),
+        });
+
+        let eval = evaluate_claim(&matrix, Profile::Mvp, &results, 1).unwrap();
+        let err = publish_claim(&matrix, Profile::Mvp, &results, 1).unwrap_err();
+
+        assert_eq!(err.code(), "CPM_CLAIM_BLOCKED");
+        assert_eq!(eval.verdict, "FAIL");
+        assert!(!eval.can_publish);
+        assert_eq!(eval.metadata.capabilities_passed, 4);
+        assert!(eval.results.iter().any(|result| {
+            result.capability == "auth"
+                && !result.passed
+                && result.details == "first auth run failed"
         }));
     }
 

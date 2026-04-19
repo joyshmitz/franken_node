@@ -16,7 +16,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::capacity_defaults::aliases::{MAX_ENTRIES, MAX_EVENTS};
+use crate::capacity_defaults::aliases::{MAX_ENTRIES, MAX_EVENTS, MAX_FIELDS};
+
+const MAX_EVIDENCE_FIELD_BYTES: usize = MAX_FIELDS;
+const MAX_EVIDENCE_LIST_ITEMS: usize = MAX_FIELDS;
 
 // ---------------------------------------------------------------------------
 // Event codes
@@ -169,51 +172,12 @@ impl ControlEvidenceEntry {
                 self.schema_version
             )));
         }
-        if self.decision_id.is_empty() {
-            return Err(ConformanceError::SchemaInvalid(
-                "decision_id must not be empty".to_string(),
-            ));
-        }
-        if self.decision_id.trim() != self.decision_id {
-            return Err(ConformanceError::SchemaInvalid(
-                "decision_id must not contain leading or trailing whitespace".to_string(),
-            ));
-        }
-        if self.decision_id.contains('\0') {
-            return Err(ConformanceError::SchemaInvalid(
-                "decision_id must not contain null bytes".to_string(),
-            ));
-        }
-        if self.trace_id.is_empty() {
-            return Err(ConformanceError::SchemaInvalid(
-                "trace_id must not be empty".to_string(),
-            ));
-        }
-        if self.trace_id.trim() != self.trace_id {
-            return Err(ConformanceError::SchemaInvalid(
-                "trace_id must not contain leading or trailing whitespace".to_string(),
-            ));
-        }
-        if self.trace_id.contains('\0') {
-            return Err(ConformanceError::SchemaInvalid(
-                "trace_id must not contain null bytes".to_string(),
-            ));
-        }
-        if self.chosen_action.is_empty() {
-            return Err(ConformanceError::SchemaInvalid(
-                "chosen_action must not be empty".to_string(),
-            ));
-        }
-        if self.chosen_action.trim() != self.chosen_action {
-            return Err(ConformanceError::SchemaInvalid(
-                "chosen_action must not contain leading or trailing whitespace".to_string(),
-            ));
-        }
-        if self.chosen_action.contains('\0') {
-            return Err(ConformanceError::SchemaInvalid(
-                "chosen_action must not contain null bytes".to_string(),
-            ));
-        }
+        validate_identifier_field("decision_id", &self.decision_id)?;
+        validate_identifier_field("trace_id", &self.trace_id)?;
+        validate_identifier_field("chosen_action", &self.chosen_action)?;
+        validate_text_list("policy_inputs", &self.policy_inputs)?;
+        validate_text_list("candidates_considered", &self.candidates_considered)?;
+        validate_text_list("rejection_reasons", &self.rejection_reasons)?;
         Ok(())
     }
 
@@ -457,10 +421,67 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
         return;
     }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
+}
+
+fn validate_identifier_field(field_name: &str, value: &str) -> Result<(), ConformanceError> {
+    validate_text_field(field_name, value)?;
+    if value.starts_with('/') {
+        return Err(ConformanceError::SchemaInvalid(format!(
+            "{field_name} must not start with '/'"
+        )));
+    }
+    if value.contains('\\') {
+        return Err(ConformanceError::SchemaInvalid(format!(
+            "{field_name} must not contain backslashes"
+        )));
+    }
+    if value.split('/').any(|segment| segment == "..") {
+        return Err(ConformanceError::SchemaInvalid(format!(
+            "{field_name} must not contain parent-directory segments"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_text_list(field_name: &str, values: &[String]) -> Result<(), ConformanceError> {
+    if values.len() > MAX_EVIDENCE_LIST_ITEMS {
+        return Err(ConformanceError::SchemaInvalid(format!(
+            "{field_name} must not contain more than {MAX_EVIDENCE_LIST_ITEMS} items"
+        )));
+    }
+    let item_field_name = format!("{field_name} item");
+    for value in values {
+        validate_text_field(&item_field_name, value)?;
+    }
+    Ok(())
+}
+
+fn validate_text_field(field_name: &str, value: &str) -> Result<(), ConformanceError> {
+    if value.is_empty() {
+        return Err(ConformanceError::SchemaInvalid(format!(
+            "{field_name} must not be empty"
+        )));
+    }
+    if value.trim() != value {
+        return Err(ConformanceError::SchemaInvalid(format!(
+            "{field_name} must not contain leading or trailing whitespace"
+        )));
+    }
+    if value.contains('\0') {
+        return Err(ConformanceError::SchemaInvalid(format!(
+            "{field_name} must not contain null bytes"
+        )));
+    }
+    if value.len() > MAX_EVIDENCE_FIELD_BYTES {
+        return Err(ConformanceError::SchemaInvalid(format!(
+            "{field_name} must not exceed {MAX_EVIDENCE_FIELD_BYTES} bytes"
+        )));
+    }
+    Ok(())
 }
 
 // ===========================================================================
@@ -797,6 +818,123 @@ mod tests {
             err,
             ConformanceError::SchemaInvalid(ref reason)
                 if reason == "chosen_action must not contain null bytes"
+        ));
+    }
+
+    #[test]
+    fn test_entry_validate_rejects_parent_segment_decision_id() {
+        let entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "tenant/../d1",
+            100,
+        );
+
+        let err = entry.validate().unwrap_err();
+
+        assert!(matches!(
+            err,
+            ConformanceError::SchemaInvalid(ref reason)
+                if reason == "decision_id must not contain parent-directory segments"
+        ));
+    }
+
+    #[test]
+    fn test_entry_validate_rejects_leading_slash_trace_id() {
+        let mut entry = make_entry(
+            DecisionType::FencingDecision,
+            DecisionOutcome::Grant,
+            "d1",
+            100,
+        );
+        entry.trace_id = "/trace-001".to_string();
+
+        let err = entry.validate().unwrap_err();
+
+        assert!(matches!(
+            err,
+            ConformanceError::SchemaInvalid(ref reason)
+                if reason == "trace_id must not start with '/'"
+        ));
+    }
+
+    #[test]
+    fn test_entry_validate_rejects_backslash_action() {
+        let mut entry = make_entry(
+            DecisionType::MigrationDecision,
+            DecisionOutcome::Proceed,
+            "d1",
+            100,
+        );
+        entry.chosen_action = "Proceed\\Abort".to_string();
+
+        let err = entry.validate().unwrap_err();
+
+        assert!(matches!(
+            err,
+            ConformanceError::SchemaInvalid(ref reason)
+                if reason == "chosen_action must not contain backslashes"
+        ));
+    }
+
+    #[test]
+    fn test_entry_validate_rejects_oversized_action() {
+        let mut entry = make_entry(
+            DecisionType::MigrationDecision,
+            DecisionOutcome::Proceed,
+            "d1",
+            100,
+        );
+        entry.chosen_action = "a".repeat(MAX_EVIDENCE_FIELD_BYTES.saturating_add(1));
+
+        let err = entry.validate().unwrap_err();
+
+        assert!(matches!(
+            err,
+            ConformanceError::SchemaInvalid(ref reason)
+                if reason == &format!(
+                    "chosen_action must not exceed {MAX_EVIDENCE_FIELD_BYTES} bytes"
+                )
+        ));
+    }
+
+    #[test]
+    fn test_entry_validate_rejects_oversized_policy_input_list() {
+        let mut entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
+        entry.policy_inputs = vec!["input".to_string(); MAX_EVIDENCE_LIST_ITEMS.saturating_add(1)];
+
+        let err = entry.validate().unwrap_err();
+
+        assert!(matches!(
+            err,
+            ConformanceError::SchemaInvalid(ref reason)
+                if reason == &format!(
+                    "policy_inputs must not contain more than {MAX_EVIDENCE_LIST_ITEMS} items"
+                )
+        ));
+    }
+
+    #[test]
+    fn test_entry_validate_rejects_null_byte_candidate_item() {
+        let mut entry = make_entry(
+            DecisionType::HealthGateEval,
+            DecisionOutcome::Pass,
+            "d1",
+            100,
+        );
+        entry.candidates_considered = vec!["candidate\0shadow".to_string()];
+
+        let err = entry.validate().unwrap_err();
+
+        assert!(matches!(
+            err,
+            ConformanceError::SchemaInvalid(ref reason)
+                if reason == "candidates_considered item must not contain null bytes"
         ));
     }
 
@@ -1517,6 +1655,15 @@ mod tests {
         push_bounded(&mut items, "new", 0);
 
         assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_push_bounded_drains_overfull_prefix() {
+        let mut items = vec![1, 2, 3, 4];
+
+        push_bounded(&mut items, 5, 2);
+
+        assert_eq!(items, vec![4, 5]);
     }
 
     // -- All decision types emit evidence successfully ------------------

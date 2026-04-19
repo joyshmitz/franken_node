@@ -49,11 +49,21 @@ impl TraceContext {
                 self.trace_id
             )));
         }
+        if !has_nonzero_hex_digit(&self.trace_id) {
+            return Err(TraceError::InvalidFormat(
+                "trace_id must not be all zero".to_string(),
+            ));
+        }
         if !is_hex(&self.span_id, 16) {
             return Err(TraceError::InvalidFormat(format!(
                 "span_id must be 16 hex chars, got '{}'",
                 self.span_id
             )));
+        }
+        if !has_nonzero_hex_digit(&self.span_id) {
+            return Err(TraceError::InvalidFormat(
+                "span_id must not be all zero".to_string(),
+            ));
         }
         if let Some(ref parent) = self.parent_span_id
             && !is_hex(parent, 16)
@@ -61,6 +71,13 @@ impl TraceContext {
             return Err(TraceError::InvalidFormat(format!(
                 "parent_span_id must be 16 hex chars, got '{parent}'"
             )));
+        }
+        if let Some(parent) = &self.parent_span_id
+            && !has_nonzero_hex_digit(parent)
+        {
+            return Err(TraceError::InvalidFormat(
+                "parent_span_id must not be all zero".to_string(),
+            ));
         }
         if self.parent_span_id.as_deref() == Some(self.span_id.as_str()) {
             return Err(TraceError::InvalidFormat(
@@ -85,6 +102,10 @@ fn is_hex(s: &str, expected_len: usize) -> bool {
     s.len() == expected_len && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
+fn has_nonzero_hex_digit(value: &str) -> bool {
+    value.bytes().any(|byte| byte != b'0')
+}
+
 fn invalid_artifact_id_reason(artifact_id: &str) -> Option<String> {
     let trimmed = artifact_id.trim();
     if trimmed.is_empty() {
@@ -98,6 +119,21 @@ fn invalid_artifact_id_reason(artifact_id: &str) -> Option<String> {
     }
     if trimmed != artifact_id {
         return Some("artifact_id contains leading or trailing whitespace".to_string());
+    }
+    if !artifact_id.is_ascii() {
+        return Some("artifact_id contains non-ASCII characters".to_string());
+    }
+    if artifact_id.bytes().any(|byte| byte.is_ascii_control()) {
+        return Some("artifact_id contains control characters".to_string());
+    }
+    if artifact_id.starts_with('/') {
+        return Some("artifact_id starts with '/'".to_string());
+    }
+    if artifact_id.contains('\\') {
+        return Some("artifact_id contains backslash".to_string());
+    }
+    if artifact_id.split('/').any(|segment| segment == "..") {
+        return Some("artifact_id contains path traversal segment".to_string());
     }
     None
 }
@@ -363,7 +399,7 @@ mod tests {
 
     #[test]
     fn validate_with_parent() {
-        ctx(Some(sid(0))).validate().unwrap();
+        ctx(Some(sid(2))).validate().unwrap();
     }
 
     #[test]
@@ -681,6 +717,42 @@ mod tests {
     }
 
     #[test]
+    fn reject_all_zero_trace_id() {
+        let mut c = ctx(None);
+        c.trace_id = "00000000000000000000000000000000".to_string();
+
+        let err = c.validate().unwrap_err();
+
+        assert_eq!(err.code(), "TRC_INVALID_FORMAT");
+        assert!(err.to_string().contains("trace_id must not be all zero"));
+    }
+
+    #[test]
+    fn reject_all_zero_span_id() {
+        let mut c = ctx(None);
+        c.span_id = "0000000000000000".to_string();
+
+        let err = c.validate().unwrap_err();
+
+        assert_eq!(err.code(), "TRC_INVALID_FORMAT");
+        assert!(err.to_string().contains("span_id must not be all zero"));
+    }
+
+    #[test]
+    fn reject_all_zero_parent_span_id() {
+        let mut c = ctx(None);
+        c.parent_span_id = Some("0000000000000000".to_string());
+
+        let err = c.validate().unwrap_err();
+
+        assert_eq!(err.code(), "TRC_INVALID_FORMAT");
+        assert!(
+            err.to_string()
+                .contains("parent_span_id must not be all zero")
+        );
+    }
+
+    #[test]
     fn reject_empty_parent_span_id() {
         let mut c = ctx(None);
         c.parent_span_id = Some(String::new());
@@ -951,6 +1023,39 @@ mod tests {
         assert_eq!(report.trace_id, "");
         assert_eq!(report.violations.len(), 1);
         assert!(report.violations[0].reason.contains("NUL"));
+    }
+
+    #[test]
+    fn conformance_rejects_artifact_id_with_embedded_control_character() {
+        let arts = vec![TracedArtifact {
+            artifact_id: "artifact\nid".into(),
+            artifact_type: "invoke".into(),
+            trace_context: Some(ctx(None)),
+        }];
+
+        let report = TraceStore::check_conformance(&arts);
+
+        assert_eq!(report.verdict, "FAIL");
+        assert_eq!(report.trace_id, "");
+        assert_eq!(report.violations.len(), 1);
+        assert!(report.violations[0].reason.contains("control characters"));
+    }
+
+    #[test]
+    fn conformance_rejects_path_like_artifact_ids() {
+        for artifact_id in ["../escape", "/absolute", "bad\\path"] {
+            let arts = vec![TracedArtifact {
+                artifact_id: artifact_id.into(),
+                artifact_type: "invoke".into(),
+                trace_context: Some(ctx(None)),
+            }];
+
+            let report = TraceStore::check_conformance(&arts);
+
+            assert_eq!(report.verdict, "FAIL");
+            assert_eq!(report.trace_id, "");
+            assert_eq!(report.violations.len(), 1);
+        }
     }
 
     #[test]

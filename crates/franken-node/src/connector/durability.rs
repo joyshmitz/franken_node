@@ -11,7 +11,7 @@
 //! identical (mode, outcome) inputs always produce identical claim strings.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
@@ -458,9 +458,20 @@ impl DurabilityController {
 
         match &mode {
             DurabilityMode::Quorum { min_acks } => {
-                let acked =
-                    u32::try_from(responses.iter().filter(|r| r.acked).count()).unwrap_or(u32::MAX);
-                let total = u32::try_from(responses.len()).unwrap_or(u32::MAX);
+                let mut unique_replicas = BTreeSet::new();
+                let mut acked_replicas = BTreeSet::new();
+                for response in responses {
+                    let replica_id = response.replica_id.as_str();
+                    if replica_id.is_empty() {
+                        continue;
+                    }
+                    unique_replicas.insert(replica_id);
+                    if response.acked {
+                        acked_replicas.insert(replica_id);
+                    }
+                }
+                let acked = u32::try_from(acked_replicas.len()).unwrap_or(u32::MAX);
+                let total = u32::try_from(unique_replicas.len()).unwrap_or(u32::MAX);
                 let min_acks = *min_acks;
 
                 if acked >= min_acks {
@@ -897,6 +908,54 @@ mod tests {
         let responses = make_responses(2, 3); // only 2 ack
         let err = ctrl.write_quorum(&responses).unwrap_err();
         assert_eq!(err.code, ERR_QUORUM_INSUFFICIENT);
+    }
+
+    #[test]
+    fn test_controller_quorum_write_duplicate_replica_ids_count_once() {
+        let mut ctrl = DurabilityController::quorum("trust_receipt", 2);
+        let responses = vec![
+            ReplicaResponse {
+                replica_id: "r1".to_string(),
+                acked: true,
+            },
+            ReplicaResponse {
+                replica_id: "r1".to_string(),
+                acked: true,
+            },
+        ];
+
+        let err = ctrl.write_quorum(&responses).unwrap_err();
+
+        assert_eq!(err.code, ERR_QUORUM_INSUFFICIENT);
+        assert!(ctrl.events().iter().any(|event| {
+            event.code == DM_WRITE_QUORUM_FAILED
+                && event.detail.contains("1/1 acks")
+                && event.detail.contains("required 2")
+        }));
+    }
+
+    #[test]
+    fn test_controller_quorum_write_empty_replica_ids_do_not_count() {
+        let mut ctrl = DurabilityController::quorum("trust_receipt", 1);
+        let responses = vec![
+            ReplicaResponse {
+                replica_id: String::new(),
+                acked: true,
+            },
+            ReplicaResponse {
+                replica_id: String::new(),
+                acked: true,
+            },
+        ];
+
+        let err = ctrl.write_quorum(&responses).unwrap_err();
+
+        assert_eq!(err.code, ERR_QUORUM_INSUFFICIENT);
+        assert!(ctrl.events().iter().any(|event| {
+            event.code == DM_WRITE_QUORUM_FAILED
+                && event.detail.contains("0/0 acks")
+                && event.detail.contains("required 1")
+        }));
     }
 
     #[test]

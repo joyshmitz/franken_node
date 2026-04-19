@@ -231,11 +231,7 @@ impl GaussianSuffStats {
             *self = Self::new();
         }
         // Hardening: use saturating arithmetic for counter operations
-        let old_n = self.n;
-        self.n = old_n + 1.0;
-        if !self.n.is_finite() || self.n < old_n {
-            self.n = f64::MAX; // Saturated
-        }
+        self.n = self.n.saturating_add(1.0);
         let delta = x - self.mean;
         self.mean = self.mean + (delta / self.n);
         if !self.mean.is_finite() {
@@ -421,12 +417,8 @@ impl PoissonSuffStats {
         if !self.n.is_finite() || self.n < 0.0 || !self.sum.is_finite() || self.sum < 0.0 {
             *self = Self::new();
         }
-        // Hardening: use safe counter increment with overflow detection
-        let old_n = self.n;
-        self.n = old_n + 1.0;
-        if !self.n.is_finite() || self.n < old_n {
-            self.n = f64::MAX; // Saturated
-        }
+        // Hardening: use saturating arithmetic for counter operations
+        self.n = self.n.saturating_add(1.0);
         // Hardening: use safe addition with overflow detection
         let old_sum = self.sum;
         self.sum = old_sum + x;
@@ -535,10 +527,7 @@ impl CategoricalSuffStats {
             } else {
                 0.0
             };
-            self.counts[category] = old_count + 1.0;
-            if !self.counts[category].is_finite() || self.counts[category] < old_count {
-                self.counts[category] = f64::MAX; // Saturated
-            }
+            self.counts[category] = old_count.saturating_add(1.0);
         }
     }
 }
@@ -734,11 +723,27 @@ impl BocpdDetector {
         let mut pred_probs = vec![0.0; max_rl];
         for (r, pred_prob) in pred_probs.iter_mut().enumerate() {
             *pred_prob = match &self.model {
-                ObservationModel::Gaussian(m) => m.predictive_prob(&self.gaussian_stats[r], x),
-                ObservationModel::Poisson(m) => m.predictive_prob(&self.poisson_stats[r], x),
+                ObservationModel::Gaussian(m) => {
+                    if r < self.gaussian_stats.len() {
+                        m.predictive_prob(&self.gaussian_stats[r], x)
+                    } else {
+                        0.0
+                    }
+                }
+                ObservationModel::Poisson(m) => {
+                    if r < self.poisson_stats.len() {
+                        m.predictive_prob(&self.poisson_stats[r], x)
+                    } else {
+                        0.0
+                    }
+                }
                 ObservationModel::Categorical(m) => {
-                    let cat = categorical_index(x);
-                    m.predictive_prob(&self.categorical_stats[r], cat)
+                    if r < self.categorical_stats.len() {
+                        let cat = categorical_index(x);
+                        m.predictive_prob(&self.categorical_stats[r], cat)
+                    } else {
+                        0.0
+                    }
                 }
             };
         }
@@ -860,12 +865,8 @@ impl BocpdDetector {
             self.current_regime_sum = if x >= 0.0 { f64::MAX } else { -f64::MAX };
         }
 
-        // Hardening: use safe counter increment with overflow detection
-        let old_count = self.current_regime_count;
-        self.current_regime_count = old_count + 1.0;
-        if !self.current_regime_count.is_finite() || self.current_regime_count < old_count {
-            self.current_regime_count = f64::MAX; // Saturated
-        }
+        // Hardening: use saturating arithmetic for counter operations
+        self.current_regime_count = self.current_regime_count.saturating_add(1.0);
 
         // Step 5: Check for changepoint.
         let cp_prob = self.run_length_probs[0];

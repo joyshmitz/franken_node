@@ -241,11 +241,19 @@ impl TrustObjectId {
                 format!("{}sha256:{}", self.domain.prefix(), self.digest)
             }
             DerivationMode::ContextAddressed => {
+                let epoch = self
+                    .epoch
+                    .map(|value| value.to_string())
+                    .unwrap_or_default();
+                let sequence = self
+                    .sequence
+                    .map(|value| value.to_string())
+                    .unwrap_or_default();
                 format!(
                     "{}{}:{}:{}",
                     self.domain.prefix(),
-                    self.epoch.unwrap_or(0),
-                    self.sequence.unwrap_or(0),
+                    epoch,
+                    sequence,
                     self.digest,
                 )
             }
@@ -254,11 +262,7 @@ impl TrustObjectId {
 
     /// Short form for logging: `<prefix><first_8_hex_chars>`.
     pub fn short_form(&self) -> String {
-        let short_digest = if self.digest.len() >= 8 {
-            &self.digest[..8]
-        } else {
-            &self.digest
-        };
+        let short_digest = self.digest.chars().take(8).collect::<String>();
         format!("{}{short_digest}", self.domain.prefix())
     }
 
@@ -286,18 +290,8 @@ impl TrustObjectId {
         // Try context-addressed: <epoch>:<sequence>:<digest>
         let parts: Vec<&str> = rest.splitn(3, ':').collect();
         if parts.len() == 3 {
-            let epoch = parts[0]
-                .parse::<u64>()
-                .map_err(|_| IdError::InvalidFormat {
-                    input: s.to_string(),
-                    reason: "epoch is not a valid u64".to_string(),
-                })?;
-            let sequence = parts[1]
-                .parse::<u64>()
-                .map_err(|_| IdError::InvalidFormat {
-                    input: s.to_string(),
-                    reason: "sequence is not a valid u64".to_string(),
-                })?;
+            let epoch = parse_canonical_u64(parts[0], "epoch", s)?;
+            let sequence = parse_canonical_u64(parts[1], "sequence", s)?;
             let digest = parts[2];
             validate_hex_digest(digest)?;
             return Ok(Self {
@@ -490,13 +484,35 @@ fn validate_hex_digest(s: &str) -> Result<(), IdError> {
             reason: format!("expected 64 hex chars, got {}", s.len()),
         });
     }
-    if !s.chars().all(|c| c.is_ascii_hexdigit()) {
+    if !s
+        .bytes()
+        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
         return Err(IdError::MalformedDigest {
             input: s.to_string(),
-            reason: "contains non-hex characters".to_string(),
+            reason: "contains non-hex or uppercase characters".to_string(),
         });
     }
     Ok(())
+}
+
+fn parse_canonical_u64(input: &str, field: &str, full_input: &str) -> Result<u64, IdError> {
+    if input.is_empty() || !input.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(IdError::InvalidFormat {
+            input: full_input.to_string(),
+            reason: format!("{field} is not a valid u64"),
+        });
+    }
+    if input.len() > 1 && input.starts_with('0') {
+        return Err(IdError::InvalidFormat {
+            input: full_input.to_string(),
+            reason: format!("{field} is not a canonical u64"),
+        });
+    }
+    input.parse::<u64>().map_err(|_| IdError::InvalidFormat {
+        input: full_input.to_string(),
+        reason: format!("{field} is not a valid u64"),
+    })
 }
 
 /// Demonstrate trust object ID derivation for all domains.
@@ -691,6 +707,31 @@ mod tests {
         assert!(full.starts_with("migr:10:3:"));
     }
 
+    #[test]
+    fn test_context_addressed_full_form_missing_context_is_not_aliased_to_zero() {
+        let digest = sha256_digest(b"missing-context");
+        let invalid = TrustObjectId {
+            domain: DomainPrefix::PolicyCheckpoint,
+            hash_algorithm: "sha256".to_string(),
+            digest: digest.clone(),
+            derivation_mode: DerivationMode::ContextAddressed,
+            epoch: None,
+            sequence: None,
+        };
+        let zero_context = TrustObjectId {
+            domain: DomainPrefix::PolicyCheckpoint,
+            hash_algorithm: "sha256".to_string(),
+            digest: digest.clone(),
+            derivation_mode: DerivationMode::ContextAddressed,
+            epoch: Some(0),
+            sequence: Some(0),
+        };
+
+        assert_ne!(invalid.full_form(), zero_context.full_form());
+        assert!(!TrustObjectId::validate(&invalid.full_form()));
+        assert!(invalid.full_form().ends_with(&format!("::{digest}")));
+    }
+
     // ── TrustObjectId: short form ───────────────────────────────────
 
     #[test]
@@ -709,6 +750,20 @@ mod tests {
             let short = id.short_form();
             assert!(short.starts_with(domain.prefix()));
         }
+    }
+
+    #[test]
+    fn test_short_form_does_not_byte_slice_malformed_public_digest() {
+        let id = TrustObjectId {
+            domain: DomainPrefix::Extension,
+            hash_algorithm: "sha256".to_string(),
+            digest: "ééééé".to_string(),
+            derivation_mode: DerivationMode::ContentAddressed,
+            epoch: None,
+            sequence: None,
+        };
+
+        assert_eq!(id.short_form(), "ext:ééééé");
     }
 
     // ── TrustObjectId: parse ────────────────────────────────────────
@@ -794,6 +849,19 @@ mod tests {
             }
             other => unreachable!("expected MalformedDigest, got {other}"),
         }
+    }
+
+    #[test]
+    fn test_parse_rejects_uppercase_content_digest() {
+        let candidate = format!("ext:sha256:{}", "A".repeat(64));
+
+        let result = TrustObjectId::parse(&candidate);
+
+        assert!(matches!(
+            result,
+            Err(IdError::MalformedDigest { ref reason, .. })
+                if reason.contains("uppercase")
+        ));
     }
 
     #[test]
@@ -891,6 +959,34 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_rejects_leading_zero_epoch() {
+        let digest = sha256_digest(b"ctx-leading-zero-epoch");
+        let candidate = format!("ext:01:1:{digest}");
+
+        let result = TrustObjectId::parse(&candidate);
+
+        assert!(matches!(
+            result,
+            Err(IdError::InvalidFormat { ref reason, .. })
+                if reason == "epoch is not a canonical u64"
+        ));
+    }
+
+    #[test]
+    fn test_parse_rejects_leading_zero_sequence() {
+        let digest = sha256_digest(b"ctx-leading-zero-seq");
+        let candidate = format!("ext:1:01:{digest}");
+
+        let result = TrustObjectId::parse(&candidate);
+
+        assert!(matches!(
+            result,
+            Err(IdError::InvalidFormat { ref reason, .. })
+                if reason == "sequence is not a canonical u64"
+        ));
+    }
+
+    #[test]
     fn test_parse_rejects_case_mismatched_prefix() {
         let digest = sha256_digest(b"case-mismatch");
         let candidate = format!("Ext:sha256:{digest}");
@@ -965,7 +1061,20 @@ mod tests {
         assert!(matches!(
             result,
             Err(IdError::MalformedDigest { ref reason, .. })
-                if reason == "contains non-hex characters"
+                if reason == "contains non-hex or uppercase characters"
+        ));
+    }
+
+    #[test]
+    fn test_parse_rejects_uppercase_context_digest() {
+        let candidate = format!("ext:1:2:{}", "F".repeat(64));
+
+        let result = TrustObjectId::parse(&candidate);
+
+        assert!(matches!(
+            result,
+            Err(IdError::MalformedDigest { ref reason, .. })
+                if reason == "contains non-hex or uppercase characters"
         ));
     }
 
@@ -1023,7 +1132,7 @@ mod tests {
         assert!(matches!(
             result,
             Err(IdError::MalformedDigest { ref reason, .. })
-                if reason == "contains non-hex characters"
+                if reason == "contains non-hex or uppercase characters"
         ));
     }
 

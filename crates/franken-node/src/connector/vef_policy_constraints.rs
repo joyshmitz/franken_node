@@ -17,10 +17,16 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use crate::capacity_defaults::aliases::{MAX_FIELDS, MAX_PREDICATES, MAX_RULES};
+
 pub const LANGUAGE_VERSION: &str = "vef-policy-lang-v1";
 pub const COMPILER_VERSION: &str = "vef-constraint-compiler-v1";
 pub const COMPILED_SCHEMA_VERSION: &str = "vef-policy-constraints-v1";
 const RESERVED_POLICY_ID: &str = "<unknown>";
+const MAX_POLICY_RULES: usize = MAX_RULES;
+const MAX_RULE_CAPABILITIES: usize = MAX_FIELDS;
+const MAX_RULE_CONSTRAINTS: usize = MAX_FIELDS;
+const MAX_COMPILED_PREDICATES: usize = MAX_PREDICATES;
 
 // ---------------------------------------------------------------------------
 // Event codes
@@ -285,6 +291,37 @@ fn invalid_policy_id_reason(policy_id: &str) -> Option<String> {
     if trimmed != policy_id {
         return Some("policy_id contains leading or trailing whitespace".to_string());
     }
+    if let Some(reason) = invalid_trace_segment_reason("policy_id", policy_id) {
+        return Some(reason);
+    }
+    None
+}
+
+fn invalid_trace_segment_reason(field: &str, value: &str) -> Option<String> {
+    if value.starts_with('/') {
+        return Some(format!("{field} must not be absolute"));
+    }
+    if value.contains('\\') {
+        return Some(format!("{field} must not contain backslashes"));
+    }
+    if value.split('/').any(|segment| segment == "..") {
+        return Some(format!(
+            "{field} must not contain parent-directory segments"
+        ));
+    }
+    if value.contains('/') {
+        return Some(format!("{field} must not contain path separators"));
+    }
+    None
+}
+
+fn invalid_expression_atom_reason(field: &str, value: &str) -> Option<String> {
+    if value.contains('"') {
+        return Some(format!("{field} must not contain double quotes"));
+    }
+    if value.contains('\\') {
+        return Some(format!("{field} must not contain backslashes"));
+    }
     None
 }
 
@@ -320,6 +357,19 @@ fn normalize_policy(
         ));
     }
 
+    if policy.rules.len() > MAX_POLICY_RULES {
+        return Err(ConstraintCompileError::new(
+            event_codes::VEF_COMPILE_ERR_001_INVALID_INPUT,
+            format!(
+                "policy rule count {} exceeds maximum {}",
+                policy.rules.len(),
+                MAX_POLICY_RULES
+            ),
+            trace_id,
+            None,
+        ));
+    }
+
     let mut seen_rule_ids = BTreeSet::new();
     let mut normalized_rules = Vec::with_capacity(policy.rules.len());
 
@@ -341,6 +391,14 @@ fn normalize_policy(
                 Some(rule_id),
             ));
         }
+        if let Some(reason) = invalid_trace_segment_reason("rule_id", rule_id) {
+            return Err(ConstraintCompileError::new(
+                event_codes::VEF_COMPILE_ERR_004_INVALID_RULE,
+                reason,
+                trace_id,
+                Some(rule_id),
+            ));
+        }
 
         if !seen_rule_ids.insert(rule_id.to_string()) {
             return Err(ConstraintCompileError::new(
@@ -351,11 +409,34 @@ fn normalize_policy(
             ));
         }
 
+        if rule.required_capabilities.len() > MAX_RULE_CAPABILITIES {
+            return Err(ConstraintCompileError::new(
+                event_codes::VEF_COMPILE_ERR_004_INVALID_RULE,
+                format!(
+                    "required capability count {} exceeds maximum {}",
+                    rule.required_capabilities.len(),
+                    MAX_RULE_CAPABILITIES
+                ),
+                trace_id,
+                Some(rule_id),
+            ));
+        }
         for capability in &rule.required_capabilities {
             if contains_nul(capability) {
                 return Err(ConstraintCompileError::new(
                     event_codes::VEF_COMPILE_ERR_004_INVALID_RULE,
                     "required capability must not contain NUL bytes",
+                    trace_id,
+                    Some(rule_id),
+                ));
+            }
+            let trimmed_capability = capability.trim();
+            if let Some(reason) =
+                invalid_expression_atom_reason("required capability", trimmed_capability)
+            {
+                return Err(ConstraintCompileError::new(
+                    event_codes::VEF_COMPILE_ERR_004_INVALID_RULE,
+                    reason,
                     trace_id,
                     Some(rule_id),
                 ));
@@ -371,6 +452,18 @@ fn normalize_policy(
         required_capabilities.sort();
         required_capabilities.dedup();
 
+        if rule.constraints.len() > MAX_RULE_CONSTRAINTS {
+            return Err(ConstraintCompileError::new(
+                event_codes::VEF_COMPILE_ERR_004_INVALID_RULE,
+                format!(
+                    "constraint count {} exceeds maximum {}",
+                    rule.constraints.len(),
+                    MAX_RULE_CONSTRAINTS
+                ),
+                trace_id,
+                Some(rule_id),
+            ));
+        }
         let mut constraints = BTreeMap::new();
         for (key, value) in &rule.constraints {
             let key = key.trim();
@@ -386,6 +479,14 @@ fn normalize_policy(
                 return Err(ConstraintCompileError::new(
                     event_codes::VEF_COMPILE_ERR_004_INVALID_RULE,
                     "constraint key must not contain NUL bytes",
+                    trace_id,
+                    Some(rule_id),
+                ));
+            }
+            if let Some(reason) = invalid_expression_atom_reason("constraint key", key) {
+                return Err(ConstraintCompileError::new(
+                    event_codes::VEF_COMPILE_ERR_004_INVALID_RULE,
+                    reason,
                     trace_id,
                     Some(rule_id),
                 ));
@@ -407,7 +508,26 @@ fn normalize_policy(
                     Some(rule_id),
                 ));
             }
-            constraints.insert(key.to_string(), trimmed_value.to_string());
+            if let Some(reason) = invalid_expression_atom_reason("constraint value", trimmed_value)
+            {
+                return Err(ConstraintCompileError::new(
+                    event_codes::VEF_COMPILE_ERR_004_INVALID_RULE,
+                    reason,
+                    trace_id,
+                    Some(rule_id),
+                ));
+            }
+            if constraints
+                .insert(key.to_string(), trimmed_value.to_string())
+                .is_some()
+            {
+                return Err(ConstraintCompileError::new(
+                    event_codes::VEF_COMPILE_ERR_004_INVALID_RULE,
+                    "duplicate constraint key after normalization",
+                    trace_id,
+                    Some(rule_id),
+                ));
+            }
         }
 
         if matches!(rule.effect, RuleEffect::Require)
@@ -473,11 +593,7 @@ fn predicate_hash_id(fields: &[&str]) -> String {
         hasher.update(field.as_bytes());
     }
     let digest = hasher.finalize();
-    let mut hex = String::with_capacity(16);
-    for b in &digest[..8] {
-        hex.push_str(&format!("{b:02x}"));
-    }
-    format!("pred-{hex}")
+    format!("pred-{digest:x}")
 }
 
 fn snapshot_hash(normalized: &NormalizedPolicy) -> Result<String, ConstraintCompileError> {
@@ -489,7 +605,11 @@ fn snapshot_hash(normalized: &NormalizedPolicy) -> Result<String, ConstraintComp
             None,
         )
     })?;
-    let digest = Sha256::digest([b"vef_snapshot_hash_v1:" as &[u8], &canonical[..]].concat());
+    let mut hasher = Sha256::new();
+    hasher.update(b"vef_snapshot_hash_v1:");
+    hasher.update((canonical.len() as u64).to_le_bytes());
+    hasher.update(&canonical);
+    let digest = hasher.finalize();
     Ok(format!("sha256:{digest:x}"))
 }
 
@@ -539,10 +659,25 @@ pub fn compile_policy(
     }
 
     let mut predicates = Vec::new();
-    let mut coverage = BTreeMap::new();
-    let mut rule_projections = Vec::new();
+    let mut coverage: BTreeMap<String, usize> = BTreeMap::new();
+    let mut rule_projections = Vec::with_capacity(normalized.rules.len());
 
     for rule in &normalized.rules {
+        let next_predicate_count = 1_usize
+            .saturating_add(rule.required_capabilities.len())
+            .saturating_add(rule.constraints.len());
+        if predicates.len().saturating_add(next_predicate_count) > MAX_COMPILED_PREDICATES {
+            return Err(ConstraintCompileError::new(
+                event_codes::VEF_COMPILE_ERR_004_INVALID_RULE,
+                format!(
+                    "compiled predicate count would exceed maximum {}",
+                    MAX_COMPILED_PREDICATES
+                ),
+                trace_id,
+                Some(&rule.rule_id),
+            ));
+        }
+
         let projection = to_rule_projection(rule);
         rule_projections.push(projection);
 
@@ -620,7 +755,7 @@ pub fn compile_policy(
 
         let counter = coverage
             .entry(rule.action_class.as_str().to_string())
-            .or_insert(0);
+            .or_insert(0_usize);
         *counter = (*counter).saturating_add(1);
     }
 
@@ -888,6 +1023,18 @@ mod tests {
     }
 
     #[test]
+    fn policy_id_with_trace_path_separator_fails() {
+        let mut policy = full_policy();
+        policy.policy_id = "policy/../escape".to_string();
+
+        let err = compile_policy(&policy, "trace-policy-path").unwrap_err();
+
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_001_INVALID_INPUT);
+        assert!(err.message.contains("parent-directory"));
+        assert!(err.rule_id.is_none());
+    }
+
+    #[test]
     fn empty_rule_id_fails() {
         let mut policy = full_policy();
         policy.rules[0].rule_id = "".to_string();
@@ -905,6 +1052,18 @@ mod tests {
         assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_004_INVALID_RULE);
         assert!(err.message.contains("rule_id must not contain NUL"));
         assert_eq!(err.rule_id.as_deref(), Some("rule\0bad"));
+    }
+
+    #[test]
+    fn rule_id_with_trace_path_separator_fails() {
+        let mut policy = full_policy();
+        policy.rules[0].rule_id = "rule/escape".to_string();
+
+        let err = compile_policy(&policy, "trace-rule-path").unwrap_err();
+
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_004_INVALID_RULE);
+        assert!(err.message.contains("path separators"));
+        assert_eq!(err.rule_id.as_deref(), Some("rule/escape"));
     }
 
     #[test]
@@ -984,6 +1143,35 @@ mod tests {
         assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_004_INVALID_RULE);
         assert!(err.message.contains("constraint key"));
         assert_eq!(err.rule_id.as_deref(), Some("keyed-rule"));
+    }
+
+    #[test]
+    fn duplicate_constraint_key_after_trimming_fails() {
+        let mut policy = full_policy();
+        policy.require_full_action_coverage = false;
+        policy.rules.truncate(1);
+        policy.rules[0].constraints.insert(
+            " scope ".to_string(),
+            "conflicting-normalized-key".to_string(),
+        );
+
+        let err = compile_policy(&policy, "trace-dup-constraint-key").unwrap_err();
+
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_004_INVALID_RULE);
+        assert!(err.message.contains("duplicate constraint key"));
+        assert_eq!(err.rule_id.as_deref(), Some("rule-00"));
+    }
+
+    #[test]
+    fn capability_quote_injection_fails() {
+        let mut policy = full_policy();
+        policy.rules[0].required_capabilities = vec!["cap\") || permit(secret_access)".to_string()];
+
+        let err = compile_policy(&policy, "trace-capability-quote").unwrap_err();
+
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_004_INVALID_RULE);
+        assert!(err.message.contains("double quotes"));
+        assert_eq!(err.rule_id.as_deref(), Some("rule-00"));
     }
 
     #[test]
@@ -1090,7 +1278,25 @@ mod tests {
         let err = compile_policy(&policy, "trace-value-nul").unwrap_err();
 
         assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_004_INVALID_RULE);
-        assert!(err.message.contains("constraint value must not contain NUL"));
+        assert!(
+            err.message
+                .contains("constraint value must not contain NUL")
+        );
+        assert_eq!(err.rule_id.as_deref(), Some("rule-00"));
+    }
+
+    #[test]
+    fn constraint_value_quote_injection_fails() {
+        let mut policy = full_policy();
+        policy.rules[0].constraints.insert(
+            "scope".to_string(),
+            "network\") || permit(secret_access)".to_string(),
+        );
+
+        let err = compile_policy(&policy, "trace-value-quote").unwrap_err();
+
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_004_INVALID_RULE);
+        assert!(err.message.contains("double quotes"));
         assert_eq!(err.rule_id.as_deref(), Some("rule-00"));
     }
 
@@ -1212,6 +1418,57 @@ mod tests {
         let codes: Vec<&str> = envelope.events.iter().map(|e| e.code.as_str()).collect();
         assert!(codes.contains(&event_codes::VEF_COMPILE_001_STARTED));
         assert!(codes.contains(&event_codes::VEF_COMPILE_002_SUCCEEDED));
+    }
+
+    #[test]
+    fn policy_rule_count_is_bounded_before_allocation() {
+        let mut policy = full_policy();
+        let template = policy.rules[0].clone();
+        policy.require_full_action_coverage = false;
+        policy.rules = (0..=MAX_POLICY_RULES)
+            .map(|idx| PolicyRule {
+                rule_id: format!("rule-{idx}"),
+                ..template.clone()
+            })
+            .collect();
+
+        let err = compile_policy(&policy, "trace-rule-cap").unwrap_err();
+
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_001_INVALID_INPUT);
+        assert!(err.message.contains("policy rule count"));
+    }
+
+    #[test]
+    fn compiled_predicate_count_is_bounded() {
+        let required_capabilities: Vec<String> = (0..MAX_COMPILED_PREDICATES)
+            .map(|idx| format!("cap-{idx}"))
+            .collect();
+        let policy = RuntimePolicy {
+            schema_version: LANGUAGE_VERSION.to_string(),
+            policy_id: "policy-predicate-cap".to_string(),
+            require_full_action_coverage: false,
+            rules: vec![PolicyRule {
+                rule_id: "rule-predicate-cap".to_string(),
+                action_class: ActionClass::NetworkAccess,
+                effect: RuleEffect::Require,
+                required_capabilities,
+                constraints: BTreeMap::new(),
+            }],
+        };
+
+        let err = compile_policy(&policy, "trace-predicate-cap").unwrap_err();
+
+        assert_eq!(err.code, event_codes::VEF_COMPILE_ERR_004_INVALID_RULE);
+        assert!(err.message.contains("compiled predicate count"));
+        assert_eq!(err.rule_id.as_deref(), Some("rule-predicate-cap"));
+    }
+
+    #[test]
+    fn predicate_hash_id_uses_full_sha256_width() {
+        let predicate_id = predicate_hash_id(&["policy", "rule", "decision"]);
+
+        assert!(predicate_id.starts_with("pred-"));
+        assert_eq!(predicate_id.len(), "pred-".len() + 64);
     }
 
     #[test]

@@ -5,6 +5,29 @@
 
 use std::collections::BTreeMap;
 
+/// Maximum budget violation dimensions to track per check.
+/// Since we check exactly 5 dimensions, this provides safety margin.
+const MAX_VIOLATIONS: usize = 10;
+
+/// Maximum audit records per admission check.
+/// Since we generate exactly 5 records, this provides safety margin.
+const MAX_AUDIT_RECORDS: usize = 10;
+
+/// Push item to vector with bounded capacity to prevent memory exhaustion.
+/// When capacity is exceeded, removes oldest entries to maintain the limit.
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
+    if items.len() >= cap {
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        let safe_overflow = overflow.min(items.len());
+        items.drain(0..safe_overflow);
+    }
+    items.push(item);
+}
+
 /// Budget limits for a single peer.
 #[derive(Debug, Clone)]
 pub struct AdmissionBudget {
@@ -298,7 +321,7 @@ impl AdmissionBudgetTracker {
         // Dimension 1: bytes
         let bytes_after = usage.bytes_used.saturating_add(request.bytes_requested);
         let bytes_ok = bytes_after <= self.budget.max_bytes;
-        records.push(BudgetCheckRecord {
+        push_bounded(&mut records, BudgetCheckRecord {
             peer_id: request.peer_id.clone(),
             timestamp: timestamp.to_string(),
             dimension: "bytes".into(),
@@ -306,15 +329,15 @@ impl AdmissionBudgetTracker {
             requested: request.bytes_requested,
             limit: self.budget.max_bytes,
             verdict: if bytes_ok { "PASS" } else { "FAIL" }.into(),
-        });
+        }, MAX_AUDIT_RECORDS);
         if !bytes_ok {
-            violations.push(BudgetDimension::Bytes);
+            push_bounded(&mut violations, BudgetDimension::Bytes, MAX_VIOLATIONS);
         }
 
         // Dimension 2: symbols
         let symbols_after = usage.symbols_used.saturating_add(request.symbols_requested);
         let symbols_ok = symbols_after <= self.budget.max_symbols;
-        records.push(BudgetCheckRecord {
+        push_bounded(&mut records, BudgetCheckRecord {
             peer_id: request.peer_id.clone(),
             timestamp: timestamp.to_string(),
             dimension: "symbols".into(),
@@ -322,14 +345,14 @@ impl AdmissionBudgetTracker {
             requested: request.symbols_requested,
             limit: self.budget.max_symbols,
             verdict: if symbols_ok { "PASS" } else { "FAIL" }.into(),
-        });
+        }, MAX_AUDIT_RECORDS);
         if !symbols_ok {
-            violations.push(BudgetDimension::Symbols);
+            push_bounded(&mut violations, BudgetDimension::Symbols, MAX_VIOLATIONS);
         }
 
         // Dimension 3: failed_auth (current count, no increment from request)
         let auth_ok = usage.failed_auth_count < self.budget.max_failed_auth;
-        records.push(BudgetCheckRecord {
+        push_bounded(&mut records, BudgetCheckRecord {
             peer_id: request.peer_id.clone(),
             timestamp: timestamp.to_string(),
             dimension: "failed_auth".into(),
@@ -337,14 +360,14 @@ impl AdmissionBudgetTracker {
             requested: 0,
             limit: self.budget.max_failed_auth as u64,
             verdict: if auth_ok { "PASS" } else { "FAIL" }.into(),
-        });
+        }, MAX_AUDIT_RECORDS);
         if !auth_ok {
-            violations.push(BudgetDimension::FailedAuth);
+            push_bounded(&mut violations, BudgetDimension::FailedAuth, MAX_VIOLATIONS);
         }
 
         // Dimension 4: inflight_decode (current count)
         let inflight_ok = usage.inflight_decode_count < self.budget.max_inflight_decode;
-        records.push(BudgetCheckRecord {
+        push_bounded(&mut records, BudgetCheckRecord {
             peer_id: request.peer_id.clone(),
             timestamp: timestamp.to_string(),
             dimension: "inflight_decode".into(),
@@ -352,9 +375,9 @@ impl AdmissionBudgetTracker {
             requested: 0,
             limit: self.budget.max_inflight_decode as u64,
             verdict: if inflight_ok { "PASS" } else { "FAIL" }.into(),
-        });
+        }, MAX_AUDIT_RECORDS);
         if !inflight_ok {
-            violations.push(BudgetDimension::InflightDecode);
+            push_bounded(&mut violations, BudgetDimension::InflightDecode, MAX_VIOLATIONS);
         }
 
         // Dimension 5: decode_cpu
@@ -362,7 +385,7 @@ impl AdmissionBudgetTracker {
             .decode_cpu_ms
             .saturating_add(request.decode_cpu_estimate_ms);
         let cpu_ok = cpu_after <= self.budget.max_decode_cpu_ms;
-        records.push(BudgetCheckRecord {
+        push_bounded(&mut records, BudgetCheckRecord {
             peer_id: request.peer_id.clone(),
             timestamp: timestamp.to_string(),
             dimension: "decode_cpu".into(),
@@ -370,9 +393,9 @@ impl AdmissionBudgetTracker {
             requested: request.decode_cpu_estimate_ms,
             limit: self.budget.max_decode_cpu_ms,
             verdict: if cpu_ok { "PASS" } else { "FAIL" }.into(),
-        });
+        }, MAX_AUDIT_RECORDS);
         if !cpu_ok {
-            violations.push(BudgetDimension::DecodeCpu);
+            push_bounded(&mut violations, BudgetDimension::DecodeCpu, MAX_VIOLATIONS);
         }
 
         let admitted = violations.is_empty();

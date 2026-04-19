@@ -627,6 +627,13 @@ impl DporScheduleGate {
         ];
 
         for (name, builder) in builders {
+            if self
+                .registered_scenarios
+                .iter()
+                .any(|registered| registered == name)
+            {
+                continue;
+            }
             let model = builder();
             self.explorer
                 .register_model(model)
@@ -647,6 +654,14 @@ impl DporScheduleGate {
 
     /// Register a single scenario by name.
     pub fn register_scenario(&mut self, name: &str) -> Result<(), DporScheduleGateError> {
+        if self
+            .registered_scenarios
+            .iter()
+            .any(|registered| registered == name)
+        {
+            return Ok(());
+        }
+
         let model = match name {
             SCENARIO_EPOCH_LEASE_INTERLEAVE => build_epoch_lease_interleave(),
             SCENARIO_REMOTE_EVIDENCE_RACE => build_remote_evidence_race(),
@@ -968,6 +983,55 @@ mod tests {
             gate.registered_scenarios()[0],
             SCENARIO_EPOCH_LEASE_INTERLEAVE
         );
+    }
+
+    #[test]
+    fn duplicate_single_scenario_registration_is_idempotent() {
+        let mut gate = DporScheduleGate::with_defaults().unwrap();
+        gate.register_scenario(SCENARIO_EPOCH_LEASE_INTERLEAVE)
+            .unwrap();
+        gate.register_scenario(SCENARIO_EPOCH_LEASE_INTERLEAVE)
+            .unwrap();
+
+        assert_eq!(
+            gate.registered_scenarios(),
+            &[SCENARIO_EPOCH_LEASE_INTERLEAVE.to_string()]
+        );
+        assert_eq!(
+            gate.events()
+                .iter()
+                .filter(|event| event.code == event_codes::DSG_002)
+                .count(),
+            1
+        );
+
+        let result = gate.run_full_gate().unwrap();
+        assert_eq!(result.scenarios_explored, 1);
+        assert!(result.scenarios_explored < result.scenarios_total);
+    }
+
+    #[test]
+    fn repeated_register_all_scenarios_does_not_duplicate_coverage() {
+        let mut gate = DporScheduleGate::with_defaults().unwrap();
+        gate.register_all_scenarios().unwrap();
+        gate.register_all_scenarios().unwrap();
+
+        assert_eq!(gate.registered_scenarios().len(), ALL_SCENARIOS.len());
+        for name in ALL_SCENARIOS {
+            assert_eq!(
+                gate.registered_scenarios()
+                    .iter()
+                    .filter(|registered| registered.as_str() == *name)
+                    .count(),
+                1,
+                "duplicate registration for scenario: {}",
+                name
+            );
+        }
+
+        let result = gate.run_full_gate().unwrap();
+        assert_eq!(result.scenarios_explored, ALL_SCENARIOS.len());
+        assert_eq!(result.per_scenario.len(), ALL_SCENARIOS.len());
     }
 
     // --- 6. Unknown scenario rejected ---
@@ -1329,7 +1393,11 @@ mod tests {
             GateEvent::new(event_codes::DSG_003, "newest"),
         ];
 
-        push_bounded(&mut events, GateEvent::new(event_codes::DSG_004, "incoming"), 2);
+        push_bounded(
+            &mut events,
+            GateEvent::new(event_codes::DSG_004, "incoming"),
+            2,
+        );
 
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].detail, "newest");
@@ -1346,9 +1414,10 @@ mod tests {
         let err = config.validate().unwrap_err();
 
         assert_eq!(err.code(), ERR_DSG_INVALID_CONFIG);
-        assert!(err
-            .to_string()
-            .contains("time_budget_per_scenario_secs must be > 0"));
+        assert!(
+            err.to_string()
+                .contains("time_budget_per_scenario_secs must be > 0")
+        );
     }
 
     #[test]
@@ -1361,9 +1430,7 @@ mod tests {
         let err = config.validate().unwrap_err();
 
         assert_eq!(err.code(), ERR_DSG_INVALID_CONFIG);
-        assert!(err
-            .to_string()
-            .contains("memory_budget_bytes must be > 0"));
+        assert!(err.to_string().contains("memory_budget_bytes must be > 0"));
     }
 
     #[test]
@@ -1479,9 +1546,7 @@ mod tests {
         let mut gate = DporScheduleGate::with_defaults().unwrap();
         gate.registered_scenarios = vec!["missing-custom-model".to_string()];
 
-        let err = gate
-            .run_full_gate_with_checker(&no_violations)
-            .unwrap_err();
+        let err = gate.run_full_gate_with_checker(&no_violations).unwrap_err();
 
         assert_eq!(err.code(), ERR_DSG_EXPLORATION_FAILED);
         assert!(

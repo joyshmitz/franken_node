@@ -232,7 +232,14 @@ pub fn check_response_bound(
 
     // Check 2: amplification ratio
     let ratio = if request.request_bytes > 0 {
-        request.actual_response_bytes as f64 / request.request_bytes as f64
+        // Safe casting: u64 to f64 with explicit finite check
+        let numerator = request.actual_response_bytes as f64;
+        let denominator = request.request_bytes as f64;
+        if !numerator.is_finite() || !denominator.is_finite() {
+            f64::INFINITY
+        } else {
+            numerator / denominator
+        }
     } else if request.actual_response_bytes > 0 {
         f64::INFINITY
     } else {
