@@ -34,7 +34,7 @@ getrandom = "0.2.17"
 serde_cbor = "0.11.2"
 flate2 = "1.0.35"
 asupersync = { path = "/dp/asupersync", optional = true }
-frankentui = { package = "ftui", path = "/dp/frankentui/crates/ftui", default-features = false }
+frankentui.workspace = true
 frankenengine-engine = { path = "../../../franken_engine/crates/franken-engine" }
 frankenengine-extension-host = { path = "../../../franken_engine/crates/franken-extension-host" }
 tracing = { workspace = true }

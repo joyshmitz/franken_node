@@ -37,3 +37,25 @@ fn doctor_verbose_human_output_is_routed_through_frankentui_surface() {
         "doctor human output must not bypass FrankenTUI with a direct println"
     );
 }
+
+#[test]
+fn frankentui_dependency_is_workspace_relative_not_absolute() {
+    let workspace_manifest = include_str!("../../../Cargo.toml");
+    let crate_manifest = include_str!("../Cargo.toml");
+
+    assert!(
+        workspace_manifest.contains(
+            r#"frankentui = { package = "ftui", path = "../../../dp/frankentui/crates/ftui""#
+        ),
+        "workspace manifest must own the FrankenTUI dependency through a relative path"
+    );
+    assert!(
+        crate_manifest.contains("frankentui.workspace = true"),
+        "crate manifest must consume the workspace-relative FrankenTUI dependency"
+    );
+    assert!(
+        !workspace_manifest.contains(r#"path = "/dp/frankentui"#)
+            && !crate_manifest.contains(r#"path = "/dp/frankentui"#),
+        "FrankenTUI dependency paths must not be absolute"
+    );
+}
