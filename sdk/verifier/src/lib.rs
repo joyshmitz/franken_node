@@ -45,6 +45,7 @@
 
 pub mod bundle;
 pub mod capsule;
+pub mod counterfactual;
 
 /// SDK version string for compatibility checks.
 /// INV-CAPSULE-VERSIONED-API: every API surface carries a version identifier.
