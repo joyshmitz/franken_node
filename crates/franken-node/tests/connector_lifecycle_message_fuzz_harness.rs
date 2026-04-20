@@ -4,11 +4,11 @@
 //! nesting depth checks, and boundary conditions following patterns
 //! established in canonical_serializer_fuzz_harness.
 
-use libfuzzer_sys::fuzz_target;
 use frankenengine_node::connector::frame_parser::{
-    FrameInput, ParserConfig, check_frame, check_batch, validate_config,
-    GuardrailViolation, ParserError,
+    FrameInput, GuardrailViolation, ParserConfig, ParserError, check_batch, check_frame,
+    validate_config,
 };
+use libfuzzer_sys::fuzz_target;
 
 /// Seed corpus for lifecycle message frame fuzzing.
 const FRAME_SEED_CORPUS: &[FrameInput] = &[
@@ -25,67 +25,63 @@ const FRAME_SEED_CORPUS: &[FrameInput] = &[
         nesting_depth: 16,
         decode_cpu_ms: 80,
     },
-
     // Boundary condition frames - exactly at limits
     FrameInput {
         frame_id: "at_size_limit".to_string(),
-        raw_bytes_len: 1_000_000,  // Default max_frame_bytes
+        raw_bytes_len: 1_000_000, // Default max_frame_bytes
         nesting_depth: 1,
         decode_cpu_ms: 1,
     },
     FrameInput {
         frame_id: "at_depth_limit".to_string(),
         raw_bytes_len: 100,
-        nesting_depth: 32,  // Default max_nesting_depth
+        nesting_depth: 32, // Default max_nesting_depth
         decode_cpu_ms: 1,
     },
     FrameInput {
         frame_id: "at_cpu_limit".to_string(),
         raw_bytes_len: 100,
         nesting_depth: 1,
-        decode_cpu_ms: 100,  // Default max_decode_cpu_ms
+        decode_cpu_ms: 100, // Default max_decode_cpu_ms
     },
-
     // Over-limit frames - should be rejected
     FrameInput {
         frame_id: "over_size_limit".to_string(),
-        raw_bytes_len: 1_000_001,  // Over max_frame_bytes
+        raw_bytes_len: 1_000_001, // Over max_frame_bytes
         nesting_depth: 1,
         decode_cpu_ms: 1,
     },
     FrameInput {
         frame_id: "over_depth_limit".to_string(),
         raw_bytes_len: 100,
-        nesting_depth: 33,  // Over max_nesting_depth
+        nesting_depth: 33, // Over max_nesting_depth
         decode_cpu_ms: 1,
     },
     FrameInput {
         frame_id: "over_cpu_limit".to_string(),
         raw_bytes_len: 100,
         nesting_depth: 1,
-        decode_cpu_ms: 101,  // Over max_decode_cpu_ms
+        decode_cpu_ms: 101, // Over max_decode_cpu_ms
     },
-
     // Edge case frames
     FrameInput {
-        frame_id: "".to_string(),  // Empty frame ID
-        raw_bytes_len: 0,          // Zero bytes
-        nesting_depth: 0,          // Zero depth
-        decode_cpu_ms: 0,          // Zero CPU
+        frame_id: "".to_string(), // Empty frame ID
+        raw_bytes_len: 0,         // Zero bytes
+        nesting_depth: 0,         // Zero depth
+        decode_cpu_ms: 0,         // Zero CPU
     },
     FrameInput {
         frame_id: "max_values".to_string(),
-        raw_bytes_len: u64::MAX,   // Maximum u64
-        nesting_depth: u32::MAX,   // Maximum u32
-        decode_cpu_ms: u64::MAX,   // Maximum u64
+        raw_bytes_len: u64::MAX, // Maximum u64
+        nesting_depth: u32::MAX, // Maximum u32
+        decode_cpu_ms: u64::MAX, // Maximum u64
     },
-
     // Multiple violations
     FrameInput {
         frame_id: "triple_violation".to_string(),
-        raw_bytes_len: u64::MAX,   // Over size limit
-        nesting_depth: u32::MAX,   // Over depth limit
-        decode_cpu_ms: u64::MAX,   // Over CPU limit
+        raw_bytes_len: u64::MAX, // Over size limit
+        nesting_depth: u32::MAX, // Over depth limit
+        decode_cpu_ms: u64::MAX, // Over CPU limit
     },
 ];
 
@@ -97,36 +93,33 @@ const CONFIG_SEED_CORPUS: &[ParserConfig] = &[
         max_nesting_depth: 32,
         max_decode_cpu_ms: 100,
     },
-
     // Minimal valid configuration
     ParserConfig {
         max_frame_bytes: 1,
         max_nesting_depth: 1,
         max_decode_cpu_ms: 1,
     },
-
     // Very permissive configuration
     ParserConfig {
         max_frame_bytes: u64::MAX,
         max_nesting_depth: u32::MAX,
         max_decode_cpu_ms: u64::MAX,
     },
-
     // Zero value configurations (should be invalid)
     ParserConfig {
-        max_frame_bytes: 0,  // Invalid
+        max_frame_bytes: 0, // Invalid
         max_nesting_depth: 32,
         max_decode_cpu_ms: 100,
     },
     ParserConfig {
         max_frame_bytes: 1_000_000,
-        max_nesting_depth: 0,  // Actually valid (means no depth limit)
+        max_nesting_depth: 0, // Actually valid (means no depth limit)
         max_decode_cpu_ms: 100,
     },
     ParserConfig {
         max_frame_bytes: 1_000_000,
         max_nesting_depth: 32,
-        max_decode_cpu_ms: 0,  // Invalid
+        max_decode_cpu_ms: 0, // Invalid
     },
 ];
 
@@ -137,40 +130,32 @@ const MALICIOUS_FRAME_IDS: &[&str] = &[
     "frame\nid",
     "frame\rid",
     "frame\tid",
-
     // Unicode edge cases
-    "frame\u{FEFF}id",  // BOM
-    "frame\u{200B}id",  // Zero-width space
-    "frame\u{FFFF}id",  // Non-character
-
+    "frame\u{FEFF}id", // BOM
+    "frame\u{200B}id", // Zero-width space
+    "frame\u{FFFF}id", // Non-character
     // Very long IDs
     &"x".repeat(10_000),
     &"A".repeat(100_000),
-
     // Path traversal attempts
     "../admin",
     "../../etc/passwd",
     "..\\windows\\system32",
-
     // SQL injection patterns
     "'; DROP TABLE frames; --",
     "frame' OR '1'='1",
     "frame\"; DELETE FROM logs; --",
-
     // Command injection
     "frame`whoami`",
     "frame$(id)",
     "frame; rm -rf /",
-
     // JSON injection
     "frame\": {\"admin\": true}, \"",
     "frame\",\"bypass\":true,\"dummy\":\"",
-
     // HTML/Script injection
     "<script>alert('xss')</script>",
     "javascript:alert('xss')",
     "%3Cscript%3Ealert('xss')%3C/script%3E",
-
     // Empty and whitespace variations
     "",
     " ",
@@ -286,12 +271,27 @@ fn test_frame_input_boundary_conditions(data: &[u8]) {
             let expected_depth_violation = frame.nesting_depth >= config.max_nesting_depth;
             let expected_cpu_violation = frame.decode_cpu_ms >= config.max_decode_cpu_ms;
 
-            let size_violations = verdict.violations.iter().filter(|v| matches!(v, GuardrailViolation::SizeExceeded { .. })).count();
-            let depth_violations = verdict.violations.iter().filter(|v| matches!(v, GuardrailViolation::DepthExceeded { .. })).count();
-            let cpu_violations = verdict.violations.iter().filter(|v| matches!(v, GuardrailViolation::CpuExceeded { .. })).count();
+            let size_violations = verdict
+                .violations
+                .iter()
+                .filter(|v| matches!(v, GuardrailViolation::SizeExceeded { .. }))
+                .count();
+            let depth_violations = verdict
+                .violations
+                .iter()
+                .filter(|v| matches!(v, GuardrailViolation::DepthExceeded { .. }))
+                .count();
+            let cpu_violations = verdict
+                .violations
+                .iter()
+                .filter(|v| matches!(v, GuardrailViolation::CpuExceeded { .. }))
+                .count();
 
             assert_eq!(size_violations, if expected_size_violation { 1 } else { 0 });
-            assert_eq!(depth_violations, if expected_depth_violation { 1 } else { 0 });
+            assert_eq!(
+                depth_violations,
+                if expected_depth_violation { 1 } else { 0 }
+            );
             assert_eq!(cpu_violations, if expected_cpu_violation { 1 } else { 0 });
         }
         Err(error) => {
@@ -313,17 +313,13 @@ fn test_parser_config_validation(data: &[u8]) {
 
     // Generate configuration from fuzzer data
     let max_frame_bytes = u64::from_le_bytes([
-        data[0], data[1], data[2], data[3],
-        data[4], data[5], data[6], data[7],
+        data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
     ]);
 
-    let max_nesting_depth = u32::from_le_bytes([
-        data[8], data[9], data[10], data[11],
-    ]);
+    let max_nesting_depth = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
 
     let max_decode_cpu_ms = u64::from_le_bytes([
-        data[12], data[13], data[14], data[15],
-        data[16], data[17], data[18], data[19],
+        data[12], data[13], data[14], data[15], data[16], data[17], data[18], data[19],
     ]);
 
     let config = ParserConfig {
@@ -428,7 +424,10 @@ fn test_batch_frame_processing(data: &[u8]) {
         Err(_) => {
             // Batch processing failed - should be due to config validation
             let validation_result = validate_config(&config);
-            assert!(validation_result.is_err(), "Batch failure should correspond to config validation failure");
+            assert!(
+                validation_result.is_err(),
+                "Batch failure should correspond to config validation failure"
+            );
         }
     }
 }
@@ -441,21 +440,41 @@ fn test_resource_limit_enforcement(data: &[u8]) {
         if let Ok((verdict, _)) = check_frame(seed_frame, &config, "2026-04-20T00:00:00Z") {
             // Check size limit enforcement
             if seed_frame.raw_bytes_len > config.max_frame_bytes {
-                assert!(verdict.violations.iter().any(|v| matches!(v, GuardrailViolation::SizeExceeded { .. })));
+                assert!(
+                    verdict
+                        .violations
+                        .iter()
+                        .any(|v| matches!(v, GuardrailViolation::SizeExceeded { .. }))
+                );
                 assert!(!verdict.allowed);
             } else if seed_frame.raw_bytes_len <= config.max_frame_bytes {
-                assert!(!verdict.violations.iter().any(|v| matches!(v, GuardrailViolation::SizeExceeded { .. })));
+                assert!(
+                    !verdict
+                        .violations
+                        .iter()
+                        .any(|v| matches!(v, GuardrailViolation::SizeExceeded { .. }))
+                );
             }
 
             // Check depth limit enforcement
             if seed_frame.nesting_depth >= config.max_nesting_depth {
-                assert!(verdict.violations.iter().any(|v| matches!(v, GuardrailViolation::DepthExceeded { .. })));
+                assert!(
+                    verdict
+                        .violations
+                        .iter()
+                        .any(|v| matches!(v, GuardrailViolation::DepthExceeded { .. }))
+                );
                 assert!(!verdict.allowed);
             }
 
             // Check CPU limit enforcement
             if seed_frame.decode_cpu_ms >= config.max_decode_cpu_ms {
-                assert!(verdict.violations.iter().any(|v| matches!(v, GuardrailViolation::CpuExceeded { .. })));
+                assert!(
+                    verdict
+                        .violations
+                        .iter()
+                        .any(|v| matches!(v, GuardrailViolation::CpuExceeded { .. }))
+                );
                 assert!(!verdict.allowed);
             }
         }
@@ -489,7 +508,9 @@ fn test_frame_id_security(data: &[u8]) {
                     decode_cpu_ms: frame.decode_cpu_ms,
                 };
 
-                if let Ok((clean_verdict, _)) = check_frame(&clean_frame, &config, "2026-04-20T00:00:00Z") {
+                if let Ok((clean_verdict, _)) =
+                    check_frame(&clean_frame, &config, "2026-04-20T00:00:00Z")
+                {
                     // Resource-based decisions should be identical
                     assert_eq!(verdict.allowed, clean_verdict.allowed);
                     assert_eq!(verdict.violations.len(), clean_verdict.violations.len());
@@ -556,7 +577,7 @@ mod tests {
         // Test exactly at limits
         let data = [
             0x40, 0x42, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00, // 1,000,000 bytes (at limit)
-            0x20, 0x00, 0x00, 0x00,                         // 32 depth (at limit)
+            0x20, 0x00, 0x00, 0x00, // 32 depth (at limit)
             0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 100 CPU ms (at limit)
         ];
         fuzz_connector_lifecycle_messages(&data);

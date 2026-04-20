@@ -11,18 +11,15 @@
 //! This harness follows Pattern 1 (Differential Testing) + Pattern 4 (Spec-Derived Tests)
 //! from /testing-conformance-harnesses skill.
 
-use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(test)]
 use insta::{assert_json_snapshot, with_settings};
 
-use frankenengine_node::connector::lifecycle::{ConnectorState, LifecycleError};
-use frankenengine_node::api::session_auth::{SessionState, SessionManager};
-use frankenengine_node::api::service::{ServiceConfig, EndpointCatalogEntry, build_endpoint_catalog};
 use frankenengine_node::connector::frame_parser::{FrameInput, ParserConfig, check_frame};
-use frankenengine_node::security::epoch_scoped_keys::RootSecret;
+use frankenengine_node::connector::lifecycle::ConnectorState;
 
 // ---------------------------------------------------------------------------
 // Protocol Version Constants (for testing compatibility)
@@ -70,75 +67,74 @@ pub enum CompatibilityExpectation {
     Incompatible { reason: String },
 }
 
-const COMPATIBILITY_SCENARIOS: &[CompatibilityScenario] = &[
-    // Forward compatibility: new-connector × old-host
-    CompatibilityScenario {
-        scenario_id: "new_connector_old_host_lifecycle".to_string(),
-        connector_version: ProtocolVersion {
-            lifecycle_protocol: FUTURE_LIFECYCLE_PROTOCOL.to_string(),
-            api_version: FUTURE_API_VERSION.to_string(),
-            session_version: FUTURE_SESSION_VERSION.to_string(),
+fn compatibility_scenarios() -> Vec<CompatibilityScenario> {
+    vec![
+        // Forward compatibility: new-connector × old-host
+        CompatibilityScenario {
+            scenario_id: "new_connector_old_host_lifecycle".to_string(),
+            connector_version: ProtocolVersion {
+                lifecycle_protocol: FUTURE_LIFECYCLE_PROTOCOL.to_string(),
+                api_version: FUTURE_API_VERSION.to_string(),
+                session_version: FUTURE_SESSION_VERSION.to_string(),
+            },
+            host_version: ProtocolVersion {
+                lifecycle_protocol: CURRENT_LIFECYCLE_PROTOCOL.to_string(),
+                api_version: CURRENT_API_VERSION.to_string(),
+                session_version: CURRENT_SESSION_VERSION.to_string(),
+            },
+            expected_compatibility: CompatibilityExpectation::NegotiatedCompatibility {
+                fallback_version: CURRENT_LIFECYCLE_PROTOCOL.to_string(),
+            },
         },
-        host_version: ProtocolVersion {
-            lifecycle_protocol: CURRENT_LIFECYCLE_PROTOCOL.to_string(),
-            api_version: CURRENT_API_VERSION.to_string(),
-            session_version: CURRENT_SESSION_VERSION.to_string(),
+        // Backward compatibility: old-connector × new-host
+        CompatibilityScenario {
+            scenario_id: "old_connector_new_host_lifecycle".to_string(),
+            connector_version: ProtocolVersion {
+                lifecycle_protocol: LEGACY_LIFECYCLE_PROTOCOL.to_string(),
+                api_version: LEGACY_API_VERSION.to_string(),
+                session_version: LEGACY_SESSION_VERSION.to_string(),
+            },
+            host_version: ProtocolVersion {
+                lifecycle_protocol: CURRENT_LIFECYCLE_PROTOCOL.to_string(),
+                api_version: CURRENT_API_VERSION.to_string(),
+                session_version: CURRENT_SESSION_VERSION.to_string(),
+            },
+            expected_compatibility: CompatibilityExpectation::FullCompatibility,
         },
-        expected_compatibility: CompatibilityExpectation::NegotiatedCompatibility {
-            fallback_version: CURRENT_LIFECYCLE_PROTOCOL.to_string(),
+        // Current version compatibility (baseline)
+        CompatibilityScenario {
+            scenario_id: "current_versions_baseline".to_string(),
+            connector_version: ProtocolVersion {
+                lifecycle_protocol: CURRENT_LIFECYCLE_PROTOCOL.to_string(),
+                api_version: CURRENT_API_VERSION.to_string(),
+                session_version: CURRENT_SESSION_VERSION.to_string(),
+            },
+            host_version: ProtocolVersion {
+                lifecycle_protocol: CURRENT_LIFECYCLE_PROTOCOL.to_string(),
+                api_version: CURRENT_API_VERSION.to_string(),
+                session_version: CURRENT_SESSION_VERSION.to_string(),
+            },
+            expected_compatibility: CompatibilityExpectation::FullCompatibility,
         },
-    },
-
-    // Backward compatibility: old-connector × new-host
-    CompatibilityScenario {
-        scenario_id: "old_connector_new_host_lifecycle".to_string(),
-        connector_version: ProtocolVersion {
-            lifecycle_protocol: LEGACY_LIFECYCLE_PROTOCOL.to_string(),
-            api_version: LEGACY_API_VERSION.to_string(),
-            session_version: LEGACY_SESSION_VERSION.to_string(),
+        // Major version incompatibility
+        CompatibilityScenario {
+            scenario_id: "major_version_incompatible".to_string(),
+            connector_version: ProtocolVersion {
+                lifecycle_protocol: "lifecycle-v2.0.0".to_string(),
+                api_version: "api-v3.0.0".to_string(),
+                session_version: "session-auth-v2.0.0".to_string(),
+            },
+            host_version: ProtocolVersion {
+                lifecycle_protocol: CURRENT_LIFECYCLE_PROTOCOL.to_string(),
+                api_version: CURRENT_API_VERSION.to_string(),
+                session_version: CURRENT_SESSION_VERSION.to_string(),
+            },
+            expected_compatibility: CompatibilityExpectation::Incompatible {
+                reason: "Major version mismatch - breaking changes".to_string(),
+            },
         },
-        host_version: ProtocolVersion {
-            lifecycle_protocol: CURRENT_LIFECYCLE_PROTOCOL.to_string(),
-            api_version: CURRENT_API_VERSION.to_string(),
-            session_version: CURRENT_SESSION_VERSION.to_string(),
-        },
-        expected_compatibility: CompatibilityExpectation::FullCompatibility,
-    },
-
-    // Current version compatibility (baseline)
-    CompatibilityScenario {
-        scenario_id: "current_versions_baseline".to_string(),
-        connector_version: ProtocolVersion {
-            lifecycle_protocol: CURRENT_LIFECYCLE_PROTOCOL.to_string(),
-            api_version: CURRENT_API_VERSION.to_string(),
-            session_version: CURRENT_SESSION_VERSION.to_string(),
-        },
-        host_version: ProtocolVersion {
-            lifecycle_protocol: CURRENT_LIFECYCLE_PROTOCOL.to_string(),
-            api_version: CURRENT_API_VERSION.to_string(),
-            session_version: CURRENT_SESSION_VERSION.to_string(),
-        },
-        expected_compatibility: CompatibilityExpectation::FullCompatibility,
-    },
-
-    // Major version incompatibility
-    CompatibilityScenario {
-        scenario_id: "major_version_incompatible".to_string(),
-        connector_version: ProtocolVersion {
-            lifecycle_protocol: "lifecycle-v2.0.0".to_string(),
-            api_version: "api-v3.0.0".to_string(),
-            session_version: "session-auth-v2.0.0".to_string(),
-        },
-        host_version: ProtocolVersion {
-            lifecycle_protocol: CURRENT_LIFECYCLE_PROTOCOL.to_string(),
-            api_version: CURRENT_API_VERSION.to_string(),
-            session_version: CURRENT_SESSION_VERSION.to_string(),
-        },
-        expected_compatibility: CompatibilityExpectation::Incompatible {
-            reason: "Major version mismatch - breaking changes".to_string(),
-        },
-    },
-];
+    ]
+}
 
 // ---------------------------------------------------------------------------
 // Mock Version Adapters (simulating version differences)
@@ -154,83 +150,120 @@ pub struct ConnectorVersionAdapter {
 
 impl ConnectorVersionAdapter {
     pub fn new(version: ProtocolVersion) -> Self {
-        let (supported_states, supported_transitions, feature_flags) = match version.lifecycle_protocol.as_str() {
-            LEGACY_LIFECYCLE_PROTOCOL => {
-                // Legacy version: no Cancelling state (pre-bd-1cs7)
-                let mut states = BTreeSet::new();
-                states.extend([
-                    ConnectorState::Discovered,
-                    ConnectorState::Verified,
-                    ConnectorState::Installed,
-                    ConnectorState::Configured,
-                    ConnectorState::Active,
-                    ConnectorState::Paused,
-                    ConnectorState::Stopped,
-                    ConnectorState::Failed,
-                ]);
+        let (supported_states, supported_transitions, feature_flags) =
+            match version.lifecycle_protocol.as_str() {
+                LEGACY_LIFECYCLE_PROTOCOL => {
+                    // Legacy version: no Cancelling state (pre-bd-1cs7)
+                    let mut states = BTreeSet::new();
+                    states.extend([
+                        ConnectorState::Discovered,
+                        ConnectorState::Verified,
+                        ConnectorState::Installed,
+                        ConnectorState::Configured,
+                        ConnectorState::Active,
+                        ConnectorState::Paused,
+                        ConnectorState::Stopped,
+                        ConnectorState::Failed,
+                    ]);
 
-                let mut transitions = BTreeMap::new();
-                transitions.insert(ConnectorState::Discovered, vec![ConnectorState::Verified, ConnectorState::Failed]);
-                transitions.insert(ConnectorState::Verified, vec![ConnectorState::Installed, ConnectorState::Failed]);
-                transitions.insert(ConnectorState::Installed, vec![ConnectorState::Configured, ConnectorState::Failed]);
-                transitions.insert(ConnectorState::Configured, vec![ConnectorState::Active, ConnectorState::Failed]);
-                transitions.insert(ConnectorState::Active, vec![ConnectorState::Paused, ConnectorState::Stopped, ConnectorState::Failed]);
-                transitions.insert(ConnectorState::Paused, vec![ConnectorState::Active, ConnectorState::Stopped, ConnectorState::Failed]);
-                transitions.insert(ConnectorState::Stopped, vec![ConnectorState::Configured, ConnectorState::Failed]);
-                transitions.insert(ConnectorState::Failed, vec![ConnectorState::Discovered]);
+                    let mut transitions = BTreeMap::new();
+                    transitions.insert(
+                        ConnectorState::Discovered,
+                        vec![ConnectorState::Verified, ConnectorState::Failed],
+                    );
+                    transitions.insert(
+                        ConnectorState::Verified,
+                        vec![ConnectorState::Installed, ConnectorState::Failed],
+                    );
+                    transitions.insert(
+                        ConnectorState::Installed,
+                        vec![ConnectorState::Configured, ConnectorState::Failed],
+                    );
+                    transitions.insert(
+                        ConnectorState::Configured,
+                        vec![ConnectorState::Active, ConnectorState::Failed],
+                    );
+                    transitions.insert(
+                        ConnectorState::Active,
+                        vec![
+                            ConnectorState::Paused,
+                            ConnectorState::Stopped,
+                            ConnectorState::Failed,
+                        ],
+                    );
+                    transitions.insert(
+                        ConnectorState::Paused,
+                        vec![
+                            ConnectorState::Active,
+                            ConnectorState::Stopped,
+                            ConnectorState::Failed,
+                        ],
+                    );
+                    transitions.insert(
+                        ConnectorState::Stopped,
+                        vec![ConnectorState::Configured, ConnectorState::Failed],
+                    );
+                    transitions.insert(ConnectorState::Failed, vec![ConnectorState::Discovered]);
 
-                let mut features = BTreeSet::new();
-                features.insert("basic_lifecycle".to_string());
+                    let mut features = BTreeSet::new();
+                    features.insert("basic_lifecycle".to_string());
 
-                (states, transitions, features)
-            }
-            CURRENT_LIFECYCLE_PROTOCOL => {
-                // Current version: includes Cancelling state (bd-1cs7)
-                let states = ConnectorState::ALL.iter().copied().collect();
-
-                let mut transitions = BTreeMap::new();
-                for state in ConnectorState::ALL {
-                    transitions.insert(state, state.legal_targets().to_vec());
+                    (states, transitions, features)
                 }
+                CURRENT_LIFECYCLE_PROTOCOL => {
+                    // Current version: includes Cancelling state (bd-1cs7)
+                    let states = ConnectorState::ALL.iter().copied().collect();
 
-                let mut features = BTreeSet::new();
-                features.insert("basic_lifecycle".to_string());
-                features.insert("three_phase_cancellation".to_string());
+                    let mut transitions = BTreeMap::new();
+                    for state in ConnectorState::ALL {
+                        transitions.insert(state, state.legal_targets().to_vec());
+                    }
 
-                (states, transitions, features)
-            }
-            FUTURE_LIFECYCLE_PROTOCOL => {
-                // Future version: adds hypothetical new states and features
-                let mut states = ConnectorState::ALL.iter().copied().collect::<BTreeSet<_>>();
-                // Note: We can't add new enum variants, so we simulate with feature flags
+                    let mut features = BTreeSet::new();
+                    features.insert("basic_lifecycle".to_string());
+                    features.insert("three_phase_cancellation".to_string());
 
-                let mut transitions = BTreeMap::new();
-                for state in ConnectorState::ALL {
-                    transitions.insert(state, state.legal_targets().to_vec());
+                    (states, transitions, features)
                 }
+                FUTURE_LIFECYCLE_PROTOCOL => {
+                    // Future version: adds hypothetical new states and features
+                    let states = ConnectorState::ALL.iter().copied().collect::<BTreeSet<_>>();
+                    // Note: We can't add new enum variants, so we simulate with feature flags
 
-                let mut features = BTreeSet::new();
-                features.insert("basic_lifecycle".to_string());
-                features.insert("three_phase_cancellation".to_string());
-                features.insert("graceful_restart".to_string());
-                features.insert("hot_reload".to_string());
+                    let mut transitions = BTreeMap::new();
+                    for state in ConnectorState::ALL {
+                        transitions.insert(state, state.legal_targets().to_vec());
+                    }
 
-                (states, transitions, features)
-            }
-            _ => {
-                // Unknown version: minimal compatibility
-                let mut states = BTreeSet::new();
-                states.extend([ConnectorState::Discovered, ConnectorState::Active, ConnectorState::Failed]);
+                    let mut features = BTreeSet::new();
+                    features.insert("basic_lifecycle".to_string());
+                    features.insert("three_phase_cancellation".to_string());
+                    features.insert("graceful_restart".to_string());
+                    features.insert("hot_reload".to_string());
 
-                let mut transitions = BTreeMap::new();
-                transitions.insert(ConnectorState::Discovered, vec![ConnectorState::Active, ConnectorState::Failed]);
-                transitions.insert(ConnectorState::Active, vec![ConnectorState::Failed]);
-                transitions.insert(ConnectorState::Failed, vec![ConnectorState::Discovered]);
+                    (states, transitions, features)
+                }
+                _ => {
+                    // Unknown version: minimal compatibility
+                    let mut states = BTreeSet::new();
+                    states.extend([
+                        ConnectorState::Discovered,
+                        ConnectorState::Active,
+                        ConnectorState::Failed,
+                    ]);
 
-                let features = BTreeSet::new();
-                (states, transitions, features)
-            }
-        };
+                    let mut transitions = BTreeMap::new();
+                    transitions.insert(
+                        ConnectorState::Discovered,
+                        vec![ConnectorState::Active, ConnectorState::Failed],
+                    );
+                    transitions.insert(ConnectorState::Active, vec![ConnectorState::Failed]);
+                    transitions.insert(ConnectorState::Failed, vec![ConnectorState::Discovered]);
+
+                    let features = BTreeSet::new();
+                    (states, transitions, features)
+                }
+            };
 
         Self {
             version,
@@ -275,32 +308,39 @@ pub struct EndpointSpec {
 
 impl HostVersionAdapter {
     pub fn new(version: ProtocolVersion) -> Self {
-        let (api_endpoints, auth_methods, frame_parser_config) = match version.api_version.as_str() {
+        let (api_endpoints, auth_methods, frame_parser_config) = match version.api_version.as_str()
+        {
             LEGACY_API_VERSION => {
                 // Legacy API: basic endpoints only
                 let mut endpoints = BTreeMap::new();
-                endpoints.insert("connector_status".to_string(), EndpointSpec {
-                    path: "/api/v1/connector/status".to_string(),
-                    method: "GET".to_string(),
-                    min_api_version: LEGACY_API_VERSION.to_string(),
-                    auth_required: false,
-                    deprecated: false,
-                });
-                endpoints.insert("connector_transition".to_string(), EndpointSpec {
-                    path: "/api/v1/connector/transition".to_string(),
-                    method: "POST".to_string(),
-                    min_api_version: LEGACY_API_VERSION.to_string(),
-                    auth_required: true,
-                    deprecated: false,
-                });
+                endpoints.insert(
+                    "connector_status".to_string(),
+                    EndpointSpec {
+                        path: "/api/v1/connector/status".to_string(),
+                        method: "GET".to_string(),
+                        min_api_version: LEGACY_API_VERSION.to_string(),
+                        auth_required: false,
+                        deprecated: false,
+                    },
+                );
+                endpoints.insert(
+                    "connector_transition".to_string(),
+                    EndpointSpec {
+                        path: "/api/v1/connector/transition".to_string(),
+                        method: "POST".to_string(),
+                        min_api_version: LEGACY_API_VERSION.to_string(),
+                        auth_required: true,
+                        deprecated: false,
+                    },
+                );
 
                 let mut auth_methods = BTreeSet::new();
                 auth_methods.insert("basic_session".to_string());
 
                 let frame_config = ParserConfig {
-                    max_frame_bytes: 100_000,  // Smaller limit in legacy
-                    max_nesting_depth: 16,     // Smaller limit in legacy
-                    max_decode_cpu_ms: 50,     // Smaller limit in legacy
+                    max_frame_bytes: 100_000, // Smaller limit in legacy
+                    max_nesting_depth: 16,    // Smaller limit in legacy
+                    max_decode_cpu_ms: 50,    // Smaller limit in legacy
                 };
 
                 (endpoints, auth_methods, frame_config)
@@ -308,34 +348,46 @@ impl HostVersionAdapter {
             CURRENT_API_VERSION => {
                 // Current API: full endpoint set
                 let mut endpoints = BTreeMap::new();
-                endpoints.insert("connector_status".to_string(), EndpointSpec {
-                    path: "/api/v2/connector/status".to_string(),
-                    method: "GET".to_string(),
-                    min_api_version: CURRENT_API_VERSION.to_string(),
-                    auth_required: false,
-                    deprecated: false,
-                });
-                endpoints.insert("connector_transition".to_string(), EndpointSpec {
-                    path: "/api/v2/connector/lifecycle/transition".to_string(),
-                    method: "POST".to_string(),
-                    min_api_version: CURRENT_API_VERSION.to_string(),
-                    auth_required: true,
-                    deprecated: false,
-                });
-                endpoints.insert("connector_cancel".to_string(), EndpointSpec {
-                    path: "/api/v2/connector/lifecycle/cancel".to_string(),
-                    method: "POST".to_string(),
-                    min_api_version: CURRENT_API_VERSION.to_string(),
-                    auth_required: true,
-                    deprecated: false,
-                });
-                endpoints.insert("connector_health".to_string(), EndpointSpec {
-                    path: "/api/v2/connector/health".to_string(),
-                    method: "GET".to_string(),
-                    min_api_version: CURRENT_API_VERSION.to_string(),
-                    auth_required: false,
-                    deprecated: false,
-                });
+                endpoints.insert(
+                    "connector_status".to_string(),
+                    EndpointSpec {
+                        path: "/api/v2/connector/status".to_string(),
+                        method: "GET".to_string(),
+                        min_api_version: CURRENT_API_VERSION.to_string(),
+                        auth_required: false,
+                        deprecated: false,
+                    },
+                );
+                endpoints.insert(
+                    "connector_transition".to_string(),
+                    EndpointSpec {
+                        path: "/api/v2/connector/lifecycle/transition".to_string(),
+                        method: "POST".to_string(),
+                        min_api_version: CURRENT_API_VERSION.to_string(),
+                        auth_required: true,
+                        deprecated: false,
+                    },
+                );
+                endpoints.insert(
+                    "connector_cancel".to_string(),
+                    EndpointSpec {
+                        path: "/api/v2/connector/lifecycle/cancel".to_string(),
+                        method: "POST".to_string(),
+                        min_api_version: CURRENT_API_VERSION.to_string(),
+                        auth_required: true,
+                        deprecated: false,
+                    },
+                );
+                endpoints.insert(
+                    "connector_health".to_string(),
+                    EndpointSpec {
+                        path: "/api/v2/connector/health".to_string(),
+                        method: "GET".to_string(),
+                        min_api_version: CURRENT_API_VERSION.to_string(),
+                        auth_required: false,
+                        deprecated: false,
+                    },
+                );
 
                 let mut auth_methods = BTreeSet::new();
                 auth_methods.insert("basic_session".to_string());
@@ -348,49 +400,67 @@ impl HostVersionAdapter {
             FUTURE_API_VERSION => {
                 // Future API: extended endpoint set
                 let mut endpoints = BTreeMap::new();
-                endpoints.insert("connector_status".to_string(), EndpointSpec {
-                    path: "/api/v2/connector/status".to_string(),
-                    method: "GET".to_string(),
-                    min_api_version: CURRENT_API_VERSION.to_string(),
-                    auth_required: false,
-                    deprecated: false,
-                });
-                endpoints.insert("connector_transition".to_string(), EndpointSpec {
-                    path: "/api/v2/connector/lifecycle/transition".to_string(),
-                    method: "POST".to_string(),
-                    min_api_version: CURRENT_API_VERSION.to_string(),
-                    auth_required: true,
-                    deprecated: false,
-                });
-                endpoints.insert("connector_cancel".to_string(), EndpointSpec {
-                    path: "/api/v2/connector/lifecycle/cancel".to_string(),
-                    method: "POST".to_string(),
-                    min_api_version: CURRENT_API_VERSION.to_string(),
-                    auth_required: true,
-                    deprecated: false,
-                });
-                endpoints.insert("connector_health".to_string(), EndpointSpec {
-                    path: "/api/v2/connector/health".to_string(),
-                    method: "GET".to_string(),
-                    min_api_version: CURRENT_API_VERSION.to_string(),
-                    auth_required: false,
-                    deprecated: false,
-                });
+                endpoints.insert(
+                    "connector_status".to_string(),
+                    EndpointSpec {
+                        path: "/api/v2/connector/status".to_string(),
+                        method: "GET".to_string(),
+                        min_api_version: CURRENT_API_VERSION.to_string(),
+                        auth_required: false,
+                        deprecated: false,
+                    },
+                );
+                endpoints.insert(
+                    "connector_transition".to_string(),
+                    EndpointSpec {
+                        path: "/api/v2/connector/lifecycle/transition".to_string(),
+                        method: "POST".to_string(),
+                        min_api_version: CURRENT_API_VERSION.to_string(),
+                        auth_required: true,
+                        deprecated: false,
+                    },
+                );
+                endpoints.insert(
+                    "connector_cancel".to_string(),
+                    EndpointSpec {
+                        path: "/api/v2/connector/lifecycle/cancel".to_string(),
+                        method: "POST".to_string(),
+                        min_api_version: CURRENT_API_VERSION.to_string(),
+                        auth_required: true,
+                        deprecated: false,
+                    },
+                );
+                endpoints.insert(
+                    "connector_health".to_string(),
+                    EndpointSpec {
+                        path: "/api/v2/connector/health".to_string(),
+                        method: "GET".to_string(),
+                        min_api_version: CURRENT_API_VERSION.to_string(),
+                        auth_required: false,
+                        deprecated: false,
+                    },
+                );
                 // Future endpoints
-                endpoints.insert("connector_restart".to_string(), EndpointSpec {
-                    path: "/api/v2/connector/lifecycle/restart".to_string(),
-                    method: "POST".to_string(),
-                    min_api_version: FUTURE_API_VERSION.to_string(),
-                    auth_required: true,
-                    deprecated: false,
-                });
-                endpoints.insert("connector_metrics".to_string(), EndpointSpec {
-                    path: "/api/v2/connector/metrics".to_string(),
-                    method: "GET".to_string(),
-                    min_api_version: FUTURE_API_VERSION.to_string(),
-                    auth_required: true,
-                    deprecated: false,
-                });
+                endpoints.insert(
+                    "connector_restart".to_string(),
+                    EndpointSpec {
+                        path: "/api/v2/connector/lifecycle/restart".to_string(),
+                        method: "POST".to_string(),
+                        min_api_version: FUTURE_API_VERSION.to_string(),
+                        auth_required: true,
+                        deprecated: false,
+                    },
+                );
+                endpoints.insert(
+                    "connector_metrics".to_string(),
+                    EndpointSpec {
+                        path: "/api/v2/connector/metrics".to_string(),
+                        method: "GET".to_string(),
+                        min_api_version: FUTURE_API_VERSION.to_string(),
+                        auth_required: true,
+                        deprecated: false,
+                    },
+                );
 
                 let mut auth_methods = BTreeSet::new();
                 auth_methods.insert("basic_session".to_string());
@@ -398,9 +468,9 @@ impl HostVersionAdapter {
                 auth_methods.insert("mutual_tls".to_string());
 
                 let frame_config = ParserConfig {
-                    max_frame_bytes: 10_000_000,  // Larger limit in future
-                    max_nesting_depth: 64,        // Larger limit in future
-                    max_decode_cpu_ms: 500,       // Larger limit in future
+                    max_frame_bytes: 10_000_000, // Larger limit in future
+                    max_nesting_depth: 64,       // Larger limit in future
+                    max_decode_cpu_ms: 500,      // Larger limit in future
                 };
 
                 (endpoints, auth_methods, frame_config)
@@ -408,13 +478,16 @@ impl HostVersionAdapter {
             _ => {
                 // Unknown version: minimal endpoints
                 let mut endpoints = BTreeMap::new();
-                endpoints.insert("status".to_string(), EndpointSpec {
-                    path: "/status".to_string(),
-                    method: "GET".to_string(),
-                    min_api_version: "unknown".to_string(),
-                    auth_required: false,
-                    deprecated: false,
-                });
+                endpoints.insert(
+                    "status".to_string(),
+                    EndpointSpec {
+                        path: "/status".to_string(),
+                        method: "GET".to_string(),
+                        min_api_version: "unknown".to_string(),
+                        auth_required: false,
+                        deprecated: false,
+                    },
+                );
 
                 let auth_methods = BTreeSet::new();
                 let frame_config = ParserConfig::default_config();
@@ -525,7 +598,10 @@ pub fn test_scenario_compatibility(scenario: &CompatibilityScenario) -> Conforma
     }
 }
 
-fn test_state_compatibility(connector: &ConnectorVersionAdapter, host: &HostVersionAdapter) -> f64 {
+fn test_state_compatibility(
+    connector: &ConnectorVersionAdapter,
+    _host: &HostVersionAdapter,
+) -> f64 {
     let connector_states = &connector.supported_states;
     let total_states = ConnectorState::ALL.len();
     let supported_states = connector_states.len();
@@ -534,7 +610,10 @@ fn test_state_compatibility(connector: &ConnectorVersionAdapter, host: &HostVers
     supported_states as f64 / total_states as f64
 }
 
-fn test_transition_compatibility(connector: &ConnectorVersionAdapter, host: &HostVersionAdapter) -> f64 {
+fn test_transition_compatibility(
+    connector: &ConnectorVersionAdapter,
+    _host: &HostVersionAdapter,
+) -> f64 {
     let mut compatible_transitions = 0;
     let mut total_transitions = 0;
 
@@ -544,7 +623,8 @@ fn test_transition_compatibility(connector: &ConnectorVersionAdapter, host: &Hos
             total_transitions += legal_targets.len();
 
             for &target in legal_targets {
-                if connector.supports_state(target) && connector.supports_transition(state, target) {
+                if connector.supports_state(target) && connector.supports_transition(state, target)
+                {
                     compatible_transitions += 1;
                 }
             }
@@ -558,7 +638,10 @@ fn test_transition_compatibility(connector: &ConnectorVersionAdapter, host: &Hos
     }
 }
 
-fn test_endpoint_compatibility(connector: &ConnectorVersionAdapter, host: &HostVersionAdapter) -> f64 {
+fn test_endpoint_compatibility(
+    _connector: &ConnectorVersionAdapter,
+    host: &HostVersionAdapter,
+) -> f64 {
     // Test what percentage of required connector endpoints are supported by the host
     let required_endpoints = ["connector_status", "connector_transition"];
     let mut supported = 0;
@@ -572,7 +655,10 @@ fn test_endpoint_compatibility(connector: &ConnectorVersionAdapter, host: &HostV
     supported as f64 / required_endpoints.len() as f64
 }
 
-fn test_frame_parser_compatibility(connector: &ConnectorVersionAdapter, host: &HostVersionAdapter) -> f64 {
+fn test_frame_parser_compatibility(
+    _connector: &ConnectorVersionAdapter,
+    host: &HostVersionAdapter,
+) -> f64 {
     // Test frame parser configuration compatibility
     let config = &host.frame_parser_config;
 
@@ -602,17 +688,18 @@ fn test_frame_parser_compatibility(connector: &ConnectorVersionAdapter, host: &H
     successful as f64 / test_frames.len() as f64
 }
 
-fn test_protocol_negotiation(connector: &ConnectorVersionAdapter, host: &HostVersionAdapter) -> ProtocolNegotiationResult {
+fn test_protocol_negotiation(
+    connector: &ConnectorVersionAdapter,
+    host: &HostVersionAdapter,
+) -> ProtocolNegotiationResult {
     // Simulate protocol version negotiation
     let negotiated_lifecycle_version = negotiate_version(
         &connector.version.lifecycle_protocol,
         &host.version.lifecycle_protocol,
     );
 
-    let negotiated_api_version = negotiate_version(
-        &connector.version.api_version,
-        &host.version.api_version,
-    );
+    let negotiated_api_version =
+        negotiate_version(&connector.version.api_version, &host.version.api_version);
 
     let negotiated_session_version = negotiate_version(
         &connector.version.session_version,
@@ -620,7 +707,8 @@ fn test_protocol_negotiation(connector: &ConnectorVersionAdapter, host: &HostVer
     );
 
     // Find feature intersection
-    let feature_intersection = connector.feature_flags
+    let feature_intersection = connector
+        .feature_flags
         .intersection(&BTreeSet::new()) // Host features would go here in real implementation
         .cloned()
         .collect();
@@ -645,18 +733,51 @@ fn test_protocol_negotiation(connector: &ConnectorVersionAdapter, host: &HostVer
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct ParsedProtocolVersion<'a> {
+    family: &'a str,
+    major: u64,
+    minor: u64,
+    patch: u64,
+}
+
+fn parse_protocol_version(version: &str) -> Option<ParsedProtocolVersion<'_>> {
+    let (family, semver) = version.rsplit_once("-v")?;
+    let mut parts = semver.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(ParsedProtocolVersion {
+        family,
+        major,
+        minor,
+        patch,
+    })
+}
+
 fn negotiate_version(connector_version: &str, host_version: &str) -> String {
-    // Simple version negotiation: use the lower version
     if connector_version == host_version {
         connector_version.to_string()
-    } else {
-        // In real implementation, this would parse semver and negotiate properly
-        // For testing, we'll use a simple heuristic
-        match (connector_version.contains("v1.1"), host_version.contains("v1.1")) {
-            (true, false) => host_version.to_string(), // Connector downgrades
-            (false, true) => connector_version.to_string(), // Host downgrades
-            _ => connector_version.to_string(), // Default to connector version
+    } else if let (Some(connector), Some(host)) = (
+        parse_protocol_version(connector_version),
+        parse_protocol_version(host_version),
+    ) {
+        if connector.family != host.family || connector.major != host.major {
+            "INCOMPATIBLE".to_string()
+        } else if (connector.minor, connector.patch) <= (host.minor, host.patch) {
+            connector_version.to_string()
+        } else {
+            host_version.to_string()
         }
+    } else if parse_protocol_version(connector_version).is_some() {
+        connector_version.to_string()
+    } else if parse_protocol_version(host_version).is_some() {
+        host_version.to_string()
+    } else {
+        "INCOMPATIBLE".to_string()
     }
 }
 
@@ -676,7 +797,8 @@ fn calculate_compatibility_score(scores: &[f64]) -> f64 {
 fn test_connector_lifecycle_conformance_matrix() {
     let mut all_results = Vec::new();
 
-    for scenario in COMPATIBILITY_SCENARIOS {
+    let scenarios = compatibility_scenarios();
+    for scenario in &scenarios {
         let result = test_scenario_compatibility(scenario);
         all_results.push(result);
     }
@@ -690,28 +812,88 @@ fn test_connector_lifecycle_conformance_matrix() {
     for result in &all_results {
         match &result.expected {
             CompatibilityExpectation::FullCompatibility => {
-                assert!(result.compatibility_score >= 0.95,
+                assert!(
+                    result.compatibility_score >= 0.95,
                     "Full compatibility expected for {} but got score {:.2}",
-                    result.scenario_id, result.compatibility_score);
+                    result.scenario_id,
+                    result.compatibility_score
+                );
             }
             CompatibilityExpectation::NegotiatedCompatibility { .. } => {
-                assert!(result.compatibility_score >= 0.8,
+                assert!(
+                    result.compatibility_score >= 0.8,
                     "Negotiated compatibility expected for {} but got score {:.2}",
-                    result.scenario_id, result.compatibility_score);
+                    result.scenario_id,
+                    result.compatibility_score
+                );
             }
             CompatibilityExpectation::LimitedCompatibility { .. } => {
-                assert!(result.compatibility_score >= 0.6,
+                assert!(
+                    result.compatibility_score >= 0.6,
                     "Limited compatibility expected for {} but got score {:.2}",
-                    result.scenario_id, result.compatibility_score);
+                    result.scenario_id,
+                    result.compatibility_score
+                );
             }
             CompatibilityExpectation::Incompatible { .. } => {
                 // Incompatible scenarios should have low scores or controlled failures
-                assert!(result.compatibility_score < 0.7,
+                assert!(
+                    result.compatibility_score < 0.7,
                     "Incompatible scenario {} unexpectedly has high compatibility score {:.2}",
-                    result.scenario_id, result.compatibility_score);
+                    result.scenario_id,
+                    result.compatibility_score
+                );
             }
         }
     }
+
+    for (scenario, result) in scenarios.iter().zip(&all_results) {
+        if let CompatibilityExpectation::NegotiatedCompatibility { fallback_version } =
+            &scenario.expected_compatibility
+        {
+            let negotiation = result
+                .protocol_negotiation
+                .as_ref()
+                .expect("negotiation result should be recorded");
+            assert_eq!(
+                negotiation.negotiated_lifecycle_version, *fallback_version,
+                "scenario {} should negotiate lifecycle fallback",
+                scenario.scenario_id
+            );
+        }
+    }
+}
+
+#[test]
+fn test_protocol_negotiation_uses_lower_compatible_versions() {
+    assert_eq!(
+        negotiate_version(FUTURE_LIFECYCLE_PROTOCOL, CURRENT_LIFECYCLE_PROTOCOL),
+        CURRENT_LIFECYCLE_PROTOCOL
+    );
+    assert_eq!(
+        negotiate_version(LEGACY_LIFECYCLE_PROTOCOL, CURRENT_LIFECYCLE_PROTOCOL),
+        LEGACY_LIFECYCLE_PROTOCOL
+    );
+    assert_eq!(
+        negotiate_version(FUTURE_API_VERSION, CURRENT_API_VERSION),
+        CURRENT_API_VERSION
+    );
+    assert_eq!(
+        negotiate_version(LEGACY_SESSION_VERSION, CURRENT_SESSION_VERSION),
+        LEGACY_SESSION_VERSION
+    );
+}
+
+#[test]
+fn test_protocol_negotiation_rejects_major_version_mismatch() {
+    assert_eq!(
+        negotiate_version("lifecycle-v2.0.0", CURRENT_LIFECYCLE_PROTOCOL),
+        "INCOMPATIBLE"
+    );
+    assert_eq!(
+        negotiate_version("api-v3.0.0", CURRENT_API_VERSION),
+        "INCOMPATIBLE"
+    );
 }
 
 #[test]
@@ -743,8 +925,11 @@ fn test_backward_compatibility_state_transitions() {
     for (from, to) in basic_progression {
         if old_connector.supports_state(from) && old_connector.supports_state(to) {
             let can_transition = old_connector.supports_transition(from, to);
-            assert!(can_transition,
-                "Old connector should support transition from {:?} to {:?}", from, to);
+            assert!(
+                can_transition,
+                "Old connector should support transition from {:?} to {:?}",
+                from, to
+            );
         }
     }
 
@@ -787,8 +972,10 @@ fn test_forward_compatibility_graceful_degradation() {
     }
 
     // Should be able to support at least basic status and transition operations
-    assert!(!supported_endpoints.is_empty(),
-        "Old host should support at least basic connector endpoints");
+    assert!(
+        !supported_endpoints.is_empty(),
+        "Old host should support at least basic connector endpoints"
+    );
 
     let degradation_test = json!({
         "test": "forward_compatibility_graceful_degradation",
@@ -808,8 +995,6 @@ fn test_forward_compatibility_graceful_degradation() {
 #[test]
 fn test_session_auth_protocol_evolution() {
     // Test session authentication compatibility across versions
-    let root_secret = RootSecret::generate_test_key();
-
     let test_cases = [
         ("legacy_session", LEGACY_SESSION_VERSION),
         ("current_session", CURRENT_SESSION_VERSION),
@@ -819,9 +1004,6 @@ fn test_session_auth_protocol_evolution() {
     let mut session_results = Vec::new();
 
     for (test_name, session_version) in test_cases {
-        // Create session manager for this version
-        let session_manager = SessionManager::new(root_secret.clone());
-
         let session_test_result = json!({
             "test_case": test_name,
             "session_version": session_version,
@@ -845,8 +1027,6 @@ fn test_session_auth_protocol_evolution() {
 #[test]
 fn test_api_endpoint_version_negotiation() {
     // Test API endpoint versioning and negotiation
-    let endpoint_catalog = build_endpoint_catalog();
-
     let version_scenarios = [
         ("legacy_api", LEGACY_API_VERSION),
         ("current_api", CURRENT_API_VERSION),

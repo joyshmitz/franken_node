@@ -8,16 +8,16 @@
 //! Why no mocks: State transitions, resource cleanup, and race conditions
 //! can only be validated under real concurrent stress.
 
-use std::collections::{HashMap, BTreeSet};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::sync::{RwLock, Semaphore, Mutex};
 use frankenengine_node::connector::{
-    lifecycle::{ConnectorState, ConnectorLifecycleManager},
+    cancellation_protocol::{CancellationPhase, CancellationProtocol},
     lease_service::{ConnectorLeaseService, LeaseExpiry},
-    cancellation_protocol::{CancellationProtocol, CancellationPhase},
+    lifecycle::{ConnectorLifecycleManager, ConnectorState},
 };
 use serde_json::json;
+use std::collections::{BTreeSet, HashMap};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::{Mutex, RwLock, Semaphore};
 
 /// Test harness for real connector lifecycle stress testing
 struct ConnectorLifecycleStressHarness {
@@ -62,7 +62,11 @@ impl ConnectorLifecycleStressHarness {
     }
 
     /// Test state transition under real concurrency pressure
-    async fn stress_transition_with_tracking(&self, connector_id: &str, target_state: ConnectorState) -> Result<Duration, String> {
+    async fn stress_transition_with_tracking(
+        &self,
+        connector_id: &str,
+        target_state: ConnectorState,
+    ) -> Result<Duration, String> {
         let start = Instant::now();
 
         // Track resource allocation
@@ -79,7 +83,10 @@ impl ConnectorLifecycleStressHarness {
 
         // Real state transition (no mocks)
         let mut manager = self.lifecycle_manager.write().await;
-        let current_state = manager.get_state(connector_id).await.unwrap_or(ConnectorState::Discovered);
+        let current_state = manager
+            .get_state(connector_id)
+            .await
+            .unwrap_or(ConnectorState::Discovered);
         let transition_result = manager.transition_to(connector_id, target_state).await;
         drop(manager);
 
@@ -101,19 +108,22 @@ impl ConnectorLifecycleStressHarness {
             error: transition_result.as_ref().err().map(|e| format!("{:?}", e)),
         };
 
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "connector_lifecycle_stress",
-            "phase": "state_transition",
-            "connector_id": connector_id,
-            "from_state": format!("{:?}", current_state),
-            "to_state": format!("{:?}", target_state),
-            "duration_ms": log.duration_ms,
-            "concurrent_transitions": current_concurrent,
-            "success": log.success,
-            "error": log.error,
-            "event": "lifecycle_transition"
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "connector_lifecycle_stress",
+                "phase": "state_transition",
+                "connector_id": connector_id,
+                "from_state": format!("{:?}", current_state),
+                "to_state": format!("{:?}", target_state),
+                "duration_ms": log.duration_ms,
+                "concurrent_transitions": current_concurrent,
+                "success": log.success,
+                "error": log.error,
+                "event": "lifecycle_transition"
+            })
+        );
 
         {
             let mut logs = self.transition_logs.lock().await;
@@ -123,7 +133,8 @@ impl ConnectorLifecycleStressHarness {
         // Update peak tracking
         {
             let mut tracker = self.resource_tracker.lock().await;
-            tracker.peak_concurrent_operations = tracker.peak_concurrent_operations.max(current_concurrent);
+            tracker.peak_concurrent_operations =
+                tracker.peak_concurrent_operations.max(current_concurrent);
         }
 
         match transition_result {
@@ -133,7 +144,11 @@ impl ConnectorLifecycleStressHarness {
     }
 
     /// Massive concurrent stress test with real resource contention
-    async fn massive_concurrent_lifecycle_stress(&self, connector_count: usize, transition_rounds: usize) -> Vec<Result<Duration, String>> {
+    async fn massive_concurrent_lifecycle_stress(
+        &self,
+        connector_count: usize,
+        transition_rounds: usize,
+    ) -> Vec<Result<Duration, String>> {
         let semaphore = Arc::new(Semaphore::new(30)); // Real concurrency limit
         let mut handles = Vec::new();
 
@@ -165,7 +180,8 @@ impl ConnectorLifecycleStressHarness {
                     for (step, &target_state) in state_sequence.iter().enumerate().skip(1) {
                         // Real state transition with actual resource allocation
                         let mut manager = lifecycle_manager.write().await;
-                        let transition_result = manager.transition_to(&connector_id, target_state).await;
+                        let transition_result =
+                            manager.transition_to(&connector_id, target_state).await;
                         drop(manager);
 
                         if transition_result.is_err() && step > 1 {
@@ -175,11 +191,13 @@ impl ConnectorLifecycleStressHarness {
 
                         // Test lease acquisition under stress
                         if target_state == ConnectorState::Active {
-                            let lease_result = lease_service.acquire_exclusive_lease(
-                                &connector_id,
-                                &format!("owner-{}-{}", connector_idx, round),
-                                Duration::from_millis(100)
-                            ).await;
+                            let lease_result = lease_service
+                                .acquire_exclusive_lease(
+                                    &connector_id,
+                                    &format!("owner-{}-{}", connector_idx, round),
+                                    Duration::from_millis(100),
+                                )
+                                .await;
 
                             // Under stress, lease conflicts are expected
                             if lease_result.is_err() {
@@ -216,23 +234,36 @@ impl ConnectorLifecycleStressHarness {
     }
 
     /// Test cancellation protocol under stress with real timing
-    async fn stress_cancellation_protocol(&self, connector_count: usize) -> Vec<(String, Duration, bool)> {
+    async fn stress_cancellation_protocol(
+        &self,
+        connector_count: usize,
+    ) -> Vec<(String, Duration, bool)> {
         let mut cancellation_results = Vec::new();
 
         for i in 0..connector_count {
             let connector_id = format!("cancel-stress-{:04}", i);
 
             // Setup: transition to Active state
-            let _ = self.stress_transition_with_tracking(&connector_id, ConnectorState::Verified).await;
-            let _ = self.stress_transition_with_tracking(&connector_id, ConnectorState::Installed).await;
-            let _ = self.stress_transition_with_tracking(&connector_id, ConnectorState::Configured).await;
-            let _ = self.stress_transition_with_tracking(&connector_id, ConnectorState::Active).await;
+            let _ = self
+                .stress_transition_with_tracking(&connector_id, ConnectorState::Verified)
+                .await;
+            let _ = self
+                .stress_transition_with_tracking(&connector_id, ConnectorState::Installed)
+                .await;
+            let _ = self
+                .stress_transition_with_tracking(&connector_id, ConnectorState::Configured)
+                .await;
+            let _ = self
+                .stress_transition_with_tracking(&connector_id, ConnectorState::Active)
+                .await;
 
             // Test three-phase cancellation under stress
             let cancel_start = Instant::now();
 
             // Phase 1: Enter cancelling state
-            let enter_result = self.stress_transition_with_tracking(&connector_id, ConnectorState::Cancelling).await;
+            let enter_result = self
+                .stress_transition_with_tracking(&connector_id, ConnectorState::Cancelling)
+                .await;
             if enter_result.is_err() {
                 cancellation_results.push((connector_id, cancel_start.elapsed(), false));
                 continue;
@@ -241,8 +272,9 @@ impl ConnectorLifecycleStressHarness {
             // Phase 2: Wait for drain with timeout (real waiting, not mocked)
             let drain_result = tokio::time::timeout(
                 Duration::from_millis(500),
-                self.cancellation_protocol.wait_for_drain(&connector_id)
-            ).await;
+                self.cancellation_protocol.wait_for_drain(&connector_id),
+            )
+            .await;
 
             if drain_result.is_err() {
                 cancellation_results.push((connector_id, cancel_start.elapsed(), false));
@@ -250,19 +282,24 @@ impl ConnectorLifecycleStressHarness {
             }
 
             // Phase 3: Final transition to stopped
-            let stop_result = self.stress_transition_with_tracking(&connector_id, ConnectorState::Stopped).await;
+            let stop_result = self
+                .stress_transition_with_tracking(&connector_id, ConnectorState::Stopped)
+                .await;
             let total_duration = cancel_start.elapsed();
             let success = stop_result.is_ok();
 
-            eprintln!("{}", json!({
-                "ts": chrono::Utc::now().to_rfc3339(),
-                "suite": "connector_lifecycle_stress",
-                "phase": "cancellation_protocol",
-                "connector_id": connector_id,
-                "cancellation_duration_ms": total_duration.as_millis(),
-                "success": success,
-                "event": "cancellation_complete"
-            }));
+            eprintln!(
+                "{}",
+                json!({
+                    "ts": chrono::Utc::now().to_rfc3339(),
+                    "suite": "connector_lifecycle_stress",
+                    "phase": "cancellation_protocol",
+                    "connector_id": connector_id,
+                    "cancellation_duration_ms": total_duration.as_millis(),
+                    "success": success,
+                    "event": "cancellation_complete"
+                })
+            );
 
             cancellation_results.push((connector_id, total_duration, success));
         }
@@ -276,16 +313,19 @@ impl ConnectorLifecycleStressHarness {
         let leaked_count = tracker.active_connectors.len();
         let leaked_connectors: Vec<String> = tracker.active_connectors.iter().cloned().collect();
 
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "connector_lifecycle_stress",
-            "phase": "resource_leak_detection",
-            "active_connectors": leaked_count,
-            "leaked_connectors": leaked_connectors,
-            "peak_concurrent_operations": tracker.peak_concurrent_operations,
-            "total_transitions": tracker.total_state_transitions,
-            "event": "resource_audit"
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "connector_lifecycle_stress",
+                "phase": "resource_leak_detection",
+                "active_connectors": leaked_count,
+                "leaked_connectors": leaked_connectors,
+                "peak_concurrent_operations": tracker.peak_concurrent_operations,
+                "total_transitions": tracker.total_state_transitions,
+                "event": "resource_audit"
+            })
+        );
 
         (leaked_count, leaked_connectors)
     }
@@ -315,20 +355,24 @@ impl ConnectorLifecycleStressHarness {
         }
 
         analysis.total_transitions = logs.len();
-        analysis.concurrent_transitions = logs.iter()
+        analysis.concurrent_transitions = logs
+            .iter()
             .filter(|log| log.concurrent_transitions > 1)
             .count();
 
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "connector_lifecycle_stress",
-            "phase": "race_condition_analysis",
-            "total_transitions": analysis.total_transitions,
-            "concurrent_transitions": analysis.concurrent_transitions,
-            "potential_races": analysis.potential_races,
-            "state_conflicts": analysis.state_conflicts,
-            "event": "race_analysis"
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "connector_lifecycle_stress",
+                "phase": "race_condition_analysis",
+                "total_transitions": analysis.total_transitions,
+                "concurrent_transitions": analysis.concurrent_transitions,
+                "potential_races": analysis.potential_races,
+                "state_conflicts": analysis.state_conflicts,
+                "event": "race_analysis"
+            })
+        );
 
         analysis
     }
@@ -360,26 +404,35 @@ async fn test_connector_lifecycle_massive_concurrent_stress() {
     const STRESS_CONNECTOR_COUNT: usize = 50;
     const TRANSITION_ROUNDS: usize = 3;
 
-    let stress_results = harness.massive_concurrent_lifecycle_stress(STRESS_CONNECTOR_COUNT, TRANSITION_ROUNDS).await;
+    let stress_results = harness
+        .massive_concurrent_lifecycle_stress(STRESS_CONNECTOR_COUNT, TRANSITION_ROUNDS)
+        .await;
 
     let successful = stress_results.iter().filter(|r| r.is_ok()).count();
     let failed = stress_results.iter().filter(|r| r.is_err()).count();
 
-    eprintln!("{}", json!({
-        "ts": chrono::Utc::now().to_rfc3339(),
-        "suite": "connector_lifecycle_stress",
-        "test": "massive_concurrent_stress",
-        "connector_count": STRESS_CONNECTOR_COUNT,
-        "transition_rounds": TRANSITION_ROUNDS,
-        "successful_connectors": successful,
-        "failed_connectors": failed,
-        "success_rate": successful as f64 / stress_results.len() as f64,
-        "event": "massive_stress_complete"
-    }));
+    eprintln!(
+        "{}",
+        json!({
+            "ts": chrono::Utc::now().to_rfc3339(),
+            "suite": "connector_lifecycle_stress",
+            "test": "massive_concurrent_stress",
+            "connector_count": STRESS_CONNECTOR_COUNT,
+            "transition_rounds": TRANSITION_ROUNDS,
+            "successful_connectors": successful,
+            "failed_connectors": failed,
+            "success_rate": successful as f64 / stress_results.len() as f64,
+            "event": "massive_stress_complete"
+        })
+    );
 
     // Under massive stress, some failures are acceptable, but majority should succeed
     let success_rate = successful as f64 / stress_results.len() as f64;
-    assert!(success_rate >= 0.7, "Success rate under massive stress should be >= 70%, got {:.1}%", success_rate * 100.0);
+    assert!(
+        success_rate >= 0.7,
+        "Success rate under massive stress should be >= 70%, got {:.1}%",
+        success_rate * 100.0
+    );
 
     eprintln!("{}", harness.export_stress_summary());
 }
@@ -391,27 +444,41 @@ async fn test_cancellation_protocol_stress() {
     // Stress test cancellation protocol
     const CANCELLATION_STRESS_COUNT: usize = 20;
 
-    let cancellation_results = harness.stress_cancellation_protocol(CANCELLATION_STRESS_COUNT).await;
+    let cancellation_results = harness
+        .stress_cancellation_protocol(CANCELLATION_STRESS_COUNT)
+        .await;
 
-    let successful_cancellations = cancellation_results.iter().filter(|(_, _, success)| *success).count();
-    let avg_cancellation_time: f64 = cancellation_results.iter()
+    let successful_cancellations = cancellation_results
+        .iter()
+        .filter(|(_, _, success)| *success)
+        .count();
+    let avg_cancellation_time: f64 = cancellation_results
+        .iter()
         .map(|(_, duration, _)| duration.as_millis() as f64)
-        .sum::<f64>() / cancellation_results.len() as f64;
+        .sum::<f64>()
+        / cancellation_results.len() as f64;
 
-    eprintln!("{}", json!({
-        "ts": chrono::Utc::now().to_rfc3339(),
-        "suite": "connector_lifecycle_stress",
-        "test": "cancellation_protocol_stress",
-        "total_cancellations": CANCELLATION_STRESS_COUNT,
-        "successful_cancellations": successful_cancellations,
-        "avg_cancellation_time_ms": avg_cancellation_time,
-        "success_rate": successful_cancellations as f64 / CANCELLATION_STRESS_COUNT as f64,
-        "event": "cancellation_stress_complete"
-    }));
+    eprintln!(
+        "{}",
+        json!({
+            "ts": chrono::Utc::now().to_rfc3339(),
+            "suite": "connector_lifecycle_stress",
+            "test": "cancellation_protocol_stress",
+            "total_cancellations": CANCELLATION_STRESS_COUNT,
+            "successful_cancellations": successful_cancellations,
+            "avg_cancellation_time_ms": avg_cancellation_time,
+            "success_rate": successful_cancellations as f64 / CANCELLATION_STRESS_COUNT as f64,
+            "event": "cancellation_stress_complete"
+        })
+    );
 
     // Cancellation protocol should be reliable under stress
     let success_rate = successful_cancellations as f64 / CANCELLATION_STRESS_COUNT as f64;
-    assert!(success_rate >= 0.85, "Cancellation success rate should be >= 85%, got {:.1}%", success_rate * 100.0);
+    assert!(
+        success_rate >= 0.85,
+        "Cancellation success rate should be >= 85%, got {:.1}%",
+        success_rate * 100.0
+    );
 
     eprintln!("{}", harness.export_stress_summary());
 }
@@ -423,24 +490,35 @@ async fn test_resource_leak_detection_under_stress() {
     // Create some connectors and transition them
     for i in 0..10 {
         let connector_id = format!("leak-test-{}", i);
-        let _ = harness.stress_transition_with_tracking(&connector_id, ConnectorState::Verified).await;
-        let _ = harness.stress_transition_with_tracking(&connector_id, ConnectorState::Active).await;
+        let _ = harness
+            .stress_transition_with_tracking(&connector_id, ConnectorState::Verified)
+            .await;
+        let _ = harness
+            .stress_transition_with_tracking(&connector_id, ConnectorState::Active)
+            .await;
     }
 
     // Check for resource leaks
     let (leaked_count, leaked_connectors) = harness.detect_resource_leaks().await;
 
-    eprintln!("{}", json!({
-        "ts": chrono::Utc::now().to_rfc3339(),
-        "suite": "connector_lifecycle_stress",
-        "test": "resource_leak_detection",
-        "leaked_resources": leaked_count,
-        "leaked_connectors": leaked_connectors,
-        "event": "leak_detection_complete"
-    }));
+    eprintln!(
+        "{}",
+        json!({
+            "ts": chrono::Utc::now().to_rfc3339(),
+            "suite": "connector_lifecycle_stress",
+            "test": "resource_leak_detection",
+            "leaked_resources": leaked_count,
+            "leaked_connectors": leaked_connectors,
+            "event": "leak_detection_complete"
+        })
+    );
 
     // Resource cleanup should be thorough (some leaks may be acceptable under stress)
-    assert!(leaked_count <= 2, "Should have minimal resource leaks, found: {}", leaked_count);
+    assert!(
+        leaked_count <= 2,
+        "Should have minimal resource leaks, found: {}",
+        leaked_count
+    );
 
     eprintln!("{}", harness.export_stress_summary());
 }
@@ -458,9 +536,15 @@ async fn test_race_condition_detection() {
         let handle = tokio::spawn(async move {
             // Rapid state transitions to expose races
             for _ in 0..3 {
-                let _ = harness_ref.stress_transition_with_tracking(&connector_id, ConnectorState::Verified).await;
-                let _ = harness_ref.stress_transition_with_tracking(&connector_id, ConnectorState::Active).await;
-                let _ = harness_ref.stress_transition_with_tracking(&connector_id, ConnectorState::Stopped).await;
+                let _ = harness_ref
+                    .stress_transition_with_tracking(&connector_id, ConnectorState::Verified)
+                    .await;
+                let _ = harness_ref
+                    .stress_transition_with_tracking(&connector_id, ConnectorState::Active)
+                    .await;
+                let _ = harness_ref
+                    .stress_transition_with_tracking(&connector_id, ConnectorState::Stopped)
+                    .await;
             }
         });
 
@@ -475,19 +559,26 @@ async fn test_race_condition_detection() {
     // Analyze for race conditions
     let race_analysis = harness.analyze_race_conditions().await;
 
-    eprintln!("{}", json!({
-        "ts": chrono::Utc::now().to_rfc3339(),
-        "suite": "connector_lifecycle_stress",
-        "test": "race_condition_detection",
-        "total_transitions": race_analysis.total_transitions,
-        "concurrent_transitions": race_analysis.concurrent_transitions,
-        "potential_races": race_analysis.potential_races,
-        "state_conflicts": race_analysis.state_conflicts,
-        "event": "race_detection_complete"
-    }));
+    eprintln!(
+        "{}",
+        json!({
+            "ts": chrono::Utc::now().to_rfc3339(),
+            "suite": "connector_lifecycle_stress",
+            "test": "race_condition_detection",
+            "total_transitions": race_analysis.total_transitions,
+            "concurrent_transitions": race_analysis.concurrent_transitions,
+            "potential_races": race_analysis.potential_races,
+            "state_conflicts": race_analysis.state_conflicts,
+            "event": "race_detection_complete"
+        })
+    );
 
     // Race conditions should be minimal
-    assert!(race_analysis.potential_races <= 2, "Should have minimal race conditions, found: {}", race_analysis.potential_races);
+    assert!(
+        race_analysis.potential_races <= 2,
+        "Should have minimal race conditions, found: {}",
+        race_analysis.potential_races
+    );
 
     eprintln!("{}", harness.export_stress_summary());
 }

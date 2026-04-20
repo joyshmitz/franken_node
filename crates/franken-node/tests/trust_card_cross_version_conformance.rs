@@ -14,14 +14,13 @@ use std::collections::BTreeMap;
 #[cfg(test)]
 use insta::assert_json_snapshot;
 
+use frankenengine_node::supply_chain::certification::{EvidenceType, VerifiedEvidenceRef};
 use frankenengine_node::supply_chain::trust_card::{
-    TrustCard, TrustCardRegistry, TrustCardInput, TrustCardRegistrySnapshot,
-    ExtensionIdentity, PublisherIdentity, CertificationLevel,
-    CapabilityDeclaration, CapabilityRisk, BehavioralProfile,
-    RevocationStatus, ProvenanceSummary, ReputationTrend, RiskLevel, RiskAssessment,
-    DependencyTrustStatus, verify_card_signature, TrustCardError,
+    BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
+    DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary, PublisherIdentity,
+    ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard, TrustCardError,
+    TrustCardInput, TrustCardRegistry, TrustCardRegistrySnapshot, verify_card_signature,
 };
-use frankenengine_node::supply_chain::certification::{VerifiedEvidenceRef, EvidenceType};
 
 // ---------------------------------------------------------------------------
 // Schema Version Constants (for testing compatibility)
@@ -74,7 +73,9 @@ fn create_test_input_v1() -> TrustCardInput {
         revocation_status: RevocationStatus::Active,
         provenance_summary: ProvenanceSummary {
             attestation_level: "signed".to_string(),
-            source_uri: "https://registry.npmjs.org/@conformance/test-extension/-/test-extension-1.0.0.tgz".to_string(),
+            source_uri:
+                "https://registry.npmjs.org/@conformance/test-extension/-/test-extension-1.0.0.tgz"
+                    .to_string(),
             artifact_hashes: vec![
                 "sha256:conformance1234567890".to_string(),
                 "sha512:conformance0987654321".to_string(),
@@ -84,39 +85,44 @@ fn create_test_input_v1() -> TrustCardInput {
         reputation_score_basis_points: 8500,
         reputation_trend: ReputationTrend::Stable,
         active_quarantine: false,
-        dependency_trust_summary: vec![
-            DependencyTrustStatus {
-                dependency_id: "npm:lodash".to_string(),
-                trust_level: "verified".to_string(),
-            },
-        ],
+        dependency_trust_summary: vec![DependencyTrustStatus {
+            dependency_id: "npm:lodash".to_string(),
+            trust_level: "verified".to_string(),
+        }],
         last_verified_timestamp: "2024-01-01T00:00:00Z".to_string(),
         user_facing_risk_assessment: RiskAssessment {
             level: RiskLevel::Low,
             summary: "Well-maintained conformance test package".to_string(),
         },
-        evidence_refs: vec![
-            VerifiedEvidenceRef {
-                evidence_id: "conformance-evidence-1".to_string(),
-                evidence_type: EvidenceType::ProvenanceChain,
-                verified_at_epoch: 1000,
-                verification_receipt_hash: "conformance-receipt-hash-1".to_string(),
-            },
-        ],
+        evidence_refs: vec![VerifiedEvidenceRef {
+            evidence_id: "conformance-evidence-1".to_string(),
+            evidence_type: EvidenceType::ProvenanceChain,
+            verified_at_epoch: 1000,
+            verification_receipt_hash: "conformance-receipt-hash-1".to_string(),
+        }],
     }
 }
 
 /// Create a trust card with explicit schema version for compatibility testing
-fn create_card_with_schema(input: TrustCardInput, schema_version: &str, now_secs: u64) -> TrustCard {
+fn create_card_with_schema(
+    input: TrustCardInput,
+    schema_version: &str,
+    now_secs: u64,
+) -> TrustCard {
     let mut registry = TrustCardRegistry::new(60, b"conformance-test-key");
-    let mut card = registry.create(input, now_secs, "conformance-trace").unwrap();
+    let mut card = registry
+        .create(input, now_secs, "conformance-trace")
+        .unwrap();
     // Override schema version for testing
     card.schema_version = schema_version.to_string();
     card
 }
 
 /// Create registry snapshot with explicit schema version
-fn create_registry_snapshot_with_schema(cards: BTreeMap<String, Vec<TrustCard>>, schema_version: &str) -> TrustCardRegistrySnapshot {
+fn create_registry_snapshot_with_schema(
+    cards: BTreeMap<String, Vec<TrustCard>>,
+    schema_version: &str,
+) -> TrustCardRegistrySnapshot {
     TrustCardRegistrySnapshot {
         schema_version: schema_version.to_string(),
         cache_ttl_secs: 60,
@@ -160,7 +166,6 @@ const CROSS_VERSION_TEST_MATRIX: &[CrossVersionTest] = &[
         verifier_version: VerifierVersion::Current,
         expected_result: TestExpectation::Pass, // Must maintain backward compatibility
     },
-
     // Forward compatibility: new cards with old verifier
     CrossVersionTest {
         name: "future_card_current_verifier",
@@ -169,7 +174,6 @@ const CROSS_VERSION_TEST_MATRIX: &[CrossVersionTest] = &[
         verifier_version: VerifierVersion::Current,
         expected_result: TestExpectation::Fail("unsupported_schema"), // Expected to fail gracefully
     },
-
     // Version chain validation across schema transitions
     CrossVersionTest {
         name: "schema_transition_chain_valid",
@@ -178,7 +182,6 @@ const CROSS_VERSION_TEST_MATRIX: &[CrossVersionTest] = &[
         verifier_version: VerifierVersion::Current,
         expected_result: TestExpectation::Pass,
     },
-
     // Edge case: mixed schema versions in history
     CrossVersionTest {
         name: "mixed_schema_history",
@@ -199,37 +202,43 @@ fn cross_version_conformance_matrix() {
         match (&result, &test_case.expected_result) {
             (Ok(_), TestExpectation::Pass) => {
                 println!("✓ {} PASS", test_case.name);
-            },
+            }
             (Err(_), TestExpectation::Fail(_)) => {
                 println!("✓ {} FAIL (expected)", test_case.name);
-            },
+            }
             (Ok(_), TestExpectation::Fail(reason)) => {
-                panic!("❌ {} expected to fail with '{}' but passed", test_case.name, reason);
-            },
+                panic!(
+                    "❌ {} expected to fail with '{}' but passed",
+                    test_case.name, reason
+                );
+            }
             (Err(e), TestExpectation::Pass) => {
                 panic!("❌ {} expected to pass but failed: {:?}", test_case.name, e);
-            },
+            }
             (Ok(_), TestExpectation::WarningButPass) => {
                 println!("⚠ {} PASS (with warnings)", test_case.name);
-            },
+            }
             (Err(_), TestExpectation::WarningButPass) => {
                 panic!("❌ {} expected warning but failed", test_case.name);
-            },
+            }
         }
 
         // Generate golden file for this test case
         let test_output = format!("{}_output", test_case.name);
-        assert_json_snapshot!(test_output, serde_json::json!({
-            "test_name": test_case.name,
-            "card_schema": test_case.card_schema,
-            "registry_schema": test_case.registry_schema,
-            "verifier_version": format!("{:?}", test_case.verifier_version),
-            "result": match result {
-                Ok(_) => "pass",
-                Err(_) => "fail"
-            },
-            "expected": format!("{:?}", test_case.expected_result)
-        }));
+        assert_json_snapshot!(
+            test_output,
+            serde_json::json!({
+                "test_name": test_case.name,
+                "card_schema": test_case.card_schema,
+                "registry_schema": test_case.registry_schema,
+                "verifier_version": format!("{:?}", test_case.verifier_version),
+                "result": match result {
+                    Ok(_) => "pass",
+                    Err(_) => "fail"
+                },
+                "expected": format!("{:?}", test_case.expected_result)
+            })
+        );
     }
 }
 
@@ -242,24 +251,24 @@ fn run_cross_version_test(test_case: &CrossVersionTest) -> Result<(), TrustCardE
             // Test: can current verifier handle legacy schema cards?
             let card = create_card_with_schema(input, test_case.card_schema, now_secs);
             verify_card_signature(&card, b"conformance-test-key")
-        },
+        }
 
         "future_card_current_verifier" => {
             // Test: does current verifier gracefully reject future schema?
             let card = create_card_with_schema(input, test_case.card_schema, now_secs);
             // This should fail - we don't support future schemas yet
             verify_card_signature(&card, b"conformance-test-key")
-        },
+        }
 
         "schema_transition_chain_valid" => {
             // Test: version history chains remain valid during schema transitions
             test_version_chain_across_schemas()
-        },
+        }
 
         "mixed_schema_history" => {
             // Test: registry with mixed schema versions in card history
             test_mixed_schema_registry()
-        },
+        }
 
         _ => Ok(()), // Default pass for unknown tests
     }
@@ -277,7 +286,10 @@ fn test_version_chain_across_schemas() -> Result<(), TrustCardError> {
     // Create version 2 - should link correctly to v1
     let card_v2 = registry.create(input.clone(), 2000, "trace")?;
     assert_eq!(card_v2.trust_card_version, 2);
-    assert_eq!(card_v2.previous_version_hash, Some(card_v1.card_hash.clone()));
+    assert_eq!(
+        card_v2.previous_version_hash,
+        Some(card_v1.card_hash.clone())
+    );
 
     // Verify both cards validate
     verify_card_signature(&card_v1, b"conformance-test-key")?;
@@ -303,11 +315,8 @@ fn test_mixed_schema_registry() -> Result<(), TrustCardError> {
     let snapshot = create_registry_snapshot_with_schema(cards_map, CURRENT_REGISTRY_SCHEMA);
 
     // Test: can we restore registry from mixed-schema snapshot?
-    let _restored_registry = TrustCardRegistry::from_snapshot(
-        snapshot,
-        b"conformance-test-key",
-        now_secs + 2000
-    )?;
+    let _restored_registry =
+        TrustCardRegistry::from_snapshot(snapshot, b"conformance-test-key", now_secs + 2000)?;
 
     Ok(())
 }
@@ -319,45 +328,32 @@ fn registry_schema_compatibility() {
     let card = create_card_with_schema(input, CURRENT_CARD_SCHEMA, 1000);
 
     let mut cards_map = BTreeMap::new();
-    cards_map.insert(
-        "npm:@conformance/test-extension".to_string(),
-        vec![card],
-    );
+    cards_map.insert("npm:@conformance/test-extension".to_string(), vec![card]);
 
     // Test current schema
-    let current_snapshot = create_registry_snapshot_with_schema(
-        cards_map.clone(),
-        CURRENT_REGISTRY_SCHEMA
-    );
+    let current_snapshot =
+        create_registry_snapshot_with_schema(cards_map.clone(), CURRENT_REGISTRY_SCHEMA);
     assert_json_snapshot!("registry_current_schema", current_snapshot);
 
     // Test that current verifier accepts current schema
-    let result = TrustCardRegistry::from_snapshot(
-        current_snapshot,
-        b"conformance-test-key",
-        2000
-    );
+    let result = TrustCardRegistry::from_snapshot(current_snapshot, b"conformance-test-key", 2000);
     assert!(result.is_ok(), "Current schema should be accepted");
 
     // Test that current verifier rejects future schema
-    let future_snapshot = create_registry_snapshot_with_schema(
-        cards_map,
-        FUTURE_REGISTRY_SCHEMA
-    );
+    let future_snapshot = create_registry_snapshot_with_schema(cards_map, FUTURE_REGISTRY_SCHEMA);
 
-    let result = TrustCardRegistry::from_snapshot(
-        future_snapshot,
-        b"conformance-test-key",
-        2000
-    );
+    let result = TrustCardRegistry::from_snapshot(future_snapshot, b"conformance-test-key", 2000);
     assert!(result.is_err(), "Future schema should be rejected");
 
     if let Err(TrustCardError::UnsupportedSnapshotSchema(schema)) = result {
         assert_eq!(schema, FUTURE_REGISTRY_SCHEMA);
-        assert_json_snapshot!("registry_future_schema_error", serde_json::json!({
-            "error": "UnsupportedSnapshotSchema",
-            "schema": schema
-        }));
+        assert_json_snapshot!(
+            "registry_future_schema_error",
+            serde_json::json!({
+                "error": "UnsupportedSnapshotSchema",
+                "schema": schema
+            })
+        );
     } else {
         panic!("Expected UnsupportedSnapshotSchema error");
     }
@@ -374,10 +370,14 @@ fn signature_verification_cross_version() {
     let current_card = create_card_with_schema(input.clone(), CURRENT_CARD_SCHEMA, 2000);
 
     // Both should verify with current verifier (backward compatibility)
-    assert!(verify_card_signature(&legacy_card, key).is_ok(),
-           "Legacy card should verify with current verifier");
-    assert!(verify_card_signature(&current_card, key).is_ok(),
-           "Current card should verify with current verifier");
+    assert!(
+        verify_card_signature(&legacy_card, key).is_ok(),
+        "Legacy card should verify with current verifier"
+    );
+    assert!(
+        verify_card_signature(&current_card, key).is_ok(),
+        "Current card should verify with current verifier"
+    );
 
     // Test with wrong key (should fail regardless of schema)
     let wrong_key = b"wrong-key";
@@ -385,12 +385,15 @@ fn signature_verification_cross_version() {
     assert!(verify_card_signature(&current_card, wrong_key).is_err());
 
     // Golden files for verification results
-    assert_json_snapshot!("signature_verification_results", serde_json::json!({
-        "legacy_card_correct_key": verify_card_signature(&legacy_card, key).is_ok(),
-        "current_card_correct_key": verify_card_signature(&current_card, key).is_ok(),
-        "legacy_card_wrong_key": verify_card_signature(&legacy_card, wrong_key).is_ok(),
-        "current_card_wrong_key": verify_card_signature(&current_card, wrong_key).is_ok(),
-    }));
+    assert_json_snapshot!(
+        "signature_verification_results",
+        serde_json::json!({
+            "legacy_card_correct_key": verify_card_signature(&legacy_card, key).is_ok(),
+            "current_card_correct_key": verify_card_signature(&current_card, key).is_ok(),
+            "legacy_card_wrong_key": verify_card_signature(&legacy_card, wrong_key).is_ok(),
+            "current_card_wrong_key": verify_card_signature(&current_card, wrong_key).is_ok(),
+        })
+    );
 }
 
 #[test]
@@ -405,19 +408,25 @@ fn serialization_round_trip_cross_version() {
         let original_card = create_card_with_schema(input.clone(), schema, 1000);
 
         // Serialize to JSON
-        let json_str = serde_json::to_string(&original_card)
-            .expect("Card should serialize to JSON");
+        let json_str =
+            serde_json::to_string(&original_card).expect("Card should serialize to JSON");
 
         // Deserialize back
-        let deserialized_card: TrustCard = serde_json::from_str(&json_str)
-            .expect("Card should deserialize from JSON");
+        let deserialized_card: TrustCard =
+            serde_json::from_str(&json_str).expect("Card should deserialize from JSON");
 
         // Should be identical
-        assert_eq!(original_card, deserialized_card,
-                  "Round-trip should preserve card for schema {}", schema);
+        assert_eq!(
+            original_card, deserialized_card,
+            "Round-trip should preserve card for schema {}",
+            schema
+        );
 
         // Golden file for this schema version
-        assert_json_snapshot!(format!("card_serialization_{}", schema.replace(".", "_")), deserialized_card);
+        assert_json_snapshot!(
+            format!("card_serialization_{}", schema.replace(".", "_")),
+            deserialized_card
+        );
     }
 }
 
@@ -434,25 +443,33 @@ fn generate_conformance_report() {
         let result = run_cross_version_test(test_case);
         let passed = result.is_ok();
 
-        report.insert(test_case.name.to_string(), serde_json::json!({
-            "card_schema": test_case.card_schema,
-            "registry_schema": test_case.registry_schema,
-            "verifier_version": format!("{:?}", test_case.verifier_version),
-            "expected": format!("{:?}", test_case.expected_result),
-            "actual": if passed { "Pass" } else { "Fail" },
-            "conformant": match (&result, &test_case.expected_result) {
-                (Ok(_), TestExpectation::Pass) => true,
-                (Err(_), TestExpectation::Fail(_)) => true,
-                (Ok(_), TestExpectation::WarningButPass) => true,
-                _ => false,
-            }
-        }));
+        report.insert(
+            test_case.name.to_string(),
+            serde_json::json!({
+                "card_schema": test_case.card_schema,
+                "registry_schema": test_case.registry_schema,
+                "verifier_version": format!("{:?}", test_case.verifier_version),
+                "expected": format!("{:?}", test_case.expected_result),
+                "actual": if passed { "Pass" } else { "Fail" },
+                "conformant": match (&result, &test_case.expected_result) {
+                    (Ok(_), TestExpectation::Pass) => true,
+                    (Err(_), TestExpectation::Fail(_)) => true,
+                    (Ok(_), TestExpectation::WarningButPass) => true,
+                    _ => false,
+                }
+            }),
+        );
     }
 
     // Calculate overall conformance score
     let total_tests = CROSS_VERSION_TEST_MATRIX.len();
-    let conformant_tests = report.values()
-        .filter(|v| v.get("conformant").and_then(|c| c.as_bool()).unwrap_or(false))
+    let conformant_tests = report
+        .values()
+        .filter(|v| {
+            v.get("conformant")
+                .and_then(|c| c.as_bool())
+                .unwrap_or(false)
+        })
         .count();
 
     let final_report = serde_json::json!({
