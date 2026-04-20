@@ -10,8 +10,8 @@ use std::fs;
 use frankenengine_node::supply_chain::artifact_signing::{KeyId, Ed25519Signer};
 use serde_json::Value;
 
-mod golden;
-use golden::{assert_scrubbed_json_golden, assert_scrubbed_golden, assert_json_golden};
+// Golden utilities re-exported from parent module
+use super::{assert_scrubbed_json_golden, assert_scrubbed_golden, assert_json_golden};
 
 /// Create a test signing key for deterministic outputs
 fn create_test_signing_key() -> Ed25519Signer {

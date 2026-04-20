@@ -17,8 +17,8 @@ use frankenengine_node::supply_chain::trust_card::{
 use frankenengine_node::supply_chain::certification::{VerifiedEvidenceRef, EvidenceType};
 use serde_json::Value;
 
-mod golden;
-use golden::{assert_scrubbed_json_golden, assert_scrubbed_golden, assert_json_golden};
+// Golden utilities re-exported from parent module
+use super::{assert_scrubbed_json_golden, assert_scrubbed_golden, assert_json_golden};
 
 /// Create a deterministic test trust card
 fn create_test_trust_card() -> TrustCard {

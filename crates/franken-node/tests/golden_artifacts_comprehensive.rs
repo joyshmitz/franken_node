@@ -10,13 +10,17 @@
 //! for deterministic comparison.
 
 // Dependencies for claims testing
-#[path = "../../../tests/conformance/adjacent_claim_language_gate.rs"]
+#[path = "../conformance/adjacent_claim_language_gate.rs"]
 mod adjacent_claim_language_gate;
 
 // Golden test modules
+#[path = "golden/mod.rs"]
 mod golden;
+#[path = "golden/trust_card_golden_tests.rs"]
 mod trust_card_golden_tests;
+#[path = "golden/registry_golden_tests.rs"]
 mod registry_golden_tests;
+#[path = "golden/claims_golden_tests.rs"]
 mod claims_golden_tests;
 
 use std::env;
@@ -46,6 +50,9 @@ fn golden_infrastructure_test() {
     assert!(scrubbed.contains("[UUID]"));
     assert!(scrubbed.contains(r#""test": "value""#));
 }
+
+// Re-export golden utilities for the test modules
+pub use golden::*;
 
 // Re-export the individual test modules so they run as part of this suite
 pub use trust_card_golden_tests::*;

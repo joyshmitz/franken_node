@@ -14,8 +14,8 @@ use crate::adjacent_claim_language_gate::{
     ClaimLanguageGate, Claim, ClaimCategory, ClaimStatus, ClaimGateEvent, ClaimGateSummary
 };
 
-mod golden;
-use golden::{assert_scrubbed_json_golden, assert_scrubbed_golden, assert_json_golden};
+// Golden utilities re-exported from parent module
+use super::{assert_scrubbed_json_golden, assert_scrubbed_golden, assert_json_golden};
 
 /// Create test claims for golden file testing
 fn create_test_claims() -> Vec<Claim> {
