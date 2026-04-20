@@ -38,3 +38,9 @@ path = "fuzz_targets/fuzz_epoch_key_derivation.rs"
 test = false
 doc = false
 
+[[bin]]
+name = "fuzz_intent_firewall"
+path = "fuzz_targets/fuzz_intent_firewall.rs"
+test = false
+doc = false
+

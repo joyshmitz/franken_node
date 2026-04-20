@@ -188,4 +188,210 @@ mod fuzz_regression {
         assert!(result, "Identical large inputs should be equal");
         assert!(duration.as_millis() < 100, "Constant-time comparison should be fast");
     }
+
+    /// Regression tests for intent firewall discovered through structure-aware fuzzing
+    mod intent_firewall_regression {
+        use crate::security::intent_firewall::{
+            RemoteEffect, TrafficOrigin, IntentClassifier, IntentClassification,
+            TrafficPolicy, TrafficPolicyRule, FirewallVerdict, EffectsFirewall
+        };
+        use std::collections::BTreeMap;
+
+        /// Regression test for path traversal injection in effect paths
+        #[test]
+        fn regression_intent_firewall_path_traversal_injection() {
+            let effect = RemoteEffect {
+                effect_id: "test-effect".to_string(),
+                origin: TrafficOrigin::Extension { extension_id: "test-ext".to_string() },
+                target_host: "api.example.com".to_string(),
+                target_port: 443,
+                method: "GET".to_string(),
+                path: "../../../etc/passwd".to_string(), // Path traversal attempt
+                has_sensitive_payload: false,
+                carries_credentials: false,
+                metadata: BTreeMap::new(),
+            };
+
+            // Path traversal in path field should not cause classification bypass
+            let classification = IntentClassifier::classify(&effect);
+            assert_eq!(classification, Some(IntentClassification::DataFetch));
+        }
+
+        /// Regression test for null byte injection in host patterns
+        #[test]
+        fn regression_intent_firewall_null_byte_injection() {
+            let effect = RemoteEffect {
+                effect_id: "test-effect".to_string(),
+                origin: TrafficOrigin::Extension { extension_id: "test-ext".to_string() },
+                target_host: "evil.com\0trusted.com".to_string(), // Null byte injection
+                target_port: 443,
+                method: "GET".to_string(),
+                path: "/api/data".to_string(),
+                has_sensitive_payload: false,
+                carries_credentials: false,
+                metadata: BTreeMap::new(),
+            };
+
+            // Null byte injection should not bypass validation
+            let validation_result = effect.validate();
+            assert!(validation_result.is_ok(), "Null bytes in host should be handled gracefully");
+        }
+
+        /// Regression test for Unicode normalization in extension IDs
+        #[test]
+        fn regression_intent_firewall_unicode_extension_id() {
+            // Two extension IDs that look identical but have different Unicode normalization
+            let effect_nfc = RemoteEffect {
+                effect_id: "test-effect-1".to_string(),
+                origin: TrafficOrigin::Extension { extension_id: "café-extension".to_string() }, // NFC
+                target_host: "api.example.com".to_string(),
+                target_port: 443,
+                method: "GET".to_string(),
+                path: "/api/data".to_string(),
+                has_sensitive_payload: false,
+                carries_credentials: false,
+                metadata: BTreeMap::new(),
+            };
+
+            let effect_nfd = RemoteEffect {
+                effect_id: "test-effect-2".to_string(),
+                origin: TrafficOrigin::Extension { extension_id: "cafe\u{0301}-extension".to_string() }, // NFD
+                target_host: "api.example.com".to_string(),
+                target_port: 443,
+                method: "GET".to_string(),
+                path: "/api/data".to_string(),
+                has_sensitive_payload: false,
+                carries_credentials: false,
+                metadata: BTreeMap::new(),
+            };
+
+            // Classification should be consistent despite Unicode normalization differences
+            let classification_nfc = IntentClassifier::classify(&effect_nfc);
+            let classification_nfd = IntentClassifier::classify(&effect_nfd);
+            assert_eq!(classification_nfc, classification_nfd);
+        }
+
+        /// Regression test for edge case in wildcard host pattern matching
+        #[test]
+        fn regression_intent_firewall_wildcard_bypass_attempt() {
+            let rule = TrafficPolicyRule {
+                intent: IntentClassification::DataFetch,
+                verdict: FirewallVerdict::Allow,
+                priority: 100,
+                host_patterns: vec!["*.trusted.com".to_string()],
+            };
+
+            // Attempt to bypass wildcard with crafted hostnames
+            assert!(!rule.matches_host("evil.trusted.com.attacker.com")); // Should not match
+            assert!(!rule.matches_host("trusted.com")); // Should not match (missing subdomain)
+            assert!(rule.matches_host("api.trusted.com")); // Should match
+            assert!(!rule.matches_host("eviltrusteed.com")); // Should not match (typosquatting)
+        }
+
+        /// Regression test for case sensitivity in method classification
+        #[test]
+        fn regression_intent_firewall_method_case_sensitivity() {
+            let mut effect = RemoteEffect {
+                effect_id: "test-effect".to_string(),
+                origin: TrafficOrigin::Extension { extension_id: "test-ext".to_string() },
+                target_host: "api.example.com".to_string(),
+                target_port: 443,
+                method: "get".to_string(), // lowercase
+                path: "/api/data".to_string(),
+                has_sensitive_payload: false,
+                carries_credentials: false,
+                metadata: BTreeMap::new(),
+            };
+
+            let classification_lower = IntentClassifier::classify(&effect);
+
+            effect.method = "GET".to_string(); // uppercase
+            let classification_upper = IntentClassifier::classify(&effect);
+
+            effect.method = "Get".to_string(); // mixed case
+            let classification_mixed = IntentClassifier::classify(&effect);
+
+            // All should classify as DataFetch regardless of case
+            assert_eq!(classification_lower, Some(IntentClassification::DataFetch));
+            assert_eq!(classification_upper, Some(IntentClassification::DataFetch));
+            assert_eq!(classification_mixed, Some(IntentClassification::DataFetch));
+        }
+
+        /// Regression test for empty field validation edge cases
+        #[test]
+        fn regression_intent_firewall_empty_field_validation() {
+            // Test various empty/whitespace combinations
+            let test_cases = vec![
+                ("", "Empty effect_id should be rejected"),
+                (" ", "Whitespace-only effect_id should be rejected"),
+                ("\t\n\r", "Control character effect_id should be rejected"),
+            ];
+
+            for (effect_id, description) in test_cases {
+                let effect = RemoteEffect {
+                    effect_id: effect_id.to_string(),
+                    origin: TrafficOrigin::Extension { extension_id: "test-ext".to_string() },
+                    target_host: "api.example.com".to_string(),
+                    target_port: 443,
+                    method: "GET".to_string(),
+                    path: "/api/data".to_string(),
+                    has_sensitive_payload: false,
+                    carries_credentials: false,
+                    metadata: BTreeMap::new(),
+                };
+
+                let result = effect.validate();
+                assert!(result.is_err(), "{}", description);
+            }
+        }
+
+        /// Regression test for deterministic classification invariant
+        #[test]
+        fn regression_intent_firewall_classification_determinism() {
+            let effect = RemoteEffect {
+                effect_id: "test-effect".to_string(),
+                origin: TrafficOrigin::Extension { extension_id: "test-ext".to_string() },
+                target_host: "api.example.com".to_string(),
+                target_port: 443,
+                method: "GET".to_string(),
+                path: "/webhook/callback".to_string(),
+                has_sensitive_payload: false,
+                carries_credentials: false,
+                metadata: BTreeMap::new(),
+            };
+
+            // Multiple classifications of the same input must yield identical results
+            let classifications: Vec<Option<IntentClassification>> = (0..10)
+                .map(|_| IntentClassifier::classify(&effect))
+                .collect();
+
+            assert!(classifications.windows(2).all(|w| w[0] == w[1]),
+                   "Intent classification must be deterministic (INV-FIREWALL-STABLE-CLASSIFICATION)");
+        }
+
+        /// Regression test for risky intent detection consistency
+        #[test]
+        fn regression_intent_firewall_risky_intent_consistency() {
+            let risky_intents = vec![
+                IntentClassification::Exfiltration,
+                IntentClassification::CredentialForward,
+                IntentClassification::SideChannel,
+            ];
+
+            let safe_intents = vec![
+                IntentClassification::DataFetch,
+                IntentClassification::DataMutation,
+                IntentClassification::HealthCheck,
+                IntentClassification::ConfigSync,
+            ];
+
+            for intent in risky_intents {
+                assert!(intent.is_risky(), "Intent {:?} should be classified as risky", intent);
+            }
+
+            for intent in safe_intents {
+                assert!(!intent.is_risky(), "Intent {:?} should not be classified as risky", intent);
+            }
+        }
+    }
 }
