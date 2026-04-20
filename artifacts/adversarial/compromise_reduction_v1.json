@@ -1,0 +1,205 @@
+{
+  "schema_version": "1.0.0",
+  "artifact_id": "compromise_reduction_v1",
+  "charter_gap": "reality-check-charter-section-5-compromise-reduction-gap",
+  "generated_at_utc": "2026-04-20T00:00:00Z",
+  "harness": {
+    "command": "franken-node run --policy strict --json .",
+    "enforcement_path": "run preflight trust gate over authoritative trust-card registry",
+    "fixture_count": 10
+  },
+  "totals": {
+    "cases": 10,
+    "blocked": 10,
+    "not_blocked": 0
+  },
+  "cases": [
+    {
+      "case_id": "malicious-postinstall",
+      "extension_id": "npm:@adversarial/malicious-postinstall",
+      "attack_vector": "malicious package postinstall hook",
+      "version_requirement": "1.0.0",
+      "policy": "strict",
+      "expected_control": "strict trust preflight denies revoked dependency",
+      "outcome": "blocked",
+      "blocked": true,
+      "contained": true,
+      "exit_code": 1,
+      "typed_errors": [
+        "revoked"
+      ],
+      "result_statuses": [
+        "revoked"
+      ]
+    },
+    {
+      "case_id": "prototype-pollution",
+      "extension_id": "npm:@adversarial/prototype-pollution",
+      "attack_vector": "Object prototype pollution during extension bootstrap",
+      "version_requirement": "1.0.0",
+      "policy": "strict",
+      "expected_control": "strict trust preflight denies revoked dependency",
+      "outcome": "blocked",
+      "blocked": true,
+      "contained": true,
+      "exit_code": 1,
+      "typed_errors": [
+        "revoked"
+      ],
+      "result_statuses": [
+        "revoked"
+      ]
+    },
+    {
+      "case_id": "ambient-authority-abuse",
+      "extension_id": "npm:@adversarial/ambient-authority-abuse",
+      "attack_vector": "ambient filesystem and environment authority abuse",
+      "version_requirement": "1.0.0",
+      "policy": "strict",
+      "expected_control": "strict trust preflight denies revoked dependency",
+      "outcome": "blocked",
+      "blocked": true,
+      "contained": true,
+      "exit_code": 1,
+      "typed_errors": [
+        "revoked"
+      ],
+      "result_statuses": [
+        "revoked"
+      ]
+    },
+    {
+      "case_id": "egress-to-unknown-host",
+      "extension_id": "npm:@adversarial/egress-to-unknown-host",
+      "attack_vector": "network egress to an undeclared external host",
+      "version_requirement": "1.0.0",
+      "policy": "strict",
+      "expected_control": "strict trust preflight denies revoked dependency",
+      "outcome": "blocked",
+      "blocked": true,
+      "contained": true,
+      "exit_code": 1,
+      "typed_errors": [
+        "revoked"
+      ],
+      "result_statuses": [
+        "revoked"
+      ]
+    },
+    {
+      "case_id": "memory-exhaust",
+      "extension_id": "npm:@adversarial/memory-exhaust",
+      "attack_vector": "unbounded heap allocation during extension init",
+      "version_requirement": "1.0.0",
+      "policy": "strict",
+      "expected_control": "strict trust preflight denies revoked dependency",
+      "outcome": "blocked",
+      "blocked": true,
+      "contained": true,
+      "exit_code": 1,
+      "typed_errors": [
+        "revoked"
+      ],
+      "result_statuses": [
+        "revoked"
+      ]
+    },
+    {
+      "case_id": "infinite-eval-loop",
+      "extension_id": "npm:@adversarial/infinite-eval-loop",
+      "attack_vector": "non-terminating eval loop",
+      "version_requirement": "1.0.0",
+      "policy": "strict",
+      "expected_control": "strict trust preflight denies revoked dependency",
+      "outcome": "blocked",
+      "blocked": true,
+      "contained": true,
+      "exit_code": 1,
+      "typed_errors": [
+        "revoked"
+      ],
+      "result_statuses": [
+        "revoked"
+      ]
+    },
+    {
+      "case_id": "trust-card-forgery-attempt",
+      "extension_id": "npm:@adversarial/trust-card-forgery-attempt",
+      "attack_vector": "forged trust-card metadata shipped inside the extension",
+      "version_requirement": "1.0.0",
+      "policy": "strict",
+      "expected_control": "strict trust preflight denies revoked dependency",
+      "outcome": "blocked",
+      "blocked": true,
+      "contained": true,
+      "exit_code": 1,
+      "typed_errors": [
+        "revoked"
+      ],
+      "result_statuses": [
+        "revoked"
+      ]
+    },
+    {
+      "case_id": "unsigned-artifact",
+      "extension_id": "npm:@adversarial/unsigned-artifact",
+      "attack_vector": "extension artifact without provenance signature",
+      "version_requirement": "1.0.0",
+      "policy": "strict",
+      "expected_control": "strict trust preflight denies revoked dependency",
+      "outcome": "blocked",
+      "blocked": true,
+      "contained": true,
+      "exit_code": 1,
+      "typed_errors": [
+        "revoked"
+      ],
+      "result_statuses": [
+        "revoked"
+      ]
+    },
+    {
+      "case_id": "stale-revocation-exploit",
+      "extension_id": "npm:@adversarial/stale-revocation-exploit",
+      "attack_vector": "attempt to rely on stale revocation state",
+      "version_requirement": "1.0.0",
+      "policy": "strict",
+      "expected_control": "strict trust preflight denies revoked dependency",
+      "outcome": "blocked",
+      "blocked": true,
+      "contained": true,
+      "exit_code": 1,
+      "typed_errors": [
+        "revoked"
+      ],
+      "result_statuses": [
+        "revoked"
+      ]
+    },
+    {
+      "case_id": "mislabeled-mime",
+      "extension_id": "npm:@adversarial/mislabeled-mime",
+      "attack_vector": "JavaScript payload mislabeled as a benign MIME type",
+      "version_requirement": "1.0.0",
+      "policy": "strict",
+      "expected_control": "strict trust preflight denies revoked dependency",
+      "outcome": "blocked",
+      "blocked": true,
+      "contained": true,
+      "exit_code": 1,
+      "typed_errors": [
+        "revoked"
+      ],
+      "result_statuses": [
+        "revoked"
+      ]
+    }
+  ],
+  "signature": {
+    "algorithm": "ed25519-fixture-v1",
+    "key_id": "adversarial-extension-harness-v1",
+    "public_key": "2152f8d19b791d24453242e15f2eab6cb7cffa7b6a5ed30097960e069881db12",
+    "payload_sha256": "sha256:85aa2f4f8eb692b031da93758a0515453765fa676e0e07d673ec31de8fcbbfbf",
+    "value": "ed25519:07aff687dec867214889cc8a88836621da60ff33158b1b71a573f0a9989d0bc8c1df5d6aadb6af8e2dde6f378e1cab557696d372d6203e0f87414042c7550004"
+  }
+}
