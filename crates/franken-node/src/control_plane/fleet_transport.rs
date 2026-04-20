@@ -13,7 +13,10 @@ use std::{
 
 use crate::capacity_defaults::aliases::{MAX_ACTION_LOG_ENTRIES, MAX_NODES_CAP};
 use chrono::{DateTime, Utc};
+use ed25519_dalek::Signer;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 pub const FLEET_SHARED_STATE_SCHEMA: &str = "franken-node/fleet-transport-state/v1";
@@ -33,6 +36,87 @@ pub const FLEET_CONVERGENCE_POLL_INTERVAL: Duration = Duration::from_millis(100)
 pub struct FleetConvergenceWaitOutcome {
     pub elapsed: Duration,
     pub timed_out: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FleetConvergenceReceiptSignature {
+    pub algorithm: String,
+    pub public_key_hex: String,
+    pub key_id: String,
+    pub signed_payload_sha256: String,
+    pub signature_hex: String,
+}
+
+#[must_use]
+pub fn fleet_convergence_receipt_verdict(
+    timed_out: bool,
+    elapsed_ms: u64,
+    timeout_seconds: u64,
+    converged: bool,
+) -> &'static str {
+    if timed_out || elapsed_ms > timeout_seconds.saturating_mul(1_000) || !converged {
+        "non_converged"
+    } else {
+        "converged"
+    }
+}
+
+pub fn canonical_fleet_convergence_receipt_payload<T: Serialize>(
+    payload: &T,
+) -> Result<Vec<u8>, FleetTransportError> {
+    let value = serde_json::to_value(payload)
+        .map_err(|err| FleetTransportError::serialization(err.to_string()))?;
+    let canonical = canonicalize_json_value(value, "$")?;
+    serde_json::to_vec(&canonical)
+        .map_err(|err| FleetTransportError::serialization(err.to_string()))
+}
+
+pub fn sign_fleet_convergence_receipt_payload<T: Serialize>(
+    payload: &T,
+    signing_key: &ed25519_dalek::SigningKey,
+) -> Result<FleetConvergenceReceiptSignature, FleetTransportError> {
+    let canonical_payload = canonical_fleet_convergence_receipt_payload(payload)?;
+    let signature = signing_key.sign(&canonical_payload);
+    let verifying_key = signing_key.verifying_key();
+    let mut payload_hasher = Sha256::new();
+    payload_hasher.update(&canonical_payload);
+
+    Ok(FleetConvergenceReceiptSignature {
+        algorithm: "ed25519".to_string(),
+        public_key_hex: hex::encode(verifying_key.to_bytes()),
+        key_id: crate::supply_chain::artifact_signing::KeyId::from_verifying_key(&verifying_key)
+            .to_string(),
+        signed_payload_sha256: hex::encode(payload_hasher.finalize()),
+        signature_hex: hex::encode(signature.to_bytes()),
+    })
+}
+
+fn canonicalize_json_value(value: Value, path: &str) -> Result<Value, FleetTransportError> {
+    match value {
+        Value::Array(items) => items
+            .into_iter()
+            .enumerate()
+            .map(|(index, item)| canonicalize_json_value(item, &format!("{path}[{index}]")))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Value::Array),
+        Value::Object(map) => {
+            let mut entries = map.into_iter().collect::<Vec<_>>();
+            entries.sort_by(|left, right| left.0.cmp(&right.0));
+
+            let mut canonical = serde_json::Map::new();
+            for (key, item) in entries {
+                canonical.insert(
+                    key.clone(),
+                    canonicalize_json_value(item, &format!("{path}.{key}"))?,
+                );
+            }
+            Ok(Value::Object(canonical))
+        }
+        Value::Number(number) if number.is_f64() => Err(FleetTransportError::serialization(
+            format!("fleet convergence receipt contains non-deterministic float at {path}"),
+        )),
+        other => Ok(other),
+    }
 }
 
 /// Bounded push helper that maintains capacity by removing oldest entries when limit is exceeded.

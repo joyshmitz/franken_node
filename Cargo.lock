@@ -866,6 +866,8 @@ dependencies = [
  "flate2",
  "frankenengine-engine",
  "frankenengine-extension-host",
+ "frankenengine-verifier-sdk",
+ "getrandom 0.2.17",
  "hex",
  "hkdf",
  "hmac",

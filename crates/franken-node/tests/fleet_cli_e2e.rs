@@ -5,11 +5,13 @@ use std::time::{Duration, Instant};
 use chrono::{TimeDelta, Utc};
 use frankenengine_node::control_plane::fleet_transport::{
     FileFleetTransport, FleetAction, FleetActionRecord, FleetTargetKind, FleetTransport,
-    NodeHealth, NodeStatus,
+    NodeHealth, NodeStatus, canonical_fleet_convergence_receipt_payload,
+    fleet_convergence_receipt_verdict,
 };
 use frankenengine_node::supply_chain::trust_card::{
     ReputationTrend, RiskAssessment, RiskLevel, TrustCardMutation, TrustCardRegistry,
 };
+use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
 fn repo_root() -> PathBuf {
@@ -145,6 +147,53 @@ fn seed_fleet_quarantine(
             },
         })
         .expect("publish quarantine");
+}
+
+fn assert_convergence_receipt_signature_round_trips(receipt: &serde_json::Value) {
+    let signature = &receipt["signature"];
+    assert_eq!(signature["algorithm"], "ed25519");
+
+    let mut signed_payload = receipt.clone();
+    signed_payload
+        .as_object_mut()
+        .expect("convergence receipt object")
+        .remove("signature")
+        .expect("signature field");
+    let canonical_payload = canonical_fleet_convergence_receipt_payload(&signed_payload)
+        .expect("canonical convergence receipt payload");
+
+    let mut hasher = Sha256::new();
+    hasher.update(&canonical_payload);
+    assert_eq!(
+        signature["signed_payload_sha256"]
+            .as_str()
+            .expect("signed payload hash"),
+        hex::encode(hasher.finalize())
+    );
+
+    let public_key_bytes: [u8; 32] = hex::decode(
+        signature["public_key_hex"]
+            .as_str()
+            .expect("public key hex"),
+    )
+    .expect("decode public key")
+    .try_into()
+    .expect("public key length");
+    let signature_bytes = hex::decode(
+        signature["signature_hex"]
+            .as_str()
+            .expect("signature hex"),
+    )
+    .expect("decode signature");
+    let verifying_key =
+        ed25519_dalek::VerifyingKey::from_bytes(&public_key_bytes).expect("verifying key");
+
+    frankenengine_verifier_sdk::bundle::verify_ed25519_signature(
+        &verifying_key,
+        &canonical_payload,
+        &signature_bytes,
+    )
+    .expect("verifier SDK should accept convergence receipt signature");
 }
 
 #[test]
@@ -352,12 +401,15 @@ fn fleet_reconcile_republishes_pending_quarantines_for_stale_nodes() {
     assert_eq!(payload["action"]["action_type"], "reconcile");
     assert_eq!(payload["action"]["event_code"], "FLEET-005");
     assert_eq!(payload["convergence_receipt"]["timed_out"], true);
+    assert_eq!(payload["convergence_receipt"]["verdict"], "non_converged");
+    assert_eq!(payload["convergence_receipt"]["timeout_ms"], 1_000);
     assert!(
         payload["convergence_receipt"]["elapsed_ms"]
             .as_u64()
             .expect("elapsed_ms")
             >= 1_000
     );
+    assert_convergence_receipt_signature_round_trips(&payload["convergence_receipt"]);
 
     let actions = transport.list_actions().expect("list actions");
     assert_eq!(actions.len(), 2);
@@ -482,6 +534,7 @@ fn fleet_reconcile_waits_for_delayed_node_convergence_receipt() {
     assert_eq!(payload["action"]["action_type"], "reconcile");
     assert_eq!(payload["action"]["event_code"], "FLEET-005");
     assert_eq!(payload["convergence_receipt"]["timed_out"], false);
+    assert_eq!(payload["convergence_receipt"]["verdict"], "converged");
     assert_eq!(
         payload["convergence_receipt"]["convergence"]["phase"],
         "Converged"
@@ -491,6 +544,15 @@ fn fleet_reconcile_waits_for_delayed_node_convergence_receipt() {
             .as_u64()
             .expect("elapsed_ms")
             >= u64::try_from(delay.as_millis()).expect("delay fits u64")
+    );
+    assert_convergence_receipt_signature_round_trips(&payload["convergence_receipt"]);
+}
+
+#[test]
+fn fleet_reconcile_receipt_default_timeout_overrun_is_non_converged() {
+    assert_eq!(
+        fleet_convergence_receipt_verdict(false, 120_001, 120, true),
+        "non_converged"
     );
 }
 
@@ -1538,6 +1600,7 @@ fn fleet_reconcile_json_output_shape_is_stable() {
             .starts_with("fleet-op-reconcile-")
     );
     assert_eq!(payload["action"]["receipt"]["issuer"], "cli-fleet-operator");
+    assert_convergence_receipt_signature_round_trips(&payload["convergence_receipt"]);
     assert_eq!(payload["status"]["zone_id"], "all");
     assert!(payload["state"]["actions"].is_array());
 }

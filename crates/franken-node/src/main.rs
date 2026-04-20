@@ -76,9 +76,11 @@ use chrono::{DateTime, Utc};
 use clap::Parser;
 use frankenengine_node::control_plane::fleet_transport::{
     FileFleetTransport, FleetAction as PersistedFleetAction,
-    FleetActionRecord as PersistedFleetActionRecord, FleetSharedState,
-    FleetTargetKind as PersistedFleetTargetKind, FleetTransport as PersistedFleetTransport,
-    FleetTransportError, NodeHealth as PersistedNodeHealth, NodeStatus as PersistedNodeStatus,
+    FleetActionRecord as PersistedFleetActionRecord, FleetConvergenceReceiptSignature,
+    FleetSharedState, FleetTargetKind as PersistedFleetTargetKind,
+    FleetTransport as PersistedFleetTransport, FleetTransportError,
+    NodeHealth as PersistedNodeHealth, NodeStatus as PersistedNodeStatus,
+    fleet_convergence_receipt_verdict, sign_fleet_convergence_receipt_payload,
     wait_until_fleet_converged_or_timeout,
 };
 #[cfg(test)]
@@ -4743,6 +4745,56 @@ fn load_receipt_signing_material(
 
 fn load_registry_publish_signing_material(path: &Path) -> Result<Ed25519SigningMaterial> {
     load_ed25519_signing_material_from_path(path, "registry publish signing key", "cli")
+}
+
+const LOCAL_FLEET_SIGNING_KEY_FILE: &str = "fleet-signing.ed25519";
+
+fn create_local_fleet_signing_key_if_missing(path: &Path) -> Result<()> {
+    use std::io::Write;
+
+    if path.is_file() {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed creating local fleet signing key directory {}",
+                parent.display()
+            )
+        })?;
+    }
+
+    let mut seed = [0_u8; 32];
+    getrandom::getrandom(&mut seed).context("failed generating local fleet signing key seed")?;
+    let encoded_seed = hex::encode(seed);
+
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+
+    match options.open(path) {
+        Ok(mut file) => file
+            .write_all(encoded_seed.as_bytes())
+            .with_context(|| format!("failed writing local fleet signing key {}", path.display())),
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(err) => Err(err).with_context(|| {
+            format!("failed creating local fleet signing key {}", path.display())
+        }),
+    }
+}
+
+fn load_fleet_signing_material(state_dir: &Path) -> Result<Ed25519SigningMaterial> {
+    if let Some(material) = load_receipt_signing_material(None)? {
+        return Ok(material);
+    }
+
+    let path = state_dir.join(LOCAL_FLEET_SIGNING_KEY_FILE);
+    create_local_fleet_signing_key_if_missing(&path)?;
+    load_ed25519_signing_material_from_path(&path, "fleet signing key", "local")
 }
 
 fn receipt_signing_key_fix_command() -> &'static str {
@@ -13595,10 +13647,18 @@ struct FleetCliActionReport {
 
 #[derive(Debug, Clone, Serialize)]
 struct FleetCliConvergenceReceipt {
+    #[serde(flatten)]
+    payload: FleetCliConvergenceReceiptPayload,
+    signature: FleetConvergenceReceiptSignature,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct FleetCliConvergenceReceiptPayload {
     schema_version: String,
     operation_id: String,
     event_code: String,
     completed_at: String,
+    verdict: String,
     elapsed_ms: u64,
     poll_interval_ms: u64,
     timeout_ms: u64,
@@ -13939,18 +13999,36 @@ fn wait_for_fleet_cli_convergence(project_root: &Path) -> Result<(LoadedFleetSta
     ))
 }
 
+fn fleet_convergence_verdict(
+    timed_out: bool,
+    elapsed_ms: u64,
+    timeout_seconds: u64,
+    convergence: &Option<ConvergenceState>,
+) -> &'static str {
+    let converged = match convergence {
+        Some(convergence) => {
+            convergence.total_nodes == 0 || convergence.phase == ConvergencePhase::Converged
+        }
+        None => true,
+    };
+    fleet_convergence_receipt_verdict(timed_out, elapsed_ms, timeout_seconds, converged)
+}
+
 fn build_fleet_convergence_receipt(
     operation_id: &str,
     timed_out: bool,
     elapsed_ms: u64,
     timeout_seconds: u64,
     convergence: Option<ConvergenceState>,
-) -> FleetCliConvergenceReceipt {
-    FleetCliConvergenceReceipt {
+    signing_key: &ed25519_dalek::SigningKey,
+) -> Result<FleetCliConvergenceReceipt> {
+    let payload = FleetCliConvergenceReceiptPayload {
         schema_version: "franken-node/fleet-convergence-receipt/v1".to_string(),
         operation_id: operation_id.to_string(),
         event_code: FLEET_RECONCILE_COMPLETED.to_string(),
         completed_at: Utc::now().to_rfc3339(),
+        verdict: fleet_convergence_verdict(timed_out, elapsed_ms, timeout_seconds, &convergence)
+            .to_string(),
         elapsed_ms,
         poll_interval_ms: duration_millis_u64(
             frankenengine_node::control_plane::fleet_transport::FLEET_CONVERGENCE_POLL_INTERVAL,
@@ -13958,7 +14036,10 @@ fn build_fleet_convergence_receipt(
         timeout_ms: timeout_seconds.saturating_mul(1_000),
         timed_out,
         convergence,
-    }
+    };
+    let signature = sign_fleet_convergence_receipt_payload(&payload, signing_key)
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+    Ok(FleetCliConvergenceReceipt { payload, signature })
 }
 
 fn fleet_action_report(
@@ -14002,7 +14083,7 @@ fn emit_fleet_action_report(report: &FleetCliActionReport, json: bool) -> Result
         if let Some(receipt) = &report.convergence_receipt {
             rendered.push_str(&format!(
                 "\n  convergence_receipt_elapsed_ms={} timed_out={}",
-                receipt.elapsed_ms, receipt.timed_out
+                receipt.payload.elapsed_ms, receipt.payload.timed_out
             ));
         }
         println!("{rendered}");
@@ -18048,6 +18129,8 @@ fn main() -> Result<()> {
                 let (converged_state, timed_out, elapsed_ms) =
                     wait_for_fleet_cli_convergence(Path::new("."))?;
                 let convergence = aggregate_convergence(&converged_state.active_incidents);
+                let fleet_signing_material =
+                    load_fleet_signing_material(&converged_state.state_dir)?;
                 let issued_at = Utc::now().to_rfc3339();
                 let report = fleet_action_report(
                     Path::new("."),
@@ -18072,7 +18155,8 @@ fn main() -> Result<()> {
                         elapsed_ms,
                         converged_state.convergence_timeout_seconds,
                         convergence,
-                    )),
+                        &fleet_signing_material.signing_key,
+                    )?),
                 )?;
                 emit_fleet_action_report(&report, args.json)?;
             }
