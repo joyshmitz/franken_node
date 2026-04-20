@@ -2048,7 +2048,7 @@ mod bounded_mask_comprehensive_negative_tests {
                         allocations.clear();
                     }
                 }
-                allocations.len() as u64
+                u64::try_from(allocations.len()).unwrap_or(u64::MAX)
             },
             |duration: Duration| {
                 // Hash computation busy loop
