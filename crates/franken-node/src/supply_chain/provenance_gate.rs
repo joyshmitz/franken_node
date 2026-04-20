@@ -16,6 +16,9 @@ const MAX_ATTESTATIONS: usize = 50;
 /// Maximum number of trusted builders accepted in one admission policy.
 const MAX_TRUSTED_BUILDERS: usize = 256;
 
+/// Maximum artifact ID length to prevent memory exhaustion DoS attacks.
+const MAX_ARTIFACT_ID_LEN: usize = 512;
+
 /// Push item to vector with bounded capacity to prevent memory exhaustion.
 /// When capacity is exceeded, removes oldest entries to maintain the limit.
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
@@ -325,6 +328,13 @@ pub fn evaluate_gate(
 }
 
 fn invalid_artifact_id_reason(artifact_id: &str) -> Option<String> {
+    if artifact_id.len() > MAX_ARTIFACT_ID_LEN {
+        return Some(format!(
+            "artifact_id too long: {} bytes exceeds maximum of {}",
+            artifact_id.len(),
+            MAX_ARTIFACT_ID_LEN
+        ));
+    }
     let trimmed = artifact_id.trim();
     if trimmed.is_empty() {
         return Some("artifact_id is empty".to_string());
