@@ -6,15 +6,37 @@ mod tests {
     use crate::capacity_defaults::aliases::{MAX_AUDIT_LOG_ENTRIES, MAX_SCHEMA_VERSIONS};
     use crate::storage::frankensqlite_adapter::{FrankensqliteAdapter, PersistenceClass};
     use serde::{Deserialize, Serialize};
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeSet, HashMap};
+    use std::hash::RandomState;
+
+    const CANONICAL_ROW_MAX_BYTES: usize = MAX_SCHEMA_VERSIONS * 8;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum BoundarySize {
+        SmallestPossible,
+        LargestUnderLimit,
+        OneByteOverLimit,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum MatrixExpectation {
+        RoundTrip,
+        RejectTooLarge,
+    }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct MatrixCase {
         label: &'static str,
         config_version: u32,
-        payload_len: usize,
+        boundary_size: BoundarySize,
         schema_version_probe: u32,
         audit_index_probe: usize,
+        expectation: MatrixExpectation,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum CanonicalRowError {
+        RowTooLarge { actual: usize, limit: usize },
     }
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,6 +89,7 @@ mod tests {
         domain: DomainTag,
         class: PersistenceClass,
         case: MatrixCase,
+        payload_len: usize,
     ) -> ContentHash {
         let mut bytes = [0u8; 32];
         let material = format!(
@@ -75,7 +98,7 @@ mod tests {
             class.label(),
             class.tier().label(),
             case.label,
-            case.payload_len
+            payload_len
         );
         for (index, byte) in material.bytes().enumerate() {
             let slot = index % bytes.len();
@@ -86,12 +109,17 @@ mod tests {
         ContentHash(bytes)
     }
 
-    fn config_for(domain: DomainTag, class: PersistenceClass, case: MatrixCase) -> ScheduleConfig {
+    fn config_for(
+        domain: DomainTag,
+        class: PersistenceClass,
+        case: MatrixCase,
+        payload_len: usize,
+    ) -> ScheduleConfig {
         ScheduleConfig::new(case.config_version)
             .with_param("audit_index_probe", case.audit_index_probe.to_string())
             .with_param("domain", domain.label())
             .with_param("domain_prefix", domain.prefix())
-            .with_param("payload_len", case.payload_len.to_string())
+            .with_param("payload_len", payload_len.to_string())
             .with_param("persistence_class", class.label())
             .with_param("persistence_tier", class.tier().label())
             .with_param(
@@ -104,11 +132,23 @@ mod tests {
         domain: DomainTag,
         class: PersistenceClass,
         case: MatrixCase,
+        payload_len: usize,
     ) -> FrankensqliteCanonicalRow {
-        let content_hash = content_hash_for(domain, class, case);
-        let config = config_for(domain, class, case);
+        let content_hash = content_hash_for(domain, class, case, payload_len);
+        let config = config_for(domain, class, case, payload_len);
+        conformance_row_with_config(domain, class, case, payload_len, content_hash, config)
+    }
+
+    fn conformance_row_with_config(
+        domain: DomainTag,
+        class: PersistenceClass,
+        case: MatrixCase,
+        payload_len: usize,
+        content_hash: ContentHash,
+        config: ScheduleConfig,
+    ) -> FrankensqliteCanonicalRow {
         let seed = derive_seed(&domain, &content_hash, &config);
-        let payload = "x".repeat(case.payload_len);
+        let payload = "x".repeat(payload_len);
 
         FrankensqliteCanonicalRow {
             requirement_id: "FSA-CANONICAL-ROUNDTRIP-DOMAIN-PERSISTENCE".to_string(),
@@ -125,7 +165,7 @@ mod tests {
             seed,
             schema_version_probe: case.schema_version_probe,
             audit_index_probe: case.audit_index_probe,
-            payload_len: case.payload_len,
+            payload_len,
             payload,
         }
     }
@@ -141,6 +181,56 @@ mod tests {
         encoded
     }
 
+    fn canonical_bytes_with_limit(
+        row: &FrankensqliteCanonicalRow,
+    ) -> Result<Vec<u8>, CanonicalRowError> {
+        let encoded = canonical_bytes(row);
+        if encoded.len() > CANONICAL_ROW_MAX_BYTES {
+            return Err(CanonicalRowError::RowTooLarge {
+                actual: encoded.len(),
+                limit: CANONICAL_ROW_MAX_BYTES,
+            });
+        }
+        Ok(encoded)
+    }
+
+    fn encoded_len_for(
+        domain: DomainTag,
+        class: PersistenceClass,
+        case: MatrixCase,
+        payload_len: usize,
+    ) -> usize {
+        canonical_bytes(&conformance_row(domain, class, case, payload_len)).len()
+    }
+
+    fn largest_payload_len_under_limit(
+        domain: DomainTag,
+        class: PersistenceClass,
+        case: MatrixCase,
+    ) -> usize {
+        let mut low = 0usize;
+        let mut high = CANONICAL_ROW_MAX_BYTES;
+        while low < high {
+            let mid = low + (high - low).div_ceil(2);
+            if encoded_len_for(domain, class, case, mid) <= CANONICAL_ROW_MAX_BYTES {
+                low = mid;
+            } else {
+                high = mid.saturating_sub(1);
+            }
+        }
+        low
+    }
+
+    fn payload_len_for(domain: DomainTag, class: PersistenceClass, case: MatrixCase) -> usize {
+        match case.boundary_size {
+            BoundarySize::SmallestPossible => 0,
+            BoundarySize::LargestUnderLimit => largest_payload_len_under_limit(domain, class, case),
+            BoundarySize::OneByteOverLimit => {
+                largest_payload_len_under_limit(domain, class, case).saturating_add(1)
+            }
+        }
+    }
+
     #[test]
     fn frankensqlite_adapter_canonical_roundtrip_matrix_covers_domain_tag_by_persistence_class() {
         let mut adapter = FrankensqliteAdapter::default();
@@ -149,30 +239,43 @@ mod tests {
             .len()
             .checked_mul(PersistenceClass::all().len())
             .expect("matrix pair count should not overflow");
-        let near_limit_payload_len = MAX_SCHEMA_VERSIONS.saturating_sub(1);
         let max_audit_index = MAX_AUDIT_LOG_ENTRIES.saturating_sub(1);
         let cases = [
             MatrixCase {
-                label: "nominal",
+                label: "smallest_possible",
                 config_version: 1,
-                payload_len: 0,
+                boundary_size: BoundarySize::SmallestPossible,
                 schema_version_probe: 1,
                 audit_index_probe: 0,
+                expectation: MatrixExpectation::RoundTrip,
             },
             MatrixCase {
-                label: "near_schema_limit",
+                label: "largest_under_limit",
                 config_version: schema_limit,
-                payload_len: near_limit_payload_len,
+                boundary_size: BoundarySize::LargestUnderLimit,
                 schema_version_probe: schema_limit,
                 audit_index_probe: max_audit_index,
+                expectation: MatrixExpectation::RoundTrip,
+            },
+            MatrixCase {
+                label: "one_byte_over_limit",
+                config_version: schema_limit,
+                boundary_size: BoundarySize::OneByteOverLimit,
+                schema_version_probe: schema_limit,
+                audit_index_probe: max_audit_index,
+                expectation: MatrixExpectation::RejectTooLarge,
             },
         ];
+        let accepted_case_count = cases
+            .iter()
+            .filter(|case| case.expectation == MatrixExpectation::RoundTrip)
+            .count();
         let expected_matrix_rows = pair_count
-            .checked_mul(cases.len())
+            .checked_mul(accepted_case_count)
             .expect("matrix row count should not overflow");
         let expected_audit_rows = DomainTag::all()
             .len()
-            .checked_mul(cases.len())
+            .checked_mul(accepted_case_count)
             .expect("audit matrix row count should not overflow");
         let audit_prefill_count =
             prefill_audit_log_to_near_limit(&mut adapter, expected_audit_rows);
@@ -180,15 +283,34 @@ mod tests {
         let mut covered_pairs = BTreeSet::new();
         let mut covered_rows = BTreeSet::new();
         let mut near_limit_rows = 0usize;
+        let mut rejected_rows = 0usize;
 
         for domain in DomainTag::all() {
             for class in PersistenceClass::all() {
                 covered_pairs.insert((domain.label().to_string(), class.label().to_string()));
 
                 for case in cases {
-                    let row = conformance_row(*domain, *class, case);
-                    let first = canonical_bytes(&row);
-                    let second = canonical_bytes(&row);
+                    let payload_len = payload_len_for(*domain, *class, case);
+                    let row = conformance_row(*domain, *class, case, payload_len);
+                    let first = canonical_bytes_with_limit(&row);
+                    let second = canonical_bytes_with_limit(&row);
+
+                    if case.expectation == MatrixExpectation::RejectTooLarge {
+                        assert_eq!(first, second);
+                        let Err(CanonicalRowError::RowTooLarge { actual, limit }) = first else {
+                            panic!(
+                                "over-limit matrix row should be rejected: {}",
+                                row.matrix_row
+                            );
+                        };
+                        assert_eq!(limit, CANONICAL_ROW_MAX_BYTES);
+                        assert_eq!(actual, limit.saturating_add(1));
+                        rejected_rows = rejected_rows.saturating_add(1);
+                        continue;
+                    }
+
+                    let first = first.expect("in-limit matrix row should encode");
+                    let second = second.expect("in-limit matrix row should encode");
                     assert_eq!(
                         first, second,
                         "canonical bytes drifted for {}",
@@ -219,11 +341,21 @@ mod tests {
                     );
 
                     covered_rows.insert(row.matrix_row.clone());
-                    if case.label == "near_schema_limit" {
-                        near_limit_rows = near_limit_rows.saturating_add(1);
-                        assert_eq!(row.schema_version_probe, schema_limit);
-                        assert_eq!(row.audit_index_probe, max_audit_index);
-                        assert_eq!(row.payload_len, near_limit_payload_len);
+                    match case.boundary_size {
+                        BoundarySize::LargestUnderLimit => {
+                            near_limit_rows = near_limit_rows.saturating_add(1);
+                            assert_eq!(row.schema_version_probe, schema_limit);
+                            assert_eq!(row.audit_index_probe, max_audit_index);
+                            assert_eq!(first.len(), CANONICAL_ROW_MAX_BYTES);
+                            assert_eq!(row.payload_len, payload_len);
+                        }
+                        BoundarySize::SmallestPossible => {
+                            assert_eq!(row.payload_len, 0);
+                            assert!(first.len() < CANONICAL_ROW_MAX_BYTES);
+                        }
+                        BoundarySize::OneByteOverLimit => {
+                            unreachable!("over-limit rows continue before adapter write")
+                        }
                     }
                 }
             }
@@ -232,6 +364,7 @@ mod tests {
         assert_eq!(covered_pairs.len(), pair_count);
         assert_eq!(covered_rows.len(), expected_matrix_rows);
         assert_eq!(near_limit_rows, pair_count);
+        assert_eq!(rejected_rows, pair_count);
 
         let replay = adapter.replay();
         assert_eq!(replay.len(), MAX_AUDIT_LOG_ENTRIES);
@@ -247,5 +380,57 @@ mod tests {
         );
         assert_eq!(summary.schema_version, schema_limit);
         assert_eq!(summary.replay_mismatches, 0);
+    }
+
+    #[test]
+    fn canonical_row_encoding_is_independent_of_random_state_iteration_order() {
+        let case = MatrixCase {
+            label: "random_state_determinism",
+            config_version: 77,
+            boundary_size: BoundarySize::SmallestPossible,
+            schema_version_probe: 1,
+            audit_index_probe: 0,
+            expectation: MatrixExpectation::RoundTrip,
+        };
+        let domain = DomainTag::Verification;
+        let class = PersistenceClass::Snapshot;
+        let payload_len = 512;
+        let content_hash = content_hash_for(domain, class, case, payload_len);
+        let entries = [
+            ("audit_index_probe", "0"),
+            ("domain", domain.label()),
+            ("domain_prefix", domain.prefix()),
+            ("payload_len", "512"),
+            ("persistence_class", class.label()),
+            ("persistence_tier", class.tier().label()),
+            ("schema_version_probe", "1"),
+        ];
+        let mut outputs = BTreeSet::new();
+
+        for iteration in 0..100 {
+            let mut randomized_params: HashMap<String, String, RandomState> =
+                HashMap::with_hasher(RandomState::new());
+            for offset in 0..entries.len() {
+                let (key, value) = entries[(iteration + offset) % entries.len()];
+                randomized_params.insert(key.to_string(), value.to_string());
+            }
+
+            let mut config = ScheduleConfig::new(case.config_version);
+            for (key, value) in randomized_params {
+                config = config.with_param(key, value);
+            }
+
+            let row = conformance_row_with_config(
+                domain,
+                class,
+                case,
+                payload_len,
+                content_hash.clone(),
+                config,
+            );
+            outputs.insert(canonical_bytes_with_limit(&row).expect("payload should be in limit"));
+        }
+
+        assert_eq!(outputs.len(), 1);
     }
 }
