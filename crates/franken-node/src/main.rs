@@ -7190,6 +7190,57 @@ fn render_doctor_structured_logs_jsonl(report: &DoctorReport) -> Result<String> 
     Ok(lines)
 }
 
+fn render_operator_surface_with_frankentui(_surface_name: &str, rendered: &str) -> String {
+    let lines: Vec<&str> = rendered.lines().collect();
+    let height = u16::try_from(lines.len().max(1)).unwrap_or(u16::MAX);
+    let width = lines
+        .iter()
+        .map(|line| line.chars().count())
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    let width = u16::try_from(width).unwrap_or(u16::MAX);
+    let mut buffer = frankentui::Buffer::new(width, height);
+
+    for (y, line) in lines.iter().take(usize::from(height)).enumerate() {
+        for (x, ch) in line.chars().take(usize::from(width)).enumerate() {
+            buffer.set(
+                u16::try_from(x).unwrap_or(u16::MAX),
+                u16::try_from(y).unwrap_or(u16::MAX),
+                frankentui::Cell::from_char(ch),
+            );
+        }
+    }
+
+    let mut surface_lines = Vec::with_capacity(usize::from(height));
+    for y in 0..height {
+        let mut line = String::with_capacity(usize::from(width));
+        for x in 0..width {
+            let ch = buffer
+                .get(x, y)
+                .and_then(|cell| cell.content.as_char())
+                .unwrap_or(' ');
+            line.push(ch);
+        }
+        while line.ends_with(' ') {
+            line.pop();
+        }
+        surface_lines.push(line);
+    }
+
+    surface_lines.join("\n")
+}
+
+fn emit_operator_surface_output(surface_name: &str, rendered: &str) -> Result<()> {
+    use std::io::Write as _;
+
+    let surface = render_operator_surface_with_frankentui(surface_name, rendered);
+    let mut stdout = std::io::stdout().lock();
+    stdout.write_all(surface.as_bytes())?;
+    stdout.write_all(b"\n")?;
+    Ok(())
+}
+
 fn render_doctor_report_human(report: &DoctorReport, verbose: bool) -> String {
     let mut lines = Vec::new();
     lines.push(format!(
@@ -18235,7 +18286,10 @@ fn main() -> Result<()> {
             if args.json {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
-                println!("{}", render_doctor_report_human(&report, args.verbose));
+                emit_operator_surface_output(
+                    "doctor",
+                    &render_doctor_report_human(&report, args.verbose),
+                )?;
             }
         }
     }
