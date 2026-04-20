@@ -1237,10 +1237,17 @@ mod tests {
     #[test]
     fn mitigation_incident_id_unicode_injection_attack() {
         // Test BiDi override and control character injection in incident IDs
-        let malicious_id = format!("INC-{}\u{202e}evil\u{202d}-{}", "\u{200b}".repeat(500), "💥".repeat(300));
+        let malicious_id = format!(
+            "INC-{}\u{202e}evil\u{202d}-{}",
+            "\u{200b}".repeat(500),
+            "💥".repeat(300)
+        );
         let unicode_decisions = vec![LabDecision {
             sequence_number: 1,
-            action: format!("quarantine-{}\u{2066}hidden\u{2069}", "\u{feff}".repeat(100)),
+            action: format!(
+                "quarantine-{}\u{2066}hidden\u{2069}",
+                "\u{feff}".repeat(100)
+            ),
             expected_loss: 50,
             rationale: format!("rationale-{}\u{200f}rtl\u{200e}", "🔥".repeat(100)),
         }];
@@ -1278,12 +1285,14 @@ mod tests {
         let massive_rationale = format!("rationale-{}", "x".repeat(200000));
 
         // Create trace with massive decision payloads
-        let massive_decisions = (0..1000).map(|i| LabDecision {
-            sequence_number: i,
-            action: format!("{massive_action}-{i}"),
-            expected_loss: i as i64,
-            rationale: format!("{massive_rationale}-{i}"),
-        }).collect();
+        let massive_decisions = (0..1000)
+            .map(|i| LabDecision {
+                sequence_number: i,
+                action: format!("{massive_action}-{i}"),
+                expected_loss: i as i64,
+                rationale: format!("{massive_rationale}-{i}"),
+            })
+            .collect();
 
         let trace = build_trace("INC-MASSIVE", massive_decisions, "policy-v1");
         assert!(lab.load_trace(&trace).is_ok());
@@ -1291,14 +1300,19 @@ mod tests {
         // Create massive policy diff
         let mut massive_diff = BTreeMap::new();
         for i in 0..1000 {
-            let key = format!("param_{}_with_very_long_name_to_stress_memory_{}", i, "x".repeat(1000));
+            let key = format!(
+                "param_{}_with_very_long_name_to_stress_memory_{}",
+                i,
+                "x".repeat(1000)
+            );
             let value = format!("{}", i.saturating_mul(100));
             massive_diff.insert(key, value);
         }
 
         // Synthesize mitigation with massive data
         let massive_mitigation_id = format!("mit-{}", "massive".repeat(10000));
-        let candidate = lab.synthesize_mitigation(&trace, &massive_mitigation_id, massive_diff.clone());
+        let candidate =
+            lab.synthesize_mitigation(&trace, &massive_mitigation_id, massive_diff.clone());
 
         // Verify bounded storage behavior
         assert_eq!(candidate.mitigation_id, massive_mitigation_id);
@@ -1306,9 +1320,12 @@ mod tests {
         assert_eq!(candidate.counterfactual_decisions.len(), 1000);
 
         // Test memory consumption is bounded despite massive inputs
-        let total_size: usize = candidate.counterfactual_decisions.iter()
+        let total_size: usize = candidate
+            .counterfactual_decisions
+            .iter()
             .map(|d| d.action.len() + d.rationale.len())
-            .sum::<usize>() + massive_mitigation_id.len();
+            .sum::<usize>()
+            + massive_mitigation_id.len();
         assert!(total_size < 500_000_000); // Reasonable memory bound
 
         // Verify events are bounded
@@ -1319,7 +1336,8 @@ mod tests {
     fn mitigation_json_structure_integrity_validation() {
         // Test malicious JSON injection in policy diffs and rationales
         let mut lab = fixture_lab();
-        let json_bomb = r#"{"nested":{"deep":{"structures":[[[{"evil":"payload"}]]]},"arrays":[1,2,3,4,5]}}"#;
+        let json_bomb =
+            r#"{"nested":{"deep":{"structures":[[[{"evil":"payload"}]]]},"arrays":[1,2,3,4,5]}}"#;
         let injection_attempt = format!(r#"legitimate","injection":{json_bomb},"hidden":"#);
 
         let decisions = vec![LabDecision {
@@ -1364,19 +1382,19 @@ mod tests {
                 sequence_number: 1,
                 action: "max".to_string(),
                 expected_loss: i64::MAX,
-                rationale: "max-loss".to_string()
+                rationale: "max-loss".to_string(),
             },
             LabDecision {
                 sequence_number: 2,
                 action: "min".to_string(),
                 expected_loss: i64::MIN,
-                rationale: "min-loss".to_string()
+                rationale: "min-loss".to_string(),
             },
             LabDecision {
                 sequence_number: 3,
                 action: "zero".to_string(),
                 expected_loss: 0,
-                rationale: "zero-loss".to_string()
+                rationale: "zero-loss".to_string(),
             },
         ];
 
@@ -1427,41 +1445,55 @@ mod tests {
         // Attempt various collision strategies
         let collision_attempts = [
             // Different incident ID, same content
-            ("INC-COLLISION-1", vec![LabDecision {
-                sequence_number: 1,
-                action: "baseline".to_string(),
-                expected_loss: 100,
-                rationale: "baseline-rationale".to_string(),
-            }]),
+            (
+                "INC-COLLISION-1",
+                vec![LabDecision {
+                    sequence_number: 1,
+                    action: "baseline".to_string(),
+                    expected_loss: 100,
+                    rationale: "baseline-rationale".to_string(),
+                }],
+            ),
             // Same action bytes but different structure
-            ("INC-COLLISION-2", vec![LabDecision {
-                sequence_number: 1,
-                action: "base".to_string(),
-                expected_loss: 100,
-                rationale: "linebaseline-rationale".to_string(),
-            }]),
+            (
+                "INC-COLLISION-2",
+                vec![LabDecision {
+                    sequence_number: 1,
+                    action: "base".to_string(),
+                    expected_loss: 100,
+                    rationale: "linebaseline-rationale".to_string(),
+                }],
+            ),
             // NULL byte injection attempt
-            ("INC-COLLISION-3", vec![LabDecision {
-                sequence_number: 1,
-                action: "baseline\0collision".to_string(),
-                expected_loss: 100,
-                rationale: "baseline-rationale".to_string(),
-            }]),
+            (
+                "INC-COLLISION-3",
+                vec![LabDecision {
+                    sequence_number: 1,
+                    action: "baseline\0collision".to_string(),
+                    expected_loss: 100,
+                    rationale: "baseline-rationale".to_string(),
+                }],
+            ),
             // Unicode normalization attack
-            ("INC-COLLISION-4", vec![LabDecision {
-                sequence_number: 1,
-                action: "baseline".to_string(),
-                expected_loss: 100,
-                rationale: "baseline-rationale\u{200b}".to_string(),
-            }]),
+            (
+                "INC-COLLISION-4",
+                vec![LabDecision {
+                    sequence_number: 1,
+                    action: "baseline".to_string(),
+                    expected_loss: 100,
+                    rationale: "baseline-rationale\u{200b}".to_string(),
+                }],
+            ),
         ];
 
         for (incident_id, decisions) in collision_attempts {
             let collision_trace = build_trace(incident_id, decisions, "policy-v1");
 
             // Hashes should be different for different content
-            assert_ne!(base_trace.trace_hash, collision_trace.trace_hash,
-                "Hash collision detected between baseline and {incident_id}");
+            assert_ne!(
+                base_trace.trace_hash, collision_trace.trace_hash,
+                "Hash collision detected between baseline and {incident_id}"
+            );
 
             // Each should validate independently
             assert!(base_trace.validate_integrity().is_ok());
@@ -1476,7 +1508,7 @@ mod tests {
                 action: "extension".to_string(),
                 expected_loss: 50,
                 rationale: "extended".to_string(),
-            }
+            },
         ];
 
         let extended_trace = build_trace("INC-EXTENDED", extended_decisions, "policy-v1");
@@ -1513,9 +1545,14 @@ mod tests {
         // Evil lab should produce different signatures
         if let Ok(evil_comparison) = evil_lab.compare_replay(&trace, &evil_candidate) {
             if evil_comparison.loss_delta > 0 {
-                if let Ok(evil_promoted) = evil_lab.promote_mitigation(&evil_comparison, &evil_candidate) {
+                if let Ok(evil_promoted) =
+                    evil_lab.promote_mitigation(&evil_comparison, &evil_candidate)
+                {
                     assert_ne!(promoted.rollout.signature, evil_promoted.rollout.signature);
-                    assert_ne!(promoted.rollback.signature, evil_promoted.rollback.signature);
+                    assert_ne!(
+                        promoted.rollback.signature,
+                        evil_promoted.rollback.signature
+                    );
                 }
             }
         }
@@ -1558,13 +1595,17 @@ mod tests {
                         let mut l = lab_clone.lock().unwrap();
                         let mut diff = BTreeMap::new();
                         diff.insert(format!("param-{thread_id}"), thread_id.to_string());
-                        let _ = l.synthesize_mitigation(&trace_clone, &format!("mit-{thread_id}"), diff);
+                        let _ = l.synthesize_mitigation(
+                            &trace_clone,
+                            &format!("mit-{thread_id}"),
+                            diff,
+                        );
                     },
                     // Replay operations
                     || {
                         let mut l = lab_clone.lock().unwrap();
                         let _ = l.replay_baseline(&trace_clone);
-                    }
+                    },
                 ];
 
                 // Perform multiple operations in this thread
@@ -1602,8 +1643,16 @@ mod tests {
             ("INC-{}", "action-{}-%s", "rationale-%n-%d"),
             ("INC-\n\tmalicious", "action\x00null", "rationale\r\nCRLF"),
             ("INC-%x%p", "action%c%u", "rationale%ld%zu"),
-            ("INC-\x1b[31mred\x1b[0m", "action\x1b[1mbold\x1b[0m", "rationale\x1b[?1049h"),
-            ("INC-\u{1f4a9}\u{200d}\u{1f525}", "action\u{202e}RLO\u{202d}", "rationale\u{2066}LRI\u{2069}"),
+            (
+                "INC-\x1b[31mred\x1b[0m",
+                "action\x1b[1mbold\x1b[0m",
+                "rationale\x1b[?1049h",
+            ),
+            (
+                "INC-\u{1f4a9}\u{200d}\u{1f525}",
+                "action\u{202e}RLO\u{202d}",
+                "rationale\u{2066}LRI\u{2069}",
+            ),
         ];
 
         for (incident_id, action, rationale) in malicious_inputs {
@@ -1619,22 +1668,34 @@ mod tests {
 
             // Test display safety - should not panic or produce control sequences
             let debug_str = format!("{:?}", trace);
-            assert!(!debug_str.contains('\x00'), "Debug output should escape null bytes");
+            assert!(
+                !debug_str.contains('\x00'),
+                "Debug output should escape null bytes"
+            );
 
             // Test error display safety
             let mut corrupted_trace = trace.clone();
             corrupted_trace.trace_hash = "corrupted".to_string();
             if let Err(error) = corrupted_trace.validate_integrity() {
                 let error_display = format!("{}", error);
-                assert!(!error_display.contains('\x00'), "Error display should be safe");
-                assert!(error_display.len() > 10, "Error should produce meaningful output");
+                assert!(
+                    !error_display.contains('\x00'),
+                    "Error display should be safe"
+                );
+                assert!(
+                    error_display.len() > 10,
+                    "Error should produce meaningful output"
+                );
             }
         }
 
         // Test event display safety
         for event in lab.events() {
             let json_str = serde_json::to_string(event).unwrap();
-            assert!(!json_str.contains("\\u0000"), "JSON should escape control chars safely");
+            assert!(
+                !json_str.contains("\\u0000"),
+                "JSON should escape control chars safely"
+            );
 
             let debug_str = format!("{:?}", event);
             assert!(!debug_str.contains('\r'), "Debug should escape CRLF");
@@ -1661,19 +1722,27 @@ mod tests {
             // Empty decisions
             build_trace("INC-EMPTY", vec![], "policy-v1"),
             // Single decision
-            build_trace("INC-SINGLE", vec![LabDecision {
-                sequence_number: 1,
-                action: "a".to_string(),
-                expected_loss: 1,
-                rationale: "r".to_string(),
-            }], "policy-v1"),
+            build_trace(
+                "INC-SINGLE",
+                vec![LabDecision {
+                    sequence_number: 1,
+                    action: "a".to_string(),
+                    expected_loss: 1,
+                    rationale: "r".to_string(),
+                }],
+                "policy-v1",
+            ),
             // Extreme sequence numbers
-            build_trace("INC-EXTREME-SEQ", vec![LabDecision {
-                sequence_number: u64::MAX,
-                action: "max-seq".to_string(),
-                expected_loss: 0,
-                rationale: "max-sequence".to_string(),
-            }], "policy-v1"),
+            build_trace(
+                "INC-EXTREME-SEQ",
+                vec![LabDecision {
+                    sequence_number: u64::MAX,
+                    action: "max-seq".to_string(),
+                    expected_loss: 0,
+                    rationale: "max-sequence".to_string(),
+                }],
+                "policy-v1",
+            ),
         ];
 
         for trace in &boundary_traces {
@@ -1698,7 +1767,7 @@ mod tests {
                 expected_loss: i64::MAX / 2,
                 rationale: "y".repeat(1000000),
             }],
-            &"z".repeat(100000)
+            &"z".repeat(100000),
         );
 
         let long_load_result = lab.load_trace(&long_trace);
@@ -1719,6 +1788,9 @@ mod tests {
         assert!(json_result.is_ok(), "Should serialize boundary data safely");
 
         let parsed_result: Result<IncidentTrace, _> = serde_json::from_str(&json_result.unwrap());
-        assert!(parsed_result.is_ok(), "Should deserialize boundary data safely");
+        assert!(
+            parsed_result.is_ok(),
+            "Should deserialize boundary data safely"
+        );
     }
 }

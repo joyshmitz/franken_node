@@ -250,16 +250,20 @@ fn check_line_for_violations(
                 *exceptions_honored = exceptions_honored.saturating_add(1);
                 return;
             }
-            push_bounded(&mut *violations, DriftViolation {
-                file: file.to_path_buf(),
-                line_number,
-                line_content: line.to_string(),
-                pattern: (*pattern).to_string(),
-                reason: "Forbidden Tokio runtime bootstrap pattern detected. \
+            push_bounded(
+                &mut *violations,
+                DriftViolation {
+                    file: file.to_path_buf(),
+                    line_number,
+                    line_content: line.to_string(),
+                    pattern: (*pattern).to_string(),
+                    reason: "Forbidden Tokio runtime bootstrap pattern detected. \
                          This crate must not reintroduce ambient executor scaffolding. \
                          If a real async boundary is needed, add a TOKIO_DRIFT_EXCEPTION \
                          marker referencing an architectural decision bead.",
-            }, MAX_VIOLATIONS);
+                },
+                MAX_VIOLATIONS,
+            );
             return; // One violation per line is enough
         }
     }
@@ -271,16 +275,20 @@ fn check_line_for_violations(
                 *exceptions_honored = exceptions_honored.saturating_add(1);
                 return;
             }
-            push_bounded(&mut *violations, DriftViolation {
-                file: file.to_path_buf(),
-                line_number,
-                line_content: line.to_string(),
-                pattern: (*pattern).to_string(),
-                reason: "Direct Tokio import detected in production code. \
+            push_bounded(
+                &mut *violations,
+                DriftViolation {
+                    file: file.to_path_buf(),
+                    line_number,
+                    line_content: line.to_string(),
+                    pattern: (*pattern).to_string(),
+                    reason: "Direct Tokio import detected in production code. \
                          This crate removed its Tokio dependency in bd-1now.2. \
                          If async runtime support is genuinely needed, add a \
                          TOKIO_DRIFT_EXCEPTION marker referencing a decision bead.",
-            }, MAX_VIOLATIONS);
+                },
+                MAX_VIOLATIONS,
+            );
             return;
         }
     }
@@ -316,17 +324,21 @@ fn check_api_transport_boundary_line_for_violations(
                 *exceptions_honored = exceptions_honored.saturating_add(1);
                 return;
             }
-            push_bounded(&mut *violations, DriftViolation {
-                file: file.to_path_buf(),
-                line_number,
-                line_content: line.to_string(),
-                pattern: (*pattern).to_string(),
-                reason: "API transport boundary pattern detected in production code. \
+            push_bounded(
+                &mut *violations,
+                DriftViolation {
+                    file: file.to_path_buf(),
+                    line_number,
+                    line_content: line.to_string(),
+                    pattern: (*pattern).to_string(),
+                    reason: "API transport boundary pattern detected in production code. \
                          This is the wake-up condition for deferred Asupersync \
                          request-region work (bd-1now.6). Add a TOKIO_DRIFT_EXCEPTION \
                          marker referencing the decision bead if the boundary is \
                          intentional and fully reviewed.",
-            }, MAX_VIOLATIONS);
+                },
+                MAX_VIOLATIONS,
+            );
             return;
         }
     }
@@ -360,16 +372,20 @@ fn check_cargo_toml(
                     in_tokio_dev_dependency_table = false;
                     continue;
                 }
-                push_bounded(&mut *violations, DriftViolation {
-                    file: cargo_toml_path.to_path_buf(),
-                    line_number: idx.saturating_add(1),
-                    line_content: line.to_string(),
-                    pattern: "tokio dependency in [dependencies.tokio]".to_string(),
-                    reason: "Direct tokio production dependency detected in Cargo.toml. \
+                push_bounded(
+                    &mut *violations,
+                    DriftViolation {
+                        file: cargo_toml_path.to_path_buf(),
+                        line_number: idx.saturating_add(1),
+                        line_content: line.to_string(),
+                        pattern: "tokio dependency in [dependencies.tokio]".to_string(),
+                        reason: "Direct tokio production dependency detected in Cargo.toml. \
                              This crate intentionally removed Tokio (bd-1now.2). \
                              Add a TOKIO_DRIFT_EXCEPTION marker if reintroduction is \
                              architecturally justified.",
-                }, MAX_VIOLATIONS);
+                    },
+                    MAX_VIOLATIONS,
+                );
             }
             in_dependencies = true;
             in_dev_dependencies = false;
@@ -385,16 +401,20 @@ fn check_cargo_toml(
                 in_tokio_dev_dependency_table = false;
                 continue;
             }
-            push_bounded(&mut *violations, DriftViolation {
-                file: cargo_toml_path.to_path_buf(),
-                line_number: idx.saturating_add(1),
-                line_content: line.to_string(),
-                pattern: "tokio dependency in target [dependencies.tokio]".to_string(),
-                reason: "Direct tokio production dependency detected in Cargo.toml. \
+            push_bounded(
+                &mut *violations,
+                DriftViolation {
+                    file: cargo_toml_path.to_path_buf(),
+                    line_number: idx.saturating_add(1),
+                    line_content: line.to_string(),
+                    pattern: "tokio dependency in target [dependencies.tokio]".to_string(),
+                    reason: "Direct tokio production dependency detected in Cargo.toml. \
                          This crate intentionally removed Tokio (bd-1now.2). \
                          Add a TOKIO_DRIFT_EXCEPTION marker if reintroduction is \
                          architecturally justified.",
-            }, MAX_VIOLATIONS);
+                },
+                MAX_VIOLATIONS,
+            );
             in_dependencies = true;
             in_dev_dependencies = false;
             in_tokio_dev_dependency_table = false;
@@ -433,16 +453,20 @@ fn check_cargo_toml(
                 *exceptions_honored = exceptions_honored.saturating_add(1);
                 continue;
             }
-            push_bounded(&mut *violations, DriftViolation {
-                file: cargo_toml_path.to_path_buf(),
-                line_number: idx.saturating_add(1),
-                line_content: line.to_string(),
-                pattern: "tokio dependency in [dependencies]".to_string(),
-                reason: "Direct tokio production dependency detected in Cargo.toml. \
+            push_bounded(
+                &mut *violations,
+                DriftViolation {
+                    file: cargo_toml_path.to_path_buf(),
+                    line_number: idx.saturating_add(1),
+                    line_content: line.to_string(),
+                    pattern: "tokio dependency in [dependencies]".to_string(),
+                    reason: "Direct tokio production dependency detected in Cargo.toml. \
                          This crate intentionally removed Tokio (bd-1now.2). \
                          Add a TOKIO_DRIFT_EXCEPTION marker if reintroduction is \
                          architecturally justified.",
-            }, MAX_VIOLATIONS);
+                },
+                MAX_VIOLATIONS,
+            );
         }
 
         // Dev-dependencies with tokio are allowed (for test infrastructure)
@@ -457,15 +481,19 @@ fn check_cargo_toml(
                 *exceptions_honored = exceptions_honored.saturating_add(1);
                 continue;
             }
-            push_bounded(&mut *violations, DriftViolation {
-                file: cargo_toml_path.to_path_buf(),
-                line_number: idx.saturating_add(1),
-                line_content: line.to_string(),
-                pattern: "tokio runtime features in [dev-dependencies]".to_string(),
-                reason: "Tokio runtime features in dev-dependencies may mask \
+            push_bounded(
+                &mut *violations,
+                DriftViolation {
+                    file: cargo_toml_path.to_path_buf(),
+                    line_number: idx.saturating_add(1),
+                    line_content: line.to_string(),
+                    pattern: "tokio runtime features in [dev-dependencies]".to_string(),
+                    reason: "Tokio runtime features in dev-dependencies may mask \
                          ambient executor reintroduction. Use explicit feature \
                          gates or add a TOKIO_DRIFT_EXCEPTION marker.",
-            }, MAX_VIOLATIONS);
+                },
+                MAX_VIOLATIONS,
+            );
         }
     }
 }
@@ -1628,7 +1656,10 @@ mod tokio_drift_checker_boundary_negative_tests {
 
         let exception = parse_exception_marker(malicious_line);
 
-        assert!(exception.is_none(), "malformed bead ID should not parse as valid exception");
+        assert!(
+            exception.is_none(),
+            "malformed bead ID should not parse as valid exception"
+        );
     }
 
     #[test]
@@ -1637,7 +1668,10 @@ mod tokio_drift_checker_boundary_negative_tests {
 
         let exception = parse_exception_marker(malicious_line);
 
-        assert!(exception.is_none(), "unclosed parenthesis should not parse as valid exception");
+        assert!(
+            exception.is_none(),
+            "unclosed parenthesis should not parse as valid exception"
+        );
     }
 
     #[test]
@@ -1646,7 +1680,10 @@ mod tokio_drift_checker_boundary_negative_tests {
 
         let exception = parse_exception_marker(malicious_line);
 
-        assert!(exception.is_none(), "empty bead ID field should not parse as valid exception");
+        assert!(
+            exception.is_none(),
+            "empty bead ID field should not parse as valid exception"
+        );
     }
 
     #[test]
@@ -1656,7 +1693,10 @@ mod tokio_drift_checker_boundary_negative_tests {
         let exception = parse_exception_marker(malicious_line);
 
         // Should reject whitespace-only justification as insufficient
-        assert!(exception.is_none(), "whitespace-only justification should not be valid");
+        assert!(
+            exception.is_none(),
+            "whitespace-only justification should not be valid"
+        );
     }
 
     #[test]
@@ -1739,7 +1779,7 @@ mod tokio_drift_checker_boundary_negative_tests {
 
                 // Should terminate without infinite loop
                 match result {
-                    Ok(_) => (), // Success is fine
+                    Ok(_) => (),  // Success is fine
                     Err(_) => (), // Error handling is also acceptable
                 }
             }
@@ -1787,14 +1827,29 @@ mod tokio_drift_checker_boundary_negative_tests {
         let result = check_tokio_drift(temp_dir.path());
 
         // Verify that checking completes without memory exhaustion
-        assert!(result.violations.len() > 1000, "Should find many violations");
+        assert!(
+            result.violations.len() > 1000,
+            "Should find many violations"
+        );
         assert!(result.files_scanned > 100, "Should scan many files");
 
         // Verify all violations have valid data
         for (i, violation) in result.violations.iter().enumerate().take(100) {
-            assert!(!violation.pattern.is_empty(), "Violation {} should have pattern", i);
-            assert!(!violation.reason.is_empty(), "Violation {} should have reason", i);
-            assert!(violation.line_number > 0, "Violation {} should have valid line number", i);
+            assert!(
+                !violation.pattern.is_empty(),
+                "Violation {} should have pattern",
+                i
+            );
+            assert!(
+                !violation.reason.is_empty(),
+                "Violation {} should have reason",
+                i
+            );
+            assert!(
+                violation.line_number > 0,
+                "Violation {} should have valid line number",
+                i
+            );
         }
 
         // The current implementation has no bounds on violations vector growth
@@ -1828,13 +1883,22 @@ mod tokio_drift_checker_boundary_negative_tests {
         let collected_files = collect_source_files(temp_dir.path());
 
         // Verify collection completes without stack overflow
-        assert!(collected_files.len() > 10, "Should collect files from deep structure");
+        assert!(
+            collected_files.len() > 10,
+            "Should collect files from deep structure"
+        );
 
         // Verify all collected files are valid
         for file_path in &collected_files {
-            assert!(file_path.exists(), "Collected file should exist: {:?}", file_path);
-            assert!(file_path.extension().unwrap_or_default() == "rs",
-                   "Should only collect .rs files");
+            assert!(
+                file_path.exists(),
+                "Collected file should exist: {:?}",
+                file_path
+            );
+            assert!(
+                file_path.extension().unwrap_or_default() == "rs",
+                "Should only collect .rs files"
+            );
         }
 
         // The current implementation has no recursion depth limits
@@ -1853,12 +1917,13 @@ mod tokio_drift_checker_boundary_negative_tests {
 
         // Create file with edge case line structures
         let problematic_content = vec![
-            "", // Empty first line - idx=0 case
+            "",                                             // Empty first line - idx=0 case
             "// TOKIO_DRIFT_EXCEPTION(bd-test): justified", // Exception marker
             "#[tokio::main]", // Violation on line that references line 1 (idx=2, idx-1=1)
-            "", // Another empty line
+            "",               // Another empty line
             "#[tokio::test]", // Another violation on line 5 (idx=4, idx-1=3)
-        ].join("\n");
+        ]
+        .join("\n");
 
         std::fs::write(&test_file, problematic_content).expect("write bounds test file");
 
@@ -1869,14 +1934,20 @@ mod tokio_drift_checker_boundary_negative_tests {
         for violation in &result.violations {
             // Should handle line number edge cases correctly
             assert!(violation.line_number > 0, "Line number should be positive");
-            assert!(violation.line_number <= 10, "Line number should be reasonable");
+            assert!(
+                violation.line_number <= 10,
+                "Line number should be reasonable"
+            );
 
             // Pattern should be non-empty
             assert!(!violation.pattern.is_empty(), "Pattern should be detected");
         }
 
         // Exception should be honored for the first violation
-        assert!(result.exceptions_honored >= 1, "Should honor at least one exception");
+        assert!(
+            result.exceptions_honored >= 1,
+            "Should honor at least one exception"
+        );
 
         // Test with single-line file (edge case)
         let single_line_file = temp_dir.path().join("single.rs");
@@ -1885,10 +1956,15 @@ mod tokio_drift_checker_boundary_negative_tests {
         let single_result = check_tokio_drift(temp_dir.path());
 
         // Should handle single-line files without bounds errors
-        let single_violations: Vec<_> = single_result.violations.iter()
+        let single_violations: Vec<_> = single_result
+            .violations
+            .iter()
             .filter(|v| v.file.file_name().unwrap() == "single.rs")
             .collect();
-        assert!(!single_violations.is_empty(), "Should detect violation in single-line file");
+        assert!(
+            !single_violations.is_empty(),
+            "Should detect violation in single-line file"
+        );
     }
 
     #[test]
@@ -1911,13 +1987,20 @@ mod tokio_drift_checker_boundary_negative_tests {
             match line_idx {
                 0..=3 => {
                     // These should be detected as inside string literals
-                    assert!(is_in_string_first || test_line.starts_with("//"),
-                           "Line {} should detect string literal: {}", line_idx, test_line);
+                    assert!(
+                        is_in_string_first || test_line.starts_with("//"),
+                        "Line {} should detect string literal: {}",
+                        line_idx,
+                        test_line
+                    );
                 }
                 4..=5 => {
                     // These should NOT be detected as inside string literals
-                    assert!(!is_in_string_first,
-                           "Line {} should NOT detect string literal: {}", line_idx, test_line);
+                    assert!(
+                        !is_in_string_first,
+                        "Line {} should NOT detect string literal: {}",
+                        line_idx, test_line
+                    );
                 }
                 _ => {}
             }
@@ -1925,11 +2008,11 @@ mod tokio_drift_checker_boundary_negative_tests {
 
         // Test edge cases for quote counting
         let edge_cases = vec![
-            r#""#, // Single quote
-            r#"""#, // Two quotes
-            r#""""#, // Three quotes
-            r#"\" "#, // Escaped quote at start
-            r#" \""#, // Escaped quote at end
+            r#""#,                              // Single quote
+            r#"""#,                             // Two quotes
+            r#""""#,                            // Three quotes
+            r#"\" "#,                           // Escaped quote at start
+            r#" \""#,                           // Escaped quote at end
             r#"\"\"tokio::runtime\"\"Runtime"#, // Multiple escapes
         ];
 
@@ -1945,26 +2028,29 @@ mod tokio_drift_checker_boundary_negative_tests {
         // Test brace counting with potential arithmetic overflow
         // Lines 174-176: use saturating_add and saturating_sub for brace counting
         let extreme_brace_patterns = vec![
-            "{".repeat(1000), // Many opening braces
-            "}".repeat(1000), // Many closing braces
-            "{{{{}}}}}".repeat(100), // Mixed braces
+            "{".repeat(1000),                   // Many opening braces
+            "}".repeat(1000),                   // Many closing braces
+            "{{{{}}}}}".repeat(100),            // Mixed braces
             "{".repeat(500) + &"}".repeat(500), // Balanced but extreme
-            format!("{}{}{}", "{".repeat(usize::MAX / 1000), "content", "}".repeat(usize::MAX / 1000)),
+            format!(
+                "{}{}{}",
+                "{".repeat(usize::MAX / 1000),
+                "content",
+                "}".repeat(usize::MAX / 1000)
+            ),
         ];
 
         for pattern in extreme_brace_patterns {
             let delta = brace_delta(&pattern);
 
             // Should handle extreme cases without overflow
-            assert!(delta.abs() <= pattern.len() as isize,
-                   "Brace delta should not exceed line length");
+            assert!(
+                delta.abs() <= pattern.len() as isize,
+                "Brace delta should not exceed line length"
+            );
 
             // Test in context detection with extreme nesting
-            let lines = vec![
-                "#[cfg(test)]",
-                &pattern,
-                "more content",
-            ];
+            let lines = vec!["#[cfg(test)]", &pattern, "more content"];
             let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
 
             let in_test_context = is_in_test_context(&line_refs, 2);
@@ -1976,7 +2062,10 @@ mod tokio_drift_checker_boundary_negative_tests {
         for _ in 0..10000 {
             test_depth = test_depth.saturating_add(1);
         }
-        assert_eq!(test_depth, 10000, "Saturating add should work for reasonable values");
+        assert_eq!(
+            test_depth, 10000,
+            "Saturating add should work for reasonable values"
+        );
 
         // Test saturation at boundaries
         let mut extreme_depth = isize::MAX - 1;

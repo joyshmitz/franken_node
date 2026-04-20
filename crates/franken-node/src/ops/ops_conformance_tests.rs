@@ -759,9 +759,12 @@ fn ops_drift_check_detects_production_tokio_dependency_table() {
     let result = check_tokio_drift(temp_dir.path());
 
     assert!(!result.is_clean());
-    assert!(result.violations.iter().any(|violation| {
-        violation.pattern == "tokio dependency in [dependencies.tokio]"
-    }));
+    assert!(
+        result
+            .violations
+            .iter()
+            .any(|violation| { violation.pattern == "tokio dependency in [dependencies.tokio]" })
+    );
 }
 
 #[test]
@@ -775,9 +778,11 @@ fn ops_drift_check_detects_dev_dependency_runtime_features() {
     let result = check_tokio_drift(temp_dir.path());
 
     assert!(!result.is_clean());
-    assert!(result.violations.iter().any(|violation| {
-        violation.pattern == "tokio runtime features in [dev-dependencies]"
-    }));
+    assert!(
+        result.violations.iter().any(|violation| {
+            violation.pattern == "tokio runtime features in [dev-dependencies]"
+        })
+    );
 }
 
 #[test]

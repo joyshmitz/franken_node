@@ -3140,16 +3140,40 @@ mod tests {
         let snapshot = bridge.snapshot();
 
         // Verify bridge_id doesn't contain injection patterns
-        assert!(!snapshot.bridge_id.contains('\u{202E}'), "bridge ID must not contain BiDi override");
-        assert!(!snapshot.bridge_id.contains('\u{202D}'), "bridge ID must not contain BiDi embedding");
-        assert!(!snapshot.bridge_id.contains('\x1b'), "bridge ID must not contain ANSI escape sequences");
-        assert!(!snapshot.bridge_id.contains('\0'), "bridge ID must not contain null bytes");
-        assert!(!snapshot.bridge_id.contains('\r'), "bridge ID must not contain carriage returns");
-        assert!(!snapshot.bridge_id.contains('\n'), "bridge ID must not contain newlines");
+        assert!(
+            !snapshot.bridge_id.contains('\u{202E}'),
+            "bridge ID must not contain BiDi override"
+        );
+        assert!(
+            !snapshot.bridge_id.contains('\u{202D}'),
+            "bridge ID must not contain BiDi embedding"
+        );
+        assert!(
+            !snapshot.bridge_id.contains('\x1b'),
+            "bridge ID must not contain ANSI escape sequences"
+        );
+        assert!(
+            !snapshot.bridge_id.contains('\0'),
+            "bridge ID must not contain null bytes"
+        );
+        assert!(
+            !snapshot.bridge_id.contains('\r'),
+            "bridge ID must not contain carriage returns"
+        );
+        assert!(
+            !snapshot.bridge_id.contains('\n'),
+            "bridge ID must not contain newlines"
+        );
 
         // Verify bridge_id has reasonable length bounds
-        assert!(snapshot.bridge_id.len() < 256, "bridge ID must be reasonably bounded");
-        assert!(!snapshot.bridge_id.is_empty(), "bridge ID must not be empty");
+        assert!(
+            snapshot.bridge_id.len() < 256,
+            "bridge ID must be reasonably bounded"
+        );
+        assert!(
+            !snapshot.bridge_id.is_empty(),
+            "bridge ID must not be empty"
+        );
 
         // Verify constant-time comparison works for bridge IDs
         let other_bridge = TelemetryBridge::new(
@@ -3158,7 +3182,10 @@ mod tests {
         );
         let other_id = other_bridge.snapshot().bridge_id;
 
-        assert!(!constant_time::ct_eq(&snapshot.bridge_id, &other_id), "bridge IDs should be unique");
+        assert!(
+            !constant_time::ct_eq(&snapshot.bridge_id, &other_id),
+            "bridge IDs should be unique"
+        );
     }
 
     #[test]
@@ -3186,14 +3213,21 @@ mod tests {
 
         // Verify bounded storage prevents memory exhaustion
         let mut locked_state = state.lock().unwrap();
-        push_bounded(&mut locked_state.runtime_events, malicious_event.clone(), MAX_RUNTIME_EVENTS);
+        push_bounded(
+            &mut locked_state.runtime_events,
+            malicious_event.clone(),
+            MAX_RUNTIME_EVENTS,
+        );
 
         // Even with massive detail, storage should be bounded
         assert_eq!(locked_state.runtime_events.len(), 1);
 
         // Verify serialization doesn't cause memory explosion
         let json = serde_json::to_string(&locked_state.runtime_events[0]).unwrap_or_default();
-        assert!(json.len() >= massive_detail.len(), "serialization preserves large detail");
+        assert!(
+            json.len() >= massive_detail.len(),
+            "serialization preserves large detail"
+        );
 
         // Verify this doesn't crash the snapshot functionality
         drop(locked_state);
@@ -3203,7 +3237,10 @@ mod tests {
             state.clone(),
         );
         let snapshot = bridge.snapshot();
-        assert!(!snapshot.recent_events.is_empty(), "snapshot should include massive event");
+        assert!(
+            !snapshot.recent_events.is_empty(),
+            "snapshot should include massive event"
+        );
     }
 
     #[test]
@@ -3237,14 +3274,23 @@ mod tests {
         let parsed_json: serde_json::Value = serde_json::from_str(&json).unwrap();
         let expected_keys = ["timestamp", "event_type", "payload"];
         for key in parsed_json.as_object().unwrap().keys() {
-            assert!(expected_keys.contains(&key.as_str()),
-                   "unexpected field '{}' - possible JSON injection", key);
+            assert!(
+                expected_keys.contains(&key.as_str()),
+                "unexpected field '{}' - possible JSON injection",
+                key
+            );
         }
 
         // Verify payload contains the injection attempts as literal strings (safe)
         let payload_str = parsed_json["payload"].to_string();
-        assert!(payload_str.contains("injected_field"), "injection should be contained as literal");
-        assert!(payload_str.contains("alert"), "script injection should be literal");
+        assert!(
+            payload_str.contains("injected_field"),
+            "injection should be contained as literal"
+        );
+        assert!(
+            payload_str.contains("alert"),
+            "script injection should be literal"
+        );
     }
 
     #[test]
@@ -3272,7 +3318,11 @@ mod tests {
 
         // Verify event can be stored without overflow
         let mut locked_state = state.lock().unwrap();
-        push_bounded(&mut locked_state.runtime_events, near_max_event, MAX_RUNTIME_EVENTS);
+        push_bounded(
+            &mut locked_state.runtime_events,
+            near_max_event,
+            MAX_RUNTIME_EVENTS,
+        );
 
         // Verify arithmetic operations use saturating semantics
         let event = &locked_state.runtime_events[0];
@@ -3282,14 +3332,26 @@ mod tests {
         let new_persisted = event.persisted_total.saturating_add(1);
 
         // At u64::MAX, saturating_add should not overflow
-        assert_eq!(new_accepted, u64::MAX, "saturating_add must prevent overflow");
-        assert_eq!(new_persisted, u64::MAX, "saturating_add must prevent overflow");
+        assert_eq!(
+            new_accepted,
+            u64::MAX,
+            "saturating_add must prevent overflow"
+        );
+        assert_eq!(
+            new_persisted,
+            u64::MAX,
+            "saturating_add must prevent overflow"
+        );
 
         // Verify total accounting doesn't overflow
-        let total_processed = event.accepted_total
+        let total_processed = event
+            .accepted_total
             .saturating_add(event.shed_total)
             .saturating_add(event.dropped_total);
-        assert!(total_processed == u64::MAX, "total accounting must use saturating arithmetic");
+        assert!(
+            total_processed == u64::MAX,
+            "total accounting must use saturating arithmetic"
+        );
     }
 
     #[test]
@@ -3297,15 +3359,22 @@ mod tests {
         // Test invalid state byte values
         for invalid_byte in [7, 8, 200, 255] {
             let state = BridgeLifecycleState::from_u8(invalid_byte);
-            assert_eq!(state, BridgeLifecycleState::Failed,
-                      "invalid state byte {} should map to Failed", invalid_byte);
+            assert_eq!(
+                state,
+                BridgeLifecycleState::Failed,
+                "invalid state byte {} should map to Failed",
+                invalid_byte
+            );
         }
 
         // Test state transition invariants
         let terminal_states = [BridgeLifecycleState::Stopped, BridgeLifecycleState::Failed];
         for terminal_state in terminal_states {
-            assert!(terminal_state.is_terminal(),
-                   "state {:?} should be terminal", terminal_state);
+            assert!(
+                terminal_state.is_terminal(),
+                "state {:?} should be terminal",
+                terminal_state
+            );
         }
 
         // Test serialization/deserialization robustness
@@ -3364,7 +3433,8 @@ mod tests {
 
         // Verify state accounting remains consistent regardless of outcome
         let locked_state = state.lock().unwrap();
-        let total_events = locked_state.accepted_total + locked_state.shed_total + locked_state.dropped_total;
+        let total_events =
+            locked_state.accepted_total + locked_state.shed_total + locked_state.dropped_total;
         assert!(total_events <= 2, "event accounting must remain consistent");
     }
 
@@ -3387,8 +3457,10 @@ mod tests {
             let parsed: ShutdownReason = serde_json::from_str(&json).unwrap();
 
             match (shutdown_reason, parsed) {
-                (ShutdownReason::EngineExit { exit_code: orig },
-                 ShutdownReason::EngineExit { exit_code: parsed }) => {
+                (
+                    ShutdownReason::EngineExit { exit_code: orig },
+                    ShutdownReason::EngineExit { exit_code: parsed },
+                ) => {
                     assert_eq!(orig, parsed, "exit code serialization must be exact");
                 }
                 _ => panic!("shutdown reason type should be preserved"),
@@ -3396,9 +3468,18 @@ mod tests {
 
             // Verify debug display doesn't contain injection patterns
             let debug_str = format!("{:?}", shutdown_reason);
-            assert!(!debug_str.contains('\x1b'), "debug display must not contain ANSI escapes");
-            assert!(!debug_str.contains('\0'), "debug display must not contain null bytes");
-            assert!(!debug_str.contains('\u{202E}'), "debug display must not contain BiDi overrides");
+            assert!(
+                !debug_str.contains('\x1b'),
+                "debug display must not contain ANSI escapes"
+            );
+            assert!(
+                !debug_str.contains('\0'),
+                "debug display must not contain null bytes"
+            );
+            assert!(
+                !debug_str.contains('\u{202E}'),
+                "debug display must not contain BiDi overrides"
+            );
         }
 
         // Test Requested variant
@@ -3437,10 +3518,15 @@ mod tests {
         assert_eq!(parsed.drain_duration_ms, u64::MAX);
 
         // Verify arithmetic operations on extreme values don't overflow
-        let total_events = parsed.accepted_total
+        let total_events = parsed
+            .accepted_total
             .saturating_add(parsed.shed_total)
             .saturating_add(parsed.dropped_total);
-        assert_eq!(total_events, u64::MAX, "extreme value arithmetic must use saturating operations");
+        assert_eq!(
+            total_events,
+            u64::MAX,
+            "extreme value arithmetic must use saturating operations"
+        );
 
         // Create report with massive event collections for memory stress
         let massive_telemetry_events: Vec<RuntimeTelemetryEvent> = (0..1000)
@@ -3489,8 +3575,14 @@ mod tests {
 
         // Verify massive report can be serialized without memory explosion
         let massive_json = serde_json::to_string(&massive_report).unwrap();
-        assert!(massive_json.len() > 1_000_000, "massive report should be large but bounded");
-        assert!(massive_json.len() < 50_000_000, "massive report should not cause excessive memory usage");
+        assert!(
+            massive_json.len() > 1_000_000,
+            "massive report should be large but bounded"
+        );
+        assert!(
+            massive_json.len() < 50_000_000,
+            "massive report should not cause excessive memory usage"
+        );
     }
 
     #[test]

