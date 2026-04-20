@@ -6,17 +6,17 @@
 //! - ReceiptCheckpoint with commitment verification
 //! - Receipt chain integrity and tamper detection patterns
 
-use std::collections::BTreeMap;
+use super::super::golden;
 use frankenengine_node::connector::vef_execution_receipt::{
-    ExecutionReceipt, ExecutionActionType, ReceiptOperationType, VerificationContext,
+    ExecutionActionType, ExecutionReceipt, ReceiptOperationType, VerificationContext,
     receipt_hash_sha256,
 };
 use frankenengine_node::vef::receipt_chain::{
-    ReceiptChainEntry, ReceiptCheckpoint, ReceiptChainConfig, ChainError,
-    ChainEvent, RECEIPT_CHAIN_SCHEMA_VERSION, GENESIS_PREV_HASH,
+    ChainError, ChainEvent, GENESIS_PREV_HASH, RECEIPT_CHAIN_SCHEMA_VERSION, ReceiptChainConfig,
+    ReceiptChainEntry, ReceiptCheckpoint,
 };
 use serde_json::json;
-use super::super::golden;
+use std::collections::BTreeMap;
 
 #[test]
 fn test_execution_receipt_basic_structure() {
@@ -27,7 +27,10 @@ fn test_execution_receipt_basic_structure() {
         capability_context: {
             let mut context = BTreeMap::new();
             context.insert("capability_type".to_string(), "network_egress".to_string());
-            context.insert("endpoint".to_string(), "https://api.example.com".to_string());
+            context.insert(
+                "endpoint".to_string(),
+                "https://api.example.com".to_string(),
+            );
             context
         },
         actor_identity: "verifier-001".to_string(),
@@ -35,15 +38,15 @@ fn test_execution_receipt_basic_structure() {
         policy_snapshot_hash: "sha256:abcd1234567890ef".to_string(),
         timestamp_millis: 1234567890123, // Fixed timestamp for determinism
         sequence_number: 42,
-        witness_references: vec![
-            "witness-001".to_string(),
-            "witness-002".to_string(),
-        ],
+        witness_references: vec!["witness-001".to_string(), "witness-002".to_string()],
         trace_id: "trace-vef-001".to_string(),
     };
 
     let receipt_json = serde_json::to_value(&receipt).expect("Should serialize ExecutionReceipt");
-    golden::assert_scrubbed_json_golden("vef_receipt_envelope/execution_receipt_basic", &receipt_json);
+    golden::assert_scrubbed_json_golden(
+        "vef_receipt_envelope/execution_receipt_basic",
+        &receipt_json,
+    );
 }
 
 #[test]
@@ -64,9 +67,9 @@ fn test_execution_receipt_canonicalization() {
         timestamp_millis: 1234567890000,
         sequence_number: 1,
         witness_references: vec![
-            "witness-beta".to_string(),    // Out of order
-            "witness-alpha".to_string(),   // Out of order
-            "witness-beta".to_string(),    // Duplicate
+            "witness-beta".to_string(),  // Out of order
+            "witness-alpha".to_string(), // Out of order
+            "witness-beta".to_string(),  // Duplicate
             "witness-gamma".to_string(),
         ],
         trace_id: "trace-canon-001".to_string(),
@@ -85,7 +88,10 @@ fn test_execution_receipt_canonicalization() {
         "canonical_witness_count": canonicalized.witness_references.len(),
     });
 
-    golden::assert_scrubbed_json_golden("vef_receipt_envelope/canonicalization_comparison", &comparison);
+    golden::assert_scrubbed_json_golden(
+        "vef_receipt_envelope/canonicalization_comparison",
+        &comparison,
+    );
 
     // Test that canonicalization is idempotent
     let double_canonical = canonicalized.canonicalized();
@@ -97,7 +103,10 @@ fn test_execution_receipt_canonicalization() {
         "idempotent": canonicalized == double_canonical,
     });
 
-    golden::assert_scrubbed_json_golden("vef_receipt_envelope/canonicalization_idempotent", &idempotency_test);
+    golden::assert_scrubbed_json_golden(
+        "vef_receipt_envelope/canonicalization_idempotent",
+        &idempotency_test,
+    );
 }
 
 #[test]
@@ -163,7 +172,8 @@ fn test_receipt_hash_consistency() {
                 Ok(hash2) => {
                     // Test that canonicalized receipt produces same hash
                     let canonical_receipt = receipt.canonicalized();
-                    let canonical_hash = receipt_hash_sha256(&canonical_receipt).unwrap_or_else(|_| "ERROR".to_string());
+                    let canonical_hash = receipt_hash_sha256(&canonical_receipt)
+                        .unwrap_or_else(|_| "ERROR".to_string());
 
                     let hash_test = json!({
                         "receipt": serde_json::to_value(&receipt).unwrap(),
@@ -175,14 +185,20 @@ fn test_receipt_hash_consistency() {
                         "hash_format_valid": hash1.starts_with("sha256:") && hash1.len() == 71,
                     });
 
-                    golden::assert_scrubbed_json_golden("vef_receipt_envelope/hash_consistency", &hash_test);
+                    golden::assert_scrubbed_json_golden(
+                        "vef_receipt_envelope/hash_consistency",
+                        &hash_test,
+                    );
                 }
                 Err(err) => {
                     let error_json = json!({
                         "error": "second_hash_failed",
                         "message": format!("{}", err),
                     });
-                    golden::assert_scrubbed_json_golden("vef_receipt_envelope/hash_consistency_error", &error_json);
+                    golden::assert_scrubbed_json_golden(
+                        "vef_receipt_envelope/hash_consistency_error",
+                        &error_json,
+                    );
                 }
             }
         }
@@ -191,7 +207,10 @@ fn test_receipt_hash_consistency() {
                 "error": "initial_hash_failed",
                 "message": format!("{}", err),
             });
-            golden::assert_scrubbed_json_golden("vef_receipt_envelope/hash_consistency_error", &error_json);
+            golden::assert_scrubbed_json_golden(
+                "vef_receipt_envelope/hash_consistency_error",
+                &error_json,
+            );
         }
     }
 }
@@ -373,7 +392,8 @@ fn test_receipt_checkpoint_boundary_conditions() {
     ];
 
     for (test_name, checkpoint) in checkpoint_test_cases {
-        let checkpoint_json = serde_json::to_value(&checkpoint).expect("Should serialize checkpoint");
+        let checkpoint_json =
+            serde_json::to_value(&checkpoint).expect("Should serialize checkpoint");
 
         golden::assert_scrubbed_json_golden(
             &format!("vef_receipt_envelope/checkpoint_boundaries/{}", test_name),
@@ -386,10 +406,7 @@ fn test_receipt_checkpoint_boundary_conditions() {
 fn test_receipt_chain_config_variations() {
     // Test ReceiptChainConfig variations
     let config_test_cases = vec![
-        (
-            "default_config",
-            ReceiptChainConfig::default(),
-        ),
+        ("default_config", ReceiptChainConfig::default()),
         (
             "frequent_checkpoints",
             ReceiptChainConfig {
@@ -414,7 +431,7 @@ fn test_receipt_chain_config_variations() {
         (
             "time_only_checkpoints",
             ReceiptChainConfig {
-                checkpoint_every_entries: 0, // Disabled
+                checkpoint_every_entries: 0,    // Disabled
                 checkpoint_every_millis: 60000, // 1 minute
             },
         ),
@@ -520,9 +537,18 @@ fn test_verification_context_variations() {
                 domain: "production".to_string(),
                 constraints: Some({
                     let mut constraints = BTreeMap::new();
-                    constraints.insert("max_depth".to_string(), serde_json::Value::Number(10.into()));
-                    constraints.insert("timeout_ms".to_string(), serde_json::Value::Number(5000.into()));
-                    constraints.insert("require_signatures".to_string(), serde_json::Value::Bool(true));
+                    constraints.insert(
+                        "max_depth".to_string(),
+                        serde_json::Value::Number(10.into()),
+                    );
+                    constraints.insert(
+                        "timeout_ms".to_string(),
+                        serde_json::Value::Number(5000.into()),
+                    );
+                    constraints.insert(
+                        "require_signatures".to_string(),
+                        serde_json::Value::Bool(true),
+                    );
                     constraints
                 }),
             },
@@ -533,12 +559,21 @@ fn test_verification_context_variations() {
                 domain: "high-assurance".to_string(),
                 constraints: Some({
                     let mut constraints = BTreeMap::new();
-                    constraints.insert("verification_level".to_string(), serde_json::Value::String("strict".to_string()));
-                    constraints.insert("allowed_issuers".to_string(), serde_json::Value::Array(vec![
-                        serde_json::Value::String("issuer-1".to_string()),
-                        serde_json::Value::String("issuer-2".to_string()),
-                    ]));
-                    constraints.insert("policy_version".to_string(), serde_json::Value::String("v2.1.0".to_string()));
+                    constraints.insert(
+                        "verification_level".to_string(),
+                        serde_json::Value::String("strict".to_string()),
+                    );
+                    constraints.insert(
+                        "allowed_issuers".to_string(),
+                        serde_json::Value::Array(vec![
+                            serde_json::Value::String("issuer-1".to_string()),
+                            serde_json::Value::String("issuer-2".to_string()),
+                        ]),
+                    );
+                    constraints.insert(
+                        "policy_version".to_string(),
+                        serde_json::Value::String("v2.1.0".to_string()),
+                    );
                     constraints
                 }),
             },

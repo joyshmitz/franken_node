@@ -4,9 +4,9 @@
 //! of dynamic values (UUIDs, timestamps, paths, etc.) following the patterns
 //! from the testing-golden-artifacts skill.
 
-use std::{fs, path::Path, path::PathBuf};
 use regex::Regex;
 use serde_json::Value;
+use std::{fs, path::Path, path::PathBuf};
 
 /// Universal golden comparison function that supports scrubbing
 pub fn assert_golden(test_name: &str, actual: &str) {
@@ -19,13 +19,14 @@ pub fn assert_golden(test_name: &str, actual: &str) {
         return;
     }
 
-    let expected = fs::read_to_string(&golden_path)
-        .unwrap_or_else(|_| panic!(
+    let expected = fs::read_to_string(&golden_path).unwrap_or_else(|_| {
+        panic!(
             "Golden file missing: {}\n\
              Run with UPDATE_GOLDENS=1 to create it\n\
              Then review and commit: git diff tests/golden/",
             golden_path.display()
-        ));
+        )
+    });
 
     if actual != expected {
         let actual_path = golden_path.with_extension("actual");
@@ -64,20 +65,20 @@ pub fn scrub_dynamic_values(input: &str) -> String {
     let mut result = input.to_string();
 
     // UUIDs → [UUID]
-    let uuid_re = Regex::new(
-        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-    ).unwrap();
+    let uuid_re =
+        Regex::new(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}").unwrap();
     result = uuid_re.replace_all(&result, "[UUID]").to_string();
 
     // ISO timestamps → [TIMESTAMP]
-    let ts_re = Regex::new(
-        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?"
-    ).unwrap();
+    let ts_re =
+        Regex::new(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?").unwrap();
     result = ts_re.replace_all(&result, "[TIMESTAMP]").to_string();
 
     // Unix timestamps → [UNIX_TIMESTAMP]
     let unix_ts_re = Regex::new(r"\b\d{10}(\.\d+)?\b").unwrap();
-    result = unix_ts_re.replace_all(&result, "[UNIX_TIMESTAMP]").to_string();
+    result = unix_ts_re
+        .replace_all(&result, "[UNIX_TIMESTAMP]")
+        .to_string();
 
     // Memory addresses → [ADDR]
     let addr_re = Regex::new(r"0x[0-9a-f]{6,16}").unwrap();
@@ -97,7 +98,9 @@ pub fn scrub_dynamic_values(input: &str) -> String {
 
     // Artifact IDs → [ARTIFACT_ID]
     let artifact_id_re = Regex::new(r"artifact_id=[a-f0-9]{16}").unwrap();
-    result = artifact_id_re.replace_all(&result, "artifact_id=[ARTIFACT_ID]").to_string();
+    result = artifact_id_re
+        .replace_all(&result, "artifact_id=[ARTIFACT_ID]")
+        .to_string();
 
     // Extension IDs with version → normalize versions
     let ext_id_re = Regex::new(r"(npm:[@a-z0-9-/]+)@\d+\.\d+\.\d+").unwrap();

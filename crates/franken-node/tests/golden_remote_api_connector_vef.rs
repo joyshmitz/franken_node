@@ -87,10 +87,7 @@ fn verify_scrubber_for_domain_specific_patterns() {
         assert!(!scrubbed.contains("1713628800"));
 
         // Test the scrubbed version as golden
-        golden::assert_golden(
-            &format!("scrubber_verification/{}", test_name),
-            &scrubbed,
-        );
+        golden::assert_golden(&format!("scrubber_verification/{}", test_name), &scrubbed);
     }
 }
 
@@ -157,7 +154,8 @@ fn validate_golden_directory_structure() {
         for dir_path in golden_dirs {
             let path = Path::new(dir_path);
             if !path.exists() {
-                fs::create_dir_all(path).expect(&format!("Should create golden directory: {}", dir_path));
+                fs::create_dir_all(path)
+                    .expect(&format!("Should create golden directory: {}", dir_path));
             }
         }
     }
@@ -173,7 +171,10 @@ fn test_determinism_across_runs() {
     let create_test_structure = || {
         let mut capability_context = BTreeMap::new();
         capability_context.insert("capability_type".to_string(), "network_egress".to_string());
-        capability_context.insert("endpoint".to_string(), "https://api.example.com".to_string());
+        capability_context.insert(
+            "endpoint".to_string(),
+            "https://api.example.com".to_string(),
+        );
 
         json!({
             "determinism_test": {
@@ -198,8 +199,10 @@ fn test_determinism_across_runs() {
     assert_eq!(structure1, structure2);
 
     // Both should produce identical scrubbed output
-    let scrubbed1 = golden::scrub_dynamic_values(&serde_json::to_string_pretty(&structure1).unwrap());
-    let scrubbed2 = golden::scrub_dynamic_values(&serde_json::to_string_pretty(&structure2).unwrap());
+    let scrubbed1 =
+        golden::scrub_dynamic_values(&serde_json::to_string_pretty(&structure1).unwrap());
+    let scrubbed2 =
+        golden::scrub_dynamic_values(&serde_json::to_string_pretty(&structure2).unwrap());
 
     assert_eq!(scrubbed1, scrubbed2);
 
@@ -275,6 +278,6 @@ fn test_cross_domain_data_flow() {
 }
 
 // Re-export the domain-specific tests so they run with this suite
-pub use remote_capability_envelope_golden_tests::*;
 pub use connector_lifecycle_message_golden_tests::*;
+pub use remote_capability_envelope_golden_tests::*;
 pub use vef_receipt_envelope_golden_tests::*;

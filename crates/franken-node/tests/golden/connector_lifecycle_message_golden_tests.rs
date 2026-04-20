@@ -6,12 +6,12 @@
 //! - DecodeVerdict and GuardrailViolation canonical forms
 //! - Frame validation audit trails and error handling
 
+use super::super::golden;
 use frankenengine_node::connector::frame_parser::{
-    FrameInput, ParserConfig, check_frame, check_batch, validate_config,
-    GuardrailViolation, DecodeVerdict, DecodeAuditEntry, ResourceUsage, ParserError,
+    DecodeAuditEntry, DecodeVerdict, FrameInput, GuardrailViolation, ParserConfig, ParserError,
+    ResourceUsage, check_batch, check_frame, validate_config,
 };
 use serde_json::json;
-use super::super::golden;
 
 #[test]
 fn test_frame_input_basic_structure() {
@@ -24,17 +24,17 @@ fn test_frame_input_basic_structure() {
     };
 
     let frame_json = serde_json::to_value(&frame).expect("Should serialize FrameInput");
-    golden::assert_scrubbed_json_golden("connector_lifecycle_message/frame_input_basic", &frame_json);
+    golden::assert_scrubbed_json_golden(
+        "connector_lifecycle_message/frame_input_basic",
+        &frame_json,
+    );
 }
 
 #[test]
 fn test_parser_config_variations() {
     // Test different ParserConfig variations
     let configs = vec![
-        (
-            "default_config",
-            ParserConfig::default_config(),
-        ),
+        ("default_config", ParserConfig::default_config()),
         (
             "minimal_limits",
             ParserConfig {
@@ -235,7 +235,10 @@ fn test_frame_validation_verdicts() {
                 });
 
                 golden::assert_scrubbed_json_golden(
-                    &format!("connector_lifecycle_message/frame_validation/{}_error", test_name),
+                    &format!(
+                        "connector_lifecycle_message/frame_validation/{}_error",
+                        test_name
+                    ),
                     &error_json,
                 );
             }
@@ -278,27 +281,30 @@ fn test_batch_frame_processing() {
 
     match check_batch(&batch_frames, &config, timestamp) {
         Ok(results) => {
-            let batch_results: Vec<_> = results.into_iter().map(|(verdict, audit)| {
-                json!({
-                    "verdict": {
-                        "frame_id": verdict.frame_id,
-                        "allowed": verdict.allowed,
-                        "violation_count": verdict.violations.len(),
-                        "violations": verdict.violations.iter().map(|v| {
-                            match v {
-                                GuardrailViolation::SizeExceeded { .. } => "SizeExceeded",
-                                GuardrailViolation::DepthExceeded { .. } => "DepthExceeded",
-                                GuardrailViolation::CpuExceeded { .. } => "CpuExceeded",
-                                GuardrailViolation::MalformedFrame { .. } => "MalformedFrame",
-                            }
-                        }).collect::<Vec<_>>(),
-                    },
-                    "audit": {
-                        "frame_id": audit.frame_id,
-                        "verdict": audit.verdict,
-                    },
+            let batch_results: Vec<_> = results
+                .into_iter()
+                .map(|(verdict, audit)| {
+                    json!({
+                        "verdict": {
+                            "frame_id": verdict.frame_id,
+                            "allowed": verdict.allowed,
+                            "violation_count": verdict.violations.len(),
+                            "violations": verdict.violations.iter().map(|v| {
+                                match v {
+                                    GuardrailViolation::SizeExceeded { .. } => "SizeExceeded",
+                                    GuardrailViolation::DepthExceeded { .. } => "DepthExceeded",
+                                    GuardrailViolation::CpuExceeded { .. } => "CpuExceeded",
+                                    GuardrailViolation::MalformedFrame { .. } => "MalformedFrame",
+                                }
+                            }).collect::<Vec<_>>(),
+                        },
+                        "audit": {
+                            "frame_id": audit.frame_id,
+                            "verdict": audit.verdict,
+                        },
+                    })
                 })
-            }).collect();
+                .collect();
 
             let batch_json = json!({
                 "success": true,
@@ -306,7 +312,10 @@ fn test_batch_frame_processing() {
                 "results": batch_results,
             });
 
-            golden::assert_scrubbed_json_golden("connector_lifecycle_message/batch_processing", &batch_json);
+            golden::assert_scrubbed_json_golden(
+                "connector_lifecycle_message/batch_processing",
+                &batch_json,
+            );
         }
         Err(err) => {
             let error_json = json!({
@@ -317,7 +326,10 @@ fn test_batch_frame_processing() {
                 },
             });
 
-            golden::assert_scrubbed_json_golden("connector_lifecycle_message/batch_processing_error", &error_json);
+            golden::assert_scrubbed_json_golden(
+                "connector_lifecycle_message/batch_processing_error",
+                &error_json,
+            );
         }
     }
 }
@@ -389,7 +401,10 @@ fn test_parser_config_validation() {
         };
 
         golden::assert_scrubbed_json_golden(
-            &format!("connector_lifecycle_message/config_validation/{}", test_name),
+            &format!(
+                "connector_lifecycle_message/config_validation/{}",
+                test_name
+            ),
             &result_json,
         );
     }
@@ -402,38 +417,14 @@ fn test_frame_id_handling() {
 
     // Test various frame ID patterns
     let frame_id_test_cases = vec![
-        (
-            "normal_frame_id",
-            "normal-frame-123",
-        ),
-        (
-            "empty_frame_id",
-            "",
-        ),
-        (
-            "very_long_frame_id",
-            &"x".repeat(1000),
-        ),
-        (
-            "special_characters",
-            "frame-with-!@#$%^&*()_+{}[]",
-        ),
-        (
-            "unicode_frame_id",
-            "frame-🚀-test-🔒",
-        ),
-        (
-            "whitespace_frame_id",
-            "  frame with spaces  ",
-        ),
-        (
-            "newline_frame_id",
-            "frame\nwith\nnewlines",
-        ),
-        (
-            "null_byte_frame_id",
-            "frame\0with\0nulls",
-        ),
+        ("normal_frame_id", "normal-frame-123"),
+        ("empty_frame_id", ""),
+        ("very_long_frame_id", &"x".repeat(1000)),
+        ("special_characters", "frame-with-!@#$%^&*()_+{}[]"),
+        ("unicode_frame_id", "frame-🚀-test-🔒"),
+        ("whitespace_frame_id", "  frame with spaces  "),
+        ("newline_frame_id", "frame\nwith\nnewlines"),
+        ("null_byte_frame_id", "frame\0with\0nulls"),
     ];
 
     for (test_name, frame_id) in frame_id_test_cases {
@@ -456,7 +447,10 @@ fn test_frame_id_handling() {
                 });
 
                 golden::assert_scrubbed_json_golden(
-                    &format!("connector_lifecycle_message/frame_id_handling/{}", test_name),
+                    &format!(
+                        "connector_lifecycle_message/frame_id_handling/{}",
+                        test_name
+                    ),
                     &result_json,
                 );
             }
@@ -469,7 +463,10 @@ fn test_frame_id_handling() {
                 });
 
                 golden::assert_scrubbed_json_golden(
-                    &format!("connector_lifecycle_message/frame_id_handling/{}_error", test_name),
+                    &format!(
+                        "connector_lifecycle_message/frame_id_handling/{}_error",
+                        test_name
+                    ),
                     &error_json,
                 );
             }
@@ -569,7 +566,10 @@ fn test_resource_usage_boundary_values() {
                 });
 
                 golden::assert_scrubbed_json_golden(
-                    &format!("connector_lifecycle_message/boundary_values/{}_error", test_name),
+                    &format!(
+                        "connector_lifecycle_message/boundary_values/{}_error",
+                        test_name
+                    ),
                     &error_json,
                 );
             }
