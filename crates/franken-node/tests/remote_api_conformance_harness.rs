@@ -11,21 +11,21 @@
 //! This harness follows Pattern 4 (Spec-Derived Tests) + Pattern 5 (Contract Testing)
 //! from /testing-conformance-harnesses skill.
 
-use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(test)]
 use insta::{assert_json_snapshot, with_settings};
 
-use frankenengine_node::security::remote_cap::{
-    RemoteCap, RemoteScope, RemoteOperation, CapabilityProvider,
-    CapabilityGate, ConnectivityMode, RemoteCapAuditEvent,
-};
-use frankenengine_node::api::session_auth::{SessionState, SessionManager};
-use frankenengine_node::api::service::{ServiceConfig, build_endpoint_catalog};
 use frankenengine_node::api::error::{ApiError, ApiErrorCode};
+use frankenengine_node::api::service::{ServiceConfig, build_endpoint_catalog};
+use frankenengine_node::api::session_auth::{SessionManager, SessionState};
 use frankenengine_node::security::epoch_scoped_keys::RootSecret;
+use frankenengine_node::security::remote_cap::{
+    CapabilityGate, CapabilityProvider, ConnectivityMode, RemoteCap, RemoteCapAuditEvent,
+    RemoteOperation, RemoteScope,
+};
 
 // ---------------------------------------------------------------------------
 // API Contract Version Constants
@@ -120,65 +120,80 @@ fn build_legacy_api_contract() -> ApiContractSpec {
     let mut endpoints = BTreeMap::new();
 
     // Legacy: Basic remote capability endpoint
-    endpoints.insert("issue_capability".to_string(), EndpointContract {
-        path: "/api/v1/remote/capability".to_string(),
-        method: "POST".to_string(),
-        request_schema: RequestSchema {
-            content_type: "application/json".to_string(),
-            required_fields: ["token_id", "issuer", "scope"].iter().map(|s| s.to_string()).collect(),
-            optional_fields: ["expires_at"].iter().map(|s| s.to_string()).collect(),
-            field_types: {
-                let mut types = BTreeMap::new();
-                types.insert("token_id".to_string(), "string".to_string());
-                types.insert("issuer".to_string(), "string".to_string());
-                types.insert("scope".to_string(), "object".to_string());
-                types.insert("expires_at".to_string(), "integer".to_string());
-                types
+    endpoints.insert(
+        "issue_capability".to_string(),
+        EndpointContract {
+            path: "/api/v1/remote/capability".to_string(),
+            method: "POST".to_string(),
+            request_schema: RequestSchema {
+                content_type: "application/json".to_string(),
+                required_fields: ["token_id", "issuer", "scope"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                optional_fields: ["expires_at"].iter().map(|s| s.to_string()).collect(),
+                field_types: {
+                    let mut types = BTreeMap::new();
+                    types.insert("token_id".to_string(), "string".to_string());
+                    types.insert("issuer".to_string(), "string".to_string());
+                    types.insert("scope".to_string(), "object".to_string());
+                    types.insert("expires_at".to_string(), "integer".to_string());
+                    types
+                },
             },
+            response_schema: ResponseSchema {
+                success_content_type: "application/json".to_string(),
+                success_fields: ["capability_token", "signature"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                error_content_type: "application/json".to_string(),
+                status_codes: [200, 400, 401, 403, 500].iter().copied().collect(),
+            },
+            auth_required: true,
+            rate_limit: Some(RateLimit {
+                requests_per_minute: 60,
+                burst_capacity: 10,
+            }),
+            introduced_in_version: LEGACY_API_CONTRACT.to_string(),
+            deprecated_in_version: None,
         },
-        response_schema: ResponseSchema {
-            success_content_type: "application/json".to_string(),
-            success_fields: ["capability_token", "signature"].iter().map(|s| s.to_string()).collect(),
-            error_content_type: "application/json".to_string(),
-            status_codes: [200, 400, 401, 403, 500].iter().copied().collect(),
-        },
-        auth_required: true,
-        rate_limit: Some(RateLimit {
-            requests_per_minute: 60,
-            burst_capacity: 10,
-        }),
-        introduced_in_version: LEGACY_API_CONTRACT.to_string(),
-        deprecated_in_version: None,
-    });
+    );
 
     // Legacy: Basic session endpoint
-    endpoints.insert("create_session".to_string(), EndpointContract {
-        path: "/api/v1/session".to_string(),
-        method: "POST".to_string(),
-        request_schema: RequestSchema {
-            content_type: "application/json".to_string(),
-            required_fields: ["session_id"].iter().map(|s| s.to_string()).collect(),
-            optional_fields: BTreeSet::new(),
-            field_types: {
-                let mut types = BTreeMap::new();
-                types.insert("session_id".to_string(), "string".to_string());
-                types
+    endpoints.insert(
+        "create_session".to_string(),
+        EndpointContract {
+            path: "/api/v1/session".to_string(),
+            method: "POST".to_string(),
+            request_schema: RequestSchema {
+                content_type: "application/json".to_string(),
+                required_fields: ["session_id"].iter().map(|s| s.to_string()).collect(),
+                optional_fields: BTreeSet::new(),
+                field_types: {
+                    let mut types = BTreeMap::new();
+                    types.insert("session_id".to_string(), "string".to_string());
+                    types
+                },
             },
+            response_schema: ResponseSchema {
+                success_content_type: "application/json".to_string(),
+                success_fields: ["session_token", "expires_at"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                error_content_type: "application/json".to_string(),
+                status_codes: [200, 400, 409, 500].iter().copied().collect(),
+            },
+            auth_required: false,
+            rate_limit: Some(RateLimit {
+                requests_per_minute: 30,
+                burst_capacity: 5,
+            }),
+            introduced_in_version: LEGACY_API_CONTRACT.to_string(),
+            deprecated_in_version: None,
         },
-        response_schema: ResponseSchema {
-            success_content_type: "application/json".to_string(),
-            success_fields: ["session_token", "expires_at"].iter().map(|s| s.to_string()).collect(),
-            error_content_type: "application/json".to_string(),
-            status_codes: [200, 400, 409, 500].iter().copied().collect(),
-        },
-        auth_required: false,
-        rate_limit: Some(RateLimit {
-            requests_per_minute: 30,
-            burst_capacity: 5,
-        }),
-        introduced_in_version: LEGACY_API_CONTRACT.to_string(),
-        deprecated_in_version: None,
-    });
+    );
 
     ApiContractSpec {
         version: LEGACY_API_CONTRACT.to_string(),
@@ -200,107 +215,140 @@ fn build_current_api_contract() -> ApiContractSpec {
     let mut endpoints = BTreeMap::new();
 
     // Current: Enhanced remote capability endpoint
-    endpoints.insert("issue_capability".to_string(), EndpointContract {
-        path: "/api/v2/remote/capability/issue".to_string(),
-        method: "POST".to_string(),
-        request_schema: RequestSchema {
-            content_type: "application/json".to_string(),
-            required_fields: ["token_id", "issuer", "scope", "trace_id"].iter().map(|s| s.to_string()).collect(),
-            optional_fields: ["expires_at", "single_use"].iter().map(|s| s.to_string()).collect(),
-            field_types: {
-                let mut types = BTreeMap::new();
-                types.insert("token_id".to_string(), "string".to_string());
-                types.insert("issuer".to_string(), "string".to_string());
-                types.insert("scope".to_string(), "object".to_string());
-                types.insert("trace_id".to_string(), "string".to_string());
-                types.insert("expires_at".to_string(), "integer".to_string());
-                types.insert("single_use".to_string(), "boolean".to_string());
-                types
+    endpoints.insert(
+        "issue_capability".to_string(),
+        EndpointContract {
+            path: "/api/v2/remote/capability/issue".to_string(),
+            method: "POST".to_string(),
+            request_schema: RequestSchema {
+                content_type: "application/json".to_string(),
+                required_fields: ["token_id", "issuer", "scope", "trace_id"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                optional_fields: ["expires_at", "single_use"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                field_types: {
+                    let mut types = BTreeMap::new();
+                    types.insert("token_id".to_string(), "string".to_string());
+                    types.insert("issuer".to_string(), "string".to_string());
+                    types.insert("scope".to_string(), "object".to_string());
+                    types.insert("trace_id".to_string(), "string".to_string());
+                    types.insert("expires_at".to_string(), "integer".to_string());
+                    types.insert("single_use".to_string(), "boolean".to_string());
+                    types
+                },
             },
+            response_schema: ResponseSchema {
+                success_content_type: "application/json".to_string(),
+                success_fields: ["capability_token", "signature", "issued_at", "trace_id"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                error_content_type: "application/json".to_string(),
+                status_codes: [200, 400, 401, 403, 429, 500].iter().copied().collect(),
+            },
+            auth_required: true,
+            rate_limit: Some(RateLimit {
+                requests_per_minute: 120,
+                burst_capacity: 20,
+            }),
+            introduced_in_version: CURRENT_API_CONTRACT.to_string(),
+            deprecated_in_version: None,
         },
-        response_schema: ResponseSchema {
-            success_content_type: "application/json".to_string(),
-            success_fields: ["capability_token", "signature", "issued_at", "trace_id"].iter().map(|s| s.to_string()).collect(),
-            error_content_type: "application/json".to_string(),
-            status_codes: [200, 400, 401, 403, 429, 500].iter().copied().collect(),
-        },
-        auth_required: true,
-        rate_limit: Some(RateLimit {
-            requests_per_minute: 120,
-            burst_capacity: 20,
-        }),
-        introduced_in_version: CURRENT_API_CONTRACT.to_string(),
-        deprecated_in_version: None,
-    });
+    );
 
     // Current: Capability verification endpoint
-    endpoints.insert("verify_capability".to_string(), EndpointContract {
-        path: "/api/v2/remote/capability/verify".to_string(),
-        method: "POST".to_string(),
-        request_schema: RequestSchema {
-            content_type: "application/json".to_string(),
-            required_fields: ["capability_token", "operation", "endpoint", "trace_id"].iter().map(|s| s.to_string()).collect(),
-            optional_fields: BTreeSet::new(),
-            field_types: {
-                let mut types = BTreeMap::new();
-                types.insert("capability_token".to_string(), "string".to_string());
-                types.insert("operation".to_string(), "string".to_string());
-                types.insert("endpoint".to_string(), "string".to_string());
-                types.insert("trace_id".to_string(), "string".to_string());
-                types
+    endpoints.insert(
+        "verify_capability".to_string(),
+        EndpointContract {
+            path: "/api/v2/remote/capability/verify".to_string(),
+            method: "POST".to_string(),
+            request_schema: RequestSchema {
+                content_type: "application/json".to_string(),
+                required_fields: ["capability_token", "operation", "endpoint", "trace_id"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                optional_fields: BTreeSet::new(),
+                field_types: {
+                    let mut types = BTreeMap::new();
+                    types.insert("capability_token".to_string(), "string".to_string());
+                    types.insert("operation".to_string(), "string".to_string());
+                    types.insert("endpoint".to_string(), "string".to_string());
+                    types.insert("trace_id".to_string(), "string".to_string());
+                    types
+                },
             },
+            response_schema: ResponseSchema {
+                success_content_type: "application/json".to_string(),
+                success_fields: ["authorized", "audit_event", "trace_id"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                error_content_type: "application/json".to_string(),
+                status_codes: [200, 400, 401, 403, 429, 500].iter().copied().collect(),
+            },
+            auth_required: true,
+            rate_limit: Some(RateLimit {
+                requests_per_minute: 600,
+                burst_capacity: 100,
+            }),
+            introduced_in_version: CURRENT_API_CONTRACT.to_string(),
+            deprecated_in_version: None,
         },
-        response_schema: ResponseSchema {
-            success_content_type: "application/json".to_string(),
-            success_fields: ["authorized", "audit_event", "trace_id"].iter().map(|s| s.to_string()).collect(),
-            error_content_type: "application/json".to_string(),
-            status_codes: [200, 400, 401, 403, 429, 500].iter().copied().collect(),
-        },
-        auth_required: true,
-        rate_limit: Some(RateLimit {
-            requests_per_minute: 600,
-            burst_capacity: 100,
-        }),
-        introduced_in_version: CURRENT_API_CONTRACT.to_string(),
-        deprecated_in_version: None,
-    });
+    );
 
     // Current: Session management with HMAC
-    endpoints.insert("create_session".to_string(), EndpointContract {
-        path: "/api/v2/session/create".to_string(),
-        method: "POST".to_string(),
-        request_schema: RequestSchema {
-            content_type: "application/json".to_string(),
-            required_fields: ["session_id", "auth_method", "trace_id"].iter().map(|s| s.to_string()).collect(),
-            optional_fields: ["hmac_transcript"].iter().map(|s| s.to_string()).collect(),
-            field_types: {
-                let mut types = BTreeMap::new();
-                types.insert("session_id".to_string(), "string".to_string());
-                types.insert("auth_method".to_string(), "string".to_string());
-                types.insert("trace_id".to_string(), "string".to_string());
-                types.insert("hmac_transcript".to_string(), "string".to_string());
-                types
+    endpoints.insert(
+        "create_session".to_string(),
+        EndpointContract {
+            path: "/api/v2/session/create".to_string(),
+            method: "POST".to_string(),
+            request_schema: RequestSchema {
+                content_type: "application/json".to_string(),
+                required_fields: ["session_id", "auth_method", "trace_id"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                optional_fields: ["hmac_transcript"].iter().map(|s| s.to_string()).collect(),
+                field_types: {
+                    let mut types = BTreeMap::new();
+                    types.insert("session_id".to_string(), "string".to_string());
+                    types.insert("auth_method".to_string(), "string".to_string());
+                    types.insert("trace_id".to_string(), "string".to_string());
+                    types.insert("hmac_transcript".to_string(), "string".to_string());
+                    types
+                },
             },
+            response_schema: ResponseSchema {
+                success_content_type: "application/json".to_string(),
+                success_fields: ["session_token", "expires_at", "sequence_number", "trace_id"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                error_content_type: "application/json".to_string(),
+                status_codes: [200, 400, 409, 429, 500].iter().copied().collect(),
+            },
+            auth_required: false,
+            rate_limit: Some(RateLimit {
+                requests_per_minute: 60,
+                burst_capacity: 10,
+            }),
+            introduced_in_version: CURRENT_API_CONTRACT.to_string(),
+            deprecated_in_version: None,
         },
-        response_schema: ResponseSchema {
-            success_content_type: "application/json".to_string(),
-            success_fields: ["session_token", "expires_at", "sequence_number", "trace_id"].iter().map(|s| s.to_string()).collect(),
-            error_content_type: "application/json".to_string(),
-            status_codes: [200, 400, 409, 429, 500].iter().copied().collect(),
-        },
-        auth_required: false,
-        rate_limit: Some(RateLimit {
-            requests_per_minute: 60,
-            burst_capacity: 10,
-        }),
-        introduced_in_version: CURRENT_API_CONTRACT.to_string(),
-        deprecated_in_version: None,
-    });
+    );
 
     ApiContractSpec {
         version: CURRENT_API_CONTRACT.to_string(),
         endpoints,
-        authentication_methods: ["basic_session", "hmac_session"].iter().map(|s| s.to_string()).collect(),
+        authentication_methods: ["basic_session", "hmac_session"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
         error_format: ErrorFormatSpec {
             version: CURRENT_ERROR_SCHEMA.to_string(),
             error_code_field: "error_code".to_string(),
@@ -309,7 +357,10 @@ fn build_current_api_contract() -> ApiContractSpec {
             timestamp_field: Some("timestamp".to_string()),
             trace_id_field: Some("trace_id".to_string()),
         },
-        remote_cap_features: ["basic_issuing", "scope_validation", "audit_trails"].iter().map(|s| s.to_string()).collect(),
+        remote_cap_features: ["basic_issuing", "scope_validation", "audit_trails"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
     }
 }
 
@@ -319,39 +370,57 @@ fn build_future_api_contract() -> ApiContractSpec {
     contract.version = FUTURE_API_CONTRACT.to_string();
 
     // Future: Batch capability operations
-    contract.endpoints.insert("batch_capabilities".to_string(), EndpointContract {
-        path: "/api/v2/remote/capability/batch".to_string(),
-        method: "POST".to_string(),
-        request_schema: RequestSchema {
-            content_type: "application/json".to_string(),
-            required_fields: ["operations", "trace_id"].iter().map(|s| s.to_string()).collect(),
-            optional_fields: ["transaction_id"].iter().map(|s| s.to_string()).collect(),
-            field_types: {
-                let mut types = BTreeMap::new();
-                types.insert("operations".to_string(), "array".to_string());
-                types.insert("trace_id".to_string(), "string".to_string());
-                types.insert("transaction_id".to_string(), "string".to_string());
-                types
+    contract.endpoints.insert(
+        "batch_capabilities".to_string(),
+        EndpointContract {
+            path: "/api/v2/remote/capability/batch".to_string(),
+            method: "POST".to_string(),
+            request_schema: RequestSchema {
+                content_type: "application/json".to_string(),
+                required_fields: ["operations", "trace_id"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                optional_fields: ["transaction_id"].iter().map(|s| s.to_string()).collect(),
+                field_types: {
+                    let mut types = BTreeMap::new();
+                    types.insert("operations".to_string(), "array".to_string());
+                    types.insert("trace_id".to_string(), "string".to_string());
+                    types.insert("transaction_id".to_string(), "string".to_string());
+                    types
+                },
             },
+            response_schema: ResponseSchema {
+                success_content_type: "application/json".to_string(),
+                success_fields: ["results", "transaction_id", "trace_id"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                error_content_type: "application/json".to_string(),
+                status_codes: [200, 400, 401, 403, 422, 429, 500]
+                    .iter()
+                    .copied()
+                    .collect(),
+            },
+            auth_required: true,
+            rate_limit: Some(RateLimit {
+                requests_per_minute: 30,
+                burst_capacity: 5,
+            }),
+            introduced_in_version: FUTURE_API_CONTRACT.to_string(),
+            deprecated_in_version: None,
         },
-        response_schema: ResponseSchema {
-            success_content_type: "application/json".to_string(),
-            success_fields: ["results", "transaction_id", "trace_id"].iter().map(|s| s.to_string()).collect(),
-            error_content_type: "application/json".to_string(),
-            status_codes: [200, 400, 401, 403, 422, 429, 500].iter().copied().collect(),
-        },
-        auth_required: true,
-        rate_limit: Some(RateLimit {
-            requests_per_minute: 30,
-            burst_capacity: 5,
-        }),
-        introduced_in_version: FUTURE_API_CONTRACT.to_string(),
-        deprecated_in_version: None,
-    });
+    );
 
-    contract.authentication_methods.insert("mutual_tls".to_string());
-    contract.remote_cap_features.insert("batch_operations".to_string());
-    contract.remote_cap_features.insert("capability_chaining".to_string());
+    contract
+        .authentication_methods
+        .insert("mutual_tls".to_string());
+    contract
+        .remote_cap_features
+        .insert("batch_operations".to_string());
+    contract
+        .remote_cap_features
+        .insert("capability_chaining".to_string());
 
     contract.error_format = ErrorFormatSpec {
         version: FUTURE_ERROR_SCHEMA.to_string(),
@@ -368,26 +437,29 @@ fn build_future_api_contract() -> ApiContractSpec {
 fn build_minimal_api_contract() -> ApiContractSpec {
     let mut endpoints = BTreeMap::new();
 
-    endpoints.insert("health_check".to_string(), EndpointContract {
-        path: "/health".to_string(),
-        method: "GET".to_string(),
-        request_schema: RequestSchema {
-            content_type: "application/json".to_string(),
-            required_fields: BTreeSet::new(),
-            optional_fields: BTreeSet::new(),
-            field_types: BTreeMap::new(),
+    endpoints.insert(
+        "health_check".to_string(),
+        EndpointContract {
+            path: "/health".to_string(),
+            method: "GET".to_string(),
+            request_schema: RequestSchema {
+                content_type: "application/json".to_string(),
+                required_fields: BTreeSet::new(),
+                optional_fields: BTreeSet::new(),
+                field_types: BTreeMap::new(),
+            },
+            response_schema: ResponseSchema {
+                success_content_type: "application/json".to_string(),
+                success_fields: ["status"].iter().map(|s| s.to_string()).collect(),
+                error_content_type: "application/json".to_string(),
+                status_codes: [200, 503].iter().copied().collect(),
+            },
+            auth_required: false,
+            rate_limit: None,
+            introduced_in_version: "unknown".to_string(),
+            deprecated_in_version: None,
         },
-        response_schema: ResponseSchema {
-            success_content_type: "application/json".to_string(),
-            success_fields: ["status"].iter().map(|s| s.to_string()).collect(),
-            error_content_type: "application/json".to_string(),
-            status_codes: [200, 503].iter().copied().collect(),
-        },
-        auth_required: false,
-        rate_limit: None,
-        introduced_in_version: "unknown".to_string(),
-        deprecated_in_version: None,
-    });
+    );
 
     ApiContractSpec {
         version: "unknown".to_string(),
@@ -422,16 +494,26 @@ pub struct ContractConformanceResult {
     pub compatibility_issues: Vec<String>,
 }
 
-pub fn test_contract_conformance(client_version: &str, server_version: &str) -> ContractConformanceResult {
+pub fn test_contract_conformance(
+    client_version: &str,
+    server_version: &str,
+) -> ContractConformanceResult {
     let client_contract = build_api_contract_spec(client_version);
     let server_contract = build_api_contract_spec(server_version);
 
-    let endpoint_compatibility = calculate_endpoint_compatibility(&client_contract, &server_contract);
-    let auth_method_compatibility = calculate_auth_compatibility(&client_contract, &server_contract);
-    let error_format_compatibility = calculate_error_format_compatibility(&client_contract, &server_contract);
+    let endpoint_compatibility =
+        calculate_endpoint_compatibility(&client_contract, &server_contract);
+    let auth_method_compatibility =
+        calculate_auth_compatibility(&client_contract, &server_contract);
+    let error_format_compatibility =
+        calculate_error_format_compatibility(&client_contract, &server_contract);
     let feature_compatibility = calculate_feature_compatibility(&client_contract, &server_contract);
 
-    let overall_score = (endpoint_compatibility + auth_method_compatibility + error_format_compatibility + feature_compatibility) / 4.0;
+    let overall_score = (endpoint_compatibility
+        + auth_method_compatibility
+        + error_format_compatibility
+        + feature_compatibility)
+        / 4.0;
 
     let mut compatibility_issues = Vec::new();
     if endpoint_compatibility < 0.8 {
@@ -448,7 +530,11 @@ pub fn test_contract_conformance(client_version: &str, server_version: &str) -> 
     }
 
     ContractConformanceResult {
-        test_name: format!("contract_conformance_{}_{}", client_version.replace("-", "_"), server_version.replace("-", "_")),
+        test_name: format!(
+            "contract_conformance_{}_{}",
+            client_version.replace("-", "_"),
+            server_version.replace("-", "_")
+        ),
         client_version: client_version.to_string(),
         server_version: server_version.to_string(),
         endpoint_compatibility,
@@ -494,11 +580,13 @@ fn calculate_auth_compatibility(client: &ApiContractSpec, server: &ApiContractSp
         return 1.0;
     }
 
-    let intersection = client.authentication_methods
+    let intersection = client
+        .authentication_methods
         .intersection(&server.authentication_methods)
         .count();
 
-    let union_size = client.authentication_methods
+    let union_size = client
+        .authentication_methods
         .union(&server.authentication_methods)
         .count();
 
@@ -545,7 +633,8 @@ fn calculate_feature_compatibility(client: &ApiContractSpec, server: &ApiContrac
         return 1.0;
     }
 
-    let intersection = client.remote_cap_features
+    let intersection = client
+        .remote_cap_features
         .intersection(&server.remote_cap_features)
         .count();
 
@@ -584,24 +673,32 @@ fn test_remote_api_conformance_matrix() {
     });
 
     // Assert critical backward compatibility
-    let backward_compat = all_results.iter().find(|r|
-        r.client_version == LEGACY_API_CONTRACT &&
-        r.server_version == CURRENT_API_CONTRACT
-    ).unwrap();
+    let backward_compat = all_results
+        .iter()
+        .find(|r| {
+            r.client_version == LEGACY_API_CONTRACT && r.server_version == CURRENT_API_CONTRACT
+        })
+        .unwrap();
 
-    assert!(backward_compat.overall_score >= 0.8,
+    assert!(
+        backward_compat.overall_score >= 0.8,
         "Backward compatibility from legacy to current failed: score {:.2}",
-        backward_compat.overall_score);
+        backward_compat.overall_score
+    );
 
     // Assert forward compatibility with graceful degradation
-    let forward_compat = all_results.iter().find(|r|
-        r.client_version == FUTURE_API_CONTRACT &&
-        r.server_version == CURRENT_API_CONTRACT
-    ).unwrap();
+    let forward_compat = all_results
+        .iter()
+        .find(|r| {
+            r.client_version == FUTURE_API_CONTRACT && r.server_version == CURRENT_API_CONTRACT
+        })
+        .unwrap();
 
-    assert!(forward_compat.overall_score >= 0.7,
+    assert!(
+        forward_compat.overall_score >= 0.7,
         "Forward compatibility from future to current failed: score {:.2}",
-        forward_compat.overall_score);
+        forward_compat.overall_score
+    );
 }
 
 #[test]
@@ -627,7 +724,9 @@ fn test_remote_capability_protocol_versions() {
         let features = match protocol_version {
             LEGACY_REMOTE_CAP_PROTOCOL => vec!["basic_issuing"],
             CURRENT_REMOTE_CAP_PROTOCOL => vec!["basic_issuing", "scope_validation"],
-            FUTURE_REMOTE_CAP_PROTOCOL => vec!["basic_issuing", "scope_validation", "batch_operations"],
+            FUTURE_REMOTE_CAP_PROTOCOL => {
+                vec!["basic_issuing", "scope_validation", "batch_operations"]
+            }
             _ => vec![],
         };
 
@@ -771,6 +870,12 @@ fn test_endpoint_catalog_conformance() {
 
     // Assert that all contract endpoints are represented in catalog
     // (In a real implementation, there would be more sophisticated matching logic)
-    assert!(!endpoint_catalog.is_empty(), "Endpoint catalog should not be empty");
-    assert!(!current_contract.endpoints.is_empty(), "Contract specification should not be empty");
+    assert!(
+        !endpoint_catalog.is_empty(),
+        "Endpoint catalog should not be empty"
+    );
+    assert!(
+        !current_contract.endpoints.is_empty(),
+        "Contract specification should not be empty"
+    );
 }

@@ -15,31 +15,30 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
-use tracing::{info, warn, error, debug};
-use uuid::Uuid;
 use tempfile::TempDir;
+use tokio::sync::RwLock;
+use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
 use frankenengine_node::supply_chain::{
+    artifact_signing::{KeyId, KeyRing},
     extension_registry::{
-        SignedExtensionRegistry, AdmissionKernel, RegistrationRequest, RegistryResult,
-        ExtensionSignature, RegistryConfig, AdmissionReceipt, VersionEntry,
-        RevocationRecord, RegistryAuditRecord,
+        AdmissionKernel, AdmissionReceipt, ExtensionSignature, RegistrationRequest,
+        RegistryAuditRecord, RegistryConfig, RegistryResult, RevocationRecord,
+        SignedExtensionRegistry, VersionEntry,
     },
-    artifact_signing::{KeyRing, KeyId},
-    provenance as prov,
-    transparency_verifier as tv,
+    provenance as prov, transparency_verifier as tv,
 };
 
 use frankenengine_node::claims::claim_compiler::{
-    ClaimCompiler, CompilerConfig, ExternalClaim, CompilationResult,
-    CompiledContract, ScoreboardPipeline, ScoreboardConfig,
-    ClaimRejectionReason, ScoreboardRejectionReason, make_test_claim,
+    ClaimCompiler, ClaimRejectionReason, CompilationResult, CompiledContract, CompilerConfig,
+    ExternalClaim, ScoreboardConfig, ScoreboardPipeline, ScoreboardRejectionReason,
+    make_test_claim,
 };
 
 use frankenengine_node::security::constant_time;
-use sha2::{Digest, Sha256};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 /// Real-service supply chain integration test harness
 #[derive(Debug)]
@@ -109,9 +108,10 @@ impl SupplyChainE2EHarness {
         info!("Initializing supply chain e2e harness with real services");
 
         Self {
-            registry: Arc::new(RwLock::new(
-                SignedExtensionRegistry::new(registry_config, admission_kernel.clone())
-            )),
+            registry: Arc::new(RwLock::new(SignedExtensionRegistry::new(
+                registry_config,
+                admission_kernel.clone(),
+            ))),
             admission_kernel,
             claims_compiler: Arc::new(ClaimCompiler::new(compiler_config)),
             scoreboard: Arc::new(ScoreboardPipeline::new(scoreboard_config)),
@@ -139,7 +139,9 @@ impl SupplyChainE2EHarness {
     }
 
     /// Test registry admission with real cryptographic verification
-    async fn test_registry_admission_e2e(&mut self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    async fn test_registry_admission_e2e(
+        &mut self,
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
         let start_time = Instant::now();
         let job_id = Uuid::new_v4().to_string();
 
@@ -150,14 +152,25 @@ impl SupplyChainE2EHarness {
 
         // Step 1: Create real registration request with proper signatures
         let extension_name = format!("test-extension-{}", Uuid::new_v4().to_simple());
-        let registration_request = self.create_real_registration_request(&extension_name).await?;
+        let registration_request = self
+            .create_real_registration_request(&extension_name)
+            .await?;
         context.insert("extension_name".to_string(), extension_name.clone());
-        context.insert("request_size".to_string(), serde_json::to_string(&registration_request)?.len().to_string());
+        context.insert(
+            "request_size".to_string(),
+            serde_json::to_string(&registration_request)?
+                .len()
+                .to_string(),
+        );
 
         // Step 2: Register extension with real registry
         let submission_result = {
             let mut registry = self.registry.write().await;
-            registry.register(registration_request.clone(), &job_id, chrono::Utc::now().timestamp_millis() as u64)
+            registry.register(
+                registration_request.clone(),
+                &job_id,
+                chrono::Utc::now().timestamp_millis() as u64,
+            )
         };
 
         if submission_result.success {
@@ -188,7 +201,10 @@ impl SupplyChainE2EHarness {
                         warn!(job_id = %job_id, "Admission receipt shows verification failure");
                         context.insert("admission_verified".to_string(), "false".to_string());
                         if let Some(witness) = &latest_receipt.witness {
-                            context.insert("rejection_reason".to_string(), witness.rejection_reason.clone());
+                            context.insert(
+                                "rejection_reason".to_string(),
+                                witness.rejection_reason.clone(),
+                            );
                         }
                     }
                 }
@@ -220,7 +236,8 @@ impl SupplyChainE2EHarness {
                     error: None,
                     context,
                     ..Default::default()
-                }).await;
+                })
+                .await;
             } else {
                 return Err("Extension registration succeeded but no extension_id returned".into());
             }
@@ -246,16 +263,23 @@ impl SupplyChainE2EHarness {
                 error: Some(submission_result.detail.clone()),
                 context,
                 ..Default::default()
-            }).await;
+            })
+            .await;
 
-            return Err(format!("Extension registration failed: {}", submission_result.detail).into());
+            return Err(format!(
+                "Extension registration failed: {}",
+                submission_result.detail
+            )
+            .into());
         }
 
         Ok(admitted_extensions)
     }
 
     /// Test claims envelope lifecycle with real compilation and verification
-    async fn test_claims_envelope_lifecycle_e2e(&mut self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    async fn test_claims_envelope_lifecycle_e2e(
+        &mut self,
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
         let start_time = Instant::now();
         let job_id = Uuid::new_v4().to_string();
 
@@ -277,13 +301,19 @@ impl SupplyChainE2EHarness {
         };
 
         context.insert("claim_id".to_string(), claim_id.clone());
-        context.insert("evidence_count".to_string(), external_claim.evidence_uris.len().to_string());
+        context.insert(
+            "evidence_count".to_string(),
+            external_claim.evidence_uris.len().to_string(),
+        );
 
         // Step 2: Compile claim using real compiler (no mocks)
         let compilation_result = self.claims_compiler.compile(&external_claim);
 
         match compilation_result {
-            CompilationResult::Compiled { contract, event_code } => {
+            CompilationResult::Compiled {
+                contract,
+                event_code,
+            } => {
                 info!(
                     job_id = %job_id,
                     claim_id = %claim_id,
@@ -293,8 +323,14 @@ impl SupplyChainE2EHarness {
                 );
 
                 compiled_contracts.push(contract.claim_id.clone());
-                context.insert("contract_digest".to_string(), contract.contract_digest.clone());
-                context.insert("signature_length".to_string(), contract.signature.len().to_string());
+                context.insert(
+                    "contract_digest".to_string(),
+                    contract.contract_digest.clone(),
+                );
+                context.insert(
+                    "signature_length".to_string(),
+                    contract.signature.len().to_string(),
+                );
 
                 // Step 3: Verify compiled contract signature using real crypto
                 let signature_valid = self.verify_contract_signature(&contract).await?;
@@ -400,7 +436,11 @@ impl SupplyChainE2EHarness {
                     }
                 }
             }
-            CompilationResult::Rejected { claim_id, reason, error_code } => {
+            CompilationResult::Rejected {
+                claim_id,
+                reason,
+                error_code,
+            } => {
                 error!(
                     job_id = %job_id,
                     claim_id = %claim_id,
@@ -421,7 +461,8 @@ impl SupplyChainE2EHarness {
                     error: Some(format!("Compilation rejected: {:?}", reason)),
                     context,
                     ..Default::default()
-                }).await;
+                })
+                .await;
 
                 return Err(format!("Claim compilation failed: {:?}", reason).into());
             }
@@ -431,7 +472,9 @@ impl SupplyChainE2EHarness {
     }
 
     /// Test complete registry admission + claims lifecycle integration
-    async fn test_full_supply_chain_integration_e2e(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn test_full_supply_chain_integration_e2e(
+        &mut self,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let start_time = Instant::now();
         let job_id = Uuid::new_v4().to_string();
 
@@ -441,16 +484,24 @@ impl SupplyChainE2EHarness {
 
         // Phase 1: Registry admission
         let admitted_extensions = self.test_registry_admission_e2e().await?;
-        context.insert("admitted_extensions".to_string(), admitted_extensions.len().to_string());
+        context.insert(
+            "admitted_extensions".to_string(),
+            admitted_extensions.len().to_string(),
+        );
 
         // Phase 2: Claims lifecycle
         let compiled_contracts = self.test_claims_envelope_lifecycle_e2e().await?;
-        context.insert("compiled_contracts".to_string(), compiled_contracts.len().to_string());
+        context.insert(
+            "compiled_contracts".to_string(),
+            compiled_contracts.len().to_string(),
+        );
 
         // Phase 3: Cross-component verification
         // Verify that admitted extensions can reference compiled claims
         for (ext_id, contract_id) in admitted_extensions.iter().zip(compiled_contracts.iter()) {
-            let cross_ref_valid = self.verify_cross_component_reference(ext_id, contract_id).await?;
+            let cross_ref_valid = self
+                .verify_cross_component_reference(ext_id, contract_id)
+                .await?;
             context.insert(format!("cross_ref_{}", ext_id), cross_ref_valid.to_string());
 
             info!(
@@ -479,7 +530,8 @@ impl SupplyChainE2EHarness {
             bytes_processed: None, // Calculated in sub-operations
             error: None,
             context,
-        }).await;
+        })
+        .await;
 
         info!(
             job_id = %job_id,
@@ -492,7 +544,10 @@ impl SupplyChainE2EHarness {
 
     // Helper methods for real service operations
 
-    async fn create_real_registration_request(&self, extension_name: &str) -> Result<RegistrationRequest, Box<dyn std::error::Error>> {
+    async fn create_real_registration_request(
+        &self,
+        extension_name: &str,
+    ) -> Result<RegistrationRequest, Box<dyn std::error::Error>> {
         // Create a real registration request with test signatures
         let manifest_content = format!(r#"{{"name": "{}", "version": "1.0.0"}}"#, extension_name);
         let manifest_bytes = manifest_content.as_bytes().to_vec();
@@ -538,7 +593,10 @@ impl SupplyChainE2EHarness {
         })
     }
 
-    async fn verify_contract_signature(&self, contract: &CompiledContract) -> Result<bool, Box<dyn std::error::Error>> {
+    async fn verify_contract_signature(
+        &self,
+        contract: &CompiledContract,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
         // Real signature verification using the key ring
         let signature_bytes = hex::decode(&contract.signature)?;
         let content_hash = {
@@ -553,7 +611,11 @@ impl SupplyChainE2EHarness {
         Ok(constant_time::ct_eq(&signature_bytes, &expected_signature))
     }
 
-    async fn verify_cross_component_reference(&self, extension_id: &str, contract_id: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    async fn verify_cross_component_reference(
+        &self,
+        extension_id: &str,
+        contract_id: &str,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
         // Verify that registry entries can properly reference claims contracts
         // This would involve checking that the extension registry and claims compiler
         // can properly cross-reference each other's entries
@@ -641,7 +703,10 @@ async fn e2e_registry_admission_real_services() {
     match result {
         Ok(admitted) => {
             assert!(!admitted.is_empty(), "Should admit at least one extension");
-            info!(admitted_count = admitted.len(), "Registry admission e2e test passed");
+            info!(
+                admitted_count = admitted.len(),
+                "Registry admission e2e test passed"
+            );
         }
         Err(e) => {
             error!(error = %e, "Registry admission e2e test failed");
@@ -660,7 +725,10 @@ async fn e2e_claims_envelope_lifecycle_real_services() {
     match result {
         Ok(compiled) => {
             assert!(!compiled.is_empty(), "Should compile at least one claim");
-            info!(compiled_count = compiled.len(), "Claims envelope lifecycle e2e test passed");
+            info!(
+                compiled_count = compiled.len(),
+                "Claims envelope lifecycle e2e test passed"
+            );
         }
         Err(e) => {
             error!(error = %e, "Claims envelope lifecycle e2e test failed");

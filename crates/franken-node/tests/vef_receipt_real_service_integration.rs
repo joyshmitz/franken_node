@@ -10,21 +10,24 @@
 //! - Structured logging with timing data
 //! - Load testing and error path coverage
 
+use frankenengine_node::security::constant_time;
+use frankenengine_node::vef::{
+    evidence_capsule::{CapsuleIntegrity, EvidenceCapsule},
+    proof_scheduler::{ProofScheduler, SchedulerConfig, SchedulingDecision, WorkloadTier},
+    proof_service::{
+        ProofBackendId, ProofInputEnvelope, ProofOutputEnvelope, ProofServiceConfig,
+        VefProofService,
+    },
+    receipt_chain::{ChainValidationError, ReceiptChain, ReceiptIntegrity},
+    verification_state::{StateTransition, VerificationResult, VerificationState},
+};
+use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
-use frankenengine_node::vef::{
-    proof_service::{VefProofService, ProofServiceConfig, ProofBackendId, ProofInputEnvelope, ProofOutputEnvelope},
-    proof_scheduler::{ProofScheduler, WorkloadTier, SchedulerConfig, SchedulingDecision},
-    receipt_chain::{ReceiptChain, ReceiptIntegrity, ChainValidationError},
-    verification_state::{VerificationState, VerificationResult, StateTransition},
-    evidence_capsule::{EvidenceCapsule, CapsuleIntegrity},
-};
-use frankenengine_node::security::constant_time;
-use sha2::{Digest, Sha256};
-use serde_json::json;
+use tracing::{error, info, warn};
 
 /// Real-service VEF test harness with no mocked dependencies
 #[derive(Debug)]
@@ -101,12 +104,19 @@ impl VefReceiptTestHarness {
         format!("sha256:{:x}", Sha256::digest(input.as_bytes()))
     }
 
-    async fn generate_and_verify_proof(&mut self, job_id: &str, tier: WorkloadTier) -> Result<(ProofOutputEnvelope, Duration), String> {
+    async fn generate_and_verify_proof(
+        &mut self,
+        job_id: &str,
+        tier: WorkloadTier,
+    ) -> Result<(ProofOutputEnvelope, Duration), String> {
         let input = self.create_test_proof_input(job_id, tier);
         let start = Instant::now();
 
         // Generate proof using real proof service
-        let proof_result = self.proof_service.generate_proof(&input, None, chrono::Utc::now().timestamp_millis() as u64).await;
+        let proof_result = self
+            .proof_service
+            .generate_proof(&input, None, chrono::Utc::now().timestamp_millis() as u64)
+            .await;
         let proof = proof_result.map_err(|e| format!("Proof generation failed: {:?}", e))?;
 
         // Verify proof using real verification
@@ -127,17 +137,20 @@ impl VefReceiptTestHarness {
             error: None,
         };
 
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "vef_receipt_integration",
-            "operation": "generate_and_verify",
-            "job_id": job_id,
-            "tier": format!("{:?}", tier),
-            "duration_ms": op_log.duration_ms,
-            "proof_size_bytes": op_log.proof_size_bytes,
-            "backend_id": format!("{:?}", proof.backend_id),
-            "event": "proof_operation"
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "vef_receipt_integration",
+                "operation": "generate_and_verify",
+                "job_id": job_id,
+                "tier": format!("{:?}", tier),
+                "duration_ms": op_log.duration_ms,
+                "proof_size_bytes": op_log.proof_size_bytes,
+                "backend_id": format!("{:?}", proof.backend_id),
+                "event": "proof_operation"
+            })
+        );
 
         self.operation_logs.push(op_log);
 
@@ -153,28 +166,39 @@ impl VefReceiptTestHarness {
             let input = self.create_test_proof_input(&job_id, WorkloadTier::Medium);
 
             let start = Instant::now();
-            let proof = self.proof_service.generate_proof(&input, None, chrono::Utc::now().timestamp_millis() as u64).await
+            let proof = self
+                .proof_service
+                .generate_proof(&input, None, chrono::Utc::now().timestamp_millis() as u64)
+                .await
                 .map_err(|e| format!("Chain proof {} failed: {:?}", i, e))?;
 
             // Add to chain with previous receipt dependency
-            let previous_receipt = if i == 0 { None } else { receipt_ids.last().cloned() };
-            let receipt_id = chain.add_receipt(&proof, previous_receipt.as_deref())
+            let previous_receipt = if i == 0 {
+                None
+            } else {
+                receipt_ids.last().cloned()
+            };
+            let receipt_id = chain
+                .add_receipt(&proof, previous_receipt.as_deref())
                 .map_err(|e| format!("Failed to add receipt to chain: {:?}", e))?;
 
             receipt_ids.push(receipt_id.clone());
 
             let duration = start.elapsed();
 
-            eprintln!("{}", json!({
-                "ts": chrono::Utc::now().to_rfc3339(),
-                "suite": "vef_receipt_integration",
-                "operation": "chain_build",
-                "chain_position": i,
-                "receipt_id": receipt_id,
-                "previous_receipt": previous_receipt,
-                "duration_ms": duration.as_millis(),
-                "event": "receipt_chain_addition"
-            }));
+            eprintln!(
+                "{}",
+                json!({
+                    "ts": chrono::Utc::now().to_rfc3339(),
+                    "suite": "vef_receipt_integration",
+                    "operation": "chain_build",
+                    "chain_position": i,
+                    "receipt_id": receipt_id,
+                    "previous_receipt": previous_receipt,
+                    "duration_ms": duration.as_millis(),
+                    "event": "receipt_chain_addition"
+                })
+            );
         }
 
         Ok(receipt_ids)
@@ -186,20 +210,24 @@ impl VefReceiptTestHarness {
 
         // Verify each receipt and chain links
         for (i, receipt_id) in receipt_ids.iter().enumerate() {
-            let integrity = chain.verify_receipt_integrity(receipt_id)
+            let integrity = chain
+                .verify_receipt_integrity(receipt_id)
                 .map_err(|e| format!("Receipt {} integrity failed: {:?}", i, e))?;
 
             match integrity {
                 ReceiptIntegrity::Valid => {
-                    eprintln!("{}", json!({
-                        "ts": chrono::Utc::now().to_rfc3339(),
-                        "suite": "vef_receipt_integration",
-                        "operation": "integrity_check",
-                        "receipt_id": receipt_id,
-                        "position": i,
-                        "result": "valid",
-                        "event": "integrity_verification"
-                    }));
+                    eprintln!(
+                        "{}",
+                        json!({
+                            "ts": chrono::Utc::now().to_rfc3339(),
+                            "suite": "vef_receipt_integration",
+                            "operation": "integrity_check",
+                            "receipt_id": receipt_id,
+                            "position": i,
+                            "result": "valid",
+                            "event": "integrity_verification"
+                        })
+                    );
                 }
                 ReceiptIntegrity::Invalid(reason) => {
                     return Err(format!("Receipt {} integrity check failed: {}", i, reason));
@@ -209,11 +237,16 @@ impl VefReceiptTestHarness {
 
         // Verify chain links
         for i in 1..receipt_ids.len() {
-            let link_valid = chain.verify_chain_link(&receipt_ids[i-1], &receipt_ids[i])
-                .map_err(|e| format!("Chain link {}->{} verification failed: {:?}", i-1, i, e))?;
+            let link_valid = chain
+                .verify_chain_link(&receipt_ids[i - 1], &receipt_ids[i])
+                .map_err(|e| format!("Chain link {}->{} verification failed: {:?}", i - 1, i, e))?;
 
             if !link_valid {
-                return Err(format!("Chain link integrity broken between {} and {}", i-1, i));
+                return Err(format!(
+                    "Chain link integrity broken between {} and {}",
+                    i - 1,
+                    i
+                ));
             }
         }
 
@@ -223,15 +256,25 @@ impl VefReceiptTestHarness {
     fn export_performance_summary(&self) -> serde_json::Value {
         let total_duration = self.test_start.elapsed();
         let successful_ops = self.operation_logs.iter().filter(|log| log.success).count();
-        let failed_ops = self.operation_logs.iter().filter(|log| !log.success).count();
+        let failed_ops = self
+            .operation_logs
+            .iter()
+            .filter(|log| !log.success)
+            .count();
 
         let avg_duration: f64 = if !self.operation_logs.is_empty() {
-            self.operation_logs.iter().map(|log| log.duration_ms).sum::<u64>() as f64 / self.operation_logs.len() as f64
+            self.operation_logs
+                .iter()
+                .map(|log| log.duration_ms)
+                .sum::<u64>() as f64
+                / self.operation_logs.len() as f64
         } else {
             0.0
         };
 
-        let total_proof_size: usize = self.operation_logs.iter()
+        let total_proof_size: usize = self
+            .operation_logs
+            .iter()
             .filter_map(|log| log.proof_size_bytes)
             .sum();
 
@@ -256,24 +299,35 @@ async fn test_vef_receipt_chain_end_to_end_integration() {
     const CHAIN_LENGTH: usize = 5;
 
     // Build receipt chain with real proof generation
-    let receipt_ids = harness.build_receipt_chain(CHAIN_LENGTH).await
+    let receipt_ids = harness
+        .build_receipt_chain(CHAIN_LENGTH)
+        .await
         .expect("Receipt chain building should succeed");
 
-    assert_eq!(receipt_ids.len(), CHAIN_LENGTH, "Chain should contain expected number of receipts");
+    assert_eq!(
+        receipt_ids.len(),
+        CHAIN_LENGTH,
+        "Chain should contain expected number of receipts"
+    );
 
     // Verify chain integrity using real verification
-    let integrity_duration = harness.verify_chain_integrity(&receipt_ids).await
+    let integrity_duration = harness
+        .verify_chain_integrity(&receipt_ids)
+        .await
         .expect("Chain integrity verification should succeed");
 
-    eprintln!("{}", json!({
-        "ts": chrono::Utc::now().to_rfc3339(),
-        "suite": "vef_receipt_integration",
-        "test": "end_to_end_chain",
-        "chain_length": CHAIN_LENGTH,
-        "integrity_verification_ms": integrity_duration.as_millis(),
-        "receipt_ids": receipt_ids,
-        "event": "test_completion"
-    }));
+    eprintln!(
+        "{}",
+        json!({
+            "ts": chrono::Utc::now().to_rfc3339(),
+            "suite": "vef_receipt_integration",
+            "test": "end_to_end_chain",
+            "chain_length": CHAIN_LENGTH,
+            "integrity_verification_ms": integrity_duration.as_millis(),
+            "receipt_ids": receipt_ids,
+            "event": "test_completion"
+        })
+    );
 
     eprintln!("{}", harness.export_performance_summary());
 }
@@ -300,7 +354,9 @@ async fn test_proof_scheduler_under_load_real_services() {
 
         let handle = tokio::spawn(async move {
             let start = Instant::now();
-            let result = proof_service.generate_proof(&input, None, chrono::Utc::now().timestamp_millis() as u64).await;
+            let result = proof_service
+                .generate_proof(&input, None, chrono::Utc::now().timestamp_millis() as u64)
+                .await;
             (job_id, tier, start.elapsed(), result)
         });
 
@@ -313,53 +369,80 @@ async fn test_proof_scheduler_under_load_real_services() {
         let (job_id, tier, duration, result) = handle.await.expect("Task should not panic");
         results.push((job_id, tier, duration, result.is_ok()));
 
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "vef_receipt_integration",
-            "test": "scheduler_load",
-            "job_id": job_id,
-            "tier": format!("{:?}", tier),
-            "duration_ms": duration.as_millis(),
-            "success": result.is_ok(),
-            "event": "concurrent_proof_result"
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "vef_receipt_integration",
+                "test": "scheduler_load",
+                "job_id": job_id,
+                "tier": format!("{:?}", tier),
+                "duration_ms": duration.as_millis(),
+                "success": result.is_ok(),
+                "event": "concurrent_proof_result"
+            })
+        );
     }
 
     // Analyze load test results
     let successful = results.iter().filter(|(_, _, _, success)| *success).count();
-    let failed = results.iter().filter(|(_, _, _, success)| !*success).count();
+    let failed = results
+        .iter()
+        .filter(|(_, _, _, success)| !*success)
+        .count();
 
-    let high_tier_avg: f64 = results.iter()
+    let high_tier_avg: f64 = results
+        .iter()
         .filter(|(_, tier, _, success)| matches!(tier, WorkloadTier::High) && *success)
         .map(|(_, _, duration, _)| duration.as_millis() as f64)
-        .sum::<f64>() / results.iter().filter(|(_, tier, _, _)| matches!(tier, WorkloadTier::High)).count() as f64;
+        .sum::<f64>()
+        / results
+            .iter()
+            .filter(|(_, tier, _, _)| matches!(tier, WorkloadTier::High))
+            .count() as f64;
 
-    let low_tier_avg: f64 = results.iter()
+    let low_tier_avg: f64 = results
+        .iter()
         .filter(|(_, tier, _, success)| matches!(tier, WorkloadTier::Low) && *success)
         .map(|(_, _, duration, _)| duration.as_millis() as f64)
-        .sum::<f64>() / results.iter().filter(|(_, tier, _, _)| matches!(tier, WorkloadTier::Low)).count() as f64;
+        .sum::<f64>()
+        / results
+            .iter()
+            .filter(|(_, tier, _, _)| matches!(tier, WorkloadTier::Low))
+            .count() as f64;
 
-    eprintln!("{}", json!({
-        "ts": chrono::Utc::now().to_rfc3339(),
-        "suite": "vef_receipt_integration",
-        "test": "scheduler_load_summary",
-        "total_jobs": job_count,
-        "successful": successful,
-        "failed": failed,
-        "success_rate": successful as f64 / job_count as f64,
-        "high_tier_avg_ms": high_tier_avg,
-        "low_tier_avg_ms": low_tier_avg,
-        "tier_prioritization": high_tier_avg < low_tier_avg,
-        "event": "load_test_analysis"
-    }));
+    eprintln!(
+        "{}",
+        json!({
+            "ts": chrono::Utc::now().to_rfc3339(),
+            "suite": "vef_receipt_integration",
+            "test": "scheduler_load_summary",
+            "total_jobs": job_count,
+            "successful": successful,
+            "failed": failed,
+            "success_rate": successful as f64 / job_count as f64,
+            "high_tier_avg_ms": high_tier_avg,
+            "low_tier_avg_ms": low_tier_avg,
+            "tier_prioritization": high_tier_avg < low_tier_avg,
+            "event": "load_test_analysis"
+        })
+    );
 
     // Verify scheduler prioritization (high tier should be faster on average)
-    assert!(high_tier_avg <= low_tier_avg * 1.5,
-        "High tier jobs should be prioritized: {} vs {} ms", high_tier_avg, low_tier_avg);
+    assert!(
+        high_tier_avg <= low_tier_avg * 1.5,
+        "High tier jobs should be prioritized: {} vs {} ms",
+        high_tier_avg,
+        low_tier_avg
+    );
 
     // Verify acceptable success rate under load
     let success_rate = successful as f64 / job_count as f64;
-    assert!(success_rate >= 0.85, "Success rate too low under load: {:.2}%", success_rate * 100.0);
+    assert!(
+        success_rate >= 0.85,
+        "Success rate too low under load: {:.2}%",
+        success_rate * 100.0
+    );
 }
 
 #[tokio::test]
@@ -379,28 +462,41 @@ async fn test_verification_state_transitions_real_components() {
     for (phase, expected_state) in transitions {
         let start = Instant::now();
 
-        let transition_result = verification_state.transition_to(job_id, expected_state.clone())
+        let transition_result = verification_state
+            .transition_to(job_id, expected_state.clone())
             .map_err(|e| format!("State transition failed: {:?}", e));
 
         let duration = start.elapsed();
 
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "vef_receipt_integration",
-            "test": "state_transitions",
-            "job_id": job_id,
-            "phase": phase,
-            "target_state": format!("{:?}", expected_state),
-            "duration_ms": duration.as_millis(),
-            "success": transition_result.is_ok(),
-            "event": "state_transition"
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "vef_receipt_integration",
+                "test": "state_transitions",
+                "job_id": job_id,
+                "phase": phase,
+                "target_state": format!("{:?}", expected_state),
+                "duration_ms": duration.as_millis(),
+                "success": transition_result.is_ok(),
+                "event": "state_transition"
+            })
+        );
 
-        assert!(transition_result.is_ok(), "Transition to {} should succeed", phase);
+        assert!(
+            transition_result.is_ok(),
+            "Transition to {} should succeed",
+            phase
+        );
 
         // Verify state persistence
-        let current_state = verification_state.get_state(job_id).expect("State should exist");
-        assert_eq!(current_state, expected_state, "State should match expected value");
+        let current_state = verification_state
+            .get_state(job_id)
+            .expect("State should exist");
+        assert_eq!(
+            current_state, expected_state,
+            "State should match expected value"
+        );
     }
 }
 
@@ -433,24 +529,30 @@ async fn test_receipt_error_recovery_real_failures() {
         }
 
         let start = Instant::now();
-        let result = harness.proof_service.generate_proof(&input, None, chrono::Utc::now().timestamp_millis() as u64).await;
+        let result = harness
+            .proof_service
+            .generate_proof(&input, None, chrono::Utc::now().timestamp_millis() as u64)
+            .await;
         let duration = start.elapsed();
 
         // Verify error handling
         assert!(result.is_err(), "Scenario {} should fail", scenario_name);
 
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "vef_receipt_integration",
-            "test": "error_recovery",
-            "scenario": scenario_name,
-            "job_id": job_id,
-            "duration_ms": duration.as_millis(),
-            "expected_failure": true,
-            "actual_failure": result.is_err(),
-            "error_type": result.err().map(|e| format!("{:?}", e)),
-            "event": "error_scenario"
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "vef_receipt_integration",
+                "test": "error_recovery",
+                "scenario": scenario_name,
+                "job_id": job_id,
+                "duration_ms": duration.as_millis(),
+                "expected_failure": true,
+                "actual_failure": result.is_err(),
+                "error_type": result.err().map(|e| format!("{:?}", e)),
+                "event": "error_scenario"
+            })
+        );
     }
 
     eprintln!("{}", harness.export_performance_summary());
@@ -465,31 +567,38 @@ async fn test_evidence_capsule_integrity_cross_service() {
     let input = harness.create_test_proof_input(job_id, WorkloadTier::High);
 
     // Generate proof and create evidence capsule
-    let proof = harness.proof_service.generate_proof(&input, None, chrono::Utc::now().timestamp_millis() as u64).await
+    let proof = harness
+        .proof_service
+        .generate_proof(&input, None, chrono::Utc::now().timestamp_millis() as u64)
+        .await
         .expect("Proof generation should succeed");
 
     let start = Instant::now();
-    let evidence_capsule = EvidenceCapsule::new(&proof, &input)
-        .expect("Evidence capsule creation should succeed");
+    let evidence_capsule =
+        EvidenceCapsule::new(&proof, &input).expect("Evidence capsule creation should succeed");
 
     // Verify capsule integrity
-    let integrity = evidence_capsule.verify_integrity()
+    let integrity = evidence_capsule
+        .verify_integrity()
         .expect("Capsule integrity check should succeed");
 
     let duration = start.elapsed();
 
     match integrity {
         CapsuleIntegrity::Valid => {
-            eprintln!("{}", json!({
-                "ts": chrono::Utc::now().to_rfc3339(),
-                "suite": "vef_receipt_integration",
-                "test": "evidence_capsule_integrity",
-                "job_id": job_id,
-                "capsule_size_bytes": evidence_capsule.serialized_size(),
-                "integrity_check_ms": duration.as_millis(),
-                "result": "valid",
-                "event": "capsule_verification"
-            }));
+            eprintln!(
+                "{}",
+                json!({
+                    "ts": chrono::Utc::now().to_rfc3339(),
+                    "suite": "vef_receipt_integration",
+                    "test": "evidence_capsule_integrity",
+                    "job_id": job_id,
+                    "capsule_size_bytes": evidence_capsule.serialized_size(),
+                    "integrity_check_ms": duration.as_millis(),
+                    "result": "valid",
+                    "event": "capsule_verification"
+                })
+            );
         }
         CapsuleIntegrity::Invalid(reason) => {
             panic!("Evidence capsule integrity check failed: {}", reason);

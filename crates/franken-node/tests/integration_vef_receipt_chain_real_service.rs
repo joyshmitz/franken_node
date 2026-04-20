@@ -7,18 +7,18 @@
 //! Why no mocks: Receipt chain integrity, concurrent operations, and cross-service
 //! checkpoint synchronization can only be validated against real components.
 
+use frankenengine_node::connector::vef_execution_receipt::{
+    ExecutionActionType, ExecutionReceipt, RECEIPT_SCHEMA_VERSION,
+};
+use frankenengine_node::vef::receipt_chain::{
+    AppendOutcome, ChainError, ConcurrentReceiptChain, ReceiptChain, ReceiptChainConfig,
+    ReceiptCheckpoint, error_codes, event_codes,
+};
+use serde_json::json;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{RwLock, Semaphore};
-use frankenengine_node::vef::receipt_chain::{
-    ReceiptChain, ConcurrentReceiptChain, ReceiptChainConfig, ReceiptCheckpoint,
-    ChainError, AppendOutcome, error_codes, event_codes
-};
-use frankenengine_node::connector::vef_execution_receipt::{
-    ExecutionReceipt, ExecutionActionType, RECEIPT_SCHEMA_VERSION
-};
-use serde_json::json;
 
 /// Test harness for real VEF receipt chain cross-service testing
 struct VefReceiptChainTestHarness {
@@ -72,11 +72,15 @@ impl VefReceiptChainTestHarness {
     }
 
     /// Create realistic execution receipt for testing
-    fn create_test_receipt(&self, action_type: ExecutionActionType, sequence: u64) -> ExecutionReceipt {
+    fn create_test_receipt(
+        &self,
+        action_type: ExecutionActionType,
+        sequence: u64,
+    ) -> ExecutionReceipt {
         let mut capability_context = BTreeMap::new();
         capability_context.insert(
             "capability".to_string(),
-            format!("vef.test.capability.{}", sequence)
+            format!("vef.test.capability.{}", sequence),
         );
         capability_context.insert("domain".to_string(), "verification".to_string());
         capability_context.insert("scope".to_string(), "receipt_chain".to_string());
@@ -142,24 +146,31 @@ impl VefReceiptChainTestHarness {
                         .as_millis() as u64;
 
                     // Append to primary chain
-                    let primary_result = primary_chain.append(
-                        receipt.clone(),
-                        now_millis,
-                        format!("service-{}-receipt-{}", service_id, receipt_idx),
-                    ).await;
+                    let primary_result = primary_chain
+                        .append(
+                            receipt.clone(),
+                            now_millis,
+                            format!("service-{}-receipt-{}", service_id, receipt_idx),
+                        )
+                        .await;
 
                     match primary_result {
                         Ok(outcome) => {
                             // If replica exists, also append there (simulating cross-service replication)
                             if let Some(replica) = &replica_chain {
-                                let replica_result = replica.append(
-                                    receipt.clone(),
-                                    now_millis + 1, // Slight offset to simulate network delay
-                                    format!("replica-{}-receipt-{}", service_id, receipt_idx),
-                                ).await;
+                                let replica_result = replica
+                                    .append(
+                                        receipt.clone(),
+                                        now_millis + 1, // Slight offset to simulate network delay
+                                        format!("replica-{}-receipt-{}", service_id, receipt_idx),
+                                    )
+                                    .await;
 
                                 if replica_result.is_err() {
-                                    return Err(format!("Replica append failed: {:?}", replica_result.err()));
+                                    return Err(format!(
+                                        "Replica append failed: {:?}",
+                                        replica_result.err()
+                                    ));
                                 }
                             }
                             outcomes.push(outcome);
@@ -191,11 +202,14 @@ impl VefReceiptChainTestHarness {
     }
 
     /// Create test receipt (static method for use in spawned tasks)
-    fn create_test_receipt_static(action_type: ExecutionActionType, sequence: u64) -> ExecutionReceipt {
+    fn create_test_receipt_static(
+        action_type: ExecutionActionType,
+        sequence: u64,
+    ) -> ExecutionReceipt {
         let mut capability_context = BTreeMap::new();
         capability_context.insert(
             "capability".to_string(),
-            format!("vef.test.capability.{}", sequence)
+            format!("vef.test.capability.{}", sequence),
         );
         capability_context.insert("domain".to_string(), "verification".to_string());
         capability_context.insert("scope".to_string(), "receipt_chain".to_string());
@@ -221,7 +235,10 @@ impl VefReceiptChainTestHarness {
     }
 
     /// Test service restart scenario with chain recovery
-    async fn test_service_restart_recovery(&mut self, scenario: ServiceRestartScenario) -> Result<bool, String> {
+    async fn test_service_restart_recovery(
+        &mut self,
+        scenario: ServiceRestartScenario,
+    ) -> Result<bool, String> {
         // Phase 1: Build up chain before restart
         for i in 0..scenario.restart_after_receipts {
             let receipt = self.create_test_receipt(ExecutionActionType::NetworkAccess, i as u64);
@@ -230,26 +247,30 @@ impl VefReceiptChainTestHarness {
                 .unwrap_or_default()
                 .as_millis() as u64;
 
-            self.primary_chain.append(
-                receipt,
-                now_millis,
-                format!("pre-restart-{}", i),
-            ).await.map_err(|e| format!("Pre-restart append failed: {:?}", e))?;
+            self.primary_chain
+                .append(receipt, now_millis, format!("pre-restart-{}", i))
+                .await
+                .map_err(|e| format!("Pre-restart append failed: {:?}", e))?;
         }
 
         // Capture chain state before "restart"
-        let pre_restart_snapshot = self.primary_chain.snapshot()
+        let pre_restart_snapshot = self
+            .primary_chain
+            .snapshot()
             .map_err(|e| format!("Pre-restart snapshot failed: {:?}", e))?;
 
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "vef_receipt_chain_real_service",
-            "phase": "service_restart",
-            "event": "restart_initiated",
-            "pre_restart_entries": pre_restart_snapshot.entries().len(),
-            "pre_restart_checkpoints": pre_restart_snapshot.checkpoints().len(),
-            "service_down_duration_ms": scenario.service_down_duration_ms
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "vef_receipt_chain_real_service",
+                "phase": "service_restart",
+                "event": "restart_initiated",
+                "pre_restart_entries": pre_restart_snapshot.entries().len(),
+                "pre_restart_checkpoints": pre_restart_snapshot.checkpoints().len(),
+                "service_down_duration_ms": scenario.service_down_duration_ms
+            })
+        );
 
         // Phase 2: Simulate service downtime
         tokio::time::sleep(Duration::from_millis(scenario.service_down_duration_ms)).await;
@@ -270,13 +291,16 @@ impl VefReceiptChainTestHarness {
                 if scenario.expected_recovery_success {
                     return Err(format!("Recovery unexpectedly failed: {:?}", e));
                 } else {
-                    eprintln!("{}", json!({
-                        "ts": chrono::Utc::now().to_rfc3339(),
-                        "suite": "vef_receipt_chain_real_service",
-                        "phase": "service_restart",
-                        "event": "recovery_failed_as_expected",
-                        "error": format!("{:?}", e)
-                    }));
+                    eprintln!(
+                        "{}",
+                        json!({
+                            "ts": chrono::Utc::now().to_rfc3339(),
+                            "suite": "vef_receipt_chain_real_service",
+                            "phase": "service_restart",
+                            "event": "recovery_failed_as_expected",
+                            "error": format!("{:?}", e)
+                        })
+                    );
                     return Ok(true); // Expected failure
                 }
             }
@@ -285,30 +309,35 @@ impl VefReceiptChainTestHarness {
         // Phase 4: Verify recovery by appending new receipts
         let post_restart_receipt = self.create_test_receipt(
             ExecutionActionType::PolicyTransition,
-            scenario.restart_after_receipts as u64 + 1000
+            scenario.restart_after_receipts as u64 + 1000,
         );
         let now_millis = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
 
-        let post_restart_result = recovered_chain.append(
-            post_restart_receipt,
-            now_millis,
-            "post-restart-verification",
-        ).await;
+        let post_restart_result = recovered_chain
+            .append(
+                post_restart_receipt,
+                now_millis,
+                "post-restart-verification",
+            )
+            .await;
 
         let recovery_success = post_restart_result.is_ok();
 
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "vef_receipt_chain_real_service",
-            "phase": "service_restart",
-            "event": "recovery_complete",
-            "recovery_success": recovery_success,
-            "expected_success": scenario.expected_recovery_success,
-            "post_restart_error": post_restart_result.err().map(|e| format!("{:?}", e))
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "vef_receipt_chain_real_service",
+                "phase": "service_restart",
+                "event": "recovery_complete",
+                "recovery_success": recovery_success,
+                "expected_success": scenario.expected_recovery_success,
+                "post_restart_error": post_restart_result.err().map(|e| format!("{:?}", e))
+            })
+        );
 
         Ok(recovery_success == scenario.expected_recovery_success)
     }
@@ -325,7 +354,11 @@ impl VefReceiptChainTestHarness {
                 .unwrap_or_default()
                 .as_millis() as u64;
 
-            if let Err(e) = self.primary_chain.append(receipt, now_millis, format!("setup-{}", i)).await {
+            if let Err(e) = self
+                .primary_chain
+                .append(receipt, now_millis, format!("setup-{}", i))
+                .await
+            {
                 eprintln!("Setup failed: {:?}", e);
                 return results;
             }
@@ -347,31 +380,34 @@ impl VefReceiptChainTestHarness {
                 }
                 snapshot
             }),
-
             // Tamper with chain hash
             ("chain_hash_tampering", |mut snapshot: ReceiptChain| {
                 if let Some(entry) = snapshot.entries.get_mut(3) {
-                    entry.chain_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000".to_string();
+                    entry.chain_hash =
+                        "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                            .to_string();
                 }
                 snapshot
             }),
-
             // Tamper with receipt hash
             ("receipt_hash_tampering", |mut snapshot: ReceiptChain| {
                 if let Some(entry) = snapshot.entries.get_mut(4) {
-                    entry.receipt_hash = "sha256:1111111111111111111111111111111111111111111111111111111111111111".to_string();
+                    entry.receipt_hash =
+                        "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                            .to_string();
                 }
                 snapshot
             }),
-
             // Tamper with checkpoint commitment
-            ("checkpoint_commitment_tampering", |mut snapshot: ReceiptChain| {
-                if let Some(checkpoint) = snapshot.checkpoints.get_mut(0) {
-                    checkpoint.commitment_hash = "sha256:2222222222222222222222222222222222222222222222222222222222222222".to_string();
-                }
-                snapshot
-            }),
-
+            (
+                "checkpoint_commitment_tampering",
+                |mut snapshot: ReceiptChain| {
+                    if let Some(checkpoint) = snapshot.checkpoints.get_mut(0) {
+                        checkpoint.commitment_hash = "sha256:2222222222222222222222222222222222222222222222222222222222222222".to_string();
+                    }
+                    snapshot
+                },
+            ),
             // Delete middle entry (sequence violation)
             ("entry_deletion", |mut snapshot: ReceiptChain| {
                 if snapshot.entries.len() > 5 {
@@ -379,7 +415,6 @@ impl VefReceiptChainTestHarness {
                 }
                 snapshot
             }),
-
             // Reorder entries
             ("entry_reordering", |mut snapshot: ReceiptChain| {
                 if snapshot.entries.len() > 7 {
@@ -398,16 +433,19 @@ impl VefReceiptChainTestHarness {
 
             let error_code = verification_result.err().map(|e| e.code);
 
-            eprintln!("{}", json!({
-                "ts": chrono::Utc::now().to_rfc3339(),
-                "suite": "vef_receipt_chain_real_service",
-                "phase": "adversarial_tampering",
-                "test_case": test_name,
-                "tamper_detected": tamper_detected,
-                "error_code": error_code,
-                "expected_behavior": "tamper_should_be_detected",
-                "event": "tampering_test"
-            }));
+            eprintln!(
+                "{}",
+                json!({
+                    "ts": chrono::Utc::now().to_rfc3339(),
+                    "suite": "vef_receipt_chain_real_service",
+                    "phase": "adversarial_tampering",
+                    "test_case": test_name,
+                    "tamper_detected": tamper_detected,
+                    "error_code": error_code,
+                    "expected_behavior": "tamper_should_be_detected",
+                    "event": "tampering_test"
+                })
+            );
 
             results.push((test_name.to_string(), tamper_detected));
         }
@@ -430,25 +468,30 @@ impl VefReceiptChainTestHarness {
                 .as_millis() as u64;
 
             // Append to primary
-            self.primary_chain.append(
-                receipt.clone(),
-                now_millis,
-                format!("sync-primary-{}", i),
-            ).await.map_err(|e| format!("Primary append failed: {:?}", e))?;
+            self.primary_chain
+                .append(receipt.clone(), now_millis, format!("sync-primary-{}", i))
+                .await
+                .map_err(|e| format!("Primary append failed: {:?}", e))?;
 
             // Append to first replica with slight delay (simulating network latency)
             tokio::time::sleep(Duration::from_millis(5)).await;
-            self.replica_chains[0].append(
-                receipt,
-                now_millis + 5, // Network delay
-                format!("sync-replica-{}", i),
-            ).await.map_err(|e| format!("Replica append failed: {:?}", e))?;
+            self.replica_chains[0]
+                .append(
+                    receipt,
+                    now_millis + 5, // Network delay
+                    format!("sync-replica-{}", i),
+                )
+                .await
+                .map_err(|e| format!("Replica append failed: {:?}", e))?;
         }
 
         // Compare primary and replica states
-        let primary_snapshot = self.primary_chain.snapshot()
+        let primary_snapshot = self
+            .primary_chain
+            .snapshot()
             .map_err(|e| format!("Primary snapshot failed: {:?}", e))?;
-        let replica_snapshot = self.replica_chains[0].snapshot()
+        let replica_snapshot = self.replica_chains[0]
+            .snapshot()
             .map_err(|e| format!("Replica snapshot failed: {:?}", e))?;
 
         let primary_checkpoints = primary_snapshot.checkpoints().len();
@@ -456,19 +499,23 @@ impl VefReceiptChainTestHarness {
         let primary_entries = primary_snapshot.entries().len();
         let replica_entries = replica_snapshot.entries().len();
 
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "vef_receipt_chain_real_service",
-            "phase": "checkpoint_synchronization",
-            "primary_entries": primary_entries,
-            "replica_entries": replica_entries,
-            "primary_checkpoints": primary_checkpoints,
-            "replica_checkpoints": replica_checkpoints,
-            "event": "sync_comparison"
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "vef_receipt_chain_real_service",
+                "phase": "checkpoint_synchronization",
+                "primary_entries": primary_entries,
+                "replica_entries": replica_entries,
+                "primary_checkpoints": primary_checkpoints,
+                "replica_checkpoints": replica_checkpoints,
+                "event": "sync_comparison"
+            })
+        );
 
         // Both should have similar checkpoint counts (allowing for timing differences)
-        let checkpoint_sync_ok = (primary_checkpoints as i32 - replica_checkpoints as i32).abs() <= 1;
+        let checkpoint_sync_ok =
+            (primary_checkpoints as i32 - replica_checkpoints as i32).abs() <= 1;
         let entry_sync_ok = primary_entries == replica_entries;
 
         Ok(checkpoint_sync_ok && entry_sync_ok)
@@ -477,15 +524,27 @@ impl VefReceiptChainTestHarness {
     fn export_performance_summary(&self) -> serde_json::Value {
         let total_duration = self.test_start.elapsed();
         let successful_ops = self.operation_logs.iter().filter(|log| log.success).count();
-        let failed_ops = self.operation_logs.iter().filter(|log| !log.success).count();
+        let failed_ops = self
+            .operation_logs
+            .iter()
+            .filter(|log| !log.success)
+            .count();
 
         let avg_duration: f64 = if !self.operation_logs.is_empty() {
-            self.operation_logs.iter().map(|log| log.duration_ms).sum::<u64>() as f64 / self.operation_logs.len() as f64
+            self.operation_logs
+                .iter()
+                .map(|log| log.duration_ms)
+                .sum::<u64>() as f64
+                / self.operation_logs.len() as f64
         } else {
             0.0
         };
 
-        let checkpoints_created = self.operation_logs.iter().filter(|log| log.checkpoint_created).count();
+        let checkpoints_created = self
+            .operation_logs
+            .iter()
+            .filter(|log| log.checkpoint_created)
+            .count();
 
         json!({
             "suite": "vef_receipt_chain_real_service",
@@ -507,29 +566,35 @@ async fn test_vef_receipt_chain_concurrent_cross_service_operations() {
     const CONCURRENT_SERVICES: usize = 8;
     const RECEIPTS_PER_SERVICE: usize = 12;
 
-    let cross_service_results = harness.concurrent_cross_service_append_test(
-        CONCURRENT_SERVICES,
-        RECEIPTS_PER_SERVICE,
-    ).await;
+    let cross_service_results = harness
+        .concurrent_cross_service_append_test(CONCURRENT_SERVICES, RECEIPTS_PER_SERVICE)
+        .await;
 
     let successful_services = cross_service_results.iter().filter(|r| r.is_ok()).count();
     let failed_services = cross_service_results.iter().filter(|r| r.is_err()).count();
 
-    eprintln!("{}", json!({
-        "ts": chrono::Utc::now().to_rfc3339(),
-        "suite": "vef_receipt_chain_real_service",
-        "test": "concurrent_cross_service",
-        "concurrent_services": CONCURRENT_SERVICES,
-        "receipts_per_service": RECEIPTS_PER_SERVICE,
-        "successful_services": successful_services,
-        "failed_services": failed_services,
-        "success_rate": successful_services as f64 / cross_service_results.len() as f64,
-        "event": "cross_service_test_complete"
-    }));
+    eprintln!(
+        "{}",
+        json!({
+            "ts": chrono::Utc::now().to_rfc3339(),
+            "suite": "vef_receipt_chain_real_service",
+            "test": "concurrent_cross_service",
+            "concurrent_services": CONCURRENT_SERVICES,
+            "receipts_per_service": RECEIPTS_PER_SERVICE,
+            "successful_services": successful_services,
+            "failed_services": failed_services,
+            "success_rate": successful_services as f64 / cross_service_results.len() as f64,
+            "event": "cross_service_test_complete"
+        })
+    );
 
     // Real distributed VEF chain should handle reasonable concurrent load across services
     let success_rate = successful_services as f64 / cross_service_results.len() as f64;
-    assert!(success_rate >= 0.75, "Success rate under cross-service load should be >= 75%, got {:.1}%", success_rate * 100.0);
+    assert!(
+        success_rate >= 0.75,
+        "Success rate under cross-service load should be >= 75%, got {:.1}%",
+        success_rate * 100.0
+    );
 
     eprintln!("{}", harness.export_performance_summary());
 }
@@ -545,10 +610,15 @@ async fn test_vef_receipt_chain_service_restart_recovery() {
         expected_recovery_success: true,
     };
 
-    let recovery_result = harness.test_service_restart_recovery(success_scenario).await
+    let recovery_result = harness
+        .test_service_restart_recovery(success_scenario)
+        .await
         .expect("Service restart test should complete without error");
 
-    assert!(recovery_result, "Service restart recovery should succeed for valid scenario");
+    assert!(
+        recovery_result,
+        "Service restart recovery should succeed for valid scenario"
+    );
 
     eprintln!("{}", harness.export_performance_summary());
 }
@@ -568,29 +638,38 @@ async fn test_vef_receipt_chain_adversarial_tampering_detection() {
             tampers_detected += 1;
         }
 
-        eprintln!("{}", json!({
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "vef_receipt_chain_real_service",
+                "test": "adversarial_tampering",
+                "tamper_type": test_name,
+                "detected": detected,
+                "event": "tamper_detection_result"
+            })
+        );
+    }
+
+    eprintln!(
+        "{}",
+        json!({
             "ts": chrono::Utc::now().to_rfc3339(),
             "suite": "vef_receipt_chain_real_service",
             "test": "adversarial_tampering",
-            "tamper_type": test_name,
-            "detected": detected,
-            "event": "tamper_detection_result"
-        }));
-    }
-
-    eprintln!("{}", json!({
-        "ts": chrono::Utc::now().to_rfc3339(),
-        "suite": "vef_receipt_chain_real_service",
-        "test": "adversarial_tampering",
-        "total_tamper_tests": total_tamper_tests,
-        "tampers_detected": tampers_detected,
-        "detection_rate": tampers_detected as f64 / total_tamper_tests as f64,
-        "event": "tamper_test_summary"
-    }));
+            "total_tamper_tests": total_tamper_tests,
+            "tampers_detected": tampers_detected,
+            "detection_rate": tampers_detected as f64 / total_tamper_tests as f64,
+            "event": "tamper_test_summary"
+        })
+    );
 
     // All tampering attempts must be detected
-    assert_eq!(tampers_detected, total_tamper_tests,
-        "All tampering attempts must be detected: {}/{} detected", tampers_detected, total_tamper_tests);
+    assert_eq!(
+        tampers_detected, total_tamper_tests,
+        "All tampering attempts must be detected: {}/{} detected",
+        tampers_detected, total_tamper_tests
+    );
 
     eprintln!("{}", harness.export_performance_summary());
 }
@@ -600,10 +679,15 @@ async fn test_vef_receipt_chain_checkpoint_synchronization_across_replicas() {
     let mut harness = VefReceiptChainTestHarness::new(2).await; // 2 replica services for sync testing
 
     // Test checkpoint synchronization between primary and replicas
-    let sync_result = harness.test_checkpoint_synchronization().await
+    let sync_result = harness
+        .test_checkpoint_synchronization()
+        .await
         .expect("Checkpoint synchronization test should complete");
 
-    assert!(sync_result, "Checkpoint synchronization across replicas should maintain consistency");
+    assert!(
+        sync_result,
+        "Checkpoint synchronization across replicas should maintain consistency"
+    );
 
     eprintln!("{}", harness.export_performance_summary());
 }
@@ -632,11 +716,14 @@ async fn test_vef_receipt_chain_round_trip_determinism_across_services() {
             // Use deterministic timestamp
             let deterministic_timestamp = 1_700_000_000_000 + seq;
 
-            chain.append(
-                receipt,
-                deterministic_timestamp,
-                format!("deterministic-{}-{}", instance, seq),
-            ).await.expect("Deterministic append should succeed");
+            chain
+                .append(
+                    receipt,
+                    deterministic_timestamp,
+                    format!("deterministic-{}-{}", instance, seq),
+                )
+                .await
+                .expect("Deterministic append should succeed");
         }
 
         let snapshot = chain.snapshot().expect("Snapshot should succeed");
@@ -651,42 +738,56 @@ async fn test_vef_receipt_chain_round_trip_determinism_across_services() {
         let entries_match = first_entries.len() == snapshot.entries().len();
         let checkpoints_match = first_checkpoints.len() == snapshot.checkpoints().len();
 
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "vef_receipt_chain_real_service",
-            "test": "round_trip_determinism",
-            "instance_comparison": i,
-            "entries_match": entries_match,
-            "checkpoints_match": checkpoints_match,
-            "first_entries": first_entries.len(),
-            "comparison_entries": snapshot.entries().len(),
-            "first_checkpoints": first_checkpoints.len(),
-            "comparison_checkpoints": snapshot.checkpoints().len(),
-            "event": "determinism_check"
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "vef_receipt_chain_real_service",
+                "test": "round_trip_determinism",
+                "instance_comparison": i,
+                "entries_match": entries_match,
+                "checkpoints_match": checkpoints_match,
+                "first_entries": first_entries.len(),
+                "comparison_entries": snapshot.entries().len(),
+                "first_checkpoints": first_checkpoints.len(),
+                "comparison_checkpoints": snapshot.checkpoints().len(),
+                "event": "determinism_check"
+            })
+        );
 
-        assert!(entries_match, "Entry counts should be identical across instances");
-        assert!(checkpoints_match, "Checkpoint counts should be identical across instances");
+        assert!(
+            entries_match,
+            "Entry counts should be identical across instances"
+        );
+        assert!(
+            checkpoints_match,
+            "Checkpoint counts should be identical across instances"
+        );
     }
 
     // Verify chain hashes are deterministic
-    let first_chain_hashes: Vec<String> = first_entries.iter()
-        .map(|e| e.chain_hash.clone())
-        .collect();
+    let first_chain_hashes: Vec<String> =
+        first_entries.iter().map(|e| e.chain_hash.clone()).collect();
 
     for (i, snapshot) in chain_snapshots.iter().enumerate().skip(1) {
-        let comparison_hashes: Vec<String> = snapshot.entries().iter()
+        let comparison_hashes: Vec<String> = snapshot
+            .entries()
+            .iter()
             .map(|e| e.chain_hash.clone())
             .collect();
 
         // Note: Chain hashes will differ because receipts have different sequence numbers
         // But checkpoint patterns should be deterministic
         let checkpoint_pattern_matches = first_checkpoints.len() == snapshot.checkpoints().len()
-            && first_checkpoints.iter().zip(snapshot.checkpoints().iter())
+            && first_checkpoints
+                .iter()
+                .zip(snapshot.checkpoints().iter())
                 .all(|(a, b)| a.entry_count == b.entry_count);
 
-        assert!(checkpoint_pattern_matches,
-            "Checkpoint patterns should be deterministic across instances");
+        assert!(
+            checkpoint_pattern_matches,
+            "Checkpoint patterns should be deterministic across instances"
+        );
     }
 
     eprintln!("{}", harness.export_performance_summary());

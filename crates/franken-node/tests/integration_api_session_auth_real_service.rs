@@ -7,18 +7,18 @@
 //! Why no mocks: Session authentication timing, concurrent session limits, timeout behavior,
 //! and cryptographic verification can only be validated against real components.
 
+use frankenengine_node::api::session_auth::{
+    AuthenticatedSession, MessageDirection, SessionConfig, SessionError, SessionEvent,
+    SessionManager, SessionState, error_codes, event_codes,
+};
+use frankenengine_node::control_plane::control_epoch::ControlEpoch;
+use frankenengine_node::security::constant_time;
+use frankenengine_node::security::epoch_scoped_keys::{RootSecret, SIGNATURE_LEN};
+use serde_json::json;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{RwLock, Semaphore};
-use frankenengine_node::api::session_auth::{
-    SessionManager, SessionConfig, SessionState, AuthenticatedSession,
-    MessageDirection, SessionError, SessionEvent, error_codes, event_codes
-};
-use frankenengine_node::control_plane::control_epoch::ControlEpoch;
-use frankenengine_node::security::epoch_scoped_keys::{RootSecret, SIGNATURE_LEN};
-use frankenengine_node::security::constant_time;
-use serde_json::json;
 
 /// Test harness for real session-authenticated API testing under load
 struct SessionAuthTestHarness {
@@ -56,8 +56,8 @@ struct AuthenticationStressScenario {
 impl SessionAuthTestHarness {
     async fn new() -> Self {
         let config = SessionConfig {
-            replay_window: 10, // Enable replay protection
-            max_sessions: 50,  // Limited capacity for stress testing
+            replay_window: 10,        // Enable replay protection
+            max_sessions: 50,         // Limited capacity for stress testing
             session_timeout_ms: 5000, // 5 second timeout for fast testing
         };
 
@@ -206,29 +206,52 @@ impl SessionAuthTestHarness {
 
         let failure_scenarios = vec![
             // Invalid handshake MAC
-            ("invalid_handshake_mac", |_session_id: &str, _client: &str, _server: &str,
-             _enc_key: &str, _sign_key: &str, _timestamp: u64| -> [u8; SIGNATURE_LEN] {
-                [0u8; SIGNATURE_LEN] // Wrong MAC
-            }),
-
+            (
+                "invalid_handshake_mac",
+                |_session_id: &str,
+                 _client: &str,
+                 _server: &str,
+                 _enc_key: &str,
+                 _sign_key: &str,
+                 _timestamp: u64|
+                 -> [u8; SIGNATURE_LEN] {
+                    [0u8; SIGNATURE_LEN] // Wrong MAC
+                },
+            ),
             // Tampered session ID
-            ("tampered_session_id", |session_id: &str, client: &str, server: &str,
-             enc_key: &str, sign_key: &str, timestamp: u64| -> [u8; SIGNATURE_LEN] {
-                let tampered_id = format!("tampered-{}", session_id);
-                // This will create a MAC for wrong session ID
-                [1u8; SIGNATURE_LEN] // Placeholder - would use real signing
-            }),
-
+            (
+                "tampered_session_id",
+                |session_id: &str,
+                 client: &str,
+                 server: &str,
+                 enc_key: &str,
+                 sign_key: &str,
+                 timestamp: u64|
+                 -> [u8; SIGNATURE_LEN] {
+                    let tampered_id = format!("tampered-{}", session_id);
+                    // This will create a MAC for wrong session ID
+                    [1u8; SIGNATURE_LEN] // Placeholder - would use real signing
+                },
+            ),
             // Future timestamp (potential clock skew attack)
-            ("future_timestamp", |session_id: &str, client: &str, server: &str,
-             enc_key: &str, sign_key: &str, _timestamp: u64| -> [u8; SIGNATURE_LEN] {
-                let future_timestamp = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64 + 86400000; // 24 hours in future
-                // This would create MAC with future timestamp
-                [2u8; SIGNATURE_LEN] // Placeholder
-            }),
+            (
+                "future_timestamp",
+                |session_id: &str,
+                 client: &str,
+                 server: &str,
+                 enc_key: &str,
+                 sign_key: &str,
+                 _timestamp: u64|
+                 -> [u8; SIGNATURE_LEN] {
+                    let future_timestamp = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64
+                        + 86400000; // 24 hours in future
+                    // This would create MAC with future timestamp
+                    [2u8; SIGNATURE_LEN] // Placeholder
+                },
+            ),
         ];
 
         for (test_name, mac_generator) in failure_scenarios {
@@ -268,21 +291,26 @@ impl SessionAuthTestHarness {
 
             let error_code = result.err().map(|e| match e {
                 SessionError::AuthFailed { .. } => error_codes::ERR_SCC_AUTH_FAILED.to_string(),
-                SessionError::DuplicateSession { .. } => error_codes::ERR_SCC_DUPLICATE_SESSION.to_string(),
+                SessionError::DuplicateSession { .. } => {
+                    error_codes::ERR_SCC_DUPLICATE_SESSION.to_string()
+                }
                 SessionError::MaxSessions { .. } => error_codes::ERR_SCC_MAX_SESSIONS.to_string(),
                 _ => "OTHER_ERROR".to_string(),
             });
 
-            eprintln!("{}", json!({
-                "ts": chrono::Utc::now().to_rfc3339(),
-                "suite": "api_session_auth_real_service",
-                "phase": "authentication_failure",
-                "test_case": test_name,
-                "auth_failed": auth_failed,
-                "error_code": error_code,
-                "expected_behavior": "authentication_should_fail",
-                "event": "auth_failure_test"
-            }));
+            eprintln!(
+                "{}",
+                json!({
+                    "ts": chrono::Utc::now().to_rfc3339(),
+                    "suite": "api_session_auth_real_service",
+                    "phase": "authentication_failure",
+                    "test_case": test_name,
+                    "auth_failed": auth_failed,
+                    "error_code": error_code,
+                    "expected_behavior": "authentication_should_fail",
+                    "event": "auth_failure_test"
+                })
+            );
 
             results.push((test_name.to_string(), auth_failed));
         }
@@ -345,14 +373,17 @@ impl SessionAuthTestHarness {
             manager.active_session_count()
         };
 
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "api_session_auth_real_service",
-            "phase": "session_timeout",
-            "event": "sessions_established",
-            "initial_active_sessions": initial_active_sessions,
-            "session_timeout_ms": 100
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "api_session_auth_real_service",
+                "phase": "session_timeout",
+                "event": "sessions_established",
+                "initial_active_sessions": initial_active_sessions,
+                "session_timeout_ms": 100
+            })
+        );
 
         // Wait for timeouts to occur
         tokio::time::sleep(Duration::from_millis(150)).await;
@@ -385,19 +416,23 @@ impl SessionAuthTestHarness {
                 "timeout-message-test",
             );
 
-            let expired_detected = matches!(message_result, Err(SessionError::SessionExpired { .. }));
+            let expired_detected =
+                matches!(message_result, Err(SessionError::SessionExpired { .. }));
             let final_active_sessions = manager.active_session_count();
 
-            eprintln!("{}", json!({
-                "ts": chrono::Utc::now().to_rfc3339(),
-                "suite": "api_session_auth_real_service",
-                "phase": "session_timeout",
-                "event": "timeout_verification",
-                "initial_active_sessions": initial_active_sessions,
-                "final_active_sessions": final_active_sessions,
-                "expired_detected": expired_detected,
-                "message_error": format!("{:?}", message_result.err())
-            }));
+            eprintln!(
+                "{}",
+                json!({
+                    "ts": chrono::Utc::now().to_rfc3339(),
+                    "suite": "api_session_auth_real_service",
+                    "phase": "session_timeout",
+                    "event": "timeout_verification",
+                    "initial_active_sessions": initial_active_sessions,
+                    "final_active_sessions": final_active_sessions,
+                    "expired_detected": expired_detected,
+                    "message_error": format!("{:?}", message_result.err())
+                })
+            );
 
             // Should have fewer active sessions and expired session should be detected
             Ok(final_active_sessions < initial_active_sessions && expired_detected)
@@ -438,7 +473,8 @@ impl SessionAuthTestHarness {
             )
         };
 
-        let session = session_result.map_err(|e| format!("Session establishment failed: {:?}", e))?;
+        let session =
+            session_result.map_err(|e| format!("Session establishment failed: {:?}", e))?;
 
         // Process a legitimate message (sequence 1)
         let payload_hash = "sha256:legitimate-message";
@@ -464,7 +500,10 @@ impl SessionAuthTestHarness {
         };
 
         if legitimate_result.is_err() {
-            return Err(format!("Legitimate message failed: {:?}", legitimate_result.err()));
+            return Err(format!(
+                "Legitimate message failed: {:?}",
+                legitimate_result.err()
+            ));
         }
 
         // Attempt replay attack (same sequence number)
@@ -506,15 +545,18 @@ impl SessionAuthTestHarness {
         };
 
         // This might succeed or fail depending on replay window - log for analysis
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "api_session_auth_real_service",
-            "phase": "replay_detection",
-            "replay_detected": replay_detected,
-            "out_of_order_result": out_of_order_result.is_ok(),
-            "legitimate_success": legitimate_result.is_ok(),
-            "event": "replay_test_complete"
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "api_session_auth_real_service",
+                "phase": "replay_detection",
+                "replay_detected": replay_detected,
+                "out_of_order_result": out_of_order_result.is_ok(),
+                "legitimate_success": legitimate_result.is_ok(),
+                "event": "replay_test_complete"
+            })
+        );
 
         Ok(replay_detected && legitimate_result.is_ok())
     }
@@ -535,12 +577,14 @@ impl SessionAuthTestHarness {
 
         // Try to establish more sessions than the limit
         let mut establishment_results = Vec::new();
-        for i in 0..8 { // More than the 5 session limit
+        for i in 0..8 {
+            // More than the 5 session limit
             let session_id = format!("capacity-test-{:04x}", i);
             let timestamp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
-                .as_millis() as u64 + i as u64; // Unique timestamps
+                .as_millis() as u64
+                + i as u64; // Unique timestamps
 
             let handshake_mac = self.generate_handshake_mac(
                 &session_id,
@@ -573,24 +617,29 @@ impl SessionAuthTestHarness {
             establishment_results.push((i, success, error_code));
         }
 
-        let successful_establishments = establishment_results.iter()
+        let successful_establishments = establishment_results
+            .iter()
             .filter(|(_, success, _)| *success)
             .count();
-        let capacity_rejections = establishment_results.iter()
+        let capacity_rejections = establishment_results
+            .iter()
             .filter(|(_, _, error_code)| error_code == &Some(error_codes::ERR_SCC_MAX_SESSIONS))
             .count();
 
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "api_session_auth_real_service",
-            "phase": "capacity_limits",
-            "max_sessions": 5,
-            "attempted_sessions": 8,
-            "successful_establishments": successful_establishments,
-            "capacity_rejections": capacity_rejections,
-            "establishment_results": establishment_results,
-            "event": "capacity_test_complete"
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "api_session_auth_real_service",
+                "phase": "capacity_limits",
+                "max_sessions": 5,
+                "attempted_sessions": 8,
+                "successful_establishments": successful_establishments,
+                "capacity_rejections": capacity_rejections,
+                "establishment_results": establishment_results,
+                "event": "capacity_test_complete"
+            })
+        );
 
         // Should establish exactly the limit, then reject further attempts
         Ok(successful_establishments == 5 && capacity_rejections > 0)
@@ -599,15 +648,25 @@ impl SessionAuthTestHarness {
     fn export_performance_summary(&self) -> serde_json::Value {
         let total_duration = self.test_start.elapsed();
         let successful_ops = self.operation_logs.iter().filter(|log| log.success).count();
-        let failed_ops = self.operation_logs.iter().filter(|log| !log.success).count();
+        let failed_ops = self
+            .operation_logs
+            .iter()
+            .filter(|log| !log.success)
+            .count();
 
         let avg_duration: f64 = if !self.operation_logs.is_empty() {
-            self.operation_logs.iter().map(|log| log.duration_ms).sum::<u64>() as f64 / self.operation_logs.len() as f64
+            self.operation_logs
+                .iter()
+                .map(|log| log.duration_ms)
+                .sum::<u64>() as f64
+                / self.operation_logs.len() as f64
         } else {
             0.0
         };
 
-        let max_concurrent = self.operation_logs.iter()
+        let max_concurrent = self
+            .operation_logs
+            .iter()
             .map(|log| log.concurrent_operations)
             .max()
             .unwrap_or(0);
@@ -640,7 +699,8 @@ impl ScopedCounter {
 
 impl Drop for ScopedCounter {
     fn drop(&mut self) {
-        self.counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        self.counter
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -656,25 +716,34 @@ async fn test_session_authenticated_api_concurrent_establishment_stress() {
         introduce_failures: false,
     };
 
-    let establishment_results = harness.concurrent_session_establishment_stress(scenario).await;
+    let establishment_results = harness
+        .concurrent_session_establishment_stress(scenario)
+        .await;
 
     let successful_sessions = establishment_results.iter().filter(|r| r.is_ok()).count();
     let failed_sessions = establishment_results.iter().filter(|r| r.is_err()).count();
 
-    eprintln!("{}", json!({
-        "ts": chrono::Utc::now().to_rfc3339(),
-        "suite": "api_session_auth_real_service",
-        "test": "concurrent_establishment_stress",
-        "attempted_sessions": establishment_results.len(),
-        "successful_sessions": successful_sessions,
-        "failed_sessions": failed_sessions,
-        "success_rate": successful_sessions as f64 / establishment_results.len() as f64,
-        "event": "establishment_stress_complete"
-    }));
+    eprintln!(
+        "{}",
+        json!({
+            "ts": chrono::Utc::now().to_rfc3339(),
+            "suite": "api_session_auth_real_service",
+            "test": "concurrent_establishment_stress",
+            "attempted_sessions": establishment_results.len(),
+            "successful_sessions": successful_sessions,
+            "failed_sessions": failed_sessions,
+            "success_rate": successful_sessions as f64 / establishment_results.len() as f64,
+            "event": "establishment_stress_complete"
+        })
+    );
 
     // Real session authentication should handle reasonable concurrent load
     let success_rate = successful_sessions as f64 / establishment_results.len() as f64;
-    assert!(success_rate >= 0.8, "Success rate under concurrent load should be >= 80%, got {:.1}%", success_rate * 100.0);
+    assert!(
+        success_rate >= 0.8,
+        "Success rate under concurrent load should be >= 80%, got {:.1}%",
+        success_rate * 100.0
+    );
 
     eprintln!("{}", harness.export_performance_summary());
 }
@@ -694,19 +763,25 @@ async fn test_session_authenticated_api_authentication_failure_scenarios() {
         }
     }
 
-    eprintln!("{}", json!({
-        "ts": chrono::Utc::now().to_rfc3339(),
-        "suite": "api_session_auth_real_service",
-        "test": "authentication_failures",
-        "total_failure_tests": total_failure_tests,
-        "failures_detected": failures_detected,
-        "detection_rate": failures_detected as f64 / total_failure_tests as f64,
-        "event": "auth_failure_test_complete"
-    }));
+    eprintln!(
+        "{}",
+        json!({
+            "ts": chrono::Utc::now().to_rfc3339(),
+            "suite": "api_session_auth_real_service",
+            "test": "authentication_failures",
+            "total_failure_tests": total_failure_tests,
+            "failures_detected": failures_detected,
+            "detection_rate": failures_detected as f64 / total_failure_tests as f64,
+            "event": "auth_failure_test_complete"
+        })
+    );
 
     // All authentication failures must be detected
-    assert_eq!(failures_detected, total_failure_tests,
-        "All authentication failures must be detected: {}/{} detected", failures_detected, total_failure_tests);
+    assert_eq!(
+        failures_detected, total_failure_tests,
+        "All authentication failures must be detected: {}/{} detected",
+        failures_detected, total_failure_tests
+    );
 
     eprintln!("{}", harness.export_performance_summary());
 }
@@ -715,10 +790,15 @@ async fn test_session_authenticated_api_authentication_failure_scenarios() {
 async fn test_session_authenticated_api_timeout_behavior_under_load() {
     let mut harness = SessionAuthTestHarness::new().await;
 
-    let timeout_result = harness.session_timeout_stress_test().await
+    let timeout_result = harness
+        .session_timeout_stress_test()
+        .await
         .expect("Session timeout test should complete");
 
-    assert!(timeout_result, "Session timeout behavior should work correctly under load");
+    assert!(
+        timeout_result,
+        "Session timeout behavior should work correctly under load"
+    );
 
     eprintln!("{}", harness.export_performance_summary());
 }
@@ -727,10 +807,15 @@ async fn test_session_authenticated_api_timeout_behavior_under_load() {
 async fn test_session_authenticated_api_replay_attack_detection() {
     let mut harness = SessionAuthTestHarness::new().await;
 
-    let replay_result = harness.replay_attack_detection_test().await
+    let replay_result = harness
+        .replay_attack_detection_test()
+        .await
         .expect("Replay detection test should complete");
 
-    assert!(replay_result, "Replay attack detection should prevent sequence number reuse");
+    assert!(
+        replay_result,
+        "Replay attack detection should prevent sequence number reuse"
+    );
 
     eprintln!("{}", harness.export_performance_summary());
 }
@@ -739,10 +824,15 @@ async fn test_session_authenticated_api_replay_attack_detection() {
 async fn test_session_authenticated_api_capacity_limits_enforcement() {
     let mut harness = SessionAuthTestHarness::new().await;
 
-    let capacity_result = harness.session_capacity_limit_test().await
+    let capacity_result = harness
+        .session_capacity_limit_test()
+        .await
         .expect("Capacity limit test should complete");
 
-    assert!(capacity_result, "Session capacity limits should be enforced under load");
+    assert!(
+        capacity_result,
+        "Session capacity limits should be enforced under load"
+    );
 
     eprintln!("{}", harness.export_performance_summary());
 }

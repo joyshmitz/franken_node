@@ -10,28 +10,27 @@
 //! - Structured logging with auth timing
 //! - Comprehensive error path coverage
 
-use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::sync::{RwLock, Semaphore};
 use frankenengine_node::api::{
-    session_auth::{
-        SessionAuthenticatedControlChannel, SessionState, SessionManager,
-        event_codes, error_codes,
-    },
+    error::ApiError,
     middleware::AuthMiddleware,
     service::ApiService,
-    error::ApiError,
+    session_auth::{
+        SessionAuthenticatedControlChannel, SessionManager, SessionState, error_codes, event_codes,
+    },
 };
 use frankenengine_node::connector::control_channel::Direction;
 use frankenengine_node::control_plane::control_epoch::ControlEpoch;
 use frankenengine_node::security::{
-    epoch_scoped_keys::{RootSecret, derive_epoch_key},
     constant_time,
+    epoch_scoped_keys::{RootSecret, derive_epoch_key},
 };
 use hmac::{Hmac, Mac};
-use sha2::Sha256;
 use serde_json::json;
+use sha2::Sha256;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::{RwLock, Semaphore};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -76,16 +75,24 @@ impl ApiSessionAuthTestHarness {
         }
     }
 
-    async fn establish_authenticated_session(&mut self, client_id: &str) -> Result<(String, Duration), String> {
+    async fn establish_authenticated_session(
+        &mut self,
+        client_id: &str,
+    ) -> Result<(String, Duration), String> {
         let start = Instant::now();
         let mut session_manager = self.session_manager.write().await;
 
         // Simulate handshake transcript binding
-        let handshake_data = format!("handshake-{}-{}", client_id, chrono::Utc::now().timestamp_millis());
+        let handshake_data = format!(
+            "handshake-{}-{}",
+            client_id,
+            chrono::Utc::now().timestamp_millis()
+        );
         let transcript_hash = self.compute_transcript_hash(&handshake_data);
 
         // Establish session with real HMAC verification
-        let session_result = session_manager.establish_session(client_id, &transcript_hash, Duration::from_secs(3600))
+        let session_result = session_manager
+            .establish_session(client_id, &transcript_hash, Duration::from_secs(3600))
             .await;
 
         let duration = start.elapsed();
@@ -105,17 +112,20 @@ impl ApiSessionAuthTestHarness {
                     concurrent_sessions,
                 };
 
-                eprintln!("{}", json!({
-                    "ts": chrono::Utc::now().to_rfc3339(),
-                    "suite": "api_session_auth_integration",
-                    "operation": "establish_session",
-                    "session_id": session_id,
-                    "client_id": client_id,
-                    "duration_ms": log.duration_ms,
-                    "concurrent_sessions": concurrent_sessions,
-                    "auth_method": "transcript_hmac",
-                    "event": "session_established"
-                }));
+                eprintln!(
+                    "{}",
+                    json!({
+                        "ts": chrono::Utc::now().to_rfc3339(),
+                        "suite": "api_session_auth_integration",
+                        "operation": "establish_session",
+                        "session_id": session_id,
+                        "client_id": client_id,
+                        "duration_ms": log.duration_ms,
+                        "concurrent_sessions": concurrent_sessions,
+                        "auth_method": "transcript_hmac",
+                        "event": "session_established"
+                    })
+                );
 
                 self.auth_logs.push(log);
                 Ok((session_id, duration))
@@ -134,15 +144,18 @@ impl ApiSessionAuthTestHarness {
                     concurrent_sessions,
                 };
 
-                eprintln!("{}", json!({
-                    "ts": chrono::Utc::now().to_rfc3339(),
-                    "suite": "api_session_auth_integration",
-                    "operation": "establish_session_failed",
-                    "client_id": client_id,
-                    "duration_ms": log.duration_ms,
-                    "error_code": error_code,
-                    "event": "session_establishment_failed"
-                }));
+                eprintln!(
+                    "{}",
+                    json!({
+                        "ts": chrono::Utc::now().to_rfc3339(),
+                        "suite": "api_session_auth_integration",
+                        "operation": "establish_session_failed",
+                        "client_id": client_id,
+                        "duration_ms": log.duration_ms,
+                        "error_code": error_code,
+                        "event": "session_establishment_failed"
+                    })
+                );
 
                 self.auth_logs.push(log);
                 Err(error_code)
@@ -150,50 +163,65 @@ impl ApiSessionAuthTestHarness {
         }
     }
 
-    async fn authenticated_api_request(&mut self, session_id: &str, endpoint: &str, payload: &str) -> Result<(String, Duration), String> {
+    async fn authenticated_api_request(
+        &mut self,
+        session_id: &str,
+        endpoint: &str,
+        payload: &str,
+    ) -> Result<(String, Duration), String> {
         let start = Instant::now();
 
         // Prepare authenticated request with real session verification
-        let auth_result = self.auth_middleware.authenticate_request(session_id, endpoint, payload.as_bytes())
+        let auth_result = self
+            .auth_middleware
+            .authenticate_request(session_id, endpoint, payload.as_bytes())
             .await;
 
         match auth_result {
             Ok(auth_context) => {
                 // Proceed with actual API request processing
-                let api_result = self.api_service.process_authenticated_request(&auth_context, endpoint, payload)
+                let api_result = self
+                    .api_service
+                    .process_authenticated_request(&auth_context, endpoint, payload)
                     .await;
 
                 let duration = start.elapsed();
 
                 match api_result {
                     Ok(response) => {
-                        eprintln!("{}", json!({
-                            "ts": chrono::Utc::now().to_rfc3339(),
-                            "suite": "api_session_auth_integration",
-                            "operation": "authenticated_request",
-                            "session_id": session_id,
-                            "endpoint": endpoint,
-                            "duration_ms": duration.as_millis(),
-                            "response_size": response.len(),
-                            "success": true,
-                            "event": "api_request_success"
-                        }));
+                        eprintln!(
+                            "{}",
+                            json!({
+                                "ts": chrono::Utc::now().to_rfc3339(),
+                                "suite": "api_session_auth_integration",
+                                "operation": "authenticated_request",
+                                "session_id": session_id,
+                                "endpoint": endpoint,
+                                "duration_ms": duration.as_millis(),
+                                "response_size": response.len(),
+                                "success": true,
+                                "event": "api_request_success"
+                            })
+                        );
 
                         Ok((response, duration))
                     }
                     Err(e) => {
                         let error_msg = format!("{:?}", e);
-                        eprintln!("{}", json!({
-                            "ts": chrono::Utc::now().to_rfc3339(),
-                            "suite": "api_session_auth_integration",
-                            "operation": "authenticated_request",
-                            "session_id": session_id,
-                            "endpoint": endpoint,
-                            "duration_ms": duration.as_millis(),
-                            "success": false,
-                            "error": error_msg,
-                            "event": "api_request_failed"
-                        }));
+                        eprintln!(
+                            "{}",
+                            json!({
+                                "ts": chrono::Utc::now().to_rfc3339(),
+                                "suite": "api_session_auth_integration",
+                                "operation": "authenticated_request",
+                                "session_id": session_id,
+                                "endpoint": endpoint,
+                                "duration_ms": duration.as_millis(),
+                                "success": false,
+                                "error": error_msg,
+                                "event": "api_request_failed"
+                            })
+                        );
 
                         Err(error_msg)
                     }
@@ -203,16 +231,19 @@ impl ApiSessionAuthTestHarness {
                 let duration = start.elapsed();
                 let error_msg = format!("{:?}", e);
 
-                eprintln!("{}", json!({
-                    "ts": chrono::Utc::now().to_rfc3339(),
-                    "suite": "api_session_auth_integration",
-                    "operation": "authentication_failed",
-                    "session_id": session_id,
-                    "endpoint": endpoint,
-                    "duration_ms": duration.as_millis(),
-                    "error": error_msg,
-                    "event": "auth_failed"
-                }));
+                eprintln!(
+                    "{}",
+                    json!({
+                        "ts": chrono::Utc::now().to_rfc3339(),
+                        "suite": "api_session_auth_integration",
+                        "operation": "authentication_failed",
+                        "session_id": session_id,
+                        "endpoint": endpoint,
+                        "duration_ms": duration.as_millis(),
+                        "error": error_msg,
+                        "event": "auth_failed"
+                    })
+                );
 
                 Err(error_msg)
             }
@@ -228,30 +259,36 @@ impl ApiSessionAuthTestHarness {
 
         match result {
             Ok(_) => {
-                eprintln!("{}", json!({
-                    "ts": chrono::Utc::now().to_rfc3339(),
-                    "suite": "api_session_auth_integration",
-                    "operation": "terminate_session",
-                    "session_id": session_id,
-                    "duration_ms": duration.as_millis(),
-                    "success": true,
-                    "event": "session_terminated"
-                }));
+                eprintln!(
+                    "{}",
+                    json!({
+                        "ts": chrono::Utc::now().to_rfc3339(),
+                        "suite": "api_session_auth_integration",
+                        "operation": "terminate_session",
+                        "session_id": session_id,
+                        "duration_ms": duration.as_millis(),
+                        "success": true,
+                        "event": "session_terminated"
+                    })
+                );
 
                 Ok(duration)
             }
             Err(e) => {
                 let error_msg = format!("{:?}", e);
-                eprintln!("{}", json!({
-                    "ts": chrono::Utc::now().to_rfc3339(),
-                    "suite": "api_session_auth_integration",
-                    "operation": "terminate_session",
-                    "session_id": session_id,
-                    "duration_ms": duration.as_millis(),
-                    "success": false,
-                    "error": error_msg,
-                    "event": "session_termination_failed"
-                }));
+                eprintln!(
+                    "{}",
+                    json!({
+                        "ts": chrono::Utc::now().to_rfc3339(),
+                        "suite": "api_session_auth_integration",
+                        "operation": "terminate_session",
+                        "session_id": session_id,
+                        "duration_ms": duration.as_millis(),
+                        "success": false,
+                        "error": error_msg,
+                        "event": "session_termination_failed"
+                    })
+                );
 
                 Err(error_msg)
             }
@@ -265,7 +302,11 @@ impl ApiSessionAuthTestHarness {
         mac.finalize().into_bytes().to_vec()
     }
 
-    async fn concurrent_session_stress_test(&mut self, concurrent_clients: usize, requests_per_client: usize) -> Vec<Result<Duration, String>> {
+    async fn concurrent_session_stress_test(
+        &mut self,
+        concurrent_clients: usize,
+        requests_per_client: usize,
+    ) -> Vec<Result<Duration, String>> {
         let semaphore = Arc::new(Semaphore::new(50)); // Limit concurrency
         let mut handles = Vec::new();
 
@@ -284,13 +325,16 @@ impl ApiSessionAuthTestHarness {
                 let mut sm = session_manager.write().await;
                 let handshake_data = format!("stress-handshake-{}", client_id);
                 let transcript_hash = {
-                    let mut mac = HmacSha256::new_from_slice(b"stress_test_key").expect("Valid HMAC key");
+                    let mut mac =
+                        HmacSha256::new_from_slice(b"stress_test_key").expect("Valid HMAC key");
                     mac.update(b"session_auth_handshake_v1:");
                     mac.update(handshake_data.as_bytes());
                     mac.finalize().into_bytes().to_vec()
                 };
 
-                let session_result = sm.establish_session(&client_id, &transcript_hash, Duration::from_secs(300)).await;
+                let session_result = sm
+                    .establish_session(&client_id, &transcript_hash, Duration::from_secs(300))
+                    .await;
                 drop(sm); // Release write lock
 
                 match session_result {
@@ -298,11 +342,20 @@ impl ApiSessionAuthTestHarness {
                         // Make multiple authenticated requests
                         for req_idx in 0..requests_per_client {
                             let endpoint = format!("/api/test-endpoint-{}", req_idx);
-                            let payload = format!("{{\"test\": \"data\", \"request\": {}}}", req_idx);
+                            let payload =
+                                format!("{{\"test\": \"data\", \"request\": {}}}", req_idx);
 
-                            let auth_result = auth_middleware.authenticate_request(&session_id, &endpoint, payload.as_bytes()).await;
+                            let auth_result = auth_middleware
+                                .authenticate_request(&session_id, &endpoint, payload.as_bytes())
+                                .await;
                             if let Ok(auth_context) = auth_result {
-                                let _api_result = api_service.process_authenticated_request(&auth_context, &endpoint, &payload).await;
+                                let _api_result = api_service
+                                    .process_authenticated_request(
+                                        &auth_context,
+                                        &endpoint,
+                                        &payload,
+                                    )
+                                    .await;
                             }
 
                             // Small delay to allow for race condition detection
@@ -315,7 +368,7 @@ impl ApiSessionAuthTestHarness {
 
                         Ok(start.elapsed())
                     }
-                    Err(e) => Err(format!("Client {} failed: {:?}", client_id, e))
+                    Err(e) => Err(format!("Client {} failed: {:?}", client_id, e)),
                 }
             });
 
@@ -339,12 +392,21 @@ impl ApiSessionAuthTestHarness {
         let failed_auths = self.auth_logs.iter().filter(|log| !log.success).count();
 
         let avg_auth_duration: f64 = if !self.auth_logs.is_empty() {
-            self.auth_logs.iter().map(|log| log.duration_ms).sum::<u64>() as f64 / self.auth_logs.len() as f64
+            self.auth_logs
+                .iter()
+                .map(|log| log.duration_ms)
+                .sum::<u64>() as f64
+                / self.auth_logs.len() as f64
         } else {
             0.0
         };
 
-        let max_concurrent = self.auth_logs.iter().map(|log| log.concurrent_sessions).max().unwrap_or(0);
+        let max_concurrent = self
+            .auth_logs
+            .iter()
+            .map(|log| log.concurrent_sessions)
+            .max()
+            .unwrap_or(0);
 
         json!({
             "suite": "api_session_auth_integration",
@@ -367,32 +429,53 @@ async fn test_session_authenticated_api_end_to_end_real_auth() {
     let client_id = "test-client-001";
 
     // Establish authenticated session
-    let (session_id, establish_duration) = harness.establish_authenticated_session(client_id).await
+    let (session_id, establish_duration) = harness
+        .establish_authenticated_session(client_id)
+        .await
         .expect("Session establishment should succeed");
 
-    assert!(establish_duration >= Duration::from_micros(100), "Auth should take realistic time");
-    assert!(establish_duration <= Duration::from_secs(5), "Auth should not take too long");
+    assert!(
+        establish_duration >= Duration::from_micros(100),
+        "Auth should take realistic time"
+    );
+    assert!(
+        establish_duration <= Duration::from_secs(5),
+        "Auth should not take too long"
+    );
 
     // Make authenticated API requests
     let test_endpoints = vec![
         ("/api/fleet/status", "{\"query\": \"status\"}"),
         ("/api/trust/verify", "{\"card_id\": \"test-card-001\"}"),
-        ("/api/remote/capabilities", "{\"connector_id\": \"test-connector\"}"),
+        (
+            "/api/remote/capabilities",
+            "{\"connector_id\": \"test-connector\"}",
+        ),
     ];
 
     for (endpoint, payload) in test_endpoints {
-        let (response, request_duration) = harness.authenticated_api_request(&session_id, endpoint, payload).await
+        let (response, request_duration) = harness
+            .authenticated_api_request(&session_id, endpoint, payload)
+            .await
             .expect("Authenticated API request should succeed");
 
         assert!(!response.is_empty(), "API response should not be empty");
-        assert!(request_duration <= Duration::from_secs(10), "API request should complete in reasonable time");
+        assert!(
+            request_duration <= Duration::from_secs(10),
+            "API request should complete in reasonable time"
+        );
     }
 
     // Terminate session
-    let terminate_duration = harness.terminate_session(&session_id).await
+    let terminate_duration = harness
+        .terminate_session(&session_id)
+        .await
         .expect("Session termination should succeed");
 
-    assert!(terminate_duration <= Duration::from_secs(1), "Session termination should be fast");
+    assert!(
+        terminate_duration <= Duration::from_secs(1),
+        "Session termination should be fast"
+    );
 
     eprintln!("{}", harness.export_auth_performance_summary());
 }
@@ -405,27 +488,35 @@ async fn test_concurrent_session_authentication_under_load() {
     const CONCURRENT_CLIENTS: usize = 25;
     const REQUESTS_PER_CLIENT: usize = 10;
 
-    let stress_results = harness.concurrent_session_stress_test(CONCURRENT_CLIENTS, REQUESTS_PER_CLIENT).await;
+    let stress_results = harness
+        .concurrent_session_stress_test(CONCURRENT_CLIENTS, REQUESTS_PER_CLIENT)
+        .await;
 
     let successful = stress_results.iter().filter(|r| r.is_ok()).count();
     let failed = stress_results.iter().filter(|r| r.is_err()).count();
 
-    eprintln!("{}", json!({
-        "ts": chrono::Utc::now().to_rfc3339(),
-        "suite": "api_session_auth_integration",
-        "test": "concurrent_stress",
-        "concurrent_clients": CONCURRENT_CLIENTS,
-        "requests_per_client": REQUESTS_PER_CLIENT,
-        "successful_clients": successful,
-        "failed_clients": failed,
-        "success_rate": successful as f64 / stress_results.len() as f64,
-        "event": "stress_test_summary"
-    }));
+    eprintln!(
+        "{}",
+        json!({
+            "ts": chrono::Utc::now().to_rfc3339(),
+            "suite": "api_session_auth_integration",
+            "test": "concurrent_stress",
+            "concurrent_clients": CONCURRENT_CLIENTS,
+            "requests_per_client": REQUESTS_PER_CLIENT,
+            "successful_clients": successful,
+            "failed_clients": failed,
+            "success_rate": successful as f64 / stress_results.len() as f64,
+            "event": "stress_test_summary"
+        })
+    );
 
     // At least 90% success rate under concurrent load
     let success_rate = successful as f64 / stress_results.len() as f64;
-    assert!(success_rate >= 0.9,
-        "Success rate too low under load: {:.2}%, expected >= 90%", success_rate * 100.0);
+    assert!(
+        success_rate >= 0.9,
+        "Success rate too low under load: {:.2}%, expected >= 90%",
+        success_rate * 100.0
+    );
 
     eprintln!("{}", harness.export_auth_performance_summary());
 }
@@ -449,33 +540,54 @@ async fn test_session_auth_error_paths_real_failures() {
                 let mut session_manager = harness.session_manager.write().await;
                 let bad_transcript = vec![0u8; 32]; // Invalid transcript hash
 
-                let result = session_manager.establish_session(client_id, &bad_transcript, Duration::from_secs(3600)).await;
-                assert!(result.is_err(), "Invalid transcript should fail authentication");
+                let result = session_manager
+                    .establish_session(client_id, &bad_transcript, Duration::from_secs(3600))
+                    .await;
+                assert!(
+                    result.is_err(),
+                    "Invalid transcript should fail authentication"
+                );
             }
             "expired_session" => {
                 // Establish session with very short timeout
-                let (session_id, _) = harness.establish_authenticated_session(client_id).await
+                let (session_id, _) = harness
+                    .establish_authenticated_session(client_id)
+                    .await
                     .expect("Session establishment should succeed");
 
                 // Wait for expiry (simulate by forcing expiry)
                 let mut session_manager = harness.session_manager.write().await;
-                session_manager.expire_session(&session_id).await.expect("Session expiry should succeed");
+                session_manager
+                    .expire_session(&session_id)
+                    .await
+                    .expect("Session expiry should succeed");
                 drop(session_manager);
 
                 // Try to use expired session
-                let result = harness.authenticated_api_request(&session_id, "/api/test", "{}").await;
-                assert!(result.is_err(), "Expired session should fail authentication");
+                let result = harness
+                    .authenticated_api_request(&session_id, "/api/test", "{}")
+                    .await;
+                assert!(
+                    result.is_err(),
+                    "Expired session should fail authentication"
+                );
             }
             "malformed_request" => {
-                let (session_id, _) = harness.establish_authenticated_session(client_id).await
+                let (session_id, _) = harness
+                    .establish_authenticated_session(client_id)
+                    .await
                     .expect("Session establishment should succeed");
 
                 // Send malformed request
-                let result = harness.authenticated_api_request(&session_id, "", "invalid-json{").await;
+                let result = harness
+                    .authenticated_api_request(&session_id, "", "invalid-json{")
+                    .await;
                 assert!(result.is_err(), "Malformed request should fail");
             }
             "double_termination" => {
-                let (session_id, _) = harness.establish_authenticated_session(client_id).await
+                let (session_id, _) = harness
+                    .establish_authenticated_session(client_id)
+                    .await
                     .expect("Session establishment should succeed");
 
                 // First termination should succeed
@@ -489,15 +601,18 @@ async fn test_session_auth_error_paths_real_failures() {
             _ => {}
         }
 
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "api_session_auth_integration",
-            "test": "error_scenarios",
-            "scenario": scenario,
-            "client_id": client_id,
-            "expected_failure": true,
-            "event": "error_scenario_tested"
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "api_session_auth_integration",
+                "test": "error_scenarios",
+                "scenario": scenario,
+                "client_id": client_id,
+                "expected_failure": true,
+                "event": "error_scenario_tested"
+            })
+        );
     }
 
     eprintln!("{}", harness.export_auth_performance_summary());
@@ -509,14 +624,22 @@ async fn test_session_state_machine_transitions_real_components() {
     let client_id = "state-machine-001";
 
     // Test session state transitions with real state management
-    let (session_id, _) = harness.establish_authenticated_session(client_id).await
+    let (session_id, _) = harness
+        .establish_authenticated_session(client_id)
+        .await
         .expect("Session establishment should succeed");
 
     let session_manager = harness.session_manager.read().await;
-    let initial_state = session_manager.get_session_state(&session_id).await
+    let initial_state = session_manager
+        .get_session_state(&session_id)
+        .await
         .expect("Session should exist");
 
-    assert_eq!(initial_state, SessionState::Active, "New session should be Active");
+    assert_eq!(
+        initial_state,
+        SessionState::Active,
+        "New session should be Active"
+    );
     drop(session_manager);
 
     // Test state transitions
@@ -531,7 +654,9 @@ async fn test_session_state_machine_transitions_real_components() {
 
         let mut session_manager = harness.session_manager.write().await;
         let transition_result = match target_state {
-            SessionState::Terminating => session_manager.begin_session_termination(&session_id).await,
+            SessionState::Terminating => {
+                session_manager.begin_session_termination(&session_id).await
+            }
             SessionState::Terminated => session_manager.terminate_session(&session_id).await,
             _ => Ok(()),
         };
@@ -539,20 +664,27 @@ async fn test_session_state_machine_transitions_real_components() {
 
         let duration = start.elapsed();
 
-        eprintln!("{}", json!({
-            "ts": chrono::Utc::now().to_rfc3339(),
-            "suite": "api_session_auth_integration",
-            "test": "state_transitions",
-            "session_id": session_id,
-            "target_state": format!("{:?}", target_state),
-            "description": description,
-            "duration_ms": duration.as_millis(),
-            "success": transition_result.is_ok(),
-            "event": "state_transition"
-        }));
+        eprintln!(
+            "{}",
+            json!({
+                "ts": chrono::Utc::now().to_rfc3339(),
+                "suite": "api_session_auth_integration",
+                "test": "state_transitions",
+                "session_id": session_id,
+                "target_state": format!("{:?}", target_state),
+                "description": description,
+                "duration_ms": duration.as_millis(),
+                "success": transition_result.is_ok(),
+                "event": "state_transition"
+            })
+        );
 
         if target_state != SessionState::Terminated {
-            assert!(transition_result.is_ok(), "State transition should succeed for {}", description);
+            assert!(
+                transition_result.is_ok(),
+                "State transition should succeed for {}",
+                description
+            );
         }
     }
 
