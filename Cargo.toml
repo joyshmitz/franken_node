@@ -3,6 +3,9 @@ members = [
   "crates/franken-node",
   "sdk/verifier",
 ]
+exclude = [
+  "fuzz",
+]
 resolver = "2"
 
 [workspace.package]
