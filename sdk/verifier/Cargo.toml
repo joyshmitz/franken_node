@@ -14,3 +14,4 @@ hex = "0.4.3"
 subtle = "2.6.1"
 
 [dev-dependencies]
+frankenengine-node = { path = "../../crates/franken-node" }

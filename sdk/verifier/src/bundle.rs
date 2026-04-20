@@ -366,6 +366,26 @@ pub fn sign_bundle(signing_key: &SigningKey, bundle: &ReplayBundle) -> Signature
     signing_key.sign(&ed25519_bundle_signature_payload(bundle))
 }
 
+/// Verify a detached Ed25519 signature over caller-supplied bytes.
+///
+/// This is intentionally payload-agnostic so downstream verifiers can check
+/// registry entries and other public signed artifacts without depending on
+/// privileged `franken-node` internals.
+pub fn verify_ed25519_signature(
+    verifying_key: &VerifyingKey,
+    payload: &[u8],
+    signature_bytes: &[u8],
+) -> Result<(), BundleError> {
+    let signature = Signature::from_slice(signature_bytes).map_err(|_| {
+        BundleError::Ed25519SignatureMalformed {
+            length: signature_bytes.len(),
+        }
+    })?;
+    verifying_key
+        .verify(payload, &signature)
+        .map_err(|_| BundleError::Ed25519SignatureInvalid)
+}
+
 /// Verify a detached Ed25519 signature over a sealed replay bundle.
 pub fn verify_signed_bundle(
     verifying_key: &VerifyingKey,
@@ -374,14 +394,11 @@ pub fn verify_signed_bundle(
 ) -> Result<(), BundleError> {
     let canonical = serialize(bundle)?;
     verify(&canonical)?;
-    let signature = Signature::from_slice(signature_bytes).map_err(|_| {
-        BundleError::Ed25519SignatureMalformed {
-            length: signature_bytes.len(),
-        }
-    })?;
-    verifying_key
-        .verify(&ed25519_bundle_signature_payload(bundle), &signature)
-        .map_err(|_| BundleError::Ed25519SignatureInvalid)
+    verify_ed25519_signature(
+        verifying_key,
+        &ed25519_bundle_signature_payload(bundle),
+        signature_bytes,
+    )
 }
 
 /// Verify canonical encoding, schema, artifact hashes, and bundle integrity.

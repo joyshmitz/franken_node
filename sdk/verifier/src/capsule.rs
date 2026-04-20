@@ -919,7 +919,8 @@ mod tests {
         let mut capsule = build_reference_capsule();
         // Create a very large payload (1MB of 'x' characters)
         capsule.payload = "x".repeat(1_000_000);
-        capsule.manifest.expected_output_hash = compute_replay_hash(&capsule.payload, &capsule.inputs);
+        capsule.manifest.expected_output_hash =
+            compute_replay_hash(&capsule.payload, &capsule.inputs);
         sign_capsule(&mut capsule);
 
         // Should handle large payloads without panicking or excessive memory usage
@@ -945,9 +946,9 @@ mod tests {
     fn negative_deterministic_hash_with_maximum_unicode_handles_correctly() {
         // Test with various Unicode edge cases including max codepoints
         let test_cases = vec![
-            "\u{FFFF}".to_string(),  // Max BMP codepoint
-            "\u{10FFFF}".to_string(), // Max Unicode codepoint
-            "🚀🔥💀\u{1F600}".to_string(), // Emoji sequence
+            "\u{FFFF}".to_string(),                 // Max BMP codepoint
+            "\u{10FFFF}".to_string(),               // Max Unicode codepoint
+            "🚀🔥💀\u{1F600}".to_string(),          // Emoji sequence
             "\u{200B}\u{FEFF}\u{034F}".to_string(), // Zero-width/invisible chars
         ];
 
@@ -980,8 +981,8 @@ mod tests {
         let mut capsule2 = build_reference_capsule();
         capsule2.manifest.claim_type = "\u{00A0}\u{2000}\u{2001}".to_string(); // Non-breaking spaces
         match validate_manifest(&capsule2.manifest) {
-            Err(CapsuleError::ManifestIncomplete(_)) => {}, // Expected if considered empty
-            Ok(_) => {}, // Fine if non-breaking spaces aren't considered empty
+            Err(CapsuleError::ManifestIncomplete(_)) => {} // Expected if considered empty
+            Ok(_) => {}  // Fine if non-breaking spaces aren't considered empty
             Err(_) => {} // Other errors are not expected for this test case
         }
     }
@@ -991,19 +992,19 @@ mod tests {
         let capsule = build_reference_capsule();
 
         let invalid_identities = vec![
-            "verifier://",           // Missing verifier name
-            "verifier:///empty",     // Extra slash
-            "verifier://\n\r",       // Newlines in URI
-            "verifier://space space", // Spaces in verifier name
-            "VERIFIER://upper",      // Wrong case scheme
+            "verifier://",             // Missing verifier name
+            "verifier:///empty",       // Extra slash
+            "verifier://\n\r",         // Newlines in URI
+            "verifier://space space",  // Spaces in verifier name
+            "VERIFIER://upper",        // Wrong case scheme
             "verifier://../traversal", // Path traversal in URI
-            "verifier://\u{0000}",   // Null byte
-            "verifier://\u{FFFF}",   // Invalid Unicode
+            "verifier://\u{0000}",     // Null byte
+            "verifier://\u{FFFF}",     // Invalid Unicode
         ];
 
         for identity in invalid_identities {
             match replay(&capsule, identity) {
-                Err(CapsuleError::AccessDenied(_)) => {}, // Expected
+                Err(CapsuleError::AccessDenied(_)) => {} // Expected
                 other => panic!("Expected AccessDenied for identity '{identity}', got {other:?}"),
             }
         }
@@ -1014,13 +1015,13 @@ mod tests {
         let mut capsule = build_reference_capsule();
 
         let invalid_hashes = vec![
-            "g".repeat(64),          // Invalid hex character 'g'
-            "f".repeat(63),          // Too short (63 chars)
-            "f".repeat(65),          // Too long (65 chars)
-            "F".repeat(64),          // Uppercase hex (might be rejected)
+            "g".repeat(64),                     // Invalid hex character 'g'
+            "f".repeat(63),                     // Too short (63 chars)
+            "f".repeat(65),                     // Too long (65 chars)
+            "F".repeat(64),                     // Uppercase hex (might be rejected)
             "123456789abcdef".repeat(3) + "12", // Wrong length
-            "".to_string(),          // Empty
-            "\n".repeat(32) + &"f".repeat(32), // Newlines in middle
+            "".to_string(),                     // Empty
+            "\n".repeat(32) + &"f".repeat(32),  // Newlines in middle
         ];
 
         for hash in invalid_hashes {
@@ -1049,7 +1050,8 @@ mod tests {
             capsule.manifest.input_refs.push(key);
         }
 
-        capsule.manifest.expected_output_hash = compute_replay_hash(&capsule.payload, &capsule.inputs);
+        capsule.manifest.expected_output_hash =
+            compute_replay_hash(&capsule.payload, &capsule.inputs);
         sign_capsule(&mut capsule);
 
         // Should handle large input maps without excessive memory consumption
@@ -1069,7 +1071,10 @@ mod tests {
 
         // Attack 1: Key ending with length prefix of value
         let mut inputs1 = BTreeMap::new();
-        inputs1.insert("key\x08\x00\x00\x00\x00\x00\x00\x00value123".to_string(), "".to_string());
+        inputs1.insert(
+            "key\x08\x00\x00\x00\x00\x00\x00\x00value123".to_string(),
+            "".to_string(),
+        );
         let hash1 = compute_replay_hash("payload", &inputs1);
 
         // Attack 2: Different key-value split of same byte sequence
@@ -1078,7 +1083,10 @@ mod tests {
         let hash2 = compute_replay_hash("payload", &inputs2);
 
         // Length-prefixed encoding should make these produce different hashes
-        assert_ne!(hash1, hash2, "Replay hash must resist key-value collision attacks");
+        assert_ne!(
+            hash1, hash2,
+            "Replay hash must resist key-value collision attacks"
+        );
     }
 
     #[test]
@@ -1087,9 +1095,9 @@ mod tests {
 
         // Test verifier:// with empty remainder after trimming
         let empty_remainder_cases = vec![
-            "verifier://   ",        // Only whitespace after scheme
-            "verifier://\t\n\r",     // Only tabs/newlines after scheme
-            "verifier://\u{00A0}",   // Only non-breaking space after scheme
+            "verifier://   ",      // Only whitespace after scheme
+            "verifier://\t\n\r",   // Only tabs/newlines after scheme
+            "verifier://\u{00A0}", // Only non-breaking space after scheme
         ];
 
         for identity in empty_remainder_cases {
@@ -1097,7 +1105,9 @@ mod tests {
                 Err(CapsuleError::AccessDenied(msg)) => {
                     assert!(msg.contains("non-empty verifier name"));
                 }
-                other => panic!("Expected AccessDenied for empty verifier name '{identity}', got {other:?}"),
+                other => panic!(
+                    "Expected AccessDenied for empty verifier name '{identity}', got {other:?}"
+                ),
             }
         }
     }
@@ -1107,15 +1117,25 @@ mod tests {
     #[test]
     fn negative_is_sha256_hex_with_boundary_and_invalid_cases() {
         // Test exact boundary cases for SHA-256 hex validation
-        assert!(!is_sha256_hex(""));  // Empty string
-        assert!(!is_sha256_hex("f".repeat(63).as_str()));  // Too short by 1
-        assert!(!is_sha256_hex("f".repeat(65).as_str()));  // Too long by 1
-        assert!(!is_sha256_hex("G".repeat(64).as_str()));  // Invalid hex char
-        assert!(!is_sha256_hex("Z".repeat(64).as_str()));  // Invalid hex char
-        assert!(!is_sha256_hex(&format!("{}g{}", "f".repeat(31), "f".repeat(32))));  // Invalid char in middle
-        assert!(!is_sha256_hex(&format!("{}\x00{}", "f".repeat(31), "f".repeat(32))));  // Null byte
+        assert!(!is_sha256_hex("")); // Empty string
+        assert!(!is_sha256_hex("f".repeat(63).as_str())); // Too short by 1
+        assert!(!is_sha256_hex("f".repeat(65).as_str())); // Too long by 1
+        assert!(!is_sha256_hex("G".repeat(64).as_str())); // Invalid hex char
+        assert!(!is_sha256_hex("Z".repeat(64).as_str())); // Invalid hex char
+        assert!(!is_sha256_hex(&format!(
+            "{}g{}",
+            "f".repeat(31),
+            "f".repeat(32)
+        ))); // Invalid char in middle
+        assert!(!is_sha256_hex(&format!(
+            "{}\x00{}",
+            "f".repeat(31),
+            "f".repeat(32)
+        ))); // Null byte
         // Valid case for comparison
-        assert!(is_sha256_hex("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"));
+        assert!(is_sha256_hex(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        ));
     }
 
     #[test]
@@ -1125,7 +1145,7 @@ mod tests {
         // Test with maximum possible string length (approaching usize::MAX)
         // Note: We can't actually create a string of usize::MAX length due to memory,
         // but we can test the length encoding behavior
-        let max_len_str = "x".repeat(65536);  // Large but manageable string
+        let max_len_str = "x".repeat(65536); // Large but manageable string
         push_length_prefixed(&mut hasher, &max_len_str);
 
         // Test with zero-length string
@@ -1136,7 +1156,7 @@ mod tests {
         push_length_prefixed(&mut hasher, &null_str);
 
         // Test with string containing high Unicode codepoints
-        let unicode_str = "\u{1F4A9}".repeat(100);  // Pile of poo emoji repeated
+        let unicode_str = "\u{1F4A9}".repeat(100); // Pile of poo emoji repeated
         push_length_prefixed(&mut hasher, &unicode_str);
 
         // Finalize to ensure no panic
@@ -1158,8 +1178,8 @@ mod tests {
 
         // Test with single-character key and value at boundaries
         let mut single_inputs = BTreeMap::new();
-        single_inputs.insert("".to_string(), "".to_string());  // Empty key and value
-        single_inputs.insert("a".to_string(), "b".to_string());  // Single chars
+        single_inputs.insert("".to_string(), "".to_string()); // Empty key and value
+        single_inputs.insert("a".to_string(), "b".to_string()); // Single chars
         let hash3 = compute_replay_hash("c", &single_inputs);
         assert_ne!(hash1, hash3);
         assert_ne!(hash2, hash3);
@@ -1205,7 +1225,9 @@ mod tests {
         for i in 0..1000 {
             let ref_name = format!("stress_input_{:04}", i);
             stress_capsule.manifest.input_refs.push(ref_name.clone());
-            stress_capsule.inputs.insert(ref_name, format!("content_{}", i));
+            stress_capsule
+                .inputs
+                .insert(ref_name, format!("content_{}", i));
         }
 
         assert!(validate_declared_input_refs(&stress_capsule).is_ok());
@@ -1223,8 +1245,13 @@ mod tests {
         ];
 
         for unicode_ref in unicode_refs {
-            unicode_capsule.manifest.input_refs.push(unicode_ref.clone());
-            unicode_capsule.inputs.insert(unicode_ref, "unicode_content".to_string());
+            unicode_capsule
+                .manifest
+                .input_refs
+                .push(unicode_ref.clone());
+            unicode_capsule
+                .inputs
+                .insert(unicode_ref, "unicode_content".to_string());
         }
 
         assert!(validate_declared_input_refs(&unicode_capsule).is_ok());
@@ -1233,23 +1260,23 @@ mod tests {
     #[test]
     fn negative_ct_eq_bytes_with_length_boundary_conditions() {
         // Test constant-time comparison with various length combinations
-        assert!(!ct_eq_bytes(b"", b"a"));  // Empty vs non-empty
-        assert!(!ct_eq_bytes(b"a", b""));  // Non-empty vs empty
-        assert!(ct_eq_bytes(b"", b""));    // Both empty
+        assert!(!ct_eq_bytes(b"", b"a")); // Empty vs non-empty
+        assert!(!ct_eq_bytes(b"a", b"")); // Non-empty vs empty
+        assert!(ct_eq_bytes(b"", b"")); // Both empty
 
         // Test with very large byte arrays of different lengths
         let large1 = vec![0u8; 10000];
         let large2 = vec![1u8; 10000];
-        let large3 = vec![0u8; 10001];  // Different length
+        let large3 = vec![0u8; 10001]; // Different length
 
-        assert!(ct_eq_bytes(&large1, &large1));   // Same content, same length
+        assert!(ct_eq_bytes(&large1, &large1)); // Same content, same length
         assert!(!ct_eq_bytes(&large1, &large2)); // Different content, same length
         assert!(!ct_eq_bytes(&large1, &large3)); // Same content, different length
 
         // Test with arrays differing only in last byte
         let almost_same1 = vec![42u8; 1000];
         let mut almost_same2 = vec![42u8; 1000];
-        almost_same2[999] = 43;  // Change last byte
+        almost_same2[999] = 43; // Change last byte
 
         assert!(!ct_eq_bytes(&almost_same1, &almost_same2));
     }
@@ -1268,8 +1295,10 @@ mod tests {
         hasher_different.update(test_data.as_bytes());
         let hash_different = hex::encode(hasher_different.finalize());
 
-        assert_ne!(hash_capsule, hash_different,
-                  "Domain separators must prevent hash collision");
+        assert_ne!(
+            hash_capsule, hash_different,
+            "Domain separators must prevent hash collision"
+        );
 
         // Test with malicious input that tries to forge domain separator
         let malicious_input = "verifier_sdk_capsule_v1:fake_domain_sep";
@@ -1277,15 +1306,17 @@ mod tests {
 
         // Should NOT match hash of legitimate empty string with proper separator
         let hash_legitimate = deterministic_hash("");
-        assert_ne!(hash_malicious, hash_legitimate,
-                  "Malicious domain separator injection must be prevented");
+        assert_ne!(
+            hash_malicious, hash_legitimate,
+            "Malicious domain separator injection must be prevented"
+        );
     }
 
     #[test]
     fn negative_hash_computation_with_zero_length_boundaries() {
         // Test edge cases in hash computation involving zero-length data
         let mut zero_inputs = BTreeMap::new();
-        zero_inputs.insert("".to_string(), "".to_string());  // Zero-length key and value
+        zero_inputs.insert("".to_string(), "".to_string()); // Zero-length key and value
 
         let hash_zero_payload = compute_replay_hash("", &zero_inputs);
         let hash_zero_inputs = compute_replay_hash("data", &BTreeMap::new());
@@ -1299,15 +1330,20 @@ mod tests {
         // Test with zero-length metadata in signing payload
         let mut zero_meta_capsule = build_reference_capsule();
         zero_meta_capsule.manifest.metadata.clear();
-        zero_meta_capsule.manifest.metadata.insert("".to_string(), "".to_string());
+        zero_meta_capsule
+            .manifest
+            .metadata
+            .insert("".to_string(), "".to_string());
         let signing_zero = compute_signing_payload(&zero_meta_capsule);
 
         let mut no_meta_capsule = build_reference_capsule();
         no_meta_capsule.manifest.metadata.clear();
         let signing_no_meta = compute_signing_payload(&no_meta_capsule);
 
-        assert_ne!(signing_zero, signing_no_meta,
-                  "Empty metadata entry must differ from no metadata");
+        assert_ne!(
+            signing_zero, signing_no_meta,
+            "Empty metadata entry must differ from no metadata"
+        );
     }
 
     // =========================================================================
@@ -1320,20 +1356,23 @@ mod tests {
 
         // Attempt to spoof schema version with similar-looking strings
         let spoofed_versions = vec![
-            format!("{}\0", SDK_VERSION),         // Null terminator
-            format!(" {} ", SDK_VERSION),         // Extra whitespace
-            format!("{}\n", SDK_VERSION),         // Newline suffix
-            format!("{}\u{200B}", SDK_VERSION),   // Zero-width space
-            SDK_VERSION.to_uppercase(),           // Case change
-            format!("{}x", SDK_VERSION),          // Extra character
-            format!("v{}", SDK_VERSION),          // Version prefix
+            format!("{}\0", SDK_VERSION),       // Null terminator
+            format!(" {} ", SDK_VERSION),       // Extra whitespace
+            format!("{}\n", SDK_VERSION),       // Newline suffix
+            format!("{}\u{200B}", SDK_VERSION), // Zero-width space
+            SDK_VERSION.to_uppercase(),         // Case change
+            format!("{}x", SDK_VERSION),        // Extra character
+            format!("v{}", SDK_VERSION),        // Version prefix
         ];
 
         for spoofed_version in spoofed_versions {
             capsule.manifest.schema_version = spoofed_version.clone();
             match validate_manifest(&capsule.manifest) {
-                Err(CapsuleError::SchemaMismatch(_)) => {}, // Expected
-                other => panic!("Expected SchemaMismatch for spoofed version '{}', got {other:?}", spoofed_version),
+                Err(CapsuleError::SchemaMismatch(_)) => {} // Expected
+                other => panic!(
+                    "Expected SchemaMismatch for spoofed version '{}', got {other:?}",
+                    spoofed_version
+                ),
             }
         }
     }
@@ -1351,9 +1390,12 @@ mod tests {
             nested_value = format!("{{\"level_{}\": \"{}\"}}", i, nested_value);
         }
 
-        capsule.inputs.insert("deep_nested".to_string(), nested_value);
+        capsule
+            .inputs
+            .insert("deep_nested".to_string(), nested_value);
         capsule.manifest.input_refs.push("deep_nested".to_string());
-        capsule.manifest.expected_output_hash = compute_replay_hash(&capsule.payload, &capsule.inputs);
+        capsule.manifest.expected_output_hash =
+            compute_replay_hash(&capsule.payload, &capsule.inputs);
         sign_capsule(&mut capsule);
 
         // Should handle deep nesting without stack overflow or excessive processing time
@@ -1372,8 +1414,8 @@ mod tests {
 
         // Create potentially invalid UTF-8 sequences (would be caught at string creation)
         let invalid_utf8_attempts = vec![
-            "valid\u{FFFD}replacement".to_string(),     // Replacement character
-            r#"incomplete\uD800surrogate"#.to_string(),  // Raw string with surrogate escape
+            "valid\u{FFFD}replacement".to_string(), // Replacement character
+            r#"incomplete\uD800surrogate"#.to_string(), // Raw string with surrogate escape
         ];
 
         for invalid_sequence in invalid_utf8_attempts {
@@ -1399,8 +1441,10 @@ mod tests {
 
         // Should produce different hashes for different string interpretations
         if utf8_string != latin1_interpretation {
-            assert_ne!(hash_utf8, hash_latin1,
-                      "Different string interpretations must produce different hashes");
+            assert_ne!(
+                hash_utf8, hash_latin1,
+                "Different string interpretations must produce different hashes"
+            );
         }
     }
 
@@ -1422,7 +1466,7 @@ mod tests {
 
         // Should detect that signature no longer matches modified content
         match verify_signature(&capsule) {
-            Err(CapsuleError::SignatureInvalid(_)) => {}, // Expected
+            Err(CapsuleError::SignatureInvalid(_)) => {} // Expected
             other => panic!("Expected SignatureInvalid for modified capsule, got {other:?}"),
         }
 
@@ -1441,15 +1485,17 @@ mod tests {
         let tricky_keys = vec![
             "1".to_string(),
             "10".to_string(),
-            "2".to_string(),      // Lexicographic: "1" < "10" < "2"
-            "ä".to_string(),      // Unicode
-            "z".to_string(),      // ASCII
-            "😀".to_string(),     // High Unicode
+            "2".to_string(),  // Lexicographic: "1" < "10" < "2"
+            "ä".to_string(),  // Unicode
+            "z".to_string(),  // ASCII
+            "😀".to_string(), // High Unicode
         ];
 
         // Insert in random order
         for key in tricky_keys.iter().rev() {
-            capsule.inputs.insert(key.clone(), format!("value_for_{}", key));
+            capsule
+                .inputs
+                .insert(key.clone(), format!("value_for_{}", key));
             capsule.manifest.input_refs.push(key.clone());
         }
 
@@ -1460,7 +1506,10 @@ mod tests {
         let hash1 = compute_replay_hash(&capsule.payload, &capsule.inputs);
         let hash2 = compute_replay_hash(&capsule.payload, &capsule.inputs);
 
-        assert_eq!(hash1, hash2, "Hash must be deterministic despite key ordering complexity");
+        assert_eq!(
+            hash1, hash2,
+            "Hash must be deterministic despite key ordering complexity"
+        );
 
         capsule.manifest.expected_output_hash = hash1;
         sign_capsule(&mut capsule);
@@ -1475,22 +1524,25 @@ mod tests {
 
         // Test various protocol confusion attempts
         let confusion_attempts = vec![
-            "VERIFIER://uppercase-scheme",      // Wrong case
-            "verifier:\\\\windows-style",      // Wrong separator style
-            "verifier:/single-slash",          // Missing second slash
-            "verifier:///triple-slash",        // Too many slashes
-            "http://verifier://double-proto",  // Nested protocols
-            "verifier://user:pass@host",       // Authority with credentials
-            "verifier://host:port/path",       // Port and path
-            "verifier://host?query=param",     // Query parameters
-            "verifier://host#fragment",        // Fragment
+            "VERIFIER://uppercase-scheme",    // Wrong case
+            "verifier:\\\\windows-style",     // Wrong separator style
+            "verifier:/single-slash",         // Missing second slash
+            "verifier:///triple-slash",       // Too many slashes
+            "http://verifier://double-proto", // Nested protocols
+            "verifier://user:pass@host",      // Authority with credentials
+            "verifier://host:port/path",      // Port and path
+            "verifier://host?query=param",    // Query parameters
+            "verifier://host#fragment",       // Fragment
             "javascript:alert('xss')",        // Different protocol entirely
         ];
 
         for attempt in confusion_attempts {
             match replay(&capsule, attempt) {
-                Err(CapsuleError::AccessDenied(_)) => {}, // Expected
-                other => panic!("Expected AccessDenied for protocol confusion '{}', got {other:?}", attempt),
+                Err(CapsuleError::AccessDenied(_)) => {} // Expected
+                other => panic!(
+                    "Expected AccessDenied for protocol confusion '{}', got {other:?}",
+                    attempt
+                ),
             }
         }
     }
@@ -1509,17 +1561,26 @@ mod tests {
 
         for pattern in injection_patterns {
             capsule.manifest.metadata.clear();
-            capsule.manifest.metadata.insert("potentially_malicious".to_string(), pattern.clone());
+            capsule
+                .manifest
+                .metadata
+                .insert("potentially_malicious".to_string(), pattern.clone());
             sign_capsule(&mut capsule);
 
             // Should handle injection patterns without breaking verification
             assert!(validate_manifest(&capsule.manifest).is_ok());
 
             let result = replay(&capsule, "verifier://injection-meta-test");
-            assert!(result.is_ok(), "Metadata injection pattern should not break replay");
+            assert!(
+                result.is_ok(),
+                "Metadata injection pattern should not break replay"
+            );
 
             // Verify the pattern is preserved as-is in metadata
-            assert_eq!(capsule.manifest.metadata.get("potentially_malicious"), Some(&pattern));
+            assert_eq!(
+                capsule.manifest.metadata.get("potentially_malicious"),
+                Some(&pattern)
+            );
         }
     }
 
@@ -1557,7 +1618,7 @@ mod tests {
             "",
             "a",
             "ab",
-            "secret_reference_strin",  // One character shorter
+            "secret_reference_strin",   // One character shorter
             "secret_reference_stringx", // One character longer
             "secret_reference_string_much_longer_suffix",
         ];
@@ -1578,7 +1639,10 @@ mod tests {
         for test_string in same_length_different {
             assert_eq!(test_string.len(), reference.len()); // Verify same length
             let result = ct_eq(reference, test_string);
-            assert!(!result, "Same length, different content should not be equal");
+            assert!(
+                !result,
+                "Same length, different content should not be equal"
+            );
         }
 
         // Positive test case
@@ -1597,8 +1661,14 @@ mod tests {
         capsule.manifest.metadata.clear();
         for i in 0..10000 {
             let malicious_key = format!("pollution_{:04}\x00\r\n\t", i);
-            let malicious_value = format!("<!ENTITY xxe SYSTEM 'file:///etc/passwd'>{}", "x".repeat(i % 1000));
-            capsule.manifest.metadata.insert(malicious_key, malicious_value);
+            let malicious_value = format!(
+                "<!ENTITY xxe SYSTEM 'file:///etc/passwd'>{}",
+                "x".repeat(i % 1000)
+            );
+            capsule
+                .manifest
+                .metadata
+                .insert(malicious_key, malicious_value);
         }
         sign_capsule(&mut capsule);
 
@@ -1630,8 +1700,10 @@ mod tests {
         // Different Unicode representations should produce different hashes
         // (no normalization should be applied)
         if canonical_form.as_bytes() != decomposed_form.as_bytes() {
-            assert_ne!(hash_canonical, hash_decomposed,
-                      "Different Unicode byte sequences must produce different hashes");
+            assert_ne!(
+                hash_canonical, hash_decomposed,
+                "Different Unicode byte sequences must produce different hashes"
+            );
         }
 
         // Test with various Unicode attack patterns
@@ -1646,9 +1718,12 @@ mod tests {
         let legitimate_hash = deterministic_hash("adminuser");
         for attack_input in unicode_attacks {
             let attack_hash = deterministic_hash(attack_input);
-            assert_ne!(legitimate_hash, attack_hash,
-                      "Unicode attack pattern '{}' must not collide with legitimate input",
-                      attack_input.escape_unicode());
+            assert_ne!(
+                legitimate_hash,
+                attack_hash,
+                "Unicode attack pattern '{}' must not collide with legitimate input",
+                attack_input.escape_unicode()
+            );
         }
     }
 
@@ -1673,8 +1748,10 @@ mod tests {
 
         for attack_payload in attack_payloads {
             let attack_hash = compute_replay_hash(&attack_payload, &BTreeMap::new());
-            assert_ne!(legitimate_hash, attack_hash,
-                      "Length prefix injection attack must not produce hash collision");
+            assert_ne!(
+                legitimate_hash, attack_hash,
+                "Length prefix injection attack must not produce hash collision"
+            );
         }
     }
 
@@ -1684,18 +1761,18 @@ mod tests {
 
         // Test homograph attacks using similar-looking characters
         let homograph_attacks = vec![
-            "verifier://аdmin",          // Cyrillic 'а' instead of Latin 'a'
-            "verifier://admin‍user",     // Zero-width joiner
-            "verifier://аdmіn",          // Mixed Cyrillic/Latin
-            "verifier://admín",          // Latin with accent
-            "verifier://ⱱerifier",      // Latin small letter v with right hook
-            "verifier://verífier",       // Accent on i
-            "verifier://veriﬁer",       // Latin small ligature fi
+            "verifier://аdmin",     // Cyrillic 'а' instead of Latin 'a'
+            "verifier://admin‍user", // Zero-width joiner
+            "verifier://аdmіn",     // Mixed Cyrillic/Latin
+            "verifier://admín",     // Latin with accent
+            "verifier://ⱱerifier",  // Latin small letter v with right hook
+            "verifier://verífier",  // Accent on i
+            "verifier://veriﬁer",   // Latin small ligature fi
         ];
 
         for spoofed_identity in homograph_attacks {
             match replay(&capsule, spoofed_identity) {
-                Err(CapsuleError::AccessDenied(_)) => {}, // May be rejected during validation
+                Err(CapsuleError::AccessDenied(_)) => {} // May be rejected during validation
                 Ok(_) => {
                     // If accepted, ensure it doesn't compromise security
                     // (the test just ensures no panic/crash occurs)
@@ -1708,10 +1785,10 @@ mod tests {
 
         // Test IDN homograph domain spoofing patterns
         let domain_spoofs = vec![
-            "verifier://раypal.com",     // Cyrillic 'а' and 'р'
-            "verifier://gооgle.com",     // Cyrillic 'о' characters
-            "verifier://аmazon.com",     // Cyrillic 'а'
-            "verifier://miсrosoft.com",  // Cyrillic 'с'
+            "verifier://раypal.com",    // Cyrillic 'а' and 'р'
+            "verifier://gооgle.com",    // Cyrillic 'о' characters
+            "verifier://аmazon.com",    // Cyrillic 'а'
+            "verifier://miсrosoft.com", // Cyrillic 'с'
         ];
 
         for spoof in domain_spoofs {
@@ -1733,8 +1810,14 @@ mod tests {
 
         // Add metadata with keys and values that test boundary conditions
         stress_capsule.manifest.metadata.clear();
-        stress_capsule.manifest.metadata.insert("".to_string(), "".to_string()); // Zero length
-        stress_capsule.manifest.metadata.insert("x".repeat(65535), "y".repeat(65536)); // Large but manageable
+        stress_capsule
+            .manifest
+            .metadata
+            .insert("".to_string(), "".to_string()); // Zero length
+        stress_capsule
+            .manifest
+            .metadata
+            .insert("x".repeat(65535), "y".repeat(65536)); // Large but manageable
 
         // Should handle large lengths in signing payload without overflow
         let signing_payload = compute_signing_payload(&stress_capsule);
@@ -1759,12 +1842,12 @@ mod tests {
     fn negative_capsule_error_display_with_injection_resistant_formatting() {
         // Test that error display properly escapes malicious input
         let injection_attempts = vec![
-            "error\x1b[31mRED_TEXT\x1b[0m",                    // ANSI escape codes
+            "error\x1b[31mRED_TEXT\x1b[0m",                   // ANSI escape codes
             "error\r\nHTTP/1.1 200 OK\r\nContent-Type: text", // HTTP header injection
-            "error</script><script>alert('xss')</script>",     // HTML/JS injection
-            "error\0null_terminated\x00more",                  // Null byte injection
-            "error\n\nSecond-Line: malicious",                 // Newline injection
-            "error\u{202E}reverse\u{202D}normal",              // BiDi override attacks
+            "error</script><script>alert('xss')</script>",    // HTML/JS injection
+            "error\0null_terminated\x00more",                 // Null byte injection
+            "error\n\nSecond-Line: malicious",                // Newline injection
+            "error\u{202E}reverse\u{202D}normal",             // BiDi override attacks
         ];
 
         for malicious_content in injection_attempts {
@@ -1776,11 +1859,11 @@ mod tests {
                 CapsuleError::ManifestIncomplete(malicious_content.to_string()),
                 CapsuleError::ReplayDiverged {
                     expected: malicious_content.to_string(),
-                    actual: "legitimate".to_string()
+                    actual: "legitimate".to_string(),
                 },
                 CapsuleError::VerdictMismatch {
                     expected: "Pass".to_string(),
-                    actual: malicious_content.to_string()
+                    actual: malicious_content.to_string(),
                 },
             ];
 
@@ -1789,12 +1872,17 @@ mod tests {
 
                 // Error should contain the malicious content but in a safe way
                 // (Display trait should not process escape codes, just include them as-is)
-                assert!(error_string.contains(malicious_content) ||
-                       error_string.contains(&malicious_content.escape_debug().to_string()),
-                       "Error display should include malicious content safely");
+                assert!(
+                    error_string.contains(malicious_content)
+                        || error_string.contains(&malicious_content.escape_debug().to_string()),
+                    "Error display should include malicious content safely"
+                );
 
                 // Should not crash or cause undefined behavior
-                assert!(!error_string.is_empty(), "Error display should not be empty");
+                assert!(
+                    !error_string.is_empty(),
+                    "Error display should not be empty"
+                );
             }
         }
     }
@@ -1809,13 +1897,13 @@ mod tests {
         // Keys designed to test lexicographic edge cases and potential hash collision exploitation
         let adversarial_keys = vec![
             // ASCII boundary conditions
-            "\x00".to_string(),              // Null character (minimum)
-            "\x1F".to_string(),              // Unit separator
-            "\x20".to_string(),              // Space
-            "\x21".to_string(),              // Exclamation
-            "\x7E".to_string(),              // Tilde (near maximum printable ASCII)
-            "\x7F".to_string(),              // DEL character
-            "\u{FF}".to_string(),            // Maximum 8-bit value
+            "\x00".to_string(),   // Null character (minimum)
+            "\x1F".to_string(),   // Unit separator
+            "\x20".to_string(),   // Space
+            "\x21".to_string(),   // Exclamation
+            "\x7E".to_string(),   // Tilde (near maximum printable ASCII)
+            "\x7F".to_string(),   // DEL character
+            "\u{FF}".to_string(), // Maximum 8-bit value
             // Length-based potential collisions
             "a".to_string(),
             "aa".to_string(),
@@ -1827,15 +1915,17 @@ mod tests {
             "2".to_string(),
             "20".to_string(),
             // Unicode ordering edge cases
-            "é".to_string(),                 // Latin small letter e with acute
-            "e\u{0301}".to_string(),         // e + combining acute accent
-            "\u{1F600}".to_string(),         // Emoji (high Unicode)
-            "\u{10FFFF}".to_string(),        // Maximum Unicode codepoint
+            "é".to_string(),          // Latin small letter e with acute
+            "e\u{0301}".to_string(),  // e + combining acute accent
+            "\u{1F600}".to_string(),  // Emoji (high Unicode)
+            "\u{10FFFF}".to_string(), // Maximum Unicode codepoint
         ];
 
         // Insert in random order to test BTreeMap stabilizes the ordering
         for (i, key) in adversarial_keys.into_iter().rev().enumerate() {
-            capsule.inputs.insert(key.clone(), format!("value_{:03}", i));
+            capsule
+                .inputs
+                .insert(key.clone(), format!("value_{:03}", i));
             capsule.manifest.input_refs.push(key);
         }
 
@@ -1843,14 +1933,17 @@ mod tests {
         capsule.manifest.input_refs.sort();
 
         // Compute hash multiple times to verify determinism
-        let hash_attempts = (0..10).map(|_| {
-            compute_replay_hash(&capsule.payload, &capsule.inputs)
-        }).collect::<Vec<_>>();
+        let hash_attempts = (0..10)
+            .map(|_| compute_replay_hash(&capsule.payload, &capsule.inputs))
+            .collect::<Vec<_>>();
 
         // All hash attempts should be identical
         for (i, hash) in hash_attempts.iter().enumerate() {
-            assert_eq!(hash, &hash_attempts[0],
-                      "Hash attempt {} differs from first attempt", i);
+            assert_eq!(
+                hash, &hash_attempts[0],
+                "Hash attempt {} differs from first attempt",
+                i
+            );
         }
 
         capsule.manifest.expected_output_hash = hash_attempts[0].clone();
@@ -1866,20 +1959,30 @@ mod tests {
         let capsule = build_reference_capsule();
 
         // Simulate multiple "concurrent" replay attempts with identical capsule
-        let replay_results: Vec<_> = (0..100).map(|i| {
-            replay(&capsule, &format!("verifier://concurrent-sim-{:03}", i))
-        }).collect();
+        let replay_results: Vec<_> = (0..100)
+            .map(|i| replay(&capsule, &format!("verifier://concurrent-sim-{:03}", i)))
+            .collect();
 
         // All replays should succeed with identical results
         for (i, result) in replay_results.iter().enumerate() {
             match result {
                 Ok(replay_result) => {
-                    assert_eq!(replay_result.verdict, CapsuleVerdict::Pass,
-                              "Replay {} should pass", i);
-                    assert_eq!(replay_result.actual_hash, replay_result.expected_hash,
-                              "Hash mismatch in replay {}", i);
-                    assert_eq!(replay_result.capsule_id, capsule.manifest.capsule_id,
-                              "Capsule ID mismatch in replay {}", i);
+                    assert_eq!(
+                        replay_result.verdict,
+                        CapsuleVerdict::Pass,
+                        "Replay {} should pass",
+                        i
+                    );
+                    assert_eq!(
+                        replay_result.actual_hash, replay_result.expected_hash,
+                        "Hash mismatch in replay {}",
+                        i
+                    );
+                    assert_eq!(
+                        replay_result.capsule_id, capsule.manifest.capsule_id,
+                        "Capsule ID mismatch in replay {}",
+                        i
+                    );
                 }
                 Err(e) => panic!("Replay {} failed unexpectedly: {}", i, e),
             }
@@ -1911,9 +2014,8 @@ mod tests {
         let mut hash_set = std::collections::HashSet::new();
 
         // Generate variations of input and verify no collisions occur
-        let variations = (0..1000).map(|i| {
-            format!("{}_variant_{:04}_{}", base_input, i, "x".repeat(i % 100))
-        });
+        let variations =
+            (0..1000).map(|i| format!("{}_variant_{:04}_{}", base_input, i, "x".repeat(i % 100)));
 
         for input in variations {
             let hash = deterministic_hash(&input);
@@ -1937,8 +2039,11 @@ mod tests {
         let mut structured_hashes = std::collections::HashSet::new();
         for pattern in structured_patterns {
             let hash = deterministic_hash(pattern);
-            assert!(!structured_hashes.contains(&hash),
-                   "Collision in structured pattern: {}", pattern);
+            assert!(
+                !structured_hashes.contains(&hash),
+                "Collision in structured pattern: {}",
+                pattern
+            );
             structured_hashes.insert(hash);
         }
     }
@@ -1961,18 +2066,28 @@ mod tests {
         let timing_attack_cases = vec![
             // Differ at different bit positions to test early termination
             (format!("0{}", &correct_signature[1..]), "first_char_diff"),
-            (format!("{}{}", &correct_signature[..31], "X"), "middle_char_diff"),
+            (
+                format!("{}{}", &correct_signature[..31], "X"),
+                "middle_char_diff",
+            ),
             (format!("{}X", &correct_signature[..63]), "last_char_diff"),
-
             // Same length but entirely different
             ("0".repeat(64), "all_zeros"),
             ("f".repeat(64), "all_fs"),
             ("a".repeat(64), "all_as"),
-
             // Partial matches that could reveal processing patterns
-            (format!("{}{}", &correct_signature[..32], "0".repeat(32)), "half_correct"),
-            (format!("{}{}", &correct_signature[..48], "0".repeat(16)), "three_quarter_correct"),
-            (format!("{}{}", &correct_signature[..60], "0000"), "almost_correct"),
+            (
+                format!("{}{}", &correct_signature[..32], "0".repeat(32)),
+                "half_correct",
+            ),
+            (
+                format!("{}{}", &correct_signature[..48], "0".repeat(16)),
+                "three_quarter_correct",
+            ),
+            (
+                format!("{}{}", &correct_signature[..60], "0000"),
+                "almost_correct",
+            ),
         ];
 
         let mut timing_results = std::collections::HashMap::new();
@@ -2002,7 +2117,10 @@ mod tests {
         }
 
         // Analyze timing differences for patterns indicating non-constant-time comparison
-        let medians: Vec<f64> = timing_results.values().map(|(median, _, _, _)| *median).collect();
+        let medians: Vec<f64> = timing_results
+            .values()
+            .map(|(median, _, _, _)| *median)
+            .collect();
         let mean_median = medians.iter().sum::<f64>() / medians.len() as f64;
         let max_median = medians.iter().fold(0.0_f64, |acc, &x| acc.max(x));
         let min_median = medians.iter().fold(f64::INFINITY, |acc, &x| acc.min(x));
@@ -2010,21 +2128,35 @@ mod tests {
         let timing_variance_ratio = (max_median - min_median) / mean_median;
 
         // Constant-time verification should have low timing variance across different inputs
-        assert!(timing_variance_ratio < 1.5,
-               "Suspicious timing variance in signature verification: ratio={:.3}, mean={:.0}ns, min={:.0}ns, max={:.0}ns",
-               timing_variance_ratio, mean_median, min_median, max_median);
+        assert!(
+            timing_variance_ratio < 1.5,
+            "Suspicious timing variance in signature verification: ratio={:.3}, mean={:.0}ns, min={:.0}ns, max={:.0}ns",
+            timing_variance_ratio,
+            mean_median,
+            min_median,
+            max_median
+        );
 
         // No individual test case should be dramatically different from others
         for (test_name, (median, min, max, mean)) in timing_results {
             let individual_variance = (max - min) / mean;
-            assert!(individual_variance < 3.0,
-                   "High variance in test case '{}': median={:.0}ns, min={:.0}ns, max={:.0}ns, variance={:.3}",
-                   test_name, median, min, max, individual_variance);
+            assert!(
+                individual_variance < 3.0,
+                "High variance in test case '{}': median={:.0}ns, min={:.0}ns, max={:.0}ns, variance={:.3}",
+                test_name,
+                median,
+                min,
+                max,
+                individual_variance
+            );
 
             let deviation_from_mean = (median - mean_median).abs() / mean_median;
-            assert!(deviation_from_mean < 0.5,
-                   "Test case '{}' deviates significantly from mean timing: {:.3}",
-                   test_name, deviation_from_mean);
+            assert!(
+                deviation_from_mean < 0.5,
+                "Test case '{}' deviates significantly from mean timing: {:.3}",
+                test_name,
+                deviation_from_mean
+            );
         }
     }
 
@@ -2043,28 +2175,40 @@ mod tests {
         // Attempt length extension by appending data that looks like valid length-prefixed content
         let extension_attempts = vec![
             // Try to append fake input entries
-            format!("{}\x05\x00\x00\x00\x00\x00\x00\x00input\x06\x00\x00\x00\x00\x00\x00\x00malice", base_payload),
-
+            format!(
+                "{}\x05\x00\x00\x00\x00\x00\x00\x00input\x06\x00\x00\x00\x00\x00\x00\x00malice",
+                base_payload
+            ),
             // Try to inject length prefix that could confuse parser
-            format!("{}\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00a\x01\x00\x00\x00\x00\x00\x00\x00b", base_payload),
-
+            format!(
+                "{}\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00a\x01\x00\x00\x00\x00\x00\x00\x00b",
+                base_payload
+            ),
             // Attempt to create collision by manipulating payload structure
-            format!("{}\x08\x00\x00\x00\x00\x00\x00\x00input1xx\x06\x00\x00\x00\x00\x00\x00\x00value1", base_payload),
+            format!(
+                "{}\x08\x00\x00\x00\x00\x00\x00\x00input1xx\x06\x00\x00\x00\x00\x00\x00\x00value1",
+                base_payload
+            ),
         ];
 
         for extension_attempt in extension_attempts {
             let extension_hash = compute_replay_hash(&extension_attempt, &BTreeMap::new());
 
-            assert_ne!(legitimate_hash, extension_hash,
-                      "Length extension attack must not produce hash collision");
+            assert_ne!(
+                legitimate_hash, extension_hash,
+                "Length extension attack must not produce hash collision"
+            );
 
             // Test with various input combinations to ensure isolation
             let mut extension_inputs = BTreeMap::new();
             extension_inputs.insert("different_key".to_string(), "different_value".to_string());
 
-            let combined_extension_hash = compute_replay_hash(&extension_attempt, &extension_inputs);
-            assert_ne!(legitimate_hash, combined_extension_hash,
-                      "Combined length extension attack must not produce collision");
+            let combined_extension_hash =
+                compute_replay_hash(&extension_attempt, &extension_inputs);
+            assert_ne!(
+                legitimate_hash, combined_extension_hash,
+                "Combined length extension attack must not produce collision"
+            );
         }
 
         // Test resistance to second preimage attacks via crafted payloads
@@ -2084,9 +2228,11 @@ mod tests {
 
             let preimage_hash = compute_replay_hash(preimage_attempt, &attack_inputs);
 
-            assert_ne!(legitimate_hash, preimage_hash,
-                      "Second preimage attack with payload '{}' must not produce collision",
-                      preimage_attempt);
+            assert_ne!(
+                legitimate_hash, preimage_hash,
+                "Second preimage attack with payload '{}' must not produce collision",
+                preimage_attempt
+            );
         }
     }
 
@@ -2103,12 +2249,10 @@ mod tests {
             "verifier_sdk_capsule_v1:",
             "verifier_sdk_capsule_v1:additional_data",
             "\x76\x65\x72\x69\x66\x69\x65\x72\x5f\x73\x64\x6b\x5f\x63\x61\x70\x73\x75\x6c\x65\x5f\x76\x31\x3a", // Hex encoding
-
             // Try different domain separators that could cause confusion
             "verifier_sdk_capsule_v2:test_data",
             "verifier_sdk_capsule_replay_v1:test_data",
             "verifier_sdk_capsule_signing_v1:test_data",
-
             // Binary injection of domain separator
             "verifier_sdk_capsule_v1:test_data",
         ];
@@ -2116,9 +2260,12 @@ mod tests {
         for injection_attempt in separator_injection_attempts {
             let attack_hash = deterministic_hash(injection_attempt);
 
-            assert_ne!(legitimate_hash, attack_hash,
-                      "Domain separator injection '{}' must not produce collision",
-                      injection_attempt.escape_debug());
+            assert_ne!(
+                legitimate_hash,
+                attack_hash,
+                "Domain separator injection '{}' must not produce collision",
+                injection_attempt.escape_debug()
+            );
         }
 
         // Test cross-function domain separator collision resistance
@@ -2131,21 +2278,45 @@ mod tests {
         // Try to craft deterministic hash input that collides with replay hash
         let cross_domain_attacks = vec![
             format!("verifier_sdk_capsule_replay_v1:{}", replay_data_payload),
-            format!("{}payload", (replay_data_payload.len() as u64).to_le_bytes().iter().map(|&b| b as char).collect::<String>()),
-            format!("verifier_sdk_capsule_replay_v1:{}{}{}{}{}",
-                   (replay_data_payload.len() as u64).to_le_bytes().iter().map(|&b| b as char).collect::<String>(),
-                   replay_data_payload,
-                   (1u64).to_le_bytes().iter().map(|&b| b as char).collect::<String>(),
-                   (3u64).to_le_bytes().iter().map(|&b| b as char).collect::<String>(),
-                   "key"),
+            format!(
+                "{}payload",
+                (replay_data_payload.len() as u64)
+                    .to_le_bytes()
+                    .iter()
+                    .map(|&b| b as char)
+                    .collect::<String>()
+            ),
+            format!(
+                "verifier_sdk_capsule_replay_v1:{}{}{}{}{}",
+                (replay_data_payload.len() as u64)
+                    .to_le_bytes()
+                    .iter()
+                    .map(|&b| b as char)
+                    .collect::<String>(),
+                replay_data_payload,
+                (1u64)
+                    .to_le_bytes()
+                    .iter()
+                    .map(|&b| b as char)
+                    .collect::<String>(),
+                (3u64)
+                    .to_le_bytes()
+                    .iter()
+                    .map(|&b| b as char)
+                    .collect::<String>(),
+                "key"
+            ),
         ];
 
         for attack_input in cross_domain_attacks {
             let cross_domain_hash = deterministic_hash(&attack_input);
 
-            assert_ne!(replay_hash, cross_domain_hash,
-                      "Cross-domain collision attack must not succeed with input: {}",
-                      attack_input.escape_debug());
+            assert_ne!(
+                replay_hash,
+                cross_domain_hash,
+                "Cross-domain collision attack must not succeed with input: {}",
+                attack_input.escape_debug()
+            );
         }
 
         // Verify domain separators actually work by confirming same data with different separators produces different hashes
@@ -2161,7 +2332,10 @@ mod tests {
         manual_hash2.update(test_input.as_bytes());
         let hash2 = hex::encode(manual_hash2.finalize());
 
-        assert_ne!(hash1, hash2, "Different domain separators must produce different hashes");
+        assert_ne!(
+            hash1, hash2,
+            "Different domain separators must produce different hashes"
+        );
     }
 
     #[test]
@@ -2182,17 +2356,14 @@ mod tests {
             // Composed vs decomposed forms that are visually identical
             ("café", "composed_single_codepoint"),
             ("cafe\u{0301}", "decomposed_combining_accent"),
-
             // Complex normalization cases
-            ("\u{1E0A}\u{0323}", "complex_combining_sequence"),  // Ḋ + combining dot below
-            ("\u{1E0C}\u{0307}", "different_complex_sequence"),  // Ḍ + combining dot above
-
+            ("\u{1E0A}\u{0323}", "complex_combining_sequence"), // Ḋ + combining dot below
+            ("\u{1E0C}\u{0307}", "different_complex_sequence"), // Ḍ + combining dot above
             // Maximum length normalization cases
             (&massive_decomposed, "massive_decomposed_accents"), // 1000 é characters decomposed
             (&massive_emoji, "massive_emoji_sequence"),          // 500 emoji
-
             // Potential normalization DoS patterns
-            (&massive_combining, "massive_combining_only"),      // Only combining characters
+            (&massive_combining, "massive_combining_only"), // Only combining characters
             (&heavily_accented, "heavily_accented_sequence"),
         ];
 
@@ -2217,12 +2388,19 @@ mod tests {
             unicode_timings.insert(test_name, (median, min, max));
 
             // Individual test should complete in reasonable time
-            assert!(median < 1_000_000.0, // 1ms
-                   "Unicode processing too slow for '{}': {:.0}ns", test_name, median);
+            assert!(
+                median < 1_000_000.0, // 1ms
+                "Unicode processing too slow for '{}': {:.0}ns",
+                test_name,
+                median
+            );
         }
 
         // Analyze timing relationships to detect Unicode normalization side channels
-        let medians: Vec<f64> = unicode_timings.values().map(|(median, _, _)| *median).collect();
+        let medians: Vec<f64> = unicode_timings
+            .values()
+            .map(|(median, _, _)| *median)
+            .collect();
         let mean_median = medians.iter().sum::<f64>() / medians.len() as f64;
         let max_median = medians.iter().fold(0.0_f64, |acc, &x| acc.max(x));
         let min_median = medians.iter().fold(f64::INFINITY, |acc, &x| acc.min(x));
@@ -2230,9 +2408,14 @@ mod tests {
         let unicode_timing_variance = (max_median - min_median) / mean_median;
 
         // Unicode processing should not have dramatic timing differences
-        assert!(unicode_timing_variance < 3.0,
-               "Suspicious Unicode timing variance: ratio={:.3}, mean={:.0}ns, min={:.0}ns, max={:.0}ns",
-               unicode_timing_variance, mean_median, min_median, max_median);
+        assert!(
+            unicode_timing_variance < 3.0,
+            "Suspicious Unicode timing variance: ratio={:.3}, mean={:.0}ns, min={:.0}ns, max={:.0}ns",
+            unicode_timing_variance,
+            mean_median,
+            min_median,
+            max_median
+        );
 
         // Test capsule replay with Unicode content
         let mut unicode_capsule = build_reference_capsule();
@@ -2240,11 +2423,15 @@ mod tests {
         unicode_capsule.payload = "Unicode payload: \u{1F600}\u{1F601}\u{1F602}".to_string();
 
         let mut unicode_inputs = BTreeMap::new();
-        unicode_inputs.insert("unicode_key_é".to_string(), "unicode_value_\u{1F525}".to_string());
+        unicode_inputs.insert(
+            "unicode_key_é".to_string(),
+            "unicode_value_\u{1F525}".to_string(),
+        );
         unicode_capsule.inputs = unicode_inputs;
 
         unicode_capsule.manifest.input_refs = vec!["unicode_key_é".to_string()];
-        unicode_capsule.manifest.expected_output_hash = compute_replay_hash(&unicode_capsule.payload, &unicode_capsule.inputs);
+        unicode_capsule.manifest.expected_output_hash =
+            compute_replay_hash(&unicode_capsule.payload, &unicode_capsule.inputs);
         sign_capsule(&mut unicode_capsule);
 
         // Unicode capsule replay should work consistently
@@ -2261,9 +2448,15 @@ mod tests {
         // Extreme: Test cryptographic operations under extreme memory pressure
 
         // Create large data structures to simulate memory pressure
-        let memory_pressure_data: Vec<_> = (0..10000).map(|i| {
-            format!("memory_pressure_string_number_{}_with_content_{}", i, "x".repeat(100))
-        }).collect();
+        let memory_pressure_data: Vec<_> = (0..10000)
+            .map(|i| {
+                format!(
+                    "memory_pressure_string_number_{}_with_content_{}",
+                    i,
+                    "x".repeat(100)
+                )
+            })
+            .collect();
 
         // Test hash computation under memory pressure
         let mut stress_capsule = build_reference_capsule();
@@ -2309,13 +2502,20 @@ mod tests {
         assert!(replay_time < std::time::Duration::from_secs(10));
 
         // Memory usage should be proportional, not exponential
-        let estimated_memory = stress_capsule.payload.len() +
-                              stress_capsule.inputs.values().map(|v| v.len()).sum::<usize>() +
-                              stress_capsule.inputs.keys().map(|k| k.len()).sum::<usize>();
+        let estimated_memory = stress_capsule.payload.len()
+            + stress_capsule
+                .inputs
+                .values()
+                .map(|v| v.len())
+                .sum::<usize>()
+            + stress_capsule.inputs.keys().map(|k| k.len()).sum::<usize>();
 
         // Should be roughly linear with input size (allowing some overhead)
-        assert!(estimated_memory < 10_000_000, // 10MB reasonable upper bound
-               "Memory usage appears excessive: ~{} bytes", estimated_memory);
+        assert!(
+            estimated_memory < 10_000_000, // 10MB reasonable upper bound
+            "Memory usage appears excessive: ~{} bytes",
+            estimated_memory
+        );
 
         // Cleanup memory pressure data to prevent issues with later tests
         drop(memory_pressure_data);
@@ -2335,21 +2535,20 @@ mod tests {
             ("0".repeat(64), "all_zeros_early_diff"),
             ("x".repeat(64), "all_x_early_diff"),
             (format!("z{}", &reference_string[1..]), "first_char_diff"),
-
             // Late difference cases
             (format!("{}x", &reference_string[..63]), "last_char_diff"),
             (format!("{}0", &reference_string[..63]), "last_char_zero"),
             (format!("{}f", &reference_string[..63]), "last_char_f"),
-
             // Multiple position differences
             (format!("x{}x", &reference_string[1..63]), "first_last_diff"),
             (format!("x{}", &reference_string[1..]), "first_only_diff"),
-            ("fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210".to_string(), "reverse_hex"),
-
+            (
+                "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210".to_string(),
+                "reverse_hex",
+            ),
             // Bit-level differences (same char but different case)
             (format!("F{}", &reference_string[1..]), "case_diff_first"),
             (format!("{}F", &reference_string[..63]), "case_diff_last"),
-
             // Identical case
             (reference_string.to_string(), "identical"),
         ];
@@ -2377,9 +2576,11 @@ mod tests {
             let max = *timings.iter().max().unwrap() as f64;
 
             // Calculate standard deviation
-            let variance = timings.iter()
+            let variance = timings
+                .iter()
                 .map(|&x| (x as f64 - mean).powi(2))
-                .sum::<f64>() / sample_count as f64;
+                .sum::<f64>()
+                / sample_count as f64;
             let std_dev = variance.sqrt();
 
             // Calculate percentiles
@@ -2390,29 +2591,42 @@ mod tests {
         }
 
         // Statistical analysis for constant-time properties
-        let means: Vec<f64> = detailed_timings.values().map(|(mean, _, _, _, _, _, _)| *mean).collect();
+        let means: Vec<f64> = detailed_timings
+            .values()
+            .map(|(mean, _, _, _, _, _, _)| *mean)
+            .collect();
         let overall_mean = means.iter().sum::<f64>() / means.len() as f64;
         let max_mean = means.iter().fold(0.0_f64, |acc, &x| acc.max(x));
         let min_mean = means.iter().fold(f64::INFINITY, |acc, &x| acc.min(x));
 
         // Constant-time comparison should have very low variance across different inputs
         let mean_variance_ratio = (max_mean - min_mean) / overall_mean;
-        assert!(mean_variance_ratio < 0.3, // 30% variance threshold
-               "Excessive timing variance suggests non-constant-time comparison: ratio={:.3}",
-               mean_variance_ratio);
+        assert!(
+            mean_variance_ratio < 0.3, // 30% variance threshold
+            "Excessive timing variance suggests non-constant-time comparison: ratio={:.3}",
+            mean_variance_ratio
+        );
 
         // Individual test analysis
         for (test_name, (mean, median, min, max, std_dev, p95, p99)) in detailed_timings {
             // High individual variance could indicate timing leaks
             let individual_variance = (max - min) / mean;
-            assert!(individual_variance < 5.0,
-                   "High individual timing variance for '{}': ratio={:.3}, mean={:.0}ns",
-                   test_name, individual_variance, mean);
+            assert!(
+                individual_variance < 5.0,
+                "High individual timing variance for '{}': ratio={:.3}, mean={:.0}ns",
+                test_name,
+                individual_variance,
+                mean
+            );
 
             // Standard deviation relative to mean should be reasonable
             let coefficient_of_variation = std_dev / mean;
-            assert!(coefficient_of_variation < 1.0,
-                   "High coefficient of variation for '{}': {:.3}", test_name, coefficient_of_variation);
+            assert!(
+                coefficient_of_variation < 1.0,
+                "High coefficient of variation for '{}': {:.3}",
+                test_name,
+                coefficient_of_variation
+            );
 
             // 99th percentile should not be dramatically higher than median (indicating outliers)
             assert!(
@@ -2423,14 +2637,21 @@ mod tests {
                 p99
             );
             let outlier_ratio = p99 / median;
-            assert!(outlier_ratio < 10.0,
-                   "Excessive outliers for '{}': p99/median ratio={:.3}", test_name, outlier_ratio);
+            assert!(
+                outlier_ratio < 10.0,
+                "Excessive outliers for '{}': p99/median ratio={:.3}",
+                test_name,
+                outlier_ratio
+            );
 
             // Deviation from overall mean should be small
             let deviation_from_overall = (mean - overall_mean).abs() / overall_mean;
-            assert!(deviation_from_overall < 0.5,
-                   "Test case '{}' deviates significantly from overall mean: {:.3}",
-                   test_name, deviation_from_overall);
+            assert!(
+                deviation_from_overall < 0.5,
+                "Test case '{}' deviates significantly from overall mean: {:.3}",
+                test_name,
+                deviation_from_overall
+            );
         }
 
         // Test byte-level constant-time comparison as well
@@ -2438,13 +2659,17 @@ mod tests {
 
         for (test_string, test_name) in &[
             ("0".repeat(64), "byte_zeros".to_string()),
-            (format!("x{}", &reference_string[1..]), "byte_first_diff".to_string()),
+            (
+                format!("x{}", &reference_string[1..]),
+                "byte_first_diff".to_string(),
+            ),
             (reference_string.to_string(), "byte_identical".to_string()),
         ] {
             let test_bytes = test_string.as_bytes();
             let mut byte_timings = Vec::new();
 
-            for _ in 0..sample_count / 2 { // Fewer samples for byte tests
+            for _ in 0..sample_count / 2 {
+                // Fewer samples for byte tests
                 let start = Instant::now();
                 let _result = ct_eq_bytes(reference_bytes, test_bytes);
                 let duration = start.elapsed();
@@ -2455,9 +2680,12 @@ mod tests {
             let byte_deviation = (byte_mean - overall_mean).abs() / overall_mean;
 
             // Byte comparison should be consistent with string comparison timing
-            assert!(byte_deviation < 1.0,
-                   "Byte comparison timing inconsistent for '{}': deviation={:.3}",
-                   test_name, byte_deviation);
+            assert!(
+                byte_deviation < 1.0,
+                "Byte comparison timing inconsistent for '{}': deviation={:.3}",
+                test_name,
+                byte_deviation
+            );
         }
     }
 
@@ -2473,20 +2701,45 @@ mod tests {
         let differential_cases = vec![
             // Single bit flips at different positions
             (format!("{}x", &base_input[1..]), "bit_flip_pos_0"),
-            (format!("{}x{}", &base_input[..base_input.len()/2], &base_input[base_input.len()/2+1..]), "bit_flip_middle"),
-            (format!("{}x", &base_input[..base_input.len()-1]), "bit_flip_last"),
-
+            (
+                format!(
+                    "{}x{}",
+                    &base_input[..base_input.len() / 2],
+                    &base_input[base_input.len() / 2 + 1..]
+                ),
+                "bit_flip_middle",
+            ),
+            (
+                format!("{}x", &base_input[..base_input.len() - 1]),
+                "bit_flip_last",
+            ),
             // Multiple bit flips
-            ("cryptographic_differential_analysis_basz".to_string(), "two_bit_flip"),
-            ("cryptographic_differential_analysis_basf".to_string(), "hex_bit_pattern"),
-
+            (
+                "cryptographic_differential_analysis_basz".to_string(),
+                "two_bit_flip",
+            ),
+            (
+                "cryptographic_differential_analysis_basf".to_string(),
+                "hex_bit_pattern",
+            ),
             // Byte boundary tests
-            ("cryptographic_differential_analysis_bas\x00".to_string(), "null_byte_append"),
-            ("cryptographic_differential_analysis_bas\u{FF}".to_string(), "high_byte_append"),
-
+            (
+                "cryptographic_differential_analysis_bas\x00".to_string(),
+                "null_byte_append",
+            ),
+            (
+                "cryptographic_differential_analysis_bas\u{FF}".to_string(),
+                "high_byte_append",
+            ),
             // Length variations
-            ("cryptographic_differential_analysis_bas".to_string(), "truncated"),
-            ("cryptographic_differential_analysis_baseX".to_string(), "extended"),
+            (
+                "cryptographic_differential_analysis_bas".to_string(),
+                "truncated",
+            ),
+            (
+                "cryptographic_differential_analysis_baseX".to_string(),
+                "extended",
+            ),
         ];
 
         let mut hash_relationships = Vec::new();
@@ -2495,17 +2748,21 @@ mod tests {
             let modified_hash = deterministic_hash(&modified_input);
 
             // Verify no hash collision occurs
-            assert_ne!(base_hash, modified_hash,
-                      "Hash collision detected for differential input '{}': '{}'",
-                      test_name, modified_input);
+            assert_ne!(
+                base_hash, modified_hash,
+                "Hash collision detected for differential input '{}': '{}'",
+                test_name, modified_input
+            );
 
             // Calculate Hamming distance between hashes (converted to binary)
             let base_bytes = hex::decode(&base_hash).expect("Base hash should be valid hex");
-            let modified_bytes = hex::decode(&modified_hash).expect("Modified hash should be valid hex");
+            let modified_bytes =
+                hex::decode(&modified_hash).expect("Modified hash should be valid hex");
 
             assert_eq!(base_bytes.len(), modified_bytes.len());
 
-            let hamming_distance = base_bytes.iter()
+            let hamming_distance = base_bytes
+                .iter()
                 .zip(modified_bytes.iter())
                 .map(|(&a, &b)| (a ^ b).count_ones())
                 .sum::<u32>();
@@ -2514,38 +2771,53 @@ mod tests {
 
             // For cryptographic hash functions, small input changes should cause
             // large, unpredictable output changes (avalanche effect)
-            assert!(hamming_distance >= 50, // Should flip many bits
-                   "Insufficient avalanche effect for '{}': Hamming distance={}",
-                   test_name, hamming_distance);
+            assert!(
+                hamming_distance >= 50, // Should flip many bits
+                "Insufficient avalanche effect for '{}': Hamming distance={}",
+                test_name,
+                hamming_distance
+            );
 
-            assert!(hamming_distance <= 200, // But not suspiciously many
-                   "Suspicious bit flip pattern for '{}': Hamming distance={}",
-                   test_name, hamming_distance);
+            assert!(
+                hamming_distance <= 200, // But not suspiciously many
+                "Suspicious bit flip pattern for '{}': Hamming distance={}",
+                test_name,
+                hamming_distance
+            );
         }
 
         // Statistical analysis of Hamming distances
-        let distances: Vec<u32> = hash_relationships.iter().map(|(_, distance)| *distance).collect();
+        let distances: Vec<u32> = hash_relationships
+            .iter()
+            .map(|(_, distance)| *distance)
+            .collect();
         let mean_distance = distances.iter().sum::<u32>() as f64 / distances.len() as f64;
         let expected_distance = 128.0; // Roughly half the bits should flip for good hash function
 
         let distance_deviation = (mean_distance - expected_distance).abs() / expected_distance;
-        assert!(distance_deviation < 0.3, // 30% deviation threshold
-               "Hamming distance distribution suspicious: mean={:.1}, expected≈{}, deviation={:.3}",
-               mean_distance, expected_distance, distance_deviation);
+        assert!(
+            distance_deviation < 0.3, // 30% deviation threshold
+            "Hamming distance distribution suspicious: mean={:.1}, expected≈{}, deviation={:.3}",
+            mean_distance,
+            expected_distance,
+            distance_deviation
+        );
 
         // Test specific cryptographic properties
 
         // Test collision resistance with structured inputs
-        let structured_inputs = (0..1000).map(|i| {
-            format!("structured_collision_test_{:04}_{}", i, "a".repeat(i % 50))
-        });
+        let structured_inputs =
+            (0..1000).map(|i| format!("structured_collision_test_{:04}_{}", i, "a".repeat(i % 50)));
 
         let mut structured_hashes = std::collections::HashSet::new();
         for structured_input in structured_inputs {
             let hash = deterministic_hash(&structured_input);
 
-            assert!(!structured_hashes.contains(&hash),
-                   "Collision detected in structured inputs: '{}'", structured_input);
+            assert!(
+                !structured_hashes.contains(&hash),
+                "Collision detected in structured inputs: '{}'",
+                structured_input
+            );
             structured_hashes.insert(hash);
         }
 
@@ -2573,8 +2845,11 @@ mod tests {
 
             // Should not find preimages easily (except for the known base_input case)
             if target_hash != base_hash {
-                assert!(!preimage_found,
-                       "Preimage found too easily for target hash: {}", target_hash);
+                assert!(
+                    !preimage_found,
+                    "Preimage found too easily for target hash: {}",
+                    target_hash
+                );
             }
         }
     }
@@ -2592,23 +2867,19 @@ mod tests {
             "verifier://legitimate.com@evil.com",
             "verifier://user:password@evil.com/legitimate",
             "verifier://legitimate.com:8080/../../../admin",
-
             // Scheme confusion attacks
             "javascript:alert('xss')//verifier://fake",
             "data:text/html,<script>alert('xss')</script>//verifier://fake",
             "file:///etc/passwd#verifier://fake",
             "http://evil.com/verifier://redirect",
-
             // Authority bypass attempts
             "verifier:///admin/../../verifier://bypass",
             "verifier://\\\\evil.com/verifier://legitimate",
             "verifier://../../../admin/verifier://escalate",
-
             // Control character injection
             "verifier://admin\r\nSet-Cookie: admin=true\r\n//fake",
             "verifier://admin\x00\x01\x02\x03fake",
             "verifier://admin\u{202E}lamitgel\u{202D}//fake", // BiDi override
-
             // Unicode normalization attacks
             "verifier://аdmin", // Cyrillic 'а' instead of Latin 'a'
             "verifier://admin\u{0300}\u{0301}\u{0302}", // Heavy accent combining
@@ -2636,16 +2907,14 @@ mod tests {
             // Extremely long verifier names
             format!("verifier://{}", "x".repeat(100_000)),
             format!("verifier://{}", "aaaaaaaa".repeat(12500)), // 100k chars
-
             // Empty components after parsing
             "verifier://   ".to_string(),
             "verifier://\t\n\r   \x20".to_string(),
             "verifier://\u{00A0}\u{2000}\u{2001}".to_string(), // Various Unicode spaces
-
             // Boundary length conditions
-            format!("verifier://{}", "a".repeat(1)),      // Minimum
-            format!("verifier://{}", "a".repeat(255)),    // Typical domain limit
-            format!("verifier://{}", "a".repeat(65535)),  // Large but manageable
+            format!("verifier://{}", "a".repeat(1)), // Minimum
+            format!("verifier://{}", "a".repeat(255)), // Typical domain limit
+            format!("verifier://{}", "a".repeat(65535)), // Large but manageable
         ];
 
         for length_attack in length_based_attacks {
@@ -2654,12 +2923,15 @@ mod tests {
             let duration = start_time.elapsed();
 
             // Should complete quickly regardless of input length
-            assert!(duration < std::time::Duration::from_secs(1),
-                   "Verifier identity parsing took too long: {:?}", duration);
+            assert!(
+                duration < std::time::Duration::from_secs(1),
+                "Verifier identity parsing took too long: {:?}",
+                duration
+            );
 
             // Result should be predictable (likely rejected for long/invalid inputs)
             match result {
-                Ok(_) | Err(_) => {}, // Any result is fine as long as no crash
+                Ok(_) | Err(_) => {} // Any result is fine as long as no crash
             }
         }
 
@@ -2677,8 +2949,10 @@ mod tests {
             match replay(&test_capsule, env_attack) {
                 Ok(_) => {
                     // If somehow accepted, verify no environment variable was actually expanded
-                    assert!(!env_attack.contains("injection"),
-                           "Environment variable injection should not be processed");
+                    assert!(
+                        !env_attack.contains("injection"),
+                        "Environment variable injection should not be processed"
+                    );
                 }
                 Err(_) => {
                     // Rejection is expected and safe
@@ -2698,8 +2972,11 @@ mod tests {
 
         for legitimate_identity in legitimate_identities {
             let result = replay(&test_capsule, legitimate_identity);
-            assert!(result.is_ok(),
-                   "Legitimate verifier identity should work: {}", legitimate_identity);
+            assert!(
+                result.is_ok(),
+                "Legitimate verifier identity should work: {}",
+                legitimate_identity
+            );
 
             let replay_result = result.unwrap();
             assert_eq!(replay_result.verdict, CapsuleVerdict::Pass);
@@ -2782,7 +3059,8 @@ mod tests {
 
         // Should handle large collections without arithmetic overflow
         let start_time = std::time::Instant::now();
-        let overflow_test_hash = compute_replay_hash("overflow_test_payload", &overflow_test_inputs);
+        let overflow_test_hash =
+            compute_replay_hash("overflow_test_payload", &overflow_test_inputs);
         let duration = start_time.elapsed();
 
         assert_eq!(overflow_test_hash.len(), 64);
@@ -2791,9 +3069,9 @@ mod tests {
         // Test signing payload computation with overflow protection
         let mut overflow_capsule = build_reference_capsule();
         overflow_capsule.inputs = overflow_test_inputs;
-        overflow_capsule.manifest.input_refs = (0..max_test_size).map(|i| {
-            format!("overflow_test_key_{:06}", i)
-        }).collect();
+        overflow_capsule.manifest.input_refs = (0..max_test_size)
+            .map(|i| format!("overflow_test_key_{:06}", i))
+            .collect();
 
         let signing_start = std::time::Instant::now();
         let signing_payload = compute_signing_payload(&overflow_capsule);
@@ -2805,8 +3083,10 @@ mod tests {
         // Test that length encoding is consistent for same data
         let consistency_hash1 = compute_replay_hash(boundary_payload, &boundary_inputs);
         let consistency_hash2 = compute_replay_hash(boundary_payload, &boundary_inputs);
-        assert_eq!(consistency_hash1, consistency_hash2,
-                  "Length encoding should be deterministic");
+        assert_eq!(
+            consistency_hash1, consistency_hash2,
+            "Length encoding should be deterministic"
+        );
 
         // Test edge case: theoretical maximum string length
         // (We can't actually allocate this much memory, but test the encoding)
