@@ -99,6 +99,18 @@ pub enum ReplayBundleError {
     CreatedAtMismatch,
     #[error("bundle id does not match canonical incident/timeline derivation")]
     BundleIdMismatch,
+    #[error("replay bundle json contains trailing garbage")]
+    TrailingGarbage,
+    #[error("replay bundle json is truncated before the final chunk is complete")]
+    TruncatedFinalChunk,
+    #[error("negative value {value} cannot be cast into unsigned replay bundle field `{path}`")]
+    NegativeCastOffset { path: String, value: i64 },
+    #[error("replay bundle chunk {chunk_index} has zero length")]
+    ZeroLengthChunk { chunk_index: u32 },
+    #[error("duplicate replay bundle id `{bundle_id}`")]
+    DuplicateBundleId { bundle_id: Uuid },
+    #[error("replay bundle timestamp `{timestamp}` at `{path}` is in the future")]
+    TimestampInFuture { path: String, timestamp: String },
     #[error("bundle manifest does not match canonical timeline derivation")]
     ManifestMismatch,
     #[error("bundle chunks do not match canonical timeline derivation")]
@@ -709,10 +721,7 @@ pub fn generate_replay_bundle(
 pub fn validate_bundle_integrity(bundle: &ReplayBundle) -> Result<bool, ReplayBundleError> {
     validate_bundle_structure(bundle)?;
     let recomputed = compute_integrity_hash(bundle)?;
-    Ok(constant_time::ct_eq(
-        &recomputed,
-        &bundle.integrity_hash,
-    ))
+    Ok(constant_time::ct_eq(&recomputed, &bundle.integrity_hash))
 }
 
 pub fn replay_bundle(bundle: &ReplayBundle) -> Result<ReplayOutcome, ReplayBundleError> {
@@ -801,10 +810,153 @@ pub fn read_bundle_from_path(path: &Path) -> Result<ReplayBundle, ReplayBundleEr
     Ok(bundle)
 }
 
+pub fn replay_bundle_adversarial_fuzz_one(input: &[u8]) -> Result<(), ReplayBundleError> {
+    let bundle = decode_replay_bundle_fuzz_input(input)?;
+    validate_adversarial_bundle_shape(&bundle)?;
+    replay_bundle(&bundle).map(|_| ())
+}
+
+pub fn replay_bundle_batch_adversarial_fuzz_one(input: &[u8]) -> Result<(), ReplayBundleError> {
+    let value = decode_replay_bundle_json_value(input)?;
+    reject_negative_cast_offsets(&value, "$")?;
+    let bundles: Vec<ReplayBundle> = serde_json::from_value(value)?;
+    let mut seen = BTreeSet::new();
+    for bundle in &bundles {
+        if !seen.insert(bundle.bundle_id) {
+            return Err(ReplayBundleError::DuplicateBundleId {
+                bundle_id: bundle.bundle_id,
+            });
+        }
+    }
+    for bundle in &bundles {
+        validate_adversarial_bundle_shape(bundle)?;
+        replay_bundle(bundle)?;
+    }
+    Ok(())
+}
+
 pub fn to_canonical_json(bundle: &ReplayBundle) -> Result<String, ReplayBundleError> {
     let value = serde_json::to_value(bundle)?;
     let canonical = canonicalize_value(&value, "$")?;
     Ok(serde_json::to_string(&canonical)?)
+}
+
+fn decode_replay_bundle_fuzz_input(input: &[u8]) -> Result<ReplayBundle, ReplayBundleError> {
+    let value = decode_replay_bundle_json_value(input)?;
+    reject_negative_cast_offsets(&value, "$")?;
+    Ok(serde_json::from_value(value)?)
+}
+
+fn decode_replay_bundle_json_value(input: &[u8]) -> Result<Value, ReplayBundleError> {
+    let mut deserializer = serde_json::Deserializer::from_slice(input);
+    let value = Value::deserialize(&mut deserializer).map_err(classify_fuzz_json_error)?;
+    deserializer.end().map_err(classify_fuzz_json_error)?;
+    Ok(value)
+}
+
+fn classify_fuzz_json_error(source: serde_json::Error) -> ReplayBundleError {
+    if source.is_eof() {
+        ReplayBundleError::TruncatedFinalChunk
+    } else if source.to_string().contains("trailing characters") {
+        ReplayBundleError::TrailingGarbage
+    } else {
+        ReplayBundleError::Json(source)
+    }
+}
+
+fn reject_negative_cast_offsets(value: &Value, path: &str) -> Result<(), ReplayBundleError> {
+    match value {
+        Value::Array(items) => {
+            for (idx, item) in items.iter().enumerate() {
+                reject_negative_cast_offsets(item, &format!("{path}[{idx}]"))?;
+            }
+        }
+        Value::Object(map) => {
+            for (key, item) in map {
+                let next_path = format!("{path}.{key}");
+                if is_unsigned_replay_bundle_field(key)
+                    && let Some(number) = item.as_i64()
+                    && number < 0
+                {
+                    return Err(ReplayBundleError::NegativeCastOffset {
+                        path: next_path,
+                        value: number,
+                    });
+                }
+                reject_negative_cast_offsets(item, &next_path)?;
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+    Ok(())
+}
+
+fn is_unsigned_replay_bundle_field(field: &str) -> bool {
+    matches!(
+        field,
+        "causal_parent"
+            | "chunk_count"
+            | "chunk_index"
+            | "compressed_size_bytes"
+            | "event_count"
+            | "first_sequence_number"
+            | "last_sequence_number"
+            | "sequence_number"
+            | "time_span_micros"
+            | "total_chunks"
+    )
+}
+
+fn validate_adversarial_bundle_shape(bundle: &ReplayBundle) -> Result<(), ReplayBundleError> {
+    reject_zero_length_chunks(bundle)?;
+    reject_future_bundle_timestamps(bundle)?;
+    Ok(())
+}
+
+fn reject_zero_length_chunks(bundle: &ReplayBundle) -> Result<(), ReplayBundleError> {
+    if bundle.timeline.is_empty() {
+        return Ok(());
+    }
+    for chunk in &bundle.chunks {
+        if chunk.event_count == 0 || chunk.events.is_empty() {
+            return Err(ReplayBundleError::ZeroLengthChunk {
+                chunk_index: chunk.chunk_index,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn reject_future_bundle_timestamps(bundle: &ReplayBundle) -> Result<(), ReplayBundleError> {
+    reject_future_timestamp("$.created_at", &bundle.created_at)?;
+    for (idx, event) in bundle.timeline.iter().enumerate() {
+        reject_future_timestamp(&format!("$.timeline[{idx}].timestamp"), &event.timestamp)?;
+    }
+    for (chunk_idx, chunk) in bundle.chunks.iter().enumerate() {
+        for (event_idx, event) in chunk.events.iter().enumerate() {
+            reject_future_timestamp(
+                &format!("$.chunks[{chunk_idx}].events[{event_idx}].timestamp"),
+                &event.timestamp,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn reject_future_timestamp(path: &str, timestamp: &str) -> Result<(), ReplayBundleError> {
+    let parsed = DateTime::parse_from_rfc3339(timestamp).map_err(|source| {
+        ReplayBundleError::TimestampParse {
+            timestamp: timestamp.to_string(),
+            source,
+        }
+    })?;
+    if parsed.with_timezone(&Utc) > Utc::now() {
+        return Err(ReplayBundleError::TimestampInFuture {
+            path: path.to_string(),
+            timestamp: timestamp.to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// Deterministic fixture-only incident timeline for unit tests and examples.

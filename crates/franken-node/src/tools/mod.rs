@@ -30,6 +30,7 @@ pub mod profile_tuning_harness;
 #[cfg(feature = "extended-surfaces")]
 pub mod redteam_evaluations;
 pub mod replay_bundle;
+pub mod replay_bundle_adversarial_fuzz;
 #[cfg(feature = "extended-surfaces")]
 pub mod replay_determinism_metrics;
 #[cfg(feature = "extended-surfaces")]
