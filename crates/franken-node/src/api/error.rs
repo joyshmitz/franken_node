@@ -1006,7 +1006,10 @@ mod problem_detail_schema_negative_tests {
     fn negative_problem_detail_with_malicious_field_injection_patterns() {
         // Test ProblemDetail with various injection patterns in fields
         let injection_patterns = vec![
-            ("http_header", "detail\r\nHTTP/1.1 200 OK\r\nContent-Type: text/html"),
+            (
+                "http_header",
+                "detail\r\nHTTP/1.1 200 OK\r\nContent-Type: text/html",
+            ),
             ("xss", "detail<script>alert('xss')</script>"),
             ("json", "detail\"},\"malicious\":\"injected\",\"dummy\":\""),
             ("null_byte", "detail\0null_injection"),
@@ -1021,12 +1024,12 @@ mod problem_detail_schema_negative_tests {
         for (test_name, malicious_input) in injection_patterns {
             // Test all string fields of ProblemDetail with malicious content
             let problem = ProblemDetail::new(
-                &format!("TEST_{}", malicious_input),    // code field
-                &format!("title_{}", malicious_input),   // title field
+                &format!("TEST_{}", malicious_input),  // code field
+                &format!("title_{}", malicious_input), // title field
                 500,
-                &format!("detail_{}", malicious_input),  // detail field
+                &format!("detail_{}", malicious_input), // detail field
                 &format!("instance_{}", malicious_input), // instance field
-                &format!("trace_{}", malicious_input),   // trace_id field
+                &format!("trace_{}", malicious_input),  // trace_id field
             );
 
             // Serialization should not crash or interpret injection patterns
@@ -1042,8 +1045,11 @@ mod problem_detail_schema_negative_tests {
                     // Should not contain unescaped injection patterns
                     if malicious_input.contains("<script>") {
                         // Script tags should be escaped in JSON
-                        assert!(!json.contains("<script>"),
-                                "Test {}: Unescaped script tag found in JSON", test_name);
+                        assert!(
+                            !json.contains("<script>"),
+                            "Test {}: Unescaped script tag found in JSON",
+                            test_name
+                        );
                     }
 
                     // Verify round-trip safety
@@ -1053,7 +1059,10 @@ mod problem_detail_schema_negative_tests {
                             assert_eq!(deserialized.detail, format!("detail_{}", malicious_input));
                         }
                         Err(e) => {
-                            panic!("Test {}: Round-trip deserialization failed: {}", test_name, e);
+                            panic!(
+                                "Test {}: Round-trip deserialization failed: {}",
+                                test_name, e
+                            );
                         }
                     }
                 }
@@ -1076,38 +1085,65 @@ mod problem_detail_schema_negative_tests {
             ("huge_detail", "", "", huge_string.clone(), "", ""),
             ("huge_instance", "", "", "", huge_string.clone(), ""),
             ("huge_trace_id", "", "", "", "", huge_string.clone()),
-            ("all_empty", empty_string, empty_string, empty_string, empty_string, empty_string),
-            ("mixed_huge", huge_string.clone(), empty_string, huge_string.clone(), empty_string, "trace"),
+            (
+                "all_empty",
+                empty_string,
+                empty_string,
+                empty_string,
+                empty_string,
+                empty_string,
+            ),
+            (
+                "mixed_huge",
+                huge_string.clone(),
+                empty_string,
+                huge_string.clone(),
+                empty_string,
+                "trace",
+            ),
         ];
 
         for (test_name, code, title, detail, instance, trace_id) in extreme_cases {
             let start_time = std::time::Instant::now();
 
-            let problem = ProblemDetail::new(
-                &code, &title, 500, &detail, &instance, &trace_id
-            );
+            let problem = ProblemDetail::new(&code, &title, 500, &detail, &instance, &trace_id);
 
             // Creation should complete quickly despite large inputs
             let creation_time = start_time.elapsed();
-            assert!(creation_time < std::time::Duration::from_millis(500),
-                   "Test {}: Creation took too long: {:?}", test_name, creation_time);
+            assert!(
+                creation_time < std::time::Duration::from_millis(500),
+                "Test {}: Creation took too long: {:?}",
+                test_name,
+                creation_time
+            );
 
             // Serialization should handle large inputs without timeout
             let serialize_start = std::time::Instant::now();
             match problem.to_json() {
                 Ok(json) => {
                     let serialize_time = serialize_start.elapsed();
-                    assert!(serialize_time < std::time::Duration::from_secs(5),
-                           "Test {}: Serialization took too long: {:?}", test_name, serialize_time);
+                    assert!(
+                        serialize_time < std::time::Duration::from_secs(5),
+                        "Test {}: Serialization took too long: {:?}",
+                        test_name,
+                        serialize_time
+                    );
 
                     // JSON should be reasonable in size (but larger for huge inputs)
                     if test_name.contains("huge") {
-                        assert!(json.len() > 50_000, "Test {}: JSON should reflect large input size", test_name);
+                        assert!(
+                            json.len() > 50_000,
+                            "Test {}: JSON should reflect large input size",
+                            test_name
+                        );
                     }
                 }
                 Err(_) => {
                     // Serialization failure is acceptable for extreme inputs
-                    println!("Test {}: Serialization failed for extreme input (acceptable)", test_name);
+                    println!(
+                        "Test {}: Serialization failed for extreme input (acceptable)",
+                        test_name
+                    );
                 }
             }
         }
@@ -1117,22 +1153,22 @@ mod problem_detail_schema_negative_tests {
     fn negative_code_to_status_with_malformed_and_adversarial_codes() {
         // Test has_code_marker and code_to_status with adversarial inputs
         let adversarial_codes = vec![
-            "",                                    // Empty string
-            "_AUTH_FAIL",                          // Leading underscore
-            "AUTH_FAIL_",                          // Trailing underscore
-            "__AUTH_FAIL__",                       // Multiple underscores
-            "PREFIX_AUTH_FAIL_SUFFIX",             // Suffix after marker
-            "AUTH_FAIL_AUTH_FAIL",                 // Repeated markers
-            "x".repeat(10000),                     // Extremely long code
-            "\0AUTH_FAIL",                         // Null byte
-            "AUTH\nFAIL",                          // Newline in code
-            "AUTH\u{FFFF}FAIL",                    // Unicode characters
-            "AUTH🚀FAIL",                          // Emoji in code
-            "AUTH_FAIL\x1b[31m",                   // ANSI escape
-            "FRANKEN_PROTOCOL_AUTH_FAIL_EXTRA",    // Valid marker with extra
-            "NOT_AUTH_FAIL",                       // Marker not at word boundary
-            "AUTH_FAILED_NOT_AUTH_FAIL",          // Multiple different markers
-            "FRANKEN__AUTH_FAIL",                  // Double underscore before marker
+            "",                                 // Empty string
+            "_AUTH_FAIL",                       // Leading underscore
+            "AUTH_FAIL_",                       // Trailing underscore
+            "__AUTH_FAIL__",                    // Multiple underscores
+            "PREFIX_AUTH_FAIL_SUFFIX",          // Suffix after marker
+            "AUTH_FAIL_AUTH_FAIL",              // Repeated markers
+            "x".repeat(10000),                  // Extremely long code
+            "\0AUTH_FAIL",                      // Null byte
+            "AUTH\nFAIL",                       // Newline in code
+            "AUTH\u{FFFF}FAIL",                 // Unicode characters
+            "AUTH🚀FAIL",                       // Emoji in code
+            "AUTH_FAIL\x1b[31m",                // ANSI escape
+            "FRANKEN_PROTOCOL_AUTH_FAIL_EXTRA", // Valid marker with extra
+            "NOT_AUTH_FAIL",                    // Marker not at word boundary
+            "AUTH_FAILED_NOT_AUTH_FAIL",        // Multiple different markers
+            "FRANKEN__AUTH_FAIL",               // Double underscore before marker
         ];
 
         for code in adversarial_codes {
@@ -1142,8 +1178,12 @@ mod problem_detail_schema_negative_tests {
             // Result should be reasonable
             match status {
                 Some(http_status) => {
-                    assert!((100..=599).contains(&http_status),
-                           "Invalid HTTP status {} for code: {}", http_status, code);
+                    assert!(
+                        (100..=599).contains(&http_status),
+                        "Invalid HTTP status {} for code: {}",
+                        http_status,
+                        code
+                    );
                 }
                 None => {
                     // None is a valid result for unrecognized codes
@@ -1151,7 +1191,13 @@ mod problem_detail_schema_negative_tests {
             }
 
             // Test has_code_marker with various markers and adversarial codes
-            let markers = ["AUTH_FAIL", "POLICY_DENY", "NOT_FOUND", "", "VERY_LONG_MARKER_NAME"];
+            let markers = [
+                "AUTH_FAIL",
+                "POLICY_DENY",
+                "NOT_FOUND",
+                "",
+                "VERY_LONG_MARKER_NAME",
+            ];
             for marker in markers {
                 let result = has_code_marker(code, marker);
                 // Should not panic, result is boolean
@@ -1164,40 +1210,40 @@ mod problem_detail_schema_negative_tests {
     fn negative_api_error_display_with_malicious_details_formats_safely() {
         // Test ApiError Display implementation with malicious detail content
         let malicious_details = vec![
-            "",                                    // Empty
-            "\0null\x01control",                   // Control characters
-            "detail\r\nHTTP/1.1 200 OK",          // HTTP injection
-            "detail\x1b[31mRED\x1b[0m",            // ANSI escape
-            "detail\u{202E}reverse\u{202D}",       // BiDi override
-            "<script>alert('xss')</script>",       // XSS payload
-            "%s%d%x%p",                           // Format specifiers
-            "detail\nwith\nmultiple\nlines",      // Multiline content
-            "a".repeat(10000),                    // Extremely long
-            "{\"json\": \"injection\"}",           // JSON-like content
-            "../../etc/passwd",                   // Path traversal
-            "\u{FFFF}\u{10FFFF}",                // Max Unicode
+            "",                              // Empty
+            "\0null\x01control",             // Control characters
+            "detail\r\nHTTP/1.1 200 OK",     // HTTP injection
+            "detail\x1b[31mRED\x1b[0m",      // ANSI escape
+            "detail\u{202E}reverse\u{202D}", // BiDi override
+            "<script>alert('xss')</script>", // XSS payload
+            "%s%d%x%p",                      // Format specifiers
+            "detail\nwith\nmultiple\nlines", // Multiline content
+            "a".repeat(10000),               // Extremely long
+            "{\"json\": \"injection\"}",     // JSON-like content
+            "../../etc/passwd",              // Path traversal
+            "\u{FFFF}\u{10FFFF}",            // Max Unicode
         ];
 
         for malicious_detail in malicious_details {
             let error_variants = vec![
                 ApiError::BadRequest {
                     detail: malicious_detail.to_string(),
-                    trace_id: "trace-test".to_string()
+                    trace_id: "trace-test".to_string(),
                 },
                 ApiError::Internal {
                     detail: malicious_detail.to_string(),
-                    trace_id: "trace-test".to_string()
+                    trace_id: "trace-test".to_string(),
                 },
                 #[cfg(any(test, feature = "extended-surfaces"))]
                 ApiError::AuthFailed {
                     detail: malicious_detail.to_string(),
-                    trace_id: "trace-test".to_string()
+                    trace_id: "trace-test".to_string(),
                 },
                 #[cfg(any(test, feature = "extended-surfaces"))]
                 ApiError::RateLimited {
                     detail: malicious_detail.to_string(),
                     trace_id: "trace-test".to_string(),
-                    retry_after_ms: 1000
+                    retry_after_ms: 1000,
                 },
             ];
 
@@ -1213,7 +1259,10 @@ mod problem_detail_schema_negative_tests {
                     || display_output.contains("internal error")
                     || display_output.contains("auth failed")
                     || display_output.contains("rate limited");
-                assert!(contains_error_type, "Display output should contain error type");
+                assert!(
+                    contains_error_type,
+                    "Display output should contain error type"
+                );
 
                 // If malicious content is included, it should be safe
                 if display_output.contains(malicious_detail) {
@@ -1230,31 +1279,47 @@ mod problem_detail_schema_negative_tests {
     fn negative_problem_detail_from_registry_with_extreme_recovery_info() {
         // Test with extreme or malicious RecoveryInfo values
         let extreme_entries = vec![
-            ("zero_retry", RecoveryInfo {
-                retryable: false,
-                retry_after_ms: Some(0),
-                recovery_hint: "".to_string(),
-            }),
-            ("max_retry_delay", RecoveryInfo {
-                retryable: true,
-                retry_after_ms: Some(u64::MAX),
-                recovery_hint: "wait forever".to_string(),
-            }),
-            ("huge_hint", RecoveryInfo {
-                retryable: true,
-                retry_after_ms: Some(1000),
-                recovery_hint: "x".repeat(100_000),
-            }),
-            ("malicious_hint", RecoveryInfo {
-                retryable: true,
-                retry_after_ms: Some(500),
-                recovery_hint: "hint\r\nHTTP/1.1 200 OK\r\n<script>alert('xss')</script>".to_string(),
-            }),
-            ("unicode_hint", RecoveryInfo {
-                retryable: true,
-                retry_after_ms: Some(250),
-                recovery_hint: "\u{FFFF}\u{10FFFF}🚀💀".to_string(),
-            }),
+            (
+                "zero_retry",
+                RecoveryInfo {
+                    retryable: false,
+                    retry_after_ms: Some(0),
+                    recovery_hint: "".to_string(),
+                },
+            ),
+            (
+                "max_retry_delay",
+                RecoveryInfo {
+                    retryable: true,
+                    retry_after_ms: Some(u64::MAX),
+                    recovery_hint: "wait forever".to_string(),
+                },
+            ),
+            (
+                "huge_hint",
+                RecoveryInfo {
+                    retryable: true,
+                    retry_after_ms: Some(1000),
+                    recovery_hint: "x".repeat(100_000),
+                },
+            ),
+            (
+                "malicious_hint",
+                RecoveryInfo {
+                    retryable: true,
+                    retry_after_ms: Some(500),
+                    recovery_hint: "hint\r\nHTTP/1.1 200 OK\r\n<script>alert('xss')</script>"
+                        .to_string(),
+                },
+            ),
+            (
+                "unicode_hint",
+                RecoveryInfo {
+                    retryable: true,
+                    retry_after_ms: Some(250),
+                    recovery_hint: "\u{FFFF}\u{10FFFF}🚀💀".to_string(),
+                },
+            ),
         ];
 
         for (test_name, recovery_info) in extreme_entries {
@@ -1272,7 +1337,7 @@ mod problem_detail_schema_negative_tests {
                 &entry,
                 "test detail",
                 "/test/instance",
-                "trace-extreme"
+                "trace-extreme",
             );
 
             // Should handle extreme values gracefully
@@ -1289,12 +1354,18 @@ mod problem_detail_schema_negative_tests {
                 Ok(json) => {
                     assert!(!json.is_empty());
                     if test_name.contains("huge") {
-                        assert!(json.len() > 10_000, "JSON should reflect large recovery hint");
+                        assert!(
+                            json.len() > 10_000,
+                            "JSON should reflect large recovery hint"
+                        );
                     }
                 }
                 Err(_) => {
                     // Serialization failure acceptable for extreme inputs
-                    println!("Test {}: JSON serialization failed (acceptable for extreme input)", test_name);
+                    println!(
+                        "Test {}: JSON serialization failed (acceptable for extreme input)",
+                        test_name
+                    );
                 }
             }
         }
@@ -1303,22 +1374,26 @@ mod problem_detail_schema_negative_tests {
     #[test]
     fn negative_severity_to_status_with_exhaustive_enum_coverage() {
         // Ensure all Severity enum variants map to valid HTTP statuses
-        let severities = vec![
-            Severity::Fatal,
-            Severity::Degraded,
-            Severity::Transient,
-        ];
+        let severities = vec![Severity::Fatal, Severity::Degraded, Severity::Transient];
 
         for severity in severities {
             let status = severity_to_status(severity);
 
             // Should map to valid HTTP status codes
-            assert!((100..=599).contains(&status),
-                   "Severity {:?} maps to invalid HTTP status: {}", severity, status);
+            assert!(
+                (100..=599).contains(&status),
+                "Severity {:?} maps to invalid HTTP status: {}",
+                severity,
+                status
+            );
 
             // Should map to server error ranges for our use case
-            assert!([400, 401, 403, 404, 409, 429, 500, 503].contains(&status),
-                   "Severity {:?} maps to unexpected status: {}", severity, status);
+            assert!(
+                [400, 401, 403, 404, 409, 429, 500, 503].contains(&status),
+                "Severity {:?} maps to unexpected status: {}",
+                severity,
+                status
+            );
         }
     }
 
@@ -1326,48 +1401,59 @@ mod problem_detail_schema_negative_tests {
     fn negative_problem_type_urn_generation_with_special_characters() {
         // Test URN generation with various problematic code values
         let problematic_codes = vec![
-            "",                                    // Empty
-            "_",                                  // Single underscore
-            "__",                                 // Double underscore
-            "___",                                // Triple underscore
-            "A_B_C_D_E_F_G_H_I_J_K_L_M",        // Many underscores
-            "code with spaces",                   // Spaces (should be replaced)
-            "CODE_WITH_MIXED_case",               // Mixed case
-            "code-already-with-dashes",           // Already has dashes
-            "code.with.dots",                     // Dots
-            "code/with/slashes",                  // Slashes
-            "code@with#special$chars",            // Special characters
-            "\u{FFFF}",                           // High Unicode
-            "🚀_ROCKET_CODE",                     // Emoji
+            "",                          // Empty
+            "_",                         // Single underscore
+            "__",                        // Double underscore
+            "___",                       // Triple underscore
+            "A_B_C_D_E_F_G_H_I_J_K_L_M", // Many underscores
+            "code with spaces",          // Spaces (should be replaced)
+            "CODE_WITH_MIXED_case",      // Mixed case
+            "code-already-with-dashes",  // Already has dashes
+            "code.with.dots",            // Dots
+            "code/with/slashes",         // Slashes
+            "code@with#special$chars",   // Special characters
+            "\u{FFFF}",                  // High Unicode
+            "🚀_ROCKET_CODE",            // Emoji
         ];
 
         for code in problematic_codes {
-            let problem = ProblemDetail::new(
-                code, "Test title", 500, "test detail", "/test", "trace-urn"
-            );
+            let problem =
+                ProblemDetail::new(code, "Test title", 500, "test detail", "/test", "trace-urn");
 
             // URN should be well-formed
             assert!(problem.problem_type.starts_with("urn:franken-node:error:"));
 
             // Should not contain problematic characters in the URN part
-            let urn_suffix = problem.problem_type
+            let urn_suffix = problem
+                .problem_type
                 .strip_prefix("urn:franken-node:error:")
                 .unwrap();
 
             // Underscores should be converted to dashes
             if code.contains('_') && !code.is_empty() {
-                assert!(!urn_suffix.contains('_') || code.chars().all(|c| c == '_'),
-                       "URN suffix should not contain underscores for code: {}", code);
+                assert!(
+                    !urn_suffix.contains('_') || code.chars().all(|c| c == '_'),
+                    "URN suffix should not contain underscores for code: {}",
+                    code
+                );
             }
 
             // Should be lowercase
-            assert_eq!(urn_suffix, urn_suffix.to_lowercase(),
-                      "URN suffix should be lowercase for code: {}", code);
+            assert_eq!(
+                urn_suffix,
+                urn_suffix.to_lowercase(),
+                "URN suffix should be lowercase for code: {}",
+                code
+            );
 
             // Should not contain dangerous characters
             for dangerous_char in ['<', '>', '"', '\'', '\n', '\r', '\0'] {
-                assert!(!urn_suffix.contains(dangerous_char),
-                       "URN suffix contains dangerous character '{}' for code: {}", dangerous_char, code);
+                assert!(
+                    !urn_suffix.contains(dangerous_char),
+                    "URN suffix contains dangerous character '{}' for code: {}",
+                    dangerous_char,
+                    code
+                );
             }
         }
     }
@@ -1376,15 +1462,15 @@ mod problem_detail_schema_negative_tests {
     fn negative_api_error_to_problem_with_extreme_trace_ids() {
         // Test with various problematic trace ID values
         let problematic_trace_ids = vec![
-            "",                                   // Empty trace ID
-            "trace-" + &"x".repeat(10000),       // Extremely long
-            "trace\0null\x01control",            // Control characters
-            "trace\r\nHTTP/1.1 200 OK",          // HTTP injection
-            "trace<script>alert('xss')</script>", // XSS payload
-            "\u{FFFF}\u{10FFFF}",                // Max Unicode
+            "",                                      // Empty trace ID
+            "trace-" + &"x".repeat(10000),           // Extremely long
+            "trace\0null\x01control",                // Control characters
+            "trace\r\nHTTP/1.1 200 OK",              // HTTP injection
+            "trace<script>alert('xss')</script>",    // XSS payload
+            "\u{FFFF}\u{10FFFF}",                    // Max Unicode
             "trace.with.dots.and-dashes_underscore", // Mixed punctuation
-            "🚀trace🔥with💀emoji",               // Emoji
-            "trace\u{202E}reverse\u{202D}",       // BiDi override
+            "🚀trace🔥with💀emoji",                  // Emoji
+            "trace\u{202E}reverse\u{202D}",          // BiDi override
         ];
 
         for trace_id in problematic_trace_ids {
@@ -1411,12 +1497,18 @@ mod problem_detail_schema_negative_tests {
                             assert_eq!(deserialized.trace_id, trace_id);
                         }
                         Err(e) => {
-                            panic!("Failed to deserialize JSON with trace_id '{}': {}", trace_id, e);
+                            panic!(
+                                "Failed to deserialize JSON with trace_id '{}': {}",
+                                trace_id, e
+                            );
                         }
                     }
                 }
                 Err(e) => {
-                    panic!("Failed to serialize problem with trace_id '{}': {}", trace_id, e);
+                    panic!(
+                        "Failed to serialize problem with trace_id '{}': {}",
+                        trace_id, e
+                    );
                 }
             }
         }
@@ -1431,26 +1523,68 @@ mod problem_detail_schema_negative_tests {
             ("AUTH_FAIL", "", false, "empty marker should return false"),
             ("", "AUTH_FAIL", false, "empty code with non-empty marker"),
             ("AUTH_FAIL", "AUTH_FAIL", true, "exact match"),
-            ("AUTH_FAIL_", "AUTH_FAIL", true, "marker followed by underscore"),
-            ("AUTH_FAIL_EXTRA", "AUTH_FAIL", true, "marker followed by underscore and more"),
+            (
+                "AUTH_FAIL_",
+                "AUTH_FAIL",
+                true,
+                "marker followed by underscore",
+            ),
+            (
+                "AUTH_FAIL_EXTRA",
+                "AUTH_FAIL",
+                true,
+                "marker followed by underscore and more",
+            ),
             ("PREFIX_AUTH_FAIL", "AUTH_FAIL", true, "marker at end"),
-            ("PREFIX_AUTH_FAIL_SUFFIX", "AUTH_FAIL", true, "marker in middle"),
-            ("NOTAUTH_FAIL", "AUTH_FAIL", false, "marker without word boundary"),
-            ("AUTH_FAILNOT", "AUTH_FAIL", false, "marker without trailing boundary"),
+            (
+                "PREFIX_AUTH_FAIL_SUFFIX",
+                "AUTH_FAIL",
+                true,
+                "marker in middle",
+            ),
+            (
+                "NOTAUTH_FAIL",
+                "AUTH_FAIL",
+                false,
+                "marker without word boundary",
+            ),
+            (
+                "AUTH_FAILNOT",
+                "AUTH_FAIL",
+                false,
+                "marker without trailing boundary",
+            ),
             ("AUTH_FAIL_AUTH_FAIL", "AUTH_FAIL", true, "repeated markers"),
-            ("_AUTH_FAIL", "AUTH_FAIL", true, "marker after leading underscore"),
-            ("__AUTH_FAIL__", "AUTH_FAIL", true, "marker between underscores"),
+            (
+                "_AUTH_FAIL",
+                "AUTH_FAIL",
+                true,
+                "marker after leading underscore",
+            ),
+            (
+                "__AUTH_FAIL__",
+                "AUTH_FAIL",
+                true,
+                "marker between underscores",
+            ),
             ("A", "AUTH_FAIL", false, "marker longer than code"),
             ("AUTH_FAI", "AUTH_FAIL", false, "code shorter than marker"),
             ("AUTH_FAIL", "AUTH", false, "partial marker match"),
-            ("XAUTH_FAILX", "AUTH_FAIL", false, "marker embedded without boundaries"),
+            (
+                "XAUTH_FAILX",
+                "AUTH_FAIL",
+                false,
+                "marker embedded without boundaries",
+            ),
         ];
 
         for (code, marker, expected, description) in test_cases {
             let result = has_code_marker(code, marker);
-            assert_eq!(result, expected,
-                      "has_code_marker('{}', '{}') should be {} - {}",
-                      code, marker, expected, description);
+            assert_eq!(
+                result, expected,
+                "has_code_marker('{}', '{}') should be {} - {}",
+                code, marker, expected, description
+            );
         }
     }
 
@@ -1477,7 +1611,7 @@ mod problem_detail_schema_negative_tests {
                         500,
                         &format!("Concurrent error from thread {} iteration {}", thread_id, i),
                         &format!("/test/thread/{}/{}", thread_id, i),
-                        &format!("trace-thread-{}-{}", thread_id, i)
+                        &format!("trace-thread-{}-{}", thread_id, i),
                     );
                     problems.push(problem);
 
@@ -1520,24 +1654,25 @@ mod problem_detail_schema_negative_tests {
         // Test resistance to JSON deserialization memory bombs
         let memory_bomb_jsons = vec![
             // Extremely deeply nested objects
-            format!("{}{}{}",
+            format!(
+                "{}{}{}",
                 "{\"nested\":".repeat(10000),
                 "\"deep\"",
                 "}".repeat(10000)
             ),
-
             // Huge array in a field
-            format!("{{\"type\":\"test\",\"huge_array\":[{}],\"title\":\"test\",\"status\":500,\"detail\":\"test\",\"instance\":\"/test\",\"code\":\"TEST\",\"trace_id\":\"trace\"}}",
+            format!(
+                "{{\"type\":\"test\",\"huge_array\":[{}],\"title\":\"test\",\"status\":500,\"detail\":\"test\",\"instance\":\"/test\",\"code\":\"TEST\",\"trace_id\":\"trace\"}}",
                 "\"item\",".repeat(50000)
             ),
-
             // Repeated very long string keys
-            (0..1000).map(|i| format!("\"very_long_key_name_that_repeats_{}\":\"value\"", i))
+            (0..1000)
+                .map(|i| format!("\"very_long_key_name_that_repeats_{}\":\"value\"", i))
                 .collect::<Vec<_>>()
                 .join(","),
-
             // Unicode normalization bomb
-            format!("{{\"type\":\"test\",\"title\":\"{}\",\"status\":500,\"detail\":\"test\",\"instance\":\"/test\",\"code\":\"TEST\",\"trace_id\":\"trace\"}}",
+            format!(
+                "{{\"type\":\"test\",\"title\":\"{}\",\"status\":500,\"detail\":\"test\",\"instance\":\"/test\",\"code\":\"TEST\",\"trace_id\":\"trace\"}}",
                 "\u{0065}\u{0301}".repeat(50000) // é as base + combining character
             ),
         ];
@@ -1551,8 +1686,12 @@ mod problem_detail_schema_negative_tests {
             let parse_time = start_time.elapsed();
 
             // Should complete quickly (reject or parse within reasonable time)
-            assert!(parse_time < std::time::Duration::from_secs(5),
-                   "Memory bomb test {}: Parsing took too long: {:?}", i, parse_time);
+            assert!(
+                parse_time < std::time::Duration::from_secs(5),
+                "Memory bomb test {}: Parsing took too long: {:?}",
+                i,
+                parse_time
+            );
 
             // Most should fail to deserialize due to missing required fields
             match result {
@@ -1607,34 +1746,34 @@ mod problem_detail_schema_negative_tests {
 
             // Test inequality with modified values
             let different_error = match &original_error {
-                ApiError::Internal { detail, .. } => {
-                    ApiError::Internal {
-                        detail: detail.clone() + "_different",
-                        trace_id: "different_trace".to_string(),
-                    }
-                }
-                ApiError::BadRequest { detail, .. } => {
-                    ApiError::BadRequest {
-                        detail: detail.clone() + "_different",
-                        trace_id: "different_trace".to_string(),
-                    }
-                }
+                ApiError::Internal { detail, .. } => ApiError::Internal {
+                    detail: detail.clone() + "_different",
+                    trace_id: "different_trace".to_string(),
+                },
+                ApiError::BadRequest { detail, .. } => ApiError::BadRequest {
+                    detail: detail.clone() + "_different",
+                    trace_id: "different_trace".to_string(),
+                },
                 #[cfg(any(test, feature = "extended-surfaces"))]
-                ApiError::RateLimited { detail, trace_id, retry_after_ms } => {
-                    ApiError::RateLimited {
-                        detail: detail.clone(),
-                        trace_id: trace_id.clone(),
-                        retry_after_ms: retry_after_ms.saturating_sub(1),
-                    }
-                }
+                ApiError::RateLimited {
+                    detail,
+                    trace_id,
+                    retry_after_ms,
+                } => ApiError::RateLimited {
+                    detail: detail.clone(),
+                    trace_id: trace_id.clone(),
+                    retry_after_ms: retry_after_ms.saturating_sub(1),
+                },
                 #[cfg(any(test, feature = "extended-surfaces"))]
-                ApiError::PolicyDenied { detail, trace_id, policy_hook } => {
-                    ApiError::PolicyDenied {
-                        detail: detail.clone(),
-                        trace_id: trace_id.clone(),
-                        policy_hook: policy_hook.clone() + "_different",
-                    }
-                }
+                ApiError::PolicyDenied {
+                    detail,
+                    trace_id,
+                    policy_hook,
+                } => ApiError::PolicyDenied {
+                    detail: detail.clone(),
+                    trace_id: trace_id.clone(),
+                    policy_hook: policy_hook.clone() + "_different",
+                },
                 #[cfg(feature = "extended-surfaces")]
                 _ => continue, // Skip other variants in this test
             };
@@ -1652,7 +1791,7 @@ mod problem_detail_schema_negative_tests {
             400,
             "Testing serialization consistency across different platforms",
             "/test/platform",
-            "trace-platform-test"
+            "trace-platform-test",
         );
 
         // Serialize multiple times - should be deterministic
@@ -1668,14 +1807,14 @@ mod problem_detail_schema_negative_tests {
             500,
             &format!("Created at {:?}", start_time),
             "/test/timing",
-            "trace-timing-test"
+            "trace-timing-test",
         );
 
         let timing_json = problem_with_timing.to_json().expect("timing serialization");
 
         // Should deserialize back to same values
-        let deserialized: ProblemDetail = serde_json::from_str(&timing_json)
-            .expect("timing deserialization");
+        let deserialized: ProblemDetail =
+            serde_json::from_str(&timing_json).expect("timing deserialization");
         assert_eq!(deserialized.code, "TIMING_TEST");
         assert_eq!(deserialized.status, 500);
 
@@ -1686,12 +1825,12 @@ mod problem_detail_schema_negative_tests {
             400,
             "Testing Unicode normalization: \u{FFFF}",
             "/test/unicode",
-            "trace-unicode-\u{10FFFF}"
+            "trace-unicode-\u{10FFFF}",
         );
 
         let unicode_json = unicode_problem.to_json().expect("unicode serialization");
-        let unicode_deserialized: ProblemDetail = serde_json::from_str(&unicode_json)
-            .expect("unicode deserialization");
+        let unicode_deserialized: ProblemDetail =
+            serde_json::from_str(&unicode_json).expect("unicode deserialization");
 
         // Unicode should round-trip correctly
         assert_eq!(unicode_deserialized.code, unicode_problem.code);
@@ -1707,13 +1846,13 @@ mod problem_detail_schema_negative_tests {
             "FRANKEN_".repeat(1000) + "AUTH_FAIL",
             "AUTH_FAIL".repeat(1000),
             "_".repeat(10000) + "AUTH_FAIL" + &"_".repeat(10000),
-
             // Codes with many potential marker positions
-            (0..1000).map(|i| format!("SEGMENT_{}_", i)).collect::<String>() + "AUTH_FAIL",
-
+            (0..1000)
+                .map(|i| format!("SEGMENT_{}_", i))
+                .collect::<String>()
+                + "AUTH_FAIL",
             // Unicode that might slow down string operations
             "🚀".repeat(1000) + "_AUTH_FAIL",
-
             // Mixed case that might trigger many comparisons
             "Auth_Fail_AUTH_fail_auth_FAIL_AUTH_FAIL".repeat(100),
         ];
@@ -1725,9 +1864,13 @@ mod problem_detail_schema_negative_tests {
             let status = code_to_status(code);
 
             let elapsed = start_time.elapsed();
-            assert!(elapsed < std::time::Duration::from_millis(100),
-                   "Performance test {}: code_to_status took too long: {:?} for code length {}",
-                   i, elapsed, code.len());
+            assert!(
+                elapsed < std::time::Duration::from_millis(100),
+                "Performance test {}: code_to_status took too long: {:?} for code length {}",
+                i,
+                elapsed,
+                code.len()
+            );
 
             // Result should be consistent regardless of performance
             match status {
@@ -1744,14 +1887,14 @@ mod problem_detail_schema_negative_tests {
         // Test boundary values for numeric fields
         let boundary_test_cases = vec![
             // Status code boundaries
-            (0, false),       // Below valid HTTP range
-            (99, false),      // Below valid HTTP range
-            (100, true),      // Minimum valid HTTP status
-            (200, true),      // Common success
-            (404, true),      // Common client error
-            (500, true),      // Common server error
-            (599, true),      // Maximum standard HTTP status
-            (600, false),     // Above standard range
+            (0, false),        // Below valid HTTP range
+            (99, false),       // Below valid HTTP range
+            (100, true),       // Minimum valid HTTP status
+            (200, true),       // Common success
+            (404, true),       // Common client error
+            (500, true),       // Common server error
+            (599, true),       // Maximum standard HTTP status
+            (600, false),      // Above standard range
             (u16::MAX, false), // Maximum u16 value
         ];
 
@@ -1762,7 +1905,7 @@ mod problem_detail_schema_negative_tests {
                 status_code,
                 "Testing boundary values",
                 "/test/boundary",
-                "trace-boundary"
+                "trace-boundary",
             );
 
             // Basic creation should always work (validation is semantic, not syntactic)
@@ -1773,8 +1916,8 @@ mod problem_detail_schema_negative_tests {
             assert!(json.contains(&format!("\"status\":{}", status_code)));
 
             // Deserialization should work for any u16 value
-            let deserialized: ProblemDetail = serde_json::from_str(&json)
-                .expect("boundary deserialization");
+            let deserialized: ProblemDetail =
+                serde_json::from_str(&json).expect("boundary deserialization");
             assert_eq!(deserialized.status, status_code);
 
             // Note: Semantic validation (is this a valid HTTP status) would be done
@@ -1795,11 +1938,13 @@ mod problem_detail_schema_negative_tests {
             recovery_hint: Some("max retry".to_string()),
         };
 
-        let max_retry_json = problem_with_retry.to_json().expect("max retry serialization");
+        let max_retry_json = problem_with_retry
+            .to_json()
+            .expect("max retry serialization");
         assert!(max_retry_json.contains(&u64::MAX.to_string()));
 
-        let deserialized_max: ProblemDetail = serde_json::from_str(&max_retry_json)
-            .expect("max retry deserialization");
+        let deserialized_max: ProblemDetail =
+            serde_json::from_str(&max_retry_json).expect("max retry deserialization");
         assert_eq!(deserialized_max.retry_after_ms, Some(u64::MAX));
     }
 
@@ -1811,16 +1956,16 @@ mod problem_detail_schema_negative_tests {
         let minimal_errors = vec![
             ApiError::Internal {
                 detail: "".to_string(),
-                trace_id: "".to_string()
+                trace_id: "".to_string(),
             },
             ApiError::BadRequest {
                 detail: "".to_string(),
-                trace_id: "".to_string()
+                trace_id: "".to_string(),
             },
             #[cfg(any(test, feature = "extended-surfaces"))]
             ApiError::AuthFailed {
                 detail: "".to_string(),
-                trace_id: "".to_string()
+                trace_id: "".to_string(),
             },
             #[cfg(any(test, feature = "extended-surfaces"))]
             ApiError::PolicyDenied {
@@ -1855,8 +2000,8 @@ mod problem_detail_schema_negative_tests {
             assert!(json.contains("\"instance\":\"\""));
 
             // Should round-trip successfully
-            let deserialized: ProblemDetail = serde_json::from_str(&json)
-                .expect("empty field deserialization");
+            let deserialized: ProblemDetail =
+                serde_json::from_str(&json).expect("empty field deserialization");
             assert_eq!(deserialized.detail, problem.detail);
             assert_eq!(deserialized.trace_id, problem.trace_id);
             assert_eq!(deserialized.instance, problem.instance);
@@ -1874,33 +2019,46 @@ mod problem_detail_schema_negative_tests {
             500,
             "This is a typical error detail message that might occur in normal operation",
             "/v1/api/resource",
-            "trace-12345678-abcd-efgh-ijkl-1234567890ab"
+            "trace-12345678-abcd-efgh-ijkl-1234567890ab",
         );
 
         // Memory size should be reasonable
         let size = std::mem::size_of_val(&typical_problem);
-        assert!(size < 1024, "ProblemDetail size should be under 1KB, got {} bytes", size);
+        assert!(
+            size < 1024,
+            "ProblemDetail size should be under 1KB, got {} bytes",
+            size
+        );
 
         // Test with maximum reasonable field sizes
         let max_reasonable_problem = ProblemDetail::new(
-            &"MAX_ERROR_CODE_".repeat(10), // ~150 chars
+            &"MAX_ERROR_CODE_".repeat(10),      // ~150 chars
             &"Maximum error title ".repeat(20), // ~400 chars
             500,
             &"Maximum error detail ".repeat(50), // ~1000 chars
             &"/v1/api/maximum/path/".repeat(10), // ~200 chars
-            &"trace-maximum-".repeat(20) // ~280 chars
+            &"trace-maximum-".repeat(20),        // ~280 chars
         );
 
         // Should still be able to serialize efficiently
         let start_time = std::time::Instant::now();
-        let json = max_reasonable_problem.to_json().expect("max reasonable serialization");
+        let json = max_reasonable_problem
+            .to_json()
+            .expect("max reasonable serialization");
         let serialize_time = start_time.elapsed();
 
-        assert!(serialize_time < std::time::Duration::from_millis(10),
-               "Serialization of maximum reasonable problem took too long: {:?}", serialize_time);
+        assert!(
+            serialize_time < std::time::Duration::from_millis(10),
+            "Serialization of maximum reasonable problem took too long: {:?}",
+            serialize_time
+        );
 
         // JSON should not be excessively large
-        assert!(json.len() < 10_000, "JSON size should be under 10KB, got {} bytes", json.len());
+        assert!(
+            json.len() < 10_000,
+            "JSON size should be under 10KB, got {} bytes",
+            json.len()
+        );
 
         // Test stack allocation efficiency - should not require excessive stack space
         let _stack_allocated_problems: [ProblemDetail; 10] = std::array::from_fn(|i| {
@@ -1910,32 +2068,38 @@ mod problem_detail_schema_negative_tests {
                 400,
                 "Testing stack allocation",
                 "/test/stack",
-                &format!("trace-stack-{}", i)
+                &format!("trace-stack-{}", i),
             )
         });
 
         // Test that many problems can coexist without excessive memory
         let many_problems: Vec<ProblemDetail> = (0..1000)
-            .map(|i| ProblemDetail::new(
-                &format!("MANY_TEST_{}", i),
-                "Many test",
-                500,
-                "Testing many problems",
-                &format!("/test/many/{}", i),
-                &format!("trace-many-{}", i)
-            ))
+            .map(|i| {
+                ProblemDetail::new(
+                    &format!("MANY_TEST_{}", i),
+                    "Many test",
+                    500,
+                    "Testing many problems",
+                    &format!("/test/many/{}", i),
+                    &format!("trace-many-{}", i),
+                )
+            })
             .collect();
 
         assert_eq!(many_problems.len(), 1000);
 
         // Should be able to serialize many problems efficiently
         let start_time = std::time::Instant::now();
-        for problem in many_problems.iter().take(100) { // Sample to avoid excessive test time
+        for problem in many_problems.iter().take(100) {
+            // Sample to avoid excessive test time
             let _ = problem.to_json().expect("many problems serialization");
         }
         let batch_serialize_time = start_time.elapsed();
 
-        assert!(batch_serialize_time < std::time::Duration::from_millis(100),
-               "Batch serialization of 100 problems took too long: {:?}", batch_serialize_time);
+        assert!(
+            batch_serialize_time < std::time::Duration::from_millis(100),
+            "Batch serialization of 100 problems took too long: {:?}",
+            batch_serialize_time
+        );
     }
 }

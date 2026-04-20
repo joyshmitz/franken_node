@@ -4056,14 +4056,14 @@ mod tests {
 
         // Test Unicode normalization attacks and lookalike characters
         let malicious_zones = [
-            "zone-αdmin", // Greek alpha that looks like 'a'
-            "zone-аdmin", // Cyrillic 'a' that looks like Latin 'a'
+            "zone-αdmin",        // Greek alpha that looks like 'a'
+            "zone-аdmin",        // Cyrillic 'a' that looks like Latin 'a'
             "zone\u{200D}admin", // Zero-width joiner injection
             "zone\u{202E}admin", // Right-to-left override
             "zone\u{FEFF}admin", // Byte order mark injection
             "zone\u{00A0}admin", // Non-breaking space
             "zone\u{3000}admin", // Ideographic space
-            "zone‍admin", // Zero-width joiner (visual)
+            "zone‍admin",         // Zero-width joiner (visual)
         ];
 
         for malicious_zone in &malicious_zones {
@@ -4075,11 +4075,22 @@ mod tests {
             };
 
             // Should either reject completely or normalize consistently
-            if let Ok(result) = mgr.quarantine("ext-unicode-test", &scope, &admin_identity(), &test_trace()) {
+            if let Ok(result) =
+                mgr.quarantine("ext-unicode-test", &scope, &admin_identity(), &test_trace())
+            {
                 // If accepted, verify zone ID is properly normalized
-                assert!(!result.receipt.zone_id.contains('\u{202E}'), "RTL override must be stripped");
-                assert!(!result.receipt.zone_id.contains('\u{200D}'), "Zero-width joiner must be stripped");
-                assert!(!result.receipt.zone_id.contains('\u{FEFF}'), "BOM must be stripped");
+                assert!(
+                    !result.receipt.zone_id.contains('\u{202E}'),
+                    "RTL override must be stripped"
+                );
+                assert!(
+                    !result.receipt.zone_id.contains('\u{200D}'),
+                    "Zero-width joiner must be stripped"
+                );
+                assert!(
+                    !result.receipt.zone_id.contains('\u{FEFF}'),
+                    "BOM must be stripped"
+                );
             }
 
             // Verify status lookups use consistent normalization
@@ -4105,7 +4116,7 @@ mod tests {
         let scope = QuarantineScope {
             zone_id: "zone-memory-test".to_string(),
             tenant_id: Some("tenant-".to_string() + &"y".repeat(50_000)), // ~50KB tenant ID
-            affected_nodes: u32::MAX, // Maximum node count
+            affected_nodes: u32::MAX,                                     // Maximum node count
             reason: massive_reason,
         };
 
@@ -4116,21 +4127,35 @@ mod tests {
         match result {
             Ok(action_result) => {
                 // If accepted, verify strings are bounded
-                assert!(action_result.receipt.payload_hash.len() < 10_000, "Hash should be bounded");
-                assert!(mgr.events().len() <= MAX_FLEET_EVENTS, "Events should respect capacity");
-                assert!(mgr.incidents.len() <= MAX_INCIDENTS, "Incidents should respect capacity");
+                assert!(
+                    action_result.receipt.payload_hash.len() < 10_000,
+                    "Hash should be bounded"
+                );
+                assert!(
+                    mgr.events().len() <= MAX_FLEET_EVENTS,
+                    "Events should respect capacity"
+                );
+                assert!(
+                    mgr.incidents.len() <= MAX_INCIDENTS,
+                    "Incidents should respect capacity"
+                );
             }
             Err(err) => {
                 // Should fail with capacity/validation error, not panic
                 assert!(matches!(
                     err.error_code().as_str(),
-                    FLEET_SCOPE_INVALID | FLEET_INCIDENT_CAPACITY_EXCEEDED | FLEET_ZONE_STATUS_CAPACITY_EXCEEDED
+                    FLEET_SCOPE_INVALID
+                        | FLEET_INCIDENT_CAPACITY_EXCEEDED
+                        | FLEET_ZONE_STATUS_CAPACITY_EXCEEDED
                 ));
             }
         }
 
         // Verify memory footprint stays bounded
-        assert!(mgr.zone_status.len() <= MAX_ZONE_STATUS, "Zone status should respect capacity");
+        assert!(
+            mgr.zone_status.len() <= MAX_ZONE_STATUS,
+            "Zone status should respect capacity"
+        );
     }
 
     #[test]
@@ -4167,7 +4192,8 @@ mod tests {
                 for j in 0..10 {
                     let extension_id = format!("ext-{}-{}", i, j);
                     let mut guard = mgr_clone.lock().unwrap();
-                    let result = guard.quarantine(&extension_id, &scope, &admin_identity(), &test_trace());
+                    let result =
+                        guard.quarantine(&extension_id, &scope, &admin_identity(), &test_trace());
                     results.push(result);
                 }
                 results
@@ -4202,8 +4228,14 @@ mod tests {
 
         // Verify final state is consistent
         let guard = mgr.lock().unwrap();
-        assert!(guard.zones().len() <= 4, "Zone count should not exceed thread count");
-        assert!(guard.incident_count() <= 40, "Incident count should not exceed attempts");
+        assert!(
+            guard.zones().len() <= 4,
+            "Zone count should not exceed thread count"
+        );
+        assert!(
+            guard.incident_count() <= 40,
+            "Incident count should not exceed attempts"
+        );
     }
 
     #[test]
@@ -4275,8 +4307,14 @@ mod tests {
             // Verify error handling doesn't leak sensitive info
             if let Err(err) = result {
                 let error_string = err.to_string();
-                assert!(!error_string.contains("internal"), "Error should not expose internals");
-                assert!(!error_string.contains("debug"), "Error should not expose debug info");
+                assert!(
+                    !error_string.contains("internal"),
+                    "Error should not expose internals"
+                );
+                assert!(
+                    !error_string.contains("debug"),
+                    "Error should not expose debug info"
+                );
             }
         }
     }
@@ -4328,7 +4366,8 @@ mod tests {
         ];
 
         for attack_vector in attack_vectors {
-            let result: Result<QuarantineRequest, _> = serde_json::from_value(attack_vector.clone());
+            let result: Result<QuarantineRequest, _> =
+                serde_json::from_value(attack_vector.clone());
 
             // Should fail gracefully without panicking
             assert!(
@@ -4339,7 +4378,8 @@ mod tests {
 
             // Test round-trip consistency for valid data
             if let Ok(request) = result {
-                let serialized = serde_json::to_string(&request).expect("Valid request should serialize");
+                let serialized =
+                    serde_json::to_string(&request).expect("Valid request should serialize");
                 let deserialized: QuarantineRequest =
                     serde_json::from_str(&serialized).expect("Serialized data should deserialize");
 
@@ -4366,8 +4406,13 @@ mod tests {
                 reason: format!("capacity test {}", i),
             };
 
-            mgr.quarantine(&format!("ext-{}", i), &scope, &admin_identity(), &test_trace())
-                .expect("Should fit within capacity");
+            mgr.quarantine(
+                &format!("ext-{}", i),
+                &scope,
+                &admin_identity(),
+                &test_trace(),
+            )
+            .expect("Should fit within capacity");
         }
 
         assert_eq!(mgr.incident_count(), MAX_INCIDENTS);
@@ -4380,13 +4425,26 @@ mod tests {
             reason: "overflow attempt".to_string(),
         };
 
-        let err = mgr.quarantine("ext-overflow", &overflow_scope, &admin_identity(), &test_trace())
+        let err = mgr
+            .quarantine(
+                "ext-overflow",
+                &overflow_scope,
+                &admin_identity(),
+                &test_trace(),
+            )
             .expect_err("Should fail at capacity limit");
         assert_eq!(err.error_code(), FLEET_INCIDENT_CAPACITY_EXCEEDED);
 
         // 3. Verify no partial state corruption
-        assert_eq!(mgr.incident_count(), MAX_INCIDENTS, "Incident count should not change on failure");
-        assert!(!mgr.zone_status.contains_key("zone-overflow"), "Failed zone should not be added");
+        assert_eq!(
+            mgr.incident_count(),
+            MAX_INCIDENTS,
+            "Incident count should not change on failure"
+        );
+        assert!(
+            !mgr.zone_status.contains_key("zone-overflow"),
+            "Failed zone should not be added"
+        );
 
         // 4. Test zone status capacity limits
         for i in MAX_INCIDENTS..MAX_INCIDENTS + MAX_ZONE_STATUS {
@@ -4400,7 +4458,10 @@ mod tests {
         }
 
         // Verify zone status respects capacity
-        assert!(mgr.zone_status.len() <= MAX_ZONE_STATUS, "Zone status should respect capacity");
+        assert!(
+            mgr.zone_status.len() <= MAX_ZONE_STATUS,
+            "Zone status should respect capacity"
+        );
 
         // 5. Test event capacity through reconcile operations
         let initial_event_count = mgr.events().len();
@@ -4409,8 +4470,14 @@ mod tests {
         }
 
         // Events should be bounded
-        assert!(mgr.events().len() <= MAX_FLEET_EVENTS, "Events should respect capacity");
-        assert!(mgr.events().len() >= initial_event_count, "Events should accumulate");
+        assert!(
+            mgr.events().len() <= MAX_FLEET_EVENTS,
+            "Events should respect capacity"
+        );
+        assert!(
+            mgr.events().len() >= initial_event_count,
+            "Events should accumulate"
+        );
     }
 
     #[test]
@@ -4424,13 +4491,17 @@ mod tests {
         let trace = test_trace();
 
         // 1. Test not-activated errors are consistent
-        let quarantine_err = mgr.quarantine("ext-1", &scope, &identity, &trace)
+        let quarantine_err = mgr
+            .quarantine("ext-1", &scope, &identity, &trace)
             .expect_err("Should fail before activation");
-        let revoke_err = mgr.revoke("ext-1", &test_revocation_scope(), &identity, &trace)
+        let revoke_err = mgr
+            .revoke("ext-1", &test_revocation_scope(), &identity, &trace)
             .expect_err("Should fail before activation");
-        let release_err = mgr.release("inc-fake", &identity, &trace)
+        let release_err = mgr
+            .release("inc-fake", &identity, &trace)
             .expect_err("Should fail before activation");
-        let reconcile_err = mgr.reconcile(&identity, &trace)
+        let reconcile_err = mgr
+            .reconcile(&identity, &trace)
             .expect_err("Should fail before activation");
 
         // All should have same error code
@@ -4456,12 +4527,13 @@ mod tests {
             reason: "empty zone test".to_string(),
         };
 
-        let quarantine_scope_err = mgr.quarantine("ext-1", &empty_scope, &identity, &trace)
+        let quarantine_scope_err = mgr
+            .quarantine("ext-1", &empty_scope, &identity, &trace)
             .expect_err("Should fail with empty zone");
-        let revoke_scope_err = mgr.revoke("ext-1", &empty_revoke_scope, &identity, &trace)
+        let revoke_scope_err = mgr
+            .revoke("ext-1", &empty_revoke_scope, &identity, &trace)
             .expect_err("Should fail with empty zone");
-        let status_err = mgr.status("")
-            .expect_err("Should fail with empty zone");
+        let status_err = mgr.status("").expect_err("Should fail with empty zone");
 
         // All should have same scope error code
         assert_eq!(quarantine_scope_err.error_code(), FLEET_SCOPE_INVALID);
@@ -4471,13 +4543,17 @@ mod tests {
         // 3. Test operation ID exhaustion errors are consistent
         mgr.operation_ids_exhausted = true;
 
-        let quarantine_id_err = mgr.quarantine("ext-1", &scope, &identity, &trace)
+        let quarantine_id_err = mgr
+            .quarantine("ext-1", &scope, &identity, &trace)
             .expect_err("Should fail with exhausted IDs");
-        let revoke_id_err = mgr.revoke("ext-1", &test_revocation_scope(), &identity, &trace)
+        let revoke_id_err = mgr
+            .revoke("ext-1", &test_revocation_scope(), &identity, &trace)
             .expect_err("Should fail with exhausted IDs");
-        let release_id_err = mgr.release("inc-fake", &identity, &trace)
+        let release_id_err = mgr
+            .release("inc-fake", &identity, &trace)
             .expect_err("Should fail with exhausted IDs");
-        let reconcile_id_err = mgr.reconcile(&identity, &trace)
+        let reconcile_id_err = mgr
+            .reconcile(&identity, &trace)
             .expect_err("Should fail with exhausted IDs");
 
         // All should have same ID exhaustion error code
@@ -4514,11 +4590,19 @@ mod tests {
                 reason: format!("corruption test {}", i),
             };
 
-            let _ = mgr.quarantine(&format!("ext-{}", i), &test_scope, &admin_identity(), &test_trace());
+            let _ = mgr.quarantine(
+                &format!("ext-{}", i),
+                &test_scope,
+                &admin_identity(),
+                &test_trace(),
+            );
         }
 
         // Verify incident count never exceeds maximum
-        assert!(mgr.incident_count() <= MAX_INCIDENTS, "Incident count should be bounded");
+        assert!(
+            mgr.incident_count() <= MAX_INCIDENTS,
+            "Incident count should be bounded"
+        );
 
         // 3. Try invalid releases that could corrupt incident state
         let fake_incident_ids = vec![
@@ -4538,7 +4622,10 @@ mod tests {
         }
 
         // Verify incident count hasn't been corrupted by failed releases
-        assert!(mgr.incident_count() <= MAX_INCIDENTS, "Failed releases should not corrupt incident count");
+        assert!(
+            mgr.incident_count() <= MAX_INCIDENTS,
+            "Failed releases should not corrupt incident count"
+        );
 
         // 4. Test status queries for zones that could corrupt state
         let malicious_zones = vec![
@@ -4554,29 +4641,61 @@ mod tests {
             // Either reject or handle safely
             if let Ok(status) = result {
                 // If accepted, verify zone ID is sanitized
-                assert!(!status.zone_id.contains('\0'), "Zone ID should not contain null bytes");
-                assert!(!status.zone_id.contains(".."), "Zone ID should not contain path traversal");
+                assert!(
+                    !status.zone_id.contains('\0'),
+                    "Zone ID should not contain null bytes"
+                );
+                assert!(
+                    !status.zone_id.contains(".."),
+                    "Zone ID should not contain path traversal"
+                );
                 assert!(status.zone_id.len() < 1000, "Zone ID should be bounded");
             }
         }
 
         // 5. Verify overall state consistency after all attacks
-        assert!(mgr.zones().len() <= MAX_ZONE_STATUS, "Zone count should be bounded");
-        assert!(mgr.events().len() <= MAX_FLEET_EVENTS, "Event count should be bounded");
-        assert!(mgr.incident_count() <= MAX_INCIDENTS, "Incident count should be bounded");
+        assert!(
+            mgr.zones().len() <= MAX_ZONE_STATUS,
+            "Zone count should be bounded"
+        );
+        assert!(
+            mgr.events().len() <= MAX_FLEET_EVENTS,
+            "Event count should be bounded"
+        );
+        assert!(
+            mgr.incident_count() <= MAX_INCIDENTS,
+            "Incident count should be bounded"
+        );
 
         // Verify internal consistency
         for incident in mgr.active_incidents() {
-            assert!(!incident.incident_id.is_empty(), "Incident ID should not be empty");
+            assert!(
+                !incident.incident_id.is_empty(),
+                "Incident ID should not be empty"
+            );
             assert!(!incident.zone_id.is_empty(), "Zone ID should not be empty");
-            assert!(incident.incident_id.starts_with("inc-"), "Incident ID should have correct prefix");
+            assert!(
+                incident.incident_id.starts_with("inc-"),
+                "Incident ID should have correct prefix"
+            );
         }
 
         // Verify no state leakage in receipts
-        if let Ok(test_result) = mgr.quarantine("ext-final", &scope, &admin_identity(), &test_trace()) {
-            assert!(!test_result.receipt.payload_hash.is_empty(), "Receipt hash should not be empty");
-            assert!(!test_result.receipt.receipt_id.contains("internal"), "Receipt should not leak internals");
-            assert!(test_result.receipt.receipt_id.starts_with("rcpt-"), "Receipt ID should have correct prefix");
+        if let Ok(test_result) =
+            mgr.quarantine("ext-final", &scope, &admin_identity(), &test_trace())
+        {
+            assert!(
+                !test_result.receipt.payload_hash.is_empty(),
+                "Receipt hash should not be empty"
+            );
+            assert!(
+                !test_result.receipt.receipt_id.contains("internal"),
+                "Receipt should not leak internals"
+            );
+            assert!(
+                test_result.receipt.receipt_id.starts_with("rcpt-"),
+                "Receipt ID should have correct prefix"
+            );
         }
     }
 }

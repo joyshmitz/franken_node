@@ -1076,22 +1076,24 @@ mod tests {
         let unicode_attack_vectors = vec![
             // BiDi override attacks in arguments
             ("bidi_override", "arg\u{202E}gnivieced\u{202D}"),
-            ("bidi_nested", "param\u{202E}level1\u{202E}level2\u{202D}evil\u{202D}"),
-
+            (
+                "bidi_nested",
+                "param\u{202E}level1\u{202E}level2\u{202D}evil\u{202D}",
+            ),
             // Zero-width character pollution
             ("zws_pollution", "test\u{200B}hidden\u{200C}arg\u{200D}"),
-            ("zwj_sequence", "arg\u{200D}\u{1F469}\u{200D}\u{1F4BB}trusted"),
-
+            (
+                "zwj_sequence",
+                "arg\u{200D}\u{1F469}\u{200D}\u{1F4BB}trusted",
+            ),
             // Control character injection
             ("ansi_escape", "arg\x1b[31mevil\x1b[0m"),
             ("carriage_return", "arg\roverwrite"),
             ("vertical_tab", "arg\x0Bhidden"),
-
             // Unicode normalization attacks
-            ("nfd_attack", "café_arg"),          // NFC form
-            ("nfc_attack", "cafe\u{0301}_arg"),  // NFD form
+            ("nfd_attack", "café_arg"),         // NFC form
+            ("nfc_attack", "cafe\u{0301}_arg"), // NFD form
             ("combining_stack", "arg\u{0300}\u{0301}\u{0302}\u{0303}"),
-
             // Path injection attempts
             ("path_traversal", "../../../evil"),
             ("null_termination", "arg\x00hidden"),
@@ -1103,8 +1105,10 @@ mod tests {
                 let args = vec![
                     "franken-node",
                     "init",
-                    "--output-dir", malicious_input,
-                    "--profile", malicious_input,
+                    "--output-dir",
+                    malicious_input,
+                    "--profile",
+                    malicious_input,
                 ];
 
                 let parse_result = Cli::try_parse_from(&args);
@@ -1115,11 +1119,18 @@ mod tests {
                             Command::Init(init_args) => {
                                 if let Some(output_dir) = init_args.output_dir {
                                     // Should handle Unicode paths consistently
-                                    assert!(!output_dir.to_string_lossy().is_empty() || output_dir.to_string_lossy().is_empty(),
-                                           "Path should be handled deterministically: {}", attack_name);
+                                    assert!(
+                                        !output_dir.to_string_lossy().is_empty()
+                                            || output_dir.to_string_lossy().is_empty(),
+                                        "Path should be handled deterministically: {}",
+                                        attack_name
+                                    );
                                 }
-                                assert!(!init_args.profile.is_empty() || init_args.profile.is_empty(),
-                                       "Profile should be handled deterministically: {}", attack_name);
+                                assert!(
+                                    !init_args.profile.is_empty() || init_args.profile.is_empty(),
+                                    "Profile should be handled deterministically: {}",
+                                    attack_name
+                                );
                             }
                             _ => {}
                         }
@@ -1134,8 +1145,10 @@ mod tests {
                     "franken-node",
                     "run",
                     malicious_input, // script argument
-                    "--env", malicious_input,
-                    "--trust-root", malicious_input,
+                    "--env",
+                    malicious_input,
+                    "--trust-root",
+                    malicious_input,
                 ];
 
                 let run_parse_result = Cli::try_parse_from(&run_args);
@@ -1144,8 +1157,12 @@ mod tests {
                         match cli.command {
                             Command::Run(run_args) => {
                                 // Should handle script paths safely
-                                assert!(!run_args.script.to_string_lossy().is_empty() || run_args.script.to_string_lossy().is_empty(),
-                                       "Script path should be handled safely: {}", attack_name);
+                                assert!(
+                                    !run_args.script.to_string_lossy().is_empty()
+                                        || run_args.script.to_string_lossy().is_empty(),
+                                    "Script path should be handled safely: {}",
+                                    attack_name
+                                );
                             }
                             _ => {}
                         }
@@ -1177,8 +1194,11 @@ mod tests {
                 Ok(())
             });
 
-            assert!(injection_result.is_ok(),
-                   "Unicode injection test should not panic: {}", attack_name);
+            assert!(
+                injection_result.is_ok(),
+                "Unicode injection test should not panic: {}",
+                attack_name
+            );
         }
     }
 
@@ -1192,8 +1212,10 @@ mod tests {
             let oversized_args = vec![
                 "franken-node",
                 "init",
-                "--output-dir", &massive_arg,
-                "--profile", &massive_arg,
+                "--output-dir",
+                &massive_arg,
+                "--profile",
+                &massive_arg,
             ];
 
             let parse_result = Cli::try_parse_from(&oversized_args);
@@ -1204,8 +1226,10 @@ mod tests {
                         Command::Init(init_args) => {
                             if let Some(output_dir) = init_args.output_dir {
                                 // Path should be handled without memory exhaustion
-                                assert!(output_dir.to_string_lossy().len() <= 2_000_000,
-                                       "Output dir should be bounded");
+                                assert!(
+                                    output_dir.to_string_lossy().len() <= 2_000_000,
+                                    "Output dir should be bounded"
+                                );
                             }
                         }
                         _ => {}
@@ -1235,11 +1259,7 @@ mod tests {
 
             // Test deeply nested path structures
             let deep_path = "/".to_string() + &"deep/".repeat(1000) + "script.js";
-            let deep_path_args = vec![
-                "franken-node",
-                "run",
-                &deep_path,
-            ];
+            let deep_path_args = vec!["franken-node", "run", &deep_path];
 
             let deep_path_result = Cli::try_parse_from(&deep_path_args);
             match deep_path_result {
@@ -1247,8 +1267,10 @@ mod tests {
                     match cli.command {
                         Command::Run(run_args) => {
                             // Should handle deep paths without overflow
-                            assert!(run_args.script.to_string_lossy().len() < 100_000,
-                                   "Script path should be reasonably bounded");
+                            assert!(
+                                run_args.script.to_string_lossy().len() < 100_000,
+                                "Script path should be reasonably bounded"
+                            );
                         }
                         _ => {}
                     }
@@ -1261,7 +1283,10 @@ mod tests {
             Ok(())
         });
 
-        assert!(memory_stress_result.is_ok(), "Memory exhaustion stress test should not panic");
+        assert!(
+            memory_stress_result.is_ok(),
+            "Memory exhaustion stress test should not panic"
+        );
     }
 
     /// Test JSON and serialization integrity in CLI structures
@@ -1275,11 +1300,22 @@ mod tests {
                 // Valid cases that should work
                 vec!["franken-node", "init", "--profile", "development"],
                 vec!["franken-node", "run", "script.js", "--env", "NODE_ENV=test"],
-                vec!["franken-node", "verify", "registry", "verify", "test-extension"],
-
+                vec![
+                    "franken-node",
+                    "verify",
+                    "registry",
+                    "verify",
+                    "test-extension",
+                ],
                 // Edge cases with special characters
                 vec!["franken-node", "init", "--profile", "test\"profile"],
-                vec!["franken-node", "run", "script.js", "--env", "KEY={\"nested\": true}"],
+                vec![
+                    "franken-node",
+                    "run",
+                    "script.js",
+                    "--env",
+                    "KEY={\"nested\": true}",
+                ],
                 vec!["franken-node", "init", "--output-dir", "path/with spaces"],
             ];
 
@@ -1289,35 +1325,69 @@ mod tests {
                     Ok(cli) => {
                         // Test debug formatting (similar to serialization)
                         let debug_output = format!("{:?}", cli);
-                        assert!(!debug_output.is_empty(), "Debug output should not be empty: case {}", i);
-                        assert!(debug_output.len() < 1_000_000, "Debug output should be bounded: case {}", i);
+                        assert!(
+                            !debug_output.is_empty(),
+                            "Debug output should not be empty: case {}",
+                            i
+                        );
+                        assert!(
+                            debug_output.len() < 1_000_000,
+                            "Debug output should be bounded: case {}",
+                            i
+                        );
 
                         // Verify structure integrity
                         match &cli.command {
                             Command::Init(init_args) => {
-                                assert!(!init_args.profile.is_empty(), "Profile should not be empty: case {}", i);
+                                assert!(
+                                    !init_args.profile.is_empty(),
+                                    "Profile should not be empty: case {}",
+                                    i
+                                );
                             }
                             Command::Run(run_args) => {
-                                assert!(!run_args.script.to_string_lossy().is_empty(), "Script should not be empty: case {}", i);
+                                assert!(
+                                    !run_args.script.to_string_lossy().is_empty(),
+                                    "Script should not be empty: case {}",
+                                    i
+                                );
                             }
                             Command::Verify(verify_cmd) => {
                                 // Should have valid verify command structure
                                 let verify_debug = format!("{:?}", verify_cmd);
-                                assert!(!verify_debug.is_empty(), "Verify command should have content: case {}", i);
+                                assert!(
+                                    !verify_debug.is_empty(),
+                                    "Verify command should have content: case {}",
+                                    i
+                                );
                             }
                             _ => {}
                         }
 
                         // Test that clap's internal serialization-like behavior is safe
                         let help_output = format!("{}", Cli::command().render_help());
-                        assert!(help_output.contains("franken-node"), "Help should contain program name");
-                        assert!(!help_output.contains("\\u"), "Help should not contain unicode escapes");
+                        assert!(
+                            help_output.contains("franken-node"),
+                            "Help should contain program name"
+                        );
+                        assert!(
+                            !help_output.contains("\\u"),
+                            "Help should not contain unicode escapes"
+                        );
                     }
                     Err(err) => {
                         // Verify error handling is consistent
                         let error_message = format!("{}", err);
-                        assert!(!error_message.is_empty(), "Error message should not be empty: case {}", i);
-                        assert!(error_message.len() < 100_000, "Error message should be bounded: case {}", i);
+                        assert!(
+                            !error_message.is_empty(),
+                            "Error message should not be empty: case {}",
+                            i
+                        );
+                        assert!(
+                            error_message.len() < 100_000,
+                            "Error message should be bounded: case {}",
+                            i
+                        );
                     }
                 }
             }
@@ -1325,7 +1395,10 @@ mod tests {
             Ok(())
         });
 
-        assert!(serialization_test_result.is_ok(), "Serialization integrity test should not panic");
+        assert!(
+            serialization_test_result.is_ok(),
+            "Serialization integrity test should not panic"
+        );
     }
 
     /// Test argument injection and command injection safety in CLI
@@ -1337,22 +1410,18 @@ mod tests {
                 ("command_inject", "script.js; rm -rf /"),
                 ("pipe_inject", "script.js | cat /etc/passwd"),
                 ("background_inject", "script.js & malicious_command"),
-
                 // Path traversal attempts
                 ("path_traversal", "../../../etc/passwd"),
                 ("absolute_path", "/etc/passwd"),
                 ("windows_path", "C:\\Windows\\System32\\calc.exe"),
-
                 // Shell metacharacter injection
                 ("shell_meta", "script.js$(evil_command)"),
                 ("backtick_inject", "script.js`malicious`"),
                 ("dollar_inject", "script.js$EVIL_VAR"),
-
                 // Environment variable injection
                 ("env_inject", "PATH=/evil/path:$PATH"),
                 ("env_override", "LD_PRELOAD=/evil/lib.so"),
                 ("env_export", "export EVIL=true; script.js"),
-
                 // Quote escaping attempts
                 ("quote_escape", "script.js\"'; rm -rf /; echo '"),
                 ("double_quote", "script.js\"; evil_command; echo \""),
@@ -1371,13 +1440,33 @@ mod tests {
                                 let script_path = run_args.script.to_string_lossy();
 
                                 // Verify no command injection in parsed path
-                                assert!(!script_path.contains(';'), "Script path should not contain semicolon: {}", attack_name);
-                                assert!(!script_path.contains('|'), "Script path should not contain pipe: {}", attack_name);
-                                assert!(!script_path.contains('&'), "Script path should not contain ampersand: {}", attack_name);
-                                assert!(!script_path.contains('`'), "Script path should not contain backticks: {}", attack_name);
+                                assert!(
+                                    !script_path.contains(';'),
+                                    "Script path should not contain semicolon: {}",
+                                    attack_name
+                                );
+                                assert!(
+                                    !script_path.contains('|'),
+                                    "Script path should not contain pipe: {}",
+                                    attack_name
+                                );
+                                assert!(
+                                    !script_path.contains('&'),
+                                    "Script path should not contain ampersand: {}",
+                                    attack_name
+                                );
+                                assert!(
+                                    !script_path.contains('`'),
+                                    "Script path should not contain backticks: {}",
+                                    attack_name
+                                );
 
                                 // The path itself may contain these characters but should be treated as literal
-                                assert_eq!(script_path, malicious_input, "Path should be preserved literally: {}", attack_name);
+                                assert_eq!(
+                                    script_path, malicious_input,
+                                    "Path should be preserved literally: {}",
+                                    attack_name
+                                );
                             }
                             _ => {}
                         }
@@ -1388,7 +1477,8 @@ mod tests {
                 }
 
                 // Test environment variable injection
-                let env_inject_args = vec!["franken-node", "run", "script.js", "--env", malicious_input];
+                let env_inject_args =
+                    vec!["franken-node", "run", "script.js", "--env", malicious_input];
                 let env_result = Cli::try_parse_from(&env_inject_args);
 
                 match env_result {
@@ -1397,7 +1487,11 @@ mod tests {
                             Command::Run(run_args) => {
                                 // Verify environment variables are parsed safely
                                 for env_var in &run_args.env {
-                                    assert_eq!(env_var, malicious_input, "Env var should be preserved literally: {}", attack_name);
+                                    assert_eq!(
+                                        env_var, malicious_input,
+                                        "Env var should be preserved literally: {}",
+                                        attack_name
+                                    );
                                 }
                             }
                             _ => {}
@@ -1409,7 +1503,8 @@ mod tests {
                 }
 
                 // Test output directory injection
-                let output_inject_args = vec!["franken-node", "init", "--output-dir", malicious_input];
+                let output_inject_args =
+                    vec!["franken-node", "init", "--output-dir", malicious_input];
                 let output_result = Cli::try_parse_from(&output_inject_args);
 
                 match output_result {
@@ -1420,7 +1515,11 @@ mod tests {
                                     let output_path = output_dir.to_string_lossy();
 
                                     // Verify output directory is treated as literal path
-                                    assert_eq!(output_path, malicious_input, "Output dir should be preserved literally: {}", attack_name);
+                                    assert_eq!(
+                                        output_path, malicious_input,
+                                        "Output dir should be preserved literally: {}",
+                                        attack_name
+                                    );
                                 }
                             }
                             _ => {}
@@ -1435,7 +1534,10 @@ mod tests {
             Ok(())
         });
 
-        assert!(injection_safety_result.is_ok(), "Argument injection safety test should not panic");
+        assert!(
+            injection_safety_result.is_ok(),
+            "Argument injection safety test should not panic"
+        );
     }
 
     /// Test display injection and format string safety in CLI output
@@ -1447,22 +1549,18 @@ mod tests {
                 ("format_inject", "arg%s%x%d"),
                 ("format_overflow", "arg%.999999s"),
                 ("format_position", "arg%1$s%2$x"),
-
                 // ANSI escape sequence injection
                 ("ansi_colors", "arg\x1b[31mRED\x1b[0m"),
                 ("ansi_cursor", "arg\x1b[H\x1b[2J"),
                 ("ansi_title", "arg\x1b]0;EVIL TITLE\x07"),
-
                 // Terminal control injection
                 ("bell_spam", "arg\x07\x07\x07"),
                 ("backspace_attack", "arg\x08\x08\x08hidden"),
                 ("carriage_return", "arg\roverwrite"),
-
                 // Unicode display corruption
                 ("rtl_override", "arg\u{202E}gnitsurt\u{202D}"),
                 ("combining_overflow", "arg\u{0300}\u{0301}\u{0302}\u{0303}"),
                 ("width_confusion", "arg\u{3000}\u{FF01}"),
-
                 // Log injection attempts
                 ("log_inject", "arg\nINJECTED: admin command"),
                 ("log_crlf", "arg\r\n[FAKE] CLI security alert"),
@@ -1477,15 +1575,35 @@ mod tests {
                     Ok(cli) => {
                         // Test debug display formatting safety
                         let debug_display = format!("{:?}", cli);
-                        assert!(!debug_display.contains("%s"), "Debug should not contain format specifiers: {}", attack_name);
-                        assert!(!debug_display.contains("\x1b["), "Debug should escape ANSI sequences: {}", attack_name);
-                        assert!(!debug_display.contains("\r\n[FAKE]"), "Debug should not allow log injection: {}", attack_name);
+                        assert!(
+                            !debug_display.contains("%s"),
+                            "Debug should not contain format specifiers: {}",
+                            attack_name
+                        );
+                        assert!(
+                            !debug_display.contains("\x1b["),
+                            "Debug should escape ANSI sequences: {}",
+                            attack_name
+                        );
+                        assert!(
+                            !debug_display.contains("\r\n[FAKE]"),
+                            "Debug should not allow log injection: {}",
+                            attack_name
+                        );
 
                         match cli.command {
                             Command::Init(init_args) => {
                                 let profile_display = format!("{:?}", init_args.profile);
-                                assert!(!profile_display.contains("%s"), "Profile display should be safe: {}", attack_name);
-                                assert!(!profile_display.contains("\x1b["), "Profile display should escape ANSI: {}", attack_name);
+                                assert!(
+                                    !profile_display.contains("%s"),
+                                    "Profile display should be safe: {}",
+                                    attack_name
+                                );
+                                assert!(
+                                    !profile_display.contains("\x1b["),
+                                    "Profile display should escape ANSI: {}",
+                                    attack_name
+                                );
                             }
                             _ => {}
                         }
@@ -1493,29 +1611,66 @@ mod tests {
                     Err(err) => {
                         // Test error display safety
                         let error_display = format!("{}", err);
-                        assert!(!error_display.contains("%s"), "Error display should not contain format specifiers: {}", attack_name);
-                        assert!(!error_display.contains("\x1b["), "Error display should escape ANSI: {}", attack_name);
+                        assert!(
+                            !error_display.contains("%s"),
+                            "Error display should not contain format specifiers: {}",
+                            attack_name
+                        );
+                        assert!(
+                            !error_display.contains("\x1b["),
+                            "Error display should escape ANSI: {}",
+                            attack_name
+                        );
 
                         let error_debug = format!("{:?}", err);
-                        assert!(!error_debug.contains("\x00"), "Error debug should escape null bytes: {}", attack_name);
+                        assert!(
+                            !error_debug.contains("\x00"),
+                            "Error debug should escape null bytes: {}",
+                            attack_name
+                        );
                     }
                 }
 
                 // Test help output safety
                 let help_output = format!("{}", Cli::command().render_help());
-                assert!(!help_output.contains("%s"), "Help should not contain format specifiers: {}", attack_name);
-                assert!(!help_output.contains("\r\n[FAKE]"), "Help should not allow injection: {}", attack_name);
+                assert!(
+                    !help_output.contains("%s"),
+                    "Help should not contain format specifiers: {}",
+                    attack_name
+                );
+                assert!(
+                    !help_output.contains("\r\n[FAKE]"),
+                    "Help should not allow injection: {}",
+                    attack_name
+                );
 
                 // Test subcommand help safety
-                let init_help = format!("{}", Cli::command().find_subcommand("init").unwrap().render_help());
-                assert!(!init_help.contains("%s"), "Subcommand help should be safe: {}", attack_name);
-                assert!(!init_help.contains("\x1b["), "Subcommand help should escape ANSI: {}", attack_name);
+                let init_help = format!(
+                    "{}",
+                    Cli::command()
+                        .find_subcommand("init")
+                        .unwrap()
+                        .render_help()
+                );
+                assert!(
+                    !init_help.contains("%s"),
+                    "Subcommand help should be safe: {}",
+                    attack_name
+                );
+                assert!(
+                    !init_help.contains("\x1b["),
+                    "Subcommand help should escape ANSI: {}",
+                    attack_name
+                );
             }
 
             Ok(())
         });
 
-        assert!(display_safety_result.is_ok(), "Display injection safety test should not panic");
+        assert!(
+            display_safety_result.is_ok(),
+            "Display injection safety test should not panic"
+        );
     }
 
     /// Test boundary condition stress in CLI argument processing
@@ -1526,7 +1681,10 @@ mod tests {
             let arg_count_boundaries = vec![
                 (vec!["franken-node"], "no_subcommand"),
                 (vec!["franken-node", "init"], "minimal_args"),
-                (vec!["franken-node", "init", "--profile", "test"], "basic_args"),
+                (
+                    vec!["franken-node", "init", "--profile", "test"],
+                    "basic_args",
+                ),
             ];
 
             for (args, test_name) in arg_count_boundaries {
@@ -1535,12 +1693,20 @@ mod tests {
                     Ok(cli) => {
                         // Should handle valid argument counts
                         let debug_output = format!("{:?}", cli);
-                        assert!(!debug_output.is_empty(), "Should produce debug output: {}", test_name);
+                        assert!(
+                            !debug_output.is_empty(),
+                            "Should produce debug output: {}",
+                            test_name
+                        );
                     }
                     Err(err) => {
                         // Should provide meaningful error for invalid args
                         let error_msg = format!("{}", err);
-                        assert!(!error_msg.is_empty(), "Should provide error message: {}", test_name);
+                        assert!(
+                            !error_msg.is_empty(),
+                            "Should provide error message: {}",
+                            test_name
+                        );
                     }
                 }
             }
@@ -1563,15 +1729,17 @@ mod tests {
                 let parse_result = Cli::try_parse_from(&args);
 
                 match parse_result {
-                    Ok(cli) => {
-                        match cli.command {
-                            Command::Run(run_args) => {
-                                let parsed_path = run_args.script.to_string_lossy();
-                                assert_eq!(parsed_path, path_str, "Path should be preserved: {}", test_name);
-                            }
-                            _ => {}
+                    Ok(cli) => match cli.command {
+                        Command::Run(run_args) => {
+                            let parsed_path = run_args.script.to_string_lossy();
+                            assert_eq!(
+                                parsed_path, path_str,
+                                "Path should be preserved: {}",
+                                test_name
+                            );
                         }
-                    }
+                        _ => {}
+                    },
                     Err(_) => {
                         // May reject extreme path lengths - acceptable
                     }
@@ -1592,15 +1760,22 @@ mod tests {
                 let parse_result = Cli::try_parse_from(&args);
 
                 match parse_result {
-                    Ok(cli) => {
-                        match cli.command {
-                            Command::Run(run_args) => {
-                                assert_eq!(run_args.env.len(), 1, "Should have one env var: {}", test_name);
-                                assert_eq!(run_args.env[0], env_var, "Env var should be preserved: {}", test_name);
-                            }
-                            _ => {}
+                    Ok(cli) => match cli.command {
+                        Command::Run(run_args) => {
+                            assert_eq!(
+                                run_args.env.len(),
+                                1,
+                                "Should have one env var: {}",
+                                test_name
+                            );
+                            assert_eq!(
+                                run_args.env[0], env_var,
+                                "Env var should be preserved: {}",
+                                test_name
+                            );
                         }
-                    }
+                        _ => {}
+                    },
                     Err(_) => {
                         // May reject malformed or oversized env vars - acceptable
                     }
@@ -1609,8 +1784,20 @@ mod tests {
 
             // Test subcommand depth boundaries
             let deep_subcommands = vec![
-                vec!["franken-node", "verify", "registry", "verify", "test-extension"],
-                vec!["franken-node", "trust", "extension", "approve", "test-extension"],
+                vec![
+                    "franken-node",
+                    "verify",
+                    "registry",
+                    "verify",
+                    "test-extension",
+                ],
+                vec![
+                    "franken-node",
+                    "trust",
+                    "extension",
+                    "approve",
+                    "test-extension",
+                ],
                 vec!["franken-node", "migrate", "rewrite", "--source", "file.js"],
             ];
 
@@ -1640,14 +1827,15 @@ mod tests {
                 let parse_result = Cli::try_parse_from(&args);
 
                 match parse_result {
-                    Ok(cli) => {
-                        match cli.command {
-                            Command::Init(init_args) => {
-                                assert_eq!(init_args.profile, value, "Profile value should be preserved");
-                            }
-                            _ => {}
+                    Ok(cli) => match cli.command {
+                        Command::Init(init_args) => {
+                            assert_eq!(
+                                init_args.profile, value,
+                                "Profile value should be preserved"
+                            );
                         }
-                    }
+                        _ => {}
+                    },
                     Err(_) => {
                         // May reject extreme option values - acceptable
                     }
@@ -1657,6 +1845,9 @@ mod tests {
             Ok(())
         });
 
-        assert!(boundary_stress_result.is_ok(), "Boundary stress test should not panic");
+        assert!(
+            boundary_stress_result.is_ok(),
+            "Boundary stress test should not panic"
+        );
     }
 }

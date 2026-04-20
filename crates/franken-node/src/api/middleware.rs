@@ -153,9 +153,9 @@ fn contains_authorized_key_constant_time(
     authorized_keys: &std::collections::BTreeSet<String>,
     candidate: &str,
 ) -> bool {
-    authorized_keys
-        .iter()
-        .fold(false, |acc, authorized| acc | constant_time::ct_eq(authorized, candidate))
+    authorized_keys.iter().fold(false, |acc, authorized| {
+        acc | constant_time::ct_eq(authorized, candidate)
+    })
 }
 
 // ── Authentication ─────────────────────────────────────────────────────────
@@ -1871,20 +1871,17 @@ mod api_middleware_advanced_security_edge_tests {
         // Test Unicode normalization attacks that could bypass authentication
         let unicode_attack_vectors = [
             // Lookalike characters (homograph attacks)
-            "tеst-key-123", // 'е' is Cyrillic instead of Latin 'e'
-            "test‑key‑123", // Non-breaking hyphens instead of regular hyphens
-            "test-кey-123", // 'к' is Cyrillic 'k' instead of Latin 'k'
+            "tеst-key-123",    // 'е' is Cyrillic instead of Latin 'e'
+            "test‑key‑123",    // Non-breaking hyphens instead of regular hyphens
+            "test-кey-123",    // 'к' is Cyrillic 'k' instead of Latin 'k'
             "test-key-１２３", // Full-width digits instead of ASCII
-
             // Unicode normalization differences (NFC vs NFD)
             "test-key-123\u{0301}", // Combining acute accent
-            "tést-key-123", // Precomposed é vs decomposed e + ́
-
+            "tést-key-123",         // Precomposed é vs decomposed e + ́
             // Zero-width characters
             "test-key\u{200D}-123", // Zero-width joiner
             "test-key\u{FEFF}-123", // Byte order mark
             "test-key\u{200C}-123", // Zero-width non-joiner
-
             // Direction override attacks
             "test-key-123\u{202E}", // Right-to-left override
             "\u{202D}test-key-123", // Left-to-right override
@@ -1923,14 +1920,14 @@ mod api_middleware_advanced_security_edge_tests {
 
         // Test that authentication is constant-time resistant to timing attacks
         let timing_attack_candidates = [
-            "test-key-122", // One character off at the end
-            "test-key-124", // One character off at the end (other direction)
-            "test-key-12",  // Shorter by one
-            "test-key-1234", // Longer by one
-            "xest-key-123", // First character wrong
-            "test", // Much shorter
-            "test-key-123-extra", // Much longer
-            "", // Empty
+            "test-key-122",             // One character off at the end
+            "test-key-124",             // One character off at the end (other direction)
+            "test-key-12",              // Shorter by one
+            "test-key-1234",            // Longer by one
+            "xest-key-123",             // First character wrong
+            "test",                     // Much shorter
+            "test-key-123-extra",       // Much longer
+            "",                         // Empty
             "completely-different-key", // Totally different
         ];
 
@@ -1943,13 +1940,20 @@ mod api_middleware_advanced_security_edge_tests {
                 &keys,
             );
 
-            assert!(result.is_err(), "Invalid key should be rejected: {}", candidate);
+            assert!(
+                result.is_err(),
+                "Invalid key should be rejected: {}",
+                candidate
+            );
 
             if let Err(ApiError::AuthFailed { detail, .. }) = result {
                 assert_eq!(detail, "invalid API key");
                 // All errors should be identical - no information leakage
             } else {
-                panic!("Wrong error type for timing attack candidate: {}", candidate);
+                panic!(
+                    "Wrong error type for timing attack candidate: {}",
+                    candidate
+                );
             }
         }
 
@@ -1986,13 +1990,13 @@ mod api_middleware_advanced_security_edge_tests {
         // Test various header injection attack vectors
         let header_injection_attacks = [
             "ApiKey test-key-123\r\nX-Forwarded-For: evil.com", // CRLF injection
-            "ApiKey test-key-123\nSet-Cookie: evil=true", // Newline injection
-            "ApiKey test-key-123\0X-Evil: header", // Null byte injection
-            "ApiKey test-key-123\x00X-Malicious: payload", // Null byte (hex)
-            "ApiKey test-key-123\x0d\x0aX-Injected: header", // CRLF (hex)
+            "ApiKey test-key-123\nSet-Cookie: evil=true",       // Newline injection
+            "ApiKey test-key-123\0X-Evil: header",              // Null byte injection
+            "ApiKey test-key-123\x00X-Malicious: payload",      // Null byte (hex)
+            "ApiKey test-key-123\x0d\x0aX-Injected: header",    // CRLF (hex)
             "Bearer mytoken-abc\r\n\r\n<script>alert('xss')</script>", // XSS attempt
-            "Bearer mytoken-abc\x1b[31mANSI escape\x1b[0m", // ANSI escape codes
-            "ApiKey test-key-123\x7fDEL character\x7f", // DEL control character
+            "Bearer mytoken-abc\x1b[31mANSI escape\x1b[0m",     // ANSI escape codes
+            "ApiKey test-key-123\x7fDEL character\x7f",         // DEL control character
         ];
 
         for attack_header in &header_injection_attacks {
@@ -2053,7 +2057,10 @@ mod api_middleware_advanced_security_edge_tests {
                     Err(retry_ms) => {
                         // Rate limited - verify retry time is reasonable
                         assert!(retry_ms >= 1, "Retry time should be at least 1ms");
-                        assert!(retry_ms < 86400000, "Retry time should be less than 24 hours");
+                        assert!(
+                            retry_ms < 86400000,
+                            "Retry time should be less than 24 hours"
+                        );
                     }
                 }
             }
@@ -2067,16 +2074,15 @@ mod api_middleware_advanced_security_edge_tests {
             // Extremely long trace IDs (should be rejected)
             &format!("00-{}-b7ad6b7169203331-01", "a".repeat(10000)),
             &format!("00-{}-b7ad6b7169203331-01", "f".repeat(100000)),
-
             // Extremely long span IDs
-            &format!("00-0af7651916cd43dd8448eb211c80319c-{}-01", "b".repeat(10000)),
-
+            &format!(
+                "00-0af7651916cd43dd8448eb211c80319c-{}-01",
+                "b".repeat(10000)
+            ),
             // Many repeated dashes
             &format!("00{}", "-".repeat(10000)),
-
             // Unicode characters that could expand during processing
             "00-🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥-b7ad6b7169203331-01",
-
             // Malformed headers with extreme lengths
             &"00-".repeat(10000),
             &"invalid-trace-".repeat(1000),
@@ -2180,10 +2186,19 @@ mod api_middleware_advanced_security_edge_tests {
 
         // Execute multiple requests with various attack vectors
         let request_variations = [
-            (Some("ApiKey test-key-123"), Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")),
+            (
+                Some("ApiKey test-key-123"),
+                Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"),
+            ),
             (Some("ApiKey test-key-123"), None), // Missing trace
-            (Some("ApiKey wrong-key"), Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")),
-            (None, Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")), // Missing auth
+            (
+                Some("ApiKey wrong-key"),
+                Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"),
+            ),
+            (
+                None,
+                Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"),
+            ), // Missing auth
             (Some("ApiKey test-key-123"), Some("invalid-trace")),
         ];
 
@@ -2211,11 +2226,20 @@ mod api_middleware_advanced_security_edge_tests {
             // Verify middleware chain maintains invariants
             assert!(!log.trace_id.is_empty(), "Trace ID should never be empty");
             assert!(!log.principal.is_empty(), "Principal should never be empty");
-            assert!(!log.endpoint_group.is_empty(), "Endpoint group should never be empty");
-            assert!(!log.event_code.is_empty(), "Event code should never be empty");
+            assert!(
+                !log.endpoint_group.is_empty(),
+                "Endpoint group should never be empty"
+            );
+            assert!(
+                !log.event_code.is_empty(),
+                "Event code should never be empty"
+            );
 
             // Verify status codes are within valid ranges
-            assert!((200..600).contains(&log.status), "Status code should be valid HTTP status");
+            assert!(
+                (200..600).contains(&log.status),
+                "Status code should be valid HTTP status"
+            );
 
             // Verify latency is non-negative and finite
             assert!(log.latency_ms >= 0.0, "Latency should be non-negative");
@@ -2224,7 +2248,10 @@ mod api_middleware_advanced_security_edge_tests {
             // Verify trace ID format consistency
             if result.is_ok() {
                 // Success should have generated or parsed trace ID
-                assert!(log.trace_id.len() >= 16, "Trace ID should be reasonable length");
+                assert!(
+                    log.trace_id.len() >= 16,
+                    "Trace ID should be reasonable length"
+                );
             }
         }
     }
@@ -2238,14 +2265,12 @@ mod api_middleware_advanced_security_edge_tests {
             // Extreme outliers
             f64::MAX,
             f64::MIN,
-            1e308,   // Near overflow
-            1e-308,  // Near underflow
-
+            1e308,  // Near overflow
+            1e-308, // Near underflow
             // Special float values
             f64::INFINITY,
             f64::NEG_INFINITY,
             f64::NAN,
-
             // Values that could cause precision issues
             0.0000000000001, // Very small positive
             999999999999.99, // Very large
@@ -2264,16 +2289,28 @@ mod api_middleware_advanced_security_edge_tests {
         }
 
         // Verify resistance to poisoning
-        assert!(metrics.samples.len() <= initial_sample_count + 5, "Should not have recorded all poisoning values");
+        assert!(
+            metrics.samples.len() <= initial_sample_count + 5,
+            "Should not have recorded all poisoning values"
+        );
 
         // Verify percentiles remain reasonable
         let p50 = metrics.p50();
         let p95 = metrics.p95();
         let p99 = metrics.p99();
 
-        assert!(p50.is_finite(), "p50 should be finite after poisoning attempt");
-        assert!(p95.is_finite(), "p95 should be finite after poisoning attempt");
-        assert!(p99.is_finite(), "p99 should be finite after poisoning attempt");
+        assert!(
+            p50.is_finite(),
+            "p50 should be finite after poisoning attempt"
+        );
+        assert!(
+            p95.is_finite(),
+            "p95 should be finite after poisoning attempt"
+        );
+        assert!(
+            p99.is_finite(),
+            "p99 should be finite after poisoning attempt"
+        );
 
         assert!(p50 >= 0.0, "p50 should be non-negative");
         assert!(p95 >= p50, "p95 should be >= p50");
@@ -2302,7 +2339,9 @@ mod api_middleware_advanced_security_edge_tests {
 
         // First, set counters to near overflow
         metrics.request_count = u64::MAX - 10;
-        metrics.error_counts.insert(event_codes::ENDPOINT_ERROR.to_string(), u64::MAX - 5);
+        metrics
+            .error_counts
+            .insert(event_codes::ENDPOINT_ERROR.to_string(), u64::MAX - 5);
 
         // Record additional requests
         for _ in 0..20 {
@@ -2310,15 +2349,36 @@ mod api_middleware_advanced_security_edge_tests {
         }
 
         // Verify overflow protection (should saturate, not wrap around)
-        assert!(metrics.request_count >= u64::MAX - 10, "Request count should saturate at max");
-        assert!(metrics.request_count <= u64::MAX, "Request count should not exceed max");
+        assert!(
+            metrics.request_count >= u64::MAX - 10,
+            "Request count should saturate at max"
+        );
+        assert!(
+            metrics.request_count <= u64::MAX,
+            "Request count should not exceed max"
+        );
 
-        let error_count = metrics.error_counts.get(event_codes::ENDPOINT_ERROR).copied().unwrap_or(0);
-        assert!(error_count >= u64::MAX - 5, "Error count should saturate at max");
+        let error_count = metrics
+            .error_counts
+            .get(event_codes::ENDPOINT_ERROR)
+            .copied()
+            .unwrap_or(0);
+        assert!(
+            error_count >= u64::MAX - 5,
+            "Error count should saturate at max"
+        );
         assert!(error_count <= u64::MAX, "Error count should not exceed max");
 
         // Verify metrics remain functional after overflow protection
-        assert!(metrics.latencies.contains_key(EndpointGroup::Operator.as_str()));
-        assert!(!metrics.latencies[EndpointGroup::Operator.as_str()].samples.is_empty());
+        assert!(
+            metrics
+                .latencies
+                .contains_key(EndpointGroup::Operator.as_str())
+        );
+        assert!(
+            !metrics.latencies[EndpointGroup::Operator.as_str()]
+                .samples
+                .is_empty()
+        );
     }
 }
