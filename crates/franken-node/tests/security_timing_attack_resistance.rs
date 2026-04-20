@@ -17,7 +17,7 @@ fn test_ct_eq_timing_independence() {
     let secret = "supersecret_authentication_token_1234567890";
     let correct = "supersecret_authentication_token_1234567890";
     let incorrect_early = "different_authentication_token_1234567890"; // Differs at start
-    let incorrect_late = "supersecret_authentication_token_9876543210";  // Differs at end
+    let incorrect_late = "supersecret_authentication_token_9876543210"; // Differs at end
 
     // Warm up CPU to get consistent timing
     for _ in 0..1000 {
@@ -62,7 +62,7 @@ fn test_ct_eq_bytes_timing_independence() {
     let secret_hash = b"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"; // SHA256 hex
     let correct_hash = b"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     let incorrect_start = b"f3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"; // First byte differs
-    let incorrect_end = b"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b856";   // Last byte differs
+    let incorrect_end = b"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b856"; // Last byte differs
 
     // Warm up
     for _ in 0..1000 {
@@ -149,7 +149,13 @@ fn test_no_early_termination_on_mismatch() {
     let mut variants = Vec::new();
 
     // Create variants with single bit flips at different positions
-    for pos in [0, base.len()/4, base.len()/2, 3*base.len()/4, base.len()-1] {
+    for pos in [
+        0,
+        base.len() / 4,
+        base.len() / 2,
+        3 * base.len() / 4,
+        base.len() - 1,
+    ] {
         let mut bytes = base.as_bytes().to_vec();
         bytes[pos] ^= 1; // Flip one bit
         variants.push(String::from_utf8(bytes).unwrap());
@@ -186,7 +192,13 @@ fn test_consistent_timing_under_load() {
     // Simulate some system load with background computation
     std::thread::spawn(|| {
         for _ in 0..100000 {
-            let _ = format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+            let _ = format!(
+                "{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            );
         }
     });
 

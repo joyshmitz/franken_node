@@ -13,17 +13,15 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, Once};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use frankenengine_node::security::remote_cap::{
     CapabilityGate, CapabilityProvider, RemoteOperation, RemoteScope,
 };
-use frankenengine_node::supply_chain::trust_card::{
-    TrustCardRegistry,
-};
 use frankenengine_node::supply_chain::certification::{
-    CertificationLevel, DerivationMetadata, VerifiedEvidenceRef, EvidenceType,
+    CertificationLevel, DerivationMetadata, EvidenceType, VerifiedEvidenceRef,
 };
+use frankenengine_node::supply_chain::trust_card::TrustCardRegistry;
 
 // ---------------------------------------------------------------------------
 // Test Infrastructure
@@ -43,7 +41,9 @@ struct TestLogger {
 impl TestLogger {
     fn new(test_name: String) -> Self {
         LOGGER_INIT.call_once(|| {
-            eprintln!("{{\"event\":\"test_suite_start\",\"suite\":\"security_real_db_enforcement\"}}");
+            eprintln!(
+                "{{\"event\":\"test_suite_start\",\"suite\":\"security_real_db_enforcement\"}}"
+            );
         });
 
         let mut count = TEST_COUNT.lock().unwrap();
@@ -55,8 +55,10 @@ impl TestLogger {
             .unwrap()
             .as_secs();
 
-        eprintln!("{{\"event\":\"test_start\",\"test_id\":{},\"test_name\":\"{}\",\"start_time\":{}}}",
-            test_id, test_name, start_time);
+        eprintln!(
+            "{{\"event\":\"test_start\",\"test_id\":{},\"test_name\":\"{}\",\"start_time\":{}}}",
+            test_id, test_name, start_time
+        );
 
         Self {
             test_name,
@@ -72,14 +74,18 @@ impl TestLogger {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        eprintln!("{{\"event\":\"phase_start\",\"test_id\":{},\"phase\":\"{}\",\"ts\":{}}}",
-            self.test_id, phase, ts);
+        eprintln!(
+            "{{\"event\":\"phase_start\",\"test_id\":{},\"phase\":\"{}\",\"ts\":{}}}",
+            self.test_id, phase, ts
+        );
     }
 
     fn assert_match(&self, field: &str, expected: &Value, actual: &Value) -> bool {
         let matches = expected == actual;
-        eprintln!("{{\"event\":\"assertion\",\"test_id\":{},\"phase\":\"{}\",\"field\":\"{}\",\"expected\":{},\"actual\":{},\"match\":{}}}",
-            self.test_id, self.phase, field, expected, actual, matches);
+        eprintln!(
+            "{{\"event\":\"assertion\",\"test_id\":{},\"phase\":\"{}\",\"field\":\"{}\",\"expected\":{},\"actual\":{},\"match\":{}}}",
+            self.test_id, self.phase, field, expected, actual, matches
+        );
         matches
     }
 
@@ -89,8 +95,10 @@ impl TestLogger {
             .unwrap()
             .as_secs();
         let duration = end_time - self.start_time;
-        eprintln!("{{\"event\":\"test_end\",\"test_id\":{},\"test_name\":\"{}\",\"result\":\"{}\",\"duration_secs\":{}}}",
-            self.test_id, self.test_name, result, duration);
+        eprintln!(
+            "{{\"event\":\"test_end\",\"test_id\":{},\"test_name\":\"{}\",\"result\":\"{}\",\"duration_secs\":{}}}",
+            self.test_id, self.test_name, result, duration
+        );
     }
 }
 
@@ -184,10 +192,7 @@ impl RemoteCapFactory {
         operation: RemoteOperation,
         endpoint_prefix: &str,
     ) -> Result<frankenengine_node::security::remote_cap::RemoteCap, String> {
-        let scope = RemoteScope::new(
-            vec![operation],
-            vec![endpoint_prefix.to_string()],
-        );
+        let scope = RemoteScope::new(vec![operation], vec![endpoint_prefix.to_string()]);
 
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -288,11 +293,15 @@ fn test_remote_cap_enforcement_no_mocks() {
     );
 
     logger.phase("assert");
-    assert!(result.is_ok(), "Valid capability should authorize operation: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "Valid capability should authorize operation: {:?}",
+        result
+    );
     logger.assert_match(
         "authorization_success",
         &json!(true),
-        &json!(result.is_ok())
+        &json!(result.is_ok()),
     );
 
     // Test 2: Operation not in scope should fail
@@ -301,7 +310,8 @@ fn test_remote_cap_enforcement_no_mocks() {
         &harness.provider,
         RemoteOperation::RevocationFetch,
         "revocation://",
-    ).expect("Failed to create restricted capability");
+    )
+    .expect("Failed to create restricted capability");
 
     let result = harness.gate.authorize_network(
         Some(&restricted_cap),
@@ -318,7 +328,7 @@ fn test_remote_cap_enforcement_no_mocks() {
     logger.assert_match(
         "scope_violation_detected",
         &json!("REMOTECAP_OPERATION_DENIED"),
-        &json!(err.code())
+        &json!(err.code()),
     );
 
     // Test 3: Endpoint not in scope should fail
@@ -338,7 +348,7 @@ fn test_remote_cap_enforcement_no_mocks() {
     logger.assert_match(
         "endpoint_violation_detected",
         &json!("REMOTECAP_ENDPOINT_DENIED"),
-        &json!(err.code())
+        &json!(err.code()),
     );
 
     logger.test_end("pass");
@@ -369,38 +379,37 @@ fn test_trust_card_registry_validation_no_mocks() {
     let initial_snapshot = harness.trust_registry.snapshot();
 
     logger.phase("assert");
-    assert!(initial_snapshot.cards_by_extension.is_empty(), "Initial registry should be empty");
+    assert!(
+        initial_snapshot.cards_by_extension.is_empty(),
+        "Initial registry should be empty"
+    );
     logger.assert_match(
         "initial_registry_empty",
         &json!(true),
-        &json!(initial_snapshot.cards_by_extension.is_empty())
+        &json!(initial_snapshot.cards_by_extension.is_empty()),
     );
 
     // Test 2: Evidence validation should work correctly
     logger.phase("act");
-    let evidence_valid = !evidence_refs.is_empty() &&
-        evidence_refs.iter().all(|e| !e.evidence_id.is_empty());
+    let evidence_valid =
+        !evidence_refs.is_empty() && evidence_refs.iter().all(|e| !e.evidence_id.is_empty());
 
     logger.phase("assert");
     assert!(evidence_valid, "Evidence should be valid");
-    logger.assert_match(
-        "evidence_validation",
-        &json!(true),
-        &json!(evidence_valid)
-    );
+    logger.assert_match("evidence_validation", &json!(true), &json!(evidence_valid));
 
     // Test 3: Derivation metadata should be well-formed
     logger.phase("act");
-    let derivation_valid = derivation.derived_at_epoch > 0 &&
-        !derivation.derivation_chain_hash.is_empty() &&
-        derivation.evidence_refs.len() == evidence_refs.len();
+    let derivation_valid = derivation.derived_at_epoch > 0
+        && !derivation.derivation_chain_hash.is_empty()
+        && derivation.evidence_refs.len() == evidence_refs.len();
 
     logger.phase("assert");
     assert!(derivation_valid, "Derivation metadata should be valid");
     logger.assert_match(
         "derivation_validation",
         &json!(true),
-        &json!(derivation_valid)
+        &json!(derivation_valid),
     );
 
     logger.test_end("pass");
@@ -430,17 +439,22 @@ fn test_remote_cap_expiry_enforcement_no_mocks() {
     let past_time = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        .as_secs() - 10; // 10 seconds ago
+        .as_secs()
+        - 10; // 10 seconds ago
 
-    let expired_cap = harness.provider.issue(
-        "test-expired-controller",
-        scope,
-        past_time,
-        5, // 5 second TTL - already expired
-        true,
-        false,
-        "test-expired-trace",
-    ).expect("Failed to create expired capability").0;
+    let expired_cap = harness
+        .provider
+        .issue(
+            "test-expired-controller",
+            scope,
+            past_time,
+            5, // 5 second TTL - already expired
+            true,
+            false,
+            "test-expired-trace",
+        )
+        .expect("Failed to create expired capability")
+        .0;
 
     logger.phase("act");
 
@@ -465,7 +479,7 @@ fn test_remote_cap_expiry_enforcement_no_mocks() {
     logger.assert_match(
         "expiry_enforcement",
         &json!("REMOTECAP_EXPIRED"),
-        &json!(err.code())
+        &json!(err.code()),
     );
 
     logger.test_end("pass");
@@ -507,11 +521,14 @@ fn test_single_use_capability_consumption_no_mocks() {
     );
 
     logger.phase("assert");
-    assert!(first_result.is_ok(), "First use of single-use capability should succeed");
+    assert!(
+        first_result.is_ok(),
+        "First use of single-use capability should succeed"
+    );
     logger.assert_match(
         "first_use_success",
         &json!(true),
-        &json!(first_result.is_ok())
+        &json!(first_result.is_ok()),
     );
 
     logger.phase("act");
@@ -526,13 +543,16 @@ fn test_single_use_capability_consumption_no_mocks() {
     );
 
     logger.phase("assert");
-    assert!(second_result.is_err(), "Second use of single-use capability should fail");
+    assert!(
+        second_result.is_err(),
+        "Second use of single-use capability should fail"
+    );
     let err = second_result.unwrap_err();
     assert_eq!(err.code(), "REMOTECAP_ALREADY_CONSUMED");
     logger.assert_match(
         "single_use_enforcement",
         &json!("REMOTECAP_ALREADY_CONSUMED"),
-        &json!(err.code())
+        &json!(err.code()),
     );
 
     logger.test_end("pass");
@@ -555,7 +575,10 @@ fn test_production_safety_guard() {
     let harness_result = RealEnforcementHarness::new();
 
     logger.phase("assert");
-    assert!(harness_result.is_err(), "Should reject production environment");
+    assert!(
+        harness_result.is_err(),
+        "Should reject production environment"
+    );
 
     if let Err(e) = harness_result {
         let error_msg = format!("{}", e);
@@ -563,7 +586,7 @@ fn test_production_safety_guard() {
         logger.assert_match(
             "production_guard_triggered",
             &json!(true),
-            &json!(is_production_error)
+            &json!(is_production_error),
         );
     }
 
@@ -596,9 +619,18 @@ fn test_no_token_enforcement() {
     let operations_and_endpoints = [
         (RemoteOperation::NetworkEgress, "https://egress.example.com"),
         (RemoteOperation::FederationSync, "federation://cluster-a"),
-        (RemoteOperation::RevocationFetch, "revocation://global-feed/latest"),
-        (RemoteOperation::RemoteAttestationVerify, "https://attestation.example.com/verify"),
-        (RemoteOperation::TelemetryExport, "https://telemetry.example.com/push"),
+        (
+            RemoteOperation::RevocationFetch,
+            "revocation://global-feed/latest",
+        ),
+        (
+            RemoteOperation::RemoteAttestationVerify,
+            "https://attestation.example.com/verify",
+        ),
+        (
+            RemoteOperation::TelemetryExport,
+            "https://telemetry.example.com/push",
+        ),
     ];
 
     logger.phase("assert");
@@ -612,13 +644,17 @@ fn test_no_token_enforcement() {
             "test-no-token",
         );
 
-        assert!(result.is_err(), "Operation {:?} should fail without token", operation);
+        assert!(
+            result.is_err(),
+            "Operation {:?} should fail without token",
+            operation
+        );
         let err = result.unwrap_err();
         assert_eq!(err.code(), "REMOTECAP_MISSING");
         logger.assert_match(
             &format!("{:?}_requires_token", operation),
             &json!("REMOTECAP_MISSING"),
-            &json!(err.code())
+            &json!(err.code()),
         );
     }
 

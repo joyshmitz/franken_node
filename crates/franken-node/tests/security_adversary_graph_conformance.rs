@@ -9,8 +9,8 @@
 //! - Timing attack resistance via constant-time operations
 
 use frankenengine_node::security::adversary_graph::{
-    AdversaryGraph, AdversaryObservation, AdversaryGraphError,
-    ADVERSARY_GRAPH_SCHEMA_VERSION, EVD_ADV_GRAPH_001, EVD_ADV_GRAPH_002
+    ADVERSARY_GRAPH_SCHEMA_VERSION, AdversaryGraph, AdversaryGraphError, AdversaryObservation,
+    EVD_ADV_GRAPH_001, EVD_ADV_GRAPH_002,
 };
 use std::collections::BTreeMap;
 
@@ -195,7 +195,13 @@ fn test_bayesian_update_decreases_risk_with_low_likelihood() {
 
     // Then add low-likelihood observations that should reduce risk
     for i in 0..5 {
-        let low_risk = make_observation("ext:test", 0.05, 3, &format!("clean-{i}"), &format!("trace-{i}"));
+        let low_risk = make_observation(
+            "ext:test",
+            0.05,
+            3,
+            &format!("clean-{i}"),
+            &format!("trace-{i}"),
+        );
         let _ = graph.ingest(&low_risk);
     }
 
@@ -215,11 +221,15 @@ fn test_evidence_weight_affects_update_magnitude() {
     graph1.ingest(&light_evidence).expect("ingest");
     graph2.ingest(&heavy_evidence).expect("ingest");
 
-    let risk1 = graph1.posteriors().into_iter()
+    let risk1 = graph1
+        .posteriors()
+        .into_iter()
         .find(|p| p.principal_id == "ext:test")
         .map(|p| p.posterior)
         .unwrap_or(0.0);
-    let risk2 = graph2.posteriors().into_iter()
+    let risk2 = graph2
+        .posteriors()
+        .into_iter()
         .find(|p| p.principal_id == "ext:test")
         .map(|p| p.posterior)
         .unwrap_or(0.0);
@@ -230,18 +240,28 @@ fn test_evidence_weight_affects_update_magnitude() {
 #[test]
 fn test_multiple_observations_accumulate_evidence() {
     let mut graph = AdversaryGraph::new();
-    let initial_risk = graph.posteriors().into_iter()
+    let initial_risk = graph
+        .posteriors()
+        .into_iter()
         .find(|p| p.principal_id == "ext:accumulator")
         .map(|p| p.posterior)
         .unwrap_or(0.1); // Default prior risk
 
     // Add multiple moderate-risk observations
     for i in 0..10 {
-        let obs = make_observation("ext:accumulator", 0.7, 3, &format!("evidence-{i}"), &format!("trace-{i}"));
+        let obs = make_observation(
+            "ext:accumulator",
+            0.7,
+            3,
+            &format!("evidence-{i}"),
+            &format!("trace-{i}"),
+        );
         graph.ingest(&obs).expect("ingest");
     }
 
-    let final_risk = graph.posteriors().into_iter()
+    let final_risk = graph
+        .posteriors()
+        .into_iter()
         .find(|p| p.principal_id == "ext:accumulator")
         .map(|p| p.posterior)
         .unwrap_or(0.0);
@@ -329,7 +349,10 @@ fn test_performance_many_principals() {
     let duration = start.elapsed();
 
     // Should complete in reasonable time (< 1 second for 1000 principals)
-    assert!(duration.as_millis() < 1000, "Replay took too long: {duration:?}");
+    assert!(
+        duration.as_millis() < 1000,
+        "Replay took too long: {duration:?}"
+    );
 
     // Verify all principals are tracked
     for i in 0..1000 {
@@ -359,7 +382,10 @@ fn test_performance_many_observations_single_principal() {
     let duration = start.elapsed();
 
     // Should complete in reasonable time
-    assert!(duration.as_millis() < 500, "Heavy replay took too long: {duration:?}");
+    assert!(
+        duration.as_millis() < 500,
+        "Heavy replay took too long: {duration:?}"
+    );
 
     let final_risk = graph.get_risk_posterior("ext:heavy-target");
     assert!(final_risk > 0.0 && final_risk <= 1.0);
@@ -384,13 +410,7 @@ fn test_empty_string_fields_handled() {
 
 #[test]
 fn test_unicode_fields_handled() {
-    let obs = make_observation(
-        "ext:测试-🦀",
-        0.6,
-        7,
-        "evidence-αβγ",
-        "trace-日本語",
-    );
+    let obs = make_observation("ext:测试-🦀", 0.6, 7, "evidence-αβγ", "trace-日本語");
 
     let graph = AdversaryGraph::replay_from(&[obs]).expect("unicode strings");
     let risk = graph.get_risk_posterior("ext:测试-🦀");

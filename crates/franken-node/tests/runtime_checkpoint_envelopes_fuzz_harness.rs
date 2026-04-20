@@ -10,11 +10,10 @@
 //! checkpoint state generation and invariant enforcement.
 
 use frankenengine_node::runtime::checkpoint::{
-    CheckpointRecord, CheckpointMeta, CheckpointEvent, CheckpointError,
-    CheckpointWriter, CheckpointBackend, InMemoryCheckpointBackend,
-    RestoredCheckpoint, CheckpointReadResult, CheckpointId,
-    CHECKPOINT_SAVE, CHECKPOINT_RESTORE, CHECKPOINT_MISSING,
-    FN_CK_001_CHECKPOINT_SAVE, FN_CK_002_CHECKPOINT_RESTORE,
+    CHECKPOINT_MISSING, CHECKPOINT_RESTORE, CHECKPOINT_SAVE, CheckpointBackend, CheckpointError,
+    CheckpointEvent, CheckpointId, CheckpointMeta, CheckpointReadResult, CheckpointRecord,
+    CheckpointWriter, FN_CK_001_CHECKPOINT_SAVE, FN_CK_002_CHECKPOINT_RESTORE,
+    InMemoryCheckpointBackend, RestoredCheckpoint,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -86,16 +85,16 @@ impl FuzzState {
 /// Generate seed orchestration IDs for boundary testing
 fn seed_orchestration_ids() -> Vec<String> {
     vec![
-        "".to_string(),                                    // Empty (potentially invalid)
-        "a".to_string(),                                   // Minimal
-        "orchestration-001".to_string(),                   // Standard format
-        "test-orch".to_string(),                           // Simple name
-        " orch-001 ".to_string(),                          // Whitespace padded
-        "\0orch".to_string(),                              // Null byte
-        "orch-with-special-chars!@#$%^".to_string(),       // Special characters
-        "orch_unicode_名前".to_string(),                    // Unicode
-        "x".repeat(MAX_ORCHESTRATION_ID_LEN),              // Maximum length
-        "x".repeat(MAX_ORCHESTRATION_ID_LEN + 1),          // Over limit
+        "".to_string(),                              // Empty (potentially invalid)
+        "a".to_string(),                             // Minimal
+        "orchestration-001".to_string(),             // Standard format
+        "test-orch".to_string(),                     // Simple name
+        " orch-001 ".to_string(),                    // Whitespace padded
+        "\0orch".to_string(),                        // Null byte
+        "orch-with-special-chars!@#$%^".to_string(), // Special characters
+        "orch_unicode_名前".to_string(),             // Unicode
+        "x".repeat(MAX_ORCHESTRATION_ID_LEN),        // Maximum length
+        "x".repeat(MAX_ORCHESTRATION_ID_LEN + 1),    // Over limit
     ]
 }
 
@@ -115,38 +114,38 @@ fn seed_checkpoint_ids() -> Vec<CheckpointId> {
 /// Generate seed iteration counts for progress testing
 fn seed_iteration_counts() -> Vec<u64> {
     vec![
-        0,                         // Initial
-        1,                         // First iteration
-        100,                       // Typical
-        1000,                      // Large
-        MAX_ITERATION_COUNT / 2,   // Mid-range
-        MAX_ITERATION_COUNT - 1,   // Near maximum
-        u64::MAX,                  // Maximum value (edge case)
+        0,                       // Initial
+        1,                       // First iteration
+        100,                     // Typical
+        1000,                    // Large
+        MAX_ITERATION_COUNT / 2, // Mid-range
+        MAX_ITERATION_COUNT - 1, // Near maximum
+        u64::MAX,                // Maximum value (edge case)
     ]
 }
 
 /// Generate seed epochs for checkpoint testing
 fn seed_epochs() -> Vec<u64> {
     vec![
-        0,                    // Genesis epoch
-        1,                    // First epoch
-        100,                  // Typical
-        MAX_EPOCH / 2,        // Mid-range
-        MAX_EPOCH - 1,        // Near maximum
-        u64::MAX,             // Maximum value
+        0,             // Genesis epoch
+        1,             // First epoch
+        100,           // Typical
+        MAX_EPOCH / 2, // Mid-range
+        MAX_EPOCH - 1, // Near maximum
+        u64::MAX,      // Maximum value
     ]
 }
 
 /// Generate seed wall clock times
 fn seed_wall_clock_times() -> Vec<u64> {
     vec![
-        0,                        // Unix epoch start
-        1000000000,               // Year 2001
-        1640995200,               // Year 2022
-        1704067200,               // Year 2024
-        MAX_WALL_CLOCK_TIME / 2,  // Mid-range
-        MAX_WALL_CLOCK_TIME - 1,  // Near future
-        u64::MAX,                 // Far future
+        0,                       // Unix epoch start
+        1000000000,              // Year 2001
+        1640995200,              // Year 2022
+        1704067200,              // Year 2024
+        MAX_WALL_CLOCK_TIME / 2, // Mid-range
+        MAX_WALL_CLOCK_TIME - 1, // Near future
+        u64::MAX,                // Far future
     ]
 }
 
@@ -155,10 +154,8 @@ fn seed_progress_states() -> Vec<FuzzState> {
     vec![
         // Minimal state
         FuzzState::new(0),
-
         // Simple state with values
         FuzzState::new(1).with_values(vec!["value1".to_string(), "value2".to_string()]),
-
         // State with metadata
         FuzzState::new(2).with_metadata({
             let mut metadata = BTreeMap::new();
@@ -166,7 +163,6 @@ fn seed_progress_states() -> Vec<FuzzState> {
             metadata.insert("key2".to_string(), "value2".to_string());
             metadata
         }),
-
         // State with flags
         FuzzState::new(3).with_flags({
             let mut flags = BTreeMap::new();
@@ -174,7 +170,6 @@ fn seed_progress_states() -> Vec<FuzzState> {
             flags.insert("debug".to_string(), false);
             flags
         }),
-
         // Complex state combining all elements
         FuzzState::new(100)
             .with_values(vec![
@@ -193,12 +188,9 @@ fn seed_progress_states() -> Vec<FuzzState> {
                 flags.insert("complex_flag".to_string(), true);
                 flags
             }),
-
         // Boundary case: large values
-        FuzzState::new(u64::MAX).with_values(
-            (0..10).map(|i| format!("large_value_{}", i)).collect()
-        ),
-
+        FuzzState::new(u64::MAX)
+            .with_values((0..10).map(|i| format!("large_value_{}", i)).collect()),
         // Empty collections
         FuzzState::new(999)
             .with_values(vec![])
@@ -216,7 +208,10 @@ fn seed_checkpoint_vectors() -> Vec<(CheckpointId, String, u64, u64, u64, FuzzSt
     let iterations = vec![0, 1, 100];
     let epochs = vec![0, 1, 10];
     let times = vec![1000000000, 1640995200];
-    let states = seed_progress_states().into_iter().take(3).collect::<Vec<_>>();
+    let states = seed_progress_states()
+        .into_iter()
+        .take(3)
+        .collect::<Vec<_>>();
 
     for checkpoint_id in checkpoint_ids.iter().take(3) {
         for orch_id in &orchestration_ids {
@@ -230,7 +225,7 @@ fn seed_checkpoint_vectors() -> Vec<(CheckpointId, String, u64, u64, u64, FuzzSt
                                 iteration,
                                 epoch,
                                 time,
-                                state.clone()
+                                state.clone(),
                             ));
                         }
                     }
@@ -283,7 +278,9 @@ fn validate_checkpoint_record_round_trip(
         .map_err(|e| HarnessCheckpointError::Serialization(e.to_string()))?;
 
     if record != deserialized {
-        return Err(HarnessCheckpointError::Serialization("round-trip inequality".to_string()));
+        return Err(HarnessCheckpointError::Serialization(
+            "round-trip inequality".to_string(),
+        ));
     }
 
     // Validate state can be recovered
@@ -291,7 +288,9 @@ fn validate_checkpoint_record_round_trip(
         .map_err(|e| HarnessCheckpointError::Serialization(e.to_string()))?;
 
     if state != recovered_state {
-        return Err(HarnessCheckpointError::Serialization("state recovery failed".to_string()));
+        return Err(HarnessCheckpointError::Serialization(
+            "state recovery failed".to_string(),
+        ));
     }
 
     Ok(())
@@ -305,7 +304,9 @@ fn validate_checkpoint_writer_operations(
     let mut writer = CheckpointWriter::new(backend);
     let mut events = Vec::new();
 
-    for (checkpoint_id, orchestration_id, iteration_count, epoch, wall_clock_time, state) in vectors.iter().take(5) {
+    for (checkpoint_id, orchestration_id, iteration_count, epoch, wall_clock_time, state) in
+        vectors.iter().take(5)
+    {
         // Skip invalid orchestration IDs
         if orchestration_id.trim().is_empty() || orchestration_id.contains('\0') {
             continue;
@@ -324,11 +325,11 @@ fn validate_checkpoint_writer_operations(
         match result {
             Ok(save_events) => {
                 events.extend(save_events);
-            },
+            }
             Err(CheckpointError::ProgressRegression { .. }) => {
                 // Expected for non-monotonic iteration counts
                 continue;
-            },
+            }
             Err(other) => {
                 return Err(other.into());
             }
@@ -347,7 +348,7 @@ fn fuzz_checkpoint_record_serialization_deterministic() {
             iteration,
             epoch,
             time,
-            state.clone()
+            state.clone(),
         );
 
         // Test should be deterministic
@@ -357,7 +358,7 @@ fn fuzz_checkpoint_record_serialization_deterministic() {
             iteration,
             epoch,
             time,
-            state
+            state,
         );
 
         assert_eq!(
@@ -388,13 +389,17 @@ fn fuzz_checkpoint_meta_boundary_conditions() {
             };
 
             // Should serialize/deserialize successfully
-            let serialized = serde_json::to_string(&meta)
-                .expect("checkpoint meta should serialize");
+            let serialized =
+                serde_json::to_string(&meta).expect("checkpoint meta should serialize");
 
-            let deserialized: CheckpointMeta = serde_json::from_str(&serialized)
-                .expect("checkpoint meta should deserialize");
+            let deserialized: CheckpointMeta =
+                serde_json::from_str(&serialized).expect("checkpoint meta should deserialize");
 
-            assert_eq!(meta, deserialized, "CheckpointMeta round-trip failed for orch_id: {}", orch_id);
+            assert_eq!(
+                meta, deserialized,
+                "CheckpointMeta round-trip failed for orch_id: {}",
+                orch_id
+            );
         }
     }
 }
@@ -430,18 +435,23 @@ fn fuzz_checkpoint_event_audit_trail_consistency() {
 
     for event in test_events {
         // Events should serialize deterministically
-        let serialized1 = serde_json::to_string(&event)
-            .expect("event should serialize");
-        let serialized2 = serde_json::to_string(&event)
-            .expect("event should serialize consistently");
+        let serialized1 = serde_json::to_string(&event).expect("event should serialize");
+        let serialized2 =
+            serde_json::to_string(&event).expect("event should serialize consistently");
 
-        assert_eq!(serialized1, serialized2, "Event serialization should be deterministic");
+        assert_eq!(
+            serialized1, serialized2,
+            "Event serialization should be deterministic"
+        );
 
         // Round-trip should preserve all fields
-        let deserialized: CheckpointEvent = serde_json::from_str(&serialized1)
-            .expect("event should deserialize");
+        let deserialized: CheckpointEvent =
+            serde_json::from_str(&serialized1).expect("event should deserialize");
 
-        assert_eq!(event, deserialized, "Event round-trip should preserve all fields");
+        assert_eq!(
+            event, deserialized,
+            "Event round-trip should preserve all fields"
+        );
     }
 }
 
@@ -453,15 +463,17 @@ fn fuzz_checkpoint_writer_progress_regression_detection() {
 
     // Establish initial checkpoint
     let checkpoint_id = CheckpointId::from_deterministic("regression-test");
-    writer.save(
-        checkpoint_id.clone(),
-        "regression-orch",
-        100,  // iteration_count
-        10,   // epoch
-        1000000000,
-        &state,
-        "trace-initial"
-    ).expect("initial checkpoint should save");
+    writer
+        .save(
+            checkpoint_id.clone(),
+            "regression-orch",
+            100, // iteration_count
+            10,  // epoch
+            1000000000,
+            &state,
+            "trace-initial",
+        )
+        .expect("initial checkpoint should save");
 
     // Test regression detection scenarios
     let regression_cases = vec![
@@ -481,13 +493,23 @@ fn fuzz_checkpoint_writer_progress_regression_detection() {
             epoch,
             1000000000 + iteration,
             &state,
-            &format!("trace-{}-{}", iteration, epoch)
+            &format!("trace-{}-{}", iteration, epoch),
         );
 
         if should_fail {
-            assert!(result.is_err(), "Regression should be detected for iteration: {}, epoch: {}", iteration, epoch);
+            assert!(
+                result.is_err(),
+                "Regression should be detected for iteration: {}, epoch: {}",
+                iteration,
+                epoch
+            );
         } else {
-            assert!(result.is_ok(), "Valid progress should succeed for iteration: {}, epoch: {}", iteration, epoch);
+            assert!(
+                result.is_ok(),
+                "Valid progress should succeed for iteration: {}, epoch: {}",
+                iteration,
+                epoch
+            );
         }
     }
 }
@@ -496,13 +518,15 @@ fn fuzz_checkpoint_writer_progress_regression_detection() {
 fn fuzz_checkpoint_state_recovery_consistency() {
     for state in seed_progress_states() {
         // Test state serialization/deserialization directly
-        let state_json = serde_json::to_string(&state)
-            .expect("state should serialize");
+        let state_json = serde_json::to_string(&state).expect("state should serialize");
 
-        let recovered_state: FuzzState = serde_json::from_str(&state_json)
-            .expect("state should deserialize");
+        let recovered_state: FuzzState =
+            serde_json::from_str(&state_json).expect("state should deserialize");
 
-        assert_eq!(state, recovered_state, "State recovery should be consistent");
+        assert_eq!(
+            state, recovered_state,
+            "State recovery should be consistent"
+        );
 
         // Test through checkpoint record
         let record = CheckpointRecord {
@@ -516,22 +540,27 @@ fn fuzz_checkpoint_state_recovery_consistency() {
             previous_checkpoint_hash: None,
         };
 
-        let record_json = serde_json::to_string(&record)
-            .expect("record should serialize");
+        let record_json = serde_json::to_string(&record).expect("record should serialize");
 
-        let recovered_record: CheckpointRecord = serde_json::from_str(&record_json)
-            .expect("record should deserialize");
+        let recovered_record: CheckpointRecord =
+            serde_json::from_str(&record_json).expect("record should deserialize");
 
         let final_state: FuzzState = serde_json::from_str(&recovered_record.progress_state_json)
             .expect("final state should deserialize");
 
-        assert_eq!(state, final_state, "State should survive full checkpoint round-trip");
+        assert_eq!(
+            state, final_state,
+            "State should survive full checkpoint round-trip"
+        );
     }
 }
 
 #[test]
 fn fuzz_checkpoint_backend_operations() {
-    let vectors = seed_checkpoint_vectors().into_iter().take(10).collect::<Vec<_>>();
+    let vectors = seed_checkpoint_vectors()
+        .into_iter()
+        .take(10)
+        .collect::<Vec<_>>();
 
     // Test with in-memory backend
     let result = validate_checkpoint_writer_operations(&vectors);
@@ -539,22 +568,28 @@ fn fuzz_checkpoint_backend_operations() {
     match result {
         Ok(events) => {
             // Should have generated some events
-            assert!(!events.is_empty(), "Checkpoint operations should generate events");
+            assert!(
+                !events.is_empty(),
+                "Checkpoint operations should generate events"
+            );
 
             // Events should have required fields
             for event in events {
                 assert!(!event.event_code.is_empty(), "Event should have event_code");
                 assert!(!event.event_name.is_empty(), "Event should have event_name");
-                assert!(!event.orchestration_id.is_empty(), "Event should have orchestration_id");
+                assert!(
+                    !event.orchestration_id.is_empty(),
+                    "Event should have orchestration_id"
+                );
                 assert!(!event.trace_id.is_empty(), "Event should have trace_id");
             }
-        },
+        }
         Err(e) => {
             // Some errors are acceptable for invalid inputs
             match e {
                 HarnessCheckpointError::InvalidState => {
                     // Expected for invalid inputs
-                },
+                }
                 _ => panic!("Unexpected checkpoint backend error: {:?}", e),
             }
         }
@@ -569,13 +604,20 @@ fn fuzz_checkpoint_id_determinism() {
         let id1 = CheckpointId::from_deterministic(&input);
         let id2 = CheckpointId::from_deterministic(&input);
 
-        assert_eq!(id1, id2, "CheckpointId should be deterministic for input: {}", input);
+        assert_eq!(
+            id1, id2,
+            "CheckpointId should be deterministic for input: {}",
+            input
+        );
 
         // Should serialize consistently
         let serialized1 = serde_json::to_string(&id1).expect("id should serialize");
         let serialized2 = serde_json::to_string(&id2).expect("id should serialize");
 
-        assert_eq!(serialized1, serialized2, "CheckpointId serialization should be deterministic");
+        assert_eq!(
+            serialized1, serialized2,
+            "CheckpointId serialization should be deterministic"
+        );
     }
 }
 
@@ -597,23 +639,31 @@ fn fuzz_checkpoint_hash_chain_validation() {
             1,
             1000000000 + i,
             &state,
-            &format!("trace-chain-{}", i)
+            &format!("trace-chain-{}", i),
         );
 
         assert!(result.is_ok(), "Checkpoint chain step {} should succeed", i);
     }
 
     // Verify we can read the result
-    let read_result = writer.read(orch_id, "trace-read").expect("should read checkpoint chain");
+    let read_result = writer
+        .read(orch_id, "trace-read")
+        .expect("should read checkpoint chain");
 
     match read_result.latest {
         Some(latest) => {
-            assert_eq!(latest.iteration_count, 5, "Latest checkpoint should be iteration 5");
+            assert_eq!(
+                latest.iteration_count, 5,
+                "Latest checkpoint should be iteration 5"
+            );
             assert_eq!(latest.orchestration_id, orch_id);
-        },
+        }
         None => panic!("Should have latest checkpoint after chain creation"),
     }
 
     // Should have generated appropriate events
-    assert!(!read_result.events.is_empty(), "Chain should generate audit events");
+    assert!(
+        !read_result.events.is_empty(),
+        "Chain should generate audit events"
+    );
 }

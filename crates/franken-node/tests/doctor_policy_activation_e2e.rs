@@ -64,6 +64,97 @@ fn parse_jsonl_lines(bytes: &[u8]) -> Vec<Value> {
         .collect()
 }
 
+fn doctor_structured_log_args(trace_id: &str, extra_args: Vec<String>) -> Vec<String> {
+    let mut args = vec![
+        "doctor".to_string(),
+        "--json".to_string(),
+        "--structured-logs-jsonl".to_string(),
+        "--trace-id".to_string(),
+        trace_id.to_string(),
+    ];
+    args.extend(extra_args);
+    args
+}
+
+fn run_doctor_structured_logs_jsonl(args: Vec<String>, trace_id: &str) -> (Value, Vec<Value>) {
+    let output = run_doctor_args(&args, None);
+    assert!(
+        output.status.success(),
+        "doctor command failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let report: Value = serde_json::from_slice(&output.stdout).expect("stdout report JSON");
+    let log_lines = parse_jsonl_lines(&output.stderr);
+    assert_doctor_structured_log_contract(trace_id, &report, &log_lines);
+    (report, log_lines)
+}
+
+fn assert_doctor_structured_log_contract(trace_id: &str, report: &Value, log_lines: &[Value]) {
+    let report_logs = report["structured_logs"]
+        .as_array()
+        .expect("report structured_logs array");
+
+    assert_eq!(log_lines.len(), report_logs.len());
+    assert!(!log_lines.is_empty());
+
+    for (line, report_log) in log_lines.iter().zip(report_logs) {
+        assert_eq!(line["trace_id"], trace_id);
+        assert_eq!(line["event_code"], report_log["event_code"]);
+        assert_eq!(line["check_code"], report_log["check_code"]);
+        assert_eq!(line["scope"], report_log["scope"]);
+        assert_eq!(line["status"], report_log["status"]);
+        assert_eq!(line["surface"], "OPS-CLI");
+        assert!(line["timestamp"].as_str().is_some());
+        assert!(
+            line["message"]
+                .as_str()
+                .is_some_and(|message| !message.is_empty())
+        );
+        assert!(line["span_id"].as_str().is_some_and(|span| {
+            span.len() == 16
+                && span
+                    .chars()
+                    .all(|ch| ch.is_ascii_hexdigit() && !ch.is_ascii_uppercase())
+        }));
+        assert!(
+            line["metric_refs"]
+                .as_array()
+                .is_some_and(|metrics| !metrics.is_empty())
+        );
+        assert!(line["recovery_hint"]["action"].as_str().is_some());
+        assert!(
+            line["recovery_hint"]["target"]
+                .as_str()
+                .is_some_and(|target| !target.is_empty())
+        );
+        assert!(
+            line["recovery_hint"]["confidence"]
+                .as_f64()
+                .is_some_and(|confidence| (0.0..=1.0).contains(&confidence))
+        );
+
+        match line["level"].as_str().expect("structured log level") {
+            "info" => assert!(line.get("error_code").is_none()),
+            "warn" | "error" => assert!(
+                line["error_code"]
+                    .as_str()
+                    .is_some_and(|code| code.starts_with("FRANKEN_DOCTOR_")),
+                "warn/error log lines must include canonical doctor error_code: {line}"
+            ),
+            other => panic!("unexpected structured log level {other}"),
+        }
+    }
+}
+
+fn structured_log_for<'a>(log_lines: &'a [Value], check_code: &str) -> &'a Value {
+    log_lines
+        .iter()
+        .find(|line| line["check_code"].as_str() == Some(check_code))
+        .unwrap_or_else(|| panic!("missing structured log for {check_code}"))
+}
+
 fn run_doctor(policy_input_path: &Path, trace_id: &str) -> Value {
     parse_successful_json(run_doctor_args(
         &[
@@ -363,7 +454,11 @@ fn doctor_structured_logs_jsonl_emits_parseable_stderr_events() {
         assert_eq!(line["status"], report_log["status"]);
         assert_eq!(line["surface"], "OPS-CLI");
         assert!(line["timestamp"].as_str().is_some());
-        assert!(line["message"].as_str().is_some_and(|message| !message.is_empty()));
+        assert!(
+            line["message"]
+                .as_str()
+                .is_some_and(|message| !message.is_empty())
+        );
         assert_eq!(
             line["span_id"].as_str().map(str::len),
             Some(16),

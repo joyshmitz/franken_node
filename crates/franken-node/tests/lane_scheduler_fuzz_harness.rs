@@ -10,8 +10,8 @@
 //! input generation and round-trip validation.
 
 use frankenengine_node::runtime::lane_scheduler::{
-    LaneScheduler, LaneMappingPolicy, LaneConfig, SchedulerLane, TaskClass,
-    task_classes, LaneSchedulerError, LaneTelemetrySnapshot,
+    LaneConfig, LaneMappingPolicy, LaneScheduler, LaneSchedulerError, LaneTelemetrySnapshot,
+    SchedulerLane, TaskClass, task_classes,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -55,7 +55,11 @@ fn seed_lane_configs() -> Vec<LaneConfig> {
         // Background processing
         LaneConfig::new(SchedulerLane::Background, 10, 8),
         // Boundary: maximum values
-        LaneConfig::new(SchedulerLane::RemoteEffect, MAX_PRIORITY_WEIGHT, MAX_CONCURRENCY_CAP),
+        LaneConfig::new(
+            SchedulerLane::RemoteEffect,
+            MAX_PRIORITY_WEIGHT,
+            MAX_CONCURRENCY_CAP,
+        ),
         // Boundary: minimum priority, maximum concurrency
         LaneConfig::new(SchedulerLane::Background, 1, MAX_CONCURRENCY_CAP),
         // Boundary: maximum priority, minimum concurrency
@@ -88,14 +92,22 @@ fn seed_policies() -> Vec<LaneMappingPolicy> {
 
     // Single lane policy
     let mut single_lane = LaneMappingPolicy::new();
-    single_lane.add_lane(LaneConfig::new(SchedulerLane::ControlCritical, 100, 4)).unwrap();
-    single_lane.add_rule(&task_classes::epoch_transition(), SchedulerLane::ControlCritical);
+    single_lane
+        .add_lane(LaneConfig::new(SchedulerLane::ControlCritical, 100, 4))
+        .unwrap();
+    single_lane.add_rule(
+        &task_classes::epoch_transition(),
+        SchedulerLane::ControlCritical,
+    );
     policies.push(single_lane);
 
     // Full policy with all lanes
     let mut full_policy = LaneMappingPolicy::new();
     for lane_config in seed_lane_configs() {
-        if !full_policy.lane_configs.contains_key(lane_config.lane.as_str()) {
+        if !full_policy
+            .lane_configs
+            .contains_key(lane_config.lane.as_str())
+        {
             let _ = full_policy.add_lane(lane_config);
         }
     }
@@ -107,7 +119,9 @@ fn seed_policies() -> Vec<LaneMappingPolicy> {
 
     // Unbalanced policy (many rules, few lanes)
     let mut unbalanced = LaneMappingPolicy::new();
-    unbalanced.add_lane(LaneConfig::new(SchedulerLane::Background, 1, 1)).unwrap();
+    unbalanced
+        .add_lane(LaneConfig::new(SchedulerLane::Background, 1, 1))
+        .unwrap();
     for task_class in seed_task_classes() {
         unbalanced.add_rule(&task_class, SchedulerLane::Background);
     }
@@ -115,8 +129,17 @@ fn seed_policies() -> Vec<LaneMappingPolicy> {
 
     // Boundary capacity policy
     let mut boundary = LaneMappingPolicy::new();
-    boundary.add_lane(LaneConfig::new(SchedulerLane::RemoteEffect, MAX_PRIORITY_WEIGHT, MAX_CONCURRENCY_CAP)).unwrap();
-    boundary.add_rule(&task_classes::remote_computation(), SchedulerLane::RemoteEffect);
+    boundary
+        .add_lane(LaneConfig::new(
+            SchedulerLane::RemoteEffect,
+            MAX_PRIORITY_WEIGHT,
+            MAX_CONCURRENCY_CAP,
+        ))
+        .unwrap();
+    boundary.add_rule(
+        &task_classes::remote_computation(),
+        SchedulerLane::RemoteEffect,
+    );
     policies.push(boundary);
 
     policies
@@ -148,7 +171,9 @@ fn validate_policy_round_trip(policy: &LaneMappingPolicy) -> Result<(), HarnessP
         .map_err(|e| HarnessPolicyError::Serialization(e.to_string()))?;
 
     if policy != &deserialized {
-        return Err(HarnessPolicyError::Serialization("round-trip inequality".to_string()));
+        return Err(HarnessPolicyError::Serialization(
+            "round-trip inequality".to_string(),
+        ));
     }
 
     Ok(())
@@ -200,14 +225,15 @@ fn fuzz_policy_validation_boundary_conditions() {
     let test_cases = vec![
         // Empty policy
         (LaneMappingPolicy::new(), false),
-
         // No lanes configured
         {
             let mut policy = LaneMappingPolicy::new();
-            policy.add_rule(&task_classes::epoch_transition(), SchedulerLane::ControlCritical);
+            policy.add_rule(
+                &task_classes::epoch_transition(),
+                SchedulerLane::ControlCritical,
+            );
             (policy, false)
         },
-
         // Zero priority weight
         {
             let mut policy = LaneMappingPolicy::new();
@@ -216,7 +242,6 @@ fn fuzz_policy_validation_boundary_conditions() {
             let _ = policy.add_lane(config);
             (policy, false)
         },
-
         // Zero concurrency cap
         {
             let mut policy = LaneMappingPolicy::new();
@@ -225,12 +250,16 @@ fn fuzz_policy_validation_boundary_conditions() {
             let _ = policy.add_lane(config);
             (policy, false)
         },
-
         // Valid minimal policy
         {
             let mut policy = LaneMappingPolicy::new();
-            policy.add_lane(LaneConfig::new(SchedulerLane::ControlCritical, 1, 1)).unwrap();
-            policy.add_rule(&task_classes::epoch_transition(), SchedulerLane::ControlCritical);
+            policy
+                .add_lane(LaneConfig::new(SchedulerLane::ControlCritical, 1, 1))
+                .unwrap();
+            policy.add_rule(
+                &task_classes::epoch_transition(),
+                SchedulerLane::ControlCritical,
+            );
             (policy, true)
         },
     ];
@@ -273,8 +302,7 @@ fn fuzz_policy_epoch_lane_tuple_determinism() {
                 (Ok(snapshot1), Ok(snapshot2)) => {
                     // Snapshots should be deterministic for same inputs
                     assert_eq!(
-                        snapshot1.schema_version,
-                        snapshot2.schema_version,
+                        snapshot1.schema_version, snapshot2.schema_version,
                         "Schema version should be deterministic"
                     );
                     assert_eq!(
@@ -283,13 +311,15 @@ fn fuzz_policy_epoch_lane_tuple_determinism() {
                         "Counter length should be deterministic for policy: {:?}",
                         policy
                     );
-                },
+                }
                 (Err(_), Err(_)) => {
                     // Both failing consistently is acceptable
-                },
+                }
                 (result1, result2) => {
-                    panic!("Inconsistent scheduler behavior: {:?} vs {:?} for policy: {:?}, epoch: {}, lane: {:?}",
-                           result1, result2, policy, epoch_hint, target_lane);
+                    panic!(
+                        "Inconsistent scheduler behavior: {:?} vs {:?} for policy: {:?}, epoch: {}, lane: {:?}",
+                        result1, result2, policy, epoch_hint, target_lane
+                    );
                 }
             }
         }
@@ -300,8 +330,8 @@ fn fuzz_policy_epoch_lane_tuple_determinism() {
 fn fuzz_policy_serialization_byte_stability() {
     for policy in seed_policies() {
         if policy.validate().is_ok() {
-            let serialized1 = serde_json::to_string_pretty(&policy)
-                .expect("valid policy should serialize");
+            let serialized1 =
+                serde_json::to_string_pretty(&policy).expect("valid policy should serialize");
             let serialized2 = serde_json::to_string_pretty(&policy)
                 .expect("valid policy should serialize consistently");
 
@@ -320,7 +350,11 @@ fn fuzz_lane_config_boundary_values() {
         // Minimal valid values
         LaneConfig::new(SchedulerLane::Background, 1, 1),
         // Maximum practical values
-        LaneConfig::new(SchedulerLane::ControlCritical, MAX_PRIORITY_WEIGHT, MAX_CONCURRENCY_CAP),
+        LaneConfig::new(
+            SchedulerLane::ControlCritical,
+            MAX_PRIORITY_WEIGHT,
+            MAX_CONCURRENCY_CAP,
+        ),
         // Asymmetric configurations
         LaneConfig::new(SchedulerLane::RemoteEffect, 1, MAX_CONCURRENCY_CAP),
         LaneConfig::new(SchedulerLane::Maintenance, MAX_PRIORITY_WEIGHT, 1),
@@ -332,25 +366,26 @@ fn fuzz_lane_config_boundary_values() {
         assert!(config.concurrency_cap > 0);
 
         // Should be serializable
-        let serialized = serde_json::to_string(&config)
-            .expect("lane config should serialize");
-        let _deserialized: LaneConfig = serde_json::from_str(&serialized)
-            .expect("lane config should deserialize");
+        let serialized = serde_json::to_string(&config).expect("lane config should serialize");
+        let _deserialized: LaneConfig =
+            serde_json::from_str(&serialized).expect("lane config should deserialize");
     }
 }
 
 #[test]
 fn fuzz_task_class_mapping_edge_cases() {
     let edge_task_classes = vec![
-        TaskClass::new(""),  // Empty name
-        TaskClass::new("a"), // Single character
+        TaskClass::new(""),                // Empty name
+        TaskClass::new("a"),               // Single character
         TaskClass::new(&"x".repeat(1000)), // Long name
         TaskClass::new("task-with-special-chars!@#$%^&*()"),
         TaskClass::new("unicode_task_名前"),
     ];
 
     let mut policy = LaneMappingPolicy::new();
-    policy.add_lane(LaneConfig::new(SchedulerLane::Background, 10, 4)).unwrap();
+    policy
+        .add_lane(LaneConfig::new(SchedulerLane::Background, 10, 4))
+        .unwrap();
 
     for task_class in edge_task_classes {
         // Mapping should succeed regardless of task class name
@@ -366,8 +401,13 @@ fn fuzz_task_class_mapping_edge_cases() {
 fn fuzz_concurrency_cap_enforcement() {
     let mut policy = LaneMappingPolicy::new();
     // Create lane with capacity of exactly 2
-    policy.add_lane(LaneConfig::new(SchedulerLane::RemoteEffect, 50, 2)).unwrap();
-    policy.add_rule(&task_classes::remote_computation(), SchedulerLane::RemoteEffect);
+    policy
+        .add_lane(LaneConfig::new(SchedulerLane::RemoteEffect, 50, 2))
+        .unwrap();
+    policy.add_rule(
+        &task_classes::remote_computation(),
+        SchedulerLane::RemoteEffect,
+    );
 
     let mut scheduler = LaneScheduler::new(policy).unwrap();
 
@@ -384,14 +424,17 @@ fn fuzz_concurrency_cap_enforcement() {
 
     // Third admission: should fail (capacity exceeded)
     let result3 = scheduler.admit_task(&task_class, 1002, "trace-3");
-    assert!(result3.is_err(), "Third task admission should fail due to capacity");
+    assert!(
+        result3.is_err(),
+        "Third task admission should fail due to capacity"
+    );
 
     // Verify the error is capacity-related
     match result3 {
         Err(LaneSchedulerError::CapExceeded { cap, current, .. }) => {
             assert_eq!(cap, 2);
             assert_eq!(current, 2);
-        },
+        }
         _ => panic!("Expected CapExceeded error, got: {:?}", result3),
     }
 }

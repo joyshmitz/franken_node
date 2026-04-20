@@ -4,12 +4,11 @@
 //! profile validation, and boundary conditions following patterns
 //! established in canonical_serializer_fuzz_harness.
 
+use frankenengine_node::connector::capability_guard::{
+    CAPABILITY_TAXONOMY, CapabilityGuard, CapabilityName, CapabilityProfile, RiskLevel, error_codes,
+};
 use libfuzzer_sys::fuzz_target;
 use std::collections::BTreeSet;
-use frankenengine_node::connector::capability_guard::{
-    CapabilityName, CapabilityProfile, CapabilityGuard, RiskLevel,
-    CAPABILITY_TAXONOMY, error_codes,
-};
 
 /// Seed corpus for capability scope fuzzing.
 const CAPABILITY_SEED_CORPUS: &[&[u8]] = &[
@@ -26,64 +25,55 @@ const CAPABILITY_SEED_CORPUS: &[&[u8]] = &[
     b"cap:trust:read",
     b"cap:trust:write",
     b"cap:trust:revoke",
-
     // Boundary conditions
-    b"",                           // Empty capability name
-    b"cap",                        // Incomplete hierarchy
-    b"cap:",                       // Missing domain and action
-    b"cap:domain",                 // Missing action
-    b"cap:domain:",                // Empty action
-    b":domain:action",             // Missing cap prefix
-    b"cap::action",                // Empty domain
-    b"cap:domain:action:extra",    // Too many levels
-
+    b"",                        // Empty capability name
+    b"cap",                     // Incomplete hierarchy
+    b"cap:",                    // Missing domain and action
+    b"cap:domain",              // Missing action
+    b"cap:domain:",             // Empty action
+    b":domain:action",          // Missing cap prefix
+    b"cap::action",             // Empty domain
+    b"cap:domain:action:extra", // Too many levels
     // Case sensitivity tests
-    b"CAP:network:listen",         // Uppercase prefix
-    b"cap:NETWORK:listen",         // Uppercase domain
-    b"cap:network:LISTEN",         // Uppercase action
-    b"Cap:Network:Listen",         // Mixed case
-
+    b"CAP:network:listen", // Uppercase prefix
+    b"cap:NETWORK:listen", // Uppercase domain
+    b"cap:network:LISTEN", // Uppercase action
+    b"Cap:Network:Listen", // Mixed case
     // Special characters and injection attempts
-    b"cap:network\0:listen",       // Null byte in domain
-    b"cap:network:listen\0",       // Null byte suffix
-    b"cap:network\n:listen",       // Newline in domain
-    b"cap:network:listen\n",       // Newline suffix
-    b"cap:network\r:listen",       // Carriage return
-    b"cap:network:listen\r",       // CR suffix
-    b"cap:network\t:listen",       // Tab in domain
-    b"cap:network:listen\t",       // Tab suffix
-    b"cap:network :listen",        // Space in domain
-    b"cap:network:listen ",        // Space suffix
-    b" cap:network:listen",        // Leading space
-
+    b"cap:network\0:listen", // Null byte in domain
+    b"cap:network:listen\0", // Null byte suffix
+    b"cap:network\n:listen", // Newline in domain
+    b"cap:network:listen\n", // Newline suffix
+    b"cap:network\r:listen", // Carriage return
+    b"cap:network:listen\r", // CR suffix
+    b"cap:network\t:listen", // Tab in domain
+    b"cap:network:listen\t", // Tab suffix
+    b"cap:network :listen",  // Space in domain
+    b"cap:network:listen ",  // Space suffix
+    b" cap:network:listen",  // Leading space
     // Unicode edge cases
-    b"cap:network:\xc0\x80",       // Invalid UTF-8 (overlong encoding)
-    b"cap:network:\xff\xfe",       // Invalid UTF-8 bytes
-    b"cap:\xe2\x82\xac:listen",    // Euro symbol in domain
-    b"cap:network:\xe2\x82\xac",   // Euro symbol in action
-    b"cap:\xf0\x9f\x94\x92:listen", // Lock emoji in domain
+    b"cap:network:\xc0\x80",         // Invalid UTF-8 (overlong encoding)
+    b"cap:network:\xff\xfe",         // Invalid UTF-8 bytes
+    b"cap:\xe2\x82\xac:listen",      // Euro symbol in domain
+    b"cap:network:\xe2\x82\xac",     // Euro symbol in action
+    b"cap:\xf0\x9f\x94\x92:listen",  // Lock emoji in domain
     b"cap:network:\xf0\x9f\x94\x92", // Lock emoji in action
-
     // Very long capability names
-    &[b'x'; 1000],                // 1KB of x's
-    &[b'A'; 10000],               // 10KB of A's
-
+    &[b'x'; 1000],  // 1KB of x's
+    &[b'A'; 10000], // 10KB of A's
     // Path traversal attempts in capability names
-    b"cap:../admin:escalate",      // Path traversal in domain
-    b"cap:network:../admin",       // Path traversal in action
-    b"cap:../:listen",             // Path traversal as domain
-    b"cap:network:..",             // Path traversal as action
-
+    b"cap:../admin:escalate", // Path traversal in domain
+    b"cap:network:../admin",  // Path traversal in action
+    b"cap:../:listen",        // Path traversal as domain
+    b"cap:network:..",        // Path traversal as action
     // SQL injection patterns (should be safely rejected)
     b"cap:'; DROP TABLE caps; --:listen",
     b"cap:network:'; DELETE FROM profiles; --",
     b"cap:network' OR '1'='1:listen",
-
     // Command injection patterns
     b"cap:network`whoami`:listen",
     b"cap:network:listen; rm -rf /",
     b"cap:network$(id):listen",
-
     // JSON injection attempts
     b"cap:network\":\"admin\":\"true\":listen",
     b"cap:network:listen\",\"admin\":true,\"",
@@ -93,32 +83,29 @@ const CAPABILITY_SEED_CORPUS: &[&[u8]] = &[
 const PROFILE_JSON_CORPUS: &[&str] = &[
     // Valid minimal profile
     r#"{"subsystem":"test","version":"1.0.0","risk_level":"low","capabilities":{}}"#,
-
     // Profile with valid capabilities
     r#"{"subsystem":"trust_fabric","version":"1.0.0","risk_level":"high","capabilities":{"cap:trust:read":"read trust","cap:trust:write":"write trust"}}"#,
-
     // Boundary conditions
     r#"{"subsystem":"","version":"1.0.0","risk_level":"low","capabilities":{}}"#, // Empty subsystem
-    r#"{"subsystem":"test","version":"","risk_level":"low","capabilities":{}}"#,   // Empty version
+    r#"{"subsystem":"test","version":"","risk_level":"low","capabilities":{}}"#,  // Empty version
     r#"{"subsystem":"test","version":"1.0.0","risk_level":"","capabilities":{}}"#, // Empty risk level
-
     // Invalid risk levels
     r#"{"subsystem":"test","version":"1.0.0","risk_level":"invalid","capabilities":{}}"#,
     r#"{"subsystem":"test","version":"1.0.0","risk_level":"CRITICAL","capabilities":{}}"#, // Wrong case
-    r#"{"subsystem":"test","version":"1.0.0","risk_level":"super","capabilities":{}}"#,    // Non-existent level
-
+    r#"{"subsystem":"test","version":"1.0.0","risk_level":"super","capabilities":{}}"#, // Non-existent level
     // Invalid JSON structures
-    r#"{"subsystem":"test","version":"1.0.0","risk_level":"low""#,                // Truncated JSON
+    r#"{"subsystem":"test","version":"1.0.0","risk_level":"low""#, // Truncated JSON
     r#"{"subsystem":"test","version":"1.0.0","risk_level":"low","capabilities""#, // Truncated capabilities
     r#"{"subsystem":"test","version":"1.0.0","risk_level":"low","capabilities":}"#, // Invalid capabilities value
     r#"{"subsystem":"test","version":"1.0.0","risk_level":"low","capabilities":[]}"#, // Array instead of object
-
     // JSON injection attempts
     r#"{"subsystem":"test\", \"admin\": true, \"","version":"1.0.0","risk_level":"low","capabilities":{}}"#,
     r#"{"subsystem":"test","version":"1.0.0","risk_level":"low","capabilities":{"cap:trust:read\":\"bypass"#,
-
     // Very large profiles
-    &format!(r#"{{"subsystem":"{}","version":"1.0.0","risk_level":"low","capabilities":{{}}}}"#, "x".repeat(10000)),
+    &format!(
+        r#"{{"subsystem":"{}","version":"1.0.0","risk_level":"low","capabilities":{{}}}}"#,
+        "x".repeat(10000)
+    ),
 ];
 
 fuzz_target!(|data: &[u8]| {
@@ -197,9 +184,9 @@ fn test_capability_guard_boundary_conditions(capability_name: &CapabilityName, n
         if let Err(error) = result {
             let error_code = error.code();
             assert!(
-                error_code == error_codes::ERR_CAP_DENIED ||
-                error_code == error_codes::ERR_CAP_UNDECLARED ||
-                error_code == error_codes::ERR_CAP_PROFILE_MISSING
+                error_code == error_codes::ERR_CAP_DENIED
+                    || error_code == error_codes::ERR_CAP_UNDECLARED
+                    || error_code == error_codes::ERR_CAP_PROFILE_MISSING
             );
         }
     }
@@ -218,7 +205,8 @@ fn test_profile_json_parsing(data: &[u8]) {
 
                 // Test profile serialization round-trip
                 if let Ok(serialized) = serde_json::to_string(&profile) {
-                    let _reparse_result: Result<CapabilityProfile, _> = serde_json::from_str(&serialized);
+                    let _reparse_result: Result<CapabilityProfile, _> =
+                        serde_json::from_str(&serialized);
                     // Serialization of valid parsed profiles should work
                 }
 
@@ -287,7 +275,9 @@ fn test_hierarchical_scope_validation(data: &[u8]) {
                     let validity = name.is_valid();
 
                     // Check against known taxonomy
-                    let expected_valid = CAPABILITY_TAXONOMY.iter().any(|entry| entry.name == scope_str);
+                    let expected_valid = CAPABILITY_TAXONOMY
+                        .iter()
+                        .any(|entry| entry.name == scope_str);
                     assert_eq!(validity, expected_valid);
                 }
                 _ => {
@@ -304,14 +294,35 @@ fn test_capability_taxonomy_consistency(data: &[u8]) {
     // Test that taxonomy validation is consistent
     for entry in CAPABILITY_TAXONOMY {
         let name = CapabilityName::new(entry.name.to_string());
-        assert!(name.is_valid(), "Taxonomy entry '{}' should be valid", entry.name);
+        assert!(
+            name.is_valid(),
+            "Taxonomy entry '{}' should be valid",
+            entry.name
+        );
 
         // Test that all taxonomy entries are well-formed
         let parts: Vec<&str> = entry.name.split(':').collect();
-        assert_eq!(parts.len(), 3, "Taxonomy entry '{}' should have exactly 3 parts", entry.name);
-        assert_eq!(parts[0], "cap", "Taxonomy entry '{}' should start with 'cap'", entry.name);
-        assert!(!parts[1].is_empty(), "Taxonomy entry '{}' should have non-empty domain", entry.name);
-        assert!(!parts[2].is_empty(), "Taxonomy entry '{}' should have non-empty action", entry.name);
+        assert_eq!(
+            parts.len(),
+            3,
+            "Taxonomy entry '{}' should have exactly 3 parts",
+            entry.name
+        );
+        assert_eq!(
+            parts[0], "cap",
+            "Taxonomy entry '{}' should start with 'cap'",
+            entry.name
+        );
+        assert!(
+            !parts[1].is_empty(),
+            "Taxonomy entry '{}' should have non-empty domain",
+            entry.name
+        );
+        assert!(
+            !parts[2].is_empty(),
+            "Taxonomy entry '{}' should have non-empty action",
+            entry.name
+        );
     }
 
     // Test with fuzzer data as potential new capability names
@@ -323,8 +334,11 @@ fn test_capability_taxonomy_consistency(data: &[u8]) {
             // If fuzzer input is marked as valid, it must be in taxonomy
             if is_valid {
                 assert!(
-                    CAPABILITY_TAXONOMY.iter().any(|entry| entry.name == fuzz_name),
-                    "Valid capability '{}' must be in taxonomy", fuzz_name
+                    CAPABILITY_TAXONOMY
+                        .iter()
+                        .any(|entry| entry.name == fuzz_name),
+                    "Valid capability '{}' must be in taxonomy",
+                    fuzz_name
                 );
             }
         }
@@ -372,7 +386,11 @@ mod tests {
         // Verify all taxonomy entries pass validation
         for entry in CAPABILITY_TAXONOMY {
             let name = CapabilityName::new(entry.name.to_string());
-            assert!(name.is_valid(), "Taxonomy entry should be valid: {}", entry.name);
+            assert!(
+                name.is_valid(),
+                "Taxonomy entry should be valid: {}",
+                entry.name
+            );
         }
     }
 }

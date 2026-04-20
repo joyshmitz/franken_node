@@ -47,9 +47,15 @@ fn saturating_arithmetic_prevents_counter_overflow() {
 
     // Complete many tasks to test completed_total overflow protection
     for i in 0..10 {
-        scheduler.complete_task(&assignment.task_id, 1001 + i, "test").unwrap();
+        scheduler
+            .complete_task(&assignment.task_id, 1001 + i, "test")
+            .unwrap();
         let _fresh_assignment = scheduler
-            .assign_task(&task_classes::log_rotation(), 1002 + i, &format!("test-{}", i))
+            .assign_task(
+                &task_classes::log_rotation(),
+                1002 + i,
+                &format!("test-{}", i),
+            )
             .unwrap();
     }
 
@@ -68,11 +74,7 @@ fn boundary_condition_u64_max_timestamps_handled_safely() {
         .unwrap();
 
     // Complete with even larger timestamp
-    let completion_result = scheduler.complete_task(
-        &assignment.task_id,
-        u64::MAX,
-        "max-ts"
-    );
+    let completion_result = scheduler.complete_task(&assignment.task_id, u64::MAX, "max-ts");
 
     // Should succeed without overflow panics
     assert!(completion_result.is_ok());
@@ -97,7 +99,10 @@ fn starvation_detection_timing_precision_at_boundaries() {
 
     // Test starvation detection at exact boundary (should not detect yet)
     let starved_at_boundary = scheduler.check_starvation(2000, "boundary-test");
-    assert!(starved_at_boundary.is_empty(), "Should not detect starvation exactly at window boundary");
+    assert!(
+        starved_at_boundary.is_empty(),
+        "Should not detect starvation exactly at window boundary"
+    );
 
     // Test starvation detection just past boundary (should detect)
     let starved_past_boundary = scheduler.check_starvation(2001, "past-boundary");
@@ -122,7 +127,10 @@ fn fail_closed_capacity_enforcement_under_concurrent_load_simulation() {
     let mut policy = LaneMappingPolicy::new();
     let config = LaneConfig::new(SchedulerLane::ControlCritical, 100, 2); // Cap of 2
     policy.add_lane(config).unwrap();
-    policy.add_rule(&task_classes::epoch_transition(), SchedulerLane::ControlCritical);
+    policy.add_rule(
+        &task_classes::epoch_transition(),
+        SchedulerLane::ControlCritical,
+    );
     let mut scheduler = LaneScheduler::new(policy).unwrap();
 
     // Simulate concurrent task assignments
@@ -136,24 +144,33 @@ fn fail_closed_capacity_enforcement_under_concurrent_load_simulation() {
     // Third assignment should fail (capacity enforcement)
     let result3 = scheduler.assign_task(&task_classes::epoch_transition(), 1002, "concurrent-3");
     assert!(result3.is_err());
-    assert_eq!(result3.unwrap_err().code(), error_codes::ERR_LANE_CAP_EXCEEDED);
+    assert_eq!(
+        result3.unwrap_err().code(),
+        error_codes::ERR_LANE_CAP_EXCEEDED
+    );
 
     // Verify queue depth tracking
-    let counters = scheduler.lane_counter(SchedulerLane::ControlCritical).unwrap();
+    let counters = scheduler
+        .lane_counter(SchedulerLane::ControlCritical)
+        .unwrap();
     assert_eq!(counters.active_count, 2);
     assert_eq!(counters.queued_count, 1);
     assert_eq!(counters.rejected_total, 1);
     assert_eq!(counters.first_queued_at_ms, Some(1002));
 
     // Complete one task and verify queue admission
-    scheduler.complete_task(&task1.task_id, 1003, "complete-1").unwrap();
+    scheduler
+        .complete_task(&task1.task_id, 1003, "complete-1")
+        .unwrap();
 
     // Now another assignment should succeed (queue slot available)
     let task4 = scheduler
         .assign_task(&task_classes::epoch_transition(), 1004, "post-completion")
         .unwrap();
 
-    let counters = scheduler.lane_counter(SchedulerLane::ControlCritical).unwrap();
+    let counters = scheduler
+        .lane_counter(SchedulerLane::ControlCritical)
+        .unwrap();
     assert_eq!(counters.active_count, 2); // Still at capacity
     assert_eq!(counters.queued_count, 0); // Queue drained
     assert_eq!(counters.first_queued_at_ms, None); // No more queued items
@@ -178,7 +195,10 @@ fn hot_reload_race_condition_safety_with_active_tasks() {
     let mut new_policy = default_policy();
     new_policy.add_rule(&TaskClass::new("new_task_type"), SchedulerLane::Maintenance);
     let reload_result = scheduler.reload_policy(new_policy);
-    assert!(reload_result.is_ok(), "Hot reload should succeed with active tasks");
+    assert!(
+        reload_result.is_ok(),
+        "Hot reload should succeed with active tasks"
+    );
 
     // Verify existing tasks still complete successfully
     let cc_complete = scheduler.complete_task(&cc_task.task_id, 1002, "cc-done");
@@ -199,7 +219,8 @@ fn policy_validation_rejects_malformed_configurations() {
         ("empty policy", LaneMappingPolicy::new()),
         ("lanes without mapping rules", {
             let mut p = LaneMappingPolicy::new();
-            p.add_lane(LaneConfig::new(SchedulerLane::Background, 10, 2)).unwrap();
+            p.add_lane(LaneConfig::new(SchedulerLane::Background, 10, 2))
+                .unwrap();
             p
         }),
         ("mapping rules without lane configs", {
@@ -209,13 +230,15 @@ fn policy_validation_rejects_malformed_configurations() {
         }),
         ("zero priority weight", {
             let mut p = LaneMappingPolicy::new();
-            p.add_lane(LaneConfig::new(SchedulerLane::Background, 0, 2)).unwrap();
+            p.add_lane(LaneConfig::new(SchedulerLane::Background, 0, 2))
+                .unwrap();
             p.add_rule(&task_classes::log_rotation(), SchedulerLane::Background);
             p
         }),
         ("zero concurrency cap", {
             let mut p = LaneMappingPolicy::new();
-            p.add_lane(LaneConfig::new(SchedulerLane::Background, 10, 0)).unwrap();
+            p.add_lane(LaneConfig::new(SchedulerLane::Background, 10, 0))
+                .unwrap();
             p.add_rule(&task_classes::log_rotation(), SchedulerLane::Background);
             p
         }),
@@ -223,10 +246,18 @@ fn policy_validation_rejects_malformed_configurations() {
 
     for (description, policy) in test_cases {
         let validation_result = policy.validate();
-        assert!(validation_result.is_err(), "Policy validation should reject: {}", description);
+        assert!(
+            validation_result.is_err(),
+            "Policy validation should reject: {}",
+            description
+        );
 
         let scheduler_result = LaneScheduler::new(policy);
-        assert!(scheduler_result.is_err(), "Scheduler creation should reject: {}", description);
+        assert!(
+            scheduler_result.is_err(),
+            "Scheduler creation should reject: {}",
+            description
+        );
         assert_eq!(
             scheduler_result.unwrap_err().code(),
             error_codes::ERR_LANE_INVALID_POLICY
@@ -250,7 +281,9 @@ fn audit_log_integrity_under_high_throughput() {
             _ => task_classes::telemetry_export(),
         };
 
-        if let Ok(assignment) = scheduler.assign_task(&task_class, 1000 + i, &format!("high-throughput-{}", i)) {
+        if let Ok(assignment) =
+            scheduler.assign_task(&task_class, 1000 + i, &format!("high-throughput-{}", i))
+        {
             completed_task_ids.push(assignment.task_id);
         }
     }
@@ -265,11 +298,21 @@ fn audit_log_integrity_under_high_throughput() {
     assert_eq!(scheduler.audit_log_capacity(), 10);
 
     // Verify audit log contains most recent events (oldest-first eviction)
-    let audit_events: Vec<_> = scheduler.audit_log().iter().map(|e| &e.event_code).collect();
-    let completion_events = audit_events.iter().filter(|&&code| code == event_codes::LANE_TASK_COMPLETED).count();
+    let audit_events: Vec<_> = scheduler
+        .audit_log()
+        .iter()
+        .map(|e| &e.event_code)
+        .collect();
+    let completion_events = audit_events
+        .iter()
+        .filter(|&&code| code == event_codes::LANE_TASK_COMPLETED)
+        .count();
 
     // Should have some completion events (most recent ones kept)
-    assert!(completion_events > 0, "Audit log should retain recent completion events");
+    assert!(
+        completion_events > 0,
+        "Audit log should retain recent completion events"
+    );
 
     // Verify JSONL export works correctly
     let jsonl = scheduler.export_audit_log_jsonl();
@@ -278,8 +321,8 @@ fn audit_log_integrity_under_high_throughput() {
 
     // Verify each line is valid JSON
     for line in lines {
-        let parsed: serde_json::Value = serde_json::from_str(line)
-            .expect("Audit log JSONL should contain valid JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(line).expect("Audit log JSONL should contain valid JSON");
         assert!(parsed["event_code"].is_string());
         assert!(parsed["timestamp_ms"].is_number());
         assert_eq!(parsed["schema_version"], SCHEMA_VERSION);
@@ -310,7 +353,9 @@ fn starvation_detection_algorithm_accuracy_across_complex_scenarios() {
     assert_eq!(check2.len(), 1);
 
     // Complete the initial task, admit new work
-    scheduler.complete_task(&initial_task.task_id, 1700, "complete-initial").unwrap();
+    scheduler
+        .complete_task(&initial_task.task_id, 1700, "complete-initial")
+        .unwrap();
     let new_task = scheduler
         .assign_task(&task_classes::log_rotation(), 1750, "new-after-complete")
         .unwrap();
@@ -320,12 +365,23 @@ fn starvation_detection_algorithm_accuracy_across_complex_scenarios() {
     assert_eq!(check3.len(), 1);
 
     // Complete all remaining work
-    scheduler.complete_task(&new_task.task_id, 1850, "complete-new").unwrap();
+    scheduler
+        .complete_task(&new_task.task_id, 1850, "complete-new")
+        .unwrap();
 
     // Continue admitting until queue is drained
-    for i in 0..2 { // Should admit 2 more tasks to clear the queue
-        if let Ok(task) = scheduler.assign_task(&task_classes::log_rotation(), 1900 + i * 10, &format!("drain-{}", i)) {
-            let _ = scheduler.complete_task(&task.task_id, 1910 + i * 10, &format!("drain-complete-{}", i));
+    for i in 0..2 {
+        // Should admit 2 more tasks to clear the queue
+        if let Ok(task) = scheduler.assign_task(
+            &task_classes::log_rotation(),
+            1900 + i * 10,
+            &format!("drain-{}", i),
+        ) {
+            let _ = scheduler.complete_task(
+                &task.task_id,
+                1910 + i * 10,
+                &format!("drain-complete-{}", i),
+            );
         }
     }
 
@@ -352,19 +408,45 @@ fn multi_lane_interaction_isolation_and_independence() {
 
     // Create tasks across all lanes
     let cc_tasks: Vec<_> = (0..3)
-        .map(|i| scheduler.assign_task(&task_classes::epoch_transition(), 1000 + i, &format!("cc-{}", i)).unwrap())
+        .map(|i| {
+            scheduler
+                .assign_task(
+                    &task_classes::epoch_transition(),
+                    1000 + i,
+                    &format!("cc-{}", i),
+                )
+                .unwrap()
+        })
         .collect();
 
     let re_tasks: Vec<_> = (0..5)
-        .map(|i| scheduler.assign_task(&task_classes::remote_computation(), 1100 + i, &format!("re-{}", i)).unwrap())
+        .map(|i| {
+            scheduler
+                .assign_task(
+                    &task_classes::remote_computation(),
+                    1100 + i,
+                    &format!("re-{}", i),
+                )
+                .unwrap()
+        })
         .collect();
 
     let maint_tasks: Vec<_> = (0..2)
-        .map(|i| scheduler.assign_task(&task_classes::garbage_collection(), 1200 + i, &format!("maint-{}", i)).unwrap())
+        .map(|i| {
+            scheduler
+                .assign_task(
+                    &task_classes::garbage_collection(),
+                    1200 + i,
+                    &format!("maint-{}", i),
+                )
+                .unwrap()
+        })
         .collect();
 
     // Verify lane isolation - each lane tracks its own counters independently
-    let cc_counters = scheduler.lane_counter(SchedulerLane::ControlCritical).unwrap();
+    let cc_counters = scheduler
+        .lane_counter(SchedulerLane::ControlCritical)
+        .unwrap();
     let re_counters = scheduler.lane_counter(SchedulerLane::RemoteEffect).unwrap();
     let maint_counters = scheduler.lane_counter(SchedulerLane::Maintenance).unwrap();
     let bg_counters = scheduler.lane_counter(SchedulerLane::Background).unwrap();
@@ -376,10 +458,14 @@ fn multi_lane_interaction_isolation_and_independence() {
 
     // Complete tasks in one lane, verify others unaffected
     for task in cc_tasks {
-        scheduler.complete_task(&task.task_id, 1300, "cc-complete").unwrap();
+        scheduler
+            .complete_task(&task.task_id, 1300, "cc-complete")
+            .unwrap();
     }
 
-    let cc_counters_after = scheduler.lane_counter(SchedulerLane::ControlCritical).unwrap();
+    let cc_counters_after = scheduler
+        .lane_counter(SchedulerLane::ControlCritical)
+        .unwrap();
     let re_counters_after = scheduler.lane_counter(SchedulerLane::RemoteEffect).unwrap();
 
     assert_eq!(cc_counters_after.active_count, 0);
@@ -401,17 +487,27 @@ fn task_id_uniqueness_and_collision_resistance() {
             task_classes::telemetry_export()
         };
 
-        if let Ok(assignment) = scheduler.assign_task(&task_class, 1000 + i, &format!("unique-test-{}", i)) {
+        if let Ok(assignment) =
+            scheduler.assign_task(&task_class, 1000 + i, &format!("unique-test-{}", i))
+        {
             let was_new = seen_task_ids.insert(assignment.task_id.clone());
-            assert!(was_new, "Task ID collision detected: {}", assignment.task_id);
+            assert!(
+                was_new,
+                "Task ID collision detected: {}",
+                assignment.task_id
+            );
 
             // Complete the task to free up lane capacity
-            let _ = scheduler.complete_task(&assignment.task_id, 2000 + i, &format!("complete-{}", i));
+            let _ =
+                scheduler.complete_task(&assignment.task_id, 2000 + i, &format!("complete-{}", i));
         }
     }
 
     // Should have seen many unique IDs
-    assert!(seen_task_ids.len() >= 500, "Should generate unique task IDs");
+    assert!(
+        seen_task_ids.len() >= 500,
+        "Should generate unique task IDs"
+    );
 }
 
 #[test]
@@ -440,10 +536,18 @@ fn telemetry_snapshot_consistency_under_load() {
 
     // Create mixed workload
     let assignments = vec![
-        scheduler.assign_task(&task_classes::epoch_transition(), 1000, "t1").unwrap(),
-        scheduler.assign_task(&task_classes::remote_computation(), 1001, "t2").unwrap(),
-        scheduler.assign_task(&task_classes::garbage_collection(), 1002, "t3").unwrap(),
-        scheduler.assign_task(&task_classes::telemetry_export(), 1003, "t4").unwrap(),
+        scheduler
+            .assign_task(&task_classes::epoch_transition(), 1000, "t1")
+            .unwrap(),
+        scheduler
+            .assign_task(&task_classes::remote_computation(), 1001, "t2")
+            .unwrap(),
+        scheduler
+            .assign_task(&task_classes::garbage_collection(), 1002, "t3")
+            .unwrap(),
+        scheduler
+            .assign_task(&task_classes::telemetry_export(), 1003, "t4")
+            .unwrap(),
     ];
 
     // Take snapshot
@@ -459,8 +563,12 @@ fn telemetry_snapshot_consistency_under_load() {
     assert_eq!(total_active_from_snapshot, scheduler.total_active());
 
     // Complete some tasks and verify snapshot reflects changes
-    scheduler.complete_task(&assignments[0].task_id, 1600, "complete-1").unwrap();
-    scheduler.complete_task(&assignments[1].task_id, 1601, "complete-2").unwrap();
+    scheduler
+        .complete_task(&assignments[0].task_id, 1600, "complete-1")
+        .unwrap();
+    scheduler
+        .complete_task(&assignments[1].task_id, 1601, "complete-2")
+        .unwrap();
 
     let snapshot2 = scheduler.telemetry_snapshot(1700);
     let total_active_after: usize = snapshot2.counters.iter().map(|c| c.active_count).sum();
