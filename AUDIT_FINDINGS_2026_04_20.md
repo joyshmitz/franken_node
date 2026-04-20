@@ -54,11 +54,31 @@ fn is_component(component: &str) -> bool {
 - ✅ Extensive malicious input testing in test suite
 - ✅ Proper input sanitization and validation
 
+## Additional Findings: connector/ and vef/ Modules
+
+### Connector Module Audit
+**Files Checked:** frame_parser.rs, canonical_serializer.rs, trust_object_id.rs, vef_execution_receipt.rs
+
+**Positive Findings:**
+- ✅ `frame_parser.rs` - Excellent bounds checking with size/depth/CPU limits, fail-closed behavior (`>=`)
+- ✅ `canonical_serializer.rs` - Proper deterministic serialization with float rejection and round-trip verification  
+- ✅ `trust_object_id.rs` - Strong parsing with exact hex digest length validation (64 chars)
+- ✅ `vef_execution_receipt.rs` - Comprehensive input validation including whitespace trimming, hash format checks
+
+### VEF Module Audit  
+**Files Checked:** proof_verifier.rs, receipt_chain.rs
+
+**Positive Findings:**
+- ✅ `proof_verifier.rs` - Proper expiry checks with fail-closed semantics (`<` for expiry), capacity limits
+- ✅ `receipt_chain.rs` - Tamper-evident chain with constant-time hash comparisons, bounded collections
+
+**No Additional Vulnerabilities Found** in connector/ and vef/ modules.
+
 ## Summary
 
-1 critical vulnerability found requiring immediate attention
-1 potential issue requiring investigation 
-Multiple good security practices confirmed
+1 critical vulnerability found requiring immediate attention (remote/computation_registry.rs)
+1 potential issue requiring investigation (HTTP payload size limits)
+Comprehensive good security practices confirmed across all audited modules
 
 ---
 Audit conducted by: CrimsonCrane Agent
