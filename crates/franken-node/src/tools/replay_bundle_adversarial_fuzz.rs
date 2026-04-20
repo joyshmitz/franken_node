@@ -15,6 +15,8 @@ pub enum ReplayBundleAdversarialExpectedError {
     TruncatedFinalChunk,
     TimestampInFuture,
     BundleIdMismatch,
+    NonMonotonicChunkTimestamp,
+    DuplicateChunkOffset,
 }
 
 impl ReplayBundleAdversarialExpectedError {
@@ -56,6 +58,23 @@ impl ReplayBundleAdversarialExpectedError {
         ) || matches!(
             (self, error),
             (Self::BundleIdMismatch, ReplayBundleError::BundleIdMismatch,)
+        ) || matches!(
+            (self, error),
+            (
+                Self::NonMonotonicChunkTimestamp,
+                ReplayBundleError::NonMonotonicChunkTimestamp {
+                    chunk_index: 0,
+                    previous,
+                    next,
+                },
+            ) if previous == "2026-02-20T12:00:00.000001Z"
+                && next == "2026-02-20T11:59:59.999999Z"
+        ) || matches!(
+            (self, error),
+            (
+                Self::DuplicateChunkOffset,
+                ReplayBundleError::DuplicateChunkOffset { chunk_index: 0 },
+            )
         )
     }
 }
@@ -170,6 +189,28 @@ pub fn replay_bundle_adversarial_fuzz_corpus() -> Vec<ReplayBundleAdversarialCas
         }
     };
 
+    let non_monotonic_chunk_timestamp = {
+        let bundle = fixture_bundle("INC-FUZZ-NON-MONOTONIC-CHUNK");
+        let mut value = bundle_value(&bundle);
+        value["chunks"][0]["events"][1]["timestamp"] = json!("2026-02-20T11:59:59.999999Z");
+        ReplayBundleAdversarialCase {
+            name: "non_monotonic_timestamp_within_chunk",
+            target: ReplayBundleAdversarialTarget::Single(json_bytes(&value)),
+            expected_error: ReplayBundleAdversarialExpectedError::NonMonotonicChunkTimestamp,
+        }
+    };
+
+    let duplicate_chunk_offset = {
+        let bundle = fixture_bundle("INC-FUZZ-DUPLICATE-CHUNK-OFFSET");
+        let mut value = bundle_value(&bundle);
+        value["chunks"] = json!([value["chunks"][0].clone(), value["chunks"][0].clone()]);
+        ReplayBundleAdversarialCase {
+            name: "duplicated_chunk_offset",
+            target: ReplayBundleAdversarialTarget::Single(json_bytes(&value)),
+            expected_error: ReplayBundleAdversarialExpectedError::DuplicateChunkOffset,
+        }
+    };
+
     vec![
         negative_offset,
         zero_length_chunk,
@@ -178,6 +219,8 @@ pub fn replay_bundle_adversarial_fuzz_corpus() -> Vec<ReplayBundleAdversarialCas
         truncated_final_chunk,
         timestamp_in_future,
         bundle_id_mismatch,
+        non_monotonic_chunk_timestamp,
+        duplicate_chunk_offset,
     ]
 }
 

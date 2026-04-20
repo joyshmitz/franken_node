@@ -111,6 +111,16 @@ pub enum ReplayBundleError {
     DuplicateBundleId { bundle_id: Uuid },
     #[error("replay bundle timestamp `{timestamp}` at `{path}` is in the future")]
     TimestampInFuture { path: String, timestamp: String },
+    #[error(
+        "replay bundle chunk {chunk_index} has non-monotonic timestamps: `{previous}` before `{next}`"
+    )]
+    NonMonotonicChunkTimestamp {
+        chunk_index: u32,
+        previous: String,
+        next: String,
+    },
+    #[error("replay bundle contains duplicate chunk offset {chunk_index}")]
+    DuplicateChunkOffset { chunk_index: u32 },
     #[error("bundle manifest does not match canonical timeline derivation")]
     ManifestMismatch,
     #[error("bundle chunks do not match canonical timeline derivation")]
@@ -909,6 +919,8 @@ fn is_unsigned_replay_bundle_field(field: &str) -> bool {
 
 fn validate_adversarial_bundle_shape(bundle: &ReplayBundle) -> Result<(), ReplayBundleError> {
     reject_zero_length_chunks(bundle)?;
+    reject_duplicate_chunk_offsets(bundle)?;
+    reject_non_monotonic_chunk_timestamps(bundle)?;
     reject_future_bundle_timestamps(bundle)?;
     Ok(())
 }
@@ -922,6 +934,38 @@ fn reject_zero_length_chunks(bundle: &ReplayBundle) -> Result<(), ReplayBundleEr
             return Err(ReplayBundleError::ZeroLengthChunk {
                 chunk_index: chunk.chunk_index,
             });
+        }
+    }
+    Ok(())
+}
+
+fn reject_duplicate_chunk_offsets(bundle: &ReplayBundle) -> Result<(), ReplayBundleError> {
+    let mut seen = BTreeSet::new();
+    for chunk in &bundle.chunks {
+        if !seen.insert(chunk.chunk_index) {
+            return Err(ReplayBundleError::DuplicateChunkOffset {
+                chunk_index: chunk.chunk_index,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn reject_non_monotonic_chunk_timestamps(bundle: &ReplayBundle) -> Result<(), ReplayBundleError> {
+    for chunk in &bundle.chunks {
+        let mut previous_timestamp: Option<(String, i64)> = None;
+        for event in &chunk.events {
+            let (_, next_micros) = normalize_timestamp(&event.timestamp)?;
+            if let Some((previous, previous_micros)) = &previous_timestamp
+                && next_micros < *previous_micros
+            {
+                return Err(ReplayBundleError::NonMonotonicChunkTimestamp {
+                    chunk_index: chunk.chunk_index,
+                    previous: previous.clone(),
+                    next: event.timestamp.clone(),
+                });
+            }
+            previous_timestamp = Some((event.timestamp.clone(), next_micros));
         }
     }
     Ok(())
