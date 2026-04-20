@@ -17674,13 +17674,22 @@ fn main() -> Result<()> {
                 }
             }
             MigrateCommand::Validate(args) => {
+                let format = migration::ValidateOutputFormat::parse(&args.format)
+                    .map_err(|err| anyhow::anyhow!(err))?;
                 let report = migration::run_validate(&args.project_path).with_context(|| {
                     format!(
                         "failed running migration validate for {}",
                         args.project_path.display()
                     )
                 })?;
-                println!("{}", migration::render_validate_report(&report));
+                match format {
+                    migration::ValidateOutputFormat::Json => {
+                        println!("{}", serde_json::to_string_pretty(&report)?);
+                    }
+                    migration::ValidateOutputFormat::Text => {
+                        println!("{}", migration::render_validate_report(&report));
+                    }
+                }
                 if !report.is_pass() {
                     anyhow::bail!(
                         "migration validation failed for {}",

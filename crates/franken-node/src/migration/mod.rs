@@ -53,6 +53,24 @@ impl AuditOutputFormat {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValidateOutputFormat {
+    Json,
+    Text,
+}
+
+impl ValidateOutputFormat {
+    pub fn parse(raw: &str) -> Result<Self, String> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "json" => Ok(Self::Json),
+            "text" => Ok(Self::Text),
+            other => Err(format!(
+                "unsupported migrate validate format `{other}`; expected one of: json, text"
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum MigrationSeverity {

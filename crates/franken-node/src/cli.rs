@@ -194,6 +194,10 @@ pub struct MigrateRewriteArgs {
 pub struct MigrateValidateArgs {
     /// Path to the project to validate.
     pub project_path: PathBuf,
+
+    /// Output format: json or text.
+    #[arg(long, default_value = "text")]
+    pub format: String,
 }
 
 // -- verify --
