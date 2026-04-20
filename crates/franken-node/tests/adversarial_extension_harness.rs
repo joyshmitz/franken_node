@@ -1,4 +1,11 @@
 use ed25519_dalek::{Signer, SigningKey};
+use frankenengine_node::supply_chain::certification::{EvidenceType, VerifiedEvidenceRef};
+use frankenengine_node::supply_chain::trust_card::{
+    BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
+    DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary, PublisherIdentity,
+    ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCardInput,
+    TrustCardRegistry,
+};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -7,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 const ARTIFACT_RELATIVE_PATH: &str = "artifacts/adversarial/compromise_reduction_v1.json";
+const TRUST_CARD_REGISTRY_RELATIVE_PATH: &str = ".franken-node/state/trust-card-registry.v1.json";
 const FIXTURE_SIGNING_KEY_BYTES: [u8; 32] = [0x42; 32];
 
 #[derive(Clone, Copy)]
@@ -191,28 +199,6 @@ fn run_cli_in_workspace(workspace: &Path, args: &[String]) -> Output {
         .unwrap_or_else(|err| panic!("failed running `franken-node {}`: {err}", args.join(" ")))
 }
 
-fn ensure_command_success(context: &str, workspace: &Path, args: &[String], output: &Output) {
-    if !output.status.success() {
-        panic_with_command_diagnostics(context, workspace, args, output);
-    }
-}
-
-fn panic_with_command_diagnostics(
-    context: &str,
-    workspace: &Path,
-    args: &[String],
-    output: &Output,
-) -> ! {
-    panic!(
-        "{context} failed\ncommand: franken-node {}\nworkspace: {}\nstatus: {}\nstdout:\n{}\nstderr:\n{}",
-        args.join(" "),
-        workspace.display(),
-        output.status,
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
-}
-
 fn parse_json_stdout(output: &Output, context: &str) -> Value {
     let stdout = String::from_utf8_lossy(&output.stdout);
     serde_json::from_str(&stdout)
@@ -294,6 +280,81 @@ fn write_fixture_workspace(workspace: &Path, fixture: &AdversarialExtensionFixtu
     .expect("write app entrypoint");
 }
 
+fn fixture_evidence_refs(fixture: &AdversarialExtensionFixture) -> Vec<VerifiedEvidenceRef> {
+    let evidence_hash = Sha256::digest(format!("adversarial-evidence:{}", fixture.case_id));
+    vec![VerifiedEvidenceRef {
+        evidence_id: format!("adv-ext-{}-revocation", fixture.case_id),
+        evidence_type: EvidenceType::RevocationCheck,
+        verified_at_epoch: 2_026_042_000,
+        verification_receipt_hash: hex::encode(evidence_hash),
+    }]
+}
+
+fn write_revoked_trust_registry(workspace: &Path, fixture: &AdversarialExtensionFixture) {
+    let mut registry = TrustCardRegistry::default();
+    let payload_hash = Sha256::digest(fixture.payload_body.as_bytes());
+    let extension_id = format!("npm:{}", fixture.package_name);
+
+    registry
+        .create(
+            TrustCardInput {
+                extension: ExtensionIdentity {
+                    extension_id,
+                    version: fixture.version_requirement.to_string(),
+                },
+                publisher: PublisherIdentity {
+                    publisher_id: "pub-adversarial-fixtures".to_string(),
+                    display_name: "Adversarial Fixture Publisher".to_string(),
+                },
+                certification_level: CertificationLevel::Bronze,
+                capability_declarations: vec![CapabilityDeclaration {
+                    name: format!("adversarial.{}", fixture.case_id),
+                    description: fixture.attack_vector.to_string(),
+                    risk: CapabilityRisk::Critical,
+                }],
+                behavioral_profile: BehavioralProfile {
+                    network_access: fixture.case_id == "egress-to-unknown-host",
+                    filesystem_access: fixture.case_id == "ambient-authority-abuse",
+                    subprocess_access: false,
+                    profile_summary: fixture.attack_vector.to_string(),
+                },
+                revocation_status: RevocationStatus::Revoked {
+                    reason: format!("adversarial extension fixture: {}", fixture.attack_vector),
+                    revoked_at: "2026-04-20T00:00:00Z".to_string(),
+                },
+                provenance_summary: ProvenanceSummary {
+                    attestation_level: "fixture-revoked".to_string(),
+                    source_uri: format!("fixture://adversarial-extension/{}", fixture.case_id),
+                    artifact_hashes: vec![format!("sha256:{}", hex::encode(payload_hash))],
+                    verified_at: "2026-04-20T00:00:00Z".to_string(),
+                },
+                reputation_score_basis_points: 0,
+                reputation_trend: ReputationTrend::Declining,
+                active_quarantine: true,
+                dependency_trust_summary: vec![DependencyTrustStatus {
+                    dependency_id: "npm:fixture-transitive@0".to_string(),
+                    trust_level: "revoked-fixture".to_string(),
+                }],
+                last_verified_timestamp: "2026-04-20T00:00:00Z".to_string(),
+                user_facing_risk_assessment: RiskAssessment {
+                    level: RiskLevel::Critical,
+                    summary: format!(
+                        "Strict policy must block adversarial fixture {}",
+                        fixture.case_id
+                    ),
+                },
+                evidence_refs: fixture_evidence_refs(fixture),
+            },
+            2_026_042_000,
+            "trace-adversarial-extension-harness",
+        )
+        .expect("create revoked adversarial trust card");
+
+    registry
+        .persist_authoritative_state(&workspace.join(TRUST_CARD_REGISTRY_RELATIVE_PATH))
+        .expect("persist revoked adversarial trust registry");
+}
+
 fn collect_string_field(payload: &Value, array_field: &str, nested_field: &str) -> Vec<String> {
     payload["verdict"][array_field]
         .as_array()
@@ -309,30 +370,9 @@ fn collect_string_field(payload: &Value, array_field: &str, nested_field: &str) 
 fn run_fixture(fixture: &AdversarialExtensionFixture) -> AdversarialCaseOutcome {
     let workspace = tempfile::tempdir().expect("create adversarial fixture workspace");
     write_fixture_workspace(workspace.path(), fixture);
-
-    let init_args = args(&["init", "--json", "--out-dir", ".", "--scan"]);
-    let init_output = run_cli_in_workspace(workspace.path(), &init_args);
-    ensure_command_success(
-        "init --scan adversarial extension fixture",
-        workspace.path(),
-        &init_args,
-        &init_output,
-    );
+    write_revoked_trust_registry(workspace.path(), fixture);
 
     let extension_id = format!("npm:{}", fixture.package_name);
-    let revoke_args = vec![
-        "trust".to_string(),
-        "revoke".to_string(),
-        extension_id.clone(),
-    ];
-    let revoke_output = run_cli_in_workspace(workspace.path(), &revoke_args);
-    ensure_command_success(
-        "trust revoke adversarial extension fixture",
-        workspace.path(),
-        &revoke_args,
-        &revoke_output,
-    );
-
     let run_args = args(&["run", "--policy", "strict", "--json", "."]);
     let run_output = run_cli_in_workspace(workspace.path(), &run_args);
     let run_payload = parse_json_stdout(&run_output, "strict adversarial run");
