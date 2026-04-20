@@ -4,6 +4,9 @@ pub mod deterministic_seed;
 pub mod additional_edge_tests;
 
 #[cfg(test)]
+mod canonical_serializer;
+
+#[cfg(test)]
 mod encoding_root_negative_tests {
     use super::deterministic_seed::{
         ContentHash, DeterministicSeed, DeterministicSeedDeriver, DomainTag, ScheduleConfig,
