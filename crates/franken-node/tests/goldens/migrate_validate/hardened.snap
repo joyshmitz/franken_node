@@ -1,0 +1,37 @@
+---
+source: tests/migrate_validate_goldens.rs
+---
+{
+  "schema_version": "1.0.0",
+  "project_path": "[PATH]",
+  "generated_at_utc": "[TIMESTAMP]",
+  "status": "pass",
+  "checks": [
+    {
+      "id": "mig-validate-001",
+      "passed": true,
+      "message": "package manifests detected: 1",
+      "remediation": "Ensure at least one package.json is present before validation."
+    },
+    {
+      "id": "mig-validate-002",
+      "passed": true,
+      "message": "lockfiles detected: 1",
+      "remediation": "Commit a lockfile (package-lock.json, pnpm-lock.yaml, yarn.lock, or bun.lockb)."
+    },
+    {
+      "id": "mig-validate-003",
+      "passed": true,
+      "message": "risky install/build scripts: 0",
+      "remediation": "Remove or harden risky install/build hooks before migration rollout."
+    },
+    {
+      "id": "mig-validate-004",
+      "passed": true,
+      "message": "high-severity audit findings: 0",
+      "remediation": "Resolve all high-severity migrate audit findings before validation can pass."
+    }
+  ],
+  "blocking_findings": [],
+  "warning_findings": []
+}
