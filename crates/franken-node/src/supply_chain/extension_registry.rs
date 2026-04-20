@@ -33,6 +33,7 @@
 //! - **INV-SER-DETERMINISTIC**: Same inputs produce same registry state.
 //! - **INV-SER-NO-SHAPE-CHECKS**: No admission decision relies on field presence,
 //!   hex shape, or string formatting alone.
+//! - **INV-SER-NAME-UNIQUE**: Extension names are unique across active extensions.
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -94,6 +95,7 @@ pub mod event_codes {
     pub const SER_ERR_PROVENANCE_CHAIN_INVALID: &str = "SER-ERR-006";
     pub const SER_ERR_TRANSPARENCY_FAILED: &str = "SER-ERR-007";
     pub const SER_ERR_INTERNAL: &str = "SER-ERR-008";
+    pub const SER_ERR_DUPLICATE_NAME: &str = "SER-ERR-009";
 }
 
 pub mod invariants {
@@ -629,6 +631,32 @@ impl SignedExtensionRegistry {
             };
         }
 
+        // Check for name uniqueness after admission succeeds
+        // INV-SER-NAME-UNIQUE: Extension names must be unique across active extensions
+        for existing_extension in self.extensions.values() {
+            if existing_extension.name == request.name && existing_extension.status == ExtensionStatus::Active {
+                self.log(
+                    event_codes::SER_ERR_DUPLICATE_NAME,
+                    "",
+                    trace_id,
+                    serde_json::json!({
+                        "name": &request.name,
+                        "existing_id": &existing_extension.extension_id,
+                        "reason": "duplicate_extension_name",
+                    }),
+                );
+                return RegistryResult {
+                    success: false,
+                    extension_id: None,
+                    error_code: Some(event_codes::SER_ERR_DUPLICATE_NAME.to_string()),
+                    detail: format!(
+                        "Extension name '{}' already exists (ID: {}). Extension names must be unique.",
+                        request.name, existing_extension.extension_id
+                    ),
+                };
+            }
+        }
+
         // Signature verified
         self.log(
             event_codes::SER_SIGNATURE_VERIFIED,
@@ -895,6 +923,14 @@ impl SignedExtensionRegistry {
     /// Query an extension by ID.
     pub fn query(&self, extension_id: &str) -> Option<&SignedExtension> {
         self.extensions.get(extension_id)
+    }
+
+    /// Query an extension by name. Returns the first active extension with the given name.
+    /// Due to name uniqueness enforcement, this should return at most one active extension.
+    pub fn query_by_name(&self, name: &str) -> Option<&SignedExtension> {
+        self.extensions
+            .values()
+            .find(|e| e.name == name && e.status == ExtensionStatus::Active)
     }
 
     /// List all extensions with optional status filter.
