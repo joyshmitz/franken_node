@@ -78,7 +78,8 @@ use frankenengine_node::control_plane::fleet_transport::{
     FileFleetTransport, FleetAction as PersistedFleetAction,
     FleetActionRecord as PersistedFleetActionRecord, FleetSharedState,
     FleetTargetKind as PersistedFleetTargetKind, FleetTransport as PersistedFleetTransport,
-    NodeHealth as PersistedNodeHealth, NodeStatus as PersistedNodeStatus,
+    FleetTransportError, NodeHealth as PersistedNodeHealth, NodeStatus as PersistedNodeStatus,
+    wait_until_fleet_converged_or_timeout,
 };
 #[cfg(test)]
 use frankenengine_node::tools::replay_bundle::{fixture_incident_events, generate_replay_bundle};
@@ -13582,12 +13583,27 @@ struct FleetCliStatusReport {
 #[derive(Debug, Clone, Serialize)]
 struct FleetCliActionReport {
     action: FleetActionResult,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    convergence_receipt: Option<FleetCliConvergenceReceipt>,
     status: FleetStatus,
     state_dir: PathBuf,
     convergence_timeout_seconds: u64,
     stale_nodes: Vec<PersistedNodeStatus>,
     active_incidents: Vec<FleetCliPendingIncident>,
     state: FleetSharedState,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct FleetCliConvergenceReceipt {
+    schema_version: String,
+    operation_id: String,
+    event_code: String,
+    completed_at: String,
+    elapsed_ms: u64,
+    poll_interval_ms: u64,
+    timeout_ms: u64,
+    timed_out: bool,
+    convergence: Option<ConvergenceState>,
 }
 
 fn resolve_fleet_state_dir(
@@ -13682,6 +13698,10 @@ fn convergence_progress(converged_nodes: u32, total_nodes: u32) -> u8 {
 
     let progress = (u64::from(converged_nodes) * 100) / u64::from(total_nodes);
     u8::try_from(progress).unwrap_or(100)
+}
+
+fn duration_millis_u64(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 fn derive_active_fleet_incidents(
@@ -13895,15 +13915,63 @@ fn aggregate_convergence(active_incidents: &[FleetCliPendingIncident]) -> Option
     })
 }
 
+fn fleet_incidents_converged(active_incidents: &[FleetCliPendingIncident]) -> bool {
+    active_incidents.iter().all(|incident| {
+        incident.convergence.total_nodes == 0
+            || incident.convergence.phase == ConvergencePhase::Converged
+    })
+}
+
+fn wait_for_fleet_cli_convergence(project_root: &Path) -> Result<(LoadedFleetState, bool, u64)> {
+    let mut loaded = load_fleet_state(project_root)?;
+    let timeout = Duration::from_secs(loaded.convergence_timeout_seconds);
+    let outcome = wait_until_fleet_converged_or_timeout(timeout, || {
+        loaded = load_fleet_state(project_root)
+            .map_err(|err| FleetTransportError::stale_state(err.to_string()))?;
+        Ok(fleet_incidents_converged(&loaded.active_incidents))
+    })
+    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+
+    Ok((
+        loaded,
+        outcome.timed_out,
+        duration_millis_u64(outcome.elapsed),
+    ))
+}
+
+fn build_fleet_convergence_receipt(
+    operation_id: &str,
+    timed_out: bool,
+    elapsed_ms: u64,
+    timeout_seconds: u64,
+    convergence: Option<ConvergenceState>,
+) -> FleetCliConvergenceReceipt {
+    FleetCliConvergenceReceipt {
+        schema_version: "franken-node/fleet-convergence-receipt/v1".to_string(),
+        operation_id: operation_id.to_string(),
+        event_code: FLEET_RECONCILE_COMPLETED.to_string(),
+        completed_at: Utc::now().to_rfc3339(),
+        elapsed_ms,
+        poll_interval_ms: duration_millis_u64(
+            frankenengine_node::control_plane::fleet_transport::FLEET_CONVERGENCE_POLL_INTERVAL,
+        ),
+        timeout_ms: timeout_seconds.saturating_mul(1_000),
+        timed_out,
+        convergence,
+    }
+}
+
 fn fleet_action_report(
     project_root: &Path,
     requested_zone: &str,
     action: FleetActionResult,
+    convergence_receipt: Option<FleetCliConvergenceReceipt>,
 ) -> Result<FleetCliActionReport> {
     let loaded = load_fleet_state(project_root)?;
     let status = fleet_status_from_loaded_state(&loaded, requested_zone);
     Ok(FleetCliActionReport {
         action,
+        convergence_receipt,
         status,
         state_dir: loaded.state_dir,
         convergence_timeout_seconds: loaded.convergence_timeout_seconds,
@@ -13930,7 +13998,14 @@ fn emit_fleet_action_report(report: &FleetCliActionReport, json: bool) -> Result
     if json {
         println!("{}", serde_json::to_string_pretty(report)?);
     } else {
-        println!("{}", render_fleet_action_human(&report.action));
+        let mut rendered = render_fleet_action_human(&report.action);
+        if let Some(receipt) = &report.convergence_receipt {
+            rendered.push_str(&format!(
+                "\n  convergence_receipt_elapsed_ms={} timed_out={}",
+                receipt.elapsed_ms, receipt.timed_out
+            ));
+        }
+        println!("{rendered}");
     }
     Ok(())
 }
@@ -17939,6 +18014,7 @@ fn main() -> Result<()> {
                         trace_id: trace.trace_id.clone(),
                         event_code: FLEET_RELEASED.to_string(),
                     },
+                    None,
                 )?;
                 debug_assert_eq!(report.state_dir, state_dir);
                 emit_fleet_action_report(&report, args.json)?;
@@ -17968,8 +18044,10 @@ fn main() -> Result<()> {
                     }
                 }
 
-                let refreshed = load_fleet_state(Path::new("."))?;
                 let operation_id = fleet_operation_id("reconcile");
+                let (converged_state, timed_out, elapsed_ms) =
+                    wait_for_fleet_cli_convergence(Path::new("."))?;
+                let convergence = aggregate_convergence(&converged_state.active_incidents);
                 let issued_at = Utc::now().to_rfc3339();
                 let report = fleet_action_report(
                     Path::new("."),
@@ -17984,10 +18062,17 @@ fn main() -> Result<()> {
                             "all",
                             &issued_at,
                         ),
-                        convergence: aggregate_convergence(&refreshed.active_incidents),
+                        convergence: convergence.clone(),
                         trace_id: trace.trace_id.clone(),
                         event_code: FLEET_RECONCILE_COMPLETED.to_string(),
                     },
+                    Some(build_fleet_convergence_receipt(
+                        &operation_id,
+                        timed_out,
+                        elapsed_ms,
+                        converged_state.convergence_timeout_seconds,
+                        convergence,
+                    )),
                 )?;
                 emit_fleet_action_report(&report, args.json)?;
             }

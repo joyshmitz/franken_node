@@ -8,7 +8,7 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::capacity_defaults::aliases::{MAX_ACTION_LOG_ENTRIES, MAX_NODES_CAP};
@@ -27,6 +27,13 @@ const MAX_ACTION_RECORD_BYTES: usize = 2_048;
 const ACTION_LOG_COMPACTION_THRESHOLD_BYTES: u64 = 10 * 1024 * 1024;
 const ACTION_LOG_RETENTION_DAYS: i64 = 30;
 const LOCK_RETRY_BACKOFF_MILLIS: [u64; 3] = [100, 200, 400];
+pub const FLEET_CONVERGENCE_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FleetConvergenceWaitOutcome {
+    pub elapsed: Duration,
+    pub timed_out: bool,
+}
 
 /// Bounded push helper that maintains capacity by removing oldest entries when limit is exceeded.
 /// When capacity is exceeded, removes oldest entries to maintain the limit.
@@ -783,6 +790,34 @@ fn validate_action_record(action: &FleetActionRecord) -> Result<(), FleetTranspo
 
 fn lock_retry_backoffs() -> [Duration; LOCK_RETRY_BACKOFF_MILLIS.len()] {
     LOCK_RETRY_BACKOFF_MILLIS.map(Duration::from_millis)
+}
+
+pub fn wait_until_fleet_converged_or_timeout<F>(
+    timeout: Duration,
+    mut is_converged: F,
+) -> Result<FleetConvergenceWaitOutcome, FleetTransportError>
+where
+    F: FnMut() -> Result<bool, FleetTransportError>,
+{
+    let started = Instant::now();
+    loop {
+        if is_converged()? {
+            return Ok(FleetConvergenceWaitOutcome {
+                elapsed: started.elapsed(),
+                timed_out: false,
+            });
+        }
+
+        let elapsed = started.elapsed();
+        if elapsed >= timeout {
+            return Ok(FleetConvergenceWaitOutcome {
+                elapsed,
+                timed_out: true,
+            });
+        }
+
+        thread::sleep(FLEET_CONVERGENCE_POLL_INTERVAL.min(timeout.saturating_sub(elapsed)));
+    }
 }
 
 fn lock_file_with_backoff(

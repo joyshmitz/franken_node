@@ -335,7 +335,12 @@ fn fleet_reconcile_republishes_pending_quarantines_for_stale_nodes() {
         })
         .expect("write stale node");
 
-    let output = run_cli_with_fleet_state(&["fleet", "reconcile", "--json"], &fleet_state_dir);
+    let output = run_cli_in_dir_with_fleet_state_and_env(
+        &repo_root(),
+        &["fleet", "reconcile", "--json"],
+        &fleet_state_dir,
+        &[("FRANKEN_NODE_FLEET_CONVERGENCE_TIMEOUT_SECONDS", "1")],
+    );
     assert!(
         output.status.success(),
         "fleet reconcile --json failed: {}",
@@ -346,6 +351,13 @@ fn fleet_reconcile_republishes_pending_quarantines_for_stale_nodes() {
         serde_json::from_slice(&output.stdout).expect("fleet reconcile json");
     assert_eq!(payload["action"]["action_type"], "reconcile");
     assert_eq!(payload["action"]["event_code"], "FLEET-005");
+    assert_eq!(payload["convergence_receipt"]["timed_out"], true);
+    assert!(
+        payload["convergence_receipt"]["elapsed_ms"]
+            .as_u64()
+            .expect("elapsed_ms")
+            >= 1_000
+    );
 
     let actions = transport.list_actions().expect("list actions");
     assert_eq!(actions.len(), 2);
@@ -364,6 +376,122 @@ fn fleet_reconcile_republishes_pending_quarantines_for_stale_nodes() {
             && reason == "reconcile verification"
             && *quarantine_version == 5
     ));
+}
+
+#[test]
+fn fleet_reconcile_waits_for_delayed_node_convergence_receipt() {
+    let fleet_state = tempdir().expect("tempdir");
+    let fleet_state_dir = fleet_state.path().join("fleet-state");
+    let mut transport = seed_transport(&fleet_state_dir);
+    let now = Utc::now();
+    let delay = Duration::from_millis(350);
+
+    transport
+        .publish_action(&FleetActionRecord {
+            action_id: "fleet-op-quarantine-delayed-reconcile".to_string(),
+            emitted_at: now,
+            action: FleetAction::Quarantine {
+                zone_id: "zone-delayed".to_string(),
+                incident_id: "inc-delayed-reconcile".to_string(),
+                target_id: "sha256:delayed-reconcile".to_string(),
+                target_kind: FleetTargetKind::Artifact,
+                reason: "delayed reconcile verification".to_string(),
+                quarantine_version: 9,
+            },
+        })
+        .expect("publish quarantine");
+    transport
+        .upsert_node_status(&NodeStatus {
+            zone_id: "zone-delayed".to_string(),
+            node_id: "node-converged".to_string(),
+            last_seen: now,
+            quarantine_version: 9,
+            health: NodeHealth::Healthy,
+        })
+        .expect("write converged node");
+    transport
+        .upsert_node_status(&NodeStatus {
+            zone_id: "zone-delayed".to_string(),
+            node_id: "node-delayed".to_string(),
+            last_seen: now - TimeDelta::seconds(600),
+            quarantine_version: 1,
+            health: NodeHealth::Degraded,
+        })
+        .expect("write delayed stale node");
+
+    let updater_state_dir = fleet_state_dir.clone();
+    let updater = std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let mut delayed_transport = FileFleetTransport::new(&updater_state_dir);
+            delayed_transport
+                .initialize()
+                .expect("initialize delayed updater transport");
+            let actions = delayed_transport.list_actions().expect("list actions");
+            if actions.iter().any(|record| {
+                record
+                    .action_id
+                    .starts_with("fleet-op-reconcile-republish-")
+                    && matches!(
+                        &record.action,
+                        FleetAction::Quarantine {
+                            incident_id,
+                            zone_id,
+                            ..
+                        } if incident_id == "inc-delayed-reconcile" && zone_id == "zone-delayed"
+                    )
+            }) {
+                std::thread::sleep(delay);
+                delayed_transport
+                    .upsert_node_status(&NodeStatus {
+                        zone_id: "zone-delayed".to_string(),
+                        node_id: "node-delayed".to_string(),
+                        last_seen: Utc::now(),
+                        quarantine_version: 9,
+                        health: NodeHealth::Healthy,
+                    })
+                    .expect("write delayed node convergence");
+                return;
+            }
+
+            assert!(
+                Instant::now() < deadline,
+                "fleet reconcile never republished delayed quarantine"
+            );
+            std::thread::sleep(Duration::from_millis(25));
+        }
+    });
+
+    let output = run_cli_in_dir_with_fleet_state_and_env(
+        &repo_root(),
+        &["fleet", "reconcile", "--json"],
+        &fleet_state_dir,
+        &[("FRANKEN_NODE_FLEET_CONVERGENCE_TIMEOUT_SECONDS", "3")],
+    );
+    updater
+        .join()
+        .expect("delayed convergence updater should finish");
+    assert!(
+        output.status.success(),
+        "fleet reconcile --json failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("fleet reconcile json");
+    assert_eq!(payload["action"]["action_type"], "reconcile");
+    assert_eq!(payload["action"]["event_code"], "FLEET-005");
+    assert_eq!(payload["convergence_receipt"]["timed_out"], false);
+    assert_eq!(
+        payload["convergence_receipt"]["convergence"]["phase"],
+        "Converged"
+    );
+    assert!(
+        payload["convergence_receipt"]["elapsed_ms"]
+            .as_u64()
+            .expect("elapsed_ms")
+            >= u64::try_from(delay.as_millis()).expect("delay fits u64")
+    );
 }
 
 #[test]
