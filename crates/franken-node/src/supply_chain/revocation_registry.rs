@@ -3,6 +3,11 @@
 //! Tracks revoked artifacts per zone/tenant. Revocation heads are strictly
 //! monotonic: stale updates are rejected. State is recoverable from the
 //! canonical revocation log.
+//!
+//! # Input Validation
+//!
+//! All string inputs are length-validated to prevent DoS attacks through
+//! oversized input strings that could cause memory exhaustion.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -14,6 +19,12 @@ const MAX_AUDIT_ENTRIES: usize = 4096;
 
 /// Maximum revoked artifacts per zone before further revocations are rejected.
 const MAX_REVOKED_PER_ZONE: usize = 4096;
+
+// Input validation limits to prevent DoS attacks
+const MAX_ZONE_ID_LEN: usize = 256;
+const MAX_ARTIFACT_ID_LEN: usize = 512;
+const MAX_REASON_LEN: usize = 1024;
+const MAX_TRACE_ID_LEN: usize = 256;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
@@ -128,6 +139,16 @@ impl RevocationRegistry {
 
     /// Initialize a zone with head at sequence 0.
     pub fn init_zone(&mut self, zone_id: &str) -> Result<(), RevocationError> {
+        // Input validation to prevent DoS attacks
+        if zone_id.len() > MAX_ZONE_ID_LEN {
+            return Err(RevocationError::InvalidInput {
+                detail: format!(
+                    "zone_id too long: {} characters (max: {})",
+                    zone_id.len(), MAX_ZONE_ID_LEN
+                ),
+            });
+        }
+
         if zone_id.trim().is_empty() {
             return Err(RevocationError::InvalidInput {
                 detail: "zone_id must not be empty".to_string(),
@@ -140,6 +161,16 @@ impl RevocationRegistry {
 
     /// Get the current head sequence for a zone.
     pub fn current_head(&self, zone_id: &str) -> Result<u64, RevocationError> {
+        // Input validation to prevent DoS attacks
+        if zone_id.len() > MAX_ZONE_ID_LEN {
+            return Err(RevocationError::InvalidInput {
+                detail: format!(
+                    "zone_id too long: {} characters (max: {})",
+                    zone_id.len(), MAX_ZONE_ID_LEN
+                ),
+            });
+        }
+
         self.heads
             .get(zone_id)
             .copied()
@@ -154,6 +185,43 @@ impl RevocationRegistry {
     /// INV-REV-STALE-REJECT: rejects offered <= current.
     /// INV-REV-ZONE-ISOLATED: operates on a single zone.
     pub fn advance_head(&mut self, head: RevocationHead) -> Result<u64, RevocationError> {
+        // Input validation to prevent DoS attacks through oversized strings
+        if head.zone_id.len() > MAX_ZONE_ID_LEN {
+            return Err(RevocationError::InvalidInput {
+                detail: format!(
+                    "zone_id too long: {} characters (max: {})",
+                    head.zone_id.len(), MAX_ZONE_ID_LEN
+                ),
+            });
+        }
+
+        if head.revoked_artifact.len() > MAX_ARTIFACT_ID_LEN {
+            return Err(RevocationError::InvalidInput {
+                detail: format!(
+                    "revoked_artifact too long: {} characters (max: {})",
+                    head.revoked_artifact.len(), MAX_ARTIFACT_ID_LEN
+                ),
+            });
+        }
+
+        if head.reason.len() > MAX_REASON_LEN {
+            return Err(RevocationError::InvalidInput {
+                detail: format!(
+                    "reason too long: {} characters (max: {})",
+                    head.reason.len(), MAX_REASON_LEN
+                ),
+            });
+        }
+
+        if head.trace_id.len() > MAX_TRACE_ID_LEN {
+            return Err(RevocationError::InvalidInput {
+                detail: format!(
+                    "trace_id too long: {} characters (max: {})",
+                    head.trace_id.len(), MAX_TRACE_ID_LEN
+                ),
+            });
+        }
+
         if head.zone_id.trim().is_empty() {
             return Err(RevocationError::InvalidInput {
                 detail: "zone_id must not be empty".to_string(),
@@ -248,6 +316,25 @@ impl RevocationRegistry {
 
     /// Check if an artifact is revoked in a given zone.
     pub fn is_revoked(&self, zone_id: &str, artifact: &str) -> Result<bool, RevocationError> {
+        // Input validation to prevent DoS attacks
+        if zone_id.len() > MAX_ZONE_ID_LEN {
+            return Err(RevocationError::InvalidInput {
+                detail: format!(
+                    "zone_id too long: {} characters (max: {})",
+                    zone_id.len(), MAX_ZONE_ID_LEN
+                ),
+            });
+        }
+
+        if artifact.len() > MAX_ARTIFACT_ID_LEN {
+            return Err(RevocationError::InvalidInput {
+                detail: format!(
+                    "artifact too long: {} characters (max: {})",
+                    artifact.len(), MAX_ARTIFACT_ID_LEN
+                ),
+            });
+        }
+
         let entries = self
             .revoked
             .get(zone_id)
