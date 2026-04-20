@@ -876,6 +876,9 @@ dependencies = [
  "serde_cbor",
  "serde_json",
  "sha2",
+ "sqlmodel",
+ "sqlmodel-core",
+ "sqlmodel-schema",
  "subtle",
  "syn",
  "tempfile",
@@ -1911,6 +1914,84 @@ checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der",
+]
+
+[[package]]
+name = "sqlmodel"
+version = "0.2.1"
+dependencies = [
+ "asupersync 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde",
+ "serde_json",
+ "sqlmodel-core",
+ "sqlmodel-macros",
+ "sqlmodel-pool",
+ "sqlmodel-query",
+ "sqlmodel-schema",
+ "sqlmodel-session",
+]
+
+[[package]]
+name = "sqlmodel-core"
+version = "0.2.1"
+dependencies = [
+ "asupersync 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "regex",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "sqlmodel-macros"
+version = "0.2.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "regex",
+ "syn",
+]
+
+[[package]]
+name = "sqlmodel-pool"
+version = "0.2.1"
+dependencies = [
+ "asupersync 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sqlmodel-core",
+ "tracing",
+]
+
+[[package]]
+name = "sqlmodel-query"
+version = "0.2.1"
+dependencies = [
+ "asupersync 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde",
+ "sqlmodel-core",
+ "tracing",
+]
+
+[[package]]
+name = "sqlmodel-schema"
+version = "0.2.1"
+dependencies = [
+ "asupersync 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde",
+ "sqlmodel-core",
+ "sqlmodel-macros",
+ "tracing",
+]
+
+[[package]]
+name = "sqlmodel-session"
+version = "0.2.1"
+dependencies = [
+ "asupersync 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde",
+ "serde_json",
+ "sqlmodel-core",
+ "sqlmodel-query",
+ "tracing",
 ]
 
 [[package]]
