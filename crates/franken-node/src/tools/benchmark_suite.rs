@@ -178,6 +178,7 @@ impl ScoringConfig {
 /// Return the default scoring configuration for known scenario names.
 pub fn default_scoring(scenario_name: &str) -> Option<ScoringConfig> {
     match scenario_name {
+        "secure-extension-heavy" => Some(ScoringConfig::lower_is_better(250.0, 1000.0)),
         "cold_start_latency" => Some(ScoringConfig::lower_is_better(100.0, 500.0)),
         "p99_request_latency" => Some(ScoringConfig::lower_is_better(1.0, 10.0)),
         "extension_overhead_ratio" => Some(ScoringConfig::lower_is_better(1.0, 1.5)),
@@ -654,6 +655,8 @@ impl SuiteConfig {
             .ok()
             .and_then(|raw| raw.parse::<u64>().ok())
             .unwrap_or(16_384);
+        let timestamp_utc = std::env::var("FRANKEN_NODE_BENCH_TIMESTAMP_UTC")
+            .unwrap_or_else(|_| chrono::Utc::now().to_rfc3339());
 
         SuiteConfig {
             hardware_profile: HardwareProfile {
@@ -667,7 +670,7 @@ impl SuiteConfig {
                 node: None,
                 bun: None,
             },
-            timestamp_utc: chrono::Utc::now().to_rfc3339(),
+            timestamp_utc,
             regression_threshold_pct: DEFAULT_REGRESSION_THRESHOLD_PCT,
         }
     }
@@ -700,6 +703,15 @@ impl BenchmarkSuite {
     /// Load the default set of benchmark scenarios covering all six dimensions.
     pub fn load_default_scenarios(&mut self) {
         let defaults = vec![
+            ScenarioDefinition {
+                dimension: BenchmarkDimension::PerformanceUnderHardening,
+                name: "secure-extension-heavy".to_string(),
+                unit: "ms".to_string(),
+                iterations: 5,
+                warmup_iterations: 2,
+                sandbox_required: true,
+                scoring: ScoringConfig::lower_is_better(250.0, 1000.0),
+            },
             ScenarioDefinition {
                 dimension: BenchmarkDimension::PerformanceUnderHardening,
                 name: "cold_start_latency".to_string(),
