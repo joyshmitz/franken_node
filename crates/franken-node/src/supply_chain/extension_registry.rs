@@ -34,6 +34,7 @@
 //! - **INV-SER-NO-SHAPE-CHECKS**: No admission decision relies on field presence,
 //!   hex shape, or string formatting alone.
 //! - **INV-SER-NAME-UNIQUE**: Extension names are unique across active extensions.
+//! - **INV-SER-INPUT-BOUNDED**: All string inputs are length-validated to prevent DoS.
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -49,6 +50,14 @@ use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
 const MAX_REVOCATIONS: usize = 4096;
 const MAX_ADMISSION_RECEIPTS: usize = 4096;
 const MAX_VERSIONS_PER_EXTENSION: usize = 1024;
+
+// Input validation limits to prevent DoS attacks
+const MAX_EXTENSION_NAME_LEN: usize = 256;
+const MAX_EXTENSION_DESCRIPTION_LEN: usize = 4096;
+const MAX_PUBLISHER_ID_LEN: usize = 256;
+const MAX_TAG_LEN: usize = 128;
+const MAX_TAGS_COUNT: usize = 32;
+const MAX_TRACE_ID_LEN: usize = 256;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
@@ -96,6 +105,7 @@ pub mod event_codes {
     pub const SER_ERR_TRANSPARENCY_FAILED: &str = "SER-ERR-007";
     pub const SER_ERR_INTERNAL: &str = "SER-ERR-008";
     pub const SER_ERR_DUPLICATE_NAME: &str = "SER-ERR-009";
+    pub const SER_ERR_INVALID_INPUT: &str = "SER-ERR-010";
 }
 
 pub mod invariants {
@@ -566,6 +576,132 @@ impl SignedExtensionRegistry {
         trace_id: &str,
         now_epoch: u64,
     ) -> RegistryResult {
+        // Input validation to prevent DoS attacks through oversized strings
+        if trace_id.len() > MAX_TRACE_ID_LEN {
+            // Can't log this error normally since trace_id itself is invalid
+            return RegistryResult {
+                success: false,
+                extension_id: None,
+                error_code: Some(event_codes::SER_ERR_INVALID_INPUT.to_string()),
+                detail: format!(
+                    "Trace ID too long: {} characters (max: {})",
+                    trace_id.len(), MAX_TRACE_ID_LEN
+                ),
+            };
+        }
+
+        if request.name.len() > MAX_EXTENSION_NAME_LEN {
+            self.log(
+                event_codes::SER_ERR_INVALID_INPUT,
+                "",
+                trace_id,
+                serde_json::json!({
+                    "field": "name",
+                    "length": request.name.len(),
+                    "max_allowed": MAX_EXTENSION_NAME_LEN,
+                }),
+            );
+            return RegistryResult {
+                success: false,
+                extension_id: None,
+                error_code: Some(event_codes::SER_ERR_INVALID_INPUT.to_string()),
+                detail: format!(
+                    "Extension name too long: {} characters (max: {})",
+                    request.name.len(), MAX_EXTENSION_NAME_LEN
+                ),
+            };
+        }
+
+        if request.description.len() > MAX_EXTENSION_DESCRIPTION_LEN {
+            self.log(
+                event_codes::SER_ERR_INVALID_INPUT,
+                "",
+                trace_id,
+                serde_json::json!({
+                    "field": "description",
+                    "length": request.description.len(),
+                    "max_allowed": MAX_EXTENSION_DESCRIPTION_LEN,
+                }),
+            );
+            return RegistryResult {
+                success: false,
+                extension_id: None,
+                error_code: Some(event_codes::SER_ERR_INVALID_INPUT.to_string()),
+                detail: format!(
+                    "Extension description too long: {} characters (max: {})",
+                    request.description.len(), MAX_EXTENSION_DESCRIPTION_LEN
+                ),
+            };
+        }
+
+        if request.publisher_id.len() > MAX_PUBLISHER_ID_LEN {
+            self.log(
+                event_codes::SER_ERR_INVALID_INPUT,
+                "",
+                trace_id,
+                serde_json::json!({
+                    "field": "publisher_id",
+                    "length": request.publisher_id.len(),
+                    "max_allowed": MAX_PUBLISHER_ID_LEN,
+                }),
+            );
+            return RegistryResult {
+                success: false,
+                extension_id: None,
+                error_code: Some(event_codes::SER_ERR_INVALID_INPUT.to_string()),
+                detail: format!(
+                    "Publisher ID too long: {} characters (max: {})",
+                    request.publisher_id.len(), MAX_PUBLISHER_ID_LEN
+                ),
+            };
+        }
+
+        if request.tags.len() > MAX_TAGS_COUNT {
+            self.log(
+                event_codes::SER_ERR_INVALID_INPUT,
+                "",
+                trace_id,
+                serde_json::json!({
+                    "field": "tags",
+                    "count": request.tags.len(),
+                    "max_allowed": MAX_TAGS_COUNT,
+                }),
+            );
+            return RegistryResult {
+                success: false,
+                extension_id: None,
+                error_code: Some(event_codes::SER_ERR_INVALID_INPUT.to_string()),
+                detail: format!(
+                    "Too many tags: {} (max: {})",
+                    request.tags.len(), MAX_TAGS_COUNT
+                ),
+            };
+        }
+
+        for (i, tag) in request.tags.iter().enumerate() {
+            if tag.len() > MAX_TAG_LEN {
+                self.log(
+                    event_codes::SER_ERR_INVALID_INPUT,
+                    "",
+                    trace_id,
+                    serde_json::json!({
+                        "field": "tag",
+                        "index": i,
+                        "length": tag.len(),
+                        "max_allowed": MAX_TAG_LEN,
+                    }),
+                );
+                return RegistryResult {
+                    success: false,
+                    extension_id: None,
+                    error_code: Some(event_codes::SER_ERR_INVALID_INPUT.to_string()),
+                    detail: format!(
+                        "Tag {} too long: {} characters (max: {})",
+                        i, tag.len(), MAX_TAG_LEN
+                    ),
+                };
+            }
+        }
         // Evaluate admission via the shared kernel
         let receipt = self.admission_kernel.evaluate(
             &request.manifest_bytes,
