@@ -19,6 +19,9 @@ pub mod transition_abort;
 mod control_plane_conformance_tests;
 
 #[cfg(test)]
+mod metamorphic_epoch_tests;
+
+#[cfg(test)]
 mod epoch_window_negative_tests {
     use super::control_epoch::{
         ControlEpoch, EpochError, EpochRejectionReason, EpochStore, ValidityWindowPolicy,
