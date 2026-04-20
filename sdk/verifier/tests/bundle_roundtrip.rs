@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use frankenengine_verifier_sdk::SDK_VERSION;
 use frankenengine_verifier_sdk::bundle::{
-    BundleArtifact, REPLAY_BUNDLE_SCHEMA_VERSION, ReplayBundle, TimelineEvent, hash, seal,
-    serialize, verify,
+    BundleArtifact, BundleChunk, BundleHeader, BundleSignature, REPLAY_BUNDLE_HASH_ALGORITHM,
+    REPLAY_BUNDLE_SCHEMA_VERSION, ReplayBundle, TimelineEvent, hash, seal, serialize, verify,
 };
 use serde_json::json;
 
@@ -70,6 +70,7 @@ federated-peer,frankenengine-node-0.1.0,quarantine,sha256:36b7
         "transcripts/replay.ndjson".to_string(),
         artifact("application/x-ndjson", transcript),
     );
+    let chunks = chunks_from_artifacts(&artifacts);
 
     let mut metadata = BTreeMap::new();
     metadata.insert(
@@ -80,6 +81,14 @@ federated-peer,frankenengine-node-0.1.0,quarantine,sha256:36b7
     metadata.insert("runtime_profile".to_string(), "strict".to_string());
 
     let mut bundle = ReplayBundle {
+        header: BundleHeader {
+            hash_algorithm: REPLAY_BUNDLE_HASH_ALGORITHM.to_string(),
+            payload_length_bytes: payload_length_bytes(&artifacts),
+            chunk_count: chunks
+                .len()
+                .try_into()
+                .expect("fixture chunk count should fit u32"),
+        },
         schema_version: REPLAY_BUNDLE_SCHEMA_VERSION.to_string(),
         sdk_version: SDK_VERSION.to_string(),
         bundle_id: "018f4c6e-69d5-7a52-9d4d-0f7ffab7c042".to_string(),
@@ -159,11 +168,47 @@ federated-peer,frankenengine-node-0.1.0,quarantine,sha256:36b7
             "transcripts/replay.ndjson".to_string(),
         ],
         artifacts,
+        chunks,
         metadata,
         integrity_hash: String::new(),
+        signature: BundleSignature {
+            algorithm: REPLAY_BUNDLE_HASH_ALGORITHM.to_string(),
+            signature_hex: String::new(),
+        },
     };
     seal(&mut bundle).expect("fixture should seal");
     bundle
+}
+
+fn chunks_from_artifacts(artifacts: &BTreeMap<String, BundleArtifact>) -> Vec<BundleChunk> {
+    let total_chunks = artifacts
+        .len()
+        .try_into()
+        .expect("fixture chunk count should fit u32");
+    artifacts
+        .iter()
+        .enumerate()
+        .map(|(index, (path, artifact))| BundleChunk {
+            chunk_index: index
+                .try_into()
+                .expect("fixture chunk index should fit u32"),
+            total_chunks,
+            artifact_path: path.clone(),
+            payload_length_bytes: u64::try_from(artifact.bytes_hex.len() / 2)
+                .expect("fixture artifact length should fit u64"),
+            payload_digest: artifact.digest.clone(),
+        })
+        .collect()
+}
+
+fn payload_length_bytes(artifacts: &BTreeMap<String, BundleArtifact>) -> u64 {
+    artifacts
+        .values()
+        .map(|artifact| {
+            u64::try_from(artifact.bytes_hex.len() / 2)
+                .expect("fixture artifact length should fit u64")
+        })
+        .sum()
 }
 
 fn artifact(media_type: &str, bytes: &[u8]) -> BundleArtifact {
