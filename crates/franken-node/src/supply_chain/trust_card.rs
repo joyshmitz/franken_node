@@ -3106,7 +3106,7 @@ mod tests {
             .expect_err("older signed snapshot must be rejected after high-water advances");
 
         assert!(
-            matches!(err, TrustCardError::InvalidSnapshot(detail) if detail.contains("rollback rejected")),
+            matches!(err, TrustCardError::InvalidSnapshot(ref detail) if detail.contains("rollback rejected")),
             "unexpected error: {err:?}"
         );
     }
