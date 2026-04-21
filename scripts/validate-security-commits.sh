@@ -12,6 +12,13 @@ SECURITY_PATHS=(
     "crates/franken-node/Cargo.toml"                # Feature flags that affect security
     "crates/franken-node/src/storage/"              # Data access security
     "crates/franken-node/src/runtime/"              # Runtime security
+    "crates/franken-node/src/control_plane/"        # Fleet and control plane security
+    "crates/franken-node/src/tools/"                # Security tools and replay validation
+    "crates/franken-node/src/policy/"               # Policy and evidence security
+    "crates/franken-node/src/claims/"               # Claims and attestation security
+    "crates/franken-node/src/vef/"                  # VEF security components
+    "crates/franken-node/src/repair/"               # Repair and proof carrying security
+    "crates/franken-node/src/remote/"               # Remote capability security
 )
 
 # Check if commit message claims security fix
@@ -72,9 +79,9 @@ main() {
         commit_msg=$(git log --format=%B -n 1 "$commit_hash")
 
         if is_security_commit "$commit_msg"; then
-            ((security_count++))
+            ((++security_count))
             if ! validate_commit "$commit_hash"; then
-                ((invalid_count++))
+                ((++invalid_count))
             fi
             echo
         fi
@@ -92,5 +99,38 @@ main() {
         exit 0
     fi
 }
+
+# Test function for regression verification
+test_single_security_commit_range() {
+    echo "🧪 Testing single security commit range (regression for bd-27wno)..."
+
+    # Find a recent security commit to test with
+    local security_commit
+    security_commit=$(git log --oneline --grep="security:" --max-count=1 --format="%H")
+
+    if [ -z "$security_commit" ]; then
+        echo "   ⚠️  No security commits found in recent history, skipping regression test"
+        return 0
+    fi
+
+    # Test the exact range that was failing: single commit range
+    local test_range="${security_commit}^..${security_commit}"
+    echo "   Testing range: $test_range"
+
+    # This should not exit with error code 1 due to arithmetic trap
+    if main "$test_range" >/dev/null 2>&1; then
+        echo "   ✅ Single commit range processes without arithmetic exit trap"
+        return 0
+    else
+        echo "   ❌ Single commit range still fails (exit code: $?)"
+        return 1
+    fi
+}
+
+# Run regression test if --test flag is provided
+if [ "${1:-}" = "--test" ]; then
+    test_single_security_commit_range
+    exit $?
+fi
 
 main "$@"
