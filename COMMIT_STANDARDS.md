@@ -33,17 +33,17 @@ SECURITY: Fix authentication bypass
 - `rate.*limit.*fix`
 
 ### Process:
-1. Pre-commit hook validates security claims against file changes
+1. Commit-msg hook validates security claims against file changes
 2. Post-commit audit script checks commit history for false claims
 3. False security claims are flagged as P0 workflow violations
 
 ## Validation Tools
 
-### Pre-commit Hook
+### Commit-msg Hook
 ```bash
 # Install validation hook
-cp scripts/pre-commit-security-validation .git/hooks/pre-commit
-chmod +x .git/hooks/pre-commit
+cp scripts/pre-commit-security-validation .git/hooks/commit-msg
+chmod +x .git/hooks/commit-msg
 ```
 
 ### Audit Script  

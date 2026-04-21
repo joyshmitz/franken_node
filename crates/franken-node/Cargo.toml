@@ -153,3 +153,7 @@ path = "tests/proof_generator_timeout_race.rs"
 name = "supply_chain_golden_artifacts"
 path = "tests/supply_chain_golden_artifacts.rs"
 required-features = ["extended-surfaces"]
+
+[[test]]
+name = "frankensqlite_adapter_conformance"
+path = "tests/frankensqlite_adapter_conformance.rs"

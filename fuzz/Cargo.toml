@@ -17,7 +17,8 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 
 [dependencies.frankenengine-node]
 path = "../crates/franken-node"
-features = ["fuzz"]
+default-features = false
+features = ["fuzz", "test-support"]
 
 [dependencies.frankenengine-verifier-sdk]
 path = "../sdk/verifier"
@@ -66,3 +67,14 @@ path = "fuzz_targets/fuzz_sdk_verifier_bundle_parsing.rs"
 test = false
 doc = false
 
+[[bin]]
+name = "fuzz_api_request_deserialization"
+path = "fuzz_targets/fuzz_api_request_deserialization.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_trust_card_envelope_parsing"
+path = "fuzz_targets/fuzz_trust_card_envelope_parsing.rs"
+test = false
+doc = false

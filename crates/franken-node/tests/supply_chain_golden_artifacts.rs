@@ -3,11 +3,12 @@
 //! Tests trust-card rendering, registry receipts, and claim envelope serialization
 //! with proper canonicalization for cross-platform stability.
 
-use frankenengine_node::claims::{ClaimCompiler, ClaimContent, CompilerConfig, EvidenceBundle, ExternalClaim, ValidityPeriod};
+use frankenengine_node::claims::claim_compiler::{
+    ClaimCompiler, CompilationResult, CompilerConfig, ExternalClaim,
+};
 use frankenengine_node::registry::staking_governance::{
-    AppealOutcome, AppealRecord, PublisherId, RiskTier, SlashEvent, SlashEvidence,
-    SlashRecord, StakeId, StakeRecord, StakeState, StakingAuditEntry, StakingLedger,
-    TrustGovernanceState, ViolationType
+    RiskTier, SlashEvent, SlashEvidence, SlashRecord, StakeId, StakingAuditEntry, StakingLedger,
+    ViolationType,
 };
 use frankenengine_node::supply_chain::trust_card::{
     AuditRecord, BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
@@ -130,45 +131,13 @@ fn canonical_trust_card_fixture() -> TrustCard {
 fn canonical_external_claim() -> ExternalClaim {
     ExternalClaim {
         claim_id: "claim-12345".to_string(),
-        claim_type: "security-audit".to_string(),
-        subject_extension_id: "npm:@acme/security-lib".to_string(),
-        subject_version: "1.2.3".to_string(),
-        issuer_identity: "security-auditor-corp".to_string(),
-        claim_content: ClaimContent {
-            summary: "Comprehensive security audit passed with minor recommendations".to_string(),
-            detailed_findings: vec![
-                "No critical vulnerabilities found".to_string(),
-                "Input validation patterns are robust".to_string(),
-                "Authentication mechanisms properly implemented".to_string(),
-                "Recommendation: Add rate limiting to API endpoints".to_string(),
-            ],
-            risk_assessment: "LOW".to_string(),
-            compliance_tags: vec![
-                "SOC2-TYPE2".to_string(),
-                "NIST-800-53".to_string(),
-                "OWASP-TOP10".to_string(),
-            ],
-        },
-        validity_period: ValidityPeriod {
-            issued_at: "2026-04-21T00:00:00Z".to_string(),
-            expires_at: "2027-04-21T00:00:00Z".to_string(),
-            not_before: "2026-04-21T00:00:00Z".to_string(),
-        },
-        evidence_bundle: EvidenceBundle {
-            evidence_refs: vec![
-                "audit-report-2026-Q1.pdf".to_string(),
-                "penetration-test-results.json".to_string(),
-                "static-analysis-sarif.json".to_string(),
-            ],
-            attestation_signatures: vec![
-                "sig1:0123456789abcdef".to_string(),
-                "sig2:fedcba9876543210".to_string(),
-            ],
-            provenance_chain: vec![
-                "github.com/acme-corp/security-lib@v1.2.3".to_string(),
-                "build-server.acme.com/build/12345".to_string(),
-            ],
-        },
+        claim_text: "Comprehensive security audit passed with minor recommendations".to_string(),
+        evidence_uris: vec![
+            "artifact://audit-report-2026-Q1".to_string(),
+            "artifact://penetration-test-results".to_string(),
+            "artifact://static-analysis-sarif".to_string(),
+        ],
+        source_id: "security-auditor-corp".to_string(),
     }
 }
 
@@ -257,11 +226,16 @@ fn golden_compiled_contract_envelope() {
     let config = CompilerConfig::new("test-signer", "test-key-id", 60);
     let compiler = ClaimCompiler::new(config);
 
-    let result = compiler.compile(&claim, "test-trace")
-        .expect("compilation should succeed");
+    let result = compiler.compile(&claim);
 
-    let contract_json = serde_json::to_string_pretty(&result.compiled_contract)
-        .expect("contract should serialize");
+    let contract = match result {
+        CompilationResult::Compiled { contract, .. } => contract,
+        CompilationResult::Rejected { error_code, .. } => {
+            panic!("compilation should succeed: {error_code}");
+        }
+    };
+
+    let contract_json = serde_json::to_string_pretty(&contract).expect("contract should serialize");
     let scrubbed = scrub_output(&contract_json);
 
     insta::assert_snapshot!("compiled_contract_envelope", scrubbed);
@@ -273,15 +247,17 @@ fn golden_compiled_contract_envelope() {
 fn golden_staking_audit_entry_receipt() {
     let audit_entry = StakingAuditEntry {
         entry_id: 12345,
-        operation_type: "DEPOSIT".to_string(),
-        publisher_id: PublisherId("acme-corp".to_string()),
-        stake_id: Some(StakeId(67890)),
-        amount: Some(1000),
+        event_code: "STAKE-001".to_string(),
         timestamp: 1735689600,
-        trace_id: "trace-audit-12345".to_string(),
-        details: "Stake deposit for high-risk tier capability".to_string(),
-        risk_tier: Some(RiskTier::High),
-        metadata: Some("compliance_check=passed,automated=true".to_string()),
+        publisher_id: "acme-corp".to_string(),
+        stake_id: StakeId(67890),
+        operation: "deposit".to_string(),
+        evidence_hash: None,
+        outcome: "deposited 1000 for tier high".to_string(),
+        invariants_checked: vec![
+            "INV-STAKE-MINIMUM".to_string(),
+            "INV-STAKE-AUDIT-COMPLETE".to_string(),
+        ],
     };
 
     let json = serde_json::to_string_pretty(&audit_entry)
@@ -304,21 +280,25 @@ fn golden_slash_event_receipt() {
     let slash_event = SlashEvent {
         slash_id: 9876,
         stake_id: StakeId(54321),
-        publisher_id: PublisherId("rogue-publisher".to_string()),
-        violation_type: ViolationType::PolicyViolation,
-        evidence_digest: "sha256:abcdef123456789".to_string(),
-        penalty_amount: 500,
-        slashed_at: 1735689600,
-        slash_record: SlashRecord {
-            violation_id: "VIOL-2026-001".to_string(),
-            description: "Unauthorized sandbox escape detected".to_string(),
-            penalty_amount: 500,
-            slashed_at: 1735689600,
-            evidence,
-        },
+        publisher_id: "rogue-publisher".to_string(),
+        evidence: evidence.clone(),
+        slash_amount: 500,
+        pre_balance: 1000,
+        post_balance: 500,
+        risk_tier: RiskTier::High,
+        timestamp: 1735689600,
+        penalty_hash: "sha256:abcdef123456789".to_string(),
     };
 
-    let json = serde_json::to_string_pretty(&slash_event)
+    let slash_record = SlashRecord {
+            violation_id: "VIOL-2026-001".to_string(),
+        amount: 500,
+        reason: ViolationType::PolicyViolation,
+        evidence_hash: evidence.evidence_hash.clone(),
+        timestamp: 1735689600,
+    };
+
+    let json = serde_json::to_string_pretty(&(slash_event, slash_record))
         .expect("slash event should serialize");
     let scrubbed = scrub_output(&json);
 
@@ -351,7 +331,7 @@ fn golden_registry_complete_lifecycle_receipt() {
         .expect("appeal should succeed");
 
     let _restore_result = ledger
-        .restore_appeal(appeal_record.appeal_id, AppealOutcome::Upheld, "Test restoration", "test-reviewer", 1400)
+        .resolve_appeal(appeal_record.appeal_id, false, 1400)
         .expect("restore should succeed");
 
     // Serialize just the governance state (not the full ledger for size)

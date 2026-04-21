@@ -15,6 +15,7 @@
 use std::fmt;
 
 use crate::observability::evidence_ledger::{DecisionKind, EvidenceEntry};
+use crate::security::constant_time;
 
 use crate::capacity_defaults::aliases::{MAX_FIELDS, MAX_RESULTS};
 
@@ -393,9 +394,13 @@ impl EvidenceReplayValidator {
                     epoch_id: context.epoch_id,
                 };
 
-                if expected_ref.decision_kind == got_ref.decision_kind
-                    && expected_ref.decision_id == got_ref.decision_id
-                {
+                // Compute constant-time decision ID comparison once
+                let decision_id_match = constant_time::ct_eq(
+                    &expected_ref.decision_id,
+                    &got_ref.decision_id,
+                );
+
+                if expected_ref.decision_kind == got_ref.decision_kind && decision_id_match {
                     eprintln!(
                         "{}: entry_id={}, decision_kind={}",
                         event_codes::REPLAY_MATCH,
@@ -412,7 +417,7 @@ impl EvidenceReplayValidator {
                             &got_ref.decision_kind,
                         );
                     }
-                    if expected_ref.decision_id != got_ref.decision_id {
+                    if !decision_id_match {
                         diff.add(
                             "decision_id",
                             &expected_ref.decision_id,

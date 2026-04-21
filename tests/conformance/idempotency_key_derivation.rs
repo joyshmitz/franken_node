@@ -49,7 +49,7 @@ fn demo_registry() -> ComputationRegistry {
                 ComputationEntry {
                     name: name.to_string(),
                     description: "registered for conformance vectors".to_string(),
-                    required_capabilities: vec![RemoteOperation::DataFetch],
+                    required_capabilities: vec![RemoteOperation::RemoteComputation],
                     input_schema: "{}".to_string(),
                     output_schema: "{}".to_string(),
                 },

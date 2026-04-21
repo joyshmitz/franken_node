@@ -1,0 +1,138 @@
+{
+  "api_contract_version": "1.0.0",
+  "sdk_version": "vsdk-v1.0",
+  "frozen_at": "2026-04-21T12:00:00Z",
+  "public_constants": [
+    {
+      "name": "SDK_VERSION",
+      "value": "vsdk-v1.0",
+      "type": "string",
+      "requirement_level": "must"
+    },
+    {
+      "name": "EVENT_CODE_CLAIM",
+      "value": "EVT001",
+      "type": "string",
+      "requirement_level": "must"
+    },
+    {
+      "name": "EVENT_CODE_WORKFLOW",
+      "value": "EVT002",
+      "type": "string",
+      "requirement_level": "must"
+    },
+    {
+      "name": "ERROR_CODE_VERIFICATION_FAILED",
+      "value": "ERR001",
+      "type": "string",
+      "requirement_level": "must"
+    },
+    {
+      "name": "ERROR_CODE_BUNDLE_INVALID",
+      "value": "ERR002",
+      "type": "string",
+      "requirement_level": "must"
+    },
+    {
+      "name": "ERROR_CODE_SESSION_SEALED",
+      "value": "ERR003",
+      "type": "string",
+      "requirement_level": "must"
+    },
+    {
+      "name": "MAX_SESSION_RESULTS",
+      "value": 1000,
+      "type": "u32",
+      "requirement_level": "should"
+    },
+    {
+      "name": "MAX_VERIFICATION_STEPS",
+      "value": 100,
+      "type": "u32",
+      "requirement_level": "should"
+    }
+  ],
+  "public_enums": [
+    {
+      "name": "VerificationVerdict",
+      "variants": ["pass", "fail", "inconclusive"],
+      "serde_representation": "lowercase",
+      "requirement_level": "must"
+    },
+    {
+      "name": "VerificationOperation",
+      "variants": ["claim", "workflow"],
+      "serde_representation": "lowercase",
+      "requirement_level": "must"
+    },
+    {
+      "name": "ValidationWorkflow",
+      "variants": ["migration_audit", "compliance_audit"],
+      "serde_representation": "snake_case",
+      "requirement_level": "should"
+    }
+  ],
+  "public_structures": [
+    {
+      "name": "VerificationResult",
+      "required_fields": ["operation", "verdict", "confidence_score", "checked_assertions", "execution_timestamp", "verifier_identity", "artifact_binding_hash", "verifier_signature", "sdk_version"],
+      "field_types": {
+        "operation": "VerificationOperation",
+        "verdict": "VerificationVerdict",
+        "confidence_score": "f64",
+        "checked_assertions": "Vec<AssertionResult>",
+        "execution_timestamp": "String",
+        "verifier_identity": "String",
+        "artifact_binding_hash": "String",
+        "verifier_signature": "String",
+        "sdk_version": "String"
+      },
+      "requirement_level": "must"
+    },
+    {
+      "name": "SessionStep",
+      "required_fields": ["step_index", "operation", "verdict", "artifact_binding_hash", "timestamp"],
+      "field_types": {
+        "step_index": "u32",
+        "operation": "VerificationOperation",
+        "verdict": "VerificationVerdict",
+        "artifact_binding_hash": "String",
+        "timestamp": "String"
+      },
+      "requirement_level": "must"
+    },
+    {
+      "name": "TransparencyLogEntry",
+      "required_fields": ["result_hash", "timestamp", "verifier_id", "merkle_proof"],
+      "field_types": {
+        "result_hash": "String",
+        "timestamp": "String",
+        "verifier_id": "String",
+        "merkle_proof": "Vec<String>"
+      },
+      "requirement_level": "should"
+    }
+  ],
+  "public_functions": [
+    {
+      "name": "check_sdk_version",
+      "signature": "fn check_sdk_version(version: &str) -> Result<(), String>",
+      "behavior": "Returns Ok(()) for supported versions, Err with descriptive message for unsupported",
+      "requirement_level": "must"
+    },
+    {
+      "name": "VerifierSdk::new",
+      "signature": "fn new(trust_anchor: &str) -> Result<Self, VerifierSdkError>",
+      "behavior": "Creates new SDK instance with trust anchor validation",
+      "requirement_level": "must"
+    }
+  ],
+  "breaking_change_policy": {
+    "constants": "never",
+    "enum_variants": "major_version_only",
+    "struct_required_fields": "never",
+    "struct_optional_fields": "minor_version_ok",
+    "function_signatures": "major_version_only",
+    "error_display_format": "minor_version_ok"
+  }
+}

@@ -833,7 +833,7 @@ pub fn verify_replay_bundle_signature(
             key_source: signature.key_source.clone(),
         });
     }
-    if signature.key_id != trusted_key_id {
+    if !constant_time::ct_eq(&signature.key_id, trusted_key_id) {
         return Err(ReplayBundleError::SignatureKeyUntrusted {
             actual: signature.key_id.clone(),
             expected: trusted_key_id.to_string(),
@@ -859,7 +859,7 @@ pub fn verify_replay_bundle_signature(
     let derived_key_id =
         crate::supply_chain::artifact_signing::KeyId::from_verifying_key(&verifying_key)
             .to_string();
-    if signature.key_id != derived_key_id {
+    if !constant_time::ct_eq(&signature.key_id, &derived_key_id) {
         return Err(ReplayBundleError::SignatureKeyIdMismatch {
             claimed: signature.key_id.clone(),
             derived: derived_key_id,
@@ -1870,11 +1870,30 @@ mod tests {
     }
 
     #[test]
+    fn replay_bundle_signature_rejects_key_id_not_derived_from_public_key() {
+        let mut bundle = signed_fixture_bundle("INC-RPL-SIG-KEYID-MISMATCH");
+        let forged_key_id = "0".repeat(16);
+        bundle.signature.as_mut().expect("signature").key_id = forged_key_id.clone();
+
+        let err = verify_replay_bundle_signature(&bundle, Some(&forged_key_id))
+            .expect_err("trusted key id must still match the public key");
+
+        assert!(matches!(
+            err,
+            ReplayBundleError::SignatureKeyIdMismatch { ref claimed, .. }
+                if claimed == &forged_key_id
+        ));
+    }
+
+    #[test]
     fn replay_bundle_default_verification_rejects_untrusted_signer() {
         let bundle = signed_fixture_bundle("INC-RPL-SIG-UNTRUSTED-DEFAULT");
         let err = verify_replay_bundle_signature(&bundle, None)
             .expect_err("default verification must require a trust anchor");
-        assert!(matches!(err, ReplayBundleError::SignatureTrustAnchorMissing));
+        assert!(matches!(
+            err,
+            ReplayBundleError::SignatureTrustAnchorMissing
+        ));
 
         let replay_err = replay_bundle(&bundle).expect_err("default replay must fail closed");
         assert!(matches!(
@@ -1892,7 +1911,10 @@ mod tests {
             .expect("write raw bundle");
 
         let err = read_bundle_from_path(&path).expect_err("default read must fail closed");
-        assert!(matches!(err, ReplayBundleError::SignatureTrustAnchorMissing));
+        assert!(matches!(
+            err,
+            ReplayBundleError::SignatureTrustAnchorMissing
+        ));
 
         let trusted_key_id = fixture_trusted_key_id();
         read_bundle_from_path_with_trusted_key(&path, Some(&trusted_key_id))
@@ -1906,7 +1928,10 @@ mod tests {
         let path = dir.path().join("bundle.json");
 
         let err = write_bundle_to_path(&bundle, &path).expect_err("default write must fail closed");
-        assert!(matches!(err, ReplayBundleError::SignatureTrustAnchorMissing));
+        assert!(matches!(
+            err,
+            ReplayBundleError::SignatureTrustAnchorMissing
+        ));
         assert!(!path.exists());
     }
 
@@ -2045,8 +2070,7 @@ mod tests {
         let temp_prefix = "bundle.json.tmp";
 
         let trusted_key_id = fixture_trusted_key_id();
-        write_bundle_to_path_with_trusted_key(&first, &path, &trusted_key_id)
-            .expect("write first");
+        write_bundle_to_path_with_trusted_key(&first, &path, &trusted_key_id).expect("write first");
         let mut leftovers = temp_leftovers(&dir_path, temp_prefix);
         assert!(
             leftovers.is_empty(),
@@ -2102,9 +2126,11 @@ mod tests {
         write_result.expect("write relative bundle");
         restore_result.expect("restore cwd");
 
-        let loaded =
-            read_bundle_from_path_with_trusted_key(&dir.path().join("bundle.json"), Some(&trusted_key_id))
-                .expect("read");
+        let loaded = read_bundle_from_path_with_trusted_key(
+            &dir.path().join("bundle.json"),
+            Some(&trusted_key_id),
+        )
+        .expect("read");
         assert_eq!(bundle, loaded);
     }
 

@@ -1,0 +1,149 @@
+{
+  "log_version": "1.0.0",
+  "generated_at": "2026-04-21T12:00:00Z",
+  "session_id": "[SCRUBBED_SESSION_ID]",
+  "test_type": "conformance_verification",
+  "events": [
+    {
+      "timestamp": "2026-04-21T12:00:00.001Z",
+      "event_type": "adapter_init",
+      "event_code": "FRANKENSQLITE_ADAPTER_INIT",
+      "severity": "info",
+      "message": "Frankensqlite adapter initialized",
+      "metadata": {
+        "config": {
+          "database_path": "[SCRUBBED_PATH]",
+          "pool_size": 16
+        },
+        "adapter_version": "frankensqlite-adapter-v1.0"
+      }
+    },
+    {
+      "timestamp": "2026-04-21T12:00:00.002Z",
+      "event_type": "class_registration",
+      "event_code": "FRANKENSQLITE_CLASS_REGISTERED",
+      "severity": "info",
+      "message": "Persistence class registered",
+      "metadata": {
+        "domain": "fencing_token_state",
+        "owner_module": "crates/franken-node/src/connector/fencing.rs",
+        "safety_tier": "Tier1",
+        "table_count": 3,
+        "replay_support": true
+      }
+    },
+    {
+      "timestamp": "2026-04-21T12:00:00.003Z",
+      "event_type": "gate_verification",
+      "event_code": "FRANKENSQLITE_GATE_CHECK",
+      "severity": "info",
+      "message": "Adapter gate verification completed",
+      "metadata": {
+        "gate_status": "pass",
+        "registered_classes": 21,
+        "total_tables": 47,
+        "verification_duration_ms": "[SCRUBBED_LATENCY]"
+      }
+    },
+    {
+      "timestamp": "2026-04-21T12:00:00.010Z",
+      "event_type": "tier1_operation",
+      "event_code": "FRANKENSQLITE_TIER1_WRITE",
+      "severity": "debug",
+      "message": "Tier1 write operation completed",
+      "metadata": {
+        "domain": "fencing_token_state",
+        "table": "fencing_leases",
+        "key": "[SCRUBBED_KEY]",
+        "payload_size_bytes": 128,
+        "operation_duration_ms": "[SCRUBBED_LATENCY]",
+        "transaction_id": "[SCRUBBED_TX_ID]"
+      }
+    },
+    {
+      "timestamp": "2026-04-21T12:00:00.011Z",
+      "event_type": "tier1_operation",
+      "event_code": "FRANKENSQLITE_TIER1_READ",
+      "severity": "debug",
+      "message": "Tier1 read operation completed",
+      "metadata": {
+        "domain": "fencing_token_state",
+        "table": "fencing_leases",
+        "key": "[SCRUBBED_KEY]",
+        "payload_size_bytes": 128,
+        "operation_duration_ms": "[SCRUBBED_LATENCY]",
+        "cache_hit": false
+      }
+    },
+    {
+      "timestamp": "2026-04-21T12:00:00.020Z",
+      "event_type": "tier2_operation",
+      "event_code": "FRANKENSQLITE_TIER2_FLUSH",
+      "severity": "debug",
+      "message": "Tier2 flush operation completed",
+      "metadata": {
+        "domain": "snapshot_policy_state",
+        "sequence_number": "[SCRUBBED_SEQ]",
+        "payload_size_bytes": 256,
+        "operation_duration_ms": "[SCRUBBED_LATENCY]",
+        "fsync_duration_ms": "[SCRUBBED_LATENCY]"
+      }
+    },
+    {
+      "timestamp": "2026-04-21T12:00:00.025Z",
+      "event_type": "tier3_operation",
+      "event_code": "FRANKENSQLITE_TIER3_PUT",
+      "severity": "debug",
+      "message": "Tier3 cache operation completed",
+      "metadata": {
+        "domain": "lifecycle_transition_cache",
+        "key": "[SCRUBBED_KEY]",
+        "payload_size_bytes": 64,
+        "operation_duration_ms": "[SCRUBBED_LATENCY]",
+        "cache_size_after": "[SCRUBBED_COUNT]"
+      }
+    },
+    {
+      "timestamp": "2026-04-21T12:00:00.100Z",
+      "event_type": "conformance_summary",
+      "event_code": "FRANKENSQLITE_CONFORMANCE_COMPLETE",
+      "severity": "info",
+      "message": "Conformance verification completed",
+      "metadata": {
+        "total_requirements_tested": 47,
+        "requirements_passed": 47,
+        "requirements_failed": 0,
+        "conformance_score": 1.0,
+        "test_duration_ms": "[SCRUBBED_LATENCY]"
+      }
+    }
+  ],
+  "scrubbed_fields": [
+    "session_id",
+    "metadata.config.database_path",
+    "metadata.verification_duration_ms",
+    "metadata.key",
+    "metadata.operation_duration_ms",
+    "metadata.transaction_id",
+    "metadata.sequence_number",
+    "metadata.fsync_duration_ms",
+    "metadata.cache_size_after",
+    "metadata.test_duration_ms"
+  ],
+  "event_statistics": {
+    "total_events": 8,
+    "events_by_type": {
+      "adapter_init": 1,
+      "class_registration": 1,
+      "gate_verification": 1,
+      "tier1_operation": 2,
+      "tier2_operation": 1,
+      "tier3_operation": 1,
+      "conformance_summary": 1
+    },
+    "events_by_severity": {
+      "info": 4,
+      "debug": 4
+    }
+  }
+}

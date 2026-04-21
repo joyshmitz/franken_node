@@ -1,0 +1,60 @@
+{
+  "contract_version": "bd-1a1j",
+  "matrix_version": "1.0.0",
+  "generated_at": "2026-04-21T12:00:00Z",
+  "tier_definitions": {
+    "Tier1": {
+      "label": "tier_1",
+      "durability_mode": "WalFull",
+      "journal_mode": "WAL",
+      "synchronous": "FULL",
+      "requires_replay": true,
+      "description": "Critical durability - strongest consistency guarantees"
+    },
+    "Tier2": {
+      "label": "tier_2",
+      "durability_mode": "WalNormal",
+      "journal_mode": "WAL",
+      "synchronous": "NORMAL",
+      "requires_replay": true,
+      "description": "Standard durability - balanced performance and consistency"
+    },
+    "Tier3": {
+      "label": "tier_3",
+      "durability_mode": "Memory",
+      "journal_mode": "MEMORY",
+      "synchronous": "OFF",
+      "requires_replay": false,
+      "description": "Cache-only - no durability guarantees, reconstructed on restart"
+    }
+  },
+  "durability_constraints": {
+    "WalFull": {
+      "journal_mode": "WAL",
+      "synchronous": "FULL",
+      "replay_required": true,
+      "performance_tier": "critical"
+    },
+    "WalNormal": {
+      "journal_mode": "WAL",
+      "synchronous": "NORMAL",
+      "replay_required": true,
+      "performance_tier": "standard"
+    },
+    "Memory": {
+      "journal_mode": "MEMORY",
+      "synchronous": "OFF",
+      "replay_required": false,
+      "performance_tier": "cache"
+    }
+  },
+  "compliance_rules": {
+    "tier_durability_mapping": "MUST - Each tier MUST use its assigned durability mode",
+    "replay_support_tier1_tier2": "MUST - Tier1 and Tier2 classes MUST support replay",
+    "replay_support_tier3": "MUST NOT - Tier3 classes MUST NOT support replay",
+    "unique_domains": "MUST - Each domain MUST be unique across all persistence classes",
+    "unique_tables": "MUST - Each table name MUST be unique across all persistence classes",
+    "module_ownership": "SHOULD - Each persistence class SHOULD have a clear owner module",
+    "replay_strategy_specification": "MUST - Classes with replay_support=true MUST specify replay strategy"
+  }
+}

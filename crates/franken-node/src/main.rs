@@ -7304,6 +7304,153 @@ fn render_doctor_structured_logs_jsonl(report: &DoctorReport) -> Result<String> 
     Ok(lines)
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct InitStructuredLogLine {
+    timestamp: String,
+    level: &'static str,
+    event_code: String,
+    message: String,
+    trace_id: String,
+    span_id: String,
+    surface: &'static str,
+}
+
+fn init_structured_log_line(
+    report: &InitReport,
+    event_code: &str,
+    message: &str,
+    span_name: &str,
+) -> InitStructuredLogLine {
+    InitStructuredLogLine {
+        timestamp: report.generated_at_utc.clone(),
+        level: "info",
+        event_code: event_code.to_string(),
+        message: message.to_string(),
+        trace_id: report.trace_id.clone(),
+        span_id: format!("init-{}", span_name),
+        surface: "CLI-INIT",
+    }
+}
+
+fn render_init_structured_logs_jsonl(report: &InitReport) -> Result<String> {
+    let mut lines = String::new();
+
+    // Event: init started
+    let init_line = init_structured_log_line(
+        report,
+        "INIT-001",
+        "init command started",
+        "bootstrap"
+    );
+    lines.push_str(&serde_json::to_string(&init_line)?);
+    lines.push('\n');
+
+    // Event: trust scan (if performed)
+    if let Some(trust_scan) = &report.trust_scan {
+        let scan_line = init_structured_log_line(
+            report,
+            "INIT-002",
+            &format!("trust scan completed: created {} cards", trust_scan.created_cards),
+            "scan"
+        );
+        lines.push_str(&serde_json::to_string(&scan_line)?);
+        lines.push('\n');
+    }
+
+    // Event: init completed
+    let complete_line = init_structured_log_line(
+        report,
+        "INIT-003",
+        &format!("init completed: {} file actions, profile={}", report.file_actions.len(), report.selected_profile),
+        "complete"
+    );
+    lines.push_str(&serde_json::to_string(&complete_line)?);
+    lines.push('\n');
+
+    Ok(lines)
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct RunStructuredLogLine {
+    timestamp: String,
+    level: &'static str,
+    event_code: String,
+    message: String,
+    trace_id: String,
+    span_id: String,
+    surface: &'static str,
+}
+
+fn run_structured_log_line(
+    timestamp: &str,
+    event_code: &str,
+    message: &str,
+    trace_id: &str,
+    span_name: &str,
+) -> RunStructuredLogLine {
+    RunStructuredLogLine {
+        timestamp: timestamp.to_string(),
+        level: "info",
+        event_code: event_code.to_string(),
+        message: message.to_string(),
+        trace_id: trace_id.to_string(),
+        span_id: format!("run-{}", span_name),
+        surface: "CLI-RUN",
+    }
+}
+
+fn render_run_structured_logs_jsonl(
+    preflight: &RunPreFlightReport,
+    dispatch: &ops::engine_dispatcher::RunDispatchReport,
+    receipt: &RunExecutionReceipt,
+    trace_id: &str,
+) -> Result<String> {
+    let mut lines = String::new();
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Event: preflight completed
+    let preflight_verdict = if preflight.verdict.is_blocked() { "blocked" } else { "passed" };
+    let preflight_event_code = if preflight.verdict.is_blocked() { "RUN-002" } else { "RUN-001" };
+    let preflight_line = run_structured_log_line(
+        &now,
+        preflight_event_code,
+        &format!("run preflight {}: policy={}", preflight_verdict, preflight.policy_mode),
+        trace_id,
+        "preflight"
+    );
+    lines.push_str(&serde_json::to_string(&preflight_line)?);
+    lines.push('\n');
+
+    // If blocked, don't emit further events
+    if preflight.verdict.is_blocked() {
+        return Ok(lines);
+    }
+
+    // Event: dispatch completed
+    let dispatch_line = run_structured_log_line(
+        &now,
+        "RUN-003",
+        &format!("run dispatch completed: runtime={} exit_code={:?}", dispatch.runtime, dispatch.exit_code),
+        trace_id,
+        "dispatch"
+    );
+    lines.push_str(&serde_json::to_string(&dispatch_line)?);
+    lines.push('\n');
+
+    // Event: receipt written
+    let receipt_line = run_structured_log_line(
+        &now,
+        "RUN-004",
+        &format!("run receipt written: id={} violations={}", receipt.core.receipt_id, receipt.core.violation_count),
+        trace_id,
+        "receipt"
+    );
+    lines.push_str(&serde_json::to_string(&receipt_line)?);
+    lines.push('\n');
+
+    Ok(lines)
+}
+
 fn render_operator_surface_with_frankentui(_surface_name: &str, rendered: &str) -> String {
     let lines: Vec<&str> = rendered.lines().collect();
     let height = u16::try_from(lines.len().max(1)).unwrap_or(u16::MAX);
@@ -18093,6 +18240,7 @@ fn main() -> Result<()> {
                 backup_existing,
                 scan,
                 json,
+                structured_logs_jsonl,
                 trace_id,
                 state_dir,
                 no_state,
@@ -18186,6 +18334,10 @@ fn main() -> Result<()> {
                 stdout_config_toml.clone(),
             );
 
+            if structured_logs_jsonl {
+                eprint!("{}", render_init_structured_logs_jsonl(&report)?);
+            }
+
             if json {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else if wrote_to_stdout {
@@ -18203,6 +18355,8 @@ fn main() -> Result<()> {
                 app_path,
                 policy,
                 json,
+                structured_logs_jsonl,
+                trace_id,
                 config,
                 runtime,
                 engine_bin,
@@ -18298,6 +18452,11 @@ fn main() -> Result<()> {
                 &receipt,
                 configured_run_receipt_limit(&resolved.config),
             )?;
+
+            if structured_logs_jsonl {
+                eprint!("{}", render_run_structured_logs_jsonl(&preflight, &dispatch, &receipt, &trace_id)?);
+            }
+
             emit_run_completion_output(&preflight, &dispatch, &receipt, &receipt_path, json)?;
 
             if dispatch.terminated_by_signal {

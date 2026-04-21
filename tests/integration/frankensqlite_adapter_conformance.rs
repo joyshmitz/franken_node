@@ -1653,4 +1653,190 @@ mod tests {
         let back: ConformanceResult = serde_json::from_str(&json).unwrap();
         assert_eq!(back.test_name, "test");
     }
+
+    // =========================================================================
+    // BD-2PBFA: CONFORMANCE HARNESS
+    // =========================================================================
+
+    /// BD-1A1J contract conformance test (Pattern 4: Spec-Derived Testing)
+    ///
+    /// Replaces ad-hoc scalar assertions with golden-file-backed conformance
+    /// testing against the actual bd-1a1j persistence contract. This prevents
+    /// divergence between hardcoded test data and real contract requirements.
+    #[test]
+    fn bd1a1j_full_conformance_test() {
+        use std::collections::{BTreeMap, BTreeSet};
+        use std::fs;
+        use std::path::Path;
+
+        // Load golden catalog to verify against contract
+        let catalog_path = Path::new("tests/goldens/frankensqlite/persistence_class_catalog.json");
+        let catalog_content = fs::read_to_string(catalog_path)
+            .unwrap_or_else(|e| panic!("Failed to load golden catalog from {}: {}", catalog_path.display(), e));
+        let catalog: serde_json::Value = serde_json::from_str(&catalog_content)
+            .unwrap_or_else(|e| panic!("Failed to parse golden catalog: {}", e));
+
+        // Load actual implementation data
+        let actual_classes = canonical_classes();
+        let mut test_results = Vec::new();
+
+        // BD1A1J-CATALOG-001: Total class count
+        let actual_count = actual_classes.len();
+        let expected_count = catalog["total_classes"].as_u64().unwrap() as usize;
+        let catalog_test_pass = actual_count == expected_count;
+        test_results.push((
+            "BD1A1J-CATALOG-001",
+            "Total class count matches contract",
+            catalog_test_pass,
+            format!("expected: {}, actual: {}", expected_count, actual_count)
+        ));
+
+        // BD1A1J-TIER-001: Tier1 count
+        let tier1_count = actual_classes.iter().filter(|c| matches!(c.safety_tier, SafetyTier::Tier1)).count();
+        let expected_tier1 = catalog["tier_distribution"]["tier_1"].as_u64().unwrap() as usize;
+        let tier1_test_pass = tier1_count == expected_tier1;
+        test_results.push((
+            "BD1A1J-TIER-001",
+            "Tier1 class count matches contract",
+            tier1_test_pass,
+            format!("expected: {}, actual: {}", expected_tier1, tier1_count)
+        ));
+
+        // BD1A1J-TIER-002: Tier2 count
+        let tier2_count = actual_classes.iter().filter(|c| matches!(c.safety_tier, SafetyTier::Tier2)).count();
+        let expected_tier2 = catalog["tier_distribution"]["tier_2"].as_u64().unwrap() as usize;
+        let tier2_test_pass = tier2_count == expected_tier2;
+        test_results.push((
+            "BD1A1J-TIER-002",
+            "Tier2 class count matches contract",
+            tier2_test_pass,
+            format!("expected: {}, actual: {}", expected_tier2, tier2_count)
+        ));
+
+        // BD1A1J-TIER-003: Tier3 count
+        let tier3_count = actual_classes.iter().filter(|c| matches!(c.safety_tier, SafetyTier::Tier3)).count();
+        let expected_tier3 = catalog["tier_distribution"]["tier_3"].as_u64().unwrap() as usize;
+        let tier3_test_pass = tier3_count == expected_tier3;
+        test_results.push((
+            "BD1A1J-TIER-003",
+            "Tier3 class count matches contract",
+            tier3_test_pass,
+            format!("expected: {}, actual: {}", expected_tier3, tier3_count)
+        ));
+
+        // BD1A1J-UNIQUE-001: Unique domains
+        let domains: Vec<&str> = actual_classes.iter().map(|c| c.domain.as_str()).collect();
+        let unique_domains: BTreeSet<&str> = domains.iter().copied().collect();
+        let domains_unique = domains.len() == unique_domains.len();
+        test_results.push((
+            "BD1A1J-UNIQUE-001",
+            "Domain names are unique across all classes",
+            domains_unique,
+            format!("total: {}, unique: {}", domains.len(), unique_domains.len())
+        ));
+
+        // BD1A1J-UNIQUE-002: Unique table names
+        let all_tables: Vec<&str> = actual_classes
+            .iter()
+            .flat_map(|c| c.tables.iter().map(|t| t.as_str()))
+            .collect();
+        let unique_tables: BTreeSet<&str> = all_tables.iter().copied().collect();
+        let tables_unique = all_tables.len() == unique_tables.len();
+        test_results.push((
+            "BD1A1J-UNIQUE-002",
+            "Table names are unique across all classes",
+            tables_unique,
+            format!("total: {}, unique: {}", all_tables.len(), unique_tables.len())
+        ));
+
+        // BD1A1J-DURABILITY-001: Tier1 uses WalFull
+        let tier1_wal_full = actual_classes
+            .iter()
+            .filter(|c| matches!(c.safety_tier, SafetyTier::Tier1))
+            .all(|c| matches!(c.durability_mode, DurabilityMode::WalFull));
+        test_results.push((
+            "BD1A1J-DURABILITY-001",
+            "Tier1 classes use WalFull durability mode",
+            tier1_wal_full,
+            "all Tier1 classes checked".to_string()
+        ));
+
+        // BD1A1J-DURABILITY-002: Tier2 uses WalNormal
+        let tier2_wal_normal = actual_classes
+            .iter()
+            .filter(|c| matches!(c.safety_tier, SafetyTier::Tier2))
+            .all(|c| matches!(c.durability_mode, DurabilityMode::WalNormal));
+        test_results.push((
+            "BD1A1J-DURABILITY-002",
+            "Tier2 classes use WalNormal durability mode",
+            tier2_wal_normal,
+            "all Tier2 classes checked".to_string()
+        ));
+
+        // BD1A1J-DURABILITY-003: Tier3 uses Memory
+        let tier3_memory = actual_classes
+            .iter()
+            .filter(|c| matches!(c.safety_tier, SafetyTier::Tier3))
+            .all(|c| matches!(c.durability_mode, DurabilityMode::Memory));
+        test_results.push((
+            "BD1A1J-DURABILITY-003",
+            "Tier3 classes use Memory durability mode",
+            tier3_memory,
+            "all Tier3 classes checked".to_string()
+        ));
+
+        // BD1A1J-REPLAY-001: Tier1 and Tier2 support replay
+        let tier12_replay = actual_classes
+            .iter()
+            .filter(|c| matches!(c.safety_tier, SafetyTier::Tier1 | SafetyTier::Tier2))
+            .all(|c| c.replay_support);
+        test_results.push((
+            "BD1A1J-REPLAY-001",
+            "Tier1 and Tier2 classes support replay",
+            tier12_replay,
+            "all Tier1/Tier2 classes checked".to_string()
+        ));
+
+        // BD1A1J-REPLAY-002: Tier3 does not support replay
+        let tier3_no_replay = actual_classes
+            .iter()
+            .filter(|c| matches!(c.safety_tier, SafetyTier::Tier3))
+            .all(|c| !c.replay_support);
+        test_results.push((
+            "BD1A1J-REPLAY-002",
+            "Tier3 classes do not support replay",
+            tier3_no_replay,
+            "all Tier3 classes checked".to_string()
+        ));
+
+        // Generate structured JSON output for CI integration
+        for (id, description, passed, details) in &test_results {
+            let status = if *passed { "PASS" } else { "FAIL" };
+            eprintln!("{{\"id\":\"{}\",\"status\":\"{}\",\"level\":\"Must\",\"details\":\"{}\"}}",
+                id, status, details);
+        }
+
+        // Generate summary report
+        let total_tests = test_results.len();
+        let passed_tests = test_results.iter().filter(|(_, _, passed, _)| *passed).count();
+        let failed_tests = total_tests - passed_tests;
+        let compliance_score = (passed_tests as f64 / total_tests as f64) * 100.0;
+
+        eprintln!("\n# BD-1A1J Frankensqlite Conformance Report");
+        eprintln!("**Overall**: {}/{} pass ({:.1}% compliance)", passed_tests, total_tests, compliance_score);
+
+        if failed_tests > 0 {
+            eprintln!("\n## Failed Requirements:");
+            for (id, description, passed, details) in &test_results {
+                if !*passed {
+                    eprintln!("- **{}**: {} ({})", id, description, details);
+                }
+            }
+        }
+
+        // Fail test if any conformance requirements fail
+        assert_eq!(failed_tests, 0,
+            "{} out of {} BD-1A1J conformance requirements failed (compliance: {:.1}%)",
+            failed_tests, total_tests, compliance_score);
+    }
 }

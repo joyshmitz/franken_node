@@ -1,0 +1,156 @@
+{
+  "report_version": "1.0.0",
+  "generated_at": "2026-04-21T12:00:00Z",
+  "contract_reference": "bd-1a1j",
+  "adapter_version": "frankensqlite-adapter-v1.0",
+  "test_environment": {
+    "database_path": "[SCRUBBED_PATH]",
+    "pool_size": 16,
+    "test_mode": "conformance"
+  },
+  "summary": {
+    "total_classes_tested": 21,
+    "total_requirements_tested": 47,
+    "must_requirements": {
+      "total": 32,
+      "passed": 32,
+      "failed": 0,
+      "score": 1.0
+    },
+    "should_requirements": {
+      "total": 12,
+      "passed": 12,
+      "failed": 0,
+      "score": 1.0
+    },
+    "may_requirements": {
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "score": 1.0
+    },
+    "overall_conformance_score": 1.0
+  },
+  "test_results": [
+    {
+      "requirement_id": "BD1A1J-TIER-001",
+      "section": "tier_mapping",
+      "level": "Must",
+      "description": "Tier1 classes MUST use WalFull durability mode",
+      "status": "Pass",
+      "tested_classes": 11,
+      "passing_classes": 11,
+      "failing_classes": []
+    },
+    {
+      "requirement_id": "BD1A1J-TIER-002",
+      "section": "tier_mapping",
+      "level": "Must",
+      "description": "Tier2 classes MUST use WalNormal durability mode",
+      "status": "Pass",
+      "tested_classes": 9,
+      "passing_classes": 9,
+      "failing_classes": []
+    },
+    {
+      "requirement_id": "BD1A1J-TIER-003",
+      "section": "tier_mapping",
+      "level": "Must",
+      "description": "Tier3 classes MUST use Memory durability mode",
+      "status": "Pass",
+      "tested_classes": 1,
+      "passing_classes": 1,
+      "failing_classes": []
+    },
+    {
+      "requirement_id": "BD1A1J-REPLAY-001",
+      "section": "replay_support",
+      "level": "Must",
+      "description": "Tier1 and Tier2 classes MUST support replay",
+      "status": "Pass",
+      "tested_classes": 20,
+      "passing_classes": 20,
+      "failing_classes": []
+    },
+    {
+      "requirement_id": "BD1A1J-REPLAY-002",
+      "section": "replay_support",
+      "level": "Must",
+      "description": "Tier3 classes MUST NOT support replay",
+      "status": "Pass",
+      "tested_classes": 1,
+      "passing_classes": 1,
+      "failing_classes": []
+    },
+    {
+      "requirement_id": "BD1A1J-UNIQUE-001",
+      "section": "uniqueness",
+      "level": "Must",
+      "description": "Domain names MUST be unique across all persistence classes",
+      "status": "Pass",
+      "tested_classes": 21,
+      "passing_classes": 21,
+      "failing_classes": []
+    },
+    {
+      "requirement_id": "BD1A1J-UNIQUE-002",
+      "section": "uniqueness",
+      "level": "Must",
+      "description": "Table names MUST be unique across all persistence classes",
+      "status": "Pass",
+      "tested_classes": 21,
+      "passing_classes": 21,
+      "failing_classes": []
+    },
+    {
+      "requirement_id": "BD1A1J-CATALOG-001",
+      "section": "catalog_completeness",
+      "level": "Must",
+      "description": "Catalog MUST contain exactly 21 persistence classes",
+      "status": "Pass",
+      "expected_count": 21,
+      "actual_count": 21
+    },
+    {
+      "requirement_id": "BD1A1J-ADAPTER-001",
+      "section": "adapter_behavior",
+      "level": "Must",
+      "description": "Adapter MUST emit initialization event on creation",
+      "status": "Pass",
+      "event_count": 1,
+      "event_code": "[SCRUBBED_EVENT_CODE]"
+    },
+    {
+      "requirement_id": "BD1A1J-ADAPTER-002",
+      "section": "adapter_behavior",
+      "level": "Must",
+      "description": "Adapter gate MUST pass when all canonical classes are registered",
+      "status": "Pass"
+    },
+    {
+      "requirement_id": "BD1A1J-ADAPTER-003",
+      "section": "adapter_behavior",
+      "level": "Must",
+      "description": "Adapter gate MUST fail when no classes are registered",
+      "status": "Pass"
+    }
+  ],
+  "performance_metrics": {
+    "test_execution_duration_ms": "[SCRUBBED_LATENCY]",
+    "average_class_verification_ms": "[SCRUBBED_LATENCY]",
+    "database_operations": {
+      "total_writes": "[SCRUBBED_COUNT]",
+      "total_reads": "[SCRUBBED_COUNT]",
+      "total_transactions": "[SCRUBBED_COUNT]"
+    }
+  },
+  "scrubbed_fields": [
+    "database_path",
+    "test_execution_duration_ms",
+    "average_class_verification_ms",
+    "database_operations.total_writes",
+    "database_operations.total_reads",
+    "database_operations.total_transactions",
+    "event_code"
+  ]
+}

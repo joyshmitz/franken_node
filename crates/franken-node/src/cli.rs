@@ -105,6 +105,10 @@ pub struct InitArgs {
     #[arg(long)]
     pub json: bool,
 
+    /// Emit structured diagnostic log events as JSONL to stderr.
+    #[arg(long)]
+    pub structured_logs_jsonl: bool,
+
     /// Stable trace ID for correlating init events.
     #[arg(long, default_value = "init-bootstrap")]
     pub trace_id: String,
@@ -132,6 +136,14 @@ pub struct RunArgs {
     /// Emit a machine-readable trust pre-flight report.
     #[arg(long)]
     pub json: bool,
+
+    /// Emit structured diagnostic log events as JSONL to stderr.
+    #[arg(long)]
+    pub structured_logs_jsonl: bool,
+
+    /// Stable trace ID for correlating run events.
+    #[arg(long, default_value = "run-execution")]
+    pub trace_id: String,
 
     /// Config file override.
     #[arg(long)]

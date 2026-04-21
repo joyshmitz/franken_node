@@ -686,7 +686,7 @@ impl EpochTransitionBarrier {
             });
         }
 
-        if ack.barrier_id != barrier.barrier_id {
+        if !crate::security::constant_time::ct_eq(&ack.barrier_id, &barrier.barrier_id) {
             return Err(BarrierError::BarrierIdMismatch {
                 expected: barrier.barrier_id.clone(),
                 provided: ack.barrier_id.clone(),
@@ -1202,6 +1202,52 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.code(), error_codes::ERR_BARRIER_ID_MISMATCH);
         assert_eq!(b.active_barrier().unwrap().ack_count(), 0);
+    }
+
+    #[test]
+    fn barrier_id_constant_time_comparison_regression() {
+        // Regression test for bd-1k7am: barrier ID comparison must use constant-time
+        // to prevent timing attacks on control-plane token validation.
+        let mut b = make_barrier(2);
+        b.propose(5, 6, 1000, "t1").unwrap();
+        let correct_barrier_id = b.active_barrier().unwrap().barrier_id.clone();
+
+        // Test 1: Exact match should succeed (constant-time comparison returns true)
+        let exact_match_ack = DrainAck {
+            participant_id: "svc-0".to_string(),
+            barrier_id: correct_barrier_id.clone(),
+            drained_items: 50,
+            elapsed_ms: 100,
+            trace_id: "exact-match-test".to_string(),
+        };
+        assert!(b.record_drain_ack(exact_match_ack).is_ok());
+
+        // Reset for next test
+        let mut b = make_barrier(2);
+        b.propose(5, 6, 1000, "t2").unwrap();
+
+        // Test 2: Same-length mismatch should fail closed (prevents timing attacks)
+        // Use same-length string to ensure ct_eq() processes same amount of data
+        let same_length_wrong_ack = DrainAck {
+            participant_id: "svc-0".to_string(),
+            barrier_id: "barrier-000099".to_string(), // Same format, different number
+            drained_items: 50,
+            elapsed_ms: 100,
+            trace_id: "same-length-mismatch-test".to_string(),
+        };
+        let err = b.record_drain_ack(same_length_wrong_ack).unwrap_err();
+        assert_eq!(err.code(), error_codes::ERR_BARRIER_ID_MISMATCH);
+
+        // Test 3: Different-length mismatch should also fail closed
+        let different_length_ack = DrainAck {
+            participant_id: "svc-0".to_string(),
+            barrier_id: "short".to_string(),
+            drained_items: 50,
+            elapsed_ms: 100,
+            trace_id: "different-length-test".to_string(),
+        };
+        let err = b.record_drain_ack(different_length_ack).unwrap_err();
+        assert_eq!(err.code(), error_codes::ERR_BARRIER_ID_MISMATCH);
     }
 
     // ---- Operations on completed barrier ----

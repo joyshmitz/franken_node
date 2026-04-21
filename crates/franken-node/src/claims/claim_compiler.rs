@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use crate::security::constant_time;
 
 use crate::capacity_defaults::aliases::MAX_BLOCKED_SOURCES;
 
@@ -471,7 +472,7 @@ impl ScoreboardPipeline {
                 &contract.evidence_uris,
                 &contract.source_id,
             );
-            if !constant_time::constant_time::ct_eq_bytes(
+            if !constant_time::ct_eq_bytes(
                 contract.contract_digest.as_bytes(),
                 expected_digest.as_bytes(),
             ) {
@@ -486,7 +487,7 @@ impl ScoreboardPipeline {
                 &contract.signer_id,
                 &self.config.signing_key,
             );
-            if !constant_time::constant_time::ct_eq(&contract.signature, &expected_sig) {
+            if !constant_time::ct_eq(&contract.signature, &expected_sig) {
                 return Err(ScoreboardRejectionReason::SignatureInvalid);
             }
         }
@@ -758,8 +759,8 @@ mod negative_tests {
         let vulnerable_not_equal = digest1 == digest2;
 
         // Secure comparison (constant-time)
-        let secure_equal = constant_time::constant_time::ct_eq(&digest1, &digest3);
-        let secure_not_equal = constant_time::constant_time::ct_eq(&digest1, &digest2);
+        let secure_equal = constant_time::ct_eq(&digest1, &digest3);
+        let secure_not_equal = constant_time::ct_eq(&digest1, &digest2);
 
         // Results should match but timing characteristics differ
         assert_eq!(vulnerable_equal, secure_equal);
@@ -1036,7 +1037,7 @@ mod tests {
                     &contract.evidence_uris,
                     &contract.source_id,
                 );
-                assert!(constant_time::constant_time::ct_eq_bytes(
+                assert!(constant_time::ct_eq_bytes(
                     contract.contract_digest.as_bytes(),
                     expected_digest.as_bytes(),
                 ));
@@ -1571,7 +1572,7 @@ mod tests {
             assert_eq!(snapshot.entries.len(), 2);
             let expected_snapshot_digest =
                 compute_snapshot_digest(&snapshot.snapshot_id, &snapshot.entries);
-            assert!(constant_time::constant_time::ct_eq_bytes(
+            assert!(constant_time::ct_eq_bytes(
                 snapshot.snapshot_digest.as_bytes(),
                 expected_snapshot_digest.as_bytes(),
             ));
@@ -1583,7 +1584,7 @@ mod tests {
                     "signer-A",
                     "key-secret",
                 );
-                assert!(constant_time::constant_time::ct_eq_bytes(
+                assert!(constant_time::ct_eq_bytes(
                     entry.signed_digest.as_bytes(),
                     expected.as_bytes(),
                 ));
@@ -2118,7 +2119,7 @@ mod claim_compiler_boundary_negative_tests {
 
             // Test constant-time comparison for claim IDs
             let normal_id = "normal-claim-123";
-            assert!(!constant_time::constant_time::ct_eq(malicious_id, normal_id), "claim ID comparison should be constant-time");
+            assert!(!constant_time::ct_eq(malicious_id, normal_id), "claim ID comparison should be constant-time");
 
             // Test claim compilation with malicious ID
             let compiler = ClaimCompiler::new();
@@ -2398,7 +2399,7 @@ mod claim_compiler_boundary_negative_tests {
         // Test hash comparison with constant-time
         let hash1 = &collision_candidates[0].content_hash;
         let hash2 = &collision_candidates[1].content_hash;
-        assert!(!constant_time::constant_time::ct_eq(hash1, hash2), "different hashes should not be equal");
+        assert!(!constant_time::ct_eq(hash1, hash2), "different hashes should not be equal");
 
         // Test with malicious hash formats
         let malicious_hashes = vec![
@@ -2574,7 +2575,7 @@ mod claim_compiler_boundary_negative_tests {
         let invalid_sig = "invalid-signature";
 
         // Verify constant-time comparison is used for signatures
-        assert!(!constant_time::constant_time::ct_eq(&valid_sig, invalid_sig), "signature comparison should be constant-time");
+        assert!(!constant_time::ct_eq(&valid_sig, invalid_sig), "signature comparison should be constant-time");
     }
 
     #[test]
@@ -2684,8 +2685,8 @@ mod claim_compiler_boundary_negative_tests {
 
         for (hash1, hash2) in test_hashes {
             // Test byte comparison (used in contract validation)
-            let bytes_equal = constant_time::constant_time::ct_eq_bytes(hash1.as_bytes(), hash2.as_bytes());
-            let string_equal = constant_time::constant_time::ct_eq(hash1, hash2);
+            let bytes_equal = constant_time::ct_eq_bytes(hash1.as_bytes(), hash2.as_bytes());
+            let string_equal = constant_time::ct_eq(hash1, hash2);
 
             if hash1 == hash2 {
                 assert!(bytes_equal, "Equal hashes should match in constant time");
@@ -2705,7 +2706,7 @@ mod claim_compiler_boundary_negative_tests {
 
         for (attack1, attack2) in timing_attack_pairs {
             // Should be timing-attack resistant regardless of content
-            let result = constant_time::constant_time::ct_eq_bytes(attack1.as_bytes(), attack2.as_bytes());
+            let result = constant_time::ct_eq_bytes(attack1.as_bytes(), attack2.as_bytes());
             assert!(!result, "Attack vectors should not match");
         }
     }
@@ -2891,7 +2892,7 @@ mod claim_compiler_boundary_negative_tests {
         ];
 
         for (hash1, hash2) in hash_test_cases {
-            let are_equal = constant_time::constant_time::ct_eq_bytes(hash1.as_bytes(), hash2.as_bytes());
+            let are_equal = constant_time::ct_eq_bytes(hash1.as_bytes(), hash2.as_bytes());
             let expected = hash1 == hash2;
             assert_eq!(are_equal, expected, "Constant-time comparison mismatch");
         }

@@ -37,6 +37,19 @@ pub const VEF_PERF_ERR_001: &str = "VEF-PERF-ERR-001";
 /// Maximum audit log entries before oldest-first eviction.
 const MAX_AUDIT_LOG: usize = 4096;
 
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
+    if items.len() >= cap {
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        let drain_until = overflow.min(items.len());
+        items.drain(0..drain_until);
+    }
+    items.extend(std::iter::once(item));
+}
+
 // ── Invariant constants ─────────────────────────────────────────────────
 
 pub const INV_VEF_PBG_BUDGET: &str = "INV-VEF-PBG-BUDGET";

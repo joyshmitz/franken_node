@@ -1,0 +1,75 @@
+{
+  "bundle_errors": [
+    {
+      "error_type": "Json",
+      "error_data": "invalid JSON syntax at line 1",
+      "expected_display": "replay bundle JSON error: invalid JSON syntax at line 1"
+    },
+    {
+      "error_type": "UnsupportedSchema",
+      "error_data": {
+        "expected": "vsdk-replay-bundle-v1.0",
+        "actual": "vsdk-replay-bundle-v0.9"
+      },
+      "expected_display": "replay bundle schema mismatch: expected vsdk-replay-bundle-v1.0, got vsdk-replay-bundle-v0.9"
+    },
+    {
+      "error_type": "UnsupportedSdk",
+      "error_data": {
+        "expected": "vsdk-v1.0",
+        "actual": "vsdk-v0.9"
+      },
+      "expected_display": "replay bundle SDK mismatch: expected vsdk-v1.0, got vsdk-v0.9"
+    },
+    {
+      "error_type": "UnsupportedHashAlgorithm",
+      "error_data": {
+        "expected": "sha256",
+        "actual": "md5"
+      },
+      "expected_display": "replay bundle hash algorithm mismatch: expected sha256, got md5"
+    },
+    {
+      "error_type": "MissingField",
+      "error_data": {
+        "field": "bundle_id"
+      },
+      "expected_display": "replay bundle field is empty: bundle_id"
+    },
+    {
+      "error_type": "EmptyTimeline",
+      "error_data": null,
+      "expected_display": "replay bundle timeline is empty"
+    },
+    {
+      "error_type": "EmptyArtifacts",
+      "error_data": null,
+      "expected_display": "replay bundle artifacts are empty"
+    }
+  ],
+  "sdk_errors": [
+    {
+      "error_type": "UnsupportedSdk",
+      "error_data": "vsdk-v0.9",
+      "expected_display": "unsupported SDK version: vsdk-v0.9"
+    },
+    {
+      "error_type": "EmptyTrustAnchor",
+      "error_data": null,
+      "expected_display": "trust anchor is empty"
+    },
+    {
+      "error_type": "SessionSealed",
+      "error_data": "session-123",
+      "expected_display": "verification session session-123 is sealed"
+    },
+    {
+      "error_type": "ResultSignatureMismatch",
+      "error_data": {
+        "expected": "expected_sig_hash",
+        "actual": "actual_sig_hash"
+      },
+      "expected_display": "verification result signature mismatch: expected expected_sig_hash, actual actual_sig_hash"
+    }
+  ]
+}

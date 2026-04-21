@@ -15,6 +15,17 @@ use frankenengine_node::supply_chain::trust_card::{
 };
 use serde_json::Value;
 
+#[derive(Debug, serde::Deserialize)]
+struct StructuredLogEvent {
+    timestamp: String,
+    level: String,
+    event_code: String,
+    message: String,
+    trace_id: String,
+    span_id: String,
+    surface: String,
+}
+
 const FIXTURE_RECEIPT_KEY_ID: &str = "72416df9f1dcd9b3";
 
 static TEST_TRACING_INIT: Once = Once::new();
@@ -36,6 +47,18 @@ fn resolve_binary_path() -> PathBuf {
 
 fn run_cli_in_workspace(workspace: &Path, args: &[&str]) -> Output {
     run_cli_in_workspace_with_env(workspace, args, &[])
+}
+
+fn run_cli_in_workspace_with_structured_logs(workspace: &Path, args: &[&str]) -> Output {
+    let mut args_with_logs = args.to_vec();
+    args_with_logs.push("--structured-logs-jsonl");
+    run_cli_in_workspace_with_env(workspace, &args_with_logs, &[])
+}
+
+fn run_cli_in_workspace_with_structured_logs_and_env(workspace: &Path, args: &[&str], env: &[(&str, &str)]) -> Output {
+    let mut args_with_logs = args.to_vec();
+    args_with_logs.push("--structured-logs-jsonl");
+    run_cli_in_workspace_with_env(workspace, &args_with_logs, env)
 }
 
 fn run_cli_in_workspace_with_env(workspace: &Path, args: &[&str], env: &[(&str, &str)]) -> Output {
@@ -377,6 +400,40 @@ fn init_test_tracing() {
 fn log_pipeline_step(step_number: usize, step_name: &str, expected_outcome: &str) {
     init_test_tracing();
     tracing::info!(step_number, step_name, expected_outcome);
+}
+
+fn parse_structured_logs(stderr_bytes: &[u8]) -> Vec<StructuredLogEvent> {
+    let stderr = String::from_utf8_lossy(stderr_bytes);
+    let mut events = Vec::new();
+
+    for line in stderr.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<StructuredLogEvent>(line) {
+            Ok(event) => events.push(event),
+            Err(_) => {
+                // Skip lines that aren't structured log events (e.g., regular stderr output)
+                continue;
+            }
+        }
+    }
+
+    events
+}
+
+fn assert_structured_log_event_exists(events: &[StructuredLogEvent], event_code: &str, message_contains: &str) {
+    let matching_event = events.iter().find(|event| {
+        event.event_code == event_code && event.message.contains(message_contains)
+    });
+
+    assert!(
+        matching_event.is_some(),
+        "Expected structured log event with code '{}' and message containing '{}' not found. Available events: {:#?}",
+        event_code,
+        message_contains,
+        events.iter().map(|e| format!("{}:{}", e.event_code, e.message)).collect::<Vec<_>>()
+    );
 }
 
 fn manifest_dependency_map(entries: &[(&str, &str)]) -> serde_json::Map<String, Value> {
@@ -1471,13 +1528,18 @@ fn full_init_to_run_pipeline_empty_registry_warns_on_untracked_dependency_json()
         "init bootstraps config and an empty trust registry",
     );
     let init_args = ["init", "--json", "--out-dir", "."];
-    let init_output = run_cli_in_workspace(workspace.path(), &init_args);
+    let init_output = run_cli_in_workspace_with_structured_logs(workspace.path(), &init_args);
     ensure_command_success(
         "init without scan",
         workspace.path(),
         &init_args,
         &init_output,
     );
+
+    // Assert on structured log events from init
+    let init_structured_logs = parse_structured_logs(&init_output.stderr);
+    assert_structured_log_event_exists(&init_structured_logs, "INIT-001", "init command started");
+    assert_structured_log_event_exists(&init_structured_logs, "INIT-003", "init completed");
 
     let init_payload = parse_json_stdout(&init_output, "init --json full pipeline empty registry");
     assert2::assert!(init_payload["command"] == "init");
@@ -1504,7 +1566,7 @@ fn full_init_to_run_pipeline_empty_registry_warns_on_untracked_dependency_json()
         "--json",
         ".",
     ];
-    let run_output = run_cli_in_workspace_with_env(
+    let run_output = run_cli_in_workspace_with_structured_logs_and_env(
         workspace.path(),
         &run_args,
         &[
@@ -1519,6 +1581,12 @@ fn full_init_to_run_pipeline_empty_registry_warns_on_untracked_dependency_json()
         &run_args,
         &run_output,
     );
+
+    // Assert on structured log events from run
+    let run_structured_logs = parse_structured_logs(&run_output.stderr);
+    assert_structured_log_event_exists(&run_structured_logs, "RUN-001", "run preflight passed");
+    assert_structured_log_event_exists(&run_structured_logs, "RUN-003", "run dispatch completed");
+    assert_structured_log_event_exists(&run_structured_logs, "RUN-004", "run receipt written");
 
     let preflight_payload =
         parse_json_stderr(&run_output, "run --json preflight empty registry pipeline");

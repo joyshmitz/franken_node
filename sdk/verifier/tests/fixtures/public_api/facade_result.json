@@ -1,0 +1,22 @@
+{
+  "operation": "claim",
+  "verdict": "pass",
+  "confidence_score": 0.95,
+  "checked_assertions": [
+    {
+      "assertion": "integrity_check",
+      "passed": true,
+      "detail": "Artifact hash matches expected value"
+    },
+    {
+      "assertion": "signature_valid",
+      "passed": true,
+      "detail": "Ed25519 signature verification successful"
+    }
+  ],
+  "execution_timestamp": "2026-04-21T12:00:00Z",
+  "verifier_identity": "test-verifier-deterministic",
+  "artifact_binding_hash": "sha256:a1b2c3d4e5f6789012345678901234567890abcdef",
+  "verifier_signature": "ed25519:deadbeefcafebabe0123456789abcdef0123456789abcdef0123456789abcdef",
+  "sdk_version": "vsdk-v1.0"
+}

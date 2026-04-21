@@ -5,7 +5,7 @@ pub mod error;
 pub mod fleet_control_routes;
 pub mod fleet_quarantine;
 pub mod middleware;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(any(feature = "extended-surfaces", feature = "test-support"))]
 pub mod operator_routes;
 #[cfg(feature = "extended-surfaces")]
 pub mod service;

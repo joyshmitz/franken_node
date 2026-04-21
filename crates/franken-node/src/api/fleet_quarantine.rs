@@ -2017,14 +2017,14 @@ impl Default for FleetControlManager {
 
 // ── Request / Response types for API handlers ─────────────────────────────
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuarantineRequest {
     pub extension_id: String,
     pub scope: QuarantineScope,
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RevokeRequest {
     pub extension_id: String,
@@ -2036,7 +2036,7 @@ pub struct ReleaseRequest {
     pub incident_id: String,
 }
 
-#[cfg(feature = "extended-surfaces")]
+#[cfg(any(feature = "extended-surfaces", feature = "test-support"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StatusRequest {
     pub zone_id: String,
