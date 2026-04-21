@@ -15,6 +15,8 @@ use sha2::{Digest, Sha256};
 
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
 
+const MAX_REPLAY_ENTRIES: usize = 4_096;
+
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
         items.clear();
@@ -25,6 +27,57 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
         items.drain(0..overflow);
     }
     items.push(item);
+}
+
+#[derive(Debug, Clone, Default)]
+struct ReplayTokenSet {
+    ids: BTreeSet<String>,
+    insertion_order: Vec<String>,
+}
+
+impl ReplayTokenSet {
+    fn insert(&mut self, token_id: String) -> bool {
+        if !self.ids.insert(token_id.clone()) {
+            return false;
+        }
+
+        if self.insertion_order.len() >= MAX_REPLAY_ENTRIES {
+            let overflow = self
+                .insertion_order
+                .len()
+                .saturating_sub(MAX_REPLAY_ENTRIES)
+                .saturating_add(1);
+            let drain_len = overflow.min(self.insertion_order.len());
+            let evicted_ids: Vec<_> = self.insertion_order.drain(0..drain_len).collect();
+            for evicted in evicted_ids {
+                self.ids.remove(&evicted);
+            }
+        }
+        push_bounded(&mut self.insertion_order, token_id, MAX_REPLAY_ENTRIES);
+        true
+    }
+
+    #[must_use]
+    fn contains(&self, token_id: &str) -> bool {
+        self.ids.contains(token_id)
+    }
+
+    #[must_use]
+    fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+
+    #[cfg(test)]
+    #[must_use]
+    fn len(&self) -> usize {
+        self.ids.len()
+    }
+
+    #[cfg(test)]
+    #[must_use]
+    fn ordered_ids(&self) -> &[String] {
+        &self.insertion_order
+    }
 }
 
 fn constant_time_eq(a: &str, b: &str) -> bool {
@@ -433,8 +486,8 @@ impl CapabilityProvider {
 pub struct CapabilityGate {
     verification_secret: String,
     connectivity_mode: ConnectivityMode,
-    consumed_tokens: BTreeSet<String>,
-    revoked_tokens: BTreeSet<String>,
+    consumed_tokens: ReplayTokenSet,
+    revoked_tokens: ReplayTokenSet,
     audit_log: Vec<RemoteCapAuditEvent>,
 }
 
@@ -444,8 +497,8 @@ impl CapabilityGate {
         Self {
             verification_secret: verification_secret.to_string(),
             connectivity_mode: ConnectivityMode::Connected,
-            consumed_tokens: BTreeSet::new(),
-            revoked_tokens: BTreeSet::new(),
+            consumed_tokens: ReplayTokenSet::default(),
+            revoked_tokens: ReplayTokenSet::default(),
             audit_log: Vec::new(),
         }
     }
@@ -1975,6 +2028,42 @@ mod tests {
 
         assert_eq!(err.code(), "REMOTECAP_SCOPE_DENIED");
         assert!(gate.consumed_tokens.is_empty());
+    }
+
+    #[test]
+    fn replay_token_set_bounds_entries_with_fifo_eviction() {
+        let mut replay_tokens = ReplayTokenSet::default();
+
+        for index in 0..(MAX_REPLAY_ENTRIES + 72) {
+            assert!(replay_tokens.insert(format!("token-{index:05}")));
+        }
+
+        assert_eq!(replay_tokens.len(), MAX_REPLAY_ENTRIES);
+        assert!(!replay_tokens.contains("token-00000"));
+        assert!(!replay_tokens.contains("token-00071"));
+        assert!(replay_tokens.contains("token-00072"));
+        assert!(replay_tokens.contains(&format!("token-{:05}", MAX_REPLAY_ENTRIES + 71)));
+        assert_eq!(
+            replay_tokens.ordered_ids().first().map(String::as_str),
+            Some("token-00072")
+        );
+    }
+
+    #[test]
+    fn capability_gate_replay_sets_are_bounded_fifo() {
+        let mut gate = CapabilityGate::new("secret-a");
+
+        for index in 0..(MAX_REPLAY_ENTRIES + 32) {
+            gate.consumed_tokens.insert(format!("consumed-{index:05}"));
+            gate.revoked_tokens.insert(format!("revoked-{index:05}"));
+        }
+
+        assert_eq!(gate.consumed_tokens.len(), MAX_REPLAY_ENTRIES);
+        assert_eq!(gate.revoked_tokens.len(), MAX_REPLAY_ENTRIES);
+        assert!(!gate.consumed_tokens.contains("consumed-00000"));
+        assert!(!gate.revoked_tokens.contains("revoked-00000"));
+        assert!(gate.consumed_tokens.contains("consumed-00032"));
+        assert!(gate.revoked_tokens.contains("revoked-00032"));
     }
 }
 
