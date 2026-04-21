@@ -268,8 +268,17 @@ fn canonicalize_fleet_reconcile_snapshot(
                         "elapsed_ms" => {
                             *nested = serde_json::Value::from(0);
                         }
-                        "timestamp" | "signed_at" | "emitted_at" | "recorded_at"
-                        | "issued_at" | "completed_at" | "last_seen" | "as_of" => {
+                        "action_id" => {
+                            if let Some(action_id) = nested.as_str() {
+                                if action_id.starts_with("fleet-op-release-")
+                                    || action_id.starts_with("fleet-op-reconcile-republish-")
+                                {
+                                    *nested = serde_json::Value::String("[action-id]".to_string());
+                                }
+                            }
+                        }
+                        "timestamp" | "signed_at" | "emitted_at" | "recorded_at" | "issued_at"
+                        | "completed_at" | "last_seen" | "as_of" | "poll_timestamp" => {
                             *nested = serde_json::Value::String(format!("[{key}]"));
                         }
                         "state_dir" => {
@@ -327,12 +336,16 @@ fn canonicalize_fleet_human_snapshot(stdout: &str) -> String {
 }
 
 fn json_stdout(output: &Output, label: &str) -> serde_json::Value {
-    serde_json::from_slice(&output.stdout).unwrap_or_else(|err| {
-        panic!(
-            "{label} stdout must be JSON: {err}\n{}",
-            String::from_utf8_lossy(&output.stdout)
-        )
-    })
+    match serde_json::from_slice(&output.stdout) {
+        Ok(value) => value,
+        Err(err) => {
+            let message = format!(
+                "{label} stdout must be JSON: {err}\n{}",
+                String::from_utf8_lossy(&output.stdout)
+            );
+            Err::<serde_json::Value, _>(err).expect(&message)
+        }
+    }
 }
 
 fn jsonl_stdout(output: &Output, label: &str) -> serde_json::Value {
@@ -340,9 +353,12 @@ fn jsonl_stdout(output: &Output, label: &str) -> serde_json::Value {
     let lines = stdout
         .lines()
         .enumerate()
-        .map(|(index, line)| {
-            serde_json::from_str(line)
-                .unwrap_or_else(|err| panic!("{label} line {index} must be JSON: {err}\n{line}"))
+        .map(|(index, line)| match serde_json::from_str(line) {
+            Ok(value) => value,
+            Err(err) => {
+                let message = format!("{label} line {index} must be JSON: {err}\n{line}");
+                Err::<serde_json::Value, _>(err).expect(&message)
+            }
         })
         .collect::<Vec<serde_json::Value>>();
     serde_json::Value::Array(lines)
@@ -2101,7 +2117,13 @@ fn fleet_cli_json_output_matrix_matches_snapshots() {
     );
     let release_output = run_cli_in_dir_with_fleet_state_and_env(
         &repo_root(),
-        &["fleet", "release", "--incident", "inc-golden-release", "--json"],
+        &[
+            "fleet",
+            "release",
+            "--incident",
+            "inc-golden-release",
+            "--json",
+        ],
         &release_state_dir,
         &[(
             "FRANKEN_NODE_SECURITY_DECISION_RECEIPT_SIGNING_KEY_PATH",
@@ -2196,7 +2218,10 @@ fn fleet_cli_json_output_matrix_matches_snapshots() {
         ),
         "release": canonicalize_fleet_reconcile_snapshot(release_json, &release_state_dir),
         "reconcile_timeout": canonicalize_fleet_reconcile_snapshot(timeout_json, &timeout_state_dir),
-        "agent_once": jsonl_stdout(&agent_output, "fleet agent once"),
+        "agent_once": canonicalize_fleet_reconcile_snapshot(
+            jsonl_stdout(&agent_output, "fleet agent once"),
+            &agent_state_dir,
+        ),
     });
 
     assert_json_snapshot!("fleet_cli_json_output_matrix", matrix);

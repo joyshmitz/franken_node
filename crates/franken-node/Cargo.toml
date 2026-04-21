@@ -89,6 +89,7 @@ path = "tests/incident_cli_e2e.rs"
 [[test]]
 name = "fleet_cli_e2e"
 path = "tests/fleet_cli_e2e.rs"
+required-features = ["test-support"]
 
 [[test]]
 name = "frankentui_surface_migration"
