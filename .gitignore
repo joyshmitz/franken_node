@@ -48,6 +48,9 @@ __pycache__/
 ubs.json
 /ubs-*.txt
 ubs_*.txt
+
+# Golden artifact test outputs (temporary comparison files)
+tests/golden/**/*.actual
 ubs_*.json
 ubs_*.sarif
 ubs_*.jsonl
