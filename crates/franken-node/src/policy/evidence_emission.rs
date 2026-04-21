@@ -399,7 +399,7 @@ impl EvidenceConformanceChecker {
         }
 
         // Step 4: Validate action_id linkage via decision_id
-        if entry.decision_id != action_id.as_str() {
+        if !crate::security::constant_time::ct_eq(entry.decision_id.as_str(), action_id.as_str()) {
             let outcome = PolicyActionOutcome::Rejected {
                 action,
                 error: ConformanceError::ActionIdMismatch {
@@ -844,6 +844,39 @@ mod tests {
         assert!(outcome.is_rejected());
         if let PolicyActionOutcome::Rejected { error, .. } = &outcome {
             assert_eq!(error.code(), "ERR_ACTION_ID_MISMATCH");
+        }
+    }
+
+    #[test]
+    fn action_id_boundary_mismatches_rejected() {
+        let cases = [
+            ("ACT-SECRET-001", "ACT-SECRET-001-suffix"),
+            ("ACT-SECRET-001", "XACT-SECRET-001"),
+            ("ACT-SECRET-001", "ACT-SECRET-002"),
+        ];
+
+        for (expected, actual) in cases {
+            let mut checker = EvidenceConformanceChecker::new();
+            let mut ledger = make_ledger();
+            let action_id = ActionId::new(expected);
+            let evidence = make_evidence(PolicyAction::Commit, actual);
+
+            let outcome = checker.verify_and_execute(
+                PolicyAction::Commit,
+                &action_id,
+                Some(&evidence),
+                &mut ledger,
+            );
+
+            assert!(
+                matches!(outcome, PolicyActionOutcome::Rejected { .. }),
+                "expected action ID mismatch rejection"
+            );
+            if let PolicyActionOutcome::Rejected { error, .. } = outcome {
+                assert_eq!(error.code(), "ERR_ACTION_ID_MISMATCH");
+            }
+            assert_eq!(checker.rejected_count(), 1);
+            assert_eq!(ledger.len(), 0);
         }
     }
 
