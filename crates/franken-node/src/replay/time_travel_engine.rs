@@ -1015,7 +1015,7 @@ pub fn build_demo_trace(trace_id: &str, workflow_name: &str, step_count: usize) 
         "0.1.0",
     );
 
-    let mut steps = Vec::with_capacity(step_count);
+    let mut steps = Vec::with_capacity(step_count.min(MAX_TRACE_STEPS));
     for i in 0..step_count {
         let input = format!("input-{i}").into_bytes();
         let output = format!("output-{i}").into_bytes();
