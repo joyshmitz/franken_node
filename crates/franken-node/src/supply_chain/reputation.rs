@@ -39,7 +39,7 @@ pub enum ReputationError {
     ReputationFrozen(String),
     #[error("invalid signal weight {weight}: must be in (0.0, 1.0]")]
     InvalidSignalWeight { weight: f64 },
-    #[error("invalid decay rate {rate}: must be in (0.0, 1.0)")]
+    #[error("invalid decay rate {rate}: must be finite and in [0.0, 1.0]")]
     InvalidDecayRate { rate: f64 },
     #[error("unknown signal kind `{0}`")]
     UnknownSignalKind(String),
@@ -562,7 +562,7 @@ impl ReputationRegistry {
         let baseline = config.baseline;
         let rate = config.daily_rate;
 
-        if !rate.is_finite() || !baseline.is_finite() {
+        if !rate.is_finite() || !(0.0..=1.0).contains(&rate) || !baseline.is_finite() {
             return Err(ReputationError::InvalidDecayRate { rate });
         }
 
@@ -1149,6 +1149,54 @@ mod tests {
         assert_eq!(after.tier, before.tier);
         assert_eq!(after.last_decay_at, before.last_decay_at);
         assert_eq!(reg.audit_trail_len(), audit_len);
+    }
+
+    #[test]
+    fn test_out_of_range_finite_decay_rates_preserve_state_and_audit() {
+        for rate in [-0.001, 1.001] {
+            let mut reg = ReputationRegistry::new();
+            reg.register_publisher("pub-1", &ts(1));
+            if let Some(pub_rec) = reg.publishers.get_mut("pub-1") {
+                pub_rec.decay_config.daily_rate = rate;
+            }
+            let before = reg.get_reputation("pub-1").unwrap().clone();
+            let audit_len = reg.audit_trail_len();
+
+            let result = reg.apply_decay("pub-1", 30, &ts(2));
+
+            assert!(matches!(
+                result,
+                Err(ReputationError::InvalidDecayRate { rate: returned })
+                    if (returned - rate).abs() < f64::EPSILON
+            ));
+            let after = reg.get_reputation("pub-1").unwrap();
+            assert_eq!(after.score, before.score);
+            assert_eq!(after.tier, before.tier);
+            assert_eq!(after.last_decay_at, before.last_decay_at);
+            assert_eq!(reg.audit_trail_len(), audit_len);
+        }
+    }
+
+    #[test]
+    fn test_decay_rate_inclusive_bounds_are_accepted() {
+        for (rate, expected_score) in [(0.0, 30.0), (1.0, DecayConfig::default().baseline)] {
+            let mut reg = ReputationRegistry::new();
+            reg.register_publisher("pub-1", &ts(1));
+            if let Some(pub_rec) = reg.publishers.get_mut("pub-1") {
+                pub_rec.decay_config.daily_rate = rate;
+            }
+
+            let result = reg.apply_decay("pub-1", 30, &ts(2)).unwrap();
+
+            assert!((result.new_score - expected_score).abs() < f64::EPSILON);
+            assert_eq!(
+                reg.get_reputation("pub-1")
+                    .unwrap()
+                    .last_decay_at
+                    .as_deref(),
+                Some("2026-01-02T00:00:00Z")
+            );
+        }
     }
 
     #[test]

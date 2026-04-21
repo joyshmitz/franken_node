@@ -80,6 +80,41 @@ fn len_to_u64(len: usize) -> u64 {
     u64::try_from(len).unwrap_or(u64::MAX)
 }
 
+fn parse_monotonic_version(version: &str) -> Option<[u64; 3]> {
+    let parts: Vec<_> = version.split('.').collect();
+    let [major, minor, patch] = parts.as_slice() else {
+        return None;
+    };
+
+    Some([
+        parse_version_component(major)?,
+        parse_version_component(minor)?,
+        parse_version_component(patch)?,
+    ])
+}
+
+fn parse_version_component(component: &str) -> Option<u64> {
+    if component.is_empty() || !component.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    component.parse().ok()
+}
+
+fn validate_monotonic_version(previous: &str, candidate: &str) -> Result<(), String> {
+    let previous_version = parse_monotonic_version(previous)
+        .ok_or_else(|| format!("Existing version {previous} is not a valid numeric semver"))?;
+    let candidate_version = parse_monotonic_version(candidate)
+        .ok_or_else(|| format!("Candidate version {candidate} is not a valid numeric semver"))?;
+
+    if candidate_version <= previous_version {
+        return Err(format!(
+            "Version {candidate} must be greater than current version {previous}"
+        ));
+    }
+
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -893,6 +928,32 @@ impl SignedExtensionRegistry {
             Some(false) => {}
         }
 
+        if let Some(previous_version) = self
+            .extensions
+            .get(extension_id)
+            .and_then(|ext| ext.versions.last())
+            .map(|entry| entry.version.clone())
+        {
+            if let Err(detail) = validate_monotonic_version(&previous_version, &version.version) {
+                self.log(
+                    event_codes::SER_ERR_INVALID_INPUT,
+                    extension_id,
+                    trace_id,
+                    serde_json::json!({
+                        "previous_version": previous_version,
+                        "candidate_version": &version.version,
+                        "reason": "non_monotonic_version",
+                    }),
+                );
+                return RegistryResult {
+                    success: false,
+                    extension_id: Some(extension_id.to_string()),
+                    error_code: Some(event_codes::SER_ERR_INVALID_INPUT.to_string()),
+                    detail,
+                };
+            }
+        }
+
         let Some(ext) = self.extensions.get_mut(extension_id) else {
             return RegistryResult {
                 success: false,
@@ -1628,6 +1689,53 @@ mod tests {
     }
 
     #[test]
+    fn add_version_rejects_equal_previous_version() {
+        let (sk, vk) = test_keypair();
+        let mut reg = test_registry(&vk);
+        let r = reg.register(
+            valid_request("ext-a", &sk, now_epoch()),
+            &make_trace(),
+            now_epoch(),
+        );
+        let ext_id = r.extension_id.unwrap();
+
+        let result = reg.add_version(&ext_id, valid_version("1.0.0"), &make_trace());
+
+        assert!(!result.success);
+        assert_eq!(
+            result.error_code.as_deref(),
+            Some(event_codes::SER_ERR_INVALID_INPUT)
+        );
+        assert!(result.detail.contains("must be greater than current version"));
+        assert_eq!(reg.version_lineage(&ext_id).unwrap().len(), 1);
+        assert_eq!(
+            reg.audit_log().last().expect("audit").event_code,
+            event_codes::SER_ERR_INVALID_INPUT
+        );
+    }
+
+    #[test]
+    fn add_version_rejects_lower_previous_version() {
+        let (sk, vk) = test_keypair();
+        let mut reg = test_registry(&vk);
+        let r = reg.register(
+            valid_request("ext-a", &sk, now_epoch()),
+            &make_trace(),
+            now_epoch(),
+        );
+        let ext_id = r.extension_id.unwrap();
+
+        let result = reg.add_version(&ext_id, valid_version("0.9.9"), &make_trace());
+
+        assert!(!result.success);
+        assert_eq!(
+            result.error_code.as_deref(),
+            Some(event_codes::SER_ERR_INVALID_INPUT)
+        );
+        assert_eq!(reg.version_lineage(&ext_id).unwrap().len(), 1);
+    }
+
+    #[test]
     fn add_version_does_not_depend_on_revocation_sequence_capacity() {
         let (sk, vk) = test_keypair();
         let mut reg = test_registry(&vk);
@@ -2341,7 +2449,7 @@ mod tests {
 
         // Push MAX_VERSIONS_PER_EXTENSION + 10 versions — oldest should be evicted
         for i in 0..(MAX_VERSIONS_PER_EXTENSION + 10) {
-            let ver = valid_version(&format!("{}.0.0", i));
+            let ver = valid_version(&format!("{}.0.0", i + 2));
             let r = reg.add_version(&ext_id, ver, &make_trace());
             assert!(r.success, "version add {i} failed: {}", r.detail);
         }
