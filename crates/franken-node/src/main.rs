@@ -102,6 +102,7 @@ use frankenengine_node::{
         extension_registry::{
             AdmissionKernel, ExtensionSignature, ExtensionStatus, RegistrationRequest,
             SignedExtension, SignedExtensionRegistry, VersionEntry,
+            canonical_registration_manifest_bytes,
         },
         trust_card::{
             BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
@@ -126,8 +127,9 @@ use frankenengine_node::{
         replay_bundle::{
             ReplayBundleSigningMaterial, generate_replay_bundle_from_evidence,
             read_bundle_from_path, read_bundle_from_path_with_trusted_key,
-            read_incident_evidence_package, replay_bundle as replay_incident_bundle,
+            read_incident_evidence_package, replay_bundle_with_trusted_key,
             sign_replay_bundle, validate_bundle_integrity, write_bundle_to_path,
+            write_bundle_to_path_with_trusted_key,
         },
     },
 };
@@ -11375,9 +11377,10 @@ fn handle_incident_bundle_command(args: &cli::IncidentBundleArgs) -> Result<()> 
     };
     sign_replay_bundle(&mut bundle, &replay_bundle_signing_material)
         .context("failed signing incident replay bundle")?;
+    let trusted_key_id = signing_material_key_id(&replay_signing_material);
 
     let output_path = incident_bundle_output_path(&args.id);
-    write_bundle_to_path(&bundle, &output_path).with_context(|| {
+    write_bundle_to_path_with_trusted_key(&bundle, &output_path, &trusted_key_id).with_context(|| {
         format!(
             "failed writing incident bundle to {}",
             output_path.display()
@@ -11416,7 +11419,7 @@ fn incident_replay_cli_summary(bundle_path: &Path) -> Result<IncidentReplayCliSu
     let trusted_key_id = signing_material_key_id(&trusted_signing_material);
     let bundle = read_bundle_from_path_with_trusted_key(bundle_path, Some(&trusted_key_id))
         .with_context(|| format!("failed reading replay bundle {}", bundle_path.display()))?;
-    let outcome = replay_incident_bundle(&bundle)
+    let outcome = replay_bundle_with_trusted_key(&bundle, &trusted_key_id)
         .with_context(|| format!("failed replaying bundle {}", bundle_path.display()))?;
 
     Ok(IncidentReplayCliSummary {
@@ -11731,7 +11734,25 @@ fn build_registry_seed_request_with_config(
         }
         hex::encode(hasher.finalize())
     };
-    let manifest_bytes = format!("manifest:{}:{}:{}", name, publisher_id, version).into_bytes();
+    let initial_version = VersionEntry {
+        version: version.to_string(),
+        parent_version: None,
+        content_hash: {
+            let mut h = sha2::Sha256::new();
+            h.update(b"registry_seed_content_v1:");
+            for field in [name, version, "content"] {
+                h.update((field.len() as u64).to_le_bytes());
+                h.update(field.as_bytes());
+            }
+            hex::encode(h.finalize())
+        },
+        registered_at: chrono::Utc::now().to_rfc3339(),
+        compatible_with: vec!["franken-node".to_string()],
+    };
+    let tags_vec = tags.iter().map(|tag| (*tag).to_string()).collect::<Vec<_>>();
+    let manifest_bytes =
+        canonical_registration_manifest_bytes(name, publisher_id, &initial_version, &tags_vec)
+            .map_err(|e| anyhow::anyhow!("failed building registry seed manifest: {e}"))?;
 
     // Generate a deterministic seed key for CLI demos
     let seed_bytes = {
@@ -11811,22 +11832,8 @@ fn build_registry_seed_request_with_config(
             signed_at: chrono::Utc::now().to_rfc3339(),
         },
         provenance,
-        initial_version: VersionEntry {
-            version: version.to_string(),
-            parent_version: None,
-            content_hash: {
-                let mut h = sha2::Sha256::new();
-                h.update(b"registry_seed_content_v1:");
-                for field in [name, version, "content"] {
-                    h.update((field.len() as u64).to_le_bytes());
-                    h.update(field.as_bytes());
-                }
-                hex::encode(h.finalize())
-            },
-            registered_at: chrono::Utc::now().to_rfc3339(),
-            compatible_with: vec!["franken-node".to_string()],
-        },
-        tags: tags.iter().map(|tag| (*tag).to_string()).collect(),
+        initial_version,
+        tags: tags_vec,
         manifest_bytes,
         transparency_proof: None,
     })

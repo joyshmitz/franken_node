@@ -141,6 +141,8 @@ pub enum ReplayBundleError {
     },
     #[error("replay bundle signature key source `{key_source}` is not trusted")]
     SignatureKeySourceUntrusted { key_source: String },
+    #[error("replay bundle signature verification requires a trusted signer key id")]
+    SignatureTrustAnchorMissing,
     #[error("replay bundle signature key id `{actual}` is not trusted key id `{expected}`")]
     SignatureKeyUntrusted { actual: String, expected: String },
     #[error("replay bundle signature public key is malformed: {detail}")]
@@ -814,6 +816,7 @@ pub fn verify_replay_bundle_signature(
         .signature
         .as_ref()
         .ok_or(ReplayBundleError::SignatureMissing)?;
+    let trusted_key_id = trusted_key_id.ok_or(ReplayBundleError::SignatureTrustAnchorMissing)?;
     if signature.algorithm != "ed25519" {
         return Err(ReplayBundleError::SignatureAlgorithmUnsupported {
             algorithm: signature.algorithm.clone(),
@@ -830,12 +833,10 @@ pub fn verify_replay_bundle_signature(
             key_source: signature.key_source.clone(),
         });
     }
-    if let Some(expected_key_id) = trusted_key_id
-        && signature.key_id != expected_key_id
-    {
+    if signature.key_id != trusted_key_id {
         return Err(ReplayBundleError::SignatureKeyUntrusted {
             actual: signature.key_id.clone(),
-            expected: expected_key_id.to_string(),
+            expected: trusted_key_id.to_string(),
         });
     }
 
@@ -893,6 +894,24 @@ pub fn replay_bundle(bundle: &ReplayBundle) -> Result<ReplayOutcome, ReplayBundl
     }
     verify_replay_bundle_signature(bundle, None)?;
 
+    replay_bundle_after_signature_verification(bundle)
+}
+
+pub fn replay_bundle_with_trusted_key(
+    bundle: &ReplayBundle,
+    trusted_key_id: &str,
+) -> Result<ReplayOutcome, ReplayBundleError> {
+    if !validate_bundle_integrity(bundle)? {
+        return Err(ReplayBundleError::IntegrityMismatch);
+    }
+    verify_replay_bundle_signature(bundle, Some(trusted_key_id))?;
+
+    replay_bundle_after_signature_verification(bundle)
+}
+
+fn replay_bundle_after_signature_verification(
+    bundle: &ReplayBundle,
+) -> Result<ReplayOutcome, ReplayBundleError> {
     let replayed_sequence_hash = compute_decision_sequence_hash(
         &bundle.timeline,
         &bundle.initial_state_snapshot,
@@ -960,6 +979,25 @@ pub fn write_bundle_to_path(bundle: &ReplayBundle, path: &Path) -> Result<(), Re
         return Err(ReplayBundleError::IntegrityMismatch);
     }
     verify_replay_bundle_signature(bundle, None)?;
+    write_verified_bundle_to_path(bundle, path)
+}
+
+pub fn write_bundle_to_path_with_trusted_key(
+    bundle: &ReplayBundle,
+    path: &Path,
+    trusted_key_id: &str,
+) -> Result<(), ReplayBundleError> {
+    if !validate_bundle_integrity(bundle)? {
+        return Err(ReplayBundleError::IntegrityMismatch);
+    }
+    verify_replay_bundle_signature(bundle, Some(trusted_key_id))?;
+    write_verified_bundle_to_path(bundle, path)
+}
+
+fn write_verified_bundle_to_path(
+    bundle: &ReplayBundle,
+    path: &Path,
+) -> Result<(), ReplayBundleError> {
     let canonical_json = to_canonical_json(bundle)?;
     write_bytes_atomically(path, canonical_json.as_bytes())?;
     Ok(())
@@ -1605,6 +1643,14 @@ mod tests {
         ed25519_dalek::SigningKey::from_bytes(&[42_u8; 32])
     }
 
+    fn fixture_trusted_key_id() -> String {
+        let signing_key = fixture_signing_key();
+        crate::supply_chain::artifact_signing::KeyId::from_verifying_key(
+            &signing_key.verifying_key(),
+        )
+        .to_string()
+    }
+
     fn sign_fixture_bundle(bundle: &mut ReplayBundle) {
         let signing_key = fixture_signing_key();
         let signing_material = ReplayBundleSigningMaterial {
@@ -1732,7 +1778,8 @@ mod tests {
     #[test]
     fn replay_matches_expected_hash() {
         let bundle = signed_fixture_bundle("INC-RPL-001");
-        let outcome = replay_bundle(&bundle).expect("replay");
+        let trusted_key_id = fixture_trusted_key_id();
+        let outcome = replay_bundle_with_trusted_key(&bundle, &trusted_key_id).expect("replay");
         assert!(outcome.matched);
         assert_eq!(outcome.event_count, 3);
         assert_eq!(
@@ -1762,7 +1809,9 @@ mod tests {
         let mut bundle = signed_fixture_bundle("INC-RPL-BAD-SIG");
         bundle.signature.as_mut().expect("signature").signature_hex = "00".repeat(64);
 
-        let err = replay_bundle(&bundle).expect_err("must reject invalid signature");
+        let trusted_key_id = fixture_trusted_key_id();
+        let err = replay_bundle_with_trusted_key(&bundle, &trusted_key_id)
+            .expect_err("must reject invalid signature");
         assert!(matches!(err, ReplayBundleError::SignatureInvalid));
     }
 
@@ -1816,6 +1865,20 @@ mod tests {
         assert!(matches!(
             err,
             ReplayBundleError::SignatureKeyUntrusted { .. }
+        ));
+    }
+
+    #[test]
+    fn replay_bundle_default_verification_rejects_untrusted_signer() {
+        let bundle = signed_fixture_bundle("INC-RPL-SIG-UNTRUSTED-DEFAULT");
+        let err = verify_replay_bundle_signature(&bundle, None)
+            .expect_err("default verification must require a trust anchor");
+        assert!(matches!(err, ReplayBundleError::SignatureTrustAnchorMissing));
+
+        let replay_err = replay_bundle(&bundle).expect_err("default replay must fail closed");
+        assert!(matches!(
+            replay_err,
+            ReplayBundleError::SignatureTrustAnchorMissing
         ));
     }
 
@@ -1931,8 +1994,10 @@ mod tests {
         let bundle = signed_fixture_bundle("INC-IO-001");
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("bundle.json");
-        write_bundle_to_path(&bundle, &path).expect("write");
-        let loaded = read_bundle_from_path(&path).expect("read");
+        let trusted_key_id = fixture_trusted_key_id();
+        write_bundle_to_path_with_trusted_key(&bundle, &path, &trusted_key_id).expect("write");
+        let loaded =
+            read_bundle_from_path_with_trusted_key(&path, Some(&trusted_key_id)).expect("read");
         assert_eq!(bundle, loaded);
     }
 
@@ -1951,14 +2016,17 @@ mod tests {
         let path = dir_path.join("bundle.json");
         let temp_prefix = "bundle.json.tmp";
 
-        write_bundle_to_path(&first, &path).expect("write first");
+        let trusted_key_id = fixture_trusted_key_id();
+        write_bundle_to_path_with_trusted_key(&first, &path, &trusted_key_id)
+            .expect("write first");
         let mut leftovers = temp_leftovers(&dir_path, temp_prefix);
         assert!(
             leftovers.is_empty(),
             "temporary files should not remain after first write: {leftovers:?}"
         );
 
-        write_bundle_to_path(&second, &path).expect("write second");
+        write_bundle_to_path_with_trusted_key(&second, &path, &trusted_key_id)
+            .expect("write second");
         leftovers = temp_leftovers(&dir_path, temp_prefix);
         assert!(
             leftovers.is_empty(),
@@ -1971,7 +2039,8 @@ mod tests {
         let bundle = signed_fixture_bundle("INC-IO-002");
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("bundle.json");
-        write_bundle_to_path(&bundle, &path).expect("write");
+        let trusted_key_id = fixture_trusted_key_id();
+        write_bundle_to_path_with_trusted_key(&bundle, &path, &trusted_key_id).expect("write");
 
         let mut tampered: Value =
             serde_json::from_str(&std::fs::read_to_string(&path).expect("read raw"))
@@ -1983,7 +2052,8 @@ mod tests {
         )
         .expect("write tampered bundle");
 
-        let err = read_bundle_from_path(&path).expect_err("must reject tampered bundle");
+        let err = read_bundle_from_path_with_trusted_key(&path, Some(&trusted_key_id))
+            .expect_err("must reject tampered bundle");
         assert!(matches!(err, ReplayBundleError::ManifestMismatch));
     }
 
@@ -1996,13 +2066,17 @@ mod tests {
         std::env::set_current_dir(dir.path()).expect("set cwd");
 
         let relative_path = Path::new("bundle.json");
-        let write_result = write_bundle_to_path(&bundle, relative_path);
+        let trusted_key_id = fixture_trusted_key_id();
+        let write_result =
+            write_bundle_to_path_with_trusted_key(&bundle, relative_path, &trusted_key_id);
         let restore_result = std::env::set_current_dir(&previous_cwd);
 
         write_result.expect("write relative bundle");
         restore_result.expect("restore cwd");
 
-        let loaded = read_bundle_from_path(&dir.path().join("bundle.json")).expect("read");
+        let loaded =
+            read_bundle_from_path_with_trusted_key(&dir.path().join("bundle.json"), Some(&trusted_key_id))
+                .expect("read");
         assert_eq!(bundle, loaded);
     }
 
