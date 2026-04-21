@@ -976,10 +976,22 @@ impl LockstepHarness {
         let start = Instant::now();
         while !handle.is_finished() {
             if Self::has_timed_out(start.elapsed(), timeout) {
-                return PipeDrainResult {
-                    bytes: format!("__pipe_drain_timeout:{label}").into_bytes(),
-                    cap_reached: false,
-                };
+                // Try a final join attempt with a grace period to prevent thread leaks
+                let grace_timeout = timeout.saturating_add(Duration::from_millis(100));
+                let grace_start = Instant::now();
+                while !handle.is_finished() {
+                    if Self::has_timed_out(grace_start.elapsed(), grace_timeout) {
+                        // Thread is truly stuck - we must leak it but document the issue
+                        eprintln!("Warning: pipe drain thread '{label}' leaked due to blocked read (likely descendant process)");
+                        std::mem::forget(handle); // Explicitly leak to avoid panic on drop
+                        return PipeDrainResult {
+                            bytes: format!("__pipe_drain_leaked:{label}").into_bytes(),
+                            cap_reached: false,
+                        };
+                    }
+                    thread::sleep(Duration::from_millis(PIPE_DRAIN_JOIN_POLL_MS));
+                }
+                break; // Thread finished during grace period
             }
             thread::sleep(Duration::from_millis(PIPE_DRAIN_JOIN_POLL_MS));
         }
