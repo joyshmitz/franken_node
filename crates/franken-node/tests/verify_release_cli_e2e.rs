@@ -1,3 +1,4 @@
+use insta::assert_json_snapshot;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -114,6 +115,59 @@ fn parse_json_stdout(output: &Output) -> serde_json::Value {
     );
     serde_json::from_str(stdout.trim())
         .unwrap_or_else(|err| panic!("invalid JSON output: {err}\nstdout:\n{stdout}"))
+}
+
+fn canonicalize_verify_release_snapshot(
+    mut payload: serde_json::Value,
+    release_dir: &Path,
+    key_dir: &Path,
+) -> serde_json::Value {
+    let release_exact = release_dir.display().to_string();
+    let release_prefix = format!("{}/", release_dir.display());
+    let key_exact = key_dir.display().to_string();
+    let key_prefix = format!("{}/", key_dir.display());
+
+    fn scrub(
+        value: &mut serde_json::Value,
+        release_exact: &str,
+        release_prefix: &str,
+        key_exact: &str,
+        key_prefix: &str,
+    ) {
+        match value {
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    scrub(item, release_exact, release_prefix, key_exact, key_prefix);
+                }
+            }
+            serde_json::Value::Object(map) => {
+                for nested in map.values_mut() {
+                    scrub(nested, release_exact, release_prefix, key_exact, key_prefix);
+                }
+            }
+            serde_json::Value::String(text) => {
+                if text == release_exact {
+                    *value = serde_json::Value::String("[release]".to_string());
+                } else if let Some(path) = text.strip_prefix(release_prefix) {
+                    *value = serde_json::Value::String(format!("[release]/{path}"));
+                } else if text == key_exact {
+                    *value = serde_json::Value::String("[keys]".to_string());
+                } else if let Some(path) = text.strip_prefix(key_prefix) {
+                    *value = serde_json::Value::String(format!("[keys]/{path}"));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    scrub(
+        &mut payload,
+        &release_exact,
+        &release_prefix,
+        &key_exact,
+        &key_prefix,
+    );
+    payload
 }
 
 #[test]
@@ -474,6 +528,49 @@ fn verify_release_succeeds_with_hex_encoded_signatures_and_key_dir() {
         results
             .iter()
             .all(|row| row["passed"] == serde_json::Value::Bool(true))
+    );
+}
+
+#[test]
+fn verify_release_success_json_matches_snapshot() {
+    let temp = TempDir::new().expect("temp dir");
+    let release_dir = temp.path().join("release");
+    let key_dir = temp.path().join("keys");
+    std::fs::create_dir_all(&release_dir).expect("release dir");
+
+    let artifacts = [
+        (
+            "franken-node-linux-x64.tar.xz",
+            b"artifact-linux-x64" as &[u8],
+        ),
+        (
+            "franken-node-darwin-arm64.tar.xz",
+            b"artifact-darwin-arm64" as &[u8],
+        ),
+    ];
+    write_signed_release_fixture(&release_dir, &artifacts);
+    write_release_key_dir(&key_dir);
+
+    let release_arg = release_dir.to_string_lossy().to_string();
+    let key_dir_arg = key_dir.to_string_lossy().to_string();
+    let output = run_cli(&[
+        "verify",
+        "release",
+        &release_arg,
+        "--key-dir",
+        &key_dir_arg,
+        "--json",
+    ]);
+    assert!(
+        output.status.success(),
+        "verify release failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload = parse_json_stdout(&output);
+    assert_json_snapshot!(
+        "verify_release_success_json",
+        canonicalize_verify_release_snapshot(payload, &release_dir, &key_dir)
     );
 }
 
