@@ -76,6 +76,8 @@ pub enum BarrierError {
     OverrideRejected(String),
     #[error("barrier composition conflict: {0}")]
     CompositionConflict(String),
+    #[error("invalid progression criteria: {0}")]
+    InvalidProgressionCriteria(String),
     #[error("barrier not found: {0}")]
     NotFound(String),
 }
@@ -256,19 +258,69 @@ impl fmt::Display for RolloutPhase {
 
 /// Progression criteria for advancing a rollout fence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "ProgressionCriteriaWire")]
 pub struct ProgressionCriteria {
     pub min_soak_seconds: u64,
     pub max_error_rate: f64,
     pub min_success_count: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+struct ProgressionCriteriaWire {
+    min_soak_seconds: u64,
+    max_error_rate: f64,
+    min_success_count: u64,
+}
+
 impl Default for ProgressionCriteria {
     fn default() -> Self {
-        Self {
-            min_soak_seconds: 3600,
-            max_error_rate: 0.01,
-            min_success_count: 100,
+        Self::new(3600, 0.01, 100).expect("default progression criteria must be valid")
+    }
+}
+
+impl ProgressionCriteria {
+    pub fn new(
+        min_soak_seconds: u64,
+        max_error_rate: f64,
+        min_success_count: u64,
+    ) -> Result<Self, BarrierError> {
+        Self::validate_max_error_rate(max_error_rate)?;
+        Ok(Self {
+            min_soak_seconds,
+            max_error_rate,
+            min_success_count,
+        })
+    }
+
+    pub fn set_max_error_rate(&mut self, max_error_rate: f64) -> Result<(), BarrierError> {
+        Self::validate_max_error_rate(max_error_rate)?;
+        self.max_error_rate = max_error_rate;
+        Ok(())
+    }
+
+    pub fn validate(&self) -> Result<(), BarrierError> {
+        Self::validate_max_error_rate(self.max_error_rate)
+    }
+
+    fn validate_max_error_rate(max_error_rate: f64) -> Result<(), BarrierError> {
+        if !max_error_rate.is_finite() || !(0.0..=1.0).contains(&max_error_rate) {
+            return Err(BarrierError::InvalidProgressionCriteria(format!(
+                "max_error_rate must be finite and within [0.0, 1.0] (got {max_error_rate})"
+            )));
         }
+        Ok(())
+    }
+}
+
+impl TryFrom<ProgressionCriteriaWire> for ProgressionCriteria {
+    type Error = BarrierError;
+
+    fn try_from(value: ProgressionCriteriaWire) -> Result<Self, Self::Error> {
+        Self::new(
+            value.min_soak_seconds,
+            value.max_error_rate,
+            value.min_success_count,
+        )
     }
 }
 
@@ -278,6 +330,22 @@ pub struct StagedRolloutFenceConfig {
     pub initial_phase: RolloutPhase,
     pub progression_criteria: BTreeMap<String, ProgressionCriteria>,
     pub auto_rollback_on_breach: bool,
+}
+
+impl StagedRolloutFenceConfig {
+    pub fn validate(&self) -> Result<(), BarrierError> {
+        for (phase, criteria) in &self.progression_criteria {
+            criteria.validate().map_err(|err| match err {
+                BarrierError::InvalidProgressionCriteria(message) => {
+                    BarrierError::InvalidProgressionCriteria(format!(
+                        "phase '{phase}' has invalid criteria: {message}"
+                    ))
+                }
+                other => other,
+            })?;
+        }
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -425,14 +493,14 @@ impl BarrierAuditReceipt {
     }
 
     /// Compute a deterministic hash of this receipt for chain-linking.
-    pub fn content_hash(&self) -> String {
-        let canonical = serde_json::to_string(self).unwrap_or_else(|e| format!("__serde_err:{e}"));
+    pub fn content_hash(&self) -> Result<String, serde_json::Error> {
+        let canonical = serde_json::to_string(self)?;
         let mut hasher = Sha256::new();
         hasher.update(b"barrier_primitives_content_hash_v1:");
         hasher.update(len_to_u64(canonical.len()).to_le_bytes());
         hasher.update(canonical.as_bytes());
         let digest = hasher.finalize();
-        hex::encode(digest)
+        Ok(hex::encode(digest))
     }
 }
 
@@ -1082,6 +1150,9 @@ impl BarrierEngine {
 
     /// Check that a new barrier does not conflict with existing barriers on the same node.
     fn check_composition_validity(&self, barrier: &Barrier) -> Result<(), BarrierError> {
+        if let BarrierConfig::StagedRolloutFence(ref cfg) = barrier.config {
+            cfg.validate()?;
+        }
         let existing = self.get_node_barriers(&barrier.node_id);
         for existing_barrier in existing {
             // Two sandbox escalation barriers with conflicting tiers
@@ -1240,11 +1311,8 @@ mod tests {
         let mut criteria = BTreeMap::new();
         criteria.insert(
             "canary".to_string(),
-            ProgressionCriteria {
-                min_soak_seconds: 60,
-                max_error_rate: 0.05,
-                min_success_count: 10,
-            },
+            ProgressionCriteria::new(60, 0.05, 10)
+                .expect("test rollout criteria must be valid"),
         );
         Barrier {
             barrier_id: Uuid::now_v7().to_string(),
@@ -1643,10 +1711,63 @@ mod tests {
             override_justification: None,
         };
 
-        let hash1 = receipt.content_hash();
-        let hash2 = receipt.content_hash();
+        let hash1 = receipt.content_hash().unwrap();
+        let hash2 = receipt.content_hash().unwrap();
         assert_eq!(hash1, hash2);
         assert_eq!(hash1.len(), 64); // SHA-256 hex
+    }
+
+    #[test]
+    fn progression_criteria_constructor_rejects_invalid_error_rates() {
+        for invalid_rate in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
+            let err = ProgressionCriteria::new(60, invalid_rate, 10).unwrap_err();
+            assert!(matches!(err, BarrierError::InvalidProgressionCriteria(_)));
+        }
+    }
+
+    #[test]
+    fn progression_criteria_setter_rejects_invalid_error_rates() {
+        let mut criteria = ProgressionCriteria::new(60, 0.05, 10).unwrap();
+
+        for invalid_rate in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
+            let err = criteria.set_max_error_rate(invalid_rate).unwrap_err();
+            assert!(matches!(err, BarrierError::InvalidProgressionCriteria(_)));
+            assert_eq!(criteria.max_error_rate, 0.05);
+        }
+    }
+
+    #[test]
+    fn apply_barrier_rejects_rollout_with_invalid_error_rates() {
+        for invalid_rate in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
+            let mut criteria = BTreeMap::new();
+            criteria.insert(
+                "canary".to_string(),
+                ProgressionCriteria {
+                    min_soak_seconds: 60,
+                    max_error_rate: invalid_rate,
+                    min_success_count: 10,
+                },
+            );
+
+            let barrier = Barrier {
+                barrier_id: Uuid::now_v7().to_string(),
+                node_id: "invalid-rollout-node".to_string(),
+                barrier_type: BarrierType::StagedRolloutFence,
+                config: BarrierConfig::StagedRolloutFence(StagedRolloutFenceConfig {
+                    initial_phase: RolloutPhase::Canary,
+                    progression_criteria: criteria,
+                    auto_rollback_on_breach: true,
+                }),
+                applied_at: Utc::now().to_rfc3339(),
+                expires_at: None,
+                source_plan_id: None,
+            };
+
+            let err = BarrierEngine::new()
+                .apply_barrier(barrier, &make_trace_id())
+                .unwrap_err();
+            assert!(matches!(err, BarrierError::InvalidProgressionCriteria(_)));
+        }
     }
 
     #[test]
@@ -2098,6 +2219,28 @@ mod tests {
             r#"{
                 "min_soak_seconds": 60,
                 "max_error_rate": "0.05",
+                "min_success_count": 10
+            }"#,
+        );
+    }
+
+    #[test]
+    fn serde_rejects_progression_criteria_negative_error_rate() {
+        assert_json_rejected::<ProgressionCriteria>(
+            r#"{
+                "min_soak_seconds": 60,
+                "max_error_rate": -0.01,
+                "min_success_count": 10
+            }"#,
+        );
+    }
+
+    #[test]
+    fn serde_rejects_progression_criteria_error_rate_above_one() {
+        assert_json_rejected::<ProgressionCriteria>(
+            r#"{
+                "min_soak_seconds": 60,
+                "max_error_rate": 1.01,
                 "min_success_count": 10
             }"#,
         );
