@@ -157,3 +157,7 @@ required-features = ["extended-surfaces"]
 [[test]]
 name = "frankensqlite_adapter_conformance"
 path = "tests/frankensqlite_adapter_conformance.rs"
+
+[[test]]
+name = "trust_cli_e2e"
+path = "tests/trust_cli_e2e.rs"

@@ -11,7 +11,7 @@ use frankenengine_node::control_plane::fleet_transport::{
     FileFleetTransport, FleetAction, FleetTransport, NodeHealth, NodeStatus,
 };
 use frankenengine_node::supply_chain::trust_card::{
-    TrustCardListFilter, TrustCardMutation, TrustCardRegistry, fixture_registry,
+    fixture_registry, TrustCardListFilter, TrustCardMutation, TrustCardRegistry,
 };
 use serde_json::Value;
 
@@ -55,7 +55,11 @@ fn run_cli_in_workspace_with_structured_logs(workspace: &Path, args: &[&str]) ->
     run_cli_in_workspace_with_env(workspace, &args_with_logs, &[])
 }
 
-fn run_cli_in_workspace_with_structured_logs_and_env(workspace: &Path, args: &[&str], env: &[(&str, &str)]) -> Output {
+fn run_cli_in_workspace_with_structured_logs_and_env(
+    workspace: &Path,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> Output {
     let mut args_with_logs = args.to_vec();
     args_with_logs.push("--structured-logs-jsonl");
     run_cli_in_workspace_with_env(workspace, &args_with_logs, env)
@@ -422,10 +426,14 @@ fn parse_structured_logs(stderr_bytes: &[u8]) -> Vec<StructuredLogEvent> {
     events
 }
 
-fn assert_structured_log_event_exists(events: &[StructuredLogEvent], event_code: &str, message_contains: &str) {
-    let matching_event = events.iter().find(|event| {
-        event.event_code == event_code && event.message.contains(message_contains)
-    });
+fn assert_structured_log_event_exists(
+    events: &[StructuredLogEvent],
+    event_code: &str,
+    message_contains: &str,
+) {
+    let matching_event = events
+        .iter()
+        .find(|event| event.event_code == event_code && event.message.contains(message_contains));
 
     assert!(
         matching_event.is_some(),
@@ -512,7 +520,10 @@ fn runtime_path_env(required: &[&str]) -> String {
             .parent()
             .expect("runtime parent dir")
             .to_path_buf();
-        if !directories.iter().any(|existing: &PathBuf| existing == &parent) {
+        if !directories
+            .iter()
+            .any(|existing: &PathBuf| existing == &parent)
+        {
             directories.push(parent);
         }
     }
@@ -655,6 +666,40 @@ fn read_json_file(path: &Path, context: &str) -> Value {
         .unwrap_or_else(|err| panic!("failed parsing {context} {} as json: {err}", path.display()))
 }
 
+fn trust_card_cli_golden_path(file_name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/goldens/trust_card_cli")
+        .join(file_name)
+}
+
+fn assert_trust_card_cli_golden(file_name: &str, actual: &str) {
+    let golden_path = trust_card_cli_golden_path(file_name);
+    if std::env::var_os("UPDATE_GOLDENS").is_some() {
+        fs::create_dir_all(golden_path.parent().expect("golden path has parent"))
+            .expect("create trust-card CLI golden directory");
+        fs::write(&golden_path, actual).expect("write trust-card CLI golden");
+        return;
+    }
+
+    let expected = fs::read_to_string(&golden_path)
+        .unwrap_or_else(|err| panic!("read golden {}: {err}", golden_path.display()));
+    if actual != expected {
+        let actual_path = golden_path.with_extension("actual");
+        fs::write(&actual_path, actual).expect("write actual trust-card CLI output");
+        panic!(
+            "trust-card CLI golden mismatch for {}\nexpected: {}\nactual: {}",
+            file_name,
+            golden_path.display(),
+            actual_path.display()
+        );
+    }
+}
+
+fn assert_trust_card_cli_json_golden(file_name: &str, value: &Value) {
+    let actual = serde_json::to_string_pretty(value).expect("pretty-print trust-card CLI JSON");
+    assert_trust_card_cli_golden(file_name, &actual);
+}
+
 fn shared_fleet_transport(shared_state_dir: &Path) -> FileFleetTransport {
     let mut transport = FileFleetTransport::new(shared_state_dir);
     transport.initialize().expect("initialize fleet transport");
@@ -731,11 +776,9 @@ fn run_json_emits_blocked_preflight_verdict_for_revoked_dependency() {
     let violations = payload["verdict"]["violations"]
         .as_array()
         .expect("violations array");
-    assert!(
-        violations
-            .iter()
-            .any(|violation| violation["kind"] == "revoked")
-    );
+    assert!(violations
+        .iter()
+        .any(|violation| violation["kind"] == "revoked"));
     assert_eq!(
         payload["receipt"]["action_name"],
         "run_preflight_trust_gate"
@@ -921,10 +964,8 @@ fn trust_revoke_marks_target_as_revoked() {
         String::from_utf8_lossy(&persisted.stderr)
     );
     let persisted_stdout = String::from_utf8_lossy(&persisted.stdout);
-    assert!(
-        persisted_stdout
-            .contains("revocation: revoked (manual revoke via franken-node trust revoke)")
-    );
+    assert!(persisted_stdout
+        .contains("revocation: revoked (manual revoke via franken-node trust revoke)"));
     assert!(persisted_stdout.contains("quarantine: true"));
 }
 
@@ -1348,12 +1389,10 @@ fn trust_sync_reports_summary_counts() {
     );
     let payload = parse_json_stdout(&exported, "trust-card export after trust sync");
     assert_eq!(payload["user_facing_risk_assessment"]["level"], "high");
-    assert!(
-        payload["user_facing_risk_assessment"]["summary"]
-            .as_str()
-            .expect("risk summary")
-            .contains("OSV-2026-0001")
-    );
+    assert!(payload["user_facing_risk_assessment"]["summary"]
+        .as_str()
+        .expect("risk summary")
+        .contains("OSV-2026-0001"));
 
     server.join().expect("join OSV fixture server");
     assert_eq!(requests.lock().expect("lock requests").len(), 2);
@@ -1544,12 +1583,10 @@ fn full_init_to_run_pipeline_empty_registry_warns_on_untracked_dependency_json()
     let init_payload = parse_json_stdout(&init_output, "init --json full pipeline empty registry");
     assert2::assert!(init_payload["command"] == "init");
     assert2::assert!(init_payload["trust_scan"].is_null());
-    assert2::assert!(
-        workspace
-            .path()
-            .join(".franken-node/state/trust-card-registry.v1.json")
-            .is_file()
-    );
+    assert2::assert!(workspace
+        .path()
+        .join(".franken-node/state/trust-card-registry.v1.json")
+        .is_file());
 
     log_pipeline_step(
         2,
@@ -1703,12 +1740,10 @@ fn full_init_to_run_pipeline_with_trust_data_reports_trusted_extensions_json() {
 
     assert2::assert!(preflight_payload["verdict"]["status"] == "passed");
     assert2::assert!(run_payload["success"].as_bool() == Some(true));
-    assert2::assert!(
-        run_payload["preflight"]["verdict"]["warnings"]
-            .as_array()
-            .expect("warnings array")
-            .is_empty()
-    );
+    assert2::assert!(run_payload["preflight"]["verdict"]["warnings"]
+        .as_array()
+        .expect("warnings array")
+        .is_empty());
     let runtime_probe =
         parse_captured_runtime_probe(&run_payload, "trusted registry captured output");
     assert2::assert!(runtime_probe["marker"] == "trusted-registry");
@@ -1717,21 +1752,15 @@ fn full_init_to_run_pipeline_with_trust_data_reports_trusted_extensions_json() {
     assert2::assert!(runtime_probe["policy"] == "balanced");
     assert2::assert!(results.len() == 3);
     assert2::assert!(results.iter().all(|result| result["status"] == "trusted"));
-    assert2::assert!(
-        results
-            .iter()
-            .any(|result| result["extension_id"] == "npm:react")
-    );
-    assert2::assert!(
-        results
-            .iter()
-            .any(|result| result["extension_id"] == "npm:typescript")
-    );
-    assert2::assert!(
-        results
-            .iter()
-            .any(|result| result["extension_id"] == "npm:@types/node")
-    );
+    assert2::assert!(results
+        .iter()
+        .any(|result| result["extension_id"] == "npm:react"));
+    assert2::assert!(results
+        .iter()
+        .any(|result| result["extension_id"] == "npm:typescript"));
+    assert2::assert!(results
+        .iter()
+        .any(|result| result["extension_id"] == "npm:@types/node"));
     assert2::assert!(run_payload["receipt"]["violation_count"] == 0);
     assert2::assert!(receipt_path.is_file());
     assert2::assert!(started.elapsed() < Duration::from_secs(30));
@@ -1801,17 +1830,13 @@ fn full_init_to_run_pipeline_revoked_extension_blocks_in_strict_json() {
 
     assert2::assert!(run_payload["verdict"]["status"] == "blocked");
     assert2::assert!(run_payload["receipt"]["decision"] == "denied");
-    assert2::assert!(
-        violations
-            .iter()
-            .any(|violation| violation["kind"] == "revoked")
-    );
+    assert2::assert!(violations
+        .iter()
+        .any(|violation| violation["kind"] == "revoked"));
     assert2::assert!(results.iter().any(|result| result["status"] == "revoked"));
-    assert2::assert!(
-        results
-            .iter()
-            .any(|result| result["extension_id"] == "npm:@beta/telemetry-bridge")
-    );
+    assert2::assert!(results
+        .iter()
+        .any(|result| result["extension_id"] == "npm:@beta/telemetry-bridge"));
     assert2::assert!(started.elapsed() < Duration::from_secs(30));
 }
 
@@ -1828,6 +1853,83 @@ fn trust_card_export_requires_json_flag() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("`trust-card export` requires `--json`"));
+}
+
+#[test]
+fn trust_card_cli_outputs_match_goldens() {
+    let missing_json_flag = run_cli_in_workspace(
+        repo_root().as_path(),
+        &["trust-card", "export", "npm:@acme/auth-guard"],
+    );
+    assert!(
+        !missing_json_flag.status.success(),
+        "trust-card export without --json should fail"
+    );
+    assert_trust_card_cli_golden(
+        "error_requires_json.txt.snap",
+        &String::from_utf8_lossy(&missing_json_flag.stderr),
+    );
+
+    let workspace = seeded_fixture_trust_workspace();
+
+    let export = run_cli_in_workspace(
+        workspace.path(),
+        &["trust-card", "export", "npm:@acme/auth-guard", "--json"],
+    );
+    assert!(
+        export.status.success(),
+        "trust-card export failed: {}",
+        String::from_utf8_lossy(&export.stderr)
+    );
+    let export_payload = parse_json_stdout(&export, "trust-card export golden");
+    assert_trust_card_cli_json_golden("export_acme.json.snap", &export_payload);
+
+    let list = run_cli_in_workspace(
+        workspace.path(),
+        &["trust-card", "list", "--publisher", "pub-acme"],
+    );
+    assert!(
+        list.status.success(),
+        "trust-card list failed: {}",
+        String::from_utf8_lossy(&list.stderr)
+    );
+    assert_trust_card_cli_golden(
+        "list_pub_acme.txt.snap",
+        &String::from_utf8_lossy(&list.stdout),
+    );
+
+    let compare = run_cli_in_workspace(
+        workspace.path(),
+        &[
+            "trust-card",
+            "compare",
+            "npm:@acme/auth-guard",
+            "npm:@beta/telemetry-bridge",
+        ],
+    );
+    assert!(
+        compare.status.success(),
+        "trust-card compare failed: {}",
+        String::from_utf8_lossy(&compare.stderr)
+    );
+    assert_trust_card_cli_golden(
+        "compare_acme_beta.txt.snap",
+        &String::from_utf8_lossy(&compare.stdout),
+    );
+
+    let diff = run_cli_in_workspace(
+        workspace.path(),
+        &["trust-card", "diff", "npm:@beta/telemetry-bridge", "1", "2"],
+    );
+    assert!(
+        diff.status.success(),
+        "trust-card diff failed: {}",
+        String::from_utf8_lossy(&diff.stderr)
+    );
+    assert_trust_card_cli_golden(
+        "diff_beta_v1_v2.txt.snap",
+        &String::from_utf8_lossy(&diff.stdout),
+    );
 }
 
 #[test]

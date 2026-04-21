@@ -1,0 +1,7 @@
+compare npm:@acme/auth-guard vs npm:@beta/telemetry-bridge:
+- certification_level: gold -> bronze
+- reputation_score_basis_points: 920 -> 410
+- revocation_status: active -> revoked { reason: "publisher key compromised", revoked_at: "2026-02-20t12:01:00z" }
+- active_quarantine: false -> true
+- capability_declarations: auth.revoke-session,auth.validate-token -> telemetry.forward
+- extension_version: 1.4.2 -> 0.9.1
