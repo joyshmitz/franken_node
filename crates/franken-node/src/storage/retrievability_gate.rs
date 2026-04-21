@@ -3426,7 +3426,8 @@ mod storage_migration_integration_tests {
                 let artifact_id = aid(&format!("concurrent_artifact_{}", i));
                 let segment_id = sid(&format!("concurrent_segment_{}", i));
 
-                let mut locked_gate = gate_clone.lock().unwrap();
+                let mut locked_gate = gate_clone.lock()
+                    .unwrap_or_else(|poison| poison.into_inner());
 
                 // Register target
                 locked_gate.register_target(&artifact_id, &segment_id, &good_state(&test_hash_clone));
@@ -3460,7 +3461,8 @@ mod storage_migration_integration_tests {
         }
 
         // Verify final gate state is consistent
-        let final_gate = gate.lock().unwrap();
+        let final_gate = gate.lock()
+            .unwrap_or_else(|poison| poison.into_inner());
         assert_eq!(final_gate.receipts().len(), 10, "Should have 10 receipts");
         assert_eq!(final_gate.passed_count(), 10, "Should have 10 passed proofs");
     }
