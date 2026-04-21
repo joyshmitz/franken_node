@@ -5,19 +5,19 @@ use arbitrary::Arbitrary;
 use frankenengine_verifier_sdk::bundle::{
     ReplayBundle, BundleHeader, TimelineEvent, BundleChunk,
     BundleArtifact, BundleSignature, deserialize,
-    hash, integrity_hash, verify_bundle,
+    hash, integrity_hash, verify,
 };
 
-/// Fuzz target for SDK verifier bundle parsing and verification.
-///
-/// Tests structure-aware fuzzing of the verifier SDK's bundle deserialization patterns.
-/// This targets untrusted verifier input through `serde_json::from_slice` calls in
-/// the external verifier SDK surface.
-///
-/// Priority target (bd-11xn6): SDK verifier bundle input parsing
-/// - ReplayBundle: main bundle format (highest risk)
-/// - TimelineEvent, BundleArtifact, BundleChunk: supporting structures
-/// - Bundle verification logic: integrity_hash, verify_bundle
+// Fuzz target for SDK verifier bundle parsing and verification.
+//
+// Tests structure-aware fuzzing of the verifier SDK's bundle deserialization patterns.
+// This targets untrusted verifier input through `serde_json::from_slice` calls in
+// the external verifier SDK surface.
+//
+// Priority target (bd-11xn6): SDK verifier bundle input parsing
+// - ReplayBundle: main bundle format (highest risk)
+// - TimelineEvent, BundleArtifact, BundleChunk: supporting structures
+// - Bundle verification logic: integrity_hash, verify
 fuzz_target!(|data: FuzzInput| {
     match data {
         FuzzInput::StructuredHeader(header) => {
@@ -44,14 +44,9 @@ fn fuzz_bundle_header_structured(header: BundleHeader) {
         let _ = serde_json::from_slice::<BundleHeader>(&json);
     }
 
-    // Test edge cases with large numbers (potential overflow)
-    let test_payload_size = header.payload_length_bytes;
-    let test_chunk_count = header.chunk_count;
-
-    // Create minimal bundle with fuzzed header
     let test_bundle = create_minimal_bundle_with_header(header);
     let _ = integrity_hash(&test_bundle);
-    let _ = verify_bundle(&test_bundle);
+    verify_structured_bundle(&test_bundle);
 }
 
 /// Fuzz structured BundleChunk objects
@@ -63,7 +58,7 @@ fn fuzz_bundle_chunk_structured(chunk: BundleChunk) {
     // Test edge cases with chunk indices and sizes
     let test_bundle = create_minimal_bundle_with_chunks(vec![chunk]);
     let _ = integrity_hash(&test_bundle);
-    let _ = verify_bundle(&test_bundle);
+    verify_structured_bundle(&test_bundle);
 }
 
 /// Fuzz structured BundleSignature objects
@@ -77,7 +72,7 @@ fn fuzz_bundle_signature_structured(signature: BundleSignature) {
 
     // Test signature verification with fuzzed signature
     let test_bundle = create_minimal_bundle_with_signature(signature);
-    let _ = verify_bundle(&test_bundle);
+    verify_structured_bundle(&test_bundle);
 }
 
 /// Helper to create minimal bundle for testing components
@@ -163,7 +158,13 @@ fn fuzz_bundle_raw_bytes(bytes: Vec<u8>) {
     if let Ok(bundle) = deserialize(&bytes) {
         // Test verification logic on potentially malformed data
         let _ = integrity_hash(&bundle);
-        let _ = verify_bundle(&bundle);
+        let _ = verify(&bytes);
+    }
+}
+
+fn verify_structured_bundle(bundle: &ReplayBundle) {
+    if let Ok(bytes) = serde_json::to_vec(bundle) {
+        let _ = verify(&bytes);
     }
 }
 

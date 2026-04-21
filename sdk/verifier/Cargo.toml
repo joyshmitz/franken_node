@@ -5,6 +5,9 @@ edition = "2024"
 description = "Verifier SDK for replaying bundles, checking canonical hashes, and verifying Ed25519 signatures"
 license = "MIT"
 
+[features]
+fuzz = ["arbitrary"]
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -12,6 +15,7 @@ ed25519-dalek = "2.1.1"
 sha2 = "0.10.8"
 hex = "0.4.3"
 subtle = "2.6.1"
+arbitrary = { version = "1.3", optional = true, features = ["derive"] }
 
 [dev-dependencies]
 frankenengine-node = { path = "../../crates/franken-node" }

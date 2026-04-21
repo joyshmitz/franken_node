@@ -1,6 +1,6 @@
 use super::replay_bundle::{
-    EventType, RawEvent, ReplayBundle, ReplayBundleError, fixture_incident_events,
-    generate_replay_bundle, replay_bundle_adversarial_fuzz_one,
+    EventType, RawEvent, ReplayBundle, ReplayBundleError, generate_replay_bundle,
+    replay_bundle_adversarial_fuzz_one,
     replay_bundle_batch_adversarial_fuzz_one,
 };
 use serde_json::{Value, json};
@@ -225,8 +225,47 @@ pub fn replay_bundle_adversarial_fuzz_corpus() -> Vec<ReplayBundleAdversarialCas
 }
 
 fn fixture_bundle(incident_id: &str) -> ReplayBundle {
-    generate_replay_bundle(incident_id, &fixture_incident_events(incident_id))
-        .expect("fixture bundle")
+    generate_replay_bundle(incident_id, &adversarial_corpus_events(incident_id))
+        .expect("adversarial corpus bundle")
+}
+
+fn adversarial_corpus_events(incident_id: &str) -> Vec<RawEvent> {
+    vec![
+        RawEvent::new(
+            "2026-02-20T12:00:00.000001Z",
+            EventType::ExternalSignal,
+            json!({
+                "incident_id": incident_id,
+                "signal": "anomaly_detected",
+                "severity": "high"
+            }),
+        )
+        .with_state_snapshot(json!({
+            "hardening_level": "enhanced",
+            "epoch": 42_u64,
+            "active_policies": ["strict-revocation", "quarantine-on-high-risk"]
+        }))
+        .with_policy_version("1.0.0"),
+        RawEvent::new(
+            "2026-02-20T12:00:00.000450Z",
+            EventType::PolicyEval,
+            json!({
+                "policy": "quarantine-on-high-risk",
+                "decision": "quarantine",
+                "risk_score": 0.93
+            }),
+        )
+        .with_policy_version("1.0.0"),
+        RawEvent::new(
+            "2026-02-20T12:00:00.001000Z",
+            EventType::OperatorAction,
+            json!({
+                "action": "quarantine_node",
+                "target": incident_id,
+                "operator": "policy-engine"
+            }),
+        ),
+    ]
 }
 
 fn bundle_value(bundle: &ReplayBundle) -> Value {

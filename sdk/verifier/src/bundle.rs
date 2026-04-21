@@ -50,6 +50,7 @@ pub struct ReplayBundle {
 
 /// Versioned replay bundle header checked before payload integrity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
 pub struct BundleHeader {
     pub hash_algorithm: String,
     pub payload_length_bytes: u64,
@@ -72,6 +73,7 @@ pub struct TimelineEvent {
 
 /// Manifest entry describing one payload chunk in deterministic order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
 pub struct BundleChunk {
     pub chunk_index: u32,
     pub total_chunks: u32,
@@ -82,6 +84,7 @@ pub struct BundleChunk {
 
 /// Opaque bundle artifact bytes plus their SDK hash.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
 pub struct BundleArtifact {
     pub media_type: String,
     pub digest: String,
@@ -90,6 +93,7 @@ pub struct BundleArtifact {
 
 /// Structural signature over a sealed bundle's integrity hash.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
 pub struct BundleSignature {
     pub algorithm: String,
     pub signature_hex: String,
