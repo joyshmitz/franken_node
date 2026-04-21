@@ -281,12 +281,6 @@ impl MigrationRuntimeTarget {
             Self::Bun(_) => "bun",
         }
     }
-
-    fn path(&self) -> &Path {
-        match self {
-            Self::FrankenNode(path) | Self::Node(path) | Self::Bun(path) => path,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -519,7 +513,9 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
                         id: String::new(),
                         path: Some(relative_path),
                         action: MigrationRewriteAction::ManualModuleReview,
-                        detail: format!("unable to read JavaScript source for module rewrite: {err}"),
+                        detail: format!(
+                            "unable to read JavaScript source for module rewrite: {err}"
+                        ),
                         applied: false,
                     },
                     MAX_TOTAL_FINDINGS,
@@ -549,7 +545,9 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
             if apply {
                 write_migration_backup(project_path, &path, &raw)?;
                 std::fs::write(&path, source_rewrite.rewritten_content.as_bytes()).map_err(
-                    |err| anyhow::anyhow!("failed writing rewritten source {}: {err}", path.display()),
+                    |err| {
+                        anyhow::anyhow!("failed writing rewritten source {}: {err}", path.display())
+                    },
                 )?;
                 rewrites_applied = rewrites_applied.saturating_add(1);
             }
@@ -1226,9 +1224,7 @@ fn write_migration_backup(
             source_path.display()
         )
     })?;
-    let backup_path = project_path
-        .join(MIGRATION_BACKUP_DIR)
-        .join(relative_path);
+    let backup_path = project_path.join(MIGRATION_BACKUP_DIR).join(relative_path);
     if let Some(parent) = backup_path.parent() {
         std::fs::create_dir_all(parent).map_err(|err| {
             anyhow::anyhow!(

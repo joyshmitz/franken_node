@@ -1047,6 +1047,7 @@ dependencies = [
  "hmac",
  "insta",
  "rand",
+ "regex",
  "serde",
  "serde_cbor",
  "serde_json",
