@@ -511,9 +511,10 @@ pub fn signing_key_from_seed_bytes(seed_bytes: &[u8]) -> Result<SigningKey, Arti
 pub fn signing_key_from_seed_hex(seed_hex: &str) -> Result<SigningKey, ArtifactSigningError> {
     let trimmed = seed_hex.trim();
     let hex_text = trimmed.strip_prefix("hex:").unwrap_or(trimmed).trim();
-    let mut seed = hex::decode(hex_text).map_err(|err| ArtifactSigningError::SigningKeyInvalid {
-        reason: format!("hex decode failed: {err}"),
-    })?;
+    let mut seed =
+        hex::decode(hex_text).map_err(|err| ArtifactSigningError::SigningKeyInvalid {
+            reason: format!("hex decode failed: {err}"),
+        })?;
     let signing_key = signing_key_from_seed_bytes(&seed);
     seed.zeroize();
     signing_key

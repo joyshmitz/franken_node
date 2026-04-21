@@ -2,9 +2,7 @@ use insta::assert_json_snapshot;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use frankenengine_node::supply_chain::artifact_signing::{
-    build_and_sign_manifest, sign_artifact,
-};
+use frankenengine_node::supply_chain::artifact_signing::{build_and_sign_manifest, sign_artifact};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 

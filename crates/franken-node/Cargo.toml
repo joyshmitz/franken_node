@@ -110,3 +110,4 @@ path = "tests/proof_generator_timeout_race.rs"
 [[test]]
 name = "supply_chain_golden_artifacts"
 path = "tests/supply_chain_golden_artifacts.rs"
+required-features = ["extended-surfaces"]

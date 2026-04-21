@@ -8450,6 +8450,57 @@ mod registry_command_tests {
     }
 
     #[test]
+    fn registry_cli_registry_uses_fail_closed_level_two_policy() {
+        let registry = registry_cli_registry().expect("registry");
+        let policy = &registry.admission_kernel().provenance_policy;
+
+        assert_eq!(
+            policy.min_level,
+            supply_chain::provenance::ProvenanceLevel::Level2SignedReproducible
+        );
+        assert_eq!(policy.required_chain_depth, 2);
+        assert_eq!(
+            policy.mode,
+            supply_chain::provenance::VerificationMode::FailClosed
+        );
+        assert_eq!(policy.cached_trust_window_secs, 0);
+        assert!(!policy.allow_self_signed);
+    }
+
+    #[test]
+    fn registry_cli_registry_rejects_development_grade_provenance() {
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[13_u8; 32]);
+        let mut key_ring = supply_chain::artifact_signing::KeyRing::new();
+        key_ring.add_key(signing_key.verifying_key());
+        let mut registry = SignedExtensionRegistry::new(
+            supply_chain::extension_registry::RegistryConfig::default(),
+            registry_cli_admission_kernel(key_ring),
+        );
+        let mut request = build_registry_seed_request(
+            "dev-only",
+            "development-grade provenance must fail closed",
+            "test-pub",
+            "1.0.0",
+            &["registry"],
+            &signing_key,
+        )
+        .expect("request");
+        request.provenance.slsa_level_claim = 1;
+        request.provenance.links.truncate(1);
+        supply_chain::provenance::sign_links_in_place(&mut request.provenance)
+            .expect("resign downgraded provenance");
+
+        let result = registry.register(request, "trace-registry-dev-profile-reject", 1_700_000_000);
+
+        assert!(!result.success);
+        assert_eq!(
+            result.error_code.as_deref(),
+            Some(frankenengine_node::supply_chain::extension_registry::event_codes::SER_ERR_PROVENANCE_CHAIN_INVALID)
+        );
+        assert!(result.detail.contains("required 2 links"));
+    }
+
+    #[test]
     fn assurance_level_is_higher_for_active_than_revoked() {
         let registry = registry_cli_registry().expect("registry");
         let entries = registry.list(None);
@@ -11840,16 +11891,28 @@ fn build_registry_seed_request_with_config(
         output_hash: attestation_hash.clone(),
         slsa_level_claim: 2,
         envelope_format: supply_chain::provenance::AttestationEnvelopeFormat::FrankenNodeEnvelopeV1,
-        links: vec![supply_chain::provenance::AttestationLink {
-            role: supply_chain::provenance::ChainLinkRole::Publisher,
-            signer_id: builder_identity,
-            signer_version: version.to_string(),
-            signature: String::new(),
-            signed_payload_hash: attestation_hash,
-            issued_at_epoch: now_epoch.saturating_sub(60),
-            expires_at_epoch: now_epoch.saturating_add(86400),
-            revoked: false,
-        }],
+        links: vec![
+            supply_chain::provenance::AttestationLink {
+                role: supply_chain::provenance::ChainLinkRole::Publisher,
+                signer_id: builder_identity,
+                signer_version: version.to_string(),
+                signature: String::new(),
+                signed_payload_hash: attestation_hash.clone(),
+                issued_at_epoch: now_epoch.saturating_sub(60),
+                expires_at_epoch: now_epoch.saturating_add(86400),
+                revoked: false,
+            },
+            supply_chain::provenance::AttestationLink {
+                role: supply_chain::provenance::ChainLinkRole::BuildSystem,
+                signer_id: build_context.build_system_identifier.clone(),
+                signer_version: version.to_string(),
+                signature: String::new(),
+                signed_payload_hash: attestation_hash,
+                issued_at_epoch: now_epoch.saturating_sub(60),
+                expires_at_epoch: now_epoch.saturating_add(86400),
+                revoked: false,
+            },
+        ],
         custom_claims: std::collections::BTreeMap::new(),
     };
     supply_chain::provenance::sign_links_in_place(&mut provenance)
@@ -11878,6 +11941,34 @@ fn generate_registry_seed_signing_key() -> ed25519_dalek::SigningKey {
     ed25519_dalek::SigningKey::generate(&mut rng)
 }
 
+fn registry_cli_provenance_policy() -> supply_chain::provenance::VerificationPolicy {
+    supply_chain::provenance::VerificationPolicy {
+        min_level: supply_chain::provenance::ProvenanceLevel::Level2SignedReproducible,
+        required_chain_depth: 2,
+        max_attestation_age_secs: 24 * 60 * 60,
+        cached_trust_window_secs: 0,
+        allow_self_signed: false,
+        mode: supply_chain::provenance::VerificationMode::FailClosed,
+    }
+}
+
+fn registry_cli_transparency_policy() -> supply_chain::transparency_verifier::TransparencyPolicy {
+    supply_chain::transparency_verifier::TransparencyPolicy {
+        required: false,
+        pinned_roots: vec![],
+    }
+}
+
+fn registry_cli_admission_kernel(
+    key_ring: supply_chain::artifact_signing::KeyRing,
+) -> AdmissionKernel {
+    AdmissionKernel {
+        key_ring,
+        provenance_policy: registry_cli_provenance_policy(),
+        transparency_policy: registry_cli_transparency_policy(),
+    }
+}
+
 fn registry_cli_registry() -> Result<SignedExtensionRegistry> {
     let mut key_ring = supply_chain::artifact_signing::KeyRing::new();
     let acme_seed_key = generate_registry_seed_signing_key();
@@ -11891,14 +11982,7 @@ fn registry_cli_registry() -> Result<SignedExtensionRegistry> {
         key_ring.add_key(verifying_key);
     }
 
-    let admission_kernel = AdmissionKernel {
-        key_ring,
-        provenance_policy: supply_chain::provenance::VerificationPolicy::development_profile(),
-        transparency_policy: supply_chain::transparency_verifier::TransparencyPolicy {
-            required: false,
-            pinned_roots: vec![],
-        },
-    };
+    let admission_kernel = registry_cli_admission_kernel(key_ring);
 
     let mut registry = SignedExtensionRegistry::new(
         supply_chain::extension_registry::RegistryConfig::default(),
