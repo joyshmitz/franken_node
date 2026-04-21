@@ -90,6 +90,8 @@ pub fn sign_fleet_convergence_receipt_payload<T: Serialize>(
     let signature = signing_key.sign(&canonical_payload);
     let verifying_key = signing_key.verifying_key();
     let mut payload_hasher = Sha256::new();
+    payload_hasher.update(b"fleet_convergence_receipt_payload_v1:");
+    payload_hasher.update((canonical_payload.len() as u64).to_le_bytes());
     payload_hasher.update(&canonical_payload);
 
     Ok(FleetConvergenceReceiptSignature {
@@ -2482,6 +2484,71 @@ mod tests {
         assert!(
             leftovers.is_empty(),
             "found temp compaction leftovers: {leftovers:?}"
+        );
+    }
+
+    #[test]
+    fn fleet_convergence_receipt_payload_hash_domain_separation() {
+        use ed25519_dalek::SigningKey;
+        use sha2::{Digest, Sha256};
+
+        // Test payload
+        let test_payload = serde_json::json!({
+            "zone_id": "zone-001",
+            "convergence_state": "active",
+            "timestamp": "2026-04-21T19:00:00Z"
+        });
+
+        // Generate a test signing key
+        let signing_key = SigningKey::generate(&mut rand::thread_rng());
+
+        // Sign with the new domain-separated hash
+        let receipt = sign_fleet_convergence_receipt_payload(
+            &test_payload,
+            &signing_key,
+            "test",
+            "test-identity",
+        ).expect("signing should succeed");
+
+        // Manually compute what the legacy bare hash would be
+        let canonical_payload = canonical_fleet_convergence_receipt_payload(&test_payload)
+            .expect("canonicalization should succeed");
+        let mut legacy_hasher = Sha256::new();
+        legacy_hasher.update(&canonical_payload);
+        let legacy_hash = hex::encode(legacy_hasher.finalize());
+
+        // The new hash should be different from the legacy hash
+        assert_ne!(
+            receipt.signed_payload_sha256,
+            legacy_hash,
+            "Domain-separated hash should differ from legacy bare hash"
+        );
+
+        // Verify the new hash follows the expected domain-separated pattern
+        let mut expected_hasher = Sha256::new();
+        expected_hasher.update(b"fleet_convergence_receipt_payload_v1:");
+        expected_hasher.update((canonical_payload.len() as u64).to_le_bytes());
+        expected_hasher.update(&canonical_payload);
+        let expected_hash = hex::encode(expected_hasher.finalize());
+
+        assert_eq!(
+            receipt.signed_payload_sha256,
+            expected_hash,
+            "Domain-separated hash should match expected pattern"
+        );
+
+        // Ensure the hash is deterministic
+        let receipt2 = sign_fleet_convergence_receipt_payload(
+            &test_payload,
+            &signing_key,
+            "test",
+            "test-identity",
+        ).expect("second signing should succeed");
+
+        assert_eq!(
+            receipt.signed_payload_sha256,
+            receipt2.signed_payload_sha256,
+            "Hash should be deterministic for same input"
         );
     }
 
