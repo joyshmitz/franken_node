@@ -58,8 +58,9 @@ use crate::api::{
 use crate::cli::{
     BenchCommand, Cli, Command, DoctorCloseConditionArgs, DoctorCommand, FleetAgentArgs,
     FleetCommand, IncidentCommand, MigrateCommand, RegistryCommand, RemoteCapCommand,
-    RemoteCapIssueArgs, TrustCardCommand, TrustCommand, VerifyCommand, VerifyCompatibilityArgs,
-    VerifyCorpusArgs, VerifyMigrationArgs, VerifyModuleArgs, VerifyReleaseArgs,
+    RemoteCapIssueArgs, RuntimeCommand, RuntimeLaneCommand, TrustCardCommand, TrustCommand,
+    VerifyCommand, VerifyCompatibilityArgs, VerifyCorpusArgs, VerifyMigrationArgs,
+    VerifyModuleArgs, VerifyReleaseArgs,
 };
 use crate::policy::{
     bayesian_diagnostics::{BayesianDiagnostics, CandidateRef, Observation},
@@ -5113,6 +5114,124 @@ fn render_incident_list(entries: &[IncidentListEntry], severity_filter: Option<&
 fn now_unix_secs() -> u64 {
     let ts = chrono::Utc::now().timestamp();
     if ts <= 0 { 0 } else { ts as u64 }
+}
+
+#[derive(Debug, Serialize)]
+struct RuntimeLaneStatusReport {
+    schema_version: &'static str,
+    command: &'static str,
+    policy: runtime::lane_scheduler::LaneMappingPolicy,
+    telemetry: runtime::lane_scheduler::LaneTelemetrySnapshot,
+}
+
+#[derive(Debug, Serialize)]
+struct RuntimeLaneAssignmentReport {
+    schema_version: &'static str,
+    command: &'static str,
+    assignment: runtime::lane_scheduler::TaskAssignment,
+    telemetry: runtime::lane_scheduler::LaneTelemetrySnapshot,
+}
+
+#[derive(Debug, Serialize)]
+struct RuntimeEpochReport {
+    schema_version: &'static str,
+    command: &'static str,
+    local_epoch: u64,
+    peer_epoch: Option<u64>,
+    verdict: &'static str,
+    epoch_delta: Option<u64>,
+}
+
+fn runtime_cli_timestamp_ms(timestamp_ms: Option<u64>) -> u64 {
+    timestamp_ms.unwrap_or_else(|| now_unix_secs().saturating_mul(1_000))
+}
+
+fn emit_json_or_human<T: Serialize>(value: &T, json: bool, human: impl FnOnce() -> String) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(value)?);
+    } else {
+        println!("{}", human());
+    }
+    Ok(())
+}
+
+fn handle_runtime_command(command: RuntimeCommand) -> Result<()> {
+    match command {
+        RuntimeCommand::Lane(lane_command) => match lane_command {
+            RuntimeLaneCommand::Status(args) => {
+                let policy = runtime::lane_scheduler::default_policy();
+                let scheduler = runtime::lane_scheduler::LaneScheduler::new(policy.clone())
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                let telemetry = scheduler.telemetry_snapshot(runtime_cli_timestamp_ms(None));
+                let report = RuntimeLaneStatusReport {
+                    schema_version: runtime::lane_scheduler::SCHEMA_VERSION,
+                    command: "runtime.lane.status",
+                    policy,
+                    telemetry,
+                };
+                emit_json_or_human(&report, args.json, || {
+                    let lane_count = report.policy.lane_configs.len();
+                    let rule_count = report.policy.mapping_rules.len();
+                    format!(
+                        "runtime lane status: lanes={lane_count} mapping_rules={rule_count} schema={}",
+                        report.schema_version
+                    )
+                })?;
+            }
+            RuntimeLaneCommand::Assign(args) => {
+                let policy = runtime::lane_scheduler::default_policy();
+                let mut scheduler = runtime::lane_scheduler::LaneScheduler::new(policy)
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                let timestamp_ms = runtime_cli_timestamp_ms(args.timestamp_ms);
+                let task_class = runtime::lane_scheduler::TaskClass::new(&args.task_class);
+                let assignment = scheduler
+                    .assign_task(&task_class, timestamp_ms, &args.trace_id)
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                let telemetry = scheduler.telemetry_snapshot(timestamp_ms);
+                let report = RuntimeLaneAssignmentReport {
+                    schema_version: runtime::lane_scheduler::SCHEMA_VERSION,
+                    command: "runtime.lane.assign",
+                    assignment,
+                    telemetry,
+                };
+                emit_json_or_human(&report, args.json, || {
+                    format!(
+                        "runtime lane assignment: task_id={} task_class={} lane={}",
+                        report.assignment.task_id,
+                        report.assignment.task_class,
+                        report.assignment.lane
+                    )
+                })?;
+            }
+        },
+        RuntimeCommand::Epoch(args) => {
+            let (verdict, epoch_delta) = match args.peer_epoch {
+                Some(peer_epoch) if peer_epoch == args.local_epoch => ("matched", Some(0)),
+                Some(peer_epoch) => ("mismatch", Some(args.local_epoch.abs_diff(peer_epoch))),
+                None => ("local_only", None),
+            };
+            let report = RuntimeEpochReport {
+                schema_version: "runtime-epoch-v1",
+                command: "runtime.epoch",
+                local_epoch: args.local_epoch,
+                peer_epoch: args.peer_epoch,
+                verdict,
+                epoch_delta,
+            };
+            emit_json_or_human(&report, args.json, || {
+                format!(
+                    "runtime epoch: local={} peer={} verdict={}",
+                    report.local_epoch,
+                    report
+                        .peer_epoch
+                        .map(|epoch| epoch.to_string())
+                        .unwrap_or_else(|| "none".to_string()),
+                    report.verdict
+                )
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn resolve_remotecap_signing_key() -> Result<String> {
@@ -18192,6 +18311,10 @@ fn main() -> Result<()> {
             {
                 std::process::exit(exit_code);
             }
+        }
+
+        Command::Runtime(sub) => {
+            handle_runtime_command(sub)?;
         }
 
         Command::Migrate(sub) => match sub {

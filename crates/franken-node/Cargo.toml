@@ -104,8 +104,16 @@ name = "artifact_signing_key_loading"
 path = "tests/artifact_signing_key_loading.rs"
 
 [[test]]
+name = "runtime_cli_e2e"
+path = "tests/runtime_cli_e2e.rs"
+
+[[test]]
 name = "registry_cli_e2e"
 path = "tests/registry_cli_e2e.rs"
+
+[[test]]
+name = "trust_object_id_real_inputs"
+path = "tests/trust_object_id_real_inputs.rs"
 
 [[test]]
 name = "session_auth_real_lifecycle"

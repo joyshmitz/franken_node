@@ -29,6 +29,10 @@ pub enum Command {
     /// Run app under policy-governed runtime controls.
     Run(RunArgs),
 
+    /// Runtime lane and epoch inspection/control.
+    #[command(subcommand)]
+    Runtime(RuntimeCommand),
+
     /// Migration audit, rewrite, and validation workflows.
     #[command(subcommand)]
     Migrate(MigrateCommand),
@@ -146,6 +150,67 @@ pub struct RunArgs {
     /// and results are compared. Divergence blocks execution.
     #[arg(long)]
     pub lockstep_preflight: bool,
+}
+
+// -- runtime --
+
+#[derive(Debug, Subcommand)]
+pub enum RuntimeCommand {
+    /// Inspect or exercise lane scheduler state.
+    #[command(subcommand)]
+    Lane(RuntimeLaneCommand),
+
+    /// Inspect control epoch compatibility.
+    Epoch(RuntimeEpochArgs),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RuntimeLaneCommand {
+    /// Emit the default lane policy and empty telemetry snapshot.
+    Status(RuntimeLaneStatusArgs),
+
+    /// Assign one task class through the default lane scheduler.
+    Assign(RuntimeLaneAssignArgs),
+}
+
+#[derive(Debug, Parser)]
+pub struct RuntimeLaneStatusArgs {
+    /// Emit structured JSON output.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Parser)]
+pub struct RuntimeLaneAssignArgs {
+    /// Task class to assign, for example epoch_transition or log_rotation.
+    pub task_class: String,
+
+    /// Deterministic timestamp override in milliseconds.
+    #[arg(long)]
+    pub timestamp_ms: Option<u64>,
+
+    /// Stable trace ID for the assignment.
+    #[arg(long, default_value = "runtime-lane-cli")]
+    pub trace_id: String,
+
+    /// Emit structured JSON output.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Parser)]
+pub struct RuntimeEpochArgs {
+    /// Local control epoch.
+    #[arg(long)]
+    pub local_epoch: u64,
+
+    /// Peer control epoch to compare against.
+    #[arg(long)]
+    pub peer_epoch: Option<u64>,
+
+    /// Emit structured JSON output.
+    #[arg(long)]
+    pub json: bool,
 }
 
 // -- migrate --

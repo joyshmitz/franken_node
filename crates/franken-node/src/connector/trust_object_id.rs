@@ -15,6 +15,8 @@
 //! - INV-TOI-DIGEST: Digest uses SHA-256 (256-bit, >= 128 bits collision
 //!   resistance).
 
+use crate::capacity_defaults::aliases::MAX_EVENTS;
+use crate::push_bounded;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -620,28 +622,6 @@ pub fn sample_trust_object_id_events_for_tests() -> Vec<IdEvent> {
         );
     }
     derive_trust_object_id_events(&inputs)
-}
-
-#[cfg(not(feature = "test-support"))]
-const _: fn() = || {
-    fn _assert_no_public_demo_symbol() {
-        let _ = stringify!(derive_trust_object_id_events);
-    }
-};
-
-#[cfg(any(test, feature = "test-support"))]
-pub fn demo_trust_object_ids() -> Vec<IdEvent> {
-    sample_trust_object_id_events_for_tests()
-}
-            event_code: event_codes::TOI_DERIVED.to_string(),
-            domain: domain.label().to_string(),
-            derivation_mode: "context_addressed".to_string(),
-            short_id: id.short_form(),
-            detail: format!("derived context-addressed ID for {}", domain.label()),
-        });
-    }
-
-    events
 }
 
 // ---------------------------------------------------------------------------
@@ -1393,16 +1373,37 @@ mod tests {
         assert!(validate_hex_digest(&"g".repeat(64)).is_err());
     }
 
-    // ── Demo function ───────────────────────────────────────────────
+    // ── Event derivation ────────────────────────────────────────────
 
     #[test]
-    fn test_demo_trust_object_ids() {
-        let events = demo_trust_object_ids();
+    fn test_sample_trust_object_id_events_for_tests() {
+        let events = sample_trust_object_id_events_for_tests();
         // 6 content-addressed + 6 context-addressed
         assert_eq!(events.len(), 12);
         for e in &events {
             assert_eq!(e.event_code, event_codes::TOI_DERIVED);
         }
+    }
+
+    #[test]
+    fn test_derive_trust_object_id_events_uses_caller_inputs() {
+        let inputs = vec![
+            TrustObjectInput::content_addressed(DomainPrefix::Extension, b"caller-extension"),
+            TrustObjectInput::context_addressed(DomainPrefix::Receipt, 7, 11, b"caller-receipt"),
+        ];
+
+        let events = derive_trust_object_id_events(&inputs);
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].domain, "extension");
+        assert_eq!(events[0].derivation_mode, "content_addressed");
+        assert_eq!(events[1].domain, "receipt");
+        assert_eq!(events[1].derivation_mode, "context_addressed");
+        assert!(
+            events
+                .iter()
+                .all(|event| event.detail.contains("caller-supplied"))
+        );
     }
 
     // ── Cross-domain collision resistance ───────────────────────────
