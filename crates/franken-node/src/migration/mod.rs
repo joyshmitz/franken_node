@@ -317,6 +317,32 @@ struct PackageScriptRewrite {
     rewritten_command: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PackageScriptShellTokenKind {
+    Word,
+    AndIf,
+    OrIf,
+    Sequence,
+    Pipe,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PackageScriptShellToken {
+    kind: PackageScriptShellTokenKind,
+    raw: String,
+    unquoted: String,
+    start: usize,
+    end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PackageScriptCommandMatch {
+    runtime: PackageScriptRuntime,
+    runtime_start: usize,
+    runtime_end: usize,
+    entry_path: String,
+}
+
 fn ensure_migration_project_path(project_path: &Path, operation: &str) -> anyhow::Result<()> {
     if !project_path.exists() {
         anyhow::bail!(
@@ -2041,35 +2067,363 @@ fn classify_package_script_command(
     script_name: &str,
     command: &str,
 ) -> Option<PackageScriptRewrite> {
-    let trimmed = command.trim();
-    let runtime_token = trimmed.split_whitespace().next()?;
-    let runtime = match runtime_token {
-        "node" => PackageScriptRuntime::Node,
-        "bun" => PackageScriptRuntime::Bun,
-        "franken-node" => PackageScriptRuntime::FrankenNode,
-        _ => return None,
-    };
+    let tokens = tokenize_package_script_command(command)?;
+    let mut first_match = None;
+    let mut replacements = Vec::new();
+    let mut segment_start = 0_usize;
 
-    let command_tail = trimmed.get(runtime_token.len()..)?.trim_start();
-    let entry_path = command_tail.split_whitespace().next()?;
-    if !is_package_script_entry_path(entry_path) {
-        return None;
+    while segment_start < tokens.len() {
+        let segment_end = tokens[segment_start..]
+            .iter()
+            .position(|token| token.kind != PackageScriptShellTokenKind::Word)
+            .map_or(tokens.len(), |offset| segment_start.saturating_add(offset));
+
+        if let Some(command_match) =
+            classify_package_script_segment(&tokens[segment_start..segment_end])
+        {
+            first_match.get_or_insert_with(|| command_match.clone());
+            if matches!(
+                command_match.runtime,
+                PackageScriptRuntime::Node | PackageScriptRuntime::Bun
+            ) {
+                push_bounded(
+                    &mut replacements,
+                    (command_match.runtime_start, command_match.runtime_end),
+                    MAX_FINDINGS_PER_CATEGORY,
+                );
+            }
+        }
+
+        segment_start = segment_end.saturating_add(1);
     }
 
-    let rewritten_command = match runtime {
-        PackageScriptRuntime::Node | PackageScriptRuntime::Bun => {
-            Some(format!("franken-node {command_tail}"))
-        }
-        PackageScriptRuntime::FrankenNode => None,
+    let first_match = first_match?;
+    let rewritten_command = if replacements.is_empty() {
+        None
+    } else {
+        Some(apply_package_script_runtime_replacements(
+            command,
+            &replacements,
+        ))
     };
 
     Some(PackageScriptRewrite {
         script_name: script_name.to_string(),
-        runtime,
-        entry_path: unquote_script_token(entry_path).to_string(),
+        runtime: first_match.runtime,
+        entry_path: first_match.entry_path,
         original_command: command.to_string(),
         rewritten_command,
     })
+}
+
+fn tokenize_package_script_command(command: &str) -> Option<Vec<PackageScriptShellToken>> {
+    let mut tokens = Vec::new();
+    let mut index = 0_usize;
+
+    while index < command.len() {
+        let current = command[index..].chars().next()?;
+        if current.is_whitespace() {
+            index = index.saturating_add(current.len_utf8());
+            continue;
+        }
+
+        if let Some((kind, width)) = package_script_control_token(command, index) {
+            let end = index.saturating_add(width);
+            let raw = command.get(index..end)?.to_string();
+            push_bounded(
+                &mut tokens,
+                PackageScriptShellToken {
+                    kind,
+                    unquoted: raw.clone(),
+                    raw,
+                    start: index,
+                    end,
+                },
+                MAX_TOTAL_FINDINGS,
+            );
+            index = end;
+            continue;
+        }
+
+        let start = index;
+        let mut unquoted = String::new();
+        let mut quote = None;
+
+        while index < command.len() {
+            let ch = command[index..].chars().next()?;
+            if quote.is_none()
+                && (ch.is_whitespace() || package_script_control_token(command, index).is_some())
+            {
+                break;
+            }
+
+            match quote {
+                None => match ch {
+                    '\'' | '"' => {
+                        quote = Some(ch);
+                        index = index.saturating_add(ch.len_utf8());
+                    }
+                    '\\' => {
+                        index = index.saturating_add(ch.len_utf8());
+                        if index < command.len() {
+                            let escaped = command[index..].chars().next()?;
+                            unquoted.push(escaped);
+                            index = index.saturating_add(escaped.len_utf8());
+                        } else {
+                            unquoted.push(ch);
+                        }
+                    }
+                    _ => {
+                        unquoted.push(ch);
+                        index = index.saturating_add(ch.len_utf8());
+                    }
+                },
+                Some(active_quote) if ch == active_quote => {
+                    quote = None;
+                    index = index.saturating_add(ch.len_utf8());
+                }
+                Some('"') if ch == '\\' => {
+                    index = index.saturating_add(ch.len_utf8());
+                    if index < command.len() {
+                        let escaped = command[index..].chars().next()?;
+                        unquoted.push(escaped);
+                        index = index.saturating_add(escaped.len_utf8());
+                    } else {
+                        unquoted.push(ch);
+                    }
+                }
+                Some(_) => {
+                    unquoted.push(ch);
+                    index = index.saturating_add(ch.len_utf8());
+                }
+            }
+        }
+
+        if quote.is_some() || start == index {
+            return None;
+        }
+
+        let raw = command.get(start..index)?.to_string();
+        push_bounded(
+            &mut tokens,
+            PackageScriptShellToken {
+                kind: PackageScriptShellTokenKind::Word,
+                raw,
+                unquoted,
+                start,
+                end: index,
+            },
+            MAX_TOTAL_FINDINGS,
+        );
+    }
+
+    Some(tokens)
+}
+
+fn package_script_control_token(
+    command: &str,
+    index: usize,
+) -> Option<(PackageScriptShellTokenKind, usize)> {
+    let rest = command.get(index..)?;
+    if rest.starts_with("&&") {
+        return Some((PackageScriptShellTokenKind::AndIf, 2));
+    }
+    if rest.starts_with("||") {
+        return Some((PackageScriptShellTokenKind::OrIf, 2));
+    }
+    if rest.starts_with(';') {
+        return Some((PackageScriptShellTokenKind::Sequence, 1));
+    }
+    if rest.starts_with('|') {
+        return Some((PackageScriptShellTokenKind::Pipe, 1));
+    }
+    None
+}
+
+fn classify_package_script_segment(
+    tokens: &[PackageScriptShellToken],
+) -> Option<PackageScriptCommandMatch> {
+    if tokens.is_empty() {
+        return None;
+    }
+
+    let mut command_index = skip_shell_env_assignments(tokens, 0);
+
+    if tokens
+        .get(command_index)
+        .is_some_and(|token| token.unquoted == "env")
+    {
+        command_index = skip_shell_env_assignments(tokens, command_index.saturating_add(1));
+    }
+
+    if tokens.get(command_index).is_some_and(|token| {
+        matches!(token.unquoted.as_str(), "cross-env" | "cross-env-shell")
+    }) {
+        command_index = skip_shell_env_assignments(tokens, command_index.saturating_add(1));
+    }
+
+    let runtime_index =
+        package_manager_wrapped_runtime_index(tokens, command_index).unwrap_or(command_index);
+    let runtime = package_script_runtime_from_word(tokens.get(runtime_index)?.unquoted.as_str())?;
+    let entry_index = package_script_entry_index(tokens, runtime_index)?;
+    let entry_path = tokens.get(entry_index)?.unquoted.clone();
+    if !is_package_script_entry_path(&entry_path) {
+        return None;
+    }
+
+    let runtime_token = tokens.get(runtime_index)?;
+    Some(PackageScriptCommandMatch {
+        runtime,
+        runtime_start: runtime_token.start,
+        runtime_end: runtime_token.end,
+        entry_path,
+    })
+}
+
+fn skip_shell_env_assignments(tokens: &[PackageScriptShellToken], mut index: usize) -> usize {
+    while tokens
+        .get(index)
+        .is_some_and(|token| is_shell_env_assignment(&token.unquoted))
+    {
+        index = index.saturating_add(1);
+    }
+    index
+}
+
+fn is_shell_env_assignment(word: &str) -> bool {
+    let Some((name, _value)) = word.split_once('=') else {
+        return false;
+    };
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn package_manager_wrapped_runtime_index(
+    tokens: &[PackageScriptShellToken],
+    command_index: usize,
+) -> Option<usize> {
+    let command = tokens.get(command_index)?.unquoted.as_str();
+    match command {
+        "npm" | "pnpm" => {
+            let subcommand = tokens.get(command_index.saturating_add(1))?.unquoted.as_str();
+            if !matches!(subcommand, "exec" | "x" | "dlx") {
+                return None;
+            }
+            Some(skip_package_manager_exec_options(
+                tokens,
+                command_index.saturating_add(2),
+            ))
+        }
+        "npx" => Some(skip_package_manager_exec_options(
+            tokens,
+            command_index.saturating_add(1),
+        )),
+        "yarn" => {
+            let next_index = command_index.saturating_add(1);
+            let next = tokens.get(next_index)?.unquoted.as_str();
+            if next == "exec" {
+                Some(skip_package_manager_exec_options(
+                    tokens,
+                    next_index.saturating_add(1),
+                ))
+            } else if package_script_runtime_from_word(next).is_some() {
+                Some(next_index)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn skip_package_manager_exec_options(tokens: &[PackageScriptShellToken], mut index: usize) -> usize {
+    loop {
+        let Some(token) = tokens.get(index) else {
+            return index;
+        };
+        let word = token.unquoted.as_str();
+        if word == "--" {
+            return index.saturating_add(1);
+        }
+        if matches!(word, "--package" | "-p") {
+            index = index.saturating_add(2);
+            continue;
+        }
+        if word.starts_with("--package=") || matches!(word, "--yes" | "-y") {
+            index = index.saturating_add(1);
+            continue;
+        }
+        break;
+    }
+    skip_shell_env_assignments(tokens, index)
+}
+
+fn package_script_runtime_from_word(word: &str) -> Option<PackageScriptRuntime> {
+    match word {
+        "node" | "node.exe" => Some(PackageScriptRuntime::Node),
+        "bun" | "bun.exe" => Some(PackageScriptRuntime::Bun),
+        "franken-node" | "franken-node.exe" => Some(PackageScriptRuntime::FrankenNode),
+        _ => None,
+    }
+}
+
+fn package_script_entry_index(
+    tokens: &[PackageScriptShellToken],
+    runtime_index: usize,
+) -> Option<usize> {
+    let mut index = runtime_index.saturating_add(1);
+    while let Some(token) = tokens.get(index) {
+        let word = token.unquoted.as_str();
+        if word == "--" {
+            return Some(index.saturating_add(1));
+        }
+        if package_script_runtime_option_takes_value(word) {
+            index = index.saturating_add(2);
+            continue;
+        }
+        if word.starts_with('-') {
+            index = index.saturating_add(1);
+            continue;
+        }
+        return Some(index);
+    }
+    None
+}
+
+fn package_script_runtime_option_takes_value(word: &str) -> bool {
+    matches!(
+        word,
+        "-e"
+            | "--eval"
+            | "-p"
+            | "--print"
+            | "-r"
+            | "--require"
+            | "--loader"
+            | "--import"
+            | "--env-file"
+            | "--conditions"
+            | "--inspect-port"
+    )
+}
+
+fn apply_package_script_runtime_replacements(
+    command: &str,
+    replacements: &[(usize, usize)],
+) -> String {
+    let mut rewritten = command.to_string();
+    let mut sorted = replacements.to_vec();
+    sorted.sort_by(|left, right| right.0.cmp(&left.0));
+    for (start, end) in sorted {
+        if start <= end && end <= rewritten.len() {
+            rewritten.replace_range(start..end, "franken-node");
+        }
+    }
+    rewritten
 }
 
 fn apply_package_script_rewrites(
@@ -2099,6 +2453,10 @@ fn apply_package_script_rewrites(
     rewrite_count
 }
 
+/// MVP shell coverage: quoted words, env prefixes, cross-env/env wrappers,
+/// npm/pnpm/npx/yarn exec wrappers, and `&&`/`||`/`;`/`|` segments. More
+/// complex shell forms such as subshells, heredocs, command substitution, and
+/// nested `npm run` indirection remain manual-review territory.
 fn is_package_script_entry_path(token: &str) -> bool {
     let token = unquote_script_token(token);
     if token.is_empty()
@@ -3012,6 +3370,65 @@ mod tests {
                 && entry.detail.contains("script `already`")
                 && entry.detail.contains("src/dep.mjs")
         }));
+    }
+
+    #[test]
+    fn run_rewrite_rewrites_shell_aware_package_scripts() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+
+        write_project_file(project, "src/index.js", "console.log('start');\n");
+        write_project_file(project, "tools/build.mjs", "console.log('build');\n");
+        write_project_file(project, "scripts/check.js", "console.log('check');\n");
+        write_project_file(project, "scripts/my task.js", "console.log('quoted');\n");
+        write_project_file(
+            project,
+            "package.json",
+            r#"{
+              "name":"demo",
+              "version":"1.0.0",
+              "engines":{"node":">=20 <23"},
+              "scripts":{
+                "compound":"NODE_OPTIONS=--enable-source-maps node src/index.js && bun tools/build.mjs || npm run fallback",
+                "env":"env NODE_OPTIONS='--trace-warnings' node \"scripts/my task.js\"",
+                "pnpm":"pnpm exec -- node scripts/check.js",
+                "yarn":"yarn node scripts/check.js",
+                "inline":"node -e \"console.log(1)\"",
+                "delegated":"npm run build"
+              }
+            }"#,
+        );
+
+        let report = run_rewrite(project, true).expect("shell-aware package script rewrite");
+        let rewritten =
+            std::fs::read_to_string(project.join("package.json")).expect("read package");
+        let parsed: serde_json::Value = serde_json::from_str(&rewritten).expect("valid manifest");
+
+        assert_eq!(report.rewrites_planned, 1);
+        assert_eq!(report.rewrites_applied, 1);
+        assert_eq!(
+            parsed["scripts"]["compound"],
+            "NODE_OPTIONS=--enable-source-maps franken-node src/index.js && franken-node tools/build.mjs || npm run fallback"
+        );
+        assert_eq!(
+            parsed["scripts"]["env"],
+            "env NODE_OPTIONS='--trace-warnings' franken-node \"scripts/my task.js\""
+        );
+        assert_eq!(
+            parsed["scripts"]["pnpm"],
+            "pnpm exec -- franken-node scripts/check.js"
+        );
+        assert_eq!(parsed["scripts"]["yarn"], "yarn franken-node scripts/check.js");
+        assert_eq!(parsed["scripts"]["inline"], "node -e \"console.log(1)\"");
+        assert_eq!(parsed["scripts"]["delegated"], "npm run build");
+        assert_eq!(
+            report
+                .entries
+                .iter()
+                .filter(|entry| entry.action == MigrationRewriteAction::RewritePackageScript)
+                .count(),
+            4
+        );
     }
 
     #[test]
