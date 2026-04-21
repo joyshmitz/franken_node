@@ -4014,4 +4014,268 @@ mod tests {
         assert_eq!(final1.publisher, final2.publisher);
         assert_eq!(final1.certification_level, final2.certification_level);
     }
+
+    // === GOLDEN ARTIFACT TESTING ===
+    // Golden file tests for trust-card outputs with canonicalization
+
+    use insta::Settings;
+    use regex::Regex;
+
+    /// Scrub non-deterministic values for golden comparison
+    fn scrub_trust_card_output(output: &str) -> String {
+        let mut scrubbed = output.to_string();
+
+        // UUIDs → [UUID]
+        let uuid_re = Regex::new(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        ).unwrap();
+        scrubbed = uuid_re.replace_all(&scrubbed, "[UUID]").to_string();
+
+        // ISO timestamps → [TIMESTAMP]
+        let ts_re = Regex::new(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?"
+        ).unwrap();
+        scrubbed = ts_re.replace_all(&scrubbed, "[TIMESTAMP]").to_string();
+
+        // Epoch timestamps → [EPOCH]
+        let epoch_re = Regex::new(r"\b\d{10,13}\b").unwrap();
+        scrubbed = epoch_re.replace_all(&scrubbed, "[EPOCH]").to_string();
+
+        // SHA256 hashes → [HASH]
+        let hash_re = Regex::new(r"sha256:[a-f0-9]{64}").unwrap();
+        scrubbed = hash_re.replace_all(&scrubbed, "sha256:[HASH]").to_string();
+
+        // Hex signatures → [SIG]
+        let sig_re = Regex::new(r"[a-f0-9]{128,256}").unwrap();
+        scrubbed = sig_re.replace_all(&scrubbed, "[SIG]").to_string();
+
+        scrubbed
+    }
+
+    fn canonical_trust_card_fixture() -> TrustCard {
+        TrustCard {
+            schema_version: "trust-card-v1.0".to_string(),
+            trust_card_version: 42,
+            extension: ExtensionIdentity {
+                extension_id: "npm:@acme/security-scanner".to_string(),
+                version: "2.1.0".to_string(),
+            },
+            publisher: PublisherIdentity {
+                publisher_id: "acme-corp".to_string(),
+                display_name: "ACME Corporation".to_string(),
+            },
+            certification_level: CertificationLevel::Gold,
+            revocation_status: RevocationStatus::Active,
+            behavioral_profile: BehavioralProfile {
+                network_access: true,
+                filesystem_access: false,
+                sandbox_escape_risk: false,
+                profile_summary: "Network scanner with read-only file access".to_string(),
+            },
+            capabilities: vec![
+                CapabilityDeclaration {
+                    name: "network.scan".to_string(),
+                    description: "Scan network endpoints for vulnerabilities".to_string(),
+                    risk: CapabilityRisk::Medium,
+                },
+                CapabilityDeclaration {
+                    name: "fs.read_config".to_string(),
+                    description: "Read configuration files".to_string(),
+                    risk: CapabilityRisk::Low,
+                },
+            ],
+            provenance: ProvenanceSummary {
+                attestation_level: "L3-verified-build".to_string(),
+                source_uri: "https://github.com/acme-corp/security-scanner".to_string(),
+                build_reproducible: true,
+                verified_at: "2026-04-21T00:00:00Z".to_string(),
+            },
+            dependency_trust_status: vec![
+                DependencyTrustStatus {
+                    dependency_id: "npm:lodash".to_string(),
+                    trust_level: "high".to_string(),
+                },
+                DependencyTrustStatus {
+                    dependency_id: "npm:axios".to_string(),
+                    trust_level: "medium".to_string(),
+                },
+            ],
+            reputation_score_basis_points: 8750, // 87.5%
+            reputation_trend: ReputationTrend::Improving,
+            active_quarantine: false,
+            user_facing_risk_assessment: RiskAssessment {
+                level: RiskLevel::Low,
+                summary: "Well-maintained security tool with verified provenance".to_string(),
+            },
+            last_verified_timestamp: "2026-04-21T12:00:00Z".to_string(),
+            evidence_refs: vec![
+                VerifiedEvidenceRef {
+                    evidence_id: "slsa-provenance-v1.0".to_string(),
+                    evidence_type: EvidenceType::ProvenanceAttestation,
+                    verified_at_epoch: 1735689600,
+                    verification_receipt_hash: "sha256:abc123def456789".to_string(),
+                },
+                VerifiedEvidenceRef {
+                    evidence_id: "security-audit-2026-Q1".to_string(),
+                    evidence_type: EvidenceType::CertificationEvidence,
+                    verified_at_epoch: 1735689600,
+                    verification_receipt_hash: "sha256:fed987cba654321".to_string(),
+                },
+            ],
+            derivation_hash: "computed-hash-placeholder".to_string(),
+            registry_signature: "signature-placeholder".to_string(),
+        }
+    }
+
+    #[test]
+    fn golden_trust_card_human_rendering() {
+        let card = canonical_trust_card_fixture();
+        let rendered = render_trust_card_human(&card);
+        let scrubbed = scrub_trust_card_output(&rendered);
+
+        insta::assert_snapshot!("trust_card_human_render", scrubbed);
+    }
+
+    #[test]
+    fn golden_trust_card_human_rendering_revoked() {
+        let mut card = canonical_trust_card_fixture();
+        card.revocation_status = RevocationStatus::Revoked {
+            reason: "Security vulnerability discovered in dependency".to_string(),
+            revoked_at: "2026-04-20T15:30:00Z".to_string(),
+        };
+        card.active_quarantine = true;
+        card.user_facing_risk_assessment = RiskAssessment {
+            level: RiskLevel::Critical,
+            summary: "REVOKED: Security vulnerability in transitive dependency".to_string(),
+        };
+
+        let rendered = render_trust_card_human(&card);
+        let scrubbed = scrub_trust_card_output(&rendered);
+
+        insta::assert_snapshot!("trust_card_human_render_revoked", scrubbed);
+    }
+
+    #[test]
+    fn golden_trust_card_canonical_json() {
+        let card = canonical_trust_card_fixture();
+        let canonical_json = to_canonical_json(&card).expect("canonical JSON should serialize");
+        let scrubbed = scrub_trust_card_output(&canonical_json);
+
+        insta::assert_snapshot!("trust_card_canonical_json", scrubbed);
+    }
+
+    #[test]
+    fn golden_trust_card_comparison_human_rendering() {
+        let card1 = canonical_trust_card_fixture();
+        let mut card2 = canonical_trust_card_fixture();
+
+        // Make some differences for comparison
+        card2.certification_level = CertificationLevel::Platinum;
+        card2.reputation_score_basis_points = 9500; // 95%
+        card2.reputation_trend = ReputationTrend::Stable;
+
+        // Create comparison using the internal comparison logic
+        let comparison = TrustCardComparison {
+            left_extension_id: card1.extension.extension_id.clone(),
+            right_extension_id: card2.extension.extension_id.clone(),
+            changes: vec![
+                TrustCardDiffEntry {
+                    field: "certification_level".to_string(),
+                    left: "gold".to_string(),
+                    right: "platinum".to_string(),
+                },
+                TrustCardDiffEntry {
+                    field: "reputation_score_basis_points".to_string(),
+                    left: "8750".to_string(),
+                    right: "9500".to_string(),
+                },
+                TrustCardDiffEntry {
+                    field: "reputation_trend".to_string(),
+                    left: "improving".to_string(),
+                    right: "stable".to_string(),
+                },
+            ],
+        };
+
+        let rendered = render_comparison_human(&comparison);
+        // Comparison output should be deterministic (no timestamps/UUIDs)
+        insta::assert_snapshot!("trust_card_comparison_human", rendered);
+    }
+
+    #[test]
+    fn golden_trust_card_complex_scenario() {
+        // Test complex scenario with multiple capabilities and dependencies
+        let mut card = canonical_trust_card_fixture();
+
+        // Add more capabilities
+        card.capabilities.extend(vec![
+            CapabilityDeclaration {
+                name: "crypto.encrypt".to_string(),
+                description: "Encrypt sensitive data".to_string(),
+                risk: CapabilityRisk::High,
+            },
+            CapabilityDeclaration {
+                name: "system.process_spawn".to_string(),
+                description: "Spawn system processes".to_string(),
+                risk: CapabilityRisk::Critical,
+            },
+        ]);
+
+        // Add more dependencies
+        card.dependency_trust_status.extend(vec![
+            DependencyTrustStatus {
+                dependency_id: "npm:crypto-js".to_string(),
+                trust_level: "high".to_string(),
+            },
+            DependencyTrustStatus {
+                dependency_id: "npm:node-forge".to_string(),
+                trust_level: "medium".to_string(),
+            },
+            DependencyTrustStatus {
+                dependency_id: "npm:bcrypt".to_string(),
+                trust_level: "unverified".to_string(),
+            },
+        ]);
+
+        // Update risk assessment based on additional capabilities
+        card.user_facing_risk_assessment = RiskAssessment {
+            level: RiskLevel::High,
+            summary: "High-capability security tool requiring careful review".to_string(),
+        };
+
+        let rendered = render_trust_card_human(&card);
+        let scrubbed = scrub_trust_card_output(&rendered);
+
+        insta::assert_snapshot!("trust_card_human_complex_scenario", scrubbed);
+    }
+
+    #[test]
+    fn golden_trust_card_empty_collections() {
+        // Test edge case with minimal/empty collections
+        let mut card = canonical_trust_card_fixture();
+        card.capabilities.clear();
+        card.dependency_trust_status.clear();
+        card.evidence_refs = vec![]; // This should still work due to ensure_evidence_refs_present validation
+
+        let rendered = render_trust_card_human(&card);
+        let scrubbed = scrub_trust_card_output(&rendered);
+
+        insta::assert_snapshot!("trust_card_human_empty_collections", scrubbed);
+    }
+
+    #[test]
+    fn golden_trust_card_canonical_json_stability() {
+        // Test that canonical JSON is stable across multiple serializations
+        let card = canonical_trust_card_fixture();
+
+        let json1 = to_canonical_json(&card).expect("first serialization");
+        let json2 = to_canonical_json(&card).expect("second serialization");
+        let json3 = to_canonical_json(&card).expect("third serialization");
+
+        assert_eq!(json1, json2, "canonical JSON should be stable");
+        assert_eq!(json2, json3, "canonical JSON should be stable");
+
+        let scrubbed = scrub_trust_card_output(&json1);
+        insta::assert_snapshot!("trust_card_canonical_json_stability", scrubbed);
+    }
 }

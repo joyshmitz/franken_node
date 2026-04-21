@@ -3,9 +3,19 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use frankenengine_node::supply_chain::artifact_signing::{
-    build_and_sign_manifest, demo_signing_key, demo_signing_key_2, sign_artifact,
+    build_and_sign_manifest, sign_artifact,
 };
+use sha2::{Digest, Sha256};
 use tempfile::TempDir;
+
+fn fixture_artifact_signing_key(label: &[u8]) -> ed25519_dalek::SigningKey {
+    let mut hasher = Sha256::new();
+    hasher.update(b"verify_release_cli_e2e_artifact_key_v1:");
+    hasher.update(u64::try_from(label.len()).unwrap_or(u64::MAX).to_le_bytes());
+    hasher.update(label);
+    let seed: [u8; 32] = hasher.finalize().into();
+    ed25519_dalek::SigningKey::from_bytes(&seed)
+}
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -57,7 +67,7 @@ fn ensure_parent_dir(path: &Path) {
 }
 
 fn write_signed_release_fixture(release_dir: &Path, artifacts: &[(&str, &[u8])]) {
-    let signing_key = demo_signing_key();
+    let signing_key = fixture_artifact_signing_key(b"current");
     let manifest = build_and_sign_manifest(artifacts, &signing_key);
 
     for (name, bytes) in artifacts {
@@ -91,13 +101,13 @@ fn write_signed_release_fixture(release_dir: &Path, artifacts: &[(&str, &[u8])])
 fn write_release_key_dir(key_dir: &Path) {
     std::fs::create_dir_all(key_dir).expect("key dir");
 
-    let wrong_key = demo_signing_key_2();
+    let wrong_key = fixture_artifact_signing_key(b"rotated");
     std::fs::write(
         key_dir.join("00-rotated.pub"),
         hex::encode(wrong_key.verifying_key().as_bytes()),
     )
     .expect("write rotated key");
-    let correct_key = demo_signing_key();
+    let correct_key = fixture_artifact_signing_key(b"current");
     std::fs::write(
         key_dir.join("10-current.pub"),
         hex::encode(correct_key.verifying_key().as_bytes()),

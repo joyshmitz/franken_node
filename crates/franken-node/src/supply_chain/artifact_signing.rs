@@ -9,7 +9,9 @@ use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
+use rand::rngs::OsRng;
 use sha2::{Digest, Sha256};
+use zeroize::Zeroize;
 
 use crate::security::constant_time;
 
@@ -75,6 +77,8 @@ pub enum ArtifactSigningError {
     ThresholdNotMet { required: usize, provided: usize },
     /// Transition record signature invalid during key rotation.
     TransitionRecordInvalid,
+    /// Signing key material is malformed or unsupported.
+    SigningKeyInvalid { reason: String },
     /// Generic IO-level error (stringified for Clone/Eq).
     IoError(String),
 }
@@ -109,6 +113,7 @@ impl fmt::Display for ArtifactSigningError {
                 write!(f, "threshold not met: need {required}, got {provided}")
             }
             Self::TransitionRecordInvalid => write!(f, "transition record signature invalid"),
+            Self::SigningKeyInvalid { reason } => write!(f, "signing key invalid: {reason}"),
             Self::IoError(msg) => write!(f, "io error: {msg}"),
         }
     }
@@ -479,6 +484,41 @@ pub fn sign_artifact(signing_key: &SigningKey, content: &[u8]) -> Vec<u8> {
     sign_bytes(signing_key, content)
 }
 
+/// Generate a fresh Ed25519 signing key using the operating system CSPRNG.
+pub fn generate_artifact_signing_key() -> SigningKey {
+    SigningKey::generate(&mut OsRng)
+}
+
+/// Build a signing key from configured 32-byte Ed25519 seed material.
+pub fn signing_key_from_seed_bytes(seed_bytes: &[u8]) -> Result<SigningKey, ArtifactSigningError> {
+    if seed_bytes.len() != 32 {
+        return Err(ArtifactSigningError::SigningKeyInvalid {
+            reason: format!("expected 32 seed bytes, got {}", seed_bytes.len()),
+        });
+    }
+
+    let mut seed = [0_u8; 32];
+    seed.copy_from_slice(seed_bytes);
+    let signing_key = SigningKey::from_bytes(&seed);
+    seed.zeroize();
+    Ok(signing_key)
+}
+
+/// Build a signing key from configured hex-encoded Ed25519 seed material.
+///
+/// Accepts either raw hex or `hex:<seed>` form. The decoded key material must be
+/// exactly 32 bytes.
+pub fn signing_key_from_seed_hex(seed_hex: &str) -> Result<SigningKey, ArtifactSigningError> {
+    let trimmed = seed_hex.trim();
+    let hex_text = trimmed.strip_prefix("hex:").unwrap_or(trimmed).trim();
+    let mut seed = hex::decode(hex_text).map_err(|err| ArtifactSigningError::SigningKeyInvalid {
+        reason: format!("hex decode failed: {err}"),
+    })?;
+    let signing_key = signing_key_from_seed_bytes(&seed);
+    seed.zeroize();
+    signing_key
+}
+
 // ---------------------------------------------------------------------------
 // Verification functions
 // ---------------------------------------------------------------------------
@@ -750,25 +790,35 @@ impl AuditLogEntry {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: generate a deterministic demo signing key for tests/demos.
+// Test-support fixtures.
 // ---------------------------------------------------------------------------
 
-/// Return a deterministic Ed25519 signing key for demos/tests.
+#[cfg(any(test, feature = "test-support"))]
+fn fixture_signing_key(label: &[u8]) -> SigningKey {
+    let mut hasher = Sha256::new();
+    hasher.update(b"artifact_signing_test_fixture_key_v1:");
+    hasher.update(len_to_u64(label.len()).to_le_bytes());
+    hasher.update(label);
+    let seed: [u8; 32] = hasher.finalize().into();
+    SigningKey::from_bytes(&seed)
+}
+
+/// Return a deterministic Ed25519 signing key for tests.
+#[cfg(any(test, feature = "test-support"))]
 pub fn demo_signing_key() -> SigningKey {
-    let seed: [u8; 32] = Sha256::digest(b"franken-node-artifact-signing-demo-key-v1").into();
-    SigningKey::from_bytes(&seed)
+    fixture_signing_key(b"key-1")
 }
 
-/// Return a second deterministic demo key (for rotation / threshold tests).
+/// Return a second deterministic test key (for rotation / threshold tests).
+#[cfg(any(test, feature = "test-support"))]
 pub fn demo_signing_key_2() -> SigningKey {
-    let seed: [u8; 32] = Sha256::digest(b"franken-node-artifact-signing-demo-key-v2").into();
-    SigningKey::from_bytes(&seed)
+    fixture_signing_key(b"key-2")
 }
 
-/// Return a third deterministic demo key (for threshold tests).
+/// Return a third deterministic test key (for threshold tests).
+#[cfg(any(test, feature = "test-support"))]
 pub fn demo_signing_key_3() -> SigningKey {
-    let seed: [u8; 32] = Sha256::digest(b"franken-node-artifact-signing-demo-key-v3").into();
-    SigningKey::from_bytes(&seed)
+    fixture_signing_key(b"key-3")
 }
 
 // ---------------------------------------------------------------------------
@@ -1274,6 +1324,59 @@ mod tests {
         let sk = demo_signing_key();
         let sig = sign_artifact(&sk, b"some artifact content");
         assert_eq!(sig.len(), 64);
+    }
+
+    #[test]
+    fn generated_artifact_signing_key_verifies_signature() {
+        let sk = generate_artifact_signing_key();
+        let payload = b"release payload";
+        let sig = sign_bytes(&sk, payload);
+
+        assert!(verify_signature(&sk.verifying_key(), payload, &sig).is_ok());
+    }
+
+    #[test]
+    fn signing_key_from_seed_hex_matches_seed_bytes() {
+        let seed = [17_u8; 32];
+        let from_bytes = signing_key_from_seed_bytes(&seed).expect("seed bytes");
+        let from_hex =
+            signing_key_from_seed_hex(&format!("hex:{}", hex::encode(seed))).expect("seed hex");
+
+        assert_eq!(
+            from_bytes.verifying_key().as_bytes(),
+            from_hex.verifying_key().as_bytes()
+        );
+    }
+
+    #[test]
+    fn signing_key_loader_rejects_malformed_key_material() {
+        assert!(matches!(
+            signing_key_from_seed_bytes(&[1_u8; 31]),
+            Err(ArtifactSigningError::SigningKeyInvalid { .. })
+        ));
+        assert!(matches!(
+            signing_key_from_seed_bytes(&[1_u8; 33]),
+            Err(ArtifactSigningError::SigningKeyInvalid { .. })
+        ));
+        assert!(matches!(
+            signing_key_from_seed_hex("not-hex"),
+            Err(ArtifactSigningError::SigningKeyInvalid { .. })
+        ));
+        assert!(matches!(
+            signing_key_from_seed_hex(&hex::encode([1_u8; 31])),
+            Err(ArtifactSigningError::SigningKeyInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn demo_signing_keys_are_test_support_only_and_distinct() {
+        let key_1 = demo_signing_key().verifying_key();
+        let key_2 = demo_signing_key_2().verifying_key();
+        let key_3 = demo_signing_key_3().verifying_key();
+
+        assert_ne!(key_1.as_bytes(), key_2.as_bytes());
+        assert_ne!(key_1.as_bytes(), key_3.as_bytes());
+        assert_ne!(key_2.as_bytes(), key_3.as_bytes());
     }
 
     #[test]
