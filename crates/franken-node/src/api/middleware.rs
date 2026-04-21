@@ -287,11 +287,7 @@ pub fn authenticate(
             Ok(AuthIdentity {
                 principal: format!("mtls:{}", utf8_prefix(propagated_identity, 16)),
                 method: AuthMethod::MtlsClientCert,
-                roles: vec![
-                    "operator".to_string(),
-                    "verifier".to_string(),
-                    "fleet-admin".to_string(),
-                ],
+                roles: vec!["reader".to_string()], // SECURITY: default to minimal privilege
             })
         }
     }
