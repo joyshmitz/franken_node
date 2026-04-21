@@ -7,8 +7,10 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -17,6 +19,8 @@ const MAX_COMBINED_OUTPUT_BYTES: usize = 16_777_216; // 16MB limit per runtime e
 const MAX_LOCKSTEP_CORPUS_CASES: usize = 256;
 const MAX_SANITIZED_STRACE_LINES: usize = 65_536; // 64K syscall lines max
 const MAX_THREAD_HANDLES: usize = 64; // Maximum concurrent runtime threads
+const PIPE_DRAIN_JOIN_TIMEOUT_MS: u64 = 2_000;
+const PIPE_DRAIN_JOIN_POLL_MS: u64 = 10;
 
 #[derive(Debug, Deserialize)]
 struct LockstepCorpusManifest {
@@ -674,6 +678,7 @@ impl LockstepHarness {
         } else {
             cmd.arg(&runtime_target);
         }
+        Self::isolate_child_process_group(&mut cmd);
 
         let mut child = cmd
             .stdout(Stdio::piped())
@@ -721,20 +726,16 @@ impl LockstepHarness {
                 break;
             }
             if Self::has_timed_out(start.elapsed(), timeout) {
-                let _ = child.kill();
-                let _ = child.wait(); // Reclaim resources
+                Self::terminate_runtime_tree(&mut child);
                 is_timeout = true;
                 break;
             }
             thread::sleep(Duration::from_millis(50));
         }
 
-        let stdout_bytes = stdout_thread
-            .join()
-            .unwrap_or_else(|_| b"__thread_panic:stdout".to_vec());
-        let stderr_bytes = stderr_thread
-            .join()
-            .unwrap_or_else(|_| b"__thread_panic:stderr".to_vec());
+        let drain_timeout = Duration::from_millis(PIPE_DRAIN_JOIN_TIMEOUT_MS);
+        let stdout_bytes = Self::join_pipe_drain(stdout_thread, "stdout", drain_timeout);
+        let stderr_bytes = Self::join_pipe_drain(stderr_thread, "stderr", drain_timeout);
 
         let mut combined_output = Vec::new();
         extend_bounded(
@@ -788,6 +789,54 @@ impl LockstepHarness {
 
     fn has_timed_out(elapsed: Duration, timeout: Duration) -> bool {
         elapsed >= timeout
+    }
+
+    #[cfg(unix)]
+    fn isolate_child_process_group(cmd: &mut Command) {
+        cmd.process_group(0);
+    }
+
+    #[cfg(not(unix))]
+    fn isolate_child_process_group(_cmd: &mut Command) {}
+
+    fn terminate_runtime_tree(child: &mut Child) {
+        #[cfg(unix)]
+        Self::terminate_process_group(child.id());
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    #[cfg(unix)]
+    fn terminate_process_group(child_pid: u32) {
+        let process_group = format!("-{child_pid}");
+        let _ = Command::new("kill")
+            .arg("-TERM")
+            .arg("--")
+            .arg(&process_group)
+            .status();
+        thread::sleep(Duration::from_millis(50));
+        let _ = Command::new("kill")
+            .arg("-KILL")
+            .arg("--")
+            .arg(&process_group)
+            .status();
+    }
+
+    fn join_pipe_drain(
+        handle: thread::JoinHandle<Vec<u8>>,
+        label: &str,
+        timeout: Duration,
+    ) -> Vec<u8> {
+        let start = Instant::now();
+        while !handle.is_finished() {
+            if Self::has_timed_out(start.elapsed(), timeout) {
+                return format!("__pipe_drain_timeout:{label}").into_bytes();
+            }
+            thread::sleep(Duration::from_millis(PIPE_DRAIN_JOIN_POLL_MS));
+        }
+        handle
+            .join()
+            .unwrap_or_else(|_| format!("__thread_panic:{label}").into_bytes())
     }
 
     fn read_strace_output(path: &Path, runtime: &str) -> Result<Vec<u8>> {
@@ -981,6 +1030,30 @@ mod tests {
             Duration::from_millis(31),
             timeout
         ));
+    }
+
+    #[test]
+    fn pipe_drain_join_returns_finished_output() {
+        let handle = thread::spawn(|| b"drained".to_vec());
+        let output = LockstepHarness::join_pipe_drain(handle, "stdout", Duration::from_secs(1));
+        assert_eq!(output, b"drained".to_vec());
+    }
+
+    #[test]
+    fn pipe_drain_join_timeout_is_bounded() {
+        let (sender, receiver) = std::sync::mpsc::channel::<()>();
+        let handle = thread::spawn(move || {
+            let _ = receiver.recv();
+            b"late-output".to_vec()
+        });
+
+        let start = Instant::now();
+        let output =
+            LockstepHarness::join_pipe_drain(handle, "stderr", Duration::from_millis(30));
+
+        assert_eq!(output, b"__pipe_drain_timeout:stderr".to_vec());
+        assert!(start.elapsed() < Duration::from_secs(1));
+        drop(sender);
     }
 
     #[test]
