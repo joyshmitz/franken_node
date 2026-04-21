@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
-use std::io::{self, Read, Write as _};
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::thread;
@@ -27,24 +27,6 @@ const MAX_PENDING_DIRS: usize = 10_000;
 const MAX_TOTAL_FINDINGS: usize = 1_000;
 const MIGRATION_BACKUP_DIR: &str = ".migrate-backup";
 const MIGRATION_VALIDATE_RUNTIME_TIMEOUT: Duration = Duration::from_secs(10);
-const MIGRATION_VALIDATE_SMOKE_SOURCE: &str = r#"
-const fs = require('fs');
-const path = require('path');
-const manifestPath = path.join(process.cwd(), 'package.json');
-const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-if (!manifest.name || typeof manifest.name !== 'string') {
-  throw new Error('package.json name is required for migrate validate smoke');
-}
-if (!manifest.engines || typeof manifest.engines.node !== 'string') {
-  throw new Error('package.json engines.node is required for migrate validate smoke');
-}
-console.log(JSON.stringify({
-  event: 'migration_validate_runtime_smoke',
-  project: manifest.name,
-  engine: manifest.engines.node,
-  ok: true
-}));
-"#;
 
 /// Push item to vector with capacity bounds checking to prevent memory exhaustion.
 fn push_bounded<T>(vec: &mut Vec<T>, item: T, max_cap: usize) {
@@ -268,6 +250,13 @@ struct MigrationRuntimeSmokeReceipt {
     exit_code: i32,
     stdout_sha256: String,
     stderr_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MigrationRuntimeSmokeTarget {
+    working_dir: PathBuf,
+    entry_path: PathBuf,
+    display: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -841,13 +830,12 @@ fn runtime_smoke_validation_check(project_path: &Path) -> MigrationValidationChe
 fn execute_migration_runtime_smoke(
     project_path: &Path,
 ) -> anyhow::Result<MigrationRuntimeSmokeReceipt> {
-    let (workspace, fixture_path) = prepare_migration_runtime_smoke_workspace(project_path)?;
+    let smoke_target = select_migration_runtime_smoke_target(project_path)?;
     let runtimes = resolve_migration_runtime_targets()?;
     let mut failures = Vec::new();
 
     for runtime in runtimes {
-        match execute_migration_runtime_smoke_with_target(&runtime, workspace.path(), &fixture_path)
-        {
+        match execute_migration_runtime_smoke_with_target(&runtime, &smoke_target) {
             Ok(receipt) => return Ok(receipt),
             Err(err) => failures.push(format!("{}: {err}", runtime.label())),
         }
@@ -861,26 +849,27 @@ fn execute_migration_runtime_smoke(
 
 fn execute_migration_runtime_smoke_with_target(
     runtime: &MigrationRuntimeTarget,
-    workspace_path: &Path,
-    fixture_path: &Path,
+    smoke_target: &MigrationRuntimeSmokeTarget,
 ) -> anyhow::Result<MigrationRuntimeSmokeReceipt> {
     let mut command = match &runtime {
         MigrationRuntimeTarget::FrankenNode(path) => {
             let mut command = Command::new(path);
             command
                 .arg("run")
-                .arg(fixture_path)
+                .arg(&smoke_target.entry_path)
                 .arg("--runtime")
                 .arg("auto")
                 .arg("--policy")
                 .arg("balanced")
                 .arg("--json")
-                .current_dir(workspace_path);
+                .current_dir(&smoke_target.working_dir);
             command
         }
         MigrationRuntimeTarget::Node(path) | MigrationRuntimeTarget::Bun(path) => {
             let mut command = Command::new(path);
-            command.arg(fixture_path).current_dir(workspace_path);
+            command
+                .arg(&smoke_target.entry_path)
+                .current_dir(&smoke_target.working_dir);
             command
         }
     };
@@ -900,14 +889,12 @@ fn execute_migration_runtime_smoke_with_target(
 
     if matches!(runtime, MigrationRuntimeTarget::FrankenNode(_)) {
         verify_franken_node_smoke_receipt_round_trip(&output)?;
-    } else {
-        verify_direct_runtime_smoke_output(&output)?;
     }
 
     let receipt = MigrationRuntimeSmokeReceipt {
         schema_version: "franken-node/migrate-validate-runtime-smoke/v1".to_string(),
         runtime: runtime.label().to_string(),
-        target: "canonical_fixture".to_string(),
+        target: smoke_target.display.clone(),
         exit_code,
         stdout_sha256: sha256_hex(&output.stdout),
         stderr_sha256: sha256_hex(&output.stderr),
@@ -916,58 +903,225 @@ fn execute_migration_runtime_smoke_with_target(
     Ok(receipt)
 }
 
-fn prepare_migration_runtime_smoke_workspace(
+fn select_migration_runtime_smoke_target(
     project_path: &Path,
-) -> anyhow::Result<(tempfile::TempDir, PathBuf)> {
-    let workspace = tempfile::Builder::new()
-        .prefix("franken-migrate-validate-smoke-")
-        .tempdir()
-        .map_err(|err| {
-            anyhow::anyhow!("failed creating migrate validate smoke workspace: {err}")
-        })?;
+) -> anyhow::Result<MigrationRuntimeSmokeTarget> {
     let manifest_path = select_smoke_package_manifest(project_path)?;
-    std::fs::copy(&manifest_path, workspace.path().join("package.json")).map_err(|err| {
+    let manifest_dir = manifest_path.parent().unwrap_or(project_path);
+    let project_root = std::fs::canonicalize(project_path).map_err(|err| {
         anyhow::anyhow!(
-            "failed copying package manifest {} into smoke workspace: {err}",
+            "failed canonicalizing migration smoke project {}: {err}",
+            project_path.display()
+        )
+    })?;
+    let manifest_dir = std::fs::canonicalize(manifest_dir).map_err(|err| {
+        anyhow::anyhow!(
+            "failed canonicalizing package manifest directory {}: {err}",
+            manifest_dir.display()
+        )
+    })?;
+    let manifest_path = std::fs::canonicalize(&manifest_path).map_err(|err| {
+        anyhow::anyhow!(
+            "failed canonicalizing package manifest {}: {err}",
+            manifest_path.display()
+        )
+    })?;
+    let manifest_raw = std::fs::read_to_string(&manifest_path).map_err(|err| {
+        anyhow::anyhow!(
+            "failed reading package manifest {} for runtime smoke target: {err}",
+            manifest_path.display()
+        )
+    })?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_raw).map_err(|err| {
+        anyhow::anyhow!(
+            "failed parsing package manifest {} for runtime smoke target: {err}",
             manifest_path.display()
         )
     })?;
 
-    for lockfile in [
-        "package-lock.json",
-        "npm-shrinkwrap.json",
-        "pnpm-lock.yaml",
-        "yarn.lock",
-        "bun.lockb",
-        "bun.lock",
-    ] {
-        let source = project_path.join(lockfile);
-        if source.is_file() {
-            std::fs::copy(&source, workspace.path().join(lockfile)).map_err(|err| {
-                anyhow::anyhow!(
-                    "failed copying lockfile {} into smoke workspace: {err}",
-                    source.display()
-                )
-            })?;
+    let manifest_display = relative_display(&project_root, &manifest_path);
+
+    for (label, entry_path) in manifest_entry_candidates(&manifest) {
+        if let Some(target) = build_runtime_smoke_target(
+            &project_root,
+            &manifest_dir,
+            &manifest_display,
+            &label,
+            &entry_path,
+        ) {
+            return Ok(target);
         }
     }
 
-    let fixture_path = workspace.path().join("migrate_validate_smoke.js");
-    let mut fixture = std::fs::File::create(&fixture_path).map_err(|err| {
-        anyhow::anyhow!(
-            "failed creating migrate validate smoke fixture {}: {err}",
-            fixture_path.display()
-        )
-    })?;
-    fixture
-        .write_all(MIGRATION_VALIDATE_SMOKE_SOURCE.as_bytes())
-        .map_err(|err| {
-            anyhow::anyhow!(
-                "failed writing migrate validate smoke fixture {}: {err}",
-                fixture_path.display()
-            )
-        })?;
-    Ok((workspace, fixture_path))
+    for (script_name, script_rewrite) in preferred_script_entry_candidates(&manifest) {
+        if let Some(target) = build_runtime_smoke_target(
+            &project_root,
+            &manifest_dir,
+            &manifest_display,
+            &format!("scripts.{script_name}"),
+            &script_rewrite.entry_path,
+        ) {
+            return Ok(target);
+        }
+    }
+
+    for fallback_entry in [
+        "index.js",
+        "index.mjs",
+        "index.cjs",
+        "src/index.js",
+        "src/index.mjs",
+        "src/index.cjs",
+        "dist/index.js",
+        "dist/index.mjs",
+        "dist/index.cjs",
+    ] {
+        if let Some(target) = build_runtime_smoke_target(
+            &project_root,
+            &manifest_dir,
+            &manifest_display,
+            "default_entry",
+            fallback_entry,
+        ) {
+            return Ok(target);
+        }
+    }
+
+    anyhow::bail!(
+        "no runnable JS/CJS/MJS target app entrypoint found for transformed-runtime smoke validation under {}",
+        project_path.display()
+    )
+}
+
+fn manifest_entry_candidates(manifest: &serde_json::Value) -> Vec<(String, String)> {
+    let mut candidates = Vec::new();
+    for field in ["main", "module"] {
+        if let Some(entry_path) = manifest.get(field).and_then(serde_json::Value::as_str)
+            && !entry_path.trim().is_empty()
+        {
+            push_bounded(
+                &mut candidates,
+                (field.to_string(), entry_path.to_string()),
+                MAX_FINDINGS_PER_CATEGORY,
+            );
+        }
+    }
+    if let Some(entry_path) = manifest.get("exports").and_then(serde_json::Value::as_str)
+        && !entry_path.trim().is_empty()
+    {
+        push_bounded(
+            &mut candidates,
+            ("exports".to_string(), entry_path.to_string()),
+            MAX_FINDINGS_PER_CATEGORY,
+        );
+    }
+    match manifest.get("bin") {
+        Some(serde_json::Value::String(entry_path)) if !entry_path.trim().is_empty() => {
+            push_bounded(
+                &mut candidates,
+                ("bin".to_string(), entry_path.to_string()),
+                MAX_FINDINGS_PER_CATEGORY,
+            );
+        }
+        Some(serde_json::Value::Object(entries)) => {
+            for (name, value) in entries {
+                if let Some(entry_path) = value.as_str()
+                    && !entry_path.trim().is_empty()
+                {
+                    push_bounded(
+                        &mut candidates,
+                        (format!("bin.{name}"), entry_path.to_string()),
+                        MAX_FINDINGS_PER_CATEGORY,
+                    );
+                }
+            }
+        }
+        _ => {}
+    }
+    candidates
+}
+
+fn preferred_script_entry_candidates(
+    manifest: &serde_json::Value,
+) -> Vec<(String, PackageScriptRewrite)> {
+    let rewrites = collect_package_script_rewrites(manifest);
+    let mut candidates = Vec::new();
+    for preferred in ["smoke", "validate", "test", "start"] {
+        if let Some(script_rewrite) = rewrites
+            .iter()
+            .find(|rewrite| rewrite.script_name == preferred)
+            .cloned()
+        {
+            push_bounded(
+                &mut candidates,
+                (preferred.to_string(), script_rewrite),
+                MAX_FINDINGS_PER_CATEGORY,
+            );
+        }
+    }
+    for script_rewrite in rewrites {
+        if candidates
+            .iter()
+            .any(|(_, existing)| existing.script_name == script_rewrite.script_name)
+        {
+            continue;
+        }
+        let script_name = script_rewrite.script_name.clone();
+        push_bounded(
+            &mut candidates,
+            (script_name, script_rewrite),
+            MAX_FINDINGS_PER_CATEGORY,
+        );
+    }
+    candidates
+}
+
+fn build_runtime_smoke_target(
+    project_root: &Path,
+    manifest_dir: &Path,
+    manifest_display: &str,
+    label: &str,
+    entry_path: &str,
+) -> Option<MigrationRuntimeSmokeTarget> {
+    let entry_path = resolve_runtime_smoke_entry_path(project_root, manifest_dir, entry_path)?;
+    let entry_display = relative_display(project_root, &entry_path);
+    Some(MigrationRuntimeSmokeTarget {
+        working_dir: manifest_dir.to_path_buf(),
+        entry_path,
+        display: format!("{manifest_display}:{label} -> {entry_display}"),
+    })
+}
+
+fn resolve_runtime_smoke_entry_path(
+    project_root: &Path,
+    manifest_dir: &Path,
+    entry_path: &str,
+) -> Option<PathBuf> {
+    let entry_path = entry_path.trim();
+    let entry = Path::new(entry_path);
+    if entry_path.is_empty() || entry.is_absolute() {
+        return None;
+    }
+
+    let candidate = manifest_dir.join(entry);
+    if let Some(path) = resolve_existing_graph_file(project_root, &candidate) {
+        return Some(path);
+    }
+
+    for candidate in [
+        candidate.with_extension("js"),
+        candidate.with_extension("mjs"),
+        candidate.with_extension("cjs"),
+        candidate.join("index.js"),
+        candidate.join("index.mjs"),
+        candidate.join("index.cjs"),
+    ] {
+        if let Some(path) = resolve_existing_graph_file(project_root, &candidate) {
+            return Some(path);
+        }
+    }
+
+    None
 }
 
 fn select_smoke_package_manifest(project_path: &Path) -> anyhow::Result<PathBuf> {
@@ -1122,21 +1276,6 @@ fn verify_franken_node_smoke_receipt_round_trip(output: &Output) -> anyhow::Resu
     if &persisted_receipt != receipt {
         anyhow::bail!("franken-node smoke stdout receipt did not match persisted receipt");
     }
-    Ok(())
-}
-
-fn verify_direct_runtime_smoke_output(output: &Output) -> anyhow::Result<()> {
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let event: serde_json::Value = serde_json::from_str(stdout.trim()).map_err(|err| {
-        anyhow::anyhow!("runtime smoke stdout was not canonical JSON: {err}; stdout={stdout}")
-    })?;
-    if event.get("event").and_then(serde_json::Value::as_str)
-        != Some("migration_validate_runtime_smoke")
-        || event.get("ok").and_then(serde_json::Value::as_bool) != Some(true)
-    {
-        anyhow::bail!("runtime smoke fixture emitted an invalid conformance event");
-    }
-    verify_json_round_trip(&event, "runtime smoke event")?;
     Ok(())
 }
 
