@@ -1,13 +1,36 @@
 use frankenengine_node::connector::canonical_serializer::{
-    CanonicalSerializer, SerializerError, SignaturePreimage, TrustObjectType,
+    CanonicalSerializer, SerializerError, SignaturePreimage, TrustObjectType, event_codes,
 };
 use frankenengine_node::tools::replay_bundle::{
     EventType, RawEvent, generate_replay_bundle, replay_bundle, to_canonical_json,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
+use std::time::{Duration, Instant};
 
 const TEXT_DEPTH_LIMIT: usize = 12;
+const LONG_FUZZ_DURATION_SECS: u64 = 60;
+const SHORT_FUZZ_DURATION_MILLIS: u64 = 250;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MutationExpectation {
+    AcceptCanonical,
+    RejectFloat,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct StructuredMutationCase {
+    name: &'static str,
+    payload: &'static str,
+    expectation: MutationExpectation,
+}
+
+#[derive(Debug, Default)]
+struct MutationCampaignStats {
+    iterations: u64,
+    accept_cases: u64,
+    reject_cases: u64,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum HarnessDecodeError {
@@ -22,6 +45,37 @@ enum HarnessDecodeError {
 impl From<SerializerError> for HarnessDecodeError {
     fn from(error: SerializerError) -> Self {
         Self::Serializer(error.to_string())
+    }
+}
+
+#[derive(Debug, Clone)]
+struct XorShift64 {
+    state: u64,
+}
+
+impl XorShift64 {
+    fn seeded(seed: u64) -> Self {
+        Self {
+            state: if seed == 0 {
+                0x9E37_79B9_7F4A_7C15
+            } else {
+                seed
+            },
+        }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        let mut value = self.state;
+        value ^= value << 13;
+        value ^= value >> 7;
+        value ^= value << 17;
+        self.state = value;
+        value
+    }
+
+    fn choose_index(&mut self, len: usize) -> usize {
+        assert!(len > 0, "cannot choose from empty slice");
+        (self.next_u64() % u64::try_from(len).expect("slice length fits u64")) as usize
     }
 }
 
@@ -117,6 +171,244 @@ fn deeply_nested_json(depth: usize) -> Vec<u8> {
         text = format!(r#"{{"n":{text}}}"#);
     }
     text.into_bytes()
+}
+
+fn structured_mutation_corpus() -> &'static [StructuredMutationCase] {
+    &[
+        StructuredMutationCase {
+            name: "leading-space-decimal",
+            payload: r#" {"score":3.14}"#,
+            expectation: MutationExpectation::RejectFloat,
+        },
+        StructuredMutationCase {
+            name: "leading-newline-tab-scientific",
+            payload: "\n\t{\"score\":1e9}",
+            expectation: MutationExpectation::RejectFloat,
+        },
+        StructuredMutationCase {
+            name: "leading-crlf-array-infinity",
+            payload: "\r\n[{\"score\":Infinity}]",
+            expectation: MutationExpectation::RejectFloat,
+        },
+        StructuredMutationCase {
+            name: "leading-tab-escaped-quote-real-float",
+            payload: "\t{\"note\":\"quoted \\\"1.0\\\" text\",\"score\":3.14}",
+            expectation: MutationExpectation::RejectFloat,
+        },
+        StructuredMutationCase {
+            name: "leading-space-version-string-nested-float",
+            payload: r#" {"version":"1.0.0","nested":{"score":9.5}}"#,
+            expectation: MutationExpectation::RejectFloat,
+        },
+        StructuredMutationCase {
+            name: "leading-crlf-signed-exponent-after-string",
+            payload: "\r\n{\"note\":\"1E-9 stays text\",\"score\":6E23}",
+            expectation: MutationExpectation::RejectFloat,
+        },
+        StructuredMutationCase {
+            name: "leading-space-integer-object",
+            payload: r#" {"score":42,"count":7}"#,
+            expectation: MutationExpectation::AcceptCanonical,
+        },
+        StructuredMutationCase {
+            name: "leading-tab-version-string-only",
+            payload: "\t{\"version\":\"1.0.0\",\"count\":42}",
+            expectation: MutationExpectation::AcceptCanonical,
+        },
+        StructuredMutationCase {
+            name: "leading-newline-escaped-quote-string-only",
+            payload: "\n{\"note\":\"quoted \\\"1.5\\\" text\",\"count\":7}",
+            expectation: MutationExpectation::AcceptCanonical,
+        },
+        StructuredMutationCase {
+            name: "leading-crlf-scientific-string-only",
+            payload: "\r\n{\"note\":\"1e9 stays text\",\"count\":100}",
+            expectation: MutationExpectation::AcceptCanonical,
+        },
+        StructuredMutationCase {
+            name: "leading-space-version-array-labels",
+            payload: r#" [{"label":"v1.0.0"},{"count":3}]"#,
+            expectation: MutationExpectation::AcceptCanonical,
+        },
+    ]
+}
+
+fn whitespace_prefix(rng: &mut XorShift64) -> &'static str {
+    const PREFIXES: &[&str] = &["", " ", "\t", "\n", "\r\n", " \n\t", "\r\n \t"];
+    PREFIXES[rng.choose_index(PREFIXES.len())]
+}
+
+fn wrap_case_payload(
+    expectation: MutationExpectation,
+    core_payload: &str,
+    rng: &mut XorShift64,
+) -> String {
+    match expectation {
+        MutationExpectation::RejectFloat => match rng.choose_index(4) {
+            0 => core_payload.to_string(),
+            1 => format!(r#"{{"outer":{core_payload}}}"#),
+            2 => format!(r#"[{core_payload},{{"note":"1.0.0 stays text"}}]"#),
+            _ => format!(r#"{{"note":"quoted \"1.0\" text","payload":{core_payload},"epoch":7}}"#),
+        },
+        MutationExpectation::AcceptCanonical => match rng.choose_index(4) {
+            0 => core_payload.to_string(),
+            1 => format!(r#"{{"outer":{core_payload},"note":"1.0.0 stays text"}}"#),
+            2 => format!(r#"[{core_payload},{{"note":"1e9 stays text"}}]"#),
+            _ => format!(r#"{{"payload":{core_payload},"note":"quoted \"1.5\" text","count":7}}"#),
+        },
+    }
+}
+
+fn mutate_structured_case(case: StructuredMutationCase, rng: &mut XorShift64) -> Vec<u8> {
+    let mut text = wrap_case_payload(case.expectation, case.payload.trim_start(), rng);
+
+    if rng.choose_index(2) == 1 {
+        text = match case.expectation {
+            MutationExpectation::RejectFloat => {
+                format!(r#"{{"meta":"v1.0.0","payload":{text}}}"#)
+            }
+            MutationExpectation::AcceptCanonical => {
+                format!(r#"[{text},{{"meta":"v1.0.0","count":3}}]"#)
+            }
+        };
+    }
+
+    format!("{}{}", whitespace_prefix(rng), text).into_bytes()
+}
+
+fn assert_mutation_case_oracle(
+    case_name: &str,
+    object_type: TrustObjectType,
+    expectation: MutationExpectation,
+    payload: &[u8],
+) {
+    match expectation {
+        MutationExpectation::RejectFloat => {
+            let mut serialize_serializer = CanonicalSerializer::with_all_schemas();
+            let serialize_result = serialize_serializer.serialize(object_type, payload, case_name);
+            assert!(
+                matches!(
+                    serialize_result,
+                    Err(SerializerError::FloatingPointRejected { .. })
+                ),
+                "{case_name} should reject float payload during serialize: {}",
+                String::from_utf8_lossy(payload)
+            );
+            assert!(
+                serialize_serializer
+                    .events()
+                    .iter()
+                    .all(|event| event.event_code != event_codes::CAN_PREIMAGE_CONSTRUCT),
+                "{case_name} must not emit a preimage event after float rejection"
+            );
+
+            let mut preimage_serializer = CanonicalSerializer::with_all_schemas();
+            let preimage_result =
+                preimage_serializer.build_preimage(object_type, payload, case_name);
+            assert!(
+                matches!(
+                    preimage_result,
+                    Err(SerializerError::FloatingPointRejected { .. })
+                ),
+                "{case_name} should reject float payload during preimage build: {}",
+                String::from_utf8_lossy(payload)
+            );
+            assert!(
+                preimage_serializer
+                    .events()
+                    .iter()
+                    .all(|event| event.event_code != event_codes::CAN_PREIMAGE_CONSTRUCT),
+                "{case_name} must not emit a preimage event after build_preimage rejection"
+            );
+        }
+        MutationExpectation::AcceptCanonical => {
+            let mut serializer = CanonicalSerializer::with_all_schemas();
+            let canonical = serializer
+                .serialize(object_type, payload, case_name)
+                .expect("non-float structured payload should serialize");
+            assert_eq!(
+                canonical,
+                encoded_payload(payload),
+                "{case_name} canonical output must remain length-prefixed identity"
+            );
+            let decoded = serializer
+                .deserialize(object_type, &canonical)
+                .expect("canonical payload must deserialize");
+            assert_eq!(decoded, payload, "{case_name} payload must round-trip");
+
+            let round_trip = serializer
+                .round_trip_canonical(object_type, payload, case_name)
+                .expect("accepted structured payload must round-trip");
+            assert_eq!(
+                round_trip, canonical,
+                "{case_name} round-trip must be byte-stable"
+            );
+
+            let preimage = serializer
+                .build_preimage(object_type, payload, case_name)
+                .expect("accepted structured payload must build a preimage");
+            assert_eq!(preimage.domain_tag, object_type.domain_tag(), "{case_name}");
+            assert_eq!(preimage.canonical_payload, canonical, "{case_name}");
+            let parsed =
+                parse_preimage_for_type(object_type, &preimage.to_bytes()).expect("parse preimage");
+            assert_eq!(parsed, preimage, "{case_name}");
+            assert!(
+                serializer
+                    .events()
+                    .iter()
+                    .any(|event| event.event_code == event_codes::CAN_PREIMAGE_CONSTRUCT),
+                "{case_name} should emit a preimage construct event"
+            );
+        }
+    }
+}
+
+fn run_mutation_campaign(duration: Duration) -> MutationCampaignStats {
+    let start = Instant::now();
+    let mut rng = XorShift64::seeded(0xC0DE_1625_1D4D_D397);
+    let corpus = structured_mutation_corpus();
+    let mut stats = MutationCampaignStats::default();
+
+    for (index, case) in corpus.iter().copied().enumerate() {
+        let object_type = TrustObjectType::all()[index % TrustObjectType::all().len()];
+        let mutated = mutate_structured_case(case, &mut rng);
+        assert!(
+            mutated.len() <= 16 * 1024,
+            "mutation output should stay bounded for fuzz throughput"
+        );
+        assert_mutation_case_oracle(case.name, object_type, case.expectation, &mutated);
+        stats.iterations = stats.iterations.saturating_add(1);
+        match case.expectation {
+            MutationExpectation::AcceptCanonical => {
+                stats.accept_cases = stats.accept_cases.saturating_add(1)
+            }
+            MutationExpectation::RejectFloat => {
+                stats.reject_cases = stats.reject_cases.saturating_add(1)
+            }
+        }
+    }
+
+    while start.elapsed() < duration {
+        let case = corpus[rng.choose_index(corpus.len())];
+        let object_type = TrustObjectType::all()[rng.choose_index(TrustObjectType::all().len())];
+        let mutated = mutate_structured_case(case, &mut rng);
+        assert!(
+            mutated.len() <= 16 * 1024,
+            "mutation output should stay bounded for fuzz throughput"
+        );
+        assert_mutation_case_oracle(case.name, object_type, case.expectation, &mutated);
+        stats.iterations = stats.iterations.saturating_add(1);
+        match case.expectation {
+            MutationExpectation::AcceptCanonical => {
+                stats.accept_cases = stats.accept_cases.saturating_add(1)
+            }
+            MutationExpectation::RejectFloat => {
+                stats.reject_cases = stats.reject_cases.saturating_add(1)
+            }
+        }
+    }
+
+    stats
 }
 
 fn replay_grammar_event_logs() -> Vec<(&'static str, Vec<RawEvent>)> {
@@ -422,6 +714,76 @@ fn fuzz_valid_nested_json_at_limit_is_accepted() {
 }
 
 #[test]
+fn fuzz_structured_mutation_corpus_covers_recent_float_guard_regressions() {
+    let names: BTreeSet<_> = structured_mutation_corpus()
+        .iter()
+        .map(|case| case.name)
+        .collect();
+    for required in [
+        "leading-tab-escaped-quote-real-float",
+        "leading-space-version-string-nested-float",
+        "leading-crlf-signed-exponent-after-string",
+    ] {
+        assert!(
+            names.contains(required),
+            "missing churn-derived corpus case {required}"
+        );
+    }
+
+    let reject_count = structured_mutation_corpus()
+        .iter()
+        .filter(|case| case.expectation == MutationExpectation::RejectFloat)
+        .count();
+    let accept_count = structured_mutation_corpus()
+        .iter()
+        .filter(|case| case.expectation == MutationExpectation::AcceptCanonical)
+        .count();
+    assert!(reject_count >= 6, "need broad float-rejection coverage");
+    assert!(accept_count >= 5, "need false-positive guard coverage");
+}
+
+#[test]
+fn fuzz_structured_mutation_corpus_matches_labelled_oracle() {
+    for case in structured_mutation_corpus() {
+        assert_mutation_case_oracle(
+            case.name,
+            TrustObjectType::OperatorReceipt,
+            case.expectation,
+            case.payload.as_bytes(),
+        );
+    }
+}
+
+#[test]
+fn fuzz_structured_mutation_campaign_smoke() {
+    let stats = run_mutation_campaign(Duration::from_millis(SHORT_FUZZ_DURATION_MILLIS));
+    assert!(
+        stats.iterations > 0,
+        "smoke campaign must exercise at least one input"
+    );
+    assert!(
+        stats.reject_cases > 0,
+        "smoke campaign must hit float rejection paths"
+    );
+    assert!(
+        stats.accept_cases > 0,
+        "smoke campaign must hit acceptance paths"
+    );
+}
+
+#[test]
+#[ignore = "long-running structure-aware mutation campaign"]
+fn fuzz_structured_mutation_campaign_60s() {
+    let stats = run_mutation_campaign(Duration::from_secs(LONG_FUZZ_DURATION_SECS));
+    assert!(
+        stats.iterations >= 1_000,
+        "60s campaign should cover many mutations"
+    );
+    assert!(stats.reject_cases > 0, "campaign must hit reject cases");
+    assert!(stats.accept_cases > 0, "campaign must hit accept cases");
+}
+
+#[test]
 fn fuzz_json_float_payloads_are_rejected_as_non_canonical() {
     let mut serializer = CanonicalSerializer::with_all_schemas();
     let cases = [
@@ -429,6 +791,9 @@ fn fuzz_json_float_payloads_are_rejected_as_non_canonical() {
         b" {\"score\":3.14}".as_slice(),
         b"\n\t{\"score\":1e9}".as_slice(),
         b"\r\n[{\"score\":Infinity}]".as_slice(),
+        b"\t{\"note\":\"quoted \\\"1.0\\\" text\",\"score\":3.14}".as_slice(),
+        b" {\"version\":\"1.0.0\",\"nested\":{\"score\":9.5}}".as_slice(),
+        b"\r\n{\"note\":\"1E-9 stays text\",\"score\":6E23}".as_slice(),
         br#"[1,2.5,3]"#.as_slice(),
         br#"{"nested":{"score":9.5}}"#.as_slice(),
     ];
