@@ -11406,12 +11406,14 @@ fn handle_incident_bundle_command(args: &cli::IncidentBundleArgs) -> Result<()> 
     let trusted_key_id = signing_material_key_id(&replay_signing_material);
 
     let output_path = incident_bundle_output_path(&args.id);
-    write_bundle_to_path_with_trusted_key(&bundle, &output_path, &trusted_key_id).with_context(|| {
-        format!(
-            "failed writing incident bundle to {}",
-            output_path.display()
-        )
-    })?;
+    write_bundle_to_path_with_trusted_key(&bundle, &output_path, &trusted_key_id).with_context(
+        || {
+            format!(
+                "failed writing incident bundle to {}",
+                output_path.display()
+            )
+        },
+    )?;
 
     if let Some(ref ctx) = receipt_export_ctx {
         export_signed_receipts(
