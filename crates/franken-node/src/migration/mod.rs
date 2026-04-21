@@ -169,6 +169,7 @@ pub enum MigrationRewriteAction {
     PinNodeEngine,
     RewritePackageScript,
     RewriteCommonJsRequire,
+    RewriteEsmImport,
     ModuleGraphDiscovery,
     ManualModuleReview,
     ManualScriptReview,
@@ -342,6 +343,12 @@ struct PackageScriptCommandMatch {
     runtime_start: usize,
     runtime_end: usize,
     entry_path: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SourceModuleFormat {
+    CommonJs,
+    Esm,
 }
 
 fn ensure_migration_project_path(project_path: &Path, operation: &str) -> anyhow::Result<()> {
@@ -617,8 +624,37 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
             }
         };
 
-        let source_rewrite = rewrite_commonjs_requires(&raw);
-        for detail in source_rewrite.manual_findings {
+        let module_format = classify_source_module_format(project_path, &path);
+        let (rewritten_content, rewrite_count, manual_findings, rewrite_action, rewrite_detail) =
+            match module_format {
+                SourceModuleFormat::CommonJs => {
+                    let rewrite = rewrite_commonjs_requires(&raw);
+                    (
+                        rewrite.rewritten_content,
+                        rewrite.rewrite_count,
+                        rewrite.manual_findings,
+                        MigrationRewriteAction::RewriteCommonJsRequire,
+                        format!(
+                            "rewrote {} CommonJS require/export declaration(s) to ESM syntax",
+                            rewrite.rewrite_count
+                        ),
+                    )
+                }
+                SourceModuleFormat::Esm => {
+                    let rewrite = rewrite_esm_imports(&raw);
+                    (
+                        rewrite.rewritten_content,
+                        rewrite.rewrite_count,
+                        rewrite.manual_findings,
+                        MigrationRewriteAction::RewriteEsmImport,
+                        format!(
+                            "rewrote {} ESM import/export specifier(s) for runtime compatibility",
+                            rewrite.rewrite_count
+                        ),
+                    )
+                }
+            };
+        for detail in manual_findings {
             manual_review_items = manual_review_items.saturating_add(1);
             push_bounded(
                 &mut entries,
@@ -633,15 +669,13 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
             );
         }
 
-        if source_rewrite.rewrite_count > 0 {
+        if rewrite_count > 0 {
             rewrites_planned = rewrites_planned.saturating_add(1);
             if apply {
                 write_migration_backup(project_path, &path, &raw)?;
-                std::fs::write(&path, source_rewrite.rewritten_content.as_bytes()).map_err(
-                    |err| {
-                        anyhow::anyhow!("failed writing rewritten source {}: {err}", path.display())
-                    },
-                )?;
+                std::fs::write(&path, rewritten_content.as_bytes()).map_err(|err| {
+                    anyhow::anyhow!("failed writing rewritten source {}: {err}", path.display())
+                })?;
                 rewrites_applied = rewrites_applied.saturating_add(1);
             }
 
@@ -650,11 +684,8 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
                 MigrationRewriteEntry {
                     id: String::new(),
                     path: Some(relative_path.clone()),
-                    action: MigrationRewriteAction::RewriteCommonJsRequire,
-                    detail: format!(
-                        "rewrote {} CommonJS require/export declaration(s) to ESM syntax",
-                        source_rewrite.rewrite_count
-                    ),
+                    action: rewrite_action,
+                    detail: rewrite_detail,
                     applied: apply,
                 },
                 MAX_TOTAL_FINDINGS,
@@ -664,7 +695,7 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
                 MigrationRollbackEntry {
                     path: relative_path,
                     original_content: raw,
-                    rewritten_content: source_rewrite.rewritten_content,
+                    rewritten_content,
                 },
                 MAX_TOTAL_FINDINGS,
             );
@@ -1333,6 +1364,63 @@ fn is_migration_source_file(path: &Path) -> bool {
         })
 }
 
+fn classify_source_module_format(project_path: &Path, source_path: &Path) -> SourceModuleFormat {
+    match source_path
+        .extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("mjs") => SourceModuleFormat::Esm,
+        Some("cjs") => SourceModuleFormat::CommonJs,
+        Some("js" | "jsx" | "ts" | "tsx") => {
+            if nearest_package_declares_module_type(project_path, source_path) {
+                SourceModuleFormat::Esm
+            } else {
+                SourceModuleFormat::CommonJs
+            }
+        }
+        _ => SourceModuleFormat::CommonJs,
+    }
+}
+
+fn nearest_package_declares_module_type(project_path: &Path, source_path: &Path) -> bool {
+    let project_root = std::fs::canonicalize(project_path).unwrap_or_else(|_| project_path.into());
+    let source_path = std::fs::canonicalize(source_path).unwrap_or_else(|_| source_path.into());
+    let mut current = source_path.parent();
+
+    while let Some(directory) = current {
+        if let Some(is_module) = package_manifest_declares_module_type(directory) {
+            return is_module;
+        }
+        if directory == project_root || !directory.starts_with(&project_root) {
+            break;
+        }
+        current = directory.parent();
+    }
+
+    false
+}
+
+fn package_manifest_declares_module_type(directory: &Path) -> Option<bool> {
+    let manifest_path = directory.join("package.json");
+    if !manifest_path.is_file() {
+        return None;
+    }
+    let Ok(raw) = std::fs::read_to_string(manifest_path) else {
+        return Some(false);
+    };
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return Some(false);
+    };
+    Some(
+        parsed
+            .get("type")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|module_type| module_type.trim() == "module"),
+    )
+}
+
 fn write_migration_backup(
     project_path: &Path,
     source_path: &Path,
@@ -1381,6 +1469,12 @@ fn write_migration_backup(
 }
 
 struct CommonJsRewrite {
+    rewritten_content: String,
+    rewrite_count: usize,
+    manual_findings: Vec<String>,
+}
+
+struct EsmImportRewrite {
     rewritten_content: String,
     rewrite_count: usize,
     manual_findings: Vec<String>,
@@ -1514,6 +1608,145 @@ fn rewrite_commonjs_requires(source: &str) -> CommonJsRewrite {
         rewrite_count,
         manual_findings: Vec::new(),
     }
+}
+
+fn rewrite_esm_imports(source: &str) -> EsmImportRewrite {
+    let has_esm_syntax = source.lines().any(line_has_esm_module_syntax);
+    let has_commonjs_syntax = source
+        .lines()
+        .any(|line| line_contains_require_call(line) || line_has_commonjs_export(line));
+    let mut manual_findings = BTreeSet::new();
+    if has_esm_syntax && has_commonjs_syntax {
+        manual_findings
+            .insert("ESM/CJS module mixing detected; automatic import rewrite skipped".to_string());
+    } else if has_commonjs_syntax {
+        manual_findings.insert(
+            "CommonJS require()/exports found in ESM-classified source; manual migration required"
+                .to_string(),
+        );
+    }
+
+    if !manual_findings.is_empty() {
+        return EsmImportRewrite {
+            rewritten_content: source.to_string(),
+            rewrite_count: 0,
+            manual_findings: manual_findings.into_iter().collect(),
+        };
+    }
+
+    let mut rewritten_content = String::with_capacity(source.len());
+    let mut rewrite_count = 0_usize;
+    for line in source.split_inclusive('\n') {
+        let (body, line_ending) = split_line_ending(line);
+        if let Some(rewritten_line) = rewrite_esm_import_line(body) {
+            rewritten_content.push_str(&rewritten_line);
+            rewrite_count = rewrite_count.saturating_add(1);
+        } else {
+            rewritten_content.push_str(body);
+        }
+        rewritten_content.push_str(line_ending);
+    }
+
+    if rewrite_count == 0 {
+        return EsmImportRewrite {
+            rewritten_content: source.to_string(),
+            rewrite_count: 0,
+            manual_findings: Vec::new(),
+        };
+    }
+
+    EsmImportRewrite {
+        rewritten_content,
+        rewrite_count,
+        manual_findings: Vec::new(),
+    }
+}
+
+fn rewrite_esm_import_line(line: &str) -> Option<String> {
+    let (code, suffix_comment) = split_js_trailing_line_comment(line);
+    let (specifier_start, specifier_end, specifier) = esm_module_specifier_span(code)?;
+    let normalized_specifier = normalize_import_specifier(&specifier);
+    if normalized_specifier == specifier {
+        return None;
+    }
+
+    let mut rewritten_line = String::with_capacity(
+        code.len()
+            .saturating_sub(specifier.len())
+            .saturating_add(normalized_specifier.len()),
+    );
+    rewritten_line.push_str(&code[..specifier_start]);
+    rewritten_line.push_str(&normalized_specifier);
+    rewritten_line.push_str(&code[specifier_end..]);
+    Some(append_js_suffix_comment(rewritten_line, suffix_comment))
+}
+
+fn esm_module_specifier_span(code: &str) -> Option<(usize, usize, String)> {
+    let leading_whitespace = code.len().saturating_sub(code.trim_start().len());
+    let trimmed = &code[leading_whitespace..];
+    if is_ignorable_js_line(trimmed) {
+        return None;
+    }
+
+    if let Some(after_import) = trimmed.strip_prefix("import ") {
+        let after_import_offset = leading_whitespace.saturating_add("import ".len());
+        let after_import_whitespace = after_import
+            .len()
+            .saturating_sub(after_import.trim_start().len());
+        let side_effect_offset = after_import_offset.saturating_add(after_import_whitespace);
+        if after_import
+            .trim_start()
+            .chars()
+            .next()
+            .is_some_and(|ch| ch == '"' || ch == '\'')
+        {
+            return parse_js_string_literal_at(code, side_effect_offset);
+        }
+        return parse_esm_from_specifier(code, after_import_offset);
+    }
+
+    if trimmed.starts_with("export ") {
+        return parse_esm_from_specifier(code, leading_whitespace.saturating_add("export ".len()));
+    }
+
+    None
+}
+
+fn parse_esm_from_specifier(code: &str, search_start: usize) -> Option<(usize, usize, String)> {
+    let from_offset = code.get(search_start..)?.rfind(" from ")?;
+    let from_start = search_start.saturating_add(from_offset);
+    let after_from = from_start.saturating_add(" from ".len());
+    let rest = code.get(after_from..)?;
+    let whitespace = rest.len().saturating_sub(rest.trim_start().len());
+    parse_js_string_literal_at(code, after_from.saturating_add(whitespace))
+}
+
+fn parse_js_string_literal_at(code: &str, quote_index: usize) -> Option<(usize, usize, String)> {
+    let quote = code.get(quote_index..)?.chars().next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+
+    let literal_start = quote_index.saturating_add(quote.len_utf8());
+    let mut escaped = false;
+    for (relative_index, ch) in code.get(literal_start..)?.char_indices() {
+        if escaped {
+            return None;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == quote {
+            let literal_end = literal_start.saturating_add(relative_index);
+            let specifier = code.get(literal_start..literal_end)?.to_string();
+            if specifier.trim().is_empty() {
+                return None;
+            }
+            return Some((literal_start, literal_end, specifier));
+        }
+    }
+    None
 }
 
 fn analyze_commonjs_with_js_parser(source: &str) -> Result<CommonJsParserAnalysis, String> {
@@ -2751,7 +2984,7 @@ fn is_package_script_entry_path(token: &str) -> bool {
             .and_then(std::ffi::OsStr::to_str)
             .map(str::to_ascii_lowercase)
             .as_deref(),
-        Some("js" | "mjs")
+        Some("js" | "mjs" | "cjs")
     )
 }
 
@@ -2799,7 +3032,7 @@ fn build_module_graph_entry(
         path: Some(manifest_relative_path.to_string()),
         action: MigrationRewriteAction::ModuleGraphDiscovery,
         detail: format!(
-            "script `{}` uses `{}` entry `{}`; module graph discovered {} JS/MJS file(s): {}{}",
+            "script `{}` uses `{}` entry `{}`; module graph discovered {} JS/MJS/CJS file(s): {}{}",
             script_rewrite.script_name,
             script_rewrite.runtime.as_str(),
             script_rewrite.entry_path,
@@ -2884,8 +3117,10 @@ fn resolve_relative_module_specifier(
     for candidate in [
         candidate.with_extension("js"),
         candidate.with_extension("mjs"),
+        candidate.with_extension("cjs"),
         candidate.join("index.js"),
         candidate.join("index.mjs"),
+        candidate.join("index.cjs"),
     ] {
         if let Some(path) = resolve_existing_graph_file(project_root, &candidate) {
             return Some(path);
@@ -2906,7 +3141,12 @@ fn resolve_existing_graph_file(project_root: &Path, path: &Path) -> Option<PathB
 fn is_graph_source_file(path: &Path) -> bool {
     path.extension()
         .and_then(std::ffi::OsStr::to_str)
-        .is_some_and(|extension| matches!(extension.to_ascii_lowercase().as_str(), "js" | "mjs"))
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "js" | "mjs" | "cjs"
+            )
+        })
 }
 
 fn extract_relative_module_specifiers(source: &str) -> Vec<String> {
@@ -3744,6 +3984,121 @@ mod tests {
         assert!(graph_entry.detail.contains("src/index.js"));
         assert!(graph_entry.detail.contains("src/util.js"));
         assert!(graph_entry.detail.contains("src/nested.mjs"));
+    }
+
+    #[test]
+    fn run_rewrite_uses_package_type_module_for_js_import_rewrites() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+        let original_source =
+            "import fs from \"fs\";\nexport const exists = fs.existsSync(\"package.json\");\n";
+
+        write_project_file(
+            project,
+            "package.json",
+            r#"{"name":"demo","version":"1.0.0","type":"module","engines":{"node":">=20 <23"}}"#,
+        );
+        write_project_file(project, "src/index.js", original_source);
+
+        let report = run_rewrite(project, true).expect("esm import rewrite");
+
+        assert_eq!(report.rewrites_planned, 1);
+        assert_eq!(report.rewrites_applied, 1);
+        assert!(report.entries.iter().any(|entry| {
+            entry.action == MigrationRewriteAction::RewriteEsmImport
+                && entry.path.as_deref() == Some("src/index.js")
+        }));
+        assert!(!report.entries.iter().any(|entry| {
+            entry.action == MigrationRewriteAction::RewriteCommonJsRequire
+                && entry.path.as_deref() == Some("src/index.js")
+        }));
+        let rewritten = std::fs::read_to_string(project.join("src/index.js")).expect("read source");
+        assert!(rewritten.contains("import fs from \"node:fs\";"));
+        assert!(!rewritten.contains("import fs from \"fs\";"));
+    }
+
+    #[test]
+    fn run_rewrite_treats_mjs_as_esm_without_package_type() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+
+        write_project_file(
+            project,
+            "package.json",
+            r#"{"name":"demo","version":"1.0.0","engines":{"node":">=20 <23"}}"#,
+        );
+        write_project_file(
+            project,
+            "src/index.mjs",
+            "import path from \"path\";\nexport default path.sep;\n",
+        );
+
+        let report = run_rewrite(project, true).expect("mjs import rewrite");
+
+        assert_eq!(report.rewrites_planned, 1);
+        assert!(report.entries.iter().any(|entry| {
+            entry.action == MigrationRewriteAction::RewriteEsmImport
+                && entry.path.as_deref() == Some("src/index.mjs")
+        }));
+        let rewritten =
+            std::fs::read_to_string(project.join("src/index.mjs")).expect("read source");
+        assert!(rewritten.contains("import path from \"node:path\";"));
+    }
+
+    #[test]
+    fn run_rewrite_preserves_cjs_boundary_inside_type_module_package() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+
+        write_project_file(
+            project,
+            "package.json",
+            r#"{"name":"demo","version":"1.0.0","type":"module","engines":{"node":">=20 <23"}}"#,
+        );
+        write_project_file(
+            project,
+            "src/legacy.cjs",
+            "const fs = require(\"fs\");\nmodule.exports = { fs };\n",
+        );
+
+        let report = run_rewrite(project, false).expect("cjs boundary rewrite plan");
+
+        assert_eq!(report.rewrites_planned, 1);
+        assert!(report.entries.iter().any(|entry| {
+            entry.action == MigrationRewriteAction::RewriteCommonJsRequire
+                && entry.path.as_deref() == Some("src/legacy.cjs")
+        }));
+        assert!(!report.entries.iter().any(|entry| {
+            entry.action == MigrationRewriteAction::RewriteEsmImport
+                && entry.path.as_deref() == Some("src/legacy.cjs")
+        }));
+    }
+
+    #[test]
+    fn run_rewrite_marks_mixed_import_and_require_for_manual_review() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+        let source = "import fs from \"fs\";\nconst path = require(\"path\");\nexport const sep = path.sep;\n";
+
+        write_project_file(
+            project,
+            "package.json",
+            r#"{"name":"demo","version":"1.0.0","type":"module","engines":{"node":">=20 <23"}}"#,
+        );
+        write_project_file(project, "src/index.js", source);
+
+        let report = run_rewrite(project, true).expect("mixed module review");
+
+        assert_eq!(report.rewrites_planned, 0);
+        assert_eq!(report.rewrites_applied, 0);
+        assert!(report.rollback_entries.is_empty());
+        assert!(report.entries.iter().any(|entry| {
+            entry.action == MigrationRewriteAction::ManualModuleReview
+                && entry.path.as_deref() == Some("src/index.js")
+                && entry.detail.contains("ESM/CJS module mixing")
+        }));
+        let unchanged = std::fs::read_to_string(project.join("src/index.js")).expect("read source");
+        assert_eq!(unchanged, source);
     }
 
     #[test]
