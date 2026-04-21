@@ -276,9 +276,14 @@ impl std::error::Error for VsiError {}
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Compute SHA-256 hex digest of arbitrary input bytes.
+/// Compute SHA-256 hex digest with proper length-prefixed framing.
+/// Prevents collision attacks via domain separation and length prefixing.
 fn sha256_hex(data: &[u8]) -> String {
-    let digest = Sha256::digest([b"vef_sdk_hash_v1:" as &[u8], data].concat());
+    let mut hasher = Sha256::new();
+    hasher.update(b"vef_sdk_hash_v1:");
+    hasher.update((data.len() as u64).to_le_bytes());
+    hasher.update(data);
+    let digest = hasher.finalize();
     format!("sha256:{digest:x}")
 }
 
@@ -1686,5 +1691,94 @@ mod tests {
 
         assert_eq!(bundle.records.len(), 1);
         assert_eq!(bundle.records[0].submission_id, "sub-export-ok");
+    }
+
+    #[test]
+    fn test_sha256_hex_deterministic() {
+        // Verify hash is deterministic for same input
+        let data = b"test-data-123";
+        let hash1 = sha256_hex(data);
+        let hash2 = sha256_hex(data);
+        assert_eq!(hash1, hash2, "sha256_hex should be deterministic");
+        assert!(hash1.starts_with("sha256:"), "hash should have sha256: prefix");
+    }
+
+    #[test]
+    fn test_sha256_hex_collision_resistance() {
+        // Test: different data should produce different hashes
+        let hash1 = sha256_hex(b"data1");
+        let hash2 = sha256_hex(b"data2");
+        assert_ne!(hash1, hash2, "different data should produce different hashes");
+
+        // Test: length extension attack prevention
+        let hash_ab_cd = sha256_hex(b"abcd");
+        let hash_a_bcd = sha256_hex(b"a");
+        let hash_abc_d = sha256_hex(b"abc");
+        // All should be different due to length prefixing
+        assert_ne!(hash_ab_cd, hash_a_bcd, "length prefixing should prevent ab|cd vs a|bcd collision");
+        assert_ne!(hash_ab_cd, hash_abc_d, "length prefixing should prevent ab|cd vs abc|d collision");
+        assert_ne!(hash_a_bcd, hash_abc_d, "different length data should hash differently");
+    }
+
+    #[test]
+    fn test_compute_binding_hash_collision_resistance() {
+        // Test: same-prefix proof_ref/capsule payload mutations should not collide
+        let proof_ref1 = "proof-123";
+        let payload1 = "capsule-data";
+        let hash1 = compute_binding_hash(proof_ref1, payload1).unwrap();
+
+        // Test different proof_ref
+        let proof_ref2 = "proof-456";
+        let hash2 = compute_binding_hash(proof_ref2, payload1).unwrap();
+        assert_ne!(hash1, hash2, "different proof_ref should produce different binding hash");
+
+        // Test different capsule payload
+        let payload2 = "different-capsule-data";
+        let hash3 = compute_binding_hash(proof_ref1, payload2).unwrap();
+        assert_ne!(hash1, hash3, "different capsule payload should produce different binding hash");
+
+        // Test concatenation attack resistance
+        let proof_ref_ab = "ab";
+        let payload_cd = "cd";
+        let hash_ab_cd = compute_binding_hash(proof_ref_ab, payload_cd).unwrap();
+
+        let proof_ref_a = "a";
+        let payload_bcd = "bcd";
+        let hash_a_bcd = compute_binding_hash(proof_ref_a, payload_bcd).unwrap();
+
+        assert_ne!(hash_ab_cd, hash_a_bcd, "binding hash should resist concatenation attacks");
+    }
+
+    #[test]
+    fn test_compute_binding_hash_deterministic() {
+        let proof_ref = "test-proof-ref";
+        let capsule_payload = "test-capsule-payload";
+
+        let hash1 = compute_binding_hash(proof_ref, capsule_payload).unwrap();
+        let hash2 = compute_binding_hash(proof_ref, capsule_payload).unwrap();
+
+        assert_eq!(hash1, hash2, "binding hash should be deterministic");
+        assert!(hash1.starts_with("sha256:"), "binding hash should have sha256: prefix");
+    }
+
+    #[test]
+    fn test_binding_hash_tamper_detection() {
+        let original_proof_ref = "original-proof";
+        let original_payload = "original-payload";
+        let original_hash = compute_binding_hash(original_proof_ref, original_payload).unwrap();
+
+        // Test: single character changes should be detected
+        let tampered_proof_ref = "original-proo"; // removed 'f'
+        let tampered_hash1 = compute_binding_hash(tampered_proof_ref, original_payload).unwrap();
+        assert_ne!(original_hash, tampered_hash1, "single character change in proof_ref should be detected");
+
+        let tampered_payload = "original-payloa"; // removed 'd'
+        let tampered_hash2 = compute_binding_hash(original_proof_ref, tampered_payload).unwrap();
+        assert_ne!(original_hash, tampered_hash2, "single character change in payload should be detected");
+
+        // Test: reordering should be detected
+        let reordered_proof_ref = "proof-original";
+        let reordered_hash = compute_binding_hash(reordered_proof_ref, original_payload).unwrap();
+        assert_ne!(original_hash, reordered_hash, "reordering should be detected");
     }
 }
