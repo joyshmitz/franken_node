@@ -3,7 +3,6 @@ use std::process::{Child, Command, Output};
 use std::time::{Duration, Instant};
 
 use chrono::{TimeDelta, Utc};
-use insta::assert_json_snapshot;
 #[cfg(feature = "asupersync-transport")]
 use frankenengine_node::control_plane::fleet_transport::{
     AsupersyncFleetNetwork, AsupersyncFleetTransport, wait_until_fleet_converged_or_timeout,
@@ -16,6 +15,7 @@ use frankenengine_node::control_plane::fleet_transport::{
 use frankenengine_node::supply_chain::trust_card::{
     ReputationTrend, RiskAssessment, RiskLevel, TrustCardMutation, TrustCardRegistry,
 };
+use insta::assert_json_snapshot;
 use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
@@ -237,11 +237,7 @@ fn canonicalize_fleet_reconcile_snapshot(
     let fleet_state_prefix = format!("{}/", fleet_state_dir.display());
     let repo_root_prefix = format!("{}/", repo_root().display());
 
-    fn scrub(
-        value: &mut serde_json::Value,
-        fleet_state_prefix: &str,
-        repo_root_prefix: &str,
-    ) {
+    fn scrub(value: &mut serde_json::Value, fleet_state_prefix: &str, repo_root_prefix: &str) {
         match value {
             serde_json::Value::Array(items) => {
                 for item in items {
@@ -270,11 +266,7 @@ fn canonicalize_fleet_reconcile_snapshot(
                         "elapsed_ms" => {
                             *nested = serde_json::Value::from(0);
                         }
-                        "timestamp"
-                        | "signed_at"
-                        | "emitted_at"
-                        | "recorded_at"
-                        | "issued_at"
+                        "timestamp" | "signed_at" | "emitted_at" | "recorded_at" | "issued_at"
                         | "completed_at" => {
                             *nested = serde_json::Value::String(format!("[{key}]"));
                         }
@@ -497,10 +489,7 @@ fn fleet_release_publishes_release_action_to_transport() {
     assert_eq!(payload["action"]["event_code"], "FLEET-004");
     assert_eq!(payload["action"]["convergence"]["phase"], "Converged");
     assert_eq!(payload["convergence_receipt"]["event_code"], "FLEET-004");
-    assert_convergence_receipt_signature_round_trips(
-        &payload["convergence_receipt"],
-        &signing_key,
-    );
+    assert_convergence_receipt_signature_round_trips(&payload["convergence_receipt"], &signing_key);
 
     let actions = transport.list_actions().expect("list actions");
     assert!(matches!(
@@ -550,7 +539,13 @@ fn fleet_release_fails_on_convergence_timeout() {
 
     let output = run_cli_in_dir_with_fleet_state_and_env(
         &repo_root(),
-        &["fleet", "release", "--incident", "inc-release-timeout", "--json"],
+        &[
+            "fleet",
+            "release",
+            "--incident",
+            "inc-release-timeout",
+            "--json",
+        ],
         &fleet_state_dir,
         &[
             ("FRANKEN_NODE_FLEET_CONVERGENCE_TIMEOUT_SECONDS", "1"),
