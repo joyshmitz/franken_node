@@ -118,10 +118,60 @@ fn migrate_rewrite_apply_emits_rollback_plan_and_updates_manifest() {
         std::fs::read_to_string(project_path.join("index.js")).expect("read rewritten source");
     assert!(rewritten_source.contains("import fs from \"node:fs\";"));
     assert!(!rewritten_source.contains("require("));
-    let source_backup =
-        std::fs::read_to_string(project_path.join(".migrate-backup/index.js"))
-            .expect("read source backup");
+    let source_backup = std::fs::read_to_string(project_path.join(".migrate-backup/index.js"))
+        .expect("read source backup");
     assert!(source_backup.contains("const fs = require(\"fs\");"));
+}
+
+#[test]
+fn migrate_rewrite_apply_handles_commonjs_destructuring_export_and_nested_requires() {
+    let temp = TempDir::new().expect("temp dir");
+    let project_path = temp.path().join("project");
+    std::fs::create_dir_all(&project_path).expect("project dir");
+
+    let original_source = "#!/usr/bin/env node\nconst { readFile, writeFile: write } = require('fs'); // fs api\nconst literal = \"require('path') remains a string\";\n// const fake = require('crypto');\nfunction platform() {\n  const os = require(\"os\");\n  return os.platform();\n}\nmodule.exports = { readFile, writer: write };\n";
+    std::fs::write(project_path.join("index.js"), original_source).expect("write js");
+    std::fs::write(
+        project_path.join("package.json"),
+        r#"{
+  "name": "demo",
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=20 <23"
+  }
+}
+"#,
+    )
+    .expect("write package manifest");
+
+    let project_arg = project_path.to_string_lossy().to_string();
+    let output = run_cli(&["migrate", "rewrite", &project_arg, "--apply"]);
+    assert!(
+        output.status.success(),
+        "migrate rewrite failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("rewrites_planned=1"));
+    assert!(stdout.contains("rewrites_applied=1"));
+
+    let rewritten_source =
+        std::fs::read_to_string(project_path.join("index.js")).expect("read rewritten source");
+    assert!(rewritten_source.starts_with("#!/usr/bin/env node\n"));
+    assert!(
+        rewritten_source
+            .contains("import { readFile, writeFile as write } from \"node:fs\"; // fs api")
+    );
+    assert!(rewritten_source.contains("import os from \"node:os\";"));
+    assert!(rewritten_source.contains("export { readFile, write as writer };"));
+    assert!(rewritten_source.contains("const literal = \"require('path') remains a string\";"));
+    assert!(rewritten_source.contains("// const fake = require('crypto');"));
+    assert!(!rewritten_source.contains("const os = require(\"os\")"));
+
+    let source_backup = std::fs::read_to_string(project_path.join(".migrate-backup/index.js"))
+        .expect("read source backup");
+    assert_eq!(source_backup, original_source);
 }
 
 #[test]
