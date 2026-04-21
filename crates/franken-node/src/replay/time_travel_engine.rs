@@ -442,6 +442,11 @@ impl WorkflowTrace {
         hasher.update((u64::try_from(steps.len()).unwrap_or(u64::MAX)).to_le_bytes());
         for step in steps {
             hasher.update(step.seq.to_le_bytes());
+            let timestamp_bytes = step.timestamp_ns.to_le_bytes();
+            hasher.update(
+                (u64::try_from(timestamp_bytes.len()).unwrap_or(u64::MAX)).to_le_bytes(),
+            );
+            hasher.update(timestamp_bytes);
             hasher.update((u64::try_from(step.input.len()).unwrap_or(u64::MAX)).to_le_bytes());
             hasher.update(&step.input);
             hasher.update((u64::try_from(step.output.len()).unwrap_or(u64::MAX)).to_le_bytes());
@@ -1831,6 +1836,25 @@ mod tests {
             WorkflowTrace::compute_digest(&s1),
             WorkflowTrace::compute_digest(&s2)
         );
+    }
+
+    #[test]
+    fn compute_digest_changes_with_different_timestamp() {
+        let s1 = vec![TraceStep::new(0, vec![1], vec![2], vec![], 100)];
+        let s2 = vec![TraceStep::new(0, vec![1], vec![2], vec![], 101)];
+        assert_ne!(
+            WorkflowTrace::compute_digest(&s1),
+            WorkflowTrace::compute_digest(&s2)
+        );
+    }
+
+    #[test]
+    fn trace_validation_rejects_timestamp_tampering() {
+        let mut trace = trace_with_timestamps("tampered-timestamp", &[100, 200]);
+        trace.steps[0].timestamp_ns = 101;
+
+        let err = trace.validate().expect_err("timestamp mutation must break digest");
+        assert!(matches!(err, TimeTravelError::DigestMismatch { .. }));
     }
 
     // --- Demo trace builder ---
