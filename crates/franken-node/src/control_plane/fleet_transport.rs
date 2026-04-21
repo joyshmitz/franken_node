@@ -17,6 +17,7 @@ use std::{
 use crate::capacity_defaults::aliases::{MAX_ACTION_LOG_ENTRIES, MAX_NODES_CAP};
 use chrono::{DateTime, Utc};
 use ed25519_dalek::Signer;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -34,7 +35,7 @@ const MAX_ACTION_ID_LEN: usize = 128;
 const MAX_ACTION_RECORD_BYTES: usize = 2_048;
 const ACTION_LOG_COMPACTION_THRESHOLD_BYTES: u64 = 10 * 1024 * 1024;
 const ACTION_LOG_RETENTION_DAYS: i64 = 30;
-const LOCK_RETRY_BACKOFF_MILLIS: [u64; 3] = [100, 200, 400];
+const LOCK_RETRY_BACKOFF_MILLIS: [u64; 5] = [100, 200, 400, 800, 1_600];
 pub const FLEET_CONVERGENCE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1177,8 +1178,19 @@ fn validate_action_record(action: &FleetActionRecord) -> Result<(), FleetTranspo
     Ok(())
 }
 
-fn lock_retry_backoffs() -> [Duration; LOCK_RETRY_BACKOFF_MILLIS.len()] {
+fn lock_retry_base_backoffs() -> [Duration; LOCK_RETRY_BACKOFF_MILLIS.len()] {
     LOCK_RETRY_BACKOFF_MILLIS.map(Duration::from_millis)
+}
+
+fn jittered_lock_retry_delay(base_millis: u64) -> Duration {
+    let jitter_millis = base_millis / 2;
+    let min_millis = base_millis.saturating_sub(jitter_millis).max(1);
+    let max_millis = base_millis.saturating_add(jitter_millis).max(min_millis);
+    Duration::from_millis(rand::thread_rng().gen_range(min_millis..=max_millis))
+}
+
+fn lock_retry_backoffs() -> [Duration; LOCK_RETRY_BACKOFF_MILLIS.len()] {
+    LOCK_RETRY_BACKOFF_MILLIS.map(jittered_lock_retry_delay)
 }
 
 pub fn wait_until_fleet_converged_or_timeout<F>(
@@ -1248,7 +1260,7 @@ fn lock_file_with_backoff(
     }
 
     Err(FleetTransportError::lock_contention(format!(
-        "timed out acquiring flock for {} after retries at 100ms/200ms/400ms",
+        "timed out acquiring flock for {} after jittered retries based on 100ms/200ms/400ms/800ms/1600ms",
         path.display()
     )))
 }
@@ -1305,7 +1317,7 @@ mod tests {
     use std::{
         fs,
         io::Write as _,
-        sync::{Arc, Barrier},
+        sync::{Arc, Barrier, mpsc},
         time::Instant,
     };
 
@@ -2126,12 +2138,103 @@ mod tests {
     #[test]
     fn lock_retry_backoffs_match_expected_schedule() {
         assert_eq!(
-            lock_retry_backoffs(),
+            lock_retry_base_backoffs(),
             [
                 Duration::from_millis(100),
                 Duration::from_millis(200),
                 Duration::from_millis(400),
+                Duration::from_millis(800),
+                Duration::from_millis(1_600),
             ]
+        );
+    }
+
+    #[test]
+    fn lock_retry_backoffs_apply_half_range_jitter() {
+        let mut saw_non_base_delay = false;
+
+        for _ in 0..32 {
+            let jittered = lock_retry_backoffs();
+            for (delay, base_millis) in jittered.iter().zip(LOCK_RETRY_BACKOFF_MILLIS) {
+                let min_millis = base_millis / 2;
+                let max_millis = base_millis + (base_millis / 2);
+                assert!(
+                    *delay >= Duration::from_millis(min_millis)
+                        && *delay <= Duration::from_millis(max_millis),
+                    "jittered delay {:?} outside +/-50% range for {base_millis}ms",
+                    delay
+                );
+                saw_non_base_delay |= *delay != Duration::from_millis(base_millis);
+            }
+        }
+
+        assert!(
+            saw_non_base_delay,
+            "retry backoff should not be deterministic"
+        );
+    }
+
+    #[test]
+    fn lock_file_with_backoff_jitter_spreads_burst_contention() {
+        let tempdir = tempdir().expect("tempdir");
+        let lock_path = tempdir.path().join("burst.lock");
+        let holder = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .expect("open holder lock");
+        holder.lock().expect("take initial lock");
+
+        let worker_count = 10;
+        let barrier = Arc::new(Barrier::new(worker_count + 1));
+        let (sender, receiver) = mpsc::channel();
+        let started = Instant::now();
+        let mut workers = Vec::new();
+
+        for _ in 0..worker_count {
+            let barrier = Arc::clone(&barrier);
+            let lock_path = lock_path.clone();
+            let sender = sender.clone();
+            workers.push(std::thread::spawn(move || {
+                let file = OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .truncate(false)
+                    .open(&lock_path)
+                    .expect("open worker lock");
+                barrier.wait();
+                lock_file_with_backoff(&file, &lock_path, false).expect("worker lock");
+                sender.send(started.elapsed()).expect("send acquisition");
+                std::thread::sleep(Duration::from_millis(8));
+                file.unlock().expect("unlock worker lock");
+            }));
+        }
+        drop(sender);
+
+        barrier.wait();
+        std::thread::sleep(Duration::from_millis(105));
+        holder.unlock().expect("release initial lock");
+
+        let mut acquisition_times: Vec<Duration> = receiver.iter().collect();
+        for worker in workers {
+            worker.join().expect("worker join");
+        }
+        acquisition_times.sort();
+
+        assert_eq!(acquisition_times.len(), worker_count);
+        let first = acquisition_times[0];
+        let last = *acquisition_times.last().expect("last acquisition");
+        assert!(
+            first < Duration::from_millis(230),
+            "at least one contender should escape the deterministic 300ms convoy window; got {first:?}"
+        );
+        assert!(
+            last.saturating_sub(first) >= Duration::from_millis(60),
+            "acquisitions should be spread by jitter, got {:?}",
+            acquisition_times
         );
     }
 
@@ -2161,7 +2264,7 @@ mod tests {
 
         assert!(matches!(error, FleetTransportError::LockContention { .. }));
         assert!(
-            started.elapsed() >= Duration::from_millis(650),
+            started.elapsed() >= Duration::from_millis(1_500),
             "expected retry backoff budget to elapse, got {:?}",
             started.elapsed()
         );
