@@ -625,7 +625,7 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
                     path: Some(relative_path.clone()),
                     action: MigrationRewriteAction::RewriteCommonJsRequire,
                     detail: format!(
-                        "rewrote {} top-level CommonJS require declaration(s) to ESM imports",
+                        "rewrote {} CommonJS require/export declaration(s) to ESM syntax",
                         source_rewrite.rewrite_count
                     ),
                     applied: apply,
@@ -1359,30 +1359,48 @@ struct CommonJsRewrite {
     manual_findings: Vec<String>,
 }
 
+struct CommonJsLineRewrite {
+    replacement_line: Option<String>,
+    hoisted_import: Option<String>,
+}
+
 fn rewrite_commonjs_requires(source: &str) -> CommonJsRewrite {
     let has_esm_syntax = source.lines().any(line_has_esm_module_syntax);
-    let has_commonjs_export = source.lines().any(line_has_commonjs_export);
-    let mut simple_requires = 0_usize;
+    let mut line_rewrites = Vec::new();
+    let mut hoisted_imports = Vec::new();
+    let mut seen_hoisted_imports = BTreeSet::new();
+    let mut rewrite_count = 0_usize;
     let mut risky_requires = 0_usize;
+    let mut risky_exports = 0_usize;
 
-    for line in source.lines() {
-        if !line_contains_require_call(line) {
-            continue;
-        }
-        if rewrite_commonjs_require_line(line).is_some() {
-            simple_requires = simple_requires.saturating_add(1);
+    for line in source.split_inclusive('\n') {
+        let (body, line_ending) = split_line_ending(line);
+        if let Some(rewrite) = rewrite_commonjs_line(body) {
+            if let Some(import_line) = rewrite.hoisted_import.as_ref() {
+                if seen_hoisted_imports.insert(import_line.clone()) {
+                    hoisted_imports.push(import_line.clone());
+                }
+            }
+            line_rewrites.push((rewrite.replacement_line, line_ending.to_string()));
+            rewrite_count = rewrite_count.saturating_add(1);
         } else {
-            risky_requires = risky_requires.saturating_add(1);
+            if line_contains_require_call(body) {
+                risky_requires = risky_requires.saturating_add(1);
+            }
+            if line_has_commonjs_export(body) {
+                risky_exports = risky_exports.saturating_add(1);
+            }
+            line_rewrites.push((Some(body.to_string()), line_ending.to_string()));
         }
     }
 
     let mut manual_findings = BTreeSet::new();
-    if has_esm_syntax && (has_commonjs_export || simple_requires > 0 || risky_requires > 0) {
+    if has_esm_syntax && (rewrite_count > 0 || risky_requires > 0 || risky_exports > 0) {
         manual_findings.insert(
             "ESM/CJS module mixing detected; automatic require() rewrite skipped".to_string(),
         );
     }
-    if has_commonjs_export {
+    if risky_exports > 0 {
         manual_findings.insert(
             "CommonJS export assignment detected; manual ESM export migration required".to_string(),
         );
@@ -1393,7 +1411,7 @@ fn rewrite_commonjs_requires(source: &str) -> CommonJsRewrite {
         ));
     }
 
-    if !manual_findings.is_empty() || simple_requires == 0 {
+    if !manual_findings.is_empty() || rewrite_count == 0 {
         return CommonJsRewrite {
             rewritten_content: source.to_string(),
             rewrite_count: 0,
@@ -1402,21 +1420,43 @@ fn rewrite_commonjs_requires(source: &str) -> CommonJsRewrite {
     }
 
     let mut rewritten_content = String::with_capacity(source.len());
-    for line in source.split_inclusive('\n') {
-        let (body, line_ending) = split_line_ending(line);
-        if let Some(rewritten_line) = rewrite_commonjs_require_line(body) {
-            rewritten_content.push_str(&rewritten_line);
-            rewritten_content.push_str(line_ending);
-        } else {
-            rewritten_content.push_str(line);
+    let mut body_without_requires = String::with_capacity(source.len());
+    for (replacement_line, line_ending) in line_rewrites {
+        if let Some(replacement_line) = replacement_line {
+            body_without_requires.push_str(&replacement_line);
+            body_without_requires.push_str(&line_ending);
         }
     }
+    prepend_hoisted_imports(
+        &mut rewritten_content,
+        &body_without_requires,
+        &hoisted_imports,
+    );
 
     CommonJsRewrite {
         rewritten_content,
-        rewrite_count: simple_requires,
+        rewrite_count,
         manual_findings: Vec::new(),
     }
+}
+
+fn prepend_hoisted_imports(output: &mut String, body: &str, imports: &[String]) {
+    if imports.is_empty() {
+        output.push_str(body);
+        return;
+    }
+    let mut rest = body;
+    if let Some(first_line) = body.split_inclusive('\n').next() {
+        if first_line.starts_with("#!") {
+            output.push_str(first_line);
+            rest = &body[first_line.len()..];
+        }
+    }
+    for import in imports {
+        output.push_str(import);
+        output.push('\n');
+    }
+    output.push_str(rest);
 }
 
 fn split_line_ending(line: &str) -> (&str, &str) {
@@ -1454,7 +1494,7 @@ fn line_has_commonjs_export(line: &str) -> bool {
 
 fn line_contains_require_call(line: &str) -> bool {
     let trimmed = line.trim_start();
-    !is_ignorable_js_line(trimmed) && trimmed.contains("require(")
+    !is_ignorable_js_line(trimmed) && contains_js_call_outside_literals(line, "require")
 }
 
 fn is_ignorable_js_line(trimmed_line: &str) -> bool {
@@ -1463,48 +1503,274 @@ fn is_ignorable_js_line(trimmed_line: &str) -> bool {
         || trimmed_line.starts_with('*')
 }
 
-fn rewrite_commonjs_require_line(line: &str) -> Option<String> {
-    if line.chars().next().is_some_and(|ch| ch.is_whitespace()) {
-        return None;
+fn rewrite_commonjs_line(line: &str) -> Option<CommonJsLineRewrite> {
+    if let Some(import_line) = rewrite_commonjs_require_line(line) {
+        return Some(CommonJsLineRewrite {
+            replacement_line: None,
+            hoisted_import: Some(import_line),
+        });
     }
-    let declaration = line
+    rewrite_commonjs_export_line(line).map(|replacement_line| CommonJsLineRewrite {
+        replacement_line: Some(replacement_line),
+        hoisted_import: None,
+    })
+}
+
+fn rewrite_commonjs_require_line(line: &str) -> Option<String> {
+    let (code, suffix_comment) = split_js_trailing_line_comment(line);
+    let trimmed_code = code.trim();
+    let declaration = trimmed_code
         .strip_prefix("const ")
-        .or_else(|| line.strip_prefix("let "))
-        .or_else(|| line.strip_prefix("var "))?;
+        .or_else(|| trimmed_code.strip_prefix("let "))
+        .or_else(|| trimmed_code.strip_prefix("var "))?;
     let (binding, initializer) = declaration.split_once('=')?;
     let binding = binding.trim();
-    if binding.contains('{') || binding.contains('[') || binding.contains(',') {
-        return None;
-    }
-    if !is_simple_js_identifier(binding) {
-        return None;
-    }
-
-    let initializer = initializer.trim();
-    let require_args = initializer.strip_prefix("require(")?;
-    let mut chars = require_args.chars();
-    let quote = chars.next()?;
-    if quote != '"' && quote != '\'' {
-        return None;
-    }
-    let specifier_start = quote.len_utf8();
-    let rest = &require_args[specifier_start..];
-    let specifier_end = rest.find(quote)?;
-    let specifier = &rest[..specifier_end];
-    if specifier.trim().is_empty() || specifier.contains('\\') || specifier.contains('"') {
-        return None;
-    }
-
-    let after_specifier = &rest[specifier_end + quote.len_utf8()..];
-    let after_call = after_specifier.trim_start().strip_prefix(')')?.trim();
+    let (specifier, after_call) = parse_static_require_call(initializer.trim())?;
     if !after_call.is_empty() && after_call != ";" {
         return None;
     }
 
-    Some(format!(
-        "import {binding} from \"{}\";",
-        normalize_import_specifier(specifier)
-    ))
+    let normalized_specifier = normalize_import_specifier(&specifier);
+    let import_line = if let Some(named_bindings) = parse_commonjs_object_binding(binding) {
+        format!(
+            "import {{ {} }} from \"{normalized_specifier}\";",
+            named_bindings.join(", ")
+        )
+    } else if is_simple_js_identifier(binding) {
+        format!("import {binding} from \"{normalized_specifier}\";")
+    } else {
+        return None;
+    };
+    Some(append_js_suffix_comment(import_line, suffix_comment))
+}
+
+fn parse_static_require_call(initializer: &str) -> Option<(String, &str)> {
+    let after_name = initializer.strip_prefix("require")?.trim_start();
+    let after_open = after_name.strip_prefix('(')?.trim_start();
+    let mut chars = after_open.char_indices();
+    let (_, quote) = chars.next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let specifier_start = quote.len_utf8();
+    let mut specifier_end = None;
+    let mut escaped = false;
+    for (index, ch) in after_open[specifier_start..].char_indices() {
+        if escaped {
+            return None;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == quote {
+            specifier_end = Some(specifier_start + index);
+            break;
+        }
+    }
+    let specifier_end = specifier_end?;
+    let specifier = &after_open[specifier_start..specifier_end];
+    if specifier.trim().is_empty() || specifier.contains('"') || specifier.contains('\'') {
+        return None;
+    }
+    let after_specifier = &after_open[specifier_end + quote.len_utf8()..];
+    let after_call = after_specifier.trim_start().strip_prefix(')')?.trim();
+    Some((specifier.to_string(), after_call))
+}
+
+fn parse_commonjs_object_binding(binding: &str) -> Option<Vec<String>> {
+    let inner = binding.trim().strip_prefix('{')?.strip_suffix('}')?;
+    let mut named_bindings = Vec::new();
+    for member in split_js_top_level_commas(inner) {
+        let member = member.trim();
+        if member.is_empty()
+            || member.starts_with("...")
+            || member.contains('=')
+            || member.contains('{')
+            || member.contains('[')
+        {
+            return None;
+        }
+        let import_binding = if let Some((imported, local)) = member.split_once(':') {
+            let imported = imported.trim();
+            let local = local.trim();
+            if !is_simple_js_identifier(imported) || !is_simple_js_identifier(local) {
+                return None;
+            }
+            if imported == local {
+                imported.to_string()
+            } else {
+                format!("{imported} as {local}")
+            }
+        } else {
+            if !is_simple_js_identifier(member) {
+                return None;
+            }
+            member.to_string()
+        };
+        push_bounded(&mut named_bindings, import_binding, MAX_TOTAL_FINDINGS);
+    }
+    if named_bindings.is_empty() {
+        return None;
+    }
+    Some(named_bindings)
+}
+
+fn rewrite_commonjs_export_line(line: &str) -> Option<String> {
+    if line.chars().next().is_some_and(|ch| ch.is_whitespace()) {
+        return None;
+    }
+    let (code, suffix_comment) = split_js_trailing_line_comment(line);
+    let rhs = code
+        .trim()
+        .strip_prefix("module.exports")?
+        .trim_start()
+        .strip_prefix('=')?
+        .trim();
+    let rhs = rhs.strip_suffix(';').unwrap_or(rhs).trim();
+    let exports = parse_commonjs_export_object(rhs)?;
+    let export_line = format!("export {{ {} }};", exports.join(", "));
+    Some(append_js_suffix_comment(export_line, suffix_comment))
+}
+
+fn parse_commonjs_export_object(rhs: &str) -> Option<Vec<String>> {
+    let inner = rhs.strip_prefix('{')?.strip_suffix('}')?;
+    let mut exports = Vec::new();
+    for member in split_js_top_level_commas(inner) {
+        let member = member.trim();
+        if member.is_empty()
+            || member.starts_with("...")
+            || member.contains('(')
+            || member.contains('{')
+            || member.contains('[')
+        {
+            return None;
+        }
+        let export_binding = if let Some((exported, local)) = member.split_once(':') {
+            let exported = exported.trim();
+            let local = local.trim();
+            if !is_simple_js_identifier(exported) || !is_simple_js_identifier(local) {
+                return None;
+            }
+            if exported == local {
+                local.to_string()
+            } else {
+                format!("{local} as {exported}")
+            }
+        } else {
+            if !is_simple_js_identifier(member) {
+                return None;
+            }
+            member.to_string()
+        };
+        push_bounded(&mut exports, export_binding, MAX_TOTAL_FINDINGS);
+    }
+    if exports.is_empty() {
+        return None;
+    }
+    Some(exports)
+}
+
+fn split_js_top_level_commas(input: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0_usize;
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, ch) in input.char_indices() {
+        if let Some(active_quote) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == active_quote {
+                quote = None;
+            }
+            continue;
+        }
+        if ch == '"' || ch == '\'' || ch == '`' {
+            quote = Some(ch);
+        } else if ch == ',' {
+            parts.push(&input[start..index]);
+            start = index + ch.len_utf8();
+        }
+    }
+    parts.push(&input[start..]);
+    parts
+}
+
+fn split_js_trailing_line_comment(line: &str) -> (&str, &str) {
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, ch) in line.char_indices() {
+        if let Some(active_quote) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == active_quote {
+                quote = None;
+            }
+            continue;
+        }
+        if ch == '"' || ch == '\'' || ch == '`' {
+            quote = Some(ch);
+            continue;
+        }
+        if ch == '/' && line[index + ch.len_utf8()..].starts_with('/') {
+            return (line[..index].trim_end(), &line[index..]);
+        }
+    }
+    (line, "")
+}
+
+fn append_js_suffix_comment(mut line: String, suffix_comment: &str) -> String {
+    let suffix_comment = suffix_comment.trim_start();
+    if !suffix_comment.is_empty() {
+        line.push(' ');
+        line.push_str(suffix_comment);
+    }
+    line
+}
+
+fn contains_js_call_outside_literals(line: &str, function_name: &str) -> bool {
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, ch) in line.char_indices() {
+        if let Some(active_quote) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == active_quote {
+                quote = None;
+            }
+            continue;
+        }
+        if ch == '"' || ch == '\'' || ch == '`' {
+            quote = Some(ch);
+            continue;
+        }
+        if ch == '/' && line[index + ch.len_utf8()..].starts_with('/') {
+            return false;
+        }
+        let rest = &line[index..];
+        if rest.starts_with(function_name) {
+            let before = line[..index].chars().next_back();
+            let after_name = &rest[function_name.len()..];
+            let after = after_name.chars().next();
+            if before.is_none_or(|candidate| !is_js_identifier_continue(candidate))
+                && after.is_some_and(|candidate| candidate == '(' || candidate.is_whitespace())
+                && after_name.trim_start().starts_with('(')
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn is_js_identifier_continue(ch: char) -> bool {
+    ch == '_' || ch == '$' || ch.is_ascii_alphanumeric()
 }
 
 fn is_simple_js_identifier(candidate: &str) -> bool {
