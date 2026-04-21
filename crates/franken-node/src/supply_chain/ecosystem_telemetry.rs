@@ -18,6 +18,8 @@ use super::{
 const MAX_ANOMALY_ALERTS: usize = 4096;
 const MAX_DATA_POINTS: usize = 4096;
 const MAX_VALUES_PER_METRIC: usize = 1024;
+const MIN_DEVIATION_THRESHOLD_PCT: f64 = 0.0;
+const MAX_DEVIATION_THRESHOLD_PCT: f64 = 100.0;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
@@ -30,6 +32,54 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
         items.drain(0..overflow.min(items.len()));
     }
     items.push(item);
+}
+
+fn valid_deviation_threshold_pct(value: f64) -> bool {
+    value.is_finite()
+        && (MIN_DEVIATION_THRESHOLD_PCT..=MAX_DEVIATION_THRESHOLD_PCT).contains(&value)
+}
+
+fn finite_mean(values: impl IntoIterator<Item = f64>) -> Option<f64> {
+    let finite_values = values
+        .into_iter()
+        .filter(|value| value.is_finite())
+        .collect::<Vec<_>>();
+    if finite_values.is_empty() {
+        return None;
+    }
+
+    let max_abs = finite_values
+        .iter()
+        .map(|value| value.abs())
+        .fold(0.0, f64::max);
+    if max_abs == 0.0 {
+        return Some(0.0);
+    }
+
+    let mut scaled_sum = 0.0;
+    for value in finite_values.iter().copied() {
+        let next = scaled_sum + (value / max_abs);
+        if !next.is_finite() {
+            return None;
+        }
+        scaled_sum = next;
+    }
+
+    let mean = (scaled_sum / finite_values.len() as f64) * max_abs;
+    mean.is_finite().then_some(mean)
+}
+
+fn finite_deviation_pct(current: f64, baseline: f64) -> Option<f64> {
+    if !current.is_finite() || !baseline.is_finite() || baseline.abs() < f64::EPSILON {
+        return None;
+    }
+
+    let relative = ((current - baseline) / baseline) * 100.0;
+    if relative.is_finite() {
+        Some(relative.abs())
+    } else {
+        Some(f64::MAX)
+    }
 }
 
 // ── Event codes ──────────────────────────────────────────────────────────────
@@ -235,6 +285,37 @@ impl Default for AnomalyConfig {
             deviation_threshold_pct: 30.0,
             min_data_points: 10,
             baseline_window: 30,
+        }
+    }
+}
+
+impl AnomalyConfig {
+    #[must_use]
+    pub fn new(
+        deviation_threshold_pct: f64,
+        min_data_points: u32,
+        baseline_window: u32,
+    ) -> Option<Self> {
+        valid_deviation_threshold_pct(deviation_threshold_pct).then_some(Self {
+            deviation_threshold_pct,
+            min_data_points,
+            baseline_window,
+        })
+    }
+
+    pub fn set_deviation_threshold_pct(&mut self, value: f64) -> bool {
+        if !valid_deviation_threshold_pct(value) {
+            return false;
+        }
+        self.deviation_threshold_pct = value;
+        true
+    }
+
+    fn effective_deviation_threshold_pct(&self) -> f64 {
+        if valid_deviation_threshold_pct(self.deviation_threshold_pct) {
+            self.deviation_threshold_pct
+        } else {
+            MIN_DEVIATION_THRESHOLD_PCT
         }
     }
 }
@@ -538,6 +619,7 @@ impl TelemetryPipeline {
     /// Run anomaly detection on the current data.
     pub fn detect_anomalies(&mut self, baseline: &BTreeMap<MetricKind, f64>) -> Vec<AnomalyAlert> {
         let mut new_alerts = Vec::new();
+        let deviation_threshold_pct = self.anomaly_config.effective_deviation_threshold_pct();
 
         // Group recent data by metric.
         let mut metric_values: BTreeMap<MetricKind, Vec<f64>> = BTreeMap::new();
@@ -545,9 +627,7 @@ impl TelemetryPipeline {
             if !point.value.is_finite() {
                 continue;
             }
-            let values = metric_values
-                .entry(point.metric)
-                .or_default();
+            let values = metric_values.entry(point.metric).or_default();
             push_bounded(values, point.value, MAX_VALUES_PER_METRIC);
         }
 
@@ -556,15 +636,16 @@ impl TelemetryPipeline {
                 continue;
             }
 
-            let current_avg: f64 = values.iter().sum::<f64>() / u32::try_from(values.len()).unwrap_or(u32::MAX) as f64;
+            let Some(current_avg) = finite_mean(values.iter().copied()) else {
+                continue;
+            };
 
             if let Some(&baseline_val) = baseline.get(metric) {
-                if !baseline_val.is_finite() || baseline_val.abs() < f64::EPSILON {
+                let Some(deviation_pct) = finite_deviation_pct(current_avg, baseline_val) else {
                     continue;
-                }
-                let deviation_pct = ((current_avg - baseline_val) / baseline_val * 100.0).abs();
+                };
 
-                if deviation_pct > self.anomaly_config.deviation_threshold_pct {
+                if deviation_pct > deviation_threshold_pct {
                     let anomaly_type = match metric {
                         MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate) => {
                             AnomalyType::ProvenanceCoverageDrop
@@ -739,17 +820,13 @@ impl TelemetryPipeline {
     // ── Internal ─────────────────────────────────────────────────────────
 
     fn compute_metric_avg(&self, metric: MetricKind) -> f64 {
-        let (sum, count) = self
-            .data_points
-            .iter()
-            .filter(|p| p.metric == metric && p.value.is_finite())
-            .fold((0.0, 0usize), |(sum, count), point| {
-                (sum + point.value, count.saturating_add(1))
-            });
-        if count == 0 {
-            return 0.0;
-        }
-        sum / count as f64
+        finite_mean(
+            self.data_points
+                .iter()
+                .filter(|point| point.metric == metric)
+                .map(|point| point.value),
+        )
+        .unwrap_or(0.0)
     }
 }
 
@@ -1390,7 +1467,12 @@ mod tests {
         let metric = MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate);
         // Ingest data points significantly below baseline.
         for i in 0..5 {
-            pipeline.ingest(make_point(&format!("p{i}"), metric, 0.3, &ts((i as u32).saturating_add(1))));
+            pipeline.ingest(make_point(
+                &format!("p{i}"),
+                metric,
+                0.3,
+                &ts((i as u32).saturating_add(1)),
+            ));
         }
 
         let mut baseline = BTreeMap::new();
@@ -1425,6 +1507,96 @@ mod tests {
         assert!(!alerts.is_empty());
         assert_eq!(alerts[0].anomaly_type, AnomalyType::ProvenanceCoverageDrop);
         assert!(alerts[0].current_value.is_finite());
+    }
+
+    #[test]
+    fn anomaly_detection_extreme_finite_values_do_not_overflow_alert_fields() {
+        let mut pipeline = TelemetryPipeline::new();
+        pipeline.enable_collection();
+        pipeline.anomaly_config.min_data_points = 2;
+
+        let metric = MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate);
+        for i in 0..3 {
+            pipeline.ingest(make_point(
+                &format!("extreme-{i}"),
+                metric,
+                f64::MAX,
+                &ts((i as u32).saturating_add(1)),
+            ));
+        }
+
+        let mut baseline = BTreeMap::new();
+        baseline.insert(metric, 1.0);
+
+        let alerts = pipeline.detect_anomalies(&baseline);
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].anomaly_type, AnomalyType::ProvenanceCoverageDrop);
+        assert!(alerts[0].current_value.is_finite());
+        assert!(alerts[0].deviation_pct.is_finite());
+    }
+
+    #[test]
+    fn health_export_extreme_finite_values_do_not_overflow_metric_averages() {
+        let mut pipeline = TelemetryPipeline::new();
+        pipeline.enable_collection();
+
+        let metric = MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate);
+        for i in 0..3 {
+            pipeline.ingest(make_point(
+                &format!("export-extreme-{i}"),
+                metric,
+                f64::MAX,
+                &ts((i as u32).saturating_add(1)),
+            ));
+        }
+
+        let export = pipeline.export_health(&ts(10), None, None, None);
+        assert!(export.provenance_coverage.is_finite());
+        assert!(!export.provenance_coverage.is_infinite());
+    }
+
+    #[test]
+    fn anomaly_config_rejects_non_finite_and_out_of_range_thresholds() {
+        assert!(AnomalyConfig::new(0.0, 1, 1).is_some());
+        assert!(AnomalyConfig::new(100.0, 1, 1).is_some());
+        assert!(AnomalyConfig::new(f64::NAN, 1, 1).is_none());
+        assert!(AnomalyConfig::new(f64::INFINITY, 1, 1).is_none());
+        assert!(AnomalyConfig::new(-0.1, 1, 1).is_none());
+        assert!(AnomalyConfig::new(100.1, 1, 1).is_none());
+
+        let mut config = AnomalyConfig::default();
+        assert!(!config.set_deviation_threshold_pct(f64::NEG_INFINITY));
+        assert_eq!(config.deviation_threshold_pct, 30.0);
+        assert!(!config.set_deviation_threshold_pct(100.1));
+        assert_eq!(config.deviation_threshold_pct, 30.0);
+        assert!(config.set_deviation_threshold_pct(0.0));
+        assert_eq!(config.deviation_threshold_pct, 0.0);
+    }
+
+    #[test]
+    fn anomaly_detection_non_finite_threshold_fails_closed() {
+        let mut pipeline = TelemetryPipeline::new();
+        pipeline.enable_collection();
+        pipeline.anomaly_config.min_data_points = 2;
+        pipeline.anomaly_config.deviation_threshold_pct = f64::NAN;
+
+        let metric = MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate);
+        for i in 0..3 {
+            pipeline.ingest(make_point(
+                &format!("nan-threshold-{i}"),
+                metric,
+                0.9,
+                &ts((i as u32).saturating_add(1)),
+            ));
+        }
+
+        let mut baseline = BTreeMap::new();
+        baseline.insert(metric, 1.0);
+
+        let alerts = pipeline.detect_anomalies(&baseline);
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].anomaly_type, AnomalyType::ProvenanceCoverageDrop);
+        assert!(alerts[0].deviation_pct.is_finite());
     }
 
     #[test]
@@ -2027,13 +2199,23 @@ mod tests {
         let mut pipeline = TelemetryPipeline::new();
         pipeline.enable_collection();
 
-        let malicious_point_id = format!("point-{}\u{202e}evil\u{202d}-{}", "\u{200b}".repeat(500), "💥".repeat(300));
+        let malicious_point_id = format!(
+            "point-{}\u{202e}evil\u{202d}-{}",
+            "\u{200b}".repeat(500),
+            "💥".repeat(300)
+        );
         let mut malicious_labels = BTreeMap::new();
         malicious_labels.insert(
             format!("region\u{2066}hidden\u{2069}-{}", "\u{feff}".repeat(100)),
-            format!("us-{}\u{200f}rtl\u{200e}", "🔥".repeat(100))
+            format!("us-{}\u{200f}rtl\u{200e}", "🔥".repeat(100)),
         );
-        malicious_labels.insert("component".to_string(), format!("telemetry\x1b[31mred\x1b[0m-{}", "\u{202a}ltr\u{202c}".repeat(50)));
+        malicious_labels.insert(
+            "component".to_string(),
+            format!(
+                "telemetry\x1b[31mred\x1b[0m-{}",
+                "\u{202a}ltr\u{202c}".repeat(50)
+            ),
+        );
 
         let unicode_point = TelemetryDataPoint {
             point_id: malicious_point_id.clone(),
@@ -2074,7 +2256,10 @@ mod tests {
 
         // Test anomaly detection with Unicode data
         let mut baseline = BTreeMap::new();
-        baseline.insert(MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate), 0.5);
+        baseline.insert(
+            MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate),
+            0.5,
+        );
         let alerts = pipeline.detect_anomalies(&baseline);
         assert!(!alerts.is_empty());
         assert!(alerts[0].description.len() > 10);
@@ -2120,15 +2305,23 @@ mod tests {
         assert!(pipeline.ingested_count() > 100); // Should have processed more than stored
 
         // Test memory usage is bounded despite massive payloads
-        let total_label_size: usize = pipeline.query(&TelemetryQuery {
-            metric: None,
-            from: None,
-            to: None,
-            aggregation: None,
-            labels: BTreeMap::new(),
-            limit: None,
-        }).data_points.iter()
-            .map(|p| p.labels.iter().map(|(k, v)| k.len() + v.len()).sum::<usize>())
+        let total_label_size: usize = pipeline
+            .query(&TelemetryQuery {
+                metric: None,
+                from: None,
+                to: None,
+                aggregation: None,
+                labels: BTreeMap::new(),
+                limit: None,
+            })
+            .data_points
+            .iter()
+            .map(|p| {
+                p.labels
+                    .iter()
+                    .map(|(k, v)| k.len() + v.len())
+                    .sum::<usize>()
+            })
             .sum();
         assert!(total_label_size < 50_000_000); // Reasonable memory bound
     }
@@ -2145,7 +2338,7 @@ mod tests {
         let mut injection_labels = BTreeMap::new();
         injection_labels.insert(
             format!(r#"key","injection":{json_bomb},"hidden":"#),
-            "legitimate_value".to_string()
+            "legitimate_value".to_string(),
         );
         injection_labels.insert("normal_key".to_string(), json_bomb.to_string());
 
@@ -2200,8 +2393,8 @@ mod tests {
             f64::MIN,
             f64::MAX,
             f64::EPSILON,
-            1.0 / 0.0,    // Should be infinity
-            0.0 / 0.0,    // Should be NaN
+            1.0 / 0.0,                          // Should be infinity
+            0.0 / 0.0,                          // Should be NaN
             f64::from_bits(0x7FF0000000000001), // Signaling NaN
             f64::from_bits(0xFFF8000000000001), // Quiet NaN with payload
         ];
@@ -2240,7 +2433,10 @@ mod tests {
         });
 
         let mut baseline = BTreeMap::new();
-        baseline.insert(MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate), 0.5);
+        baseline.insert(
+            MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate),
+            0.5,
+        );
         let alerts = pipeline.detect_anomalies(&baseline);
 
         // Anomaly detection should ignore non-finite stored points
@@ -2265,7 +2461,12 @@ mod tests {
 
         // Add legitimate anomalous data
         for i in 0..10 {
-            pipeline.ingest(make_point(&format!("anomaly-{i}"), metric, 0.1, &ts((i as u32).saturating_add(1))));
+            pipeline.ingest(make_point(
+                &format!("anomaly-{i}"),
+                metric,
+                0.1,
+                &ts((i as u32).saturating_add(1)),
+            ));
         }
 
         let mut baseline = BTreeMap::new();
@@ -2301,7 +2502,11 @@ mod tests {
         let original_alert_count = pipeline.anomaly_alerts.len();
         let new_alerts = pipeline.detect_anomalies(&baseline);
         if !new_alerts.is_empty() {
-            assert!(new_alerts[0].alert_id.contains(&original_alert_count.to_string()));
+            assert!(
+                new_alerts[0]
+                    .alert_id
+                    .contains(&original_alert_count.to_string())
+            );
         }
     }
 
@@ -2313,14 +2518,41 @@ mod tests {
 
         // Create data with format specifiers and injection attempts
         let malicious_inputs = [
-            ("point-{}", "ts-{}", "metric-%s", MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate)),
-            ("point\n\tmalicious", "ts\x00null", "metric\r\nCRLF", MetricKind::Trust(TrustMetricKind::QuarantineResolutionTime)),
-            ("point%n%s%d", "ts%x%p", "metric%c%u", MetricKind::Adoption(AdoptionMetricKind::ExtensionsPublished)),
-            ("point\x1b[31mred\x1b[0m", "ts\x1b[1mbold\x1b[0m", "metric\x1b[?1049h", MetricKind::Trust(TrustMetricKind::RevocationPropagationLatency)),
-            ("point\u{1f4a9}\u{200d}\u{1f525}", "ts\u{202e}RLO\u{202d}", "metric\u{2066}LRI\u{2069}", MetricKind::Trust(TrustMetricKind::ReputationDistribution)),
+            (
+                "point-{}",
+                "ts-{}",
+                "metric-%s",
+                MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate),
+            ),
+            (
+                "point\n\tmalicious",
+                "ts\x00null",
+                "metric\r\nCRLF",
+                MetricKind::Trust(TrustMetricKind::QuarantineResolutionTime),
+            ),
+            (
+                "point%n%s%d",
+                "ts%x%p",
+                "metric%c%u",
+                MetricKind::Adoption(AdoptionMetricKind::ExtensionsPublished),
+            ),
+            (
+                "point\x1b[31mred\x1b[0m",
+                "ts\x1b[1mbold\x1b[0m",
+                "metric\x1b[?1049h",
+                MetricKind::Trust(TrustMetricKind::RevocationPropagationLatency),
+            ),
+            (
+                "point\u{1f4a9}\u{200d}\u{1f525}",
+                "ts\u{202e}RLO\u{202d}",
+                "metric\u{2066}LRI\u{2069}",
+                MetricKind::Trust(TrustMetricKind::ReputationDistribution),
+            ),
         ];
 
-        for (i, (point_id, timestamp, label_value, metric)) in malicious_inputs.into_iter().enumerate() {
+        for (i, (point_id, timestamp, label_value, metric)) in
+            malicious_inputs.into_iter().enumerate()
+        {
             let mut labels = BTreeMap::new();
             labels.insert("component".to_string(), label_value.to_string());
             labels.insert("format_test".to_string(), format!("value-{}", point_id));
@@ -2339,37 +2571,55 @@ mod tests {
         }
 
         // Test display safety - should not panic or produce control sequences
-        for point in &pipeline.query(&TelemetryQuery {
-            metric: None,
-            from: None,
-            to: None,
-            aggregation: None,
-            labels: BTreeMap::new(),
-            limit: None,
-        }).data_points {
+        for point in &pipeline
+            .query(&TelemetryQuery {
+                metric: None,
+                from: None,
+                to: None,
+                aggregation: None,
+                labels: BTreeMap::new(),
+                limit: None,
+            })
+            .data_points
+        {
             let debug_str = format!("{:?}", point);
-            assert!(!debug_str.contains('\x00'), "Debug output should escape null bytes");
+            assert!(
+                !debug_str.contains('\x00'),
+                "Debug output should escape null bytes"
+            );
             assert!(!debug_str.contains('\r'), "Debug should escape CRLF");
             assert!(!debug_str.contains('\n'), "Debug should escape newlines");
         }
 
         // Test anomaly alert display safety
         let mut baseline = BTreeMap::new();
-        baseline.insert(MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate), 1.0);
+        baseline.insert(
+            MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate),
+            1.0,
+        );
         let alerts = pipeline.detect_anomalies(&baseline);
 
         for alert in &alerts {
             let alert_debug = format!("{:?}", alert);
-            assert!(!alert_debug.contains('\x1b'), "Alert debug should escape ANSI");
+            assert!(
+                !alert_debug.contains('\x1b'),
+                "Alert debug should escape ANSI"
+            );
 
             let description_display = format!("{}", alert.description);
-            assert!(description_display.len() > 0, "Alert description should produce output");
+            assert!(
+                description_display.len() > 0,
+                "Alert description should produce output"
+            );
         }
 
         // Test health export display safety
         let export = pipeline.export_health("2026-01-01T00:00:00Z", None, None, None);
         let export_debug = format!("{:?}", export);
-        assert!(!export_debug.contains('\x00'), "Export debug should be safe");
+        assert!(
+            !export_debug.contains('\x00'),
+            "Export debug should be safe"
+        );
 
         // Test error display safety with malformed data
         let malformed_query = TelemetryQuery {
@@ -2428,7 +2678,9 @@ mod tests {
                     || {
                         let p = pipeline_clone.lock().unwrap();
                         let query = TelemetryQuery {
-                            metric: Some(MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate)),
+                            metric: Some(MetricKind::Trust(
+                                TrustMetricKind::ProvenanceCoverageRate,
+                            )),
                             from: None,
                             to: None,
                             aggregation: None,
@@ -2441,9 +2693,12 @@ mod tests {
                     || {
                         let mut p = pipeline_clone.lock().unwrap();
                         let mut baseline = BTreeMap::new();
-                        baseline.insert(MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate), 0.5);
+                        baseline.insert(
+                            MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate),
+                            0.5,
+                        );
                         let _ = p.detect_anomalies(&baseline);
-                    }
+                    },
                 ];
 
                 // Perform multiple operations in this thread
@@ -2463,7 +2718,9 @@ mod tests {
         // Verify final state consistency
         let final_pipeline = pipeline.lock().unwrap();
         assert!(final_pipeline.ingested_count() >= 10);
-        assert!(final_pipeline.stored_count() <= final_pipeline.resource_budget().max_in_memory_points);
+        assert!(
+            final_pipeline.stored_count() <= final_pipeline.resource_budget().max_in_memory_points
+        );
 
         // Verify data integrity after concurrent access
         let results = final_pipeline.query(&TelemetryQuery {
@@ -2585,7 +2842,12 @@ mod tests {
         let original_budget = pipeline.resource_budget.max_in_memory_points;
         pipeline.resource_budget.max_in_memory_points = 0;
 
-        let zero_budget_point = make_point("zero-budget", MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate), 0.5, &ts(1));
+        let zero_budget_point = make_point(
+            "zero-budget",
+            MetricKind::Trust(TrustMetricKind::ProvenanceCoverageRate),
+            0.5,
+            &ts(1),
+        );
         assert!(!pipeline.ingest(zero_budget_point));
 
         pipeline.resource_budget.max_in_memory_points = original_budget;
@@ -2594,8 +2856,12 @@ mod tests {
         let json_result = serde_json::to_string(&pipeline);
         assert!(json_result.is_ok(), "Should serialize boundary data safely");
 
-        let parsed_result: Result<TelemetryPipeline, _> = serde_json::from_str(&json_result.unwrap());
-        assert!(parsed_result.is_ok(), "Should deserialize boundary data safely");
+        let parsed_result: Result<TelemetryPipeline, _> =
+            serde_json::from_str(&json_result.unwrap());
+        assert!(
+            parsed_result.is_ok(),
+            "Should deserialize boundary data safely"
+        );
 
         // Test health export with boundary conditions
         let export = pipeline.export_health("", None, None, None);

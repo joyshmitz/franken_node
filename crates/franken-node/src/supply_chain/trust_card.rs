@@ -6,9 +6,12 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::File,
+    fs::{File, OpenOptions, TryLockError},
     io::Write,
     path::{Path, PathBuf},
+    sync::{Mutex, MutexGuard, OnceLock},
+    thread,
+    time::Duration,
 };
 
 use hmac::{Hmac, Mac};
@@ -103,6 +106,7 @@ pub const TRUST_CARD_DIFF_COMPUTED: &str = "TRUST_CARD_DIFF_COMPUTED";
 const DEFAULT_CACHE_TTL_SECS: u64 = 60;
 const DEFAULT_REGISTRY_KEY: &[u8] = b"franken-node-trust-card-registry-key-v1";
 pub const TRUST_CARD_REGISTRY_SNAPSHOT_SCHEMA: &str = "franken-node/trust-card-registry-state/v1";
+const SNAPSHOT_LOCK_RETRY_BACKOFF_MILLIS: [u64; 3] = [100, 200, 400];
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -460,35 +464,33 @@ impl TrustCardRegistry {
     pub fn persist_authoritative_state(&self, path: &Path) -> Result<(), TrustCardError> {
         let encoded = to_canonical_json(&self.snapshot())?;
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
-        std::fs::create_dir_all(parent).map_err(|err| TrustCardError::SnapshotWrite {
-            path: path.to_path_buf(),
-            detail: err.to_string(),
-        })?;
-        let mut temp =
-            NamedTempFile::new_in(parent).map_err(|err| TrustCardError::SnapshotWrite {
-                path: path.to_path_buf(),
-                detail: err.to_string(),
-            })?;
-        temp.write_all(encoded.as_bytes())
-            .map_err(|err| TrustCardError::SnapshotWrite {
-                path: path.to_path_buf(),
-                detail: err.to_string(),
-            })?;
-        temp.as_file()
-            .sync_all()
-            .map_err(|err| TrustCardError::SnapshotWrite {
-                path: path.to_path_buf(),
-                detail: err.to_string(),
-            })?;
-        temp.persist(path)
-            .map_err(|err| TrustCardError::SnapshotWrite {
-                path: path.to_path_buf(),
-                detail: err.error.to_string(),
-            })?;
-        if let Ok(dir) = File::open(parent) {
-            let _ = dir.sync_all();
-        }
-        Ok(())
+        with_authoritative_snapshot_persist_lock(path, || {
+            let mut temp =
+                NamedTempFile::new_in(parent).map_err(|err| TrustCardError::SnapshotWrite {
+                    path: path.to_path_buf(),
+                    detail: err.to_string(),
+                })?;
+            temp.write_all(encoded.as_bytes())
+                .map_err(|err| TrustCardError::SnapshotWrite {
+                    path: path.to_path_buf(),
+                    detail: err.to_string(),
+                })?;
+            temp.as_file()
+                .sync_all()
+                .map_err(|err| TrustCardError::SnapshotWrite {
+                    path: path.to_path_buf(),
+                    detail: err.to_string(),
+                })?;
+            temp.persist(path)
+                .map_err(|err| TrustCardError::SnapshotWrite {
+                    path: path.to_path_buf(),
+                    detail: err.error.to_string(),
+                })?;
+            if let Ok(dir) = File::open(parent) {
+                let _ = dir.sync_all();
+            }
+            Ok(())
+        })
     }
 
     pub fn create(
@@ -846,7 +848,7 @@ impl TrustCardRegistry {
         for extension_id in extension_ids {
             let cache_state = match self.cache_by_extension.get(&extension_id) {
                 Some(cached)
-                    if now_secs.saturating_sub(cached.cached_at_secs) <= self.cache_ttl_secs =>
+                    if now_secs.saturating_sub(cached.cached_at_secs) < self.cache_ttl_secs =>
                 {
                     CacheSyncState::Fresh
                 }
@@ -1128,6 +1130,113 @@ impl TrustCardRegistry {
             },
             MAX_TELEMETRY,
         );
+    }
+}
+
+fn authoritative_snapshot_persist_process_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn lock_authoritative_snapshot_persist_process(
+    path: &Path,
+) -> Result<MutexGuard<'static, ()>, TrustCardError> {
+    authoritative_snapshot_persist_process_lock()
+        .lock()
+        .map_err(|_| TrustCardError::SnapshotWrite {
+            path: path.to_path_buf(),
+            detail: "trust-card snapshot persist lock poisoned".to_string(),
+        })
+}
+
+fn authoritative_snapshot_lock_path(path: &Path) -> PathBuf {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("trust-card-registry-state");
+    parent.join(format!("{file_name}.lock"))
+}
+
+fn lock_authoritative_snapshot_file(
+    file: &File,
+    lock_path: &Path,
+    snapshot_path: &Path,
+) -> Result<(), TrustCardError> {
+    match file.try_lock() {
+        Ok(()) => return Ok(()),
+        Err(TryLockError::WouldBlock) => {}
+        Err(TryLockError::Error(err)) => {
+            return Err(TrustCardError::SnapshotWrite {
+                path: snapshot_path.to_path_buf(),
+                detail: format!("failed acquiring flock for {}: {err}", lock_path.display()),
+            });
+        }
+    }
+
+    for delay_millis in SNAPSHOT_LOCK_RETRY_BACKOFF_MILLIS {
+        thread::sleep(Duration::from_millis(delay_millis));
+        match file.try_lock() {
+            Ok(()) => return Ok(()),
+            Err(TryLockError::WouldBlock) => {}
+            Err(TryLockError::Error(err)) => {
+                return Err(TrustCardError::SnapshotWrite {
+                    path: snapshot_path.to_path_buf(),
+                    detail: format!("failed acquiring flock for {}: {err}", lock_path.display()),
+                });
+            }
+        }
+    }
+
+    Err(TrustCardError::SnapshotWrite {
+        path: snapshot_path.to_path_buf(),
+        detail: format!(
+            "timed out acquiring flock for {} after retries at 100ms/200ms/400ms",
+            lock_path.display()
+        ),
+    })
+}
+
+fn unlock_authoritative_snapshot_file(
+    file: &File,
+    lock_path: &Path,
+    snapshot_path: &Path,
+) -> Result<(), TrustCardError> {
+    file.unlock().map_err(|err| TrustCardError::SnapshotWrite {
+        path: snapshot_path.to_path_buf(),
+        detail: format!("failed releasing flock for {}: {err}", lock_path.display()),
+    })
+}
+
+fn with_authoritative_snapshot_persist_lock<T>(
+    path: &Path,
+    write_snapshot: impl FnOnce() -> Result<T, TrustCardError>,
+) -> Result<T, TrustCardError> {
+    let _process_guard = lock_authoritative_snapshot_persist_process(path)?;
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent).map_err(|err| TrustCardError::SnapshotWrite {
+        path: path.to_path_buf(),
+        detail: err.to_string(),
+    })?;
+    let lock_path = authoritative_snapshot_lock_path(path);
+    let lock_file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|err| TrustCardError::SnapshotWrite {
+            path: path.to_path_buf(),
+            detail: format!("failed opening flock file {}: {err}", lock_path.display()),
+        })?;
+    lock_authoritative_snapshot_file(&lock_file, &lock_path, path)?;
+
+    let write_result = write_snapshot();
+    let unlock_result = unlock_authoritative_snapshot_file(&lock_file, &lock_path, path);
+    match (write_result, unlock_result) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(err), _) => Err(err),
+        (Ok(_), Err(err)) => Err(err),
     }
 }
 
@@ -2077,6 +2186,49 @@ mod tests {
     }
 
     #[test]
+    fn exact_ttl_boundary_fails_closed_for_read_and_sync_cache() {
+        let mut read_registry = TrustCardRegistry::new(10, DEFAULT_REGISTRY_KEY);
+        read_registry
+            .create(sample_input(), 1_000, "trace-create")
+            .expect("create");
+        read_registry
+            .cards_by_extension
+            .get_mut("npm:@acme/plugin")
+            .expect("history")
+            .last_mut()
+            .expect("latest")
+            .reputation_score_basis_points = 1;
+
+        let read_err = read_registry
+            .read("npm:@acme/plugin", 1_010, "trace-read")
+            .expect_err("exact ttl boundary must refresh from source and reject tampering");
+        assert!(matches!(
+            read_err,
+            TrustCardError::CardHashMismatch(extension) if extension == "npm:@acme/plugin"
+        ));
+
+        let mut sync_registry = TrustCardRegistry::new(10, DEFAULT_REGISTRY_KEY);
+        sync_registry
+            .create(sample_input(), 1_000, "trace-create")
+            .expect("create");
+        sync_registry
+            .cards_by_extension
+            .get_mut("npm:@acme/plugin")
+            .expect("history")
+            .last_mut()
+            .expect("latest")
+            .reputation_score_basis_points = 1;
+
+        let sync_err = sync_registry
+            .sync_cache(1_010, "trace-sync", false)
+            .expect_err("exact ttl boundary must not treat the cache entry as fresh");
+        assert!(matches!(
+            sync_err,
+            TrustCardError::CardHashMismatch(extension) if extension == "npm:@acme/plugin"
+        ));
+    }
+
+    #[test]
     fn sync_cache_force_refreshes_fresh_entries() {
         let mut registry = fixture_registry(1_000).expect("fixture registry");
         let total_cards = registry.cards_by_extension.len();
@@ -2486,6 +2638,41 @@ mod tests {
         assert!(
             !ts.chars().all(|c| c.is_ascii_digit() || c == 'Z'),
             "fallback must not be raw digits+Z: {ts}"
+        );
+    }
+
+    #[test]
+    fn concurrent_authoritative_snapshot_write_fails_closed_when_flock_is_held() {
+        let registry = fixture_registry(1_000).expect("fixture registry");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir
+            .path()
+            .join(".franken-node/state/trust-card-registry.v1.json");
+        let parent = path.parent().expect("snapshot path should have parent");
+        std::fs::create_dir_all(parent).expect("create parent");
+        let lock_path = authoritative_snapshot_lock_path(&path);
+        let lock_file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(&lock_path)
+            .expect("open lock");
+        lock_file.try_lock().expect("hold competing writer lock");
+
+        let err = registry
+            .persist_authoritative_state(&path)
+            .expect_err("held flock must prevent concurrent snapshot publication");
+
+        lock_file.unlock().expect("release lock");
+        assert!(matches!(
+            err,
+            TrustCardError::SnapshotWrite { detail, .. }
+                if detail.contains("timed out acquiring flock")
+        ));
+        assert!(
+            !path.exists(),
+            "snapshot must not be published while another writer holds the flock"
         );
     }
 
