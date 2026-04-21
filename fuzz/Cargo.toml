@@ -19,6 +19,10 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 path = "../crates/franken-node"
 features = ["fuzz"]
 
+[dependencies.frankenengine-verifier-sdk]
+path = "../sdk/verifier"
+features = ["fuzz"]
+
 # Prevent fuzzing dependencies from leaking into production
 [[bin]]
 name = "fuzz_constant_time_comparison"
@@ -53,6 +57,12 @@ doc = false
 [[bin]]
 name = "fuzz_replay_bundle_deserialization"
 path = "fuzz_targets/fuzz_replay_bundle_deserialization.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_sdk_verifier_bundle_parsing"
+path = "fuzz_targets/fuzz_sdk_verifier_bundle_parsing.rs"
 test = false
 doc = false
 

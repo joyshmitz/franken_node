@@ -505,6 +505,7 @@ dependencies = [
  "arbitrary",
  "ed25519-dalek",
  "frankenengine-node",
+ "frankenengine-verifier-sdk",
  "hex",
  "libfuzzer-sys",
  "serde_json",
@@ -580,6 +581,19 @@ dependencies = [
  "uuid",
  "which",
  "zeroize",
+]
+
+[[package]]
+name = "frankenengine-verifier-sdk"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "ed25519-dalek",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
 ]
 
 [[package]]
