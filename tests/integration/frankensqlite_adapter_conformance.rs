@@ -10,6 +10,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 
 // ---------------------------------------------------------------------------
 // Persistence tier
@@ -493,6 +495,143 @@ pub struct AdapterSummary {
 }
 
 // ---------------------------------------------------------------------------
+// Persistence contract artifact helpers
+// ---------------------------------------------------------------------------
+
+const PERSISTENCE_MATRIX_JSON: &str =
+    include_str!("../../artifacts/10.16/frankensqlite_persistence_matrix.json");
+const ADAPTER_REPORT_JSON: &str =
+    include_str!("../../artifacts/10.16/frankensqlite_adapter_report.json");
+
+#[derive(Debug, Clone, Deserialize)]
+struct PersistenceMatrixContract {
+    schema_version: String,
+    durability_modes: BTreeMap<String, TierDurabilityContract>,
+    mode_catalog: BTreeMap<String, DurabilityModeCatalogEntry>,
+    concurrency_model: ConcurrencyModelContract,
+    persistence_classes: Vec<PersistenceClassContract>,
+    event_codes: Vec<String>,
+    checklist: Vec<ChecklistItemContract>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TierDurabilityContract {
+    durability_mode: String,
+    journal_mode: String,
+    synchronous: String,
+    acid_guarantee: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DurabilityModeCatalogEntry {
+    journal_mode: String,
+    synchronous: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ConcurrencyModelContract {
+    pool_size: usize,
+    isolation_level: String,
+    conflict_resolution: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PersistenceClassContract {
+    domain: String,
+    owner_module: String,
+    safety_tier: String,
+    durability_mode: String,
+    tables: Vec<String>,
+    replay_support: bool,
+    replay_strategy: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ChecklistItemContract {
+    requirement: String,
+    status: String,
+    detail: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AdapterArtifactReport {
+    bead_id: String,
+    contract_id: String,
+    gate_verdict: String,
+    summary: AdapterArtifactSummary,
+    coverage_summary: BTreeMap<String, TierCoverageSummary>,
+    schema_migration_status: SchemaMigrationStatus,
+    conformance_results: Vec<AdapterArtifactResult>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AdapterArtifactSummary {
+    total_classes: usize,
+    tier1_count: usize,
+    tier2_count: usize,
+    tier3_count: usize,
+    replay_enabled: usize,
+    total_tables: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TierCoverageSummary {
+    classes: usize,
+    passed: usize,
+    failed: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SchemaMigrationStatus {
+    migrations_applied: usize,
+    rollback_tested: bool,
+    current_version: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AdapterArtifactResult {
+    test_name: String,
+    persistence_class: String,
+    tier: String,
+    status: String,
+    latency_ms: f64,
+    notes: String,
+}
+
+fn persistence_matrix_contract() -> PersistenceMatrixContract {
+    serde_json::from_str(PERSISTENCE_MATRIX_JSON).expect("persistence matrix parses")
+}
+
+fn adapter_artifact_report() -> AdapterArtifactReport {
+    serde_json::from_str(ADAPTER_REPORT_JSON).expect("adapter report parses")
+}
+
+fn persistence_matrix_trace_correlation() -> String {
+    let raw: Value = serde_json::from_str(PERSISTENCE_MATRIX_JSON).expect("matrix json parses");
+    let canonical = canonicalize_json_value(&raw);
+    let payload = serde_json::to_string(&canonical).expect("canonical matrix json");
+    hex::encode(Sha256::digest(payload.as_bytes()))
+}
+
+fn canonicalize_json_value(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut sorted = BTreeMap::new();
+            for (key, nested) in map {
+                sorted.insert(key.clone(), canonicalize_json_value(nested));
+            }
+            let mut canonical = Map::new();
+            for (key, nested) in sorted {
+                canonical.insert(key, nested);
+            }
+            Value::Object(canonical)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(canonicalize_json_value).collect()),
+        _ => value.clone(),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Canonical persistence classes (from bd-1a1j matrix)
 // ---------------------------------------------------------------------------
 
@@ -900,6 +1039,68 @@ mod tests {
     }
 
     #[test]
+    fn test_contract_durability_mode_mapping_matches_matrix_catalog() {
+        let matrix = persistence_matrix_contract();
+
+        let checklist = matrix
+            .checklist
+            .iter()
+            .find(|item| item.requirement == "durability_modes_are_valid_frankensqlite_configs")
+            .expect("durability mode checklist item");
+        assert_eq!(checklist.status, "defined");
+        assert!(
+            checklist.detail.contains("WAL/FULL")
+                && checklist.detail.contains("WAL/NORMAL")
+                && checklist.detail.contains("MEMORY/OFF"),
+            "durability mode checklist should document the allowed SQLite pairs"
+        );
+
+        for class in &matrix.persistence_classes {
+            let tier_defaults = matrix
+                .durability_modes
+                .get(&class.safety_tier)
+                .unwrap_or_else(|| panic!("missing durability defaults for {}", class.safety_tier));
+            assert_eq!(
+                class.durability_mode, tier_defaults.durability_mode,
+                "matrix class {} drifted from the tier durability mapping",
+                class.domain
+            );
+
+            let catalog = matrix
+                .mode_catalog
+                .get(&class.durability_mode)
+                .unwrap_or_else(|| panic!("missing mode catalog entry {}", class.durability_mode));
+            assert_eq!(catalog.journal_mode, tier_defaults.journal_mode);
+            assert_eq!(catalog.synchronous, tier_defaults.synchronous);
+        }
+
+        assert_eq!(
+            matrix
+                .durability_modes
+                .get("tier_1")
+                .expect("tier_1 defaults")
+                .acid_guarantee,
+            "crash_safe"
+        );
+        assert_eq!(
+            matrix
+                .durability_modes
+                .get("tier_2")
+                .expect("tier_2 defaults")
+                .acid_guarantee,
+            "durable_periodic_flush"
+        );
+        assert_eq!(
+            matrix
+                .durability_modes
+                .get("tier_3")
+                .expect("tier_3 defaults")
+                .acid_guarantee,
+            "best_effort_ephemeral"
+        );
+    }
+
+    #[test]
     fn test_canonical_unique_domains() {
         let classes = canonical_classes();
         let domains: Vec<&str> = classes.iter().map(|c| c.domain.as_str()).collect();
@@ -1273,6 +1474,87 @@ mod tests {
             .unwrap()
             .len();
         assert_eq!(results, 21);
+    }
+
+    #[test]
+    fn test_checked_in_adapter_report_matches_contract_summary_and_tier_coverage() {
+        let report = adapter_artifact_report();
+        let summary = report.summary;
+
+        assert_eq!(report.bead_id, "bd-2tua");
+        assert_eq!(report.contract_id, "bd-1a1j");
+        assert_eq!(report.gate_verdict, "PASS");
+        assert_eq!(summary.total_classes, canonical_classes().len());
+        assert_eq!(summary.tier1_count, 11);
+        assert_eq!(summary.tier2_count, 9);
+        assert_eq!(summary.tier3_count, 1);
+        assert_eq!(summary.replay_enabled, 20);
+        assert!(summary.total_tables >= 40);
+        assert_eq!(report.conformance_results.len(), summary.total_classes);
+
+        let tier_1 = report
+            .coverage_summary
+            .get("tier_1")
+            .expect("tier_1 coverage");
+        let tier_2 = report
+            .coverage_summary
+            .get("tier_2")
+            .expect("tier_2 coverage");
+        let tier_3 = report
+            .coverage_summary
+            .get("tier_3")
+            .expect("tier_3 coverage");
+
+        assert_eq!(tier_1.classes, summary.tier1_count);
+        assert_eq!(tier_1.passed, tier_1.classes);
+        assert_eq!(tier_1.failed, 0);
+        assert_eq!(tier_2.classes, summary.tier2_count);
+        assert_eq!(tier_2.passed, tier_2.classes);
+        assert_eq!(tier_2.failed, 0);
+        assert_eq!(tier_3.classes, summary.tier3_count);
+        assert_eq!(tier_3.passed, tier_3.classes);
+        assert_eq!(tier_3.failed, 0);
+    }
+
+    #[test]
+    fn test_checked_in_adapter_report_results_are_known_and_versioned() {
+        let report = adapter_artifact_report();
+        let matrix = persistence_matrix_contract();
+        let canonical_by_domain: BTreeMap<_, _> = canonical_classes()
+            .into_iter()
+            .map(|class| (class.domain.clone(), class))
+            .collect();
+
+        assert_eq!(
+            report.schema_migration_status.current_version,
+            matrix.schema_version
+        );
+        assert_eq!(
+            report.schema_migration_status.migrations_applied,
+            report.summary.total_classes
+        );
+        assert!(report.schema_migration_status.rollback_tested);
+
+        let mut seen_domains = std::collections::BTreeSet::new();
+        for result in &report.conformance_results {
+            let class = canonical_by_domain
+                .get(&result.persistence_class)
+                .unwrap_or_else(|| {
+                    panic!("unknown persistence class {}", result.persistence_class)
+                });
+            assert!(
+                seen_domains.insert(result.persistence_class.clone()),
+                "duplicate conformance result for {}",
+                result.persistence_class
+            );
+            assert_eq!(result.tier, class.safety_tier.label());
+            assert_eq!(result.status, "pass");
+            assert!(result.latency_ms.is_finite() && result.latency_ms >= 0.0);
+            assert!(
+                !result.test_name.trim().is_empty() && !result.notes.trim().is_empty(),
+                "artifact results must keep deterministic test names and notes"
+            );
+        }
     }
 
     // -- Invariant constants --
