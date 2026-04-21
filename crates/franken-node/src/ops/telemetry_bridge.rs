@@ -44,12 +44,12 @@ fn is_socket_live(socket_path: &Path) -> bool {
 
     // Attempt to connect to see if it's live
     match UnixStream::connect(socket_path) {
-        Ok(_) => true,  // Connection succeeded, socket is live
+        Ok(_) => true, // Connection succeeded, socket is live
         Err(err) => match err.kind() {
             ErrorKind::ConnectionRefused => false, // Socket exists but no listener
-            ErrorKind::NotFound => false,           // Socket file doesn't exist
+            ErrorKind::NotFound => false,          // Socket file doesn't exist
             _ => true, // Other errors assume socket might be live (fail closed)
-        }
+        },
     }
 }
 
@@ -471,7 +471,9 @@ impl TelemetryRuntimeHandle {
             );
         }
 
-        if let Err(err) = self.join_connection_workers() {
+        // Join connection workers with remaining deadline
+        let remaining_for_connections = deadline.saturating_sub(drain_start.elapsed());
+        if let Err(err) = self.join_connection_workers(remaining_for_connections) {
             self.connection_worker_panicked
                 .store(true, Ordering::SeqCst);
             self.mark_join_failed(&mut join_error, &err.0);
@@ -561,7 +563,7 @@ impl TelemetryRuntimeHandle {
         })
     }
 
-    fn join_connection_workers(&self) -> Result<(), TelemetryJoinError> {
+    fn join_connection_workers(&self, deadline: Duration) -> Result<(), TelemetryJoinError> {
         let mut registry_poisoned = false;
         let handles = {
             let mut guard = match self.connection_handles.lock() {
@@ -575,8 +577,41 @@ impl TelemetryRuntimeHandle {
         };
 
         let mut worker_panicked = false;
+        let join_start = Instant::now();
+
         for handle in handles {
-            if handle.join().is_err() {
+            // Check if we've exceeded the deadline
+            if join_start.elapsed() >= deadline {
+                // Signal shutdown to remaining workers by setting stop flag
+                self.stop_flag.store(true, Ordering::SeqCst);
+                break;
+            }
+
+            // Wait for handle with remaining deadline
+            let remaining_time = deadline.saturating_sub(join_start.elapsed());
+            let timed_out = if handle.is_finished() {
+                false
+            } else if remaining_time.is_zero() {
+                true
+            } else {
+                let park_start = Instant::now();
+                loop {
+                    if handle.is_finished() {
+                        break false;
+                    }
+                    if park_start.elapsed() >= remaining_time {
+                        break true;
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+            };
+
+            if timed_out {
+                // Connection worker exceeded deadline - signal shutdown and give up
+                self.stop_flag.store(true, Ordering::SeqCst);
+                worker_panicked = true; // Treat timeout as failure
+                break;
+            } else if handle.join().is_err() {
                 worker_panicked = true;
             }
         }
@@ -698,9 +733,10 @@ impl TelemetryBridge {
         let (sender, receiver) = mpsc::sync_channel(PERSIST_QUEUE_CAPACITY);
 
         // Acquire socket path lock to prevent race conditions with other bridge instances
-        let _socket_lock = acquire_socket_path_lock(&socket_path).lock().map_err(|_| {
-            anyhow::anyhow!("socket path lock poisoned for {}", socket_path)
-        })?;
+        let socket_path_lock = acquire_socket_path_lock(&socket_path);
+        let _socket_lock = socket_path_lock
+            .lock()
+            .map_err(|_| anyhow::anyhow!("socket path lock poisoned for {}", socket_path))?;
 
         // Probe socket liveness before attempting removal to prevent unlinking live sockets
         let socket_path_buf = PathBuf::from(&socket_path);
@@ -995,6 +1031,23 @@ impl TelemetryBridge {
             match reader.read_until(b'\n', &mut event_bytes) {
                 Ok(0) => break,
                 Ok(_) => {
+                    // Check buffer size immediately after each read to prevent slowloris attacks
+                    // where an attacker sends partial lines exceeding MAX_EVENT_BYTES without newlines
+                    if event_bytes.len() > MAX_EVENT_BYTES {
+                        Self::with_state(&state, |metrics| {
+                            metrics.shed_total = metrics.shed_total.saturating_add(1);
+                            metrics.record_event(
+                                event_codes::ADMISSION_SHED,
+                                Some(connection_id),
+                                None,
+                                Some(reason_codes::EVENT_TOO_LARGE),
+                                format!("partial line exceeded {} bytes (slowloris protection)", MAX_EVENT_BYTES),
+                            );
+                        });
+                        event_bytes.clear();
+                        continue;
+                    }
+
                     if event_bytes.ends_with(b"\n") {
                         event_bytes.pop();
                         if event_bytes.ends_with(b"\r") {
@@ -1006,6 +1059,7 @@ impl TelemetryBridge {
                         continue;
                     }
 
+                    // Redundant check kept for complete lines (should never trigger after partial check above)
                     if event_bytes.len() > MAX_EVENT_BYTES {
                         Self::with_state(&state, |metrics| {
                             metrics.shed_total = metrics.shed_total.saturating_add(1);
