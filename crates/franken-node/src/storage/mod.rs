@@ -2,6 +2,23 @@ pub mod frankensqlite_adapter;
 pub mod models;
 pub mod retrievability_gate;
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support {
+    use super::retrievability_gate::{
+        ArtifactId, RetrievabilityGate, SegmentId, StorageTier, TargetTierState,
+    };
+
+    pub fn seed_retrievability_target(
+        gate: &mut RetrievabilityGate,
+        artifact_id: &ArtifactId,
+        segment_id: &SegmentId,
+        target_tier: StorageTier,
+        state: TargetTierState,
+    ) {
+        gate.register_target(artifact_id, segment_id, target_tier, state);
+    }
+}
+
 #[cfg(test)]
 mod storage_conformance_tests;
 
@@ -17,6 +34,7 @@ mod negative_path_tests {
         RG_PROOF_FAILED, RetrievabilityConfig, RetrievabilityGate, SegmentId, StorageTier,
         TargetTierState,
     };
+    use super::test_support::seed_retrievability_target;
     use crate::security::constant_time;
 
     fn artifact(value: &str) -> ArtifactId {
@@ -141,7 +159,8 @@ mod negative_path_tests {
         });
         let artifact = artifact("artifact-latency");
         let segment = segment("segment-latency");
-        gate.register_target(
+        seed_retrievability_target(
+            &mut gate,
             &artifact,
             &segment,
             StorageTier::L3Archive,
@@ -167,7 +186,8 @@ mod negative_path_tests {
         let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
         let artifact = artifact("artifact-hash-mismatch");
         let segment = segment("segment-hash-mismatch");
-        gate.register_target(
+        seed_retrievability_target(
+            &mut gate,
             &artifact,
             &segment,
             StorageTier::L3Archive,
@@ -230,7 +250,8 @@ mod negative_path_tests {
         let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
         let artifact = artifact("artifact-unreachable");
         let segment = segment("segment-unreachable");
-        gate.register_target(
+        seed_retrievability_target(
+            &mut gate,
             &artifact,
             &segment,
             StorageTier::L3Archive,
@@ -263,7 +284,8 @@ mod negative_path_tests {
         let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
         let artifact = artifact("artifact-mismatch-detail");
         let segment = segment("segment-mismatch-detail");
-        gate.register_target(
+        seed_retrievability_target(
+            &mut gate,
             &artifact,
             &segment,
             StorageTier::L3Archive,
@@ -296,7 +318,8 @@ mod negative_path_tests {
         });
         let artifact = artifact("artifact-latency-before-hash");
         let segment = segment("segment-latency-before-hash");
-        gate.register_target(
+        seed_retrievability_target(
+            &mut gate,
             &artifact,
             &segment,
             StorageTier::L3Archive,

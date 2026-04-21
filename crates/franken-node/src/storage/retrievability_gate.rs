@@ -366,7 +366,8 @@ impl RetrievabilityGate {
     }
 
     /// Register simulated target tier state for testing.
-    pub fn register_target(
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn register_target(
         &mut self,
         artifact_id: &ArtifactId,
         segment_id: &SegmentId,

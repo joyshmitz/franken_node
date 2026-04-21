@@ -13,6 +13,7 @@ use crate::capacity_defaults::aliases::{
 use crate::storage::frankensqlite_adapter::*;
 use crate::storage::models::*;
 use crate::storage::retrievability_gate::*;
+use crate::storage::test_support::seed_retrievability_target;
 
 /// Test edge cases around push_bounded function
 #[cfg(test)]
@@ -341,7 +342,8 @@ mod retrievability_gate_edge_tests {
         ];
 
         for (latency_ms, should_pass, description) in test_cases {
-            gate.register_target(
+            seed_retrievability_target(
+                &mut gate,
                 &ArtifactId("test_artifact".to_string()),
                 &SegmentId("test_segment".to_string()),
                 StorageTier::L3Archive,
@@ -378,7 +380,8 @@ mod retrievability_gate_edge_tests {
         let mut gate = RetrievabilityGate::new(config);
 
         // Any non-zero latency should fail
-        gate.register_target(
+        seed_retrievability_target(
+            &mut gate,
             &ArtifactId("test".to_string()),
             &SegmentId("test".to_string()),
             StorageTier::L3Archive,
@@ -424,7 +427,8 @@ mod constant_time_comparison_tests {
         ];
 
         for (expected, actual) in test_cases {
-            gate.register_target(
+            seed_retrievability_target(
+                &mut gate,
                 &ArtifactId("test".to_string()),
                 &SegmentId("test".to_string()),
                 StorageTier::L3Archive,
@@ -460,7 +464,8 @@ mod constant_time_comparison_tests {
         };
         let mut gate = RetrievabilityGate::new(config);
 
-        gate.register_target(
+        seed_retrievability_target(
+            &mut gate,
             &ArtifactId("test".to_string()),
             &SegmentId("test".to_string()),
             StorageTier::L3Archive,
@@ -527,7 +532,8 @@ mod resource_exhaustion_tests {
             let segment_id = format!("segment_{}", i);
             let hash = format!("hash_{}", i);
 
-            gate.register_target(
+            seed_retrievability_target(
+                &mut gate,
                 &ArtifactId(artifact_id.clone()),
                 &SegmentId(segment_id.clone()),
                 StorageTier::L3Archive,
@@ -933,7 +939,8 @@ mod storage_negative_path_regression_tests {
         let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
         let artifact = ArtifactId("artifact-unreachable".to_string());
         let segment = SegmentId("segment-unreachable".to_string());
-        gate.register_target(
+        seed_retrievability_target(
+            &mut gate,
             &artifact,
             &segment,
             StorageTier::L3Archive,
@@ -964,7 +971,8 @@ mod storage_negative_path_regression_tests {
         let mut gate = RetrievabilityGate::new(RetrievabilityConfig::default());
         let artifact = ArtifactId("artifact-hash".to_string());
         let segment = SegmentId("segment-hash".to_string());
-        gate.register_target(
+        seed_retrievability_target(
+            &mut gate,
             &artifact,
             &segment,
             StorageTier::L3Archive,
@@ -992,7 +1000,8 @@ mod storage_negative_path_regression_tests {
         });
         let artifact = ArtifactId("artifact-zero-latency".to_string());
         let segment = SegmentId("segment-zero-latency".to_string());
-        gate.register_target(
+        seed_retrievability_target(
+            &mut gate,
             &artifact,
             &segment,
             StorageTier::L3Archive,
