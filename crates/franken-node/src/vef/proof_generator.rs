@@ -2,7 +2,7 @@
 //!
 //! This module implements a backend-agnostic proof generation interface that
 //! creates versioned, self-describing compliance proofs for receipt windows.
-//! The design supports pluggable backends: mock/hash-based, future ZK, or
+//! The design supports pluggable backends: test-only hash-based, future ZK, or
 //! external proving services.
 //!
 //! # Invariants
@@ -18,6 +18,7 @@
 use super::proof_scheduler::ProofWindow;
 use super::receipt_chain::ReceiptChainEntry;
 use serde::{Deserialize, Serialize};
+#[cfg(any(test, feature = "test-support"))]
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -214,6 +215,7 @@ pub trait ProofBackend: Send + Sync {
 
 // ── Test hash-based backend ─────────────────────────────────────────────────
 
+#[cfg(any(test, feature = "test-support"))]
 /// Hash-based proof backend for testing and development.
 /// Produces deterministic SHA-256 proofs. INV-PGN-DETERMINISTIC.
 #[derive(Debug, Clone)]
@@ -222,6 +224,7 @@ pub struct TestProofBackend {
     name: String,
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl TestProofBackend {
     pub fn new() -> Self {
         Self {
@@ -261,12 +264,14 @@ impl TestProofBackend {
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl Default for TestProofBackend {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl ProofBackend for TestProofBackend {
     fn backend_name(&self) -> &str {
         &self.name
