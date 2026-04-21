@@ -640,17 +640,18 @@ fn test_sdk_event_stores_code_exactly() -> TestResult {
 }
 
 fn test_sdk_event_preserves_detail() -> TestResult {
+    let long_detail = "very long detail ".repeat(1000);
     let test_details = vec![
         "simple detail",
         "",
         "unicode: 🚀 test",
         "special chars: !@#$%^&*()",
         "newlines\nand\ttabs",
-        "very long detail ".repeat(1000),
+        &long_detail,
     ];
 
     for detail in test_details {
-        let event = SdkEvent::new(CAPSULE_SIGNED, &detail);
+        let event = SdkEvent::new(CAPSULE_SIGNED, detail);
         if event.detail != detail {
             return TestResult::Fail {
                 reason: format!("SdkEvent did not preserve detail exactly"),
@@ -770,7 +771,7 @@ fn test_capsule_error_mapping() -> TestResult {
 
 fn test_bundle_error_mapping() -> TestResult {
     // Test BundleError variants exist and map correctly
-    let test_error = BundleError::InvalidHeader("test".to_string());
+    let test_error = BundleError::Json("test".to_string());
     let debug = format!("{:?}", test_error);
     if debug.contains("InvalidHeader") {
         TestResult::Pass

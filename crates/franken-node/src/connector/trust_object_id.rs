@@ -455,6 +455,44 @@ pub struct IdEvent {
     pub detail: String,
 }
 
+/// Optional addressing context for caller-supplied trust object material.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TrustObjectContext {
+    pub epoch: u64,
+    pub sequence: u64,
+}
+
+/// Caller-supplied trust object material used to derive an auditable ID event.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrustObjectInput {
+    pub domain: DomainPrefix,
+    pub data: Vec<u8>,
+    pub context: Option<TrustObjectContext>,
+}
+
+impl TrustObjectInput {
+    pub fn content_addressed(domain: DomainPrefix, data: impl Into<Vec<u8>>) -> Self {
+        Self {
+            domain,
+            data: data.into(),
+            context: None,
+        }
+    }
+
+    pub fn context_addressed(
+        domain: DomainPrefix,
+        epoch: u64,
+        sequence: u64,
+        data: impl Into<Vec<u8>>,
+    ) -> Self {
+        Self {
+            domain,
+            data: data.into(),
+            context: Some(TrustObjectContext { epoch, sequence }),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Helper functions
 // ---------------------------------------------------------------------------
@@ -515,27 +553,86 @@ fn parse_canonical_u64(input: &str, field: &str, full_input: &str) -> Result<u64
     })
 }
 
-/// Demonstrate trust object ID derivation for all domains.
-pub fn demo_trust_object_ids() -> Vec<IdEvent> {
+/// Derive auditable trust object ID events from caller-supplied trust objects.
+pub fn derive_trust_object_id_events(inputs: &[TrustObjectInput]) -> Vec<IdEvent> {
     let mut events = Vec::new();
 
-    for domain in DomainPrefix::all() {
-        let data = format!("sample-{}", domain.label());
-        let id = TrustObjectId::derive_content_addressed(*domain, data.as_bytes());
-        events.push(IdEvent {
-            event_code: event_codes::TOI_DERIVED.to_string(),
-            domain: domain.label().to_string(),
-            derivation_mode: "content_addressed".to_string(),
-            short_id: id.short_form(),
-            detail: format!("derived content-addressed ID for {}", domain.label()),
-        });
+    for input in inputs {
+        let (id, derivation_mode) = match input.context {
+            Some(context) => (
+                TrustObjectId::derive_context_addressed(
+                    input.domain,
+                    context.epoch,
+                    context.sequence,
+                    &input.data,
+                ),
+                DerivationMode::ContextAddressed,
+            ),
+            None => (
+                TrustObjectId::derive_content_addressed(input.domain, &input.data),
+                DerivationMode::ContentAddressed,
+            ),
+        };
+        push_bounded(
+            &mut events,
+            IdEvent {
+                event_code: event_codes::TOI_DERIVED.to_string(),
+                domain: input.domain.label().to_string(),
+                derivation_mode: derivation_mode.label().to_string(),
+                short_id: id.short_form(),
+                detail: format!(
+                    "derived {} ID for caller-supplied {} trust object",
+                    derivation_mode.label(),
+                    input.domain.label()
+                ),
+            },
+            MAX_EVENTS,
+        );
     }
 
-    // Context-addressed examples
-    for (i, domain) in DomainPrefix::all().iter().enumerate() {
-        let data = format!("ctx-sample-{}", domain.label());
-        let id = TrustObjectId::derive_context_addressed(*domain, 100, i as u64, data.as_bytes());
-        events.push(IdEvent {
+    events
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub fn sample_trust_object_id_events_for_tests() -> Vec<IdEvent> {
+    let mut inputs = Vec::new();
+    for domain in DomainPrefix::all() {
+        push_bounded(
+            &mut inputs,
+            TrustObjectInput::content_addressed(
+                *domain,
+                format!("sample-{}", domain.label()).into_bytes(),
+            ),
+            MAX_EVENTS,
+        );
+    }
+    for (index, domain) in DomainPrefix::all().iter().enumerate() {
+        let sequence = u64::try_from(index).unwrap_or(u64::MAX);
+        push_bounded(
+            &mut inputs,
+            TrustObjectInput::context_addressed(
+                *domain,
+                100,
+                sequence,
+                format!("ctx-sample-{}", domain.label()).into_bytes(),
+            ),
+            MAX_EVENTS,
+        );
+    }
+    derive_trust_object_id_events(&inputs)
+}
+
+#[cfg(not(feature = "test-support"))]
+const _: fn() = || {
+    fn _assert_no_public_demo_symbol() {
+        let _ = stringify!(derive_trust_object_id_events);
+    }
+};
+
+#[cfg(any(test, feature = "test-support"))]
+pub fn demo_trust_object_ids() -> Vec<IdEvent> {
+    sample_trust_object_id_events_for_tests()
+}
             event_code: event_codes::TOI_DERIVED.to_string(),
             domain: domain.label().to_string(),
             derivation_mode: "context_addressed".to_string(),

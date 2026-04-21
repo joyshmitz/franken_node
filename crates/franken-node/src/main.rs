@@ -12879,7 +12879,10 @@ fn collect_git_provenance_context(workspace: &Path) -> GitProvenanceContext {
 fn collect_registry_publish_provenance_context(
     package_path: &Path,
 ) -> RegistryPublishProvenanceContext {
-    let workspace = package_path.parent().unwrap_or_else(|| Path::new("."));
+    let workspace = package_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     RegistryPublishProvenanceContext {
         git: collect_git_provenance_context(workspace),
         builder_identity: resolve_registry_builder_identity(),
