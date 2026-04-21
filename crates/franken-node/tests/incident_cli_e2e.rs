@@ -634,3 +634,371 @@ fn incident_replay_counterfactual_pipeline_is_deterministic_and_fail_closed() {
     let corrupted_stderr = String::from_utf8_lossy(&corrupted_output.stderr);
     assert!(corrupted_stderr.contains("bundle integrity mismatch"));
 }
+
+// Boundary testing for malformed evidence packages (bd-1wdtq)
+
+#[test]
+fn incident_bundle_rejects_empty_events_array() {
+    let workspace = config_only_workspace();
+    configure_replay_bundle_signing_key(workspace.path());
+    let evidence_path = workspace
+        .path()
+        .join("fixtures/incidents/INC-EMPTY-EVENTS/evidence.v1.json");
+
+    // Write malformed evidence with empty events array
+    write_malformed_evidence_empty_events(&evidence_path, "INC-EMPTY-EVENTS");
+    let evidence_arg = evidence_path.to_string_lossy().to_string();
+
+    let output = run_cli_in_workspace(
+        workspace.path(),
+        &[
+            "incident",
+            "bundle",
+            "--id",
+            "INC-EMPTY-EVENTS",
+            "--evidence-path",
+            &evidence_arg,
+        ],
+    );
+
+    // Should fail closed with specific error
+    assert!(
+        !output.status.success(),
+        "bundle creation should fail with empty events array"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("evidence package validation failed"));
+    assert!(stderr.contains("events array cannot be empty"));
+
+    // Bundle file should not be created
+    assert!(
+        !workspace.path().join("INC-EMPTY-EVENTS.fnbundle").exists(),
+        "no bundle file should be created on validation failure"
+    );
+}
+
+#[test]
+fn incident_bundle_rejects_mismatched_incident_id() {
+    let workspace = config_only_workspace();
+    configure_replay_bundle_signing_key(workspace.path());
+    let evidence_path = workspace
+        .path()
+        .join("fixtures/incidents/INC-MISMATCH/evidence.v1.json");
+
+    // Write evidence with different incident_id than what CLI expects
+    write_fixture_incident_evidence(&evidence_path, "INC-DIFFERENT-ID");
+    let evidence_arg = evidence_path.to_string_lossy().to_string();
+
+    let output = run_cli_in_workspace(
+        workspace.path(),
+        &[
+            "incident",
+            "bundle",
+            "--id",
+            "INC-MISMATCH", // CLI expects this ID
+            "--evidence-path",
+            &evidence_arg, // But evidence contains INC-DIFFERENT-ID
+        ],
+    );
+
+    // Should fail closed with specific error
+    assert!(
+        !output.status.success(),
+        "bundle creation should fail with mismatched incident ID"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("incident ID mismatch"));
+    assert!(stderr.contains("expected: INC-MISMATCH"));
+    assert!(stderr.contains("found in evidence: INC-DIFFERENT-ID"));
+
+    // Bundle file should not be created
+    assert!(
+        !workspace.path().join("INC-MISMATCH.fnbundle").exists(),
+        "no bundle file should be created on ID validation failure"
+    );
+}
+
+#[test]
+fn incident_bundle_rejects_duplicate_event_ids() {
+    let workspace = config_only_workspace();
+    configure_replay_bundle_signing_key(workspace.path());
+    let evidence_path = workspace
+        .path()
+        .join("fixtures/incidents/INC-DUP-EVENT/evidence.v1.json");
+
+    // Write malformed evidence with duplicate event_id
+    write_malformed_evidence_duplicate_event_id(&evidence_path, "INC-DUP-EVENT");
+    let evidence_arg = evidence_path.to_string_lossy().to_string();
+
+    let output = run_cli_in_workspace(
+        workspace.path(),
+        &[
+            "incident",
+            "bundle",
+            "--id",
+            "INC-DUP-EVENT",
+            "--evidence-path",
+            &evidence_arg,
+        ],
+    );
+
+    // Should fail closed with specific error
+    assert!(
+        !output.status.success(),
+        "bundle creation should fail with duplicate event IDs"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("duplicate event ID detected"));
+    assert!(stderr.contains("evt-duplicate"));
+
+    // Bundle file should not be created
+    assert!(
+        !workspace.path().join("INC-DUP-EVENT.fnbundle").exists(),
+        "no bundle file should be created on duplicate event validation failure"
+    );
+}
+
+#[test]
+fn incident_bundle_rejects_invalid_parent_event_references() {
+    let workspace = config_only_workspace();
+    configure_replay_bundle_signing_key(workspace.path());
+    let evidence_path = workspace
+        .path()
+        .join("fixtures/incidents/INC-INVALID-REF/evidence.v1.json");
+
+    // Write malformed evidence with invalid parent_event_id reference
+    write_malformed_evidence_invalid_parent_ref(&evidence_path, "INC-INVALID-REF");
+    let evidence_arg = evidence_path.to_string_lossy().to_string();
+
+    let output = run_cli_in_workspace(
+        workspace.path(),
+        &[
+            "incident",
+            "bundle",
+            "--id",
+            "INC-INVALID-REF",
+            "--evidence-path",
+            &evidence_arg,
+        ],
+    );
+
+    // Should fail closed with specific error
+    assert!(
+        !output.status.success(),
+        "bundle creation should fail with invalid parent event reference"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid parent event reference"));
+    assert!(stderr.contains("evt-nonexistent"));
+
+    // Bundle file should not be created
+    assert!(
+        !workspace.path().join("INC-INVALID-REF.fnbundle").exists(),
+        "no bundle file should be created on reference validation failure"
+    );
+}
+
+#[test]
+fn incident_bundle_rejects_invalid_provenance_refs() {
+    let workspace = config_only_workspace();
+    configure_replay_bundle_signing_key(workspace.path());
+    let evidence_path = workspace
+        .path()
+        .join("fixtures/incidents/INC-BAD-PROV/evidence.v1.json");
+
+    // Write malformed evidence with invalid/malicious provenance_ref
+    write_malformed_evidence_invalid_provenance(&evidence_path, "INC-BAD-PROV");
+    let evidence_arg = evidence_path.to_string_lossy().to_string();
+
+    let output = run_cli_in_workspace(
+        workspace.path(),
+        &[
+            "incident",
+            "bundle",
+            "--id",
+            "INC-BAD-PROV",
+            "--evidence-path",
+            &evidence_arg,
+        ],
+    );
+
+    // Should fail closed with specific error
+    assert!(
+        !output.status.success(),
+        "bundle creation should fail with invalid provenance reference"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid provenance reference"));
+    assert!(stderr.contains("path traversal"));
+
+    // Bundle file should not be created
+    assert!(
+        !workspace.path().join("INC-BAD-PROV.fnbundle").exists(),
+        "no bundle file should be created on provenance validation failure"
+    );
+}
+
+// Helper functions for malformed evidence generation
+
+fn write_malformed_evidence_empty_events(path: &Path, incident_id: &str) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).expect("create evidence dir");
+    }
+    let package = IncidentEvidencePackage {
+        schema_version: INCIDENT_EVIDENCE_SCHEMA.to_string(),
+        incident_id: incident_id.to_string(),
+        collected_at: "2026-02-20T10:05:00.000000Z".to_string(),
+        trace_id: "trace-incident-boundary".to_string(),
+        severity: IncidentSeverity::High,
+        incident_type: "security".to_string(),
+        detector: "boundary-test".to_string(),
+        policy_version: "1.2.3".to_string(),
+        initial_state_snapshot: json!({"epoch": 7_u64, "mode": "strict"}),
+        events: vec![], // EMPTY EVENTS ARRAY
+        metadata: IncidentEvidenceMetadata {
+            evidence_collection_method: "automated".to_string(),
+            analysis_tools: vec!["boundary-detector".to_string()],
+            chain_of_custody: "test-pipeline".to_string(),
+            integrity_verified: true,
+            retention_policy: "90-day-security-incident".to_string(),
+            related_incidents: vec![],
+            escalation_path: "security-team".to_string(),
+            impact_assessment: json!({"systems_affected": 0}),
+        },
+    };
+
+    let json_str = serde_json::to_string_pretty(&package).expect("serialize empty events package");
+    fs::write(path, json_str).expect("write malformed evidence file");
+}
+
+fn write_malformed_evidence_duplicate_event_id(path: &Path, incident_id: &str) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).expect("create evidence dir");
+    }
+    let package = IncidentEvidencePackage {
+        schema_version: INCIDENT_EVIDENCE_SCHEMA.to_string(),
+        incident_id: incident_id.to_string(),
+        collected_at: "2026-02-20T10:05:00.000000Z".to_string(),
+        trace_id: "trace-incident-boundary".to_string(),
+        severity: IncidentSeverity::High,
+        incident_type: "security".to_string(),
+        detector: "boundary-test".to_string(),
+        policy_version: "1.2.3".to_string(),
+        initial_state_snapshot: json!({"epoch": 7_u64, "mode": "strict"}),
+        events: vec![
+            IncidentEvidenceEvent {
+                event_id: "evt-duplicate".to_string(), // DUPLICATE ID
+                timestamp: "2026-02-20T10:00:00.000100Z".to_string(),
+                event_type: EventType::ExternalSignal,
+                payload: json!({"signal":"anomaly1","severity":"high"}),
+                provenance_ref: "refs/logs/event-001.json".to_string(),
+            },
+            IncidentEvidenceEvent {
+                event_id: "evt-duplicate".to_string(), // SAME ID AGAIN
+                timestamp: "2026-02-20T10:00:30.000200Z".to_string(),
+                event_type: EventType::PolicyActivation,
+                payload: json!({"signal":"anomaly2","severity":"high"}),
+                provenance_ref: "refs/logs/event-002.json".to_string(),
+            },
+        ],
+        metadata: IncidentEvidenceMetadata {
+            evidence_collection_method: "automated".to_string(),
+            analysis_tools: vec!["boundary-detector".to_string()],
+            chain_of_custody: "test-pipeline".to_string(),
+            integrity_verified: true,
+            retention_policy: "90-day-security-incident".to_string(),
+            related_incidents: vec![],
+            escalation_path: "security-team".to_string(),
+            impact_assessment: json!({"systems_affected": 1}),
+        },
+    };
+
+    let json_str = serde_json::to_string_pretty(&package).expect("serialize duplicate ID package");
+    fs::write(path, json_str).expect("write malformed evidence file");
+}
+
+fn write_malformed_evidence_invalid_parent_ref(path: &Path, incident_id: &str) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).expect("create evidence dir");
+    }
+    let package = IncidentEvidencePackage {
+        schema_version: INCIDENT_EVIDENCE_SCHEMA.to_string(),
+        incident_id: incident_id.to_string(),
+        collected_at: "2026-02-20T10:05:00.000000Z".to_string(),
+        trace_id: "trace-incident-boundary".to_string(),
+        severity: IncidentSeverity::High,
+        incident_type: "security".to_string(),
+        detector: "boundary-test".to_string(),
+        policy_version: "1.2.3".to_string(),
+        initial_state_snapshot: json!({"epoch": 7_u64, "mode": "strict"}),
+        events: vec![
+            IncidentEvidenceEvent {
+                event_id: "evt-001".to_string(),
+                timestamp: "2026-02-20T10:00:00.000100Z".to_string(),
+                event_type: EventType::ExternalSignal,
+                payload: json!({"signal":"anomaly","severity":"high"}),
+                provenance_ref: "refs/logs/event-001.json".to_string(),
+            },
+            IncidentEvidenceEvent {
+                event_id: "evt-002".to_string(),
+                timestamp: "2026-02-20T10:00:30.000200Z".to_string(),
+                event_type: EventType::PolicyActivation,
+                payload: json!({"policy":"strict-security"}),
+                provenance_ref: "refs/logs/event-002.json".to_string(),
+                parent_event_id: Some("evt-nonexistent".to_string()), // INVALID REFERENCE
+            },
+        ],
+        metadata: IncidentEvidenceMetadata {
+            evidence_collection_method: "automated".to_string(),
+            analysis_tools: vec!["boundary-detector".to_string()],
+            chain_of_custody: "test-pipeline".to_string(),
+            integrity_verified: true,
+            retention_policy: "90-day-security-incident".to_string(),
+            related_incidents: vec![],
+            escalation_path: "security-team".to_string(),
+            impact_assessment: json!({"systems_affected": 1}),
+        },
+    };
+
+    let json_str = serde_json::to_string_pretty(&package).expect("serialize invalid parent ref package");
+    fs::write(path, json_str).expect("write malformed evidence file");
+}
+
+fn write_malformed_evidence_invalid_provenance(path: &Path, incident_id: &str) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).expect("create evidence dir");
+    }
+    let package = IncidentEvidencePackage {
+        schema_version: INCIDENT_EVIDENCE_SCHEMA.to_string(),
+        incident_id: incident_id.to_string(),
+        collected_at: "2026-02-20T10:05:00.000000Z".to_string(),
+        trace_id: "trace-incident-boundary".to_string(),
+        severity: IncidentSeverity::High,
+        incident_type: "security".to_string(),
+        detector: "boundary-test".to_string(),
+        policy_version: "1.2.3".to_string(),
+        initial_state_snapshot: json!({"epoch": 7_u64, "mode": "strict"}),
+        events: vec![
+            IncidentEvidenceEvent {
+                event_id: "evt-001".to_string(),
+                timestamp: "2026-02-20T10:00:00.000100Z".to_string(),
+                event_type: EventType::ExternalSignal,
+                payload: json!({"signal":"anomaly","severity":"high"}),
+                provenance_ref: "../../../etc/passwd".to_string(), // PATH TRAVERSAL ATTACK
+            },
+        ],
+        metadata: IncidentEvidenceMetadata {
+            evidence_collection_method: "automated".to_string(),
+            analysis_tools: vec!["boundary-detector".to_string()],
+            chain_of_custody: "test-pipeline".to_string(),
+            integrity_verified: true,
+            retention_policy: "90-day-security-incident".to_string(),
+            related_incidents: vec![],
+            escalation_path: "security-team".to_string(),
+            impact_assessment: json!({"systems_affected": 1}),
+        },
+    };
+
+    let json_str = serde_json::to_string_pretty(&package).expect("serialize invalid provenance package");
+    fs::write(path, json_str).expect("write malformed evidence file");
+}
