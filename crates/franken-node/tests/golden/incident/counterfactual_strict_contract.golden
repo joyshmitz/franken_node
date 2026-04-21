@@ -1,0 +1,266 @@
+{
+  "counterfactual_outcomes": [
+    {
+      "decision": "quarantine",
+      "event_type": "external_signal",
+      "expected_loss": 23,
+      "rationale": "event=external_signal risk=70 policy=strict thresholds=(45, 70)",
+      "sequence_number": 1
+    },
+    {
+      "decision": "observe",
+      "event_type": "policy_eval",
+      "expected_loss": 36,
+      "rationale": "event=policy_eval risk=50 policy=strict thresholds=(45, 70)",
+      "sequence_number": 2
+    },
+    {
+      "decision": "quarantine",
+      "event_type": "operator_action",
+      "expected_loss": 23,
+      "rationale": "event=operator_action risk=70 policy=strict thresholds=(45, 70)",
+      "sequence_number": 3
+    },
+    {
+      "decision": "observe",
+      "event_type": "external_signal",
+      "expected_loss": 36,
+      "rationale": "event=external_signal risk=50 policy=strict thresholds=(45, 70)",
+      "sequence_number": 4
+    },
+    {
+      "decision": "quarantine",
+      "event_type": "policy_eval",
+      "expected_loss": 23,
+      "rationale": "event=policy_eval risk=70 policy=strict thresholds=(45, 70)",
+      "sequence_number": 5
+    },
+    {
+      "decision": "observe",
+      "event_type": "operator_action",
+      "expected_loss": 36,
+      "rationale": "event=operator_action risk=50 policy=strict thresholds=(45, 70)",
+      "sequence_number": 6
+    },
+    {
+      "decision": "quarantine",
+      "event_type": "external_signal",
+      "expected_loss": 23,
+      "rationale": "event=external_signal risk=70 policy=strict thresholds=(45, 70)",
+      "sequence_number": 7
+    },
+    {
+      "decision": "observe",
+      "event_type": "policy_eval",
+      "expected_loss": 36,
+      "rationale": "event=policy_eval risk=50 policy=strict thresholds=(45, 70)",
+      "sequence_number": 8
+    },
+    {
+      "decision": "quarantine",
+      "event_type": "operator_action",
+      "expected_loss": 23,
+      "rationale": "event=operator_action risk=70 policy=strict thresholds=(45, 70)",
+      "sequence_number": 9
+    },
+    {
+      "decision": "observe",
+      "event_type": "external_signal",
+      "expected_loss": 36,
+      "rationale": "event=external_signal risk=50 policy=strict thresholds=(45, 70)",
+      "sequence_number": 10
+    }
+  ],
+  "divergence_points": [
+    {
+      "counterfactual_decision": "quarantine",
+      "counterfactual_rationale": "event=external_signal risk=70 policy=strict thresholds=(45, 70)",
+      "impact_estimate": "medium",
+      "original_decision": "observe",
+      "original_rationale": "event=external_signal risk=60 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 1
+    },
+    {
+      "counterfactual_decision": "observe",
+      "counterfactual_rationale": "event=policy_eval risk=50 policy=strict thresholds=(45, 70)",
+      "impact_estimate": "high",
+      "original_decision": "allow",
+      "original_rationale": "event=policy_eval risk=40 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 2
+    },
+    {
+      "counterfactual_decision": "quarantine",
+      "counterfactual_rationale": "event=operator_action risk=70 policy=strict thresholds=(45, 70)",
+      "impact_estimate": "medium",
+      "original_decision": "observe",
+      "original_rationale": "event=operator_action risk=60 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 3
+    },
+    {
+      "counterfactual_decision": "observe",
+      "counterfactual_rationale": "event=external_signal risk=50 policy=strict thresholds=(45, 70)",
+      "impact_estimate": "high",
+      "original_decision": "allow",
+      "original_rationale": "event=external_signal risk=40 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 4
+    },
+    {
+      "counterfactual_decision": "quarantine",
+      "counterfactual_rationale": "event=policy_eval risk=70 policy=strict thresholds=(45, 70)",
+      "impact_estimate": "medium",
+      "original_decision": "observe",
+      "original_rationale": "event=policy_eval risk=60 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 5
+    },
+    {
+      "counterfactual_decision": "observe",
+      "counterfactual_rationale": "event=operator_action risk=50 policy=strict thresholds=(45, 70)",
+      "impact_estimate": "high",
+      "original_decision": "allow",
+      "original_rationale": "event=operator_action risk=40 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 6
+    },
+    {
+      "counterfactual_decision": "quarantine",
+      "counterfactual_rationale": "event=external_signal risk=70 policy=strict thresholds=(45, 70)",
+      "impact_estimate": "medium",
+      "original_decision": "observe",
+      "original_rationale": "event=external_signal risk=60 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 7
+    },
+    {
+      "counterfactual_decision": "observe",
+      "counterfactual_rationale": "event=policy_eval risk=50 policy=strict thresholds=(45, 70)",
+      "impact_estimate": "high",
+      "original_decision": "allow",
+      "original_rationale": "event=policy_eval risk=40 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 8
+    },
+    {
+      "counterfactual_decision": "quarantine",
+      "counterfactual_rationale": "event=operator_action risk=70 policy=strict thresholds=(45, 70)",
+      "impact_estimate": "medium",
+      "original_decision": "observe",
+      "original_rationale": "event=operator_action risk=60 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 9
+    },
+    {
+      "counterfactual_decision": "observe",
+      "counterfactual_rationale": "event=external_signal risk=50 policy=strict thresholds=(45, 70)",
+      "impact_estimate": "high",
+      "original_decision": "allow",
+      "original_rationale": "event=external_signal risk=40 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 10
+    }
+  ],
+  "metadata": {
+    "bundle_hash": "b43fce2b6dd9ccef0ec2fca309e79ec8b8b12cfd22b94e2fcbc52228092aaf0a",
+    "engine_version": "counterfactual-v1",
+    "invocation_event_codes": [
+      "COUNTERFACTUAL_REPLAY_STARTED",
+      "COUNTERFACTUAL_REPLAY_COMPLETED"
+    ],
+    "policy_override_diff": [
+      {
+        "counterfactual": "strict",
+        "field": "policy_name",
+        "original": "balanced"
+      },
+      {
+        "counterfactual": "70",
+        "field": "quarantine_threshold",
+        "original": "85"
+      },
+      {
+        "counterfactual": "45",
+        "field": "observe_threshold",
+        "original": "55"
+      },
+      {
+        "counterfactual": "20",
+        "field": "degraded_mode_bias",
+        "original": "10"
+      }
+    ],
+    "replay_timestamp": "2026-02-20T10:00:09.000000Z"
+  },
+  "mode": "single",
+  "original_outcomes": [
+    {
+      "decision": "observe",
+      "event_type": "external_signal",
+      "expected_loss": 39,
+      "rationale": "event=external_signal risk=60 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 1
+    },
+    {
+      "decision": "allow",
+      "event_type": "policy_eval",
+      "expected_loss": 78,
+      "rationale": "event=policy_eval risk=40 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 2
+    },
+    {
+      "decision": "observe",
+      "event_type": "operator_action",
+      "expected_loss": 39,
+      "rationale": "event=operator_action risk=60 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 3
+    },
+    {
+      "decision": "allow",
+      "event_type": "external_signal",
+      "expected_loss": 78,
+      "rationale": "event=external_signal risk=40 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 4
+    },
+    {
+      "decision": "observe",
+      "event_type": "policy_eval",
+      "expected_loss": 39,
+      "rationale": "event=policy_eval risk=60 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 5
+    },
+    {
+      "decision": "allow",
+      "event_type": "operator_action",
+      "expected_loss": 78,
+      "rationale": "event=operator_action risk=40 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 6
+    },
+    {
+      "decision": "observe",
+      "event_type": "external_signal",
+      "expected_loss": 39,
+      "rationale": "event=external_signal risk=60 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 7
+    },
+    {
+      "decision": "allow",
+      "event_type": "policy_eval",
+      "expected_loss": 78,
+      "rationale": "event=policy_eval risk=40 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 8
+    },
+    {
+      "decision": "observe",
+      "event_type": "operator_action",
+      "expected_loss": 39,
+      "rationale": "event=operator_action risk=60 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 9
+    },
+    {
+      "decision": "allow",
+      "event_type": "external_signal",
+      "expected_loss": 78,
+      "rationale": "event=external_signal risk=40 policy=balanced thresholds=(55, 85)",
+      "sequence_number": 10
+    }
+  ],
+  "scenario_id": "INC-E2E-PIPE-001::strict",
+  "summary_statistics": {
+    "changed_decisions": 10,
+    "severity_delta": -290,
+    "total_decisions": 10
+  }
+}

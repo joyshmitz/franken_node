@@ -1,0 +1,7 @@
+{
+  "schema_version": "franken-node/incident-replay-result-golden/v1",
+  "matched": true,
+  "event_count": 10,
+  "expected_sequence_hash": "0b5be05ccafbc8838f0739e2dff4aed1a94a31fe6801cda4dc4a4b69e74fc4ea",
+  "replayed_sequence_hash": "0b5be05ccafbc8838f0739e2dff4aed1a94a31fe6801cda4dc4a4b69e74fc4ea"
+}
