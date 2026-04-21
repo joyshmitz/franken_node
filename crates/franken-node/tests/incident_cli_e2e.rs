@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use frankenengine_node::tools::replay_bundle::{
     EventType, INCIDENT_EVIDENCE_SCHEMA, IncidentEvidenceEvent, IncidentEvidenceMetadata,
-    IncidentEvidencePackage, IncidentSeverity, ReplayBundle, read_bundle_from_path,
+    IncidentEvidencePackage, IncidentSeverity, ReplayBundle, read_bundle_from_path_with_trusted_key,
     validate_bundle_integrity,
 };
 use serde_json::json;
@@ -54,6 +54,14 @@ fn write_receipt_signing_key(path: &Path) {
         fs::create_dir_all(parent).expect("create key dir");
     }
     fs::write(path, hex::encode([42_u8; 32])).expect("write receipt signing key");
+}
+
+fn replay_bundle_trusted_key_id() -> String {
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[42_u8; 32]);
+    frankenengine_node::supply_chain::artifact_signing::KeyId::from_verifying_key(
+        &signing_key.verifying_key(),
+    )
+    .to_string()
 }
 
 fn configure_replay_bundle_signing_key(workspace: &Path) {
@@ -299,7 +307,10 @@ fn incident_bundle_accepts_explicit_evidence_path_and_writes_bundle() {
     let output_path = workspace.path().join("INC-E2E-001.fnbundle");
     assert!(output_path.is_file());
 
-    let bundle = read_bundle_from_path(&output_path).expect("read bundle");
+    let trusted_key_id = replay_bundle_trusted_key_id();
+    let bundle =
+        read_bundle_from_path_with_trusted_key(&output_path, Some(&trusted_key_id))
+            .expect("read bundle");
     assert_eq!(bundle.incident_id, "INC-E2E-001");
     assert_eq!(
         bundle.initial_state_snapshot,
@@ -415,7 +426,9 @@ fn incident_replay_counterfactual_pipeline_is_deterministic_and_fail_closed() {
     assert!(bundle_stderr.contains("incident bundle written:"));
 
     let bundle_path = workspace.path().join("INC-E2E-PIPE-001.fnbundle");
-    let bundle = read_bundle_from_path(&bundle_path).expect("read bundle");
+    let trusted_key_id = replay_bundle_trusted_key_id();
+    let bundle = read_bundle_from_path_with_trusted_key(&bundle_path, Some(&trusted_key_id))
+        .expect("read bundle");
     assert_eq!(bundle.timeline.len(), 10);
     assert_eq!(
         bundle.initial_state_snapshot,

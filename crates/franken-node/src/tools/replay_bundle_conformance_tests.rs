@@ -22,6 +22,12 @@ fn sign_test_bundle(bundle: &mut ReplayBundle) {
     sign_replay_bundle(bundle, &signing_material).expect("sign replay bundle");
 }
 
+fn trusted_test_key_id() -> String {
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[43_u8; 32]);
+    crate::supply_chain::artifact_signing::KeyId::from_verifying_key(&signing_key.verifying_key())
+        .to_string()
+}
+
 /// Test integer overflow scenarios in event sequence numbering
 #[test]
 fn test_event_sequence_overflow_protection() {
@@ -493,11 +499,13 @@ fn test_atomic_file_operations() {
     let file_path = dir.path().join("test-bundle.json");
 
     // Write should be atomic
-    write_bundle_to_path(&bundle, &file_path).unwrap();
+    let trusted_key_id = trusted_test_key_id();
+    write_bundle_to_path_with_trusted_key(&bundle, &file_path, &trusted_key_id).unwrap();
     assert!(file_path.exists());
 
     // Should be able to read back the same bundle
-    let loaded_bundle = read_bundle_from_path(&file_path).unwrap();
+    let loaded_bundle = read_bundle_from_path_with_trusted_key(&file_path, Some(&trusted_key_id))
+        .unwrap();
     assert_eq!(bundle, loaded_bundle);
 
     // No temp files should remain

@@ -126,10 +126,9 @@ use frankenengine_node::{
         },
         replay_bundle::{
             ReplayBundleSigningMaterial, generate_replay_bundle_from_evidence,
-            read_bundle_from_path, read_bundle_from_path_with_trusted_key,
-            read_incident_evidence_package, replay_bundle_with_trusted_key,
-            sign_replay_bundle, validate_bundle_integrity, write_bundle_to_path,
-            write_bundle_to_path_with_trusted_key,
+            read_bundle_from_path_with_trusted_key, read_incident_evidence_package,
+            replay_bundle_with_trusted_key, sign_replay_bundle, validate_bundle_integrity,
+            write_bundle_to_path, write_bundle_to_path_with_trusted_key,
         },
     },
 };
@@ -5050,9 +5049,12 @@ fn collect_incident_list_entries(
     severity_filter: Option<&str>,
 ) -> Result<Vec<IncidentListEntry>> {
     let mut entries = Vec::new();
+    let trusted_signing_material = load_receipt_signing_material(None)?
+        .ok_or_else(|| missing_replay_bundle_signing_key_error("list"))?;
+    let trusted_key_id = signing_material_key_id(&trusted_signing_material);
 
     for path in collect_incident_bundle_paths(root)? {
-        let bundle = read_bundle_from_path(&path)
+        let bundle = read_bundle_from_path_with_trusted_key(&path, Some(&trusted_key_id))
             .with_context(|| format!("failed reading incident bundle {}", path.display()))?;
         let severity = infer_incident_bundle_severity(&bundle);
         if let Some(filter) = severity_filter
@@ -11466,7 +11468,10 @@ fn incident_counterfactual_cli_summary(
     bundle_path: &Path,
     policy: &str,
 ) -> Result<IncidentCounterfactualCliSummary> {
-    let bundle = read_bundle_from_path(bundle_path)
+    let trusted_signing_material = load_receipt_signing_material(None)?
+        .ok_or_else(|| missing_replay_bundle_signing_key_error("counterfactual"))?;
+    let trusted_key_id = signing_material_key_id(&trusted_signing_material);
+    let bundle = read_bundle_from_path_with_trusted_key(bundle_path, Some(&trusted_key_id))
         .with_context(|| format!("failed reading replay bundle {}", bundle_path.display()))?;
     let baseline_policy = PolicyConfig::from_bundle(&bundle);
     let mode = PolicyConfig::from_cli_spec(policy, &baseline_policy)
@@ -12793,13 +12798,10 @@ fn build_registry_publish_request_with_context(
         .unwrap_or("extension-artifact");
     let name = normalize_registry_name(inferred_name);
 
-    let manifest_bytes = format!("manifest:{}:{}", name, content_hash).into_bytes();
     let key_id = supply_chain::artifact_signing::KeyId::from_verifying_key(
         &signing_material.signing_key.verifying_key(),
     );
     let key_id_string = key_id.to_string();
-    let signature_bytes =
-        supply_chain::artifact_signing::sign_bytes(&signing_material.signing_key, &manifest_bytes);
     let slsa_level_claim = provenance_context.slsa_level_claim();
     let builder_version = env!("CARGO_PKG_VERSION").to_string();
     let RegistryPublishProvenanceContext {
@@ -12812,6 +12814,20 @@ fn build_registry_publish_request_with_context(
         builder_identity,
         build_timestamp_epoch,
     } = provenance_context;
+    let publisher_id = builder_identity.clone();
+    let initial_version = VersionEntry {
+        version: "1.0.0".to_string(),
+        parent_version: None,
+        content_hash: content_hash.to_string(),
+        registered_at: chrono::Utc::now().to_rfc3339(),
+        compatible_with: vec!["franken-node".to_string()],
+    };
+    let tags_vec = vec!["cli-publish".to_string(), "local".to_string()];
+    let manifest_bytes =
+        canonical_registration_manifest_bytes(&name, &publisher_id, &initial_version, &tags_vec)
+            .map_err(|e| anyhow::anyhow!("failed building registry publish manifest: {e}"))?;
+    let signature_bytes =
+        supply_chain::artifact_signing::sign_bytes(&signing_material.signing_key, &manifest_bytes);
 
     let mut custom_claims = std::collections::BTreeMap::new();
     if let Some(source_dirty) = source_dirty {
@@ -12861,7 +12877,7 @@ fn build_registry_publish_request_with_context(
     Ok(RegistrationRequest {
         name,
         description: format!("CLI-published artifact from {}", package_path.display()),
-        publisher_id: provenance.builder_identity.clone(),
+        publisher_id,
         signature: ExtensionSignature {
             key_id: key_id_string,
             algorithm: "ed25519".to_string(),
@@ -12869,14 +12885,8 @@ fn build_registry_publish_request_with_context(
             signed_at: chrono::Utc::now().to_rfc3339(),
         },
         provenance,
-        initial_version: VersionEntry {
-            version: "1.0.0".to_string(),
-            parent_version: None,
-            content_hash: content_hash.to_string(),
-            registered_at: chrono::Utc::now().to_rfc3339(),
-            compatible_with: vec!["franken-node".to_string()],
-        },
-        tags: vec!["cli-publish".to_string(), "local".to_string()],
+        initial_version,
+        tags: tags_vec,
         manifest_bytes,
         transparency_proof: None,
     })

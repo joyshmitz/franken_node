@@ -2,7 +2,8 @@ use frankenengine_node::connector::canonical_serializer::{
     CanonicalSerializer, SerializerError, SignaturePreimage, TrustObjectType, event_codes,
 };
 use frankenengine_node::tools::replay_bundle::{
-    EventType, RawEvent, generate_replay_bundle, replay_bundle, to_canonical_json,
+    EventType, RawEvent, ReplayBundle, ReplayBundleSigningMaterial, generate_replay_bundle,
+    replay_bundle_with_trusted_key, sign_replay_bundle, to_canonical_json,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -30,6 +31,28 @@ struct MutationCampaignStats {
     iterations: u64,
     accept_cases: u64,
     reject_cases: u64,
+}
+
+fn replay_grammar_signing_key() -> ed25519_dalek::SigningKey {
+    ed25519_dalek::SigningKey::from_bytes(&[44_u8; 32])
+}
+
+fn replay_grammar_trusted_key_id() -> String {
+    let signing_key = replay_grammar_signing_key();
+    frankenengine_node::supply_chain::artifact_signing::KeyId::from_verifying_key(
+        &signing_key.verifying_key(),
+    )
+    .to_string()
+}
+
+fn sign_replay_grammar_bundle(bundle: &mut ReplayBundle) {
+    let signing_key = replay_grammar_signing_key();
+    let signing_material = ReplayBundleSigningMaterial {
+        signing_key: &signing_key,
+        key_source: "test",
+        signing_identity: "canonical-serializer-fuzz",
+    };
+    sign_replay_bundle(bundle, &signing_material).expect("sign replay grammar bundle");
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -839,11 +862,15 @@ fn fuzz_replay_bundle_grammar_payloads_round_trip_through_serializer() {
 fn fuzz_replay_bundle_grammar_is_stable_across_generation_and_serializer_instances() {
     for (name, events) in replay_grammar_event_logs() {
         let incident_id = format!("INC-FUZZ-{name}");
-        let first_bundle =
+        let mut first_bundle =
             generate_replay_bundle(&incident_id, &events).expect("first grammar bundle");
-        let second_bundle =
+        let mut second_bundle =
             generate_replay_bundle(&incident_id, &events).expect("second grammar bundle");
-        let first_replay = replay_bundle(&first_bundle).expect("first bundle should replay");
+        sign_replay_grammar_bundle(&mut first_bundle);
+        sign_replay_grammar_bundle(&mut second_bundle);
+        let trusted_key_id = replay_grammar_trusted_key_id();
+        let first_replay = replay_bundle_with_trusted_key(&first_bundle, &trusted_key_id)
+            .expect("first bundle should replay");
         assert!(first_replay.matched, "{name}");
 
         let first_json = to_canonical_json(&first_bundle).expect("first canonical JSON");

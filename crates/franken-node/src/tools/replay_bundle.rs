@@ -1883,6 +1883,33 @@ mod tests {
     }
 
     #[test]
+    fn read_bundle_from_path_rejects_untrusted_signer_by_default() {
+        let bundle = signed_fixture_bundle("INC-RPL-SIG-UNTRUSTED-DISK");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("bundle.json");
+        std::fs::write(&path, to_canonical_json(&bundle).expect("canonical bundle"))
+            .expect("write raw bundle");
+
+        let err = read_bundle_from_path(&path).expect_err("default read must fail closed");
+        assert!(matches!(err, ReplayBundleError::SignatureTrustAnchorMissing));
+
+        let trusted_key_id = fixture_trusted_key_id();
+        read_bundle_from_path_with_trusted_key(&path, Some(&trusted_key_id))
+            .expect("trusted read should still work");
+    }
+
+    #[test]
+    fn write_bundle_to_path_rejects_untrusted_signer_by_default() {
+        let bundle = signed_fixture_bundle("INC-RPL-SIG-UNTRUSTED-WRITE");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("bundle.json");
+
+        let err = write_bundle_to_path(&bundle, &path).expect_err("default write must fail closed");
+        assert!(matches!(err, ReplayBundleError::SignatureTrustAnchorMissing));
+        assert!(!path.exists());
+    }
+
+    #[test]
     fn validate_bundle_integrity_rejects_manifest_drift_even_with_recomputed_hash() {
         let mut bundle = generate_replay_bundle("INC-RPL-003", &fixture_events()).expect("bundle");
         bundle.manifest.event_count = bundle.manifest.event_count.saturating_add(1);
