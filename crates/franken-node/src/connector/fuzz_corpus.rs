@@ -44,9 +44,13 @@ mod shim_type_coercion_target;
 const REPORT_SCHEMA_VERSION: &str = "fuzz_gate_truthful_report_v1";
 const LIVE_ADAPTER_KIND: &str = "in_process_checked_fixtures";
 const DEFAULT_LIVE_TIMEOUT_MS: u64 = 1_000;
+#[cfg(any(test, feature = "test-support"))]
 const DETERMINISTIC_FIXTURE_ADAPTER_KIND: &str = "deterministic_fixture_test_adapter";
+#[cfg(any(test, feature = "test-support"))]
 const DETERMINISTIC_FIXTURE_EXECUTION_MODE: &str = "synthetic_test_fixture";
-const DETERMINISTIC_FIXTURE_RUNNER_DETAIL: &str = "fixture_marker=synthetic_test_fixture crash_classifier=string_trigger coverage_semantics=placeholder_zero";
+#[cfg(any(test, feature = "test-support"))]
+const DETERMINISTIC_FIXTURE_RUNNER_DETAIL: &str =
+    "fixture_marker=synthetic_test_fixture crash_classifier=string_trigger coverage_semantics=placeholder_zero";
 
 // ── Fuzz target categories ──────────────────────────────────────────────────
 
@@ -71,6 +75,7 @@ impl fmt::Display for FuzzCategory {
 
 // ── Deterministic test/modeling adapter boundary ───────────────────────────
 
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone)]
 pub struct DeterministicFuzzTarget {
     pub name: String,
@@ -78,6 +83,7 @@ pub struct DeterministicFuzzTarget {
     pub description: String,
 }
 
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeterministicSeedOutcome {
     /// The input should be handled without crash.
@@ -86,6 +92,7 @@ pub enum DeterministicSeedOutcome {
     Rejected,
 }
 
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone)]
 pub struct DeterministicFuzzSeed {
     pub target: String,
@@ -93,6 +100,7 @@ pub struct DeterministicFuzzSeed {
     pub expected: DeterministicSeedOutcome,
 }
 
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone)]
 pub struct DeterministicFuzzCampaignResult {
     pub target: String,
@@ -102,6 +110,7 @@ pub struct DeterministicFuzzCampaignResult {
     pub coverage_pct: f64,
 }
 
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone)]
 pub struct DeterministicTriagedCrash {
     pub target: String,
@@ -110,6 +119,7 @@ pub struct DeterministicTriagedCrash {
     pub reproducer: String,
 }
 
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone)]
 pub struct DeterministicFuzzGateReport {
     pub adapter_kind: String,
@@ -173,6 +183,7 @@ impl fmt::Display for FuzzError {
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug)]
 pub struct DeterministicFuzzTestAdapter {
     targets: BTreeMap<String, DeterministicFuzzTarget>,
@@ -180,6 +191,7 @@ pub struct DeterministicFuzzTestAdapter {
     min_seeds: usize,
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl DeterministicFuzzTestAdapter {
     pub fn new(min_seeds: usize) -> Self {
         Self {
