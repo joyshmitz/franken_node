@@ -1239,6 +1239,15 @@ fn authoritative_snapshot_lock_path(path: &Path) -> PathBuf {
     parent.join(format!("{file_name}.lock"))
 }
 
+fn authoritative_snapshot_high_water_path(path: &Path) -> PathBuf {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("trust-card-registry-state");
+    parent.join(format!("{file_name}.high-water.json"))
+}
+
 fn lock_authoritative_snapshot_file(
     file: &File,
     lock_path: &Path,
@@ -1713,6 +1722,253 @@ fn sign_card_in_place(card: &mut TrustCard, registry_key: &[u8]) -> Result<(), T
     mac.update(card.card_hash.as_bytes());
     card.registry_signature = hex::encode(mac.finalize().into_bytes());
     Ok(())
+}
+
+fn canonical_snapshot_without_hash_and_signature(
+    snapshot: &TrustCardRegistrySnapshot,
+) -> Result<Value, TrustCardError> {
+    let mut value = serde_json::to_value(snapshot)?;
+    let Some(map) = value.as_object_mut() else {
+        return Ok(value);
+    };
+    map.insert("snapshot_hash".to_string(), Value::String(String::new()));
+    map.insert(
+        "registry_signature".to_string(),
+        Value::String(String::new()),
+    );
+    Ok(canonicalize_value(Value::Object(map.clone())))
+}
+
+fn compute_snapshot_hash(snapshot: &TrustCardRegistrySnapshot) -> Result<String, TrustCardError> {
+    let canonical = canonical_snapshot_without_hash_and_signature(snapshot)?;
+    let encoded = serde_json::to_vec(&canonical)?;
+    let mut hasher = Sha256::new();
+    hasher.update(b"trust_card_registry_snapshot_hash_v1:");
+    hasher.update(u64::try_from(encoded.len()).unwrap_or(u64::MAX).to_le_bytes());
+    hasher.update(&encoded);
+    Ok(hex::encode(hasher.finalize()))
+}
+
+fn sign_snapshot_in_place(
+    snapshot: &mut TrustCardRegistrySnapshot,
+    registry_key: &[u8],
+) -> Result<(), TrustCardError> {
+    snapshot.snapshot_hash = compute_snapshot_hash(snapshot)?;
+    let mut mac =
+        HmacSha256::new_from_slice(registry_key).map_err(|_| TrustCardError::InvalidRegistryKey)?;
+    mac.update(b"trust_card_registry_snapshot_sig_v1:");
+    mac.update(snapshot.snapshot_hash.as_bytes());
+    snapshot.registry_signature = hex::encode(mac.finalize().into_bytes());
+    Ok(())
+}
+
+fn verify_snapshot_signature(
+    snapshot: &TrustCardRegistrySnapshot,
+    registry_key: &[u8],
+) -> Result<(), TrustCardError> {
+    let expected_hash = compute_snapshot_hash(snapshot)?;
+    if !constant_time::ct_eq(&snapshot.snapshot_hash, &expected_hash) {
+        return Err(TrustCardError::InvalidSnapshot(
+            "registry snapshot hash mismatch".to_string(),
+        ));
+    }
+
+    let mut mac =
+        HmacSha256::new_from_slice(registry_key).map_err(|_| TrustCardError::InvalidRegistryKey)?;
+    mac.update(b"trust_card_registry_snapshot_sig_v1:");
+    mac.update(snapshot.snapshot_hash.as_bytes());
+    let expected_signature = hex::encode(mac.finalize().into_bytes());
+    if !constant_time::ct_eq(&snapshot.registry_signature, &expected_signature) {
+        return Err(TrustCardError::InvalidSnapshot(
+            "registry snapshot signature mismatch".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn canonical_high_water_without_signature(
+    high_water: &TrustCardRegistrySnapshotHighWater,
+) -> Result<Value, TrustCardError> {
+    let mut value = serde_json::to_value(high_water)?;
+    let Some(map) = value.as_object_mut() else {
+        return Ok(value);
+    };
+    map.insert(
+        "high_water_signature".to_string(),
+        Value::String(String::new()),
+    );
+    Ok(canonicalize_value(Value::Object(map.clone())))
+}
+
+fn high_water_signature(
+    high_water: &TrustCardRegistrySnapshotHighWater,
+    registry_key: &[u8],
+) -> Result<String, TrustCardError> {
+    let canonical = canonical_high_water_without_signature(high_water)?;
+    let encoded = serde_json::to_vec(&canonical)?;
+    let mut mac =
+        HmacSha256::new_from_slice(registry_key).map_err(|_| TrustCardError::InvalidRegistryKey)?;
+    mac.update(b"trust_card_registry_high_water_sig_v1:");
+    mac.update(u64::try_from(encoded.len()).unwrap_or(u64::MAX).to_le_bytes());
+    mac.update(&encoded);
+    Ok(hex::encode(mac.finalize().into_bytes()))
+}
+
+fn signed_snapshot_high_water(
+    snapshot: &TrustCardRegistrySnapshot,
+    registry_key: &[u8],
+) -> Result<TrustCardRegistrySnapshotHighWater, TrustCardError> {
+    verify_snapshot_signature(snapshot, registry_key)?;
+    let mut high_water = TrustCardRegistrySnapshotHighWater {
+        schema_version: TRUST_CARD_REGISTRY_HIGH_WATER_SCHEMA.to_string(),
+        snapshot_epoch: snapshot.snapshot_epoch,
+        snapshot_hash: snapshot.snapshot_hash.clone(),
+        high_water_signature: String::new(),
+    };
+    high_water.high_water_signature = high_water_signature(&high_water, registry_key)?;
+    Ok(high_water)
+}
+
+fn verify_snapshot_high_water(
+    high_water: &TrustCardRegistrySnapshotHighWater,
+    registry_key: &[u8],
+) -> Result<(), TrustCardError> {
+    if high_water.schema_version != TRUST_CARD_REGISTRY_HIGH_WATER_SCHEMA {
+        return Err(TrustCardError::InvalidSnapshot(format!(
+            "unsupported trust-card registry high-water schema `{}`",
+            high_water.schema_version
+        )));
+    }
+    let expected_signature = high_water_signature(high_water, registry_key)?;
+    if !constant_time::ct_eq(&high_water.high_water_signature, &expected_signature) {
+        return Err(TrustCardError::InvalidSnapshot(
+            "trust-card registry high-water signature mismatch".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn read_snapshot_high_water(
+    snapshot_path: &Path,
+    registry_key: &[u8],
+) -> Result<Option<TrustCardRegistrySnapshotHighWater>, TrustCardError> {
+    let high_water_path = authoritative_snapshot_high_water_path(snapshot_path);
+    if !high_water_path.exists() {
+        return Ok(None);
+    }
+    let raw =
+        std::fs::read_to_string(&high_water_path).map_err(|err| TrustCardError::SnapshotRead {
+            path: high_water_path.clone(),
+            detail: err.to_string(),
+        })?;
+    let high_water =
+        serde_json::from_str::<TrustCardRegistrySnapshotHighWater>(&raw).map_err(|err| {
+            TrustCardError::SnapshotParse {
+                path: high_water_path.clone(),
+                detail: err.to_string(),
+            }
+        })?;
+    verify_snapshot_high_water(&high_water, registry_key)?;
+    Ok(Some(high_water))
+}
+
+fn validate_snapshot_high_water(
+    path: &Path,
+    snapshot: &TrustCardRegistrySnapshot,
+    high_water: Option<&TrustCardRegistrySnapshotHighWater>,
+) -> Result<(), TrustCardError> {
+    let Some(high_water) = high_water else {
+        return Ok(());
+    };
+
+    if snapshot.snapshot_epoch < high_water.snapshot_epoch {
+        return Err(TrustCardError::InvalidSnapshot(format!(
+            "snapshot rollback rejected for {}: epoch {} is older than high-water epoch {}",
+            path.display(),
+            snapshot.snapshot_epoch,
+            high_water.snapshot_epoch
+        )));
+    }
+
+    if snapshot.snapshot_epoch == high_water.snapshot_epoch {
+        if snapshot.snapshot_hash != high_water.snapshot_hash {
+            return Err(TrustCardError::InvalidSnapshot(format!(
+                "snapshot rollback rejected for {}: epoch {} hash differs from high-water",
+                path.display(),
+                snapshot.snapshot_epoch
+            )));
+        }
+        return Ok(());
+    }
+
+    if snapshot.previous_snapshot_hash.as_deref() != Some(high_water.snapshot_hash.as_str()) {
+        return Err(TrustCardError::InvalidSnapshot(format!(
+            "snapshot chain rejected for {}: epoch {} does not extend high-water epoch {}",
+            path.display(),
+            snapshot.snapshot_epoch,
+            high_water.snapshot_epoch
+        )));
+    }
+
+    Ok(())
+}
+
+fn write_snapshot_high_water(
+    snapshot_path: &Path,
+    high_water: &TrustCardRegistrySnapshotHighWater,
+) -> Result<(), TrustCardError> {
+    let high_water_path = authoritative_snapshot_high_water_path(snapshot_path);
+    let parent = high_water_path.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent).map_err(|err| TrustCardError::SnapshotWrite {
+        path: high_water_path.clone(),
+        detail: err.to_string(),
+    })?;
+    let encoded = to_canonical_json(high_water)?;
+    let mut temp =
+        NamedTempFile::new_in(parent).map_err(|err| TrustCardError::SnapshotWrite {
+            path: high_water_path.clone(),
+            detail: err.to_string(),
+        })?;
+    temp.write_all(encoded.as_bytes())
+        .map_err(|err| TrustCardError::SnapshotWrite {
+            path: high_water_path.clone(),
+            detail: err.to_string(),
+        })?;
+    temp.as_file()
+        .sync_all()
+        .map_err(|err| TrustCardError::SnapshotWrite {
+            path: high_water_path.clone(),
+            detail: err.to_string(),
+        })?;
+    temp.persist(&high_water_path)
+        .map_err(|err| TrustCardError::SnapshotWrite {
+            path: high_water_path.clone(),
+            detail: err.error.to_string(),
+        })?;
+    if let Ok(dir) = File::open(parent) {
+        let _ = dir.sync_all();
+    }
+    Ok(())
+}
+
+fn persist_snapshot_high_water_if_newer(
+    path: &Path,
+    snapshot: &TrustCardRegistrySnapshot,
+    high_water: Option<&TrustCardRegistrySnapshotHighWater>,
+) -> Result<(), TrustCardError> {
+    let should_write = match high_water {
+        None => true,
+        Some(current) => {
+            snapshot.snapshot_epoch > current.snapshot_epoch
+                || (snapshot.snapshot_epoch == current.snapshot_epoch
+                    && snapshot.snapshot_hash != current.snapshot_hash)
+        }
+    };
+    if !should_write {
+        return Ok(());
+    }
+    let next = signed_snapshot_high_water(snapshot, DEFAULT_REGISTRY_KEY)?;
+    write_snapshot_high_water(path, &next)
 }
 
 fn sorted_capabilities(mut capabilities: Vec<CapabilityDeclaration>) -> Vec<CapabilityDeclaration> {

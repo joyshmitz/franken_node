@@ -346,6 +346,29 @@ pub struct DecisionReceiptSignature {
     pub signature_hex: String,
 }
 
+/// Trusted fleet decision-receipt verification root.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FleetDecisionTrustRoot {
+    /// Stable key identifier derived from the verifying key.
+    pub key_id: String,
+    /// Hex-encoded Ed25519 verifying key.
+    pub public_key_hex: String,
+}
+
+impl FleetDecisionTrustRoot {
+    /// Build a fleet trust root from configured Ed25519 verifying-key material.
+    #[must_use]
+    pub fn from_verifying_key(verifying_key: &VerifyingKey) -> Self {
+        Self {
+            key_id: crate::supply_chain::artifact_signing::KeyId::from_verifying_key(
+                verifying_key,
+            )
+            .to_string(),
+            public_key_hex: hex::encode(verifying_key.to_bytes()),
+        }
+    }
+}
+
 fn extend_len_prefixed(buffer: &mut Vec<u8>, field: &str) {
     let field_len = u64::try_from(field.len()).unwrap_or(u64::MAX);
     buffer.extend_from_slice(&field_len.to_le_bytes());
@@ -444,6 +467,15 @@ pub fn sign_decision_receipt(
 /// Verify the embedded Ed25519 signature on a fleet decision receipt.
 #[must_use]
 pub fn verify_decision_receipt_signature(receipt: &DecisionReceipt) -> bool {
+    verify_decision_receipt_signature_with_trust_roots(receipt, &[])
+}
+
+/// Verify a fleet decision receipt against configured trusted fleet roots.
+#[must_use]
+pub fn verify_decision_receipt_signature_with_trust_roots(
+    receipt: &DecisionReceipt,
+    trust_roots: &[FleetDecisionTrustRoot],
+) -> bool {
     let Some(signature) = &receipt.signature else {
         return false;
     };
@@ -453,21 +485,9 @@ pub fn verify_decision_receipt_signature(receipt: &DecisionReceipt) -> bool {
         return false;
     }
 
-    let Ok(public_key_bytes) = hex::decode(&signature.public_key_hex) else {
+    let Some(verifying_key) = trusted_receipt_verifying_key(signature, trust_roots) else {
         return false;
     };
-    let Ok(public_key_bytes) = <[u8; 32]>::try_from(public_key_bytes.as_slice()) else {
-        return false;
-    };
-    let Ok(verifying_key) = VerifyingKey::from_bytes(&public_key_bytes) else {
-        return false;
-    };
-    let expected_key_id =
-        crate::supply_chain::artifact_signing::KeyId::from_verifying_key(&verifying_key)
-            .to_string();
-    if !crate::security::constant_time::ct_eq(&signature.key_id, &expected_key_id) {
-        return false;
-    }
 
     let expected_decision_payload_hash = canonical_decision_receipt_payload_hash(
         &receipt.operation_id,
@@ -501,6 +521,54 @@ pub fn verify_decision_receipt_signature(receipt: &DecisionReceipt) -> bool {
         return false;
     };
     verifying_key.verify(&payload, &signature).is_ok()
+}
+
+fn trusted_receipt_verifying_key(
+    signature: &DecisionReceiptSignature,
+    trust_roots: &[FleetDecisionTrustRoot],
+) -> Option<VerifyingKey> {
+    if trust_roots.is_empty() {
+        return None;
+    }
+
+    let signature_public_key = decode_ed25519_public_key_hex(&signature.public_key_hex)?;
+    for trust_root in trust_roots {
+        if trust_root.key_id.trim().is_empty() || trust_root.public_key_hex.trim().is_empty() {
+            continue;
+        }
+        if !crate::security::constant_time::ct_eq(&signature.key_id, &trust_root.key_id) {
+            continue;
+        }
+
+        let Some(trusted_public_key) = decode_ed25519_public_key_hex(&trust_root.public_key_hex)
+        else {
+            continue;
+        };
+        if !crate::security::constant_time::ct_eq_bytes(
+            &signature_public_key,
+            &trusted_public_key,
+        ) {
+            continue;
+        }
+
+        let Ok(verifying_key) = VerifyingKey::from_bytes(&trusted_public_key) else {
+            continue;
+        };
+        let expected_key_id =
+            crate::supply_chain::artifact_signing::KeyId::from_verifying_key(&verifying_key)
+                .to_string();
+        if !crate::security::constant_time::ct_eq(&trust_root.key_id, &expected_key_id) {
+            continue;
+        }
+        return Some(verifying_key);
+    }
+
+    None
+}
+
+fn decode_ed25519_public_key_hex(public_key_hex: &str) -> Option<[u8; 32]> {
+    let public_key_bytes = hex::decode(public_key_hex).ok()?;
+    <[u8; 32]>::try_from(public_key_bytes.as_slice()).ok()
 }
 
 /// Convergence tracking for fleet propagation.
@@ -1124,6 +1192,12 @@ struct FleetDecisionSigningMaterial {
     signing_identity: &'static str,
 }
 
+impl FleetDecisionSigningMaterial {
+    fn trust_root(&self) -> FleetDecisionTrustRoot {
+        FleetDecisionTrustRoot::from_verifying_key(&self.signing_key.verifying_key())
+    }
+}
+
 fn default_decision_signing_material() -> Option<FleetDecisionSigningMaterial> {
     #[cfg(test)]
     {
@@ -1162,6 +1236,8 @@ pub struct FleetControlManager {
     operation_ids_exhausted: bool,
     /// Signing material required for every decision receipt.
     decision_signing_material: Option<FleetDecisionSigningMaterial>,
+    /// Trusted roots accepted for verifying fleet decision receipts.
+    decision_trust_roots: Vec<FleetDecisionTrustRoot>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -1330,6 +1406,12 @@ impl FleetControlManager {
     /// Create a new manager in safe-start (read-only) mode.
     /// INV-FLEET-SAFE-START: API starts read-only.
     pub fn new() -> Self {
+        let decision_signing_material = default_decision_signing_material();
+        let decision_trust_roots = decision_signing_material
+            .as_ref()
+            .map(FleetDecisionSigningMaterial::trust_root)
+            .into_iter()
+            .collect();
         Self {
             activated: false,
             incidents: BTreeMap::new(),
@@ -1339,7 +1421,8 @@ impl FleetControlManager {
             next_op_id: 1,
             op_epoch: 0,
             operation_ids_exhausted: false,
-            decision_signing_material: default_decision_signing_material(),
+            decision_signing_material,
+            decision_trust_roots,
         }
     }
 
@@ -1353,6 +1436,18 @@ impl FleetControlManager {
     #[cfg(any(test, feature = "extended-surfaces"))]
     pub fn is_activated(&self) -> bool {
         self.activated
+    }
+
+    /// Trusted roots currently configured for decision-receipt verification.
+    #[must_use]
+    pub fn decision_trust_roots(&self) -> &[FleetDecisionTrustRoot] {
+        &self.decision_trust_roots
+    }
+
+    /// Verify a decision receipt against this manager's configured trust roots.
+    #[must_use]
+    pub fn verify_decision_receipt_signature(&self, receipt: &DecisionReceipt) -> bool {
+        verify_decision_receipt_signature_with_trust_roots(receipt, &self.decision_trust_roots)
     }
 
     /// Quarantine an extension within a scope.
@@ -3718,6 +3813,46 @@ mod tests {
         DecisionReceiptPayload::release("inc-test", "zone-1", "test release")
     }
 
+    fn test_decision_signing_key(seed: u8) -> ed25519_dalek::SigningKey {
+        ed25519_dalek::SigningKey::from_bytes(&[seed; 32])
+    }
+
+    fn test_decision_trust_root(signing_key: &ed25519_dalek::SigningKey) -> FleetDecisionTrustRoot {
+        FleetDecisionTrustRoot::from_verifying_key(&signing_key.verifying_key())
+    }
+
+    fn test_receipt_signed_by(
+        operation_id: &str,
+        signing_key: &ed25519_dalek::SigningKey,
+    ) -> DecisionReceipt {
+        let issued_at = "2026-01-01T00:00:00Z";
+        let decision_payload = test_decision_payload();
+        let payload_hash = canonical_decision_receipt_payload_hash(
+            operation_id,
+            "admin",
+            "zone-1",
+            issued_at,
+            &decision_payload,
+        );
+        let mut receipt = DecisionReceipt {
+            operation_id: operation_id.to_string(),
+            receipt_id: format!("rcpt-{operation_id}"),
+            issuer: "admin".to_string(),
+            issued_at: issued_at.to_string(),
+            zone_id: "zone-1".to_string(),
+            payload_hash,
+            decision_payload,
+            signature: None,
+        };
+        receipt.signature = Some(sign_decision_receipt(
+            &receipt,
+            signing_key,
+            "test",
+            "fleet-control-plane",
+        ));
+        receipt
+    }
+
     #[test]
     fn receipt_hash_is_deterministic() {
         let mgr = FleetControlManager::new();
@@ -3740,7 +3875,7 @@ mod tests {
             )
             .expect("receipt");
         assert_eq!(r1.payload_hash, r2.payload_hash);
-        assert!(verify_decision_receipt_signature(&r1));
+        assert!(mgr.verify_decision_receipt_signature(&r1));
     }
 
     #[test]
@@ -3812,11 +3947,11 @@ mod tests {
                 test_decision_payload(),
             )
             .expect("receipt");
-        assert!(verify_decision_receipt_signature(&receipt));
+        assert!(mgr.verify_decision_receipt_signature(&receipt));
 
         receipt.zone_id = "zone-2".to_string();
 
-        assert!(!verify_decision_receipt_signature(&receipt));
+        assert!(!mgr.verify_decision_receipt_signature(&receipt));
     }
 
     #[test]
@@ -3831,11 +3966,67 @@ mod tests {
                 DecisionReceiptPayload::quarantine("ext-1", &test_quarantine_scope()),
             )
             .expect("receipt");
-        assert!(verify_decision_receipt_signature(&receipt));
+        assert!(mgr.verify_decision_receipt_signature(&receipt));
 
         receipt.decision_payload.action_type = "release".to_string();
 
-        assert!(!verify_decision_receipt_signature(&receipt));
+        assert!(!mgr.verify_decision_receipt_signature(&receipt));
+    }
+
+    #[test]
+    fn self_signed_decision_receipt_is_rejected_without_trusted_root() {
+        let attacker_key = test_decision_signing_key(42);
+        let trusted_key = test_decision_signing_key(24);
+        let trusted_root = test_decision_trust_root(&trusted_key);
+        let receipt = test_receipt_signed_by("op-self-signed", &attacker_key);
+
+        assert!(
+            !verify_decision_receipt_signature(&receipt),
+            "default verifier must fail closed without trusted roots"
+        );
+        assert!(
+            !verify_decision_receipt_signature_with_trust_roots(&receipt, &[trusted_root]),
+            "receipt signed by a key outside configured roots must be rejected"
+        );
+    }
+
+    #[test]
+    fn trusted_decision_receipt_is_accepted() {
+        let trusted_key = test_decision_signing_key(24);
+        let trusted_root = test_decision_trust_root(&trusted_key);
+        let receipt = test_receipt_signed_by("op-trusted-root", &trusted_key);
+
+        assert!(verify_decision_receipt_signature_with_trust_roots(
+            &receipt,
+            &[trusted_root]
+        ));
+    }
+
+    #[test]
+    fn rotated_decision_receipt_key_transition_is_enforced() {
+        let old_key = test_decision_signing_key(24);
+        let new_key = test_decision_signing_key(25);
+        let old_root = test_decision_trust_root(&old_key);
+        let new_root = test_decision_trust_root(&new_key);
+        let old_receipt = test_receipt_signed_by("op-old-key", &old_key);
+        let new_receipt = test_receipt_signed_by("op-new-key", &new_key);
+
+        assert!(verify_decision_receipt_signature_with_trust_roots(
+            &old_receipt,
+            std::slice::from_ref(&old_root)
+        ));
+        assert!(!verify_decision_receipt_signature_with_trust_roots(
+            &new_receipt,
+            std::slice::from_ref(&old_root)
+        ));
+        assert!(verify_decision_receipt_signature_with_trust_roots(
+            &new_receipt,
+            &[old_root, new_root.clone()]
+        ));
+        assert!(!verify_decision_receipt_signature_with_trust_roots(
+            &old_receipt,
+            &[new_root]
+        ));
     }
 
     #[derive(Debug)]

@@ -9578,13 +9578,30 @@ mod incident_list_tests {
     use super::*;
     use frankenengine_node::tools::replay_bundle::{
         EventType, INCIDENT_EVIDENCE_SCHEMA, IncidentEvidenceEvent, IncidentEvidenceMetadata,
-        IncidentEvidencePackage, IncidentSeverity,
+        IncidentEvidencePackage, IncidentSeverity, ReplayBundleSigningMaterial, sign_replay_bundle,
     };
     use std::sync::{Mutex, OnceLock};
 
     fn cwd_test_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn incident_test_trusted_key_id() -> String {
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[42_u8; 32]);
+        frankenengine_node::supply_chain::artifact_signing::KeyId::from_verifying_key(
+            &signing_key.verifying_key(),
+        )
+        .to_string()
+    }
+
+    fn configure_incident_test_signing_key(workspace: &Path) {
+        std::fs::write(
+            workspace.join("franken_node.toml"),
+            "profile = \"balanced\"\n\n[security]\ndecision_receipt_signing_key_path = \"keys/receipt-signing.key\"\n",
+        )
+        .expect("write signing config");
+        write_receipt_signing_key(&workspace.join("keys/receipt-signing.key"));
     }
 
     fn write_fixture_bundle(path: &Path, incident_id: &str, severity: &str) {
@@ -9594,8 +9611,17 @@ mod incident_list_tests {
         {
             payload.insert("severity".to_string(), serde_json::json!(severity));
         }
-        let bundle = generate_replay_bundle(incident_id, &events).expect("bundle");
-        write_bundle_to_path(&bundle, path).expect("write bundle");
+        let mut bundle = generate_replay_bundle(incident_id, &events).expect("bundle");
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[42_u8; 32]);
+        let signing_material = ReplayBundleSigningMaterial {
+            signing_key: &signing_key,
+            key_source: "test",
+            signing_identity: "incident-list-test",
+        };
+        sign_replay_bundle(&mut bundle, &signing_material).expect("sign bundle");
+        let trusted_key_id = incident_test_trusted_key_id();
+        write_bundle_to_path_with_trusted_key(&bundle, path, &trusted_key_id)
+            .expect("write bundle");
     }
 
     fn corrupt_bundle_integrity_hash(path: &Path) {
@@ -9709,18 +9735,29 @@ mod incident_list_tests {
 
     #[test]
     fn collect_incident_list_entries_filters_by_severity() {
+        let _lock = cwd_test_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let temp = tempfile::tempdir().expect("tempdir");
         let root = temp.path();
+        let previous_cwd = std::env::current_dir().expect("cwd");
+        configure_incident_test_signing_key(root);
         let nested = root.join("incidents");
         std::fs::create_dir_all(&nested).expect("create nested dir");
 
         write_fixture_bundle(&root.join("high-incident.fnbundle"), "INC-HIGH-001", "high");
         write_fixture_bundle(&nested.join("low-incident.fnbundle"), "INC-LOW-001", "low");
+        std::env::set_current_dir(root).expect("set cwd");
 
-        let all = collect_incident_list_entries(root, None).expect("all entries");
+        let all_result = collect_incident_list_entries(root, None);
+        let high_result = collect_incident_list_entries(root, Some("high"));
+        let restore_result = std::env::set_current_dir(&previous_cwd);
+
+        restore_result.expect("restore cwd");
+        let all = all_result.expect("all entries");
         assert_eq!(all.len(), 2);
 
-        let high = collect_incident_list_entries(root, Some("high")).expect("high entries");
+        let high = high_result.expect("high entries");
         assert_eq!(high.len(), 1);
         assert_eq!(high[0].incident_id, "INC-HIGH-001");
         assert_eq!(high[0].severity, "high");
@@ -9752,11 +9789,7 @@ mod incident_list_tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = tempfile::tempdir().expect("tempdir");
         let previous_cwd = std::env::current_dir().expect("cwd");
-        std::fs::write(
-            dir.path().join("franken_node.toml"),
-            "profile = \"balanced\"\n",
-        )
-        .expect("write config");
+        configure_incident_test_signing_key(dir.path());
         std::env::set_current_dir(dir.path()).expect("set cwd");
 
         let resolve_result = resolve_incident_evidence_path("INC/TEST:001", None);
@@ -9782,11 +9815,7 @@ mod incident_list_tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let previous_cwd = std::env::current_dir().expect("cwd");
         let incident_id = "INC/TEST:001";
-        std::fs::write(
-            dir.path().join("franken_node.toml"),
-            "profile = \"balanced\"\n",
-        )
-        .expect("write config");
+        configure_incident_test_signing_key(dir.path());
         let evidence_path = write_fixture_incident_evidence_package(dir.path(), incident_id);
         std::env::set_current_dir(dir.path()).expect("set cwd");
 
@@ -9807,7 +9836,9 @@ mod incident_list_tests {
         assert!(evidence_path.is_file());
         assert!(output_path.is_file());
 
-        let bundle = read_bundle_from_path(&output_path).expect("read bundle");
+        let trusted_key_id = incident_test_trusted_key_id();
+        let bundle = read_bundle_from_path_with_trusted_key(&output_path, Some(&trusted_key_id))
+            .expect("read bundle");
         assert_eq!(bundle.incident_id, incident_id);
         assert_eq!(
             bundle.initial_state_snapshot,
@@ -9825,11 +9856,7 @@ mod incident_list_tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let previous_cwd = std::env::current_dir().expect("cwd");
         let incident_id = "INC-MISSING-001";
-        std::fs::write(
-            dir.path().join("franken_node.toml"),
-            "profile = \"balanced\"\n",
-        )
-        .expect("write config");
+        configure_incident_test_signing_key(dir.path());
         std::env::set_current_dir(dir.path()).expect("set cwd");
 
         let run_result = handle_incident_bundle_command(&cli::IncidentBundleArgs {
@@ -9862,11 +9889,7 @@ mod incident_list_tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let previous_cwd = std::env::current_dir().expect("cwd");
         let incident_id = "INC/FRESH:001";
-        std::fs::write(
-            dir.path().join("franken_node.toml"),
-            "profile = \"balanced\"\n",
-        )
-        .expect("write config");
+        configure_incident_test_signing_key(dir.path());
         let evidence_path = write_fixture_incident_evidence_package(dir.path(), incident_id);
         std::env::set_current_dir(dir.path()).expect("set cwd");
 
@@ -9885,8 +9908,9 @@ mod incident_list_tests {
         restore_result.expect("restore cwd");
 
         assert!(output_path.is_file());
+        let trusted_key_id = incident_test_trusted_key_id();
         assert_eq!(
-            read_bundle_from_path(&output_path)
+            read_bundle_from_path_with_trusted_key(&output_path, Some(&trusted_key_id))
                 .expect("read bundle")
                 .incident_id,
             incident_id
