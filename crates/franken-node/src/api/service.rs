@@ -24,6 +24,9 @@ use super::middleware::{
 use super::operator_routes;
 use super::verifier_routes;
 
+/// Maximum retained request lifecycle provenance events.
+pub const MAX_LIFECYCLE_EVENTS: usize = 4096;
+
 // ── Service Configuration ──────────────────────────────────────────────────
 
 /// Configuration for the control-plane service.
@@ -348,8 +351,12 @@ impl ControlPlaneService {
     /// - Rate limit state at time of request
     /// - Whether performance baselines were measured (currently: no)
     pub fn record(&mut self, log: &RequestLog) {
-        self.request_lifecycle_events
-            .push(self.request_lifecycle_provenance(&log.endpoint_group, &log.route));
+        let provenance = self.request_lifecycle_provenance(&log.endpoint_group, &log.route);
+        push_bounded(
+            &mut self.request_lifecycle_events,
+            provenance,
+            MAX_LIFECYCLE_EVENTS,
+        );
         self.metrics.record_request(log);
     }
 
@@ -398,6 +405,19 @@ impl Default for ControlPlaneService {
     fn default() -> Self {
         Self::new(ServiceConfig::default())
     }
+}
+
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
+
+    if items.len() >= cap {
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow.min(items.len()));
+    }
+    items.push(item);
 }
 
 #[cfg(test)]
@@ -584,6 +604,39 @@ mod tests {
         assert_eq!(
             events[0].perf_baseline_status,
             PerformanceBaselineStatus::UnavailablePendingTransport
+        );
+    }
+
+    #[test]
+    fn service_record_bounds_request_lifecycle_events_fifo() {
+        let _lock = super::operator_routes::process_start_test_lock();
+        super::operator_routes::clear_process_start_override_for_tests();
+        let mut service = ControlPlaneService::default();
+
+        for index in 0..(MAX_LIFECYCLE_EVENTS + 2) {
+            let log = RequestLog {
+                method: "GET".to_string(),
+                route: format!("/v1/operator/status/{index}"),
+                status: 200,
+                latency_ms: 1.0,
+                trace_id: format!("trace-{index}"),
+                principal: "test".to_string(),
+                endpoint_group: "operator".to_string(),
+                event_code: "FASTAPI_RESPONSE_SENT".to_string(),
+            };
+            service.record(&log);
+        }
+
+        let events = service.request_lifecycle_events();
+        assert_eq!(events.len(), MAX_LIFECYCLE_EVENTS);
+        assert_eq!(events[0].route_path, "/v1/operator/status/2");
+        assert_eq!(
+            events[MAX_LIFECYCLE_EVENTS - 1].route_path,
+            format!("/v1/operator/status/{}", MAX_LIFECYCLE_EVENTS + 1)
+        );
+        assert_eq!(
+            service.request_count(),
+            u64::try_from(MAX_LIFECYCLE_EVENTS + 2).expect("test cap fits in u64")
         );
     }
 
