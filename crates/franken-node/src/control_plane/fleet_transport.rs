@@ -27,6 +27,7 @@ pub const FLEET_ACTION_LOG_FILE: &str = "actions.jsonl";
 pub const FLEET_NODE_DIR: &str = "nodes";
 pub const FLEET_LOCK_DIR: &str = "locks";
 const FLEET_ACTION_COMPACTION_LOCK_FILE: &str = "actions.compaction.lock";
+const FLEET_SHARED_STATE_LOCK_FILE: &str = "shared-state.snapshot.lock";
 const MAX_NODE_ID_LEN: usize = 128;
 const MAX_ZONE_ID_LEN: usize = 128;
 const MAX_ACTION_ID_LEN: usize = 128;
@@ -551,6 +552,33 @@ impl FleetTransport for AsupersyncFleetTransport {
         self.record_event(&mut state, "list_node_statuses");
         Ok(state.nodes.clone())
     }
+
+    fn read_shared_state(&self) -> Result<FleetSharedState, FleetTransportError> {
+        self.checkpoint("read_shared_state")?;
+        let mut state = self.network.lock()?;
+        self.ensure_initialized(&state)?;
+        self.record_event(&mut state, "read_shared_state");
+
+        let mut actions = state.actions.clone();
+        actions.sort_by(|left, right| {
+            left.emitted_at
+                .cmp(&right.emitted_at)
+                .then_with(|| left.action_id.cmp(&right.action_id))
+        });
+
+        let mut nodes = state.nodes.clone();
+        nodes.sort_by(|left, right| {
+            left.zone_id
+                .cmp(&right.zone_id)
+                .then_with(|| left.node_id.cmp(&right.node_id))
+        });
+
+        Ok(FleetSharedState {
+            schema_version: FLEET_SHARED_STATE_SCHEMA.to_string(),
+            actions,
+            nodes,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -656,97 +684,101 @@ impl FileFleetTransport {
             ));
         }
 
-        let _process_guard = lock_fleet_action_compaction_process()?;
-        let compaction_lock_path = self.action_compaction_lock_path();
-        let compaction_lock_file = self.lock_file(&compaction_lock_path)?;
-        lock_file_with_backoff(&compaction_lock_file, &compaction_lock_path, false)?;
-        let compaction_result = (|| {
-            let metadata = fs::metadata(self.layout.actions_path()).map_err(|err| {
-                FleetTransportError::io(format!(
-                    "failed reading fleet action log metadata {}: {err}",
-                    self.layout.actions_path().display()
-                ))
-            })?;
-            if metadata.len() <= max_file_size_bytes {
-                return Ok(());
-            }
-
-            let file = self.action_log_file(true)?;
-            lock_file_with_backoff(&file, self.layout.actions_path(), false)?;
-            let rewrite_result = (|| {
-                let retention_window = chrono::TimeDelta::days(retention_days);
-                let retained_actions =
-                    parse_jsonl_records::<FleetActionRecord>(&file, self.layout.actions_path())?
-                        .into_iter()
-                        .filter(|record| {
-                            now.signed_duration_since(record.emitted_at) <= retention_window
-                        })
-                        .collect::<Vec<_>>();
-
-                let temp_path = self
-                    .layout
-                    .actions_path()
-                    .with_extension(format!("jsonl.tmp-{}", Uuid::now_v7()));
-                let mut temp_guard = TempFileGuard::new(temp_path.clone());
-                let mut temp_file = OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .truncate(true)
-                    .open(&temp_path)
-                    .map_err(|err| {
-                        FleetTransportError::io(format!(
-                            "failed opening compacted fleet action log {}: {err}",
-                            temp_path.display()
-                        ))
-                    })?;
-
-                for record in retained_actions {
-                    let payload = serde_json::to_vec(&record).map_err(|err| {
-                        FleetTransportError::serialization(format!(
-                            "failed serializing compacted fleet action {}: {err}",
-                            record.action_id
-                        ))
-                    })?;
-                    temp_file.write_all(&payload).map_err(|err| {
-                        FleetTransportError::io(format!(
-                            "failed writing compacted fleet action log {}: {err}",
-                            temp_path.display()
-                        ))
-                    })?;
-                    temp_file.write_all(b"\n").map_err(|err| {
-                        FleetTransportError::io(format!(
-                            "failed writing compacted fleet action delimiter {}: {err}",
-                            temp_path.display()
-                        ))
-                    })?;
-                }
-                temp_file.sync_data().map_err(|err| {
+        self.with_shared_state_lock(false, || {
+            let _process_guard = lock_fleet_action_compaction_process()?;
+            let compaction_lock_path = self.action_compaction_lock_path();
+            let compaction_lock_file = self.lock_file(&compaction_lock_path)?;
+            lock_file_with_backoff(&compaction_lock_file, &compaction_lock_path, false)?;
+            let compaction_result = (|| {
+                let metadata = fs::metadata(self.layout.actions_path()).map_err(|err| {
                     FleetTransportError::io(format!(
-                        "failed syncing compacted fleet action log {}: {err}",
-                        temp_path.display()
-                    ))
-                })?;
-                fs::rename(&temp_path, self.layout.actions_path()).map_err(|err| {
-                    FleetTransportError::io(format!(
-                        "failed promoting compacted fleet action log {} to {}: {err}",
-                        temp_path.display(),
+                        "failed reading fleet action log metadata {}: {err}",
                         self.layout.actions_path().display()
                     ))
                 })?;
-                temp_guard.defuse();
+                if metadata.len() <= max_file_size_bytes {
+                    return Ok(());
+                }
+
+                let file = self.action_log_file(true)?;
+                lock_file_with_backoff(&file, self.layout.actions_path(), false)?;
+                let rewrite_result = (|| {
+                    let retention_window = chrono::TimeDelta::days(retention_days);
+                    let retained_actions = parse_jsonl_records::<FleetActionRecord>(
+                        &file,
+                        self.layout.actions_path(),
+                    )?
+                    .into_iter()
+                    .filter(|record| {
+                        now.signed_duration_since(record.emitted_at) <= retention_window
+                    })
+                    .collect::<Vec<_>>();
+
+                    let temp_path = self
+                        .layout
+                        .actions_path()
+                        .with_extension(format!("jsonl.tmp-{}", Uuid::now_v7()));
+                    let mut temp_guard = TempFileGuard::new(temp_path.clone());
+                    let mut temp_file = OpenOptions::new()
+                        .write(true)
+                        .create(true)
+                        .truncate(true)
+                        .open(&temp_path)
+                        .map_err(|err| {
+                            FleetTransportError::io(format!(
+                                "failed opening compacted fleet action log {}: {err}",
+                                temp_path.display()
+                            ))
+                        })?;
+
+                    for record in retained_actions {
+                        let payload = serde_json::to_vec(&record).map_err(|err| {
+                            FleetTransportError::serialization(format!(
+                                "failed serializing compacted fleet action {}: {err}",
+                                record.action_id
+                            ))
+                        })?;
+                        temp_file.write_all(&payload).map_err(|err| {
+                            FleetTransportError::io(format!(
+                                "failed writing compacted fleet action log {}: {err}",
+                                temp_path.display()
+                            ))
+                        })?;
+                        temp_file.write_all(b"\n").map_err(|err| {
+                            FleetTransportError::io(format!(
+                                "failed writing compacted fleet action delimiter {}: {err}",
+                                temp_path.display()
+                            ))
+                        })?;
+                    }
+                    temp_file.sync_data().map_err(|err| {
+                        FleetTransportError::io(format!(
+                            "failed syncing compacted fleet action log {}: {err}",
+                            temp_path.display()
+                        ))
+                    })?;
+                    fs::rename(&temp_path, self.layout.actions_path()).map_err(|err| {
+                        FleetTransportError::io(format!(
+                            "failed promoting compacted fleet action log {} to {}: {err}",
+                            temp_path.display(),
+                            self.layout.actions_path().display()
+                        ))
+                    })?;
+                    temp_guard.defuse();
+                    Ok(())
+                })();
+
+                let unlock_result = unlock_file(&file, self.layout.actions_path());
+                rewrite_result?;
+                unlock_result?;
                 Ok(())
             })();
 
-            let unlock_result = unlock_file(&file, self.layout.actions_path());
-            rewrite_result?;
+            let unlock_result = unlock_file(&compaction_lock_file, &compaction_lock_path);
+            compaction_result?;
             unlock_result?;
             Ok(())
-        })();
-
-        let unlock_result = unlock_file(&compaction_lock_file, &compaction_lock_path);
-        compaction_result?;
-        unlock_result?;
-        Ok(())
+        })
     }
 
     fn action_log_file(&self, write: bool) -> Result<File, FleetTransportError> {
@@ -772,6 +804,25 @@ impl FileFleetTransport {
         self.layout
             .locks_dir()
             .join(FLEET_ACTION_COMPACTION_LOCK_FILE)
+    }
+
+    fn shared_state_lock_path(&self) -> PathBuf {
+        self.layout.locks_dir().join(FLEET_SHARED_STATE_LOCK_FILE)
+    }
+
+    fn with_shared_state_lock<T>(
+        &self,
+        shared: bool,
+        f: impl FnOnce() -> Result<T, FleetTransportError>,
+    ) -> Result<T, FleetTransportError> {
+        let lock_path = self.shared_state_lock_path();
+        let lock_file = self.lock_file(&lock_path)?;
+        lock_file_with_backoff(&lock_file, &lock_path, shared)?;
+        let result = f();
+        let unlock_result = unlock_file(&lock_file, &lock_path);
+        let value = result?;
+        unlock_result?;
+        Ok(value)
     }
 
     fn lock_file(&self, path: &Path) -> Result<File, FleetTransportError> {
@@ -806,7 +857,7 @@ impl FileFleetTransport {
         Ok(actions)
     }
 
-    fn write_node_status(&self, status: &NodeStatus) -> Result<(), FleetTransportError> {
+    fn write_node_status_unlocked(&self, status: &NodeStatus) -> Result<(), FleetTransportError> {
         let path = self.layout.node_status_path(&status.node_id)?;
         let lock_path = self.node_lock_path(&status.node_id)?;
         let lock_file = self.lock_file(&lock_path)?;
@@ -860,81 +911,8 @@ impl FileFleetTransport {
         unlock_result?;
         Ok(())
     }
-}
 
-impl FleetTransport for FileFleetTransport {
-    fn initialize(&mut self) -> Result<(), FleetTransportError> {
-        self.layout.initialize()?;
-        self.compact_action_log_if_needed(
-            ACTION_LOG_COMPACTION_THRESHOLD_BYTES,
-            ACTION_LOG_RETENTION_DAYS,
-            Utc::now(),
-        )
-    }
-
-    fn publish_action(&mut self, action: &FleetActionRecord) -> Result<(), FleetTransportError> {
-        self.ensure_initialized()?;
-        validate_action_record(action)?;
-        let file = self.action_log_file(true)?;
-        lock_file_with_backoff(&file, self.layout.actions_path(), false)?;
-
-        let write_result = (|| {
-            let payload = serde_json::to_vec(action).map_err(|err| {
-                FleetTransportError::serialization(format!(
-                    "failed serializing fleet action {}: {err}",
-                    action.action_id
-                ))
-            })?;
-            if payload.len() > MAX_ACTION_RECORD_BYTES {
-                return Err(FleetTransportError::serialization(format!(
-                    "serialized fleet action {} exceeds {} bytes",
-                    action.action_id, MAX_ACTION_RECORD_BYTES
-                )));
-            }
-
-            let mut handle = &file;
-            handle.write_all(&payload).map_err(|err| {
-                FleetTransportError::io(format!(
-                    "failed writing fleet action log {}: {err}",
-                    self.layout.actions_path().display()
-                ))
-            })?;
-            handle.write_all(b"\n").map_err(|err| {
-                FleetTransportError::io(format!(
-                    "failed writing fleet action delimiter {}: {err}",
-                    self.layout.actions_path().display()
-                ))
-            })?;
-            file.sync_data().map_err(|err| {
-                FleetTransportError::io(format!(
-                    "failed syncing fleet action log {}: {err}",
-                    self.layout.actions_path().display()
-                ))
-            })?;
-            Ok(())
-        })();
-
-        let unlock_result = unlock_file(&file, self.layout.actions_path());
-        write_result?;
-        unlock_result?;
-        Ok(())
-    }
-
-    fn list_actions(&self) -> Result<Vec<FleetActionRecord>, FleetTransportError> {
-        self.ensure_initialized()?;
-        self.read_action_log()
-    }
-
-    fn upsert_node_status(&mut self, status: &NodeStatus) -> Result<(), FleetTransportError> {
-        self.ensure_initialized()?;
-        validate_zone_id(&status.zone_id)?;
-        validate_node_id(&status.node_id)?;
-        self.write_node_status(status)
-    }
-
-    fn list_node_statuses(&self) -> Result<Vec<NodeStatus>, FleetTransportError> {
-        self.ensure_initialized()?;
-
+    fn list_node_statuses_unlocked(&self) -> Result<Vec<NodeStatus>, FleetTransportError> {
         let mut nodes = Vec::new();
         for entry in fs::read_dir(self.layout.nodes_dir()).map_err(|err| {
             FleetTransportError::io(format!(
@@ -985,6 +963,111 @@ impl FleetTransport for FileFleetTransport {
         }
 
         Ok(nodes)
+    }
+}
+
+impl FleetTransport for FileFleetTransport {
+    fn initialize(&mut self) -> Result<(), FleetTransportError> {
+        self.layout.initialize()?;
+        self.compact_action_log_if_needed(
+            ACTION_LOG_COMPACTION_THRESHOLD_BYTES,
+            ACTION_LOG_RETENTION_DAYS,
+            Utc::now(),
+        )
+    }
+
+    fn publish_action(&mut self, action: &FleetActionRecord) -> Result<(), FleetTransportError> {
+        self.ensure_initialized()?;
+        validate_action_record(action)?;
+        self.with_shared_state_lock(false, || {
+            let file = self.action_log_file(true)?;
+            lock_file_with_backoff(&file, self.layout.actions_path(), false)?;
+
+            let write_result = (|| {
+                let payload = serde_json::to_vec(action).map_err(|err| {
+                    FleetTransportError::serialization(format!(
+                        "failed serializing fleet action {}: {err}",
+                        action.action_id
+                    ))
+                })?;
+                if payload.len() > MAX_ACTION_RECORD_BYTES {
+                    return Err(FleetTransportError::serialization(format!(
+                        "serialized fleet action {} exceeds {} bytes",
+                        action.action_id, MAX_ACTION_RECORD_BYTES
+                    )));
+                }
+
+                let mut handle = &file;
+                handle.write_all(&payload).map_err(|err| {
+                    FleetTransportError::io(format!(
+                        "failed writing fleet action log {}: {err}",
+                        self.layout.actions_path().display()
+                    ))
+                })?;
+                handle.write_all(b"\n").map_err(|err| {
+                    FleetTransportError::io(format!(
+                        "failed writing fleet action delimiter {}: {err}",
+                        self.layout.actions_path().display()
+                    ))
+                })?;
+                file.sync_data().map_err(|err| {
+                    FleetTransportError::io(format!(
+                        "failed syncing fleet action log {}: {err}",
+                        self.layout.actions_path().display()
+                    ))
+                })?;
+                Ok(())
+            })();
+
+            let unlock_result = unlock_file(&file, self.layout.actions_path());
+            write_result?;
+            unlock_result?;
+            Ok(())
+        })
+    }
+
+    fn list_actions(&self) -> Result<Vec<FleetActionRecord>, FleetTransportError> {
+        self.ensure_initialized()?;
+        self.with_shared_state_lock(true, || self.read_action_log())
+    }
+
+    fn upsert_node_status(&mut self, status: &NodeStatus) -> Result<(), FleetTransportError> {
+        self.ensure_initialized()?;
+        validate_zone_id(&status.zone_id)?;
+        validate_node_id(&status.node_id)?;
+        self.with_shared_state_lock(false, || self.write_node_status_unlocked(status))
+    }
+
+    fn list_node_statuses(&self) -> Result<Vec<NodeStatus>, FleetTransportError> {
+        self.ensure_initialized()?;
+
+        self.with_shared_state_lock(true, || self.list_node_statuses_unlocked())
+    }
+
+    fn read_shared_state(&self) -> Result<FleetSharedState, FleetTransportError> {
+        self.ensure_initialized()?;
+
+        self.with_shared_state_lock(true, || {
+            let mut actions = self.read_action_log()?;
+            actions.sort_by(|left, right| {
+                left.emitted_at
+                    .cmp(&right.emitted_at)
+                    .then_with(|| left.action_id.cmp(&right.action_id))
+            });
+
+            let mut nodes = self.list_node_statuses_unlocked()?;
+            nodes.sort_by(|left, right| {
+                left.zone_id
+                    .cmp(&right.zone_id)
+                    .then_with(|| left.node_id.cmp(&right.node_id))
+            });
+
+            Ok(FleetSharedState {
+                schema_version: FLEET_SHARED_STATE_SCHEMA.to_string(),
+                actions,
+                nodes,
+            })
+        })
     }
 }
 
@@ -1221,6 +1304,7 @@ mod tests {
     use super::*;
     use std::{
         fs,
+        io::Write as _,
         sync::{Arc, Barrier},
         time::Instant,
     };
@@ -1777,6 +1861,78 @@ mod tests {
         assert_eq!(state.actions[1].action_id, "b");
         assert_eq!(state.nodes[0].node_id, "node-a");
         assert_eq!(state.nodes[1].node_id, "node-z");
+    }
+
+    #[test]
+    fn file_transport_shared_state_reader_waits_for_inflight_snapshot_write() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+
+        let lock_path = transport.shared_state_lock_path();
+        let lock_file = transport.lock_file(&lock_path).expect("open snapshot lock");
+        lock_file.lock().expect("take exclusive snapshot lock");
+
+        let pending_action =
+            release_action_record("pending-action", "2026-04-06T01:00:03Z", "inc-pending");
+        let payload = serde_json::to_vec(&pending_action).expect("serialize action");
+        let mut action_file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(transport.layout().actions_path())
+            .expect("open actions");
+        action_file
+            .write_all(&payload)
+            .expect("write pending action");
+        action_file
+            .write_all(b"\n")
+            .expect("write action delimiter");
+        action_file.sync_data().expect("sync pending action");
+        drop(action_file);
+
+        let reader_root = root.clone();
+        let reader = std::thread::spawn(move || {
+            let transport = FileFleetTransport::new(reader_root);
+            transport.read_shared_state()
+        });
+
+        let wait_started = Instant::now();
+        while wait_started.elapsed() < Duration::from_millis(120) {
+            assert!(
+                !reader.is_finished(),
+                "snapshot reader must not observe partial action/node write"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        let pending_node = node_status(
+            "prod",
+            "node-pending",
+            "2026-04-06T01:02:06Z",
+            4,
+            NodeHealth::Healthy,
+        );
+        transport
+            .write_node_status_unlocked(&pending_node)
+            .expect("write pending node");
+        lock_file.unlock().expect("release snapshot lock");
+
+        let state = reader
+            .join()
+            .expect("reader join")
+            .expect("snapshot read after writer completes");
+        assert!(
+            state
+                .actions
+                .iter()
+                .any(|action| action.action_id == pending_action.action_id)
+        );
+        assert!(
+            state
+                .nodes
+                .iter()
+                .any(|node| node.node_id == pending_node.node_id)
+        );
     }
 
     #[test]

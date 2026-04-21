@@ -68,10 +68,31 @@ impl Drop for TempFileGuard {
     }
 }
 
+/// RAII guard for the root pointer publication flock.
+#[must_use]
+struct RootPublicationLockGuard {
+    file: File,
+    path: PathBuf,
+}
+
+impl Drop for RootPublicationLockGuard {
+    fn drop(&mut self) {
+        if let Err(source) = self.file.unlock() {
+            tracing::warn!(
+                path = %self.path.display(),
+                error = %source,
+                "failed to release root publication lock"
+            );
+        }
+    }
+}
+
 /// Canonical root pointer filename.
 pub const ROOT_POINTER_FILE: &str = "root_pointer.json";
 /// Canonical detached auth record filename for root pointer bootstrap checks.
 pub const ROOT_POINTER_AUTH_FILE: &str = "root_pointer.auth.json";
+/// Stable cross-process publication lock file for root/auth pair snapshots.
+pub const ROOT_POINTER_LOCK_FILE: &str = "root_pointer.publish.lock";
 /// Canonical root pointer format version.
 pub const ROOT_POINTER_FORMAT_VERSION: &str = "v1";
 
@@ -323,6 +344,45 @@ fn publish_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+/// Compute stable cross-process publication lock path for a root directory.
+#[must_use]
+fn root_publication_lock_path(dir: &Path) -> PathBuf {
+    dir.join(ROOT_POINTER_LOCK_FILE)
+}
+
+fn acquire_root_publication_lock(
+    dir: &Path,
+    shared: bool,
+) -> Result<RootPublicationLockGuard, RootPointerError> {
+    let path = root_publication_lock_path(dir);
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(|source| RootPointerError::Io {
+            step: "open_publication_lock",
+            path: path.display().to_string(),
+            source,
+        })?;
+    let lock_result = if shared {
+        file.lock_shared()
+    } else {
+        file.lock()
+    };
+    lock_result.map_err(|source| RootPointerError::Io {
+        step: if shared {
+            "lock_publication_shared"
+        } else {
+            "lock_publication_exclusive"
+        },
+        path: path.display().to_string(),
+        source,
+    })?;
+    Ok(RootPublicationLockGuard { file, path })
+}
+
 /// Compute canonical path for the root pointer inside `dir`.
 #[must_use]
 pub fn root_pointer_path(dir: &Path) -> PathBuf {
@@ -351,14 +411,19 @@ fn read_root_bytes(path: &Path) -> Result<Vec<u8>, RootPointerError> {
     })
 }
 
-/// Read and deserialize the canonical root pointer.
-pub fn read_root(dir: &Path) -> Result<RootPointer, RootPointerError> {
+fn read_root_unlocked(dir: &Path) -> Result<RootPointer, RootPointerError> {
     let path = root_pointer_path(dir);
     let bytes = read_root_bytes(&path)?;
     serde_json::from_slice::<RootPointer>(&bytes).map_err(|source| RootPointerError::Deserialize {
         path: path.display().to_string(),
         source,
     })
+}
+
+/// Read and deserialize the canonical root pointer under the publication lock.
+pub fn read_root(dir: &Path) -> Result<RootPointer, RootPointerError> {
+    let _publication_lock = acquire_root_publication_lock(dir, true)?;
+    read_root_unlocked(dir)
 }
 
 /// Fail-closed bootstrap gate for root pointer authentication + epoch/version checks.
@@ -368,6 +433,11 @@ pub fn bootstrap_root(
     dir: &Path,
     auth_config: &RootAuthConfig,
 ) -> Result<VerifiedRoot, BootstrapError> {
+    let _publication_lock = acquire_root_publication_lock(dir, true).map_err(|source| {
+        BootstrapError::RootAuthFailed {
+            reason: format!("unable to acquire root publication lock: {source}"),
+        }
+    })?;
     let root_path = root_pointer_path(dir);
     let root_bytes = fs::read(&root_path).map_err(|source| {
         if source.kind() == std::io::ErrorKind::NotFound {
@@ -514,6 +584,7 @@ fn publish_root_internal(
     let _guard = publish_lock()
         .lock()
         .map_err(|_| RootPointerError::LockPoisoned)?;
+    let _publication_lock = acquire_root_publication_lock(dir, false)?;
     if let Some(delay) = options.delay_after_lock {
         thread::sleep(delay);
     }
@@ -522,7 +593,7 @@ fn publish_root_internal(
     let root_path = root_pointer_path(dir);
     let temp_path = dir.join(format!(".{}.tmp.{}", ROOT_POINTER_FILE, Uuid::now_v7()));
     let mut _temp_guard = TempFileGuard::new(temp_path.clone());
-    let old_root = match read_root(dir) {
+    let old_root = match read_root_unlocked(dir) {
         Ok(r) => {
             // Verify MAC of existing root before trusting its epoch
             let auth_path = root_auth_path(dir);
@@ -1019,6 +1090,50 @@ mod tests {
     }
 
     #[test]
+    fn publish_waits_for_cross_process_publication_lock() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+
+        publish_root(dir.path(), &root(1, 1, "h1"), &k, "seed").expect("seed publish");
+
+        let lock_path = root_publication_lock_path(dir.path());
+        let lock_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .expect("open publication lock");
+        lock_file.lock().expect("take external publication lock");
+
+        let dir_path = dir.path().to_path_buf();
+        let key_for_thread = k.clone();
+        let publisher = thread::spawn(move || {
+            publish_root(
+                &dir_path,
+                &root(2, 2, "h2"),
+                &key_for_thread,
+                "external-lock",
+            )
+        });
+
+        thread::sleep(Duration::from_millis(100));
+        assert!(
+            !publisher.is_finished(),
+            "publisher must wait behind externally-held publication lock"
+        );
+
+        lock_file
+            .unlock()
+            .expect("release external publication lock");
+        let outcome = publisher
+            .join()
+            .expect("publisher join")
+            .expect("publish after external lock release");
+        assert_eq!(outcome.event.new_epoch, ControlEpoch(2));
+    }
+
+    #[test]
     fn signature_verification_fails_for_tampered_event() {
         let dir = TempDir::new().expect("tempdir");
         let k = key();
@@ -1050,6 +1165,63 @@ mod tests {
             verified.auth.root_format_version,
             ROOT_POINTER_FORMAT_VERSION
         );
+    }
+
+    #[test]
+    fn bootstrap_waits_for_publication_lock_before_reading_root_auth_pair() {
+        let dir = TempDir::new().expect("tempdir");
+        let k = key();
+
+        publish_root(dir.path(), &root(1, 1, "seed"), &k, "seed").expect("seed publish");
+
+        let lock_path = root_publication_lock_path(dir.path());
+        let lock_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .expect("open publication lock");
+        lock_file.lock().expect("take publication lock");
+
+        let next = root(2, 2, "next");
+        let payload = serde_json::to_vec_pretty(&next).expect("serialize next root");
+        fs::write(root_pointer_path(dir.path()), &payload).expect("write torn root");
+
+        let cfg = RootAuthConfig::strict(k.clone(), ControlEpoch(2));
+        let dir_path = dir.path().to_path_buf();
+        let bootstrapper = thread::spawn(move || bootstrap_root(&dir_path, &cfg));
+
+        let wait_started = Instant::now();
+        while wait_started.elapsed() < Duration::from_millis(120) {
+            assert!(
+                !bootstrapper.is_finished(),
+                "bootstrap must wait behind publication lock instead of reading a torn pair"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        let root_hash = hash_hex(&payload);
+        let auth_record = RootAuthRecord {
+            root_format_version: ROOT_POINTER_FORMAT_VERSION.to_string(),
+            root_hash: root_hash.clone(),
+            epoch: next.epoch,
+            issued_at: Utc::now().to_rfc3339(),
+            mac: sign_payload(&root_hash, &k).expect("sign auth"),
+        };
+        fs::write(
+            root_auth_path(dir.path()),
+            serde_json::to_vec_pretty(&auth_record).expect("serialize auth"),
+        )
+        .expect("write matching auth");
+        lock_file.unlock().expect("release publication lock");
+
+        let verified = bootstrapper
+            .join()
+            .expect("bootstrap join")
+            .expect("bootstrap after matching auth publish");
+        assert_eq!(verified.root, next);
+        assert_eq!(verified.auth.root_hash, root_hash);
     }
 
     #[test]
@@ -1712,8 +1884,8 @@ mod tests {
 
     #[test]
     fn test_bootstrap_path_traversal_protection() {
-        use std::path::PathBuf;
         use crate::security::constant_time;
+        use std::path::PathBuf;
 
         // Create temp directory structure
         let base_dir = TempDir::new().expect("tempdir");
