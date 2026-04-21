@@ -20,6 +20,12 @@ use frankenengine_verifier_sdk::bundle::{
 // - Bundle verification logic: integrity_hash, verify
 fuzz_target!(|data: FuzzInput| {
     match data {
+        FuzzInput::StructuredBundle(bundle) => {
+            fuzz_bundle_structured(bundle);
+        }
+        FuzzInput::StructuredEvent(event) => {
+            fuzz_timeline_event_structured(event);
+        }
         FuzzInput::StructuredHeader(header) => {
             fuzz_bundle_header_structured(header);
         }
@@ -37,6 +43,38 @@ fuzz_target!(|data: FuzzInput| {
         }
     }
 });
+
+fn fuzz_bundle_structured(input: FuzzReplayBundle) {
+    let bundle = input.into_bundle();
+    if let Ok(json) = serde_json::to_vec(&bundle) {
+        let _ = deserialize(&json);
+        let _ = serde_json::from_slice::<ReplayBundle>(&json);
+        let _ = hash(&json);
+        let _ = verify(&json);
+    }
+    if let Ok(pretty_json) = serde_json::to_vec_pretty(&bundle) {
+        let _ = deserialize(&pretty_json);
+        let _ = verify(&pretty_json);
+    }
+    let _ = integrity_hash(&bundle);
+    verify_structured_bundle(&bundle);
+}
+
+fn fuzz_timeline_event_structured(input: FuzzTimelineEvent) {
+    let event = input.into_event();
+    if let Ok(json) = serde_json::to_vec(&event) {
+        let _ = serde_json::from_slice::<TimelineEvent>(&json);
+    }
+
+    let mut bundle = create_minimal_bundle_with_header(BundleHeader {
+        hash_algorithm: "sha256".to_string(),
+        payload_length_bytes: 0,
+        chunk_count: 0,
+    });
+    bundle.timeline = vec![event];
+    let _ = integrity_hash(&bundle);
+    verify_structured_bundle(&bundle);
+}
 
 /// Fuzz structured BundleHeader objects
 fn fuzz_bundle_header_structured(header: BundleHeader) {
@@ -105,7 +143,7 @@ fn create_minimal_bundle_with_chunks(chunks: Vec<BundleChunk>) -> ReplayBundle {
     let mut bundle = create_minimal_bundle_with_header(BundleHeader {
         hash_algorithm: "sha256".to_string(),
         payload_length_bytes: 0,
-        chunk_count: chunks.len() as u32,
+        chunk_count: u32::try_from(chunks.len()).unwrap_or(u32::MAX),
     });
     bundle.chunks = chunks;
     bundle
@@ -168,9 +206,111 @@ fn verify_structured_bundle(bundle: &ReplayBundle) {
     }
 }
 
+#[derive(Arbitrary, Debug)]
+struct FuzzReplayBundle {
+    header: BundleHeader,
+    schema_version: String,
+    sdk_version: String,
+    bundle_id: String,
+    incident_id: String,
+    created_at: String,
+    policy_version: String,
+    verifier_identity: String,
+    timeline: Vec<FuzzTimelineEvent>,
+    artifacts: Vec<(String, BundleArtifact)>,
+    chunks: Vec<BundleChunk>,
+    metadata: Vec<(String, String)>,
+    integrity_hash: String,
+    signature: BundleSignature,
+}
+
+impl FuzzReplayBundle {
+    fn into_bundle(self) -> ReplayBundle {
+        let timeline = self
+            .timeline
+            .into_iter()
+            .take(16)
+            .map(FuzzTimelineEvent::into_event)
+            .collect();
+        let artifacts = self
+            .artifacts
+            .into_iter()
+            .take(16)
+            .map(|(key, artifact)| (bounded_text(key, 64), artifact))
+            .collect();
+        let metadata = self
+            .metadata
+            .into_iter()
+            .take(16)
+            .map(|(key, value)| (bounded_text(key, 64), bounded_text(value, 128)))
+            .collect();
+        ReplayBundle {
+            header: self.header,
+            schema_version: bounded_text(self.schema_version, 64),
+            sdk_version: bounded_text(self.sdk_version, 32),
+            bundle_id: bounded_text(self.bundle_id, 128),
+            incident_id: bounded_text(self.incident_id, 128),
+            created_at: bounded_text(self.created_at, 64),
+            policy_version: bounded_text(self.policy_version, 64),
+            verifier_identity: bounded_text(self.verifier_identity, 128),
+            timeline,
+            initial_state_snapshot: serde_json::json!({}),
+            evidence_refs: Vec::new(),
+            artifacts,
+            chunks: self.chunks.into_iter().take(16).collect(),
+            metadata,
+            integrity_hash: bounded_text(self.integrity_hash, 128),
+            signature: self.signature,
+        }
+    }
+}
+
+#[derive(Arbitrary, Debug)]
+struct FuzzTimelineEvent {
+    sequence_number: u64,
+    event_id: String,
+    timestamp: String,
+    event_type: String,
+    payload: Vec<u8>,
+    state_snapshot: Vec<u8>,
+    causal_parent: Option<u64>,
+    policy_version: String,
+}
+
+impl FuzzTimelineEvent {
+    fn into_event(self) -> TimelineEvent {
+        TimelineEvent {
+            sequence_number: self.sequence_number,
+            event_id: bounded_text(self.event_id, 128),
+            timestamp: bounded_text(self.timestamp, 64),
+            event_type: bounded_text(self.event_type, 64),
+            payload: bytes_json(self.payload),
+            state_snapshot: bytes_json(self.state_snapshot),
+            causal_parent: self.causal_parent,
+            policy_version: bounded_text(self.policy_version, 64),
+        }
+    }
+}
+
+fn bounded_text(value: String, max_chars: usize) -> String {
+    value.chars().take(max_chars).collect()
+}
+
+fn bytes_json(bytes: Vec<u8>) -> serde_json::Value {
+    let limit = bytes.len().min(128);
+    serde_json::json!({
+        "bytes_hex": hex::encode(&bytes[..limit]),
+        "truncated": bytes.len() > limit,
+    })
+}
+
 /// Input structure for hybrid structure-aware + coverage-guided fuzzing.
 #[derive(Arbitrary, Debug)]
 enum FuzzInput {
+    /// Generate structured ReplayBundle values then test canonical SDK parsing.
+    StructuredBundle(FuzzReplayBundle),
+    /// Generate structured TimelineEvent values then test event parsing and bundle context.
+    StructuredEvent(FuzzTimelineEvent),
     /// Generate valid structured BundleHeader then test in bundle context
     StructuredHeader(BundleHeader),
     /// Generate valid structured BundleChunk then test chunk validation
