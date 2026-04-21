@@ -5,8 +5,8 @@ use std::time::Instant;
 
 use frankenengine_node::tools::replay_bundle::{
     EventType, INCIDENT_EVIDENCE_SCHEMA, IncidentEvidenceEvent, IncidentEvidenceMetadata,
-    IncidentEvidencePackage, IncidentSeverity, ReplayBundle, read_bundle_from_path_with_trusted_key,
-    validate_bundle_integrity,
+    IncidentEvidencePackage, IncidentSeverity, ReplayBundle,
+    read_bundle_from_path_with_trusted_key, validate_bundle_integrity,
 };
 use serde_json::json;
 
@@ -397,9 +397,8 @@ fn incident_bundle_accepts_explicit_evidence_path_and_writes_bundle() {
     assert!(output_path.is_file());
 
     let trusted_key_id = replay_bundle_trusted_key_id();
-    let bundle =
-        read_bundle_from_path_with_trusted_key(&output_path, Some(&trusted_key_id))
-            .expect("read bundle");
+    let bundle = read_bundle_from_path_with_trusted_key(&output_path, Some(&trusted_key_id))
+        .expect("read bundle");
     assert_eq!(bundle.incident_id, "INC-E2E-001");
     assert_eq!(
         bundle.initial_state_snapshot,
@@ -840,6 +839,24 @@ fn incident_bundle_rejects_invalid_provenance_refs() {
 
 // Helper functions for malformed evidence generation
 
+fn boundary_metadata(tag: &str) -> IncidentEvidenceMetadata {
+    IncidentEvidenceMetadata {
+        title: "Boundary incident evidence".to_string(),
+        affected_components: vec!["boundary-detector".to_string()],
+        tags: vec![
+            "automated".to_string(),
+            "test-pipeline".to_string(),
+            tag.to_string(),
+        ],
+    }
+}
+
+fn evidence_refs(refs: &[&str]) -> Vec<String> {
+    refs.iter()
+        .map(|reference| (*reference).to_string())
+        .collect()
+}
+
 fn write_malformed_evidence_empty_events(path: &Path, incident_id: &str) {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).expect("create evidence dir");
@@ -855,16 +872,8 @@ fn write_malformed_evidence_empty_events(path: &Path, incident_id: &str) {
         policy_version: "1.2.3".to_string(),
         initial_state_snapshot: json!({"epoch": 7_u64, "mode": "strict"}),
         events: vec![], // EMPTY EVENTS ARRAY
-        metadata: IncidentEvidenceMetadata {
-            evidence_collection_method: "automated".to_string(),
-            analysis_tools: vec!["boundary-detector".to_string()],
-            chain_of_custody: "test-pipeline".to_string(),
-            integrity_verified: true,
-            retention_policy: "90-day-security-incident".to_string(),
-            related_incidents: vec![],
-            escalation_path: "security-team".to_string(),
-            impact_assessment: json!({"systems_affected": 0}),
-        },
+        evidence_refs: Vec::new(),
+        metadata: boundary_metadata("empty-events"),
     };
 
     let json_str = serde_json::to_string_pretty(&package).expect("serialize empty events package");
@@ -892,25 +901,23 @@ fn write_malformed_evidence_duplicate_event_id(path: &Path, incident_id: &str) {
                 event_type: EventType::ExternalSignal,
                 payload: json!({"signal":"anomaly1","severity":"high"}),
                 provenance_ref: "refs/logs/event-001.json".to_string(),
+                parent_event_id: None,
+                state_snapshot: None,
+                policy_version: None,
             },
             IncidentEvidenceEvent {
                 event_id: "evt-duplicate".to_string(), // SAME ID AGAIN
                 timestamp: "2026-02-20T10:00:30.000200Z".to_string(),
-                event_type: EventType::PolicyActivation,
+                event_type: EventType::PolicyEval,
                 payload: json!({"signal":"anomaly2","severity":"high"}),
                 provenance_ref: "refs/logs/event-002.json".to_string(),
+                parent_event_id: Some("evt-duplicate".to_string()),
+                state_snapshot: None,
+                policy_version: None,
             },
         ],
-        metadata: IncidentEvidenceMetadata {
-            evidence_collection_method: "automated".to_string(),
-            analysis_tools: vec!["boundary-detector".to_string()],
-            chain_of_custody: "test-pipeline".to_string(),
-            integrity_verified: true,
-            retention_policy: "90-day-security-incident".to_string(),
-            related_incidents: vec![],
-            escalation_path: "security-team".to_string(),
-            impact_assessment: json!({"systems_affected": 1}),
-        },
+        evidence_refs: evidence_refs(&["refs/logs/event-001.json", "refs/logs/event-002.json"]),
+        metadata: boundary_metadata("duplicate-event-id"),
     };
 
     let json_str = serde_json::to_string_pretty(&package).expect("serialize duplicate ID package");
@@ -938,29 +945,27 @@ fn write_malformed_evidence_invalid_parent_ref(path: &Path, incident_id: &str) {
                 event_type: EventType::ExternalSignal,
                 payload: json!({"signal":"anomaly","severity":"high"}),
                 provenance_ref: "refs/logs/event-001.json".to_string(),
+                parent_event_id: None,
+                state_snapshot: None,
+                policy_version: None,
             },
             IncidentEvidenceEvent {
                 event_id: "evt-002".to_string(),
                 timestamp: "2026-02-20T10:00:30.000200Z".to_string(),
-                event_type: EventType::PolicyActivation,
+                event_type: EventType::PolicyEval,
                 payload: json!({"policy":"strict-security"}),
                 provenance_ref: "refs/logs/event-002.json".to_string(),
                 parent_event_id: Some("evt-nonexistent".to_string()), // INVALID REFERENCE
+                state_snapshot: None,
+                policy_version: None,
             },
         ],
-        metadata: IncidentEvidenceMetadata {
-            evidence_collection_method: "automated".to_string(),
-            analysis_tools: vec!["boundary-detector".to_string()],
-            chain_of_custody: "test-pipeline".to_string(),
-            integrity_verified: true,
-            retention_policy: "90-day-security-incident".to_string(),
-            related_incidents: vec![],
-            escalation_path: "security-team".to_string(),
-            impact_assessment: json!({"systems_affected": 1}),
-        },
+        evidence_refs: evidence_refs(&["refs/logs/event-001.json", "refs/logs/event-002.json"]),
+        metadata: boundary_metadata("invalid-parent-ref"),
     };
 
-    let json_str = serde_json::to_string_pretty(&package).expect("serialize invalid parent ref package");
+    let json_str =
+        serde_json::to_string_pretty(&package).expect("serialize invalid parent ref package");
     fs::write(path, json_str).expect("write malformed evidence file");
 }
 
@@ -978,27 +983,21 @@ fn write_malformed_evidence_invalid_provenance(path: &Path, incident_id: &str) {
         detector: "boundary-test".to_string(),
         policy_version: "1.2.3".to_string(),
         initial_state_snapshot: json!({"epoch": 7_u64, "mode": "strict"}),
-        events: vec![
-            IncidentEvidenceEvent {
-                event_id: "evt-001".to_string(),
-                timestamp: "2026-02-20T10:00:00.000100Z".to_string(),
-                event_type: EventType::ExternalSignal,
-                payload: json!({"signal":"anomaly","severity":"high"}),
-                provenance_ref: "../../../etc/passwd".to_string(), // PATH TRAVERSAL ATTACK
-            },
-        ],
-        metadata: IncidentEvidenceMetadata {
-            evidence_collection_method: "automated".to_string(),
-            analysis_tools: vec!["boundary-detector".to_string()],
-            chain_of_custody: "test-pipeline".to_string(),
-            integrity_verified: true,
-            retention_policy: "90-day-security-incident".to_string(),
-            related_incidents: vec![],
-            escalation_path: "security-team".to_string(),
-            impact_assessment: json!({"systems_affected": 1}),
-        },
+        events: vec![IncidentEvidenceEvent {
+            event_id: "evt-001".to_string(),
+            timestamp: "2026-02-20T10:00:00.000100Z".to_string(),
+            event_type: EventType::ExternalSignal,
+            payload: json!({"signal":"anomaly","severity":"high"}),
+            provenance_ref: "../../../etc/passwd".to_string(), // PATH TRAVERSAL ATTACK
+            parent_event_id: None,
+            state_snapshot: None,
+            policy_version: None,
+        }],
+        evidence_refs: evidence_refs(&["../../../etc/passwd"]),
+        metadata: boundary_metadata("invalid-provenance"),
     };
 
-    let json_str = serde_json::to_string_pretty(&package).expect("serialize invalid provenance package");
+    let json_str =
+        serde_json::to_string_pretty(&package).expect("serialize invalid provenance package");
     fs::write(path, json_str).expect("write malformed evidence file");
 }

@@ -17,12 +17,12 @@ use std::process::{Command, Output};
 
 use frankenengine_node::tools::replay_bundle::{
     EventType, INCIDENT_EVIDENCE_SCHEMA, IncidentEvidenceEvent, IncidentEvidenceMetadata,
-    IncidentEvidencePackage, IncidentSeverity, ReplayBundle, read_bundle_from_path_with_trusted_key,
-    validate_bundle_integrity,
+    IncidentEvidencePackage, IncidentSeverity, ReplayBundle,
+    read_bundle_from_path_with_trusted_key, validate_bundle_integrity,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::golden::{assert_scrubbed_golden, assert_golden};
+use crate::golden::{assert_golden, assert_scrubbed_golden};
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -108,31 +108,48 @@ fn write_fixture_incident_evidence(path: &Path, incident_id: &str) {
                 event_type: EventType::ExternalSignal,
                 payload: json!({"signal":"anomaly","severity":"high"}),
                 provenance_ref: "refs/logs/event-001.json".to_string(),
+                parent_event_id: None,
+                state_snapshot: Some(json!({"phase": "detected"})),
+                policy_version: Some("1.2.3".to_string()),
             },
             IncidentEvidenceEvent {
                 event_id: "evt-002".to_string(),
                 timestamp: "2026-02-20T10:00:30.000200Z".to_string(),
-                event_type: EventType::PolicyActivation,
+                event_type: EventType::PolicyEval,
                 payload: json!({"policy":"strict-security","triggered_by":"evt-001"}),
                 provenance_ref: "refs/logs/event-002.json".to_string(),
+                parent_event_id: Some("evt-001".to_string()),
+                state_snapshot: Some(json!({"phase": "policy_evaluated"})),
+                policy_version: Some("1.2.3".to_string()),
             },
             IncidentEvidenceEvent {
                 event_id: "evt-003".to_string(),
                 timestamp: "2026-02-20T10:01:00.000300Z".to_string(),
-                event_type: EventType::RemediationAction,
+                event_type: EventType::OperatorAction,
                 payload: json!({"action":"quarantine","target":"suspicious_process"}),
                 provenance_ref: "refs/logs/event-003.json".to_string(),
+                parent_event_id: Some("evt-002".to_string()),
+                state_snapshot: Some(json!({"phase": "contained"})),
+                policy_version: Some("1.2.3".to_string()),
             },
         ],
+        evidence_refs: vec![
+            "refs/logs/event-001.json".to_string(),
+            "refs/logs/event-002.json".to_string(),
+            "refs/logs/event-003.json".to_string(),
+        ],
         metadata: IncidentEvidenceMetadata {
-            evidence_collection_method: "automated".to_string(),
-            analysis_tools: vec!["franken-detector".to_string(), "baseline-analyzer".to_string()],
-            chain_of_custody: "secure-evidence-pipeline".to_string(),
-            integrity_verified: true,
-            retention_policy: "90-day-security-incident".to_string(),
-            related_incidents: vec!["INC-E2E-000".to_string()],
-            escalation_path: "security-team".to_string(),
-            impact_assessment: json!({"systems_affected": 3, "data_exposed": false, "recovery_time": "15m"}),
+            title: "Golden incident evidence fixture".to_string(),
+            affected_components: vec![
+                "runtime".to_string(),
+                "policy".to_string(),
+                "fleet".to_string(),
+            ],
+            tags: vec![
+                "automated".to_string(),
+                "secure-evidence-pipeline".to_string(),
+                "90-day-security-incident".to_string(),
+            ],
         },
     };
 
@@ -169,17 +186,17 @@ fn golden_bundle_basic_structure_and_integrity() {
         ],
     );
 
-    assert!(output.status.success(), "Bundle generation failed: {}",
-        String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Bundle generation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // Read and scrub the bundle JSON for golden comparison
     let bundle_path = workspace.path().join("INC-GOLDEN-001.fnbundle");
     let bundle_json = fs::read_to_string(&bundle_path).expect("read bundle file");
 
-    assert_scrubbed_golden(
-        "incident/bundle_basic.fnbundle.json",
-        &bundle_json,
-    );
+    assert_scrubbed_golden("incident/bundle_basic.fnbundle.json", &bundle_json);
 
     // Verify bundle structure via round-trip
     let trusted_key_id = replay_bundle_trusted_key_id();
@@ -194,10 +211,7 @@ fn golden_bundle_basic_structure_and_integrity() {
 
     // Create golden for the parsed bundle structure
     let canonical_structure = serde_json::to_string_pretty(&bundle).expect("serialize bundle");
-    assert_scrubbed_golden(
-        "incident/bundle_structure.json",
-        &canonical_structure,
-    );
+    assert_scrubbed_golden("incident/bundle_structure.json", &canonical_structure);
 }
 
 #[test]
@@ -215,8 +229,12 @@ fn golden_counterfactual_output_format() {
     let _bundle_output = run_cli_in_workspace(
         workspace.path(),
         &[
-            "incident", "bundle", "--id", "INC-CF-001",
-            "--evidence-path", &evidence_arg,
+            "incident",
+            "bundle",
+            "--id",
+            "INC-CF-001",
+            "--evidence-path",
+            &evidence_arg,
         ],
     );
 
@@ -224,8 +242,11 @@ fn golden_counterfactual_output_format() {
     let cf_output = run_cli_in_workspace(
         workspace.path(),
         &[
-            "incident", "replay", "INC-CF-001.fnbundle",
-            "--counterfactual", "--strict",
+            "incident",
+            "replay",
+            "INC-CF-001.fnbundle",
+            "--counterfactual",
+            "--strict",
         ],
     );
 
@@ -233,15 +254,9 @@ fn golden_counterfactual_output_format() {
     let stdout_str = String::from_utf8_lossy(&cf_output.stdout);
     let stderr_str = String::from_utf8_lossy(&cf_output.stderr);
 
-    assert_scrubbed_golden(
-        "incident/counterfactual_strict.stdout",
-        &stdout_str,
-    );
+    assert_scrubbed_golden("incident/counterfactual_strict.stdout", &stdout_str);
 
-    assert_scrubbed_golden(
-        "incident/counterfactual_strict.stderr",
-        &stderr_str,
-    );
+    assert_scrubbed_golden("incident/counterfactual_strict.stderr", &stderr_str);
 }
 
 #[test]
@@ -258,8 +273,12 @@ fn golden_replay_result_format() {
     let _bundle_output = run_cli_in_workspace(
         workspace.path(),
         &[
-            "incident", "bundle", "--id", "INC-REPLAY-001",
-            "--evidence-path", &evidence_arg,
+            "incident",
+            "bundle",
+            "--id",
+            "INC-REPLAY-001",
+            "--evidence-path",
+            &evidence_arg,
         ],
     );
 
@@ -270,10 +289,7 @@ fn golden_replay_result_format() {
     );
 
     let replay_text = String::from_utf8_lossy(&replay_output.stdout);
-    assert_scrubbed_golden(
-        "incident/replay_result.txt",
-        &replay_text,
-    );
+    assert_scrubbed_golden("incident/replay_result.txt", &replay_text);
 }
 
 #[test]
@@ -290,8 +306,13 @@ fn golden_receipt_export_format() {
     let bundle_output = run_cli_in_workspace(
         workspace.path(),
         &[
-            "incident", "bundle", "--id", "INC-RECEIPT-001",
-            "--evidence-path", &evidence_arg, "--export-receipt",
+            "incident",
+            "bundle",
+            "--id",
+            "INC-RECEIPT-001",
+            "--evidence-path",
+            &evidence_arg,
+            "--export-receipt",
         ],
     );
 
@@ -299,17 +320,11 @@ fn golden_receipt_export_format() {
     let receipt_path = workspace.path().join("INC-RECEIPT-001.receipt.json");
     if receipt_path.is_file() {
         let receipt_json = fs::read_to_string(&receipt_path).expect("read receipt file");
-        assert_scrubbed_golden(
-            "incident/receipt_export.json",
-            &receipt_json,
-        );
+        assert_scrubbed_golden("incident/receipt_export.json", &receipt_json);
     } else {
         // If no receipt file, capture the stderr output for golden comparison
         let stderr_str = String::from_utf8_lossy(&bundle_output.stderr);
-        assert_scrubbed_golden(
-            "incident/receipt_export_stderr.txt",
-            &stderr_str,
-        );
+        assert_scrubbed_golden("incident/receipt_export_stderr.txt", &stderr_str);
     }
 }
 
@@ -320,7 +335,11 @@ fn golden_corrupt_bundle_error_messages() {
 
     // Create a corrupted bundle by writing invalid JSON
     let corrupt_bundle_path = workspace.path().join("CORRUPT.fnbundle");
-    fs::write(&corrupt_bundle_path, "{\"invalid\": \"json\", \"missing\": }").expect("write corrupt bundle");
+    fs::write(
+        &corrupt_bundle_path,
+        "{\"invalid\": \"json\", \"missing\": }",
+    )
+    .expect("write corrupt bundle");
 
     // Try to replay the corrupt bundle
     let corrupt_output = run_cli_in_workspace(
@@ -332,10 +351,7 @@ fn golden_corrupt_bundle_error_messages() {
     assert!(!corrupt_output.status.success());
 
     let error_text = String::from_utf8_lossy(&corrupt_output.stderr);
-    assert_scrubbed_golden(
-        "incident/corrupt_error.txt",
-        &error_text,
-    );
+    assert_scrubbed_golden("incident/corrupt_error.txt", &error_text);
 }
 
 #[test]
@@ -355,8 +371,12 @@ fn conformance_round_trip_bundle_integrity() {
     let _output1 = run_cli_in_workspace(
         workspace.path(),
         &[
-            "incident", "bundle", "--id", "INC-ROUND-001",
-            "--evidence-path", &evidence_arg,
+            "incident",
+            "bundle",
+            "--id",
+            "INC-ROUND-001",
+            "--evidence-path",
+            &evidence_arg,
         ],
     );
 
@@ -379,12 +399,32 @@ fn conformance_round_trip_bundle_integrity() {
     // Should be identical
     assert_eq!(bundle1.incident_id, bundle2.incident_id);
     assert_eq!(bundle1.timeline.len(), bundle2.timeline.len());
-    assert_eq!(bundle1.initial_state_snapshot, bundle2.initial_state_snapshot);
+    assert_eq!(
+        bundle1.initial_state_snapshot,
+        bundle2.initial_state_snapshot
+    );
 
     // Timeline order should be preserved exactly
-    for (i, (event1, event2)) in bundle1.timeline.iter().zip(bundle2.timeline.iter()).enumerate() {
-        assert_eq!(event1.event_id, event2.event_id, "Event {} ID mismatch", i);
-        assert_eq!(event1.timestamp, event2.timestamp, "Event {} timestamp mismatch", i);
-        assert_eq!(event1.event_type, event2.event_type, "Event {} type mismatch", i);
+    for (i, (event1, event2)) in bundle1
+        .timeline
+        .iter()
+        .zip(bundle2.timeline.iter())
+        .enumerate()
+    {
+        assert_eq!(
+            event1.sequence_number, event2.sequence_number,
+            "Event {} sequence mismatch",
+            i
+        );
+        assert_eq!(
+            event1.timestamp, event2.timestamp,
+            "Event {} timestamp mismatch",
+            i
+        );
+        assert_eq!(
+            event1.event_type, event2.event_type,
+            "Event {} type mismatch",
+            i
+        );
     }
 }
