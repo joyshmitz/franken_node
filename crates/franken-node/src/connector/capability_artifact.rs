@@ -402,6 +402,9 @@ impl ExtensionArtifactInput {
     }
 }
 
+const ARTIFACT_PROVENANCE_SIGNATURE_DOMAIN: &[u8] =
+    b"franken-node:connector:capability-artifact:provenance-signature:v2";
+
 fn update_len_prefixed(hasher: &mut sha2::Sha256, value: &str) {
     use sha2::Digest as _;
 
@@ -409,12 +412,20 @@ fn update_len_prefixed(hasher: &mut sha2::Sha256, value: &str) {
     hasher.update(value.as_bytes());
 }
 
-fn update_requirement_preimage(hasher: &mut sha2::Sha256, req: &CapabilityRequirement) {
-    use sha2::Digest as _;
+fn update_named_preimage_field(hasher: &mut sha2::Sha256, field_name: &str, value: &str) {
+    update_len_prefixed(hasher, field_name);
+    update_len_prefixed(hasher, value);
+}
 
-    update_len_prefixed(hasher, &req.capability);
-    update_len_prefixed(hasher, &req.justification);
-    hasher.update([req.mandatory as u8]);
+fn update_requirement_preimage(hasher: &mut sha2::Sha256, req: &CapabilityRequirement) {
+    update_len_prefixed(hasher, "capability_requirement");
+    update_named_preimage_field(hasher, "capability", &req.capability);
+    update_named_preimage_field(hasher, "justification", &req.justification);
+    update_named_preimage_field(
+        hasher,
+        "mandatory",
+        if req.mandatory { "true" } else { "false" },
+    );
 }
 
 fn canonical_capability_map(
@@ -475,25 +486,49 @@ pub fn compute_artifact_provenance_signature(
     capabilities: &[CapabilityRequirement],
     publisher: &str,
     source_digest: &str,
-) -> String {
+) -> Result<String, ArtifactError> {
     use sha2::{Digest, Sha256};
 
-    let mut hasher = Sha256::new();
-    hasher.update(b"capability_artifact_provenance_v1:");
-    let identity_repr = identity.canonical_repr();
-    update_len_prefixed(&mut hasher, &identity_repr);
-    update_len_prefixed(&mut hasher, publisher);
-    update_len_prefixed(&mut hasher, source_digest);
+    if let Some(detail) = validate_trimmed_nonempty(publisher, "publisher") {
+        return Err(ArtifactError::InvalidEnvelope {
+            artifact_id: identity.artifact_id.clone(),
+            detail,
+        });
+    }
+    if let Some(detail) = validate_trimmed_nonempty(source_digest, "source_digest") {
+        return Err(ArtifactError::InvalidEnvelope {
+            artifact_id: identity.artifact_id.clone(),
+            detail,
+        });
+    }
+    if let Some(detail) = validate_lower_hex_digest(source_digest, "source_digest") {
+        return Err(ArtifactError::InvalidEnvelope {
+            artifact_id: identity.artifact_id.clone(),
+            detail,
+        });
+    }
 
-    let capability_map = canonical_capability_map(&identity.artifact_id, capabilities)
-        .unwrap_or_else(|_| BTreeMap::new());
-    hasher.update(len_to_u64(capability_map.len()).to_le_bytes());
+    let mut hasher = Sha256::new();
+    hasher.update(ARTIFACT_PROVENANCE_SIGNATURE_DOMAIN);
+    update_named_preimage_field(&mut hasher, "artifact_id", &identity.artifact_id);
+    update_named_preimage_field(&mut hasher, "author", &identity.author);
+    update_named_preimage_field(&mut hasher, "created_at", &identity.created_at);
+    update_named_preimage_field(&mut hasher, "publisher", publisher);
+    update_named_preimage_field(&mut hasher, "source_digest", source_digest);
+
+    let capability_map = canonical_capability_map(&identity.artifact_id, capabilities)?;
+    update_named_preimage_field(
+        &mut hasher,
+        "capability_count",
+        &capability_map.len().to_string(),
+    );
     for (capability, req) in capability_map {
-        update_len_prefixed(&mut hasher, &capability);
+        update_len_prefixed(&mut hasher, "capability_entry");
+        update_named_preimage_field(&mut hasher, "capability_key", &capability);
         update_requirement_preimage(&mut hasher, &req);
     }
 
-    format!("sha256:{}", hex::encode(hasher.finalize()))
+    Ok(format!("sha256:{}", hex::encode(hasher.finalize())))
 }
 
 /// Build a capability-carrying extension artifact from caller-supplied metadata.
@@ -548,7 +583,7 @@ pub fn build_extension_artifact(
         &input.capabilities,
         &input.provenance.publisher,
         &input.provenance.source_digest,
-    );
+    )?;
     if !crate::security::constant_time::ct_eq(&input.provenance.signature, &expected_signature) {
         return Err(ArtifactError::InvalidEnvelope {
             artifact_id,

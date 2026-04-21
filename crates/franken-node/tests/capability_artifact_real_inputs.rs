@@ -1,6 +1,6 @@
 use frankenengine_node::connector::capability_artifact::{
-    build_extension_artifact, compute_artifact_provenance_signature, ArtifactError,
-    ArtifactIdentity, ArtifactProvenance, CapabilityRequirement, ExtensionArtifactInput,
+    ArtifactError, ArtifactIdentity, ArtifactProvenance, CapabilityRequirement,
+    ExtensionArtifactInput, build_extension_artifact, compute_artifact_provenance_signature,
 };
 
 fn signed_input(capabilities: Vec<CapabilityRequirement>) -> ExtensionArtifactInput {
@@ -15,7 +15,8 @@ fn signed_input(capabilities: Vec<CapabilityRequirement>) -> ExtensionArtifactIn
         &capabilities,
         "publisher-alpha",
         &source_digest,
-    );
+    )
+    .expect("provenance signature");
 
     ExtensionArtifactInput::new(
         identity,
@@ -78,10 +79,24 @@ fn rejects_artifact_when_provenance_signature_is_not_bound_to_inputs() {
 
 #[test]
 fn rejects_duplicate_capabilities_instead_of_overwriting_envelope_entries() {
-    let input = signed_input(vec![
-        CapabilityRequirement::new("cap:fs:read", "read project manifest", true),
-        CapabilityRequirement::new("cap:fs:read", "shadow original capability", true),
-    ]);
+    let identity = ArtifactIdentity::new(
+        "ext-real-builder",
+        "publisher-alpha",
+        "2026-02-21T00:00:00Z",
+    );
+    let source_digest = format!("sha256:{}", "a".repeat(64));
+    let input = ExtensionArtifactInput::new(
+        identity,
+        vec![
+            CapabilityRequirement::new("cap:fs:read", "read project manifest", true),
+            CapabilityRequirement::new("cap:fs:read", "shadow original capability", true),
+        ],
+        ArtifactProvenance::new(
+            "publisher-alpha",
+            source_digest,
+            format!("sha256:{}", "b".repeat(64)),
+        ),
+    );
 
     let err = build_extension_artifact(input).expect_err("duplicate capability should fail");
 
@@ -90,4 +105,57 @@ fn rejects_duplicate_capabilities_instead_of_overwriting_envelope_entries() {
         ArtifactError::InvalidEnvelope { ref detail, .. }
             if detail == "duplicate capability requirement: cap:fs:read"
     ));
+}
+
+#[test]
+fn provenance_signature_fails_closed_for_duplicate_capabilities() {
+    let identity = ArtifactIdentity::new(
+        "ext-real-builder",
+        "publisher-alpha",
+        "2026-02-21T00:00:00Z",
+    );
+    let source_digest = format!("sha256:{}", "a".repeat(64));
+    let err = compute_artifact_provenance_signature(
+        &identity,
+        &[
+            CapabilityRequirement::new("cap:fs:read", "read project manifest", true),
+            CapabilityRequirement::new("cap:fs:read", "shadow original capability", true),
+        ],
+        "publisher-alpha",
+        &source_digest,
+    )
+    .expect_err("duplicate capability preimage must fail closed");
+
+    assert!(matches!(
+        err,
+        ArtifactError::InvalidEnvelope { ref detail, .. }
+            if detail == "duplicate capability requirement: cap:fs:read"
+    ));
+}
+
+#[test]
+fn provenance_signature_frames_ambiguous_identity_fields() {
+    let source_digest = format!("sha256:{}", "a".repeat(64));
+    let capabilities = vec![CapabilityRequirement::new(
+        "cap:fs:read",
+        "read project manifest",
+        true,
+    )];
+
+    let left = compute_artifact_provenance_signature(
+        &ArtifactIdentity::new("ab", "c", "2026-02-21T00:00:00Z"),
+        &capabilities,
+        "publisher-alpha",
+        &source_digest,
+    )
+    .expect("left provenance signature");
+    let right = compute_artifact_provenance_signature(
+        &ArtifactIdentity::new("a", "bc", "2026-02-21T00:00:00Z"),
+        &capabilities,
+        "publisher-alpha",
+        &source_digest,
+    )
+    .expect("right provenance signature");
+
+    assert_ne!(left, right);
 }
