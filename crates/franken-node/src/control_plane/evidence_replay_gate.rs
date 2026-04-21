@@ -290,7 +290,9 @@ impl EvidenceReplayGate {
         }
 
         // Compare replayed action with original.
-        let verdict = if replayed_action == evidence.chosen_action {
+        let actions_match =
+            crate::security::constant_time::ct_eq(replayed_action, &evidence.chosen_action);
+        let verdict = if actions_match {
             self.total_reproduced = self.total_reproduced.saturating_add(1);
 
             push_bounded(
@@ -467,7 +469,6 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::security::constant_time;
 
     fn make_evidence(id: &str, dtype: DecisionType, action: &str) -> CapturedEvidence {
         let mut ev = CapturedEvidence {
@@ -508,6 +509,41 @@ mod tests {
                 ..
             } if original_action == "proceed" && replayed_action == "rollback" && diff_size_bytes > 0
         ));
+    }
+
+    #[test]
+    fn replay_action_boundary_mismatches_diverge() {
+        let cases = [
+            ("d-action-suffix", "quarantine:allow", "quarantine:allox"),
+            ("d-action-prefix", "quarantine:allow", "xuarantine:allow"),
+            ("d-action-same-len", "release:fleet-a", "release:fleet-b"),
+        ];
+
+        for (decision_id, chosen_action, replayed_action) in cases {
+            assert_eq!(chosen_action.len(), replayed_action.len());
+            let mut gate = EvidenceReplayGate::new();
+            let evidence = make_evidence(decision_id, DecisionType::Quarantine, chosen_action);
+
+            let result = gate.replay_decision(&evidence, replayed_action, "2026-01-15T01:00:00Z");
+
+            assert!(
+                matches!(result.verdict, ReplayVerdict::Diverged { .. }),
+                "expected boundary action mismatch to diverge"
+            );
+            if let ReplayVerdict::Diverged {
+                original_action,
+                replayed_action: actual_replayed_action,
+                diff_size_bytes,
+                ..
+            } = result.verdict
+            {
+                assert_eq!(original_action, chosen_action);
+                assert_eq!(actual_replayed_action, replayed_action);
+                assert_ne!(diff_size_bytes, 0);
+            }
+            assert_eq!(gate.total_reproduced(), 0);
+            assert_eq!(gate.total_diverged(), 1);
+        }
     }
 
     #[test]
@@ -782,10 +818,9 @@ mod tests {
         assert_eq!(log.len(), 2);
         assert_eq!(log[0].event_code, RPL_001_REPLAY_INITIATED);
         assert_eq!(log[1].event_code, RPL_004_ERROR);
-        assert!(
-            !log.iter()
-                .any(|entry| entry.event_code == RPL_002_REPRODUCED)
-        );
+        assert!(!log
+            .iter()
+            .any(|entry| entry.event_code == RPL_002_REPRODUCED));
     }
 
     #[test]
