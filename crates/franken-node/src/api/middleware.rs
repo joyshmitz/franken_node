@@ -228,7 +228,7 @@ pub fn authenticate(
             Ok(AuthIdentity {
                 principal: format!("apikey:{}", utf8_prefix(key, 8)),
                 method: AuthMethod::ApiKey,
-                roles: vec!["operator".to_string()],
+                roles: vec!["reader".to_string()],
             })
         }
         AuthMethod::BearerToken => {
@@ -663,12 +663,12 @@ pub fn default_rate_limit(group: EndpointGroup) -> RateLimitConfig {
         EndpointGroup::Operator => RateLimitConfig {
             sustained_rps: 100,
             burst_size: 200,
-            fail_closed: false,
+            fail_closed: true, // SECURITY: fail-closed to prevent DoS on rate limiter failure
         },
         EndpointGroup::Verifier => RateLimitConfig {
             sustained_rps: 50,
             burst_size: 100,
-            fail_closed: false,
+            fail_closed: true, // SECURITY: fail-closed to prevent DoS on rate limiter failure
         },
         EndpointGroup::FleetControl => RateLimitConfig {
             sustained_rps: 20,
@@ -1107,7 +1107,10 @@ mod tests {
     fn default_rate_limits() {
         let op = default_rate_limit(EndpointGroup::Operator);
         assert_eq!(op.sustained_rps, 100);
-        assert!(!op.fail_closed);
+        assert!(op.fail_closed); // SECURITY: all endpoint groups now fail-closed
+
+        let verifier = default_rate_limit(EndpointGroup::Verifier);
+        assert!(verifier.fail_closed); // SECURITY: all endpoint groups now fail-closed
 
         let fleet = default_rate_limit(EndpointGroup::FleetControl);
         assert!(fleet.fail_closed);
