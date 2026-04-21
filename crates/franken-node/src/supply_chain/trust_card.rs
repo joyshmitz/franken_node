@@ -387,6 +387,26 @@ struct TrustCardRegistrySnapshotHighWater {
     high_water_signature: String,
 }
 
+impl TrustCardRegistrySnapshot {
+    pub fn signed(
+        cache_ttl_secs: u64,
+        cards_by_extension: BTreeMap<String, Vec<TrustCard>>,
+        registry_key: &[u8],
+    ) -> Result<Self, TrustCardError> {
+        let mut snapshot = Self {
+            schema_version: TRUST_CARD_REGISTRY_SNAPSHOT_SCHEMA.to_string(),
+            snapshot_epoch: 1,
+            previous_snapshot_hash: None,
+            cache_ttl_secs: cache_ttl_secs.max(1),
+            cards_by_extension,
+            snapshot_hash: String::new(),
+            registry_signature: String::new(),
+        };
+        sign_snapshot_in_place(&mut snapshot, registry_key)?;
+        Ok(snapshot)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TrustCardRegistry {
     cards_by_extension: BTreeMap<String, Vec<TrustCard>>,
@@ -3038,6 +3058,56 @@ mod tests {
                 .expect("cached")
                 .cached_at_secs,
             2_000
+        );
+    }
+
+    #[test]
+    fn load_authoritative_state_rejects_older_signed_snapshot_rollback() {
+        let mut registry = TrustCardRegistry::default();
+        registry
+            .create(sample_input(), 1_000, "trace-create")
+            .expect("create");
+        let older_snapshot = registry.snapshot();
+        registry
+            .update(
+                "npm:@acme/plugin",
+                TrustCardMutation {
+                    certification_level: Some(CertificationLevel::Bronze),
+                    revocation_status: Some(RevocationStatus::Revoked {
+                        reason: "rollback regression revocation".to_string(),
+                        revoked_at: "2026-01-01T00:01:00Z".to_string(),
+                    }),
+                    active_quarantine: Some(true),
+                    reputation_score_basis_points: Some(100),
+                    reputation_trend: Some(ReputationTrend::Declining),
+                    user_facing_risk_assessment: Some(RiskAssessment {
+                        level: RiskLevel::Critical,
+                        summary: "revoked for rollback regression".to_string(),
+                    }),
+                    last_verified_timestamp: Some("2026-01-01T00:01:00Z".to_string()),
+                    evidence_refs: None,
+                },
+                1_100,
+                "trace-revoke",
+            )
+            .expect("revoke");
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir
+            .path()
+            .join(".franken-node/state/trust-card-registry.v1.json");
+        registry
+            .persist_authoritative_state(&path)
+            .expect("persist revoked high-water state");
+        std::fs::write(&path, to_canonical_json(&older_snapshot).expect("older json"))
+            .expect("install older snapshot");
+
+        let err = TrustCardRegistry::load_authoritative_state(&path, 60, 2_000)
+            .expect_err("older signed snapshot must be rejected after high-water advances");
+
+        assert!(
+            matches!(err, TrustCardError::InvalidSnapshot(detail) if detail.contains("rollback rejected")),
+            "unexpected error: {err:?}"
         );
     }
 

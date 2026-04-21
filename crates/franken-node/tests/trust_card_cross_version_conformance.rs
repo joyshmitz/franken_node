@@ -129,11 +129,10 @@ fn create_registry_snapshot_with_schema(
     cards: BTreeMap<String, Vec<TrustCard>>,
     schema_version: &str,
 ) -> TrustCardRegistrySnapshot {
-    TrustCardRegistrySnapshot {
-        schema_version: schema_version.to_string(),
-        cache_ttl_secs: 60,
-        cards_by_extension: cards,
-    }
+    let mut snapshot = TrustCardRegistrySnapshot::signed(60, cards, b"conformance-test-key")
+        .expect("signed conformance snapshot");
+    snapshot.schema_version = schema_version.to_string();
+    snapshot
 }
 
 fn trust_card_report_artifact() -> serde_json::Value {
