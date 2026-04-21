@@ -5,7 +5,7 @@ use crate::runtime::lockstep_harness::LockstepHarness;
 use crate::storage::frankensqlite_adapter::FrankensqliteAdapter;
 use crate::{
     ActionableError,
-    config::{Config, PreferredRuntime},
+    config::{Config, PreferredRuntime, Profile},
 };
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -135,6 +135,7 @@ type DispatchResolutionResult<T> = std::result::Result<T, DispatchResolutionErro
 
 const NODE_INSTALL_URL: &str = "https://nodejs.org/en/download";
 const BUN_INSTALL_URL: &str = "https://bun.sh/docs/installation";
+const DEGRADED_FALLBACK_OPT_IN_ENV: &str = "FRANKEN_NODE_ALLOW_DEGRADED_RUNTIME_FALLBACK";
 
 fn requested_runtime_unavailable_error(runtime: &str, app_path: &Path) -> ActionableError {
     ActionableError::new(
@@ -170,6 +171,53 @@ fn configured_engine_binary_missing_error(binary: &Path, app_path: &Path) -> Act
             app_path.display()
         ),
     )
+}
+
+fn trust_native_runtime_unavailable_error(app_path: &Path) -> ActionableError {
+    ActionableError::new(
+        "trust-native runtime unavailable: strict profile requires franken-engine; auto-mode will not fall back to node/bun with reduced enforcement",
+        format!(
+            "franken-node run --engine-bin /absolute/path/to/franken-engine {}",
+            app_path.display()
+        ),
+    )
+}
+
+fn degraded_fallback_opt_in_required_error(app_path: &Path) -> ActionableError {
+    ActionableError::new(
+        format!(
+            "trust-native runtime unavailable: auto-mode fallback to node/bun requires explicit reduced-guarantee opt-in via {DEGRADED_FALLBACK_OPT_IN_ENV}=1"
+        ),
+        format!(
+            "{DEGRADED_FALLBACK_OPT_IN_ENV}=1 franken-node run {}",
+            app_path.display()
+        ),
+    )
+}
+
+fn degraded_fallback_opt_in_enabled() -> bool {
+    std::env::var(DEGRADED_FALLBACK_OPT_IN_ENV)
+        .ok()
+        .is_some_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+}
+
+fn fallback_runtime_policy_error(
+    profile: Profile,
+    degraded_fallback_opt_in: bool,
+    app_path: &Path,
+) -> Option<ActionableError> {
+    match profile {
+        Profile::Strict => Some(trust_native_runtime_unavailable_error(app_path)),
+        Profile::Balanced | Profile::LegacyRisky if !degraded_fallback_opt_in => {
+            Some(degraded_fallback_opt_in_required_error(app_path))
+        }
+        Profile::Balanced | Profile::LegacyRisky => None,
+    }
 }
 
 /// Returns the list of candidate paths to search for the franken-engine binary.
@@ -628,6 +676,13 @@ impl EngineDispatcher {
 
         if let DispatchPlan::RuntimeFallback(plan) = dispatch_plan {
             if plan.mode == RuntimeExecutionMode::FallbackFrankenEngineUnavailable {
+                if let Some(error) = fallback_runtime_policy_error(
+                    config.profile,
+                    degraded_fallback_opt_in_enabled(),
+                    app_path,
+                ) {
+                    return Err(error.into());
+                }
                 tracing::warn!(
                     runtime = %plan.runtime,
                     runtime_path = %plan.runtime_path.display(),
@@ -1145,6 +1200,69 @@ mod tests {
         );
 
         assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn dispatch_plan_auto_uses_franken_engine_when_available() {
+        let temp_dir = tempfile::TempDir::new().expect("tempdir");
+        let app = temp_dir.path().join("app.js");
+        std::fs::write(&app, "console.log('hello');").expect("write app");
+        let runtime_dir = temp_dir.path().join("bin");
+        std::fs::create_dir(&runtime_dir).expect("runtime dir");
+        let engine_path = runtime_dir.join("franken-engine");
+        write_fake_executable(&engine_path);
+        write_fake_executable(&runtime_dir.join("node"));
+
+        let plan = resolve_dispatch_plan_with(
+            &app,
+            PreferredRuntime::Auto,
+            DispatchResolutionInputs {
+                configured_hint: engine_path.to_str().expect("engine path should be utf8"),
+                env_override: None,
+                cli_path: None,
+                config_path: None,
+                candidates: &[runtime_dir.join("node")],
+            },
+            Some(runtime_dir.as_os_str().to_os_string()),
+            &|path| path.exists(),
+        )
+        .expect("engine plan");
+
+        assert_eq!(
+            plan,
+            DispatchPlan::FrankenEngine {
+                binary: engine_path.display().to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn strict_profile_fail_closes_auto_fallback_when_engine_is_missing() {
+        let app = Path::new("app.js");
+
+        let err = fallback_runtime_policy_error(Profile::Strict, true, app)
+            .expect("strict profile must reject degraded fallback even with opt-in");
+
+        assert!(err.to_string().contains("trust-native runtime unavailable"));
+        assert!(
+            err.to_string()
+                .contains("strict profile requires franken-engine")
+        );
+    }
+
+    #[test]
+    fn non_strict_auto_fallback_requires_explicit_opt_in() {
+        let app = Path::new("app.js");
+
+        let balanced_err = fallback_runtime_policy_error(Profile::Balanced, false, app)
+            .expect("balanced profile should require degraded fallback opt-in");
+        assert!(
+            balanced_err
+                .to_string()
+                .contains(DEGRADED_FALLBACK_OPT_IN_ENV)
+        );
+        assert!(fallback_runtime_policy_error(Profile::Balanced, true, app).is_none());
+        assert!(fallback_runtime_policy_error(Profile::LegacyRisky, true, app).is_none());
     }
 
     #[test]
