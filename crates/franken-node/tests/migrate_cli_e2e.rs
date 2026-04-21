@@ -41,7 +41,11 @@ fn migrate_rewrite_apply_emits_rollback_plan_and_updates_manifest() {
     let project_path = temp.path().join("project");
     std::fs::create_dir_all(&project_path).expect("project dir");
 
-    std::fs::write(project_path.join("index.js"), "console.log('hello');\n").expect("write js");
+    std::fs::write(
+        project_path.join("index.js"),
+        "const fs = require(\"fs\");\nconsole.log(fs.existsSync(\"package.json\"));\n",
+    )
+    .expect("write js");
     std::fs::write(
         project_path.join("package.json"),
         r#"{
@@ -76,8 +80,8 @@ fn migrate_rewrite_apply_emits_rollback_plan_and_updates_manifest() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("franken-node migrate rewrite"));
     assert!(stdout.contains("mode: apply"));
-    assert!(stdout.contains("rewrites_planned=1"));
-    assert!(stdout.contains("rewrites_applied=1"));
+    assert!(stdout.contains("rewrites_planned=2"));
+    assert!(stdout.contains("rewrites_applied=2"));
     golden::assert_scrubbed_golden("migrate/rewrite_apply_stdout", &stdout);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -95,8 +99,8 @@ fn migrate_rewrite_apply_emits_rollback_plan_and_updates_manifest() {
     assert_eq!(rollback["apply_mode"], serde_json::Value::Bool(true));
     assert_eq!(
         rollback["entry_count"].as_u64().unwrap_or_default(),
-        1,
-        "expected exactly one rollback entry"
+        2,
+        "expected package manifest and source rollback entries"
     );
     golden::assert_scrubbed_json_golden("migrate/rewrite_apply_rollback_plan", &rollback);
 
@@ -109,6 +113,15 @@ fn migrate_rewrite_apply_emits_rollback_plan_and_updates_manifest() {
         rewritten["engines"]["node"],
         serde_json::Value::String(">=20 <23".to_string())
     );
+
+    let rewritten_source =
+        std::fs::read_to_string(project_path.join("index.js")).expect("read rewritten source");
+    assert!(rewritten_source.contains("import fs from \"node:fs\";"));
+    assert!(!rewritten_source.contains("require("));
+    let source_backup =
+        std::fs::read_to_string(project_path.join(".migrate-backup/index.js"))
+            .expect("read source backup");
+    assert!(source_backup.contains("const fs = require(\"fs\");"));
 }
 
 #[test]
