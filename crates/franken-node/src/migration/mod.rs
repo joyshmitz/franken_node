@@ -4,9 +4,14 @@
 //! whether topology risk deltas are acceptable before and during rollout.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
+use std::io::{self, Read, Write as _};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Output, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 #[cfg(any(test, feature = "extended-surfaces"))]
 #[allow(dead_code)]
@@ -19,6 +24,25 @@ const MAX_FINDINGS_PER_CATEGORY: usize = 16;
 const MAX_PROJECT_FILES: usize = 100_000;
 const MAX_PENDING_DIRS: usize = 10_000;
 const MAX_TOTAL_FINDINGS: usize = 1_000;
+const MIGRATION_VALIDATE_RUNTIME_TIMEOUT: Duration = Duration::from_secs(10);
+const MIGRATION_VALIDATE_SMOKE_SOURCE: &str = r#"
+const fs = require('fs');
+const path = require('path');
+const manifestPath = path.join(process.cwd(), 'package.json');
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+if (!manifest.name || typeof manifest.name !== 'string') {
+  throw new Error('package.json name is required for migrate validate smoke');
+}
+if (!manifest.engines || typeof manifest.engines.node !== 'string') {
+  throw new Error('package.json engines.node is required for migrate validate smoke');
+}
+console.log(JSON.stringify({
+  event: 'migration_validate_runtime_smoke',
+  project: manifest.name,
+  engine: manifest.engines.node,
+  ok: true
+}));
+"#;
 
 /// Push item to vector with capacity bounds checking to prevent memory exhaustion.
 fn push_bounded<T>(vec: &mut Vec<T>, item: T, max_cap: usize) {
@@ -226,6 +250,39 @@ impl MigrationValidateReport {
     #[must_use]
     pub const fn is_pass(&self) -> bool {
         matches!(self.status, MigrationValidateStatus::Pass)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct MigrationRuntimeSmokeReceipt {
+    schema_version: String,
+    runtime: String,
+    target: String,
+    exit_code: i32,
+    stdout_sha256: String,
+    stderr_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum MigrationRuntimeTarget {
+    FrankenNode(PathBuf),
+    Node(PathBuf),
+    Bun(PathBuf),
+}
+
+impl MigrationRuntimeTarget {
+    const fn label(&self) -> &'static str {
+        match self {
+            Self::FrankenNode(_) => "franken-node",
+            Self::Node(_) => "node",
+            Self::Bun(_) => "bun",
+        }
+    }
+
+    fn path(&self) -> &Path {
+        match self {
+            Self::FrankenNode(path) | Self::Node(path) | Self::Bun(path) => path,
+        }
     }
 }
 
