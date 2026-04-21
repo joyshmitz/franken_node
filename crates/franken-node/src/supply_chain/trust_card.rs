@@ -1829,7 +1829,7 @@ fn high_water_signature(
     let mut mac =
         HmacSha256::new_from_slice(registry_key).map_err(|_| TrustCardError::InvalidRegistryKey)?;
     mac.update(b"trust_card_registry_high_water_sig_v1:");
-    mac.update(u64::try_from(encoded.len()).unwrap_or(u64::MAX).to_le_bytes());
+    mac.update(&u64::try_from(encoded.len()).unwrap_or(u64::MAX).to_le_bytes());
     mac.update(&encoded);
     Ok(hex::encode(mac.finalize().into_bytes()))
 }
