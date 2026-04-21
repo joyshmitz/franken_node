@@ -10,14 +10,13 @@ use frankenengine_node::registry::staking_governance::{
     TrustGovernanceState, ViolationType
 };
 use frankenengine_node::supply_chain::trust_card::{
-    BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
-    DependencyTrustStatus, EvidenceType, ExtensionIdentity, ProvenanceSummary,
+    AuditRecord, BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
+    DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary,
     PublisherIdentity, ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel,
-    TrustCard, TrustCardComparison, TrustCardDiffEntry, VerifiedEvidenceRef,
+    TrustCard, TrustCardComparison, TrustCardDiffEntry,
     render_comparison_human, render_trust_card_human, to_canonical_json
 };
 
-use insta::Settings;
 use regex::Regex;
 
 /// Scrub non-deterministic values for golden comparison
@@ -55,6 +54,7 @@ fn canonical_trust_card_fixture() -> TrustCard {
     TrustCard {
         schema_version: "trust-card-v1.0".to_string(),
         trust_card_version: 42,
+        previous_version_hash: None,
         extension: ExtensionIdentity {
             extension_id: "npm:@acme/security-scanner".to_string(),
             version: "2.1.0".to_string(),
@@ -68,10 +68,10 @@ fn canonical_trust_card_fixture() -> TrustCard {
         behavioral_profile: BehavioralProfile {
             network_access: true,
             filesystem_access: false,
-            sandbox_escape_risk: false,
+            subprocess_access: false,
             profile_summary: "Network scanner with read-only file access".to_string(),
         },
-        capabilities: vec![
+        capability_declarations: vec![
             CapabilityDeclaration {
                 name: "network.scan".to_string(),
                 description: "Scan network endpoints for vulnerabilities".to_string(),
@@ -83,13 +83,13 @@ fn canonical_trust_card_fixture() -> TrustCard {
                 risk: CapabilityRisk::Low,
             },
         ],
-        provenance: ProvenanceSummary {
+        provenance_summary: ProvenanceSummary {
             attestation_level: "L3-verified-build".to_string(),
             source_uri: "https://github.com/acme-corp/security-scanner".to_string(),
-            build_reproducible: true,
+            artifact_hashes: vec!["sha256:abc123def456".to_string(), "sha256:fed456cba987".to_string()],
             verified_at: "2026-04-21T00:00:00Z".to_string(),
         },
-        dependency_trust_status: vec![
+        dependency_trust_summary: vec![
             DependencyTrustStatus {
                 dependency_id: "npm:lodash".to_string(),
                 trust_level: "high".to_string(),
@@ -107,21 +107,22 @@ fn canonical_trust_card_fixture() -> TrustCard {
             summary: "Well-maintained security tool with verified provenance".to_string(),
         },
         last_verified_timestamp: "2026-04-21T12:00:00Z".to_string(),
-        evidence_refs: vec![
-            VerifiedEvidenceRef {
-                evidence_id: "slsa-provenance-v1.0".to_string(),
-                evidence_type: EvidenceType::ProvenanceAttestation,
-                verified_at_epoch: 1735689600,
-                verification_receipt_hash: "sha256:abc123def456789".to_string(),
+        audit_history: vec![
+            AuditRecord {
+                timestamp: "2026-04-21T00:00:00Z".to_string(),
+                event_code: "TRUST_CARD_CREATED".to_string(),
+                detail: "Initial trust card generation".to_string(),
+                trace_id: "trace-12345".to_string(),
             },
-            VerifiedEvidenceRef {
-                evidence_id: "security-audit-2026-Q1".to_string(),
-                evidence_type: EvidenceType::CertificationEvidence,
-                verified_at_epoch: 1735689600,
-                verification_receipt_hash: "sha256:fed987cba654321".to_string(),
+            AuditRecord {
+                timestamp: "2026-04-21T12:00:00Z".to_string(),
+                event_code: "TRUST_CARD_VERIFIED".to_string(),
+                detail: "Provenance verification completed".to_string(),
+                trace_id: "trace-67890".to_string(),
             },
         ],
-        derivation_hash: "computed-hash-placeholder".to_string(),
+        derivation_evidence: None,
+        card_hash: "computed-hash-placeholder".to_string(),
         registry_signature: "signature-placeholder".to_string(),
     }
 }
