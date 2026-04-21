@@ -488,6 +488,19 @@ impl ProofGenerator {
         entries: &[ReceiptChainEntry],
         now_millis: u64,
     ) -> Result<ComplianceProof, ProofGeneratorError> {
+        let (backend, proof_request) =
+            self.begin_generate_proof(request_id, window, entries, now_millis)?;
+        let result = backend.generate(&proof_request);
+        self.finish_generate_proof(&proof_request, now_millis, result)
+    }
+
+    fn begin_generate_proof(
+        &mut self,
+        request_id: &str,
+        window: &ProofWindow,
+        entries: &[ReceiptChainEntry],
+        now_millis: u64,
+    ) -> Result<(Arc<dyn ProofBackend>, ProofRequest), ProofGeneratorError> {
         let status = self.requests.get_mut(request_id).ok_or_else(|| {
             ProofGeneratorError::internal(format!("unknown request_id {request_id}"))
         })?;
@@ -509,7 +522,6 @@ impl ProofGenerator {
             detail: format!("request={request_id} generation started"),
         });
 
-        // Build the proof request
         let proof_request = ProofRequest {
             request_id: request_id.to_string(),
             window: window.clone(),
@@ -519,21 +531,38 @@ impl ProofGenerator {
             created_at_millis: now_millis,
         };
 
-        // Call the backend
-        match self.backend.generate(&proof_request) {
+        Ok((Arc::clone(&self.backend), proof_request))
+    }
+
+    fn finish_generate_proof(
+        &mut self,
+        proof_request: &ProofRequest,
+        now_millis: u64,
+        result: Result<ComplianceProof, ProofGeneratorError>,
+    ) -> Result<ComplianceProof, ProofGeneratorError> {
+        let request_id = proof_request.request_id.as_str();
+        let trace_id = proof_request.trace_id.as_str();
+
+        match result {
             Ok(proof) => {
                 let status = self.requests.get_mut(request_id).ok_or_else(|| {
                     ProofGeneratorError::internal(format!(
                         "request {request_id} vanished after generation"
                     ))
                 })?;
+                if status.status != ProofStatus::Generating {
+                    return Err(ProofGeneratorError::internal(format!(
+                        "cannot complete proof for request {request_id}: current status is {:?}, expected Generating",
+                        status.status
+                    )));
+                }
                 status.status = ProofStatus::Complete;
                 status.proof = Some(proof.clone());
                 status.completed_at_millis = Some(now_millis);
 
                 self.emit_event(ProofGeneratorEvent {
                     event_code: event_codes::PGN_003_GENERATION_COMPLETE.to_string(),
-                    trace_id: trace_id.clone(),
+                    trace_id: trace_id.to_string(),
                     detail: format!(
                         "request={request_id} proof={} backend={}",
                         proof.proof_id, proof.backend_name
@@ -548,13 +577,19 @@ impl ProofGenerator {
                         "request {request_id} vanished after generation"
                     ))
                 })?;
+                if status.status != ProofStatus::Generating {
+                    return Err(ProofGeneratorError::internal(format!(
+                        "cannot fail proof for request {request_id}: current status is {:?}, expected Generating",
+                        status.status
+                    )));
+                }
                 status.status = ProofStatus::Failed;
                 status.error = Some(err.clone());
                 status.completed_at_millis = Some(now_millis);
 
                 self.emit_event(ProofGeneratorEvent {
                     event_code: event_codes::PGN_004_GENERATION_FAILED.to_string(),
-                    trace_id,
+                    trace_id: trace_id.to_string(),
                     detail: format!("request={request_id} error={err}"),
                 });
 
@@ -679,10 +714,18 @@ impl ConcurrentProofGenerator {
         entries: &[ReceiptChainEntry],
         now_millis: u64,
     ) -> Result<ComplianceProof, ProofGeneratorError> {
+        let (backend, proof_request) = {
+            let mut generator = self
+                .inner
+                .lock()
+                .map_err(|_| ProofGeneratorError::internal("proof generator mutex poisoned"))?;
+            generator.begin_generate_proof(request_id, window, entries, now_millis)?
+        };
+        let result = backend.generate(&proof_request);
         self.inner
             .lock()
             .map_err(|_| ProofGeneratorError::internal("proof generator mutex poisoned"))?
-            .generate_proof(request_id, window, entries, now_millis)
+            .finish_generate_proof(&proof_request, now_millis, result)
     }
 }
 
@@ -1269,6 +1312,105 @@ mod tests {
             .generate_proof(&req_id, &window, &entries, 1_702_000_100_100)
             .expect("should succeed");
         assert!(!proof.proof_data.is_empty());
+    }
+
+    #[derive(Clone)]
+    struct MutexProbeBackend {
+        generator_slot: Arc<std::sync::Mutex<Option<ConcurrentProofGenerator>>>,
+        reentrant_request_id: Arc<std::sync::Mutex<Option<String>>>,
+    }
+
+    impl ProofBackend for MutexProbeBackend {
+        fn backend_name(&self) -> &str {
+            "mutex-probe"
+        }
+
+        fn generate(
+            &self,
+            request: &ProofRequest,
+        ) -> Result<ComplianceProof, ProofGeneratorError> {
+            let generator = self
+                .generator_slot
+                .lock()
+                .map_err(|_| ProofGeneratorError::internal("probe generator slot poisoned"))?
+                .clone()
+                .ok_or_else(|| ProofGeneratorError::internal("probe backend not attached"))?;
+            let reentrant_request_id = {
+                let mut generator_state = generator.inner.try_lock().map_err(|_| {
+                    ProofGeneratorError::internal(
+                        "proof generator mutex held during backend generation",
+                    )
+                })?;
+                generator_state.submit_request(
+                    &request.window,
+                    &request.entries,
+                    request.created_at_millis.saturating_add(1),
+                    "trace-reentrant-backend",
+                )?
+            };
+            *self
+                .reentrant_request_id
+                .lock()
+                .map_err(|_| ProofGeneratorError::internal("probe reentry slot poisoned"))? =
+                Some(reentrant_request_id);
+
+            TestProofBackend::with_name("mutex-probe").generate(request)
+        }
+
+        fn verify(
+            &self,
+            proof: &ComplianceProof,
+            entries: &[ReceiptChainEntry],
+        ) -> Result<bool, ProofGeneratorError> {
+            TestProofBackend::with_name("mutex-probe").verify(proof, entries)
+        }
+    }
+
+    #[test]
+    fn concurrent_generator_releases_mutex_before_backend_generate() {
+        let generator_slot = Arc::new(std::sync::Mutex::new(None));
+        let reentrant_request_id = Arc::new(std::sync::Mutex::new(None));
+        let backend = Arc::new(MutexProbeBackend {
+            generator_slot: Arc::clone(&generator_slot),
+            reentrant_request_id: Arc::clone(&reentrant_request_id),
+        });
+        let cpg = ConcurrentProofGenerator::new(backend, ProofGeneratorConfig::default());
+        *generator_slot.lock().expect("generator slot lock") = Some(cpg.clone());
+
+        let entries = sample_chain_entries();
+        let window = sample_window();
+        let req_id = cpg
+            .submit_request(&window, &entries, 1_702_000_101_000, "trace-probe")
+            .expect("should submit outer request");
+        let proof = cpg
+            .generate_proof(&req_id, &window, &entries, 1_702_000_101_100)
+            .expect("backend should observe unlocked generator mutex");
+
+        assert_eq!(proof.backend_name, "mutex-probe");
+        let reentrant_id = reentrant_request_id
+            .lock()
+            .expect("reentrant slot lock")
+            .clone()
+            .expect("backend should create reentrant request");
+        let generator_state = cpg.inner.lock().expect("generator state lock");
+        assert_eq!(
+            generator_state
+                .requests()
+                .get(&req_id)
+                .expect("outer request should exist")
+                .status,
+            ProofStatus::Complete
+        );
+        assert_eq!(
+            generator_state
+                .requests()
+                .get(&reentrant_id)
+                .expect("reentrant request should exist")
+                .status,
+            ProofStatus::Pending
+        );
+        drop(generator_state);
+        *generator_slot.lock().expect("generator slot lock") = None;
     }
 
     // ── 27. Proof data hash integrity ──
