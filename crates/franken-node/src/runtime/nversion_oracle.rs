@@ -22,10 +22,13 @@
 //!   inputs; BTreeMap used for ordered output.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt;
 
 const MAX_EVENT_LOG_ENTRIES: usize = 4096;
+const L1_LINKAGE_HASH_DOMAIN: &[u8] = b"l1_linkage_v1:";
+const SHA256_HEX_LEN: usize = 64;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
@@ -275,12 +278,64 @@ impl PolicyReceipt {
         now_epoch_secs >= self.expires_at_epoch_secs
     }
 
-    /// Verify the L1 linkage is non-empty and well-formed.
-    pub fn verify_l1_linkage(&self) -> bool {
-        !self.l1_linkage.l1_oracle_run_id.is_empty()
-            && !self.l1_linkage.linkage_hash.is_empty()
-            && !self.l1_linkage.l1_verdict.is_empty()
+    pub fn compute_l1_linkage_hash(
+        &self,
+        divergence: &SemanticDivergence,
+    ) -> Result<String, serde_json::Error> {
+        let mut receipt_material = self.clone();
+        receipt_material.l1_linkage.linkage_hash.clear();
+        let receipt_bytes = serde_json::to_vec(&receipt_material)?;
+        let divergence_bytes = serde_json::to_vec(divergence)?;
+
+        let mut hasher = Sha256::new();
+        hasher.update(L1_LINKAGE_HASH_DOMAIN);
+        update_len_prefixed_hash(&mut hasher, &receipt_bytes);
+        update_len_prefixed_hash(&mut hasher, &divergence_bytes);
+        update_len_prefixed_hash(&mut hasher, self.l1_linkage.l1_verdict.as_bytes());
+        Ok(hex::encode(hasher.finalize()))
     }
+
+    /// Verify the L1 linkage shape and recomputed digest.
+    pub fn verify_l1_linkage(&self, divergence: &SemanticDivergence) -> bool {
+        if !is_valid_l1_run_id(&self.l1_linkage.l1_oracle_run_id)
+            || !is_valid_l1_verdict(&self.l1_linkage.l1_verdict)
+            || !is_canonical_sha256_hex(&self.l1_linkage.linkage_hash)
+        {
+            return false;
+        }
+
+        let Ok(expected_hash) = self.compute_l1_linkage_hash(divergence) else {
+            return false;
+        };
+        crate::security::constant_time::ct_eq(&expected_hash, &self.l1_linkage.linkage_hash)
+    }
+}
+
+fn update_len_prefixed_hash(hasher: &mut Sha256, bytes: &[u8]) {
+    hasher.update(u64::try_from(bytes.len()).unwrap_or(u64::MAX).to_be_bytes());
+    hasher.update(bytes);
+}
+
+fn is_valid_l1_run_id(value: &str) -> bool {
+    let Some(suffix) = value.strip_prefix("l1-run-") else {
+        return false;
+    };
+    (3..=64).contains(&suffix.len())
+        && value.len() <= 96
+        && suffix
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+}
+
+fn is_valid_l1_verdict(value: &str) -> bool {
+    matches!(value, "pass" | "fail" | "warn" | "error" | "blocked")
+}
+
+fn is_canonical_sha256_hex(value: &str) -> bool {
+    value.len() == SHA256_HEX_LEN
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
 // ---------------------------------------------------------------------------
@@ -686,26 +741,35 @@ impl RuntimeOracle {
 
     /// Verify L1 product-oracle linkage for a receipt.
     pub fn verify_l1_linkage(&mut self, receipt_id: &str) -> Result<bool, OracleError> {
-        let receipt = self.receipts.get(receipt_id).ok_or_else(|| OracleError {
-            code: error_codes::ERR_NVO_INVALID_RECEIPT,
-            message: format!("receipt '{receipt_id}' not found"),
-        })?;
+        let (valid, l1_oracle_run_id) = {
+            let receipt = self.receipts.get(receipt_id).ok_or_else(|| OracleError {
+                code: error_codes::ERR_NVO_INVALID_RECEIPT,
+                message: format!("receipt '{receipt_id}' not found"),
+            })?;
+            let divergence = self
+                .divergences
+                .get(&receipt.divergence_id)
+                .ok_or_else(|| OracleError {
+                    code: error_codes::ERR_NVO_DIVERGENCE_UNRESOLVED,
+                    message: format!("divergence '{}' not found", receipt.divergence_id),
+                })?;
+            (
+                receipt.verify_l1_linkage(divergence),
+                receipt.l1_linkage.l1_oracle_run_id.clone(),
+            )
+        };
 
-        let valid = receipt.verify_l1_linkage();
         if valid {
             let mut details = BTreeMap::new();
             details.insert("receipt_id".to_string(), receipt_id.to_string());
-            details.insert(
-                "l1_oracle_run_id".to_string(),
-                receipt.l1_linkage.l1_oracle_run_id.clone(),
-            );
+            details.insert("l1_oracle_run_id".to_string(), l1_oracle_run_id);
             self.emit_event(event_codes::FN_NV_010, "L1 linkage verified", details);
             Ok(true)
         } else {
             Err(OracleError {
                 code: error_codes::ERR_NVO_L1_LINKAGE_BROKEN,
                 message: format!(
-                    "L1 linkage broken for receipt '{receipt_id}': missing oracle run ID, verdict, or linkage hash"
+                    "L1 linkage broken for receipt '{receipt_id}': invalid oracle run ID, verdict, linkage hash shape, or digest"
                 ),
             })
         }
@@ -744,7 +808,9 @@ impl RuntimeOracle {
             } else if div.risk_tier.requires_receipt() {
                 // Check if a receipt has been issued for this divergence and is valid.
                 let has_receipt = self.receipts.values().any(|r| {
-                    r.divergence_id == *id && !r.is_expired(now_epoch_secs) && r.verify_l1_linkage()
+                    r.divergence_id == *id
+                        && !r.is_expired(now_epoch_secs)
+                        && r.verify_l1_linkage(div)
                 });
                 if !has_receipt {
                     pending_receipt.push(id.clone());
@@ -858,6 +924,14 @@ mod tests {
             issued_at_epoch_secs: 1700000000,
             expires_at_epoch_secs: 1700086400,
         }
+    }
+
+    fn linked_sample_receipt(receipt_id: &str, divergence: &SemanticDivergence) -> PolicyReceipt {
+        let mut receipt = sample_receipt(receipt_id, &divergence.divergence_id);
+        receipt.l1_linkage.linkage_hash = receipt
+            .compute_l1_linkage_hash(divergence)
+            .expect("sample L1 linkage hash should serialize");
+        receipt
     }
 
     // 1) Oracle creation emits event
@@ -1103,14 +1177,14 @@ mod tests {
     #[test]
     fn verify_l1_linkage_success() {
         let mut oracle = RuntimeOracle::new("trace-016", 66);
-        oracle.classify_divergence(
+        let divergence = oracle.classify_divergence(
             "div-l",
             "chk-1",
             BoundaryScope::TypeSystem,
             RiskTier::Low,
             &BTreeMap::new(),
         );
-        let receipt = sample_receipt("rcpt-l1", "div-l");
+        let receipt = linked_sample_receipt("rcpt-l1", &divergence);
         oracle.issue_policy_receipt(receipt).unwrap();
         let valid = oracle.verify_l1_linkage("rcpt-l1").unwrap();
         assert!(valid);
@@ -1229,7 +1303,7 @@ mod tests {
     #[test]
     fn release_gate_pass_with_receipt() {
         let mut oracle = RuntimeOracle::new("trace-023", 66);
-        oracle.classify_divergence(
+        let divergence = oracle.classify_divergence(
             "div-low",
             "chk-1",
             BoundaryScope::TypeSystem,
@@ -1237,7 +1311,7 @@ mod tests {
             &BTreeMap::new(),
         );
         oracle
-            .issue_policy_receipt(sample_receipt("rcpt-low", "div-low"))
+            .issue_policy_receipt(linked_sample_receipt("rcpt-low", &divergence))
             .unwrap();
         let verdict = oracle.check_release_gate(0);
         assert_eq!(verdict, OracleVerdict::Pass);
@@ -1510,6 +1584,35 @@ mod tests {
     }
 
     #[test]
+    fn release_gate_rejects_forged_non_empty_l1_linkage_hash() {
+        let mut oracle = RuntimeOracle::new("trace-forged-linkage-hash", 66);
+        let divergence = oracle.classify_divergence(
+            "div-forged-linkage",
+            "chk-forged-linkage",
+            BoundaryScope::TypeSystem,
+            RiskTier::Low,
+            &BTreeMap::new(),
+        );
+        let mut receipt = linked_sample_receipt("rcpt-forged-linkage", &divergence);
+        receipt.l1_linkage.linkage_hash = "f".repeat(SHA256_HEX_LEN);
+        oracle.issue_policy_receipt(receipt).unwrap();
+
+        let err = oracle.verify_l1_linkage("rcpt-forged-linkage").unwrap_err();
+        assert_eq!(err.code, error_codes::ERR_NVO_L1_LINKAGE_BROKEN);
+
+        let verdict = oracle.check_release_gate(1700000001);
+        match verdict {
+            OracleVerdict::RequiresReceipt {
+                pending_divergence_ids,
+            } => assert_eq!(
+                pending_divergence_ids,
+                vec!["div-forged-linkage".to_string()]
+            ),
+            other => unreachable!("expected forged linkage to be pending, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn verify_l1_linkage_rejects_empty_verdict() {
         let mut oracle = RuntimeOracle::new("trace-empty-verdict", 66);
         oracle.classify_divergence(
@@ -1560,7 +1663,7 @@ mod tests {
             RiskTier::Low,
             &BTreeMap::new(),
         );
-        oracle.classify_divergence(
+        let receipted_divergence = oracle.classify_divergence(
             "div-receipted",
             "chk-2",
             BoundaryScope::TypeSystem,
@@ -1568,7 +1671,7 @@ mod tests {
             &BTreeMap::new(),
         );
         oracle
-            .issue_policy_receipt(sample_receipt("rcpt-other", "div-receipted"))
+            .issue_policy_receipt(linked_sample_receipt("rcpt-other", &receipted_divergence))
             .unwrap();
 
         let verdict = oracle.check_release_gate(1700000001);
@@ -1622,7 +1725,8 @@ mod tests {
                 assert!(
                     tiers[i] < tiers[j],
                     "RiskTier ordering should be consistent: {:?} < {:?}",
-                    tiers[i], tiers[j]
+                    tiers[i],
+                    tiers[j]
                 );
             }
         }
@@ -1641,15 +1745,19 @@ mod tests {
         // Test invalid deserialization
         let invalid_tier_json = vec![
             "\"Unknown\"",
-            "\"CRITICAL\"",        // Wrong case
-            "\"VeryHigh\"",        // Non-existent variant
-            "42",                  // Wrong type
+            "\"CRITICAL\"", // Wrong case
+            "\"VeryHigh\"", // Non-existent variant
+            "42",           // Wrong type
             "null",
         ];
 
         for invalid_json in invalid_tier_json {
             let result: Result<RiskTier, _> = serde_json::from_str(invalid_json);
-            assert!(result.is_err(), "Should reject invalid tier JSON: {}", invalid_json);
+            assert!(
+                result.is_err(),
+                "Should reject invalid tier JSON: {}",
+                invalid_json
+            );
         }
     }
 
@@ -1707,13 +1815,13 @@ mod tests {
             RuntimeEntry {
                 runtime_id: "../../../etc/passwd".to_string(), // Path traversal
                 runtime_name: "<script>alert('runtime')</script>".to_string(), // XSS
-                version: "\u{FFFF}".to_string(), // Max Unicode
+                version: "\u{FFFF}".to_string(),               // Max Unicode
                 is_reference: true,
             },
             RuntimeEntry {
-                runtime_id: "x".repeat(10_000), // Very long ID
+                runtime_id: "x".repeat(10_000),   // Very long ID
                 runtime_name: "y".repeat(50_000), // Very long name
-                version: "z".repeat(1_000), // Long version
+                version: "z".repeat(1_000),       // Long version
                 is_reference: false,
             },
         ];
@@ -1780,7 +1888,8 @@ mod tests {
                 let mut problematic_outputs = BTreeMap::new();
                 problematic_outputs.insert("\0runtime\x01".to_string(), vec![0xFF; 1000]);
                 problematic_outputs.insert("🚀runtime💀".to_string(), vec![]);
-                problematic_outputs.insert("../../../etc/passwd".to_string(), b"malicious".to_vec());
+                problematic_outputs
+                    .insert("../../../etc/passwd".to_string(), b"malicious".to_vec());
                 CheckOutcome::Diverge {
                     outputs: problematic_outputs,
                 }
@@ -1831,14 +1940,18 @@ mod tests {
                 boundary_scope: BoundaryScope::Security,
                 input: vec![0xFF; 10_000], // Large input
                 trace_id: "trace\nwith\nnewlines".to_string(),
-                outcome: Some(CheckOutcome::Agree { canonical_output: vec![] }),
+                outcome: Some(CheckOutcome::Agree {
+                    canonical_output: vec![],
+                }),
             },
             CrossRuntimeCheck {
                 check_id: "🚀check💀".to_string(), // Unicode emoji
                 boundary_scope: BoundaryScope::Memory,
                 input: b"malicious\0input\x01".to_vec(),
                 trace_id: "../../../etc/shadow".to_string(), // Path traversal
-                outcome: Some(CheckOutcome::Diverge { outputs: BTreeMap::new() }),
+                outcome: Some(CheckOutcome::Diverge {
+                    outputs: BTreeMap::new(),
+                }),
             },
         ];
 
@@ -1850,7 +1963,8 @@ mod tests {
             let serialization = serde_json::to_string(&check);
             match serialization {
                 Ok(json) => {
-                    let _deserialization: Result<CrossRuntimeCheck, _> = serde_json::from_str(&json);
+                    let _deserialization: Result<CrossRuntimeCheck, _> =
+                        serde_json::from_str(&json);
                     // Either succeeds or fails gracefully
                 }
                 Err(_) => {
@@ -1895,7 +2009,7 @@ mod tests {
             },
             SemanticDivergence {
                 divergence_id: "x".repeat(1000), // Long ID
-                check_id: "y".repeat(2000), // Long check ID
+                check_id: "y".repeat(2000),      // Long check ID
                 boundary_scope: BoundaryScope::Security,
                 risk_tier: RiskTier::High,
                 runtime_outputs: {
@@ -1919,7 +2033,11 @@ mod tests {
             // Risk tier should be valid
             assert!(matches!(
                 divergence.risk_tier,
-                RiskTier::Info | RiskTier::Low | RiskTier::Medium | RiskTier::High | RiskTier::Critical
+                RiskTier::Info
+                    | RiskTier::Low
+                    | RiskTier::Medium
+                    | RiskTier::High
+                    | RiskTier::Critical
             ));
 
             // Serialization should handle complex nested data
@@ -1963,8 +2081,8 @@ mod tests {
             },
             L1LinkageProof {
                 l1_oracle_run_id: "".to_string(), // Empty run ID
-                l1_verdict: "".to_string(), // Empty verdict
-                linkage_hash: "".to_string(), // Empty hash
+                l1_verdict: "".to_string(),       // Empty verdict
+                linkage_hash: "".to_string(),     // Empty hash
                 timestamp_epoch_secs: 1,
             },
         ];
@@ -2015,12 +2133,20 @@ mod tests {
         push_bounded(&mut large_vec, 99999, 5);
         assert_eq!(large_vec.len(), 5);
         assert_eq!(*large_vec.last().unwrap(), 99999);
-        assert!(large_vec[0] >= 9995, "Should keep recent items: {:?}", &large_vec[..3]);
+        assert!(
+            large_vec[0] >= 9995,
+            "Should keep recent items: {:?}",
+            &large_vec[..3]
+        );
 
         // Test with capacity larger than current size
         let mut small_vec = vec![1, 2];
         push_bounded(&mut small_vec, 3, 10);
-        assert_eq!(small_vec, vec![1, 2, 3], "Should not drain when under capacity");
+        assert_eq!(
+            small_vec,
+            vec![1, 2, 3],
+            "Should not drain when under capacity"
+        );
 
         // Test edge case: exactly at capacity
         let mut exact_vec = vec![1, 2, 3];
@@ -2036,49 +2162,93 @@ mod tests {
         use event_codes::*;
 
         let event_constants = [
-            FN_NV_001, FN_NV_002, FN_NV_003, FN_NV_004, FN_NV_005, FN_NV_006,
-            FN_NV_007, FN_NV_008, FN_NV_009, FN_NV_010, FN_NV_011, FN_NV_012,
+            FN_NV_001, FN_NV_002, FN_NV_003, FN_NV_004, FN_NV_005, FN_NV_006, FN_NV_007, FN_NV_008,
+            FN_NV_009, FN_NV_010, FN_NV_011, FN_NV_012,
         ];
 
         for constant in &event_constants {
             assert!(!constant.is_empty());
-            assert!(constant.starts_with("FN-NV-"), "Event constant should start with FN-NV-: {}", constant);
-            assert!(constant.is_ascii(), "Event constant should be ASCII: {}", constant);
+            assert!(
+                constant.starts_with("FN-NV-"),
+                "Event constant should start with FN-NV-: {}",
+                constant
+            );
+            assert!(
+                constant.is_ascii(),
+                "Event constant should be ASCII: {}",
+                constant
+            );
 
             // Should follow pattern FN-NV-XXX where XXX is a 3-digit number
             let suffix = constant.strip_prefix("FN-NV-").unwrap();
-            assert_eq!(suffix.len(), 3, "Event code suffix should be 3 digits: {}", suffix);
-            assert!(suffix.chars().all(|c| c.is_ascii_digit()), "Event code suffix should be numeric: {}", suffix);
+            assert_eq!(
+                suffix.len(),
+                3,
+                "Event code suffix should be 3 digits: {}",
+                suffix
+            );
+            assert!(
+                suffix.chars().all(|c| c.is_ascii_digit()),
+                "Event code suffix should be numeric: {}",
+                suffix
+            );
         }
 
         // Test error constants
         use error_codes::*;
 
         let error_constants = [
-            ERR_NVO_NO_RUNTIMES, ERR_NVO_QUORUM_FAILED, ERR_NVO_RUNTIME_NOT_FOUND,
-            ERR_NVO_CHECK_NOT_FOUND, ERR_NVO_CHECK_ALREADY_RUNNING, ERR_NVO_DIVERGENCE_UNRESOLVED,
-            ERR_NVO_POLICY_MISSING, ERR_NVO_INVALID_RECEIPT, ERR_NVO_L1_LINKAGE_BROKEN,
-            ERR_NVO_VOTING_TIMEOUT, ERR_NVO_DUPLICATE_RUNTIME,
+            ERR_NVO_NO_RUNTIMES,
+            ERR_NVO_QUORUM_FAILED,
+            ERR_NVO_RUNTIME_NOT_FOUND,
+            ERR_NVO_CHECK_NOT_FOUND,
+            ERR_NVO_CHECK_ALREADY_RUNNING,
+            ERR_NVO_DIVERGENCE_UNRESOLVED,
+            ERR_NVO_POLICY_MISSING,
+            ERR_NVO_INVALID_RECEIPT,
+            ERR_NVO_L1_LINKAGE_BROKEN,
+            ERR_NVO_VOTING_TIMEOUT,
+            ERR_NVO_DUPLICATE_RUNTIME,
         ];
 
         for constant in &error_constants {
             assert!(!constant.is_empty());
-            assert!(constant.starts_with("ERR_NVO_"), "Error constant should start with ERR_NVO_: {}", constant);
-            assert!(constant.is_ascii(), "Error constant should be ASCII: {}", constant);
+            assert!(
+                constant.starts_with("ERR_NVO_"),
+                "Error constant should start with ERR_NVO_: {}",
+                constant
+            );
+            assert!(
+                constant.is_ascii(),
+                "Error constant should be ASCII: {}",
+                constant
+            );
         }
 
         // Test invariant constants
         use invariants::*;
 
         let invariant_constants = [
-            INV_NVO_QUORUM, INV_NVO_RISK_TIERED, INV_NVO_BLOCK_HIGH,
-            INV_NVO_POLICY_RECEIPT, INV_NVO_L1_LINKAGE, INV_NVO_DETERMINISTIC,
+            INV_NVO_QUORUM,
+            INV_NVO_RISK_TIERED,
+            INV_NVO_BLOCK_HIGH,
+            INV_NVO_POLICY_RECEIPT,
+            INV_NVO_L1_LINKAGE,
+            INV_NVO_DETERMINISTIC,
         ];
 
         for constant in &invariant_constants {
             assert!(!constant.is_empty());
-            assert!(constant.starts_with("INV-NVO-"), "Invariant should start with INV-NVO-: {}", constant);
-            assert!(constant.is_ascii(), "Invariant constant should be ASCII: {}", constant);
+            assert!(
+                constant.starts_with("INV-NVO-"),
+                "Invariant should start with INV-NVO-: {}",
+                constant
+            );
+            assert!(
+                constant.is_ascii(),
+                "Invariant constant should be ASCII: {}",
+                constant
+            );
         }
 
         // Test capacity constant
@@ -2091,13 +2261,13 @@ mod tests {
         let mut oracle = RuntimeOracle::new("trace-unicode", 66);
 
         let malicious_runtime_ids = vec![
-            "normal\u{202e}evil\u{202c}runtime",    // BiDi override
-            "runtime\u{200b}\u{feff}hidden",        // Zero-width characters
-            "runtime\nnewline",                      // Newline injection
-            "runtime\ttab",                          // Tab injection
-            "runtime\x00null",                       // Null byte injection
-            "../../../etc/passwd",                   // Path traversal
-            "runtime\"quote'injection",              // Quote injection
+            "normal\u{202e}evil\u{202c}runtime", // BiDi override
+            "runtime\u{200b}\u{feff}hidden",     // Zero-width characters
+            "runtime\nnewline",                  // Newline injection
+            "runtime\ttab",                      // Tab injection
+            "runtime\x00null",                   // Null byte injection
+            "../../../etc/passwd",               // Path traversal
+            "runtime\"quote'injection",          // Quote injection
         ];
 
         for malicious_id in &malicious_runtime_ids {
@@ -2132,7 +2302,9 @@ mod tests {
         let mut oracle = RuntimeOracle::new("trace-memory", 66);
 
         // Register runtime
-        oracle.register_runtime(sample_runtime("memory-test")).unwrap();
+        oracle
+            .register_runtime(sample_runtime("memory-test"))
+            .unwrap();
 
         // Create massive runtime outputs (10MB each)
         let massive_output = vec![0xAA; 10 * 1024 * 1024];
@@ -2179,12 +2351,7 @@ mod tests {
         );
 
         // Test with extreme current_time values
-        let extreme_times = vec![
-            u64::MAX,
-            u64::MAX - 1,
-            u64::MAX / 2,
-            0,
-        ];
+        let extreme_times = vec![u64::MAX, u64::MAX - 1, u64::MAX / 2, 0];
 
         for time in extreme_times {
             let report = oracle.generate_report(time);
@@ -2266,7 +2433,7 @@ mod tests {
         let mut oracle = RuntimeOracle::new("trace-forgery", 66);
 
         // Create legitimate divergence
-        oracle.classify_divergence(
+        let legit_divergence = oracle.classify_divergence(
             "legit-div",
             "check-1",
             BoundaryScope::Security,
@@ -2275,22 +2442,20 @@ mod tests {
         );
 
         // Create legitimate receipt
-        let legit_receipt = sample_receipt("legit-receipt", "legit-div");
+        let legit_receipt = linked_sample_receipt("legit-receipt", &legit_divergence);
         oracle.issue_policy_receipt(legit_receipt.clone()).unwrap();
 
         // Attempt various forgery attacks
         let forgery_attempts = vec![
             // Receipt for non-existent divergence
             sample_receipt("forged-1", "non-existent-div"),
-
             // Receipt with manipulated linkage
             {
                 let mut forged = legit_receipt.clone();
                 forged.receipt_id = "forged-2".to_string();
-                forged.l1_linkage.linkage_hash = "manipulated-hash".to_string();
+                forged.l1_linkage.linkage_hash = "f".repeat(SHA256_HEX_LEN);
                 forged
             },
-
             // Receipt with future expiry
             {
                 let mut forged = legit_receipt.clone();
@@ -2298,7 +2463,6 @@ mod tests {
                 forged.expires_at_epoch_secs = u64::MAX;
                 forged
             },
-
             // Receipt with empty/malicious L1 verdict
             {
                 let mut forged = legit_receipt.clone();
@@ -2341,7 +2505,6 @@ mod tests {
                 votes.insert("phantom-runtime".to_string(), vec![1, 1, 1]);
                 votes
             },
-
             // Votes with mismatched vote counts
             {
                 let mut votes = BTreeMap::new();
@@ -2349,7 +2512,6 @@ mod tests {
                 votes.insert("rt2".to_string(), vec![1, 1, 0, 1]); // 4 votes
                 votes
             },
-
             // Votes with invalid vote values
             {
                 let mut votes = BTreeMap::new();
@@ -2380,8 +2542,10 @@ mod tests {
 
             // Should detect manipulation and reject
             if result.is_err() {
-                assert!(result.unwrap_err().code == error_codes::ERR_NVO_NO_RUNTIMES ||
-                        result.unwrap_err().code == error_codes::ERR_NVO_QUORUM_FAILED);
+                assert!(
+                    result.unwrap_err().code == error_codes::ERR_NVO_NO_RUNTIMES
+                        || result.unwrap_err().code == error_codes::ERR_NVO_QUORUM_FAILED
+                );
             }
         }
     }
@@ -2401,7 +2565,7 @@ mod tests {
 
         // Attempt to reclassify to higher risk tier
         oracle.classify_divergence(
-            "div-1",  // Same divergence ID
+            "div-1", // Same divergence ID
             "check-1",
             BoundaryScope::Security,
             RiskTier::Critical, // Risk escalation
@@ -2410,15 +2574,15 @@ mod tests {
 
         // Should handle classification updates appropriately
         let divergence = &oracle.divergences["div-1"];
-        assert!(matches!(divergence.risk_tier, RiskTier::Low | RiskTier::Critical));
+        assert!(matches!(
+            divergence.risk_tier,
+            RiskTier::Low | RiskTier::Critical
+        ));
 
         // Test with massive runtime output data
         let mut massive_outputs = BTreeMap::new();
         for i in 0..1000 {
-            massive_outputs.insert(
-                format!("runtime-{}", i),
-                vec![i as u8; 1000]
-            );
+            massive_outputs.insert(format!("runtime-{}", i), vec![i as u8; 1000]);
         }
 
         oracle.classify_divergence(
@@ -2453,8 +2617,14 @@ mod tests {
         assert!(oracle.event_log.len() <= MAX_EVENT_LOG_ENTRIES);
 
         // Recent events should be preserved (FIFO eviction)
-        let recent_events = oracle.event_log.iter()
-            .filter(|event| event.detail.contains(&format!("{}", MAX_EVENT_LOG_ENTRIES + 50)))
+        let recent_events = oracle
+            .event_log
+            .iter()
+            .filter(|event| {
+                event
+                    .detail
+                    .contains(&format!("{}", MAX_EVENT_LOG_ENTRIES + 50))
+            })
             .count();
         assert!(recent_events > 0, "Recent events should be preserved");
 
@@ -2483,7 +2653,7 @@ mod tests {
             &BTreeMap::new(),
         );
 
-        oracle.classify_divergence(
+        let low_divergence = oracle.classify_divergence(
             "div-low",
             "check-2",
             BoundaryScope::IO,
@@ -2500,21 +2670,27 @@ mod tests {
         );
 
         // Issue receipt for low-risk divergence only
-        oracle.issue_policy_receipt(sample_receipt("receipt-low", "div-low")).unwrap();
+        oracle
+            .issue_policy_receipt(linked_sample_receipt("receipt-low", &low_divergence))
+            .unwrap();
 
         // Check release gate behavior with mixed divergence states
         let verdict = oracle.check_release_gate(1700000001);
 
         match verdict {
-            OracleVerdict::BlockRelease { blocking_divergence_ids } => {
+            OracleVerdict::BlockRelease {
+                blocking_divergence_ids,
+            } => {
                 // Critical divergence should block release
                 assert!(blocking_divergence_ids.contains(&"div-critical".to_string()));
             }
-            _ => panic!("Critical divergence should block release"),
+            other => unreachable!("expected critical divergence to block release, got {other:?}"),
         }
 
         // Resolve critical divergence
-        oracle.resolve_divergence("div-critical", "Manually resolved").unwrap();
+        oracle
+            .resolve_divergence("div-critical", "Manually resolved")
+            .unwrap();
 
         // Re-check release gate
         let verdict2 = oracle.check_release_gate(1700000001);
@@ -2529,7 +2705,7 @@ mod tests {
 
         let mut oracle = RuntimeOracle::new("trace-timing", 66);
 
-        oracle.classify_divergence(
+        let divergence = oracle.classify_divergence(
             "div-timing",
             "check-timing",
             BoundaryScope::TypeSystem,
@@ -2538,12 +2714,12 @@ mod tests {
         );
 
         // Create receipts with valid and invalid linkage
-        let valid_receipt = sample_receipt("valid-receipt", "div-timing");
+        let valid_receipt = linked_sample_receipt("valid-receipt", &divergence);
         oracle.issue_policy_receipt(valid_receipt.clone()).unwrap();
 
         let mut invalid_receipt = valid_receipt.clone();
         invalid_receipt.receipt_id = "invalid-receipt".to_string();
-        invalid_receipt.l1_linkage.linkage_hash = "forged-hash".to_string();
+        invalid_receipt.l1_linkage.linkage_hash = "f".repeat(SHA256_HEX_LEN);
         oracle.issue_policy_receipt(invalid_receipt).unwrap();
 
         // Measure verification timing for multiple rounds
@@ -2563,8 +2739,10 @@ mod tests {
         }
 
         // Calculate average times
-        let avg_valid = valid_times.iter().sum::<std::time::Duration>() / u32::try_from(valid_times.len()).unwrap_or(u32::MAX);
-        let avg_invalid = invalid_times.iter().sum::<std::time::Duration>() / u32::try_from(invalid_times.len()).unwrap_or(u32::MAX);
+        let avg_valid = valid_times.iter().sum::<std::time::Duration>()
+            / u32::try_from(valid_times.len()).unwrap_or(u32::MAX);
+        let avg_invalid = invalid_times.iter().sum::<std::time::Duration>()
+            / u32::try_from(invalid_times.len()).unwrap_or(u32::MAX);
 
         // Timing should not reveal linkage validation details
         if avg_valid.as_nanos() > 0 && avg_invalid.as_nanos() > 0 {
@@ -2573,9 +2751,13 @@ mod tests {
             let timing_ratio = max_time.as_nanos() as f64 / min_time.as_nanos() as f64;
 
             // Allow reasonable variance but flag excessive timing differences
-            assert!(timing_ratio < 5.0,
+            assert!(
+                timing_ratio < 5.0,
                 "Suspicious timing variance in L1 linkage verification: valid={:?}, invalid={:?}, ratio={:.2}",
-                avg_valid, avg_invalid, timing_ratio);
+                avg_valid,
+                avg_invalid,
+                timing_ratio
+            );
         }
     }
 
