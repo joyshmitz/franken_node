@@ -10,19 +10,27 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 arbitrary = { version = "1.3", features = ["derive"] }
-ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
+# Remove rand_core feature to avoid randomness dependencies for deterministic fuzzing
+ed25519-dalek = { version = "2.1.1" }
 hex = "0.4.3"
 serde_json = "1.0"
-zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
+# Remove zeroize_derive to reduce proc-macro compilation overhead
+zeroize = { version = "1.8.2" }
 
 [dependencies.frankenengine-node]
 path = "../crates/franken-node"
 default-features = false
+# Exclude heavy compilation dependencies for faster fuzz builds:
+# - parsing: tree-sitter (~3-4min savings)
+# - http-client: ureq/url (~1-2min savings)
+# - external-commands: which/ctrlc (~30s savings)
 features = ["fuzz", "test-support"]
 
-[dependencies.frankenengine-verifier-sdk]
-path = "../sdk/verifier"
-features = ["fuzz"]
+# Remove frankenengine-verifier-sdk to reduce compilation overhead
+# Only enable for fuzz targets that specifically need SDK functionality
+# [dependencies.frankenengine-verifier-sdk]
+# path = "../sdk/verifier"
+# features = ["fuzz"]
 
 # Prevent fuzzing dependencies from leaking into production
 [[bin]]
