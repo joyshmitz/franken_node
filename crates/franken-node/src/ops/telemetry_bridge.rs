@@ -1494,8 +1494,13 @@ fn assert_slowloris_partial_fragments_exceed_cap_after_timeout_shed_impl() {
         thread::sleep(Duration::from_millis(CONNECTION_READ_TIMEOUT_MS + 50));
     }
 
-    writeln!(stream, r#"{{"event":"after_attack"}}"#).expect("write valid event");
     drop(stream);
+
+    thread::sleep(Duration::from_millis(CONNECTION_READ_TIMEOUT_MS + 50));
+
+    let mut recovery_stream = UnixStream::connect(&sock).expect("connect recovery stream");
+    writeln!(recovery_stream, r#"{{"event":"after_attack"}}"#).expect("write valid event");
+    drop(recovery_stream);
 
     thread::sleep(Duration::from_millis(500));
 

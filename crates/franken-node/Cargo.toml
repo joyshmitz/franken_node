@@ -188,3 +188,8 @@ path = "tests/frankensqlite_adapter_conformance.rs"
 name = "trust_cli_e2e"
 path = "tests/trust_cli_e2e.rs"
 required-features = ["test-support"]
+
+[[test]]
+name = "telemetry_bridge_regressions"
+path = "tests/telemetry_bridge_regressions.rs"
+required-features = ["test-support"]
