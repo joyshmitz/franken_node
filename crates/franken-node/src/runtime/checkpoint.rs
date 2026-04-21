@@ -787,19 +787,37 @@ fn derive_checkpoint_id(
     previous_checkpoint_hash: Option<&str>,
 ) -> CheckpointId {
     let mut hasher = Sha256::new();
-    hasher.update(b"checkpoint_content_v2:");
-    hasher.update(orchestration_id.as_bytes());
-    hasher.update([0x00]);
-    hasher.update(iteration_count.to_le_bytes());
-    hasher.update(epoch.to_le_bytes());
-    hasher.update([0x00]);
-    hasher.update(progress_state_hash.as_bytes());
-    hasher.update([0x00]);
+    hasher.update(b"checkpoint_content_v3:length_prefixed:");
+    update_hash_field(&mut hasher, b"orchestration_id", orchestration_id.as_bytes());
+    update_hash_field(
+        &mut hasher,
+        b"iteration_count",
+        &iteration_count.to_le_bytes(),
+    );
+    update_hash_field(&mut hasher, b"epoch", &epoch.to_le_bytes());
+    update_hash_field(
+        &mut hasher,
+        b"progress_state_hash",
+        progress_state_hash.as_bytes(),
+    );
     match previous_checkpoint_hash {
-        Some(previous_hash) => hasher.update(previous_hash.as_bytes()),
-        None => hasher.update(b"root"),
+        Some(previous_hash) => update_hash_field(
+            &mut hasher,
+            b"previous_checkpoint_hash:some",
+            previous_hash.as_bytes(),
+        ),
+        None => update_hash_field(&mut hasher, b"previous_checkpoint_hash:none", &[]),
     }
     format!("{:x}", hasher.finalize())
+}
+
+fn update_hash_field(hasher: &mut Sha256, label: &[u8], value: &[u8]) {
+    let label_len = u64::try_from(label.len()).unwrap_or(u64::MAX);
+    let value_len = u64::try_from(value.len()).unwrap_or(u64::MAX);
+    hasher.update(label_len.to_le_bytes());
+    hasher.update(label);
+    hasher.update(value_len.to_le_bytes());
+    hasher.update(value);
 }
 
 fn hash_hex(bytes: &[u8]) -> String {
@@ -2507,6 +2525,15 @@ mod tests {
         let id_with_prev = derive_checkpoint_id(base_orch, 1, 1, base_state_hash, Some("previous"));
         let id_without_prev = derive_checkpoint_id(base_orch, 1, 1, base_state_hash, None);
         assert_ne!(id_with_prev, id_without_prev);
+
+        let delimiter_ambiguous_a =
+            derive_checkpoint_id(base_orch, 1, 1, "state", Some("\0previous"));
+        let delimiter_ambiguous_b =
+            derive_checkpoint_id(base_orch, 1, 1, "state\0", Some("previous"));
+        assert_ne!(
+            delimiter_ambiguous_a, delimiter_ambiguous_b,
+            "length-prefixed checkpoint hash fields must reject delimiter ambiguity"
+        );
 
         // All IDs should be valid SHA-256 hashes
         for id in ids {
