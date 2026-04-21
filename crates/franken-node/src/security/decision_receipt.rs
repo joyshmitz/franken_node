@@ -123,6 +123,8 @@ pub enum ReceiptError {
     },
     #[error("unsafe path '{path}': {reason}")]
     UnsafePath { path: String, reason: String },
+    #[error("unsupported format: {0}")]
+    UnsupportedFormat(String),
 }
 
 impl Receipt {

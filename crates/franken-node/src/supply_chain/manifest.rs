@@ -2,11 +2,16 @@
 //!
 //! Defines a trust-native signed manifest that extends the engine's
 //! `ExtensionManifest` contract with provenance/trust/signature metadata.
+//!
+//! This module requires the "extension-host" feature to be enabled.
+
+#![cfg(feature = "extension-host")]
 
 use std::collections::BTreeSet;
 use std::fmt;
 
 use base64::Engine as _;
+#[cfg(feature = "extension-host")]
 use frankenengine_extension_host::{
     Capability, ExtensionManifest, ManifestValidationError,
     validate_manifest as validate_engine_manifest, with_computed_content_hash,

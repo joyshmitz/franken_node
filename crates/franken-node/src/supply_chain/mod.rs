@@ -3,6 +3,7 @@ pub mod category_shift;
 pub mod certification;
 pub mod ecosystem_telemetry;
 pub mod extension_registry;
+#[cfg(feature = "extension-host")]
 pub mod manifest;
 pub mod migration_kit;
 pub mod provenance;
@@ -14,7 +15,7 @@ pub mod revocation_registry;
 pub mod transparency_verifier;
 pub mod trust_card;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "extension-host"))]
 mod tests {
     use super::manifest::{
         AttestationRef, BehavioralProfile, CertificationLevel, MANIFEST_SCHEMA_VERSION,
