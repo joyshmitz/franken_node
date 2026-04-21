@@ -717,25 +717,46 @@ fn runtime_smoke_validation_check(project_path: &Path) -> MigrationValidationChe
 fn execute_migration_runtime_smoke(
     project_path: &Path,
 ) -> anyhow::Result<MigrationRuntimeSmokeReceipt> {
-    let runtime = resolve_migration_runtime_target()?;
     let (workspace, fixture_path) = prepare_migration_runtime_smoke_workspace(project_path)?;
+    let runtimes = resolve_migration_runtime_targets()?;
+    let mut failures = Vec::new();
+
+    for runtime in runtimes {
+        match execute_migration_runtime_smoke_with_target(&runtime, workspace.path(), &fixture_path)
+        {
+            Ok(receipt) => return Ok(receipt),
+            Err(err) => failures.push(format!("{}: {err}", runtime.label())),
+        }
+    }
+
+    anyhow::bail!(
+        "no transformed-runtime smoke executor succeeded: {}",
+        failures.join(" | ")
+    )
+}
+
+fn execute_migration_runtime_smoke_with_target(
+    runtime: &MigrationRuntimeTarget,
+    workspace_path: &Path,
+    fixture_path: &Path,
+) -> anyhow::Result<MigrationRuntimeSmokeReceipt> {
     let mut command = match &runtime {
         MigrationRuntimeTarget::FrankenNode(path) => {
             let mut command = Command::new(path);
             command
                 .arg("run")
-                .arg(&fixture_path)
+                .arg(fixture_path)
                 .arg("--runtime")
                 .arg("auto")
                 .arg("--policy")
                 .arg("balanced")
                 .arg("--json")
-                .current_dir(project_path);
+                .current_dir(workspace_path);
             command
         }
         MigrationRuntimeTarget::Node(path) | MigrationRuntimeTarget::Bun(path) => {
             let mut command = Command::new(path);
-            command.arg(&fixture_path).current_dir(workspace.path());
+            command.arg(fixture_path).current_dir(workspace_path);
             command
         }
     };
@@ -846,23 +867,29 @@ fn select_smoke_package_manifest(project_path: &Path) -> anyhow::Result<PathBuf>
         })
 }
 
-fn resolve_migration_runtime_target() -> anyhow::Result<MigrationRuntimeTarget> {
+fn resolve_migration_runtime_targets() -> anyhow::Result<Vec<MigrationRuntimeTarget>> {
+    let mut runtimes = Vec::new();
+
     if let Ok(exe_path) = std::env::current_exe()
         && is_franken_node_binary(&exe_path)
     {
-        return Ok(MigrationRuntimeTarget::FrankenNode(exe_path));
+        runtimes.push(MigrationRuntimeTarget::FrankenNode(exe_path));
     }
 
     if let Ok(path) = which::which("node") {
-        return Ok(MigrationRuntimeTarget::Node(path));
+        runtimes.push(MigrationRuntimeTarget::Node(path));
     }
     if let Ok(path) = which::which("bun") {
-        return Ok(MigrationRuntimeTarget::Bun(path));
+        runtimes.push(MigrationRuntimeTarget::Bun(path));
     }
 
-    anyhow::bail!(
-        "no transformed-runtime executor found: franken-node, node, and bun are unavailable"
-    )
+    if runtimes.is_empty() {
+        anyhow::bail!(
+            "no transformed-runtime executor found: franken-node, node, and bun are unavailable"
+        );
+    }
+
+    Ok(runtimes)
 }
 
 fn is_franken_node_binary(path: &Path) -> bool {
