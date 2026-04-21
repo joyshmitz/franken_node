@@ -1,0 +1,148 @@
+---
+source: crates/franken-node/tests/artifact_gate_goldens.rs
+---
+{
+  "benchmark_correctness_contract": {
+    "artifact_path_policy": {
+      "must_exist": true,
+      "required_prefix": "artifacts/section_",
+      "stable_filename": true
+    },
+    "correctness_suite_requirement_count": 5,
+    "metric_requirement_count": 7,
+    "required_event_codes": [
+      "CONTRACT_BENCH_CORRECT_VALIDATED",
+      "CONTRACT_BENCH_CORRECT_MISSING",
+      "CONTRACT_BENCH_CORRECT_INCOMPLETE"
+    ],
+    "summary": {
+      "array_counts": {
+        "required_event_codes": 3
+      },
+      "bead_id": "bd-3l8d",
+      "path": "artifacts/11/benchmark_correctness_contract.json",
+      "sample_ids": {},
+      "schema_version": null,
+      "scrubbed_sha256": "187571a4edc8346012e2dea77c30929528b56590825c5871e0d141c998539cfe",
+      "section": null,
+      "status": "active",
+      "top_level_keys": [
+        "artifact_path_policy",
+        "bead_id",
+        "benchmark_metric_requirements",
+        "contract_field",
+        "correctness_suite_requirements",
+        "required_event_codes",
+        "status"
+      ]
+    }
+  },
+  "benchmark_specs_package": {
+    "dataset_count": 6,
+    "event_codes": [
+      "BSP-001",
+      "BSP-002",
+      "BSP-003",
+      "BSP-004",
+      "BSP-005",
+      "BSP-006"
+    ],
+    "release_report_field_count": 8,
+    "sample_overall_score": 0.9203,
+    "sample_score_count": 6,
+    "scoring_formula": {
+      "aggregate_formula": "aggregate_score = sum(weight_i * score_i)",
+      "hard_fail_conditions": [
+        "any_track_below_minimum_track_score",
+        "overall_below_minimum_overall_score",
+        "missing_required_track_or_dataset"
+      ],
+      "minimum_overall_score": 0.85,
+      "minimum_track_score": 0.75,
+      "normalization": "score in [0,1] from normalized metric aggregations"
+    },
+    "spec_version": "1.0.0",
+    "summary": {
+      "array_counts": {
+        "event_codes": 6
+      },
+      "bead_id": "bd-3h1g",
+      "path": "artifacts/14/benchmark_specs_package.json",
+      "sample_ids": {},
+      "schema_version": null,
+      "scrubbed_sha256": "41b6ce0ee849db68be36a7784945ea8480301ede5e7e8ead610a983a3066fd7b",
+      "section": null,
+      "status": null,
+      "top_level_keys": [
+        "bead_id",
+        "benchmark_tracks",
+        "datasets",
+        "event_codes",
+        "generated_at_utc",
+        "harness",
+        "release_report_fields",
+        "sample_overall_score",
+        "sample_scores",
+        "scoring_formula",
+        "spec_version",
+        "trace_id"
+      ]
+    },
+    "track_count": 6,
+    "tracks": [
+      {
+        "metric_count": 2,
+        "pass_threshold": 0.95,
+        "track_id": "compatibility_correctness",
+        "weight": 0.22
+      },
+      {
+        "metric_count": 2,
+        "pass_threshold": 0.9,
+        "track_id": "security_trust",
+        "weight": 0.2
+      },
+      {
+        "metric_count": 2,
+        "pass_threshold": 0.85,
+        "track_id": "performance_under_hardening",
+        "weight": 0.18
+      },
+      {
+        "metric_count": 2,
+        "pass_threshold": 0.88,
+        "track_id": "containment_revocation_latency",
+        "weight": 0.15
+      },
+      {
+        "metric_count": 2,
+        "pass_threshold": 0.9,
+        "track_id": "replay_determinism",
+        "weight": 0.13
+      },
+      {
+        "metric_count": 2,
+        "pass_threshold": 0.85,
+        "track_id": "adversarial_resilience",
+        "weight": 0.12
+      }
+    ]
+  },
+  "golden_strategy": "freeze benchmark contract shape, scoring thresholds, track matrix, and scrubbed full-artifact hashes",
+  "scrubbing_rules": {
+    "kept_exact": [
+      "schema_version",
+      "bead_id",
+      "expected hashes",
+      "thresholds",
+      "family names",
+      "pass counts",
+      "gate verdicts"
+    ],
+    "nonce_keys": "[NONCE]",
+    "timestamps": "[TIMESTAMP]",
+    "trace_id": "[TRACE_ID]",
+    "uuid_keys": "[UUID]"
+  },
+  "surface": "benchmark-artifact-gates"
+}

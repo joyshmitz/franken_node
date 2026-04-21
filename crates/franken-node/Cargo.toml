@@ -86,3 +86,7 @@ required-features = ["extended-surfaces"]
 name = "fastapi_rust_control_plane_integration"
 path = "tests/fastapi_rust_control_plane_integration.rs"
 required-features = ["test-support"]
+
+[[test]]
+name = "artifact_gate_goldens"
+path = "tests/artifact_gate_goldens.rs"

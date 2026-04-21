@@ -1,0 +1,256 @@
+---
+source: crates/franken-node/tests/artifact_gate_goldens.rs
+---
+{
+  "artifact_count": 7,
+  "artifacts": [
+    {
+      "array_counts": {
+        "vectors": 10
+      },
+      "bead_id": null,
+      "path": "artifacts/10.14/epoch_key_vectors.json",
+      "sample_ids": {},
+      "schema_version": "1.0",
+      "scrubbed_sha256": "5f14cef52552fd3e8cdf47be76b4c90decaedb4b912fbbac452e097d4fcd262a",
+      "section": null,
+      "status": null,
+      "top_level_keys": [
+        "info_format",
+        "kdf",
+        "schema_version",
+        "signature_kat",
+        "vectors"
+      ]
+    },
+    {
+      "array_counts": {
+        "vectors": 24
+      },
+      "bead_id": null,
+      "path": "artifacts/10.14/idempotency_vectors.json",
+      "sample_ids": {
+        "vectors": [
+          "core.remote_compute.v1",
+          "core.remote_compute.v1",
+          "core.remote_compute.v1",
+          "core.remote_compute.v1",
+          "core.audit.v1",
+          "core.telemetry_export.v1",
+          "core.remote_compute.v1",
+          "core.remote_compute.v1"
+        ]
+      },
+      "schema_version": "ik-v1.1",
+      "scrubbed_sha256": "fe5d04c4fb3c2e8bd6eef07d09144f8b676e666763462b0a7657e5e3fd783640",
+      "section": null,
+      "status": null,
+      "top_level_keys": [
+        "domain_prefix",
+        "schema_version",
+        "vectors"
+      ]
+    },
+    {
+      "array_counts": {
+        "inclusion_cases": 10,
+        "prefix_cases": 5
+      },
+      "bead_id": "bd-1dar",
+      "path": "artifacts/10.14/mmr_proof_vectors.json",
+      "sample_ids": {
+        "inclusion_cases": [
+          "inc-01",
+          "inc-02",
+          "inc-03",
+          "inc-04",
+          "inc-05",
+          "inc-06",
+          "inc-07",
+          "inc-08"
+        ],
+        "prefix_cases": [
+          "pre-01",
+          "pre-02",
+          "pre-03",
+          "pre-04",
+          "pre-05"
+        ]
+      },
+      "schema_version": null,
+      "scrubbed_sha256": "277b156021db44a56f194d727c8bbb2a30bc5fdc80775148ca36a7e166bf3c1c",
+      "section": "10.14",
+      "status": null,
+      "top_level_keys": [
+        "bead",
+        "inclusion_cases",
+        "inclusion_vector_count",
+        "prefix_cases",
+        "prefix_vector_count",
+        "section",
+        "title"
+      ]
+    },
+    {
+      "array_counts": {
+        "vectors": 12
+      },
+      "bead_id": "bd-29r6",
+      "path": "artifacts/10.14/seed_derivation_vectors.json",
+      "sample_ids": {
+        "vectors": [
+          "v-encoding-zero",
+          "v-repair-zero",
+          "v-scheduling-zero",
+          "v-placement-zero",
+          "v-verification-zero",
+          "v-repair-ff",
+          "v-encoding-seq-v2",
+          "v-scheduling-empty-params"
+        ]
+      },
+      "schema_version": "1.0",
+      "scrubbed_sha256": "c7fa5aea07353b20158f0c830e0d87664608e34736994db63238f03e8ed94d40",
+      "section": null,
+      "status": null,
+      "top_level_keys": [
+        "bead_id",
+        "schema_version",
+        "vectors"
+      ]
+    },
+    {
+      "array_counts": {
+        "checks": 42,
+        "error_codes": 6,
+        "event_codes": 5,
+        "invariants": 4
+      },
+      "bead_id": "bd-3ku8",
+      "path": "artifacts/10.17/capability_artifact_vectors.json",
+      "sample_ids": {
+        "checks": [
+          "Spec file exists",
+          "Implementation file exists",
+          "Extensions mod file exists",
+          "Main module wired",
+          "Extensions mod exports artifact_contract",
+          "Impl token 'struct CapabilityEntry'",
+          "Impl token 'struct CapabilityContract'",
+          "Impl token 'struct ExtensionArtifact'"
+        ]
+      },
+      "schema_version": "capability-artifact-v1.0",
+      "scrubbed_sha256": "31d4d4812d8f11ff86b023d7bcde3270ac330f13e5ec722e86bf30e4d098aa27",
+      "section": "10.17",
+      "status": "PASS",
+      "top_level_keys": [
+        "artifact_contract",
+        "bead_id",
+        "checks",
+        "error_codes",
+        "event_codes",
+        "failed",
+        "invariants",
+        "passed",
+        "schema_version",
+        "section",
+        "title",
+        "total",
+        "verdict"
+      ]
+    },
+    {
+      "array_counts": {
+        "checks": 86,
+        "error_codes": 6,
+        "event_codes": 5,
+        "impl_error_codes": 10,
+        "impl_invariants": 6,
+        "invariants": 4
+      },
+      "bead_id": "bd-kcg9",
+      "path": "artifacts/10.17/zk_attestation_vectors.json",
+      "sample_ids": {
+        "checks": [
+          "Spec file exists",
+          "Contract file exists",
+          "Implementation file exists",
+          "Security module wired",
+          "Security test exists",
+          "Python unit test exists",
+          "Evidence file exists",
+          "Summary file exists"
+        ]
+      },
+      "schema_version": "zk-attestation-v1.0",
+      "scrubbed_sha256": "de6ef206a02ab91299efadcd22d19fbcdd0a23543e66ea0e835a63ac3a121d38",
+      "section": "10.17",
+      "status": "pass",
+      "top_level_keys": [
+        "all_passed",
+        "bead_id",
+        "checks",
+        "error_codes",
+        "event_codes",
+        "failed",
+        "impl_error_codes",
+        "impl_invariants",
+        "invariants",
+        "passed",
+        "schema_version",
+        "section",
+        "status",
+        "title",
+        "total",
+        "verdict",
+        "zk_contract"
+      ]
+    },
+    {
+      "array_counts": {
+        "vectors": 6
+      },
+      "bead_id": "bd-p73r",
+      "path": "artifacts/10.18/vef_receipt_schema_vectors.json",
+      "sample_ids": {
+        "vectors": [
+          "network_access_baseline",
+          "unicode_actor_identity",
+          "artifact_promotion_high_sequence",
+          "filesystem_operation_baseline",
+          "process_spawn_denied",
+          "secret_access_quorum"
+        ]
+      },
+      "schema_version": "vef-receipt-vectors-v1",
+      "scrubbed_sha256": "f2f7c3b3bb32a4225a426ab2e7780722374d095a19626f4e76e8356ca79c49b6",
+      "section": null,
+      "status": null,
+      "top_level_keys": [
+        "bead_id",
+        "description",
+        "receipt_schema_version",
+        "schema_version",
+        "vectors"
+      ]
+    }
+  ],
+  "golden_strategy": "scrub dynamic fields, then hash canonical JSON and snapshot compact manifest",
+  "scrubbing_rules": {
+    "kept_exact": [
+      "schema_version",
+      "bead_id",
+      "expected hashes",
+      "thresholds",
+      "family names",
+      "pass counts",
+      "gate verdicts"
+    ],
+    "nonce_keys": "[NONCE]",
+    "timestamps": "[TIMESTAMP]",
+    "trace_id": "[TRACE_ID]",
+    "uuid_keys": "[UUID]"
+  },
+  "surface": "canonical-vector-artifact-gate"
+}
