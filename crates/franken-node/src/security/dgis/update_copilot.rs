@@ -44,6 +44,8 @@ pub enum CopilotError {
     AcknowledgementRequired(String),
     #[error("acknowledgement rejected: {0}")]
     AcknowledgementRejected(String),
+    #[error("invalid copilot config: {0}")]
+    InvalidConfig(String),
     #[error("invalid risk score: {0}")]
     InvalidRiskScore(String),
     #[error("proposal not found: {0}")]
@@ -364,6 +366,7 @@ pub struct CopilotInteraction {
 
 /// Configuration thresholds for the copilot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "CopilotConfigWire")]
 pub struct CopilotConfig {
     pub high_risk_threshold: f64,
     pub critical_risk_threshold: f64,
@@ -371,14 +374,69 @@ pub struct CopilotConfig {
     pub require_ack_above_threshold: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+struct CopilotConfigWire {
+    high_risk_threshold: f64,
+    critical_risk_threshold: f64,
+    low_confidence_threshold: f64,
+    require_ack_above_threshold: bool,
+}
+
 impl Default for CopilotConfig {
     fn default() -> Self {
-        Self {
-            high_risk_threshold: 0.3,
-            critical_risk_threshold: 0.6,
-            low_confidence_threshold: 0.5,
-            require_ack_above_threshold: true,
+        Self::new(0.3, 0.6, 0.5, true).expect("default copilot config must be valid")
+    }
+}
+
+impl CopilotConfig {
+    pub fn new(
+        high_risk_threshold: f64,
+        critical_risk_threshold: f64,
+        low_confidence_threshold: f64,
+        require_ack_above_threshold: bool,
+    ) -> Result<Self, CopilotError> {
+        let config = Self {
+            high_risk_threshold,
+            critical_risk_threshold,
+            low_confidence_threshold,
+            require_ack_above_threshold,
+        };
+        config.validate()?;
+        Ok(config)
+    }
+
+    pub fn validate(&self) -> Result<(), CopilotError> {
+        Self::validate_threshold("high_risk_threshold", self.high_risk_threshold)?;
+        Self::validate_threshold("critical_risk_threshold", self.critical_risk_threshold)?;
+        Self::validate_threshold("low_confidence_threshold", self.low_confidence_threshold)?;
+        if self.high_risk_threshold > self.critical_risk_threshold {
+            return Err(CopilotError::InvalidConfig(
+                "high_risk_threshold must be <= critical_risk_threshold".to_string(),
+            ));
         }
+        Ok(())
+    }
+
+    fn validate_threshold(name: &'static str, value: f64) -> Result<(), CopilotError> {
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            return Err(CopilotError::InvalidConfig(format!(
+                "{name} must be finite and within [0.0, 1.0] (got {value})"
+            )));
+        }
+        Ok(())
+    }
+}
+
+impl TryFrom<CopilotConfigWire> for CopilotConfig {
+    type Error = CopilotError;
+
+    fn try_from(value: CopilotConfigWire) -> Result<Self, Self::Error> {
+        Self::new(
+            value.high_risk_threshold,
+            value.critical_risk_threshold,
+            value.low_confidence_threshold,
+            value.require_ack_above_threshold,
+        )
     }
 }
 
@@ -396,17 +454,18 @@ pub struct UpdateCopilot {
 
 impl Default for UpdateCopilot {
     fn default() -> Self {
-        Self::new(CopilotConfig::default())
+        Self::new(CopilotConfig::default()).expect("default copilot config must be valid")
     }
 }
 
 impl UpdateCopilot {
-    pub fn new(config: CopilotConfig) -> Self {
-        Self {
+    pub fn new(config: CopilotConfig) -> Result<Self, CopilotError> {
+        config.validate()?;
+        Ok(Self {
             config,
             interactions: Vec::new(),
             acknowledgements: BTreeMap::new(),
-        }
+        })
     }
 
     /// Evaluate an update proposal and generate a recommendation.
@@ -1500,6 +1559,65 @@ mod tests {
             "low_confidence_threshold": 0.5,
             "require_ack_above_threshold": true
         }));
+    }
+
+    #[test]
+    fn copilot_config_accepts_legitimate_thresholds() {
+        let config = CopilotConfig::new(0.25, 0.75, 0.40, true)
+            .expect("finite in-range thresholds should be accepted");
+        let copilot = UpdateCopilot::new(config).expect("valid config should construct copilot");
+
+        assert_eq!(copilot.config.high_risk_threshold, 0.25);
+        assert_eq!(copilot.config.critical_risk_threshold, 0.75);
+        assert_eq!(copilot.config.low_confidence_threshold, 0.40);
+    }
+
+    #[test]
+    fn copilot_config_rejects_nan_inf_negative_and_above_one_thresholds() {
+        fn assert_rejected(config: CopilotConfig, field: &str) {
+            let err = UpdateCopilot::new(config).expect_err("invalid config must be rejected");
+            assert!(
+                matches!(err, CopilotError::InvalidConfig(message) if message.contains(field)),
+                "error should identify {field}, got {err:?}"
+            );
+        }
+
+        assert_rejected(
+            CopilotConfig {
+                high_risk_threshold: f64::NAN,
+                critical_risk_threshold: 0.6,
+                low_confidence_threshold: 0.5,
+                require_ack_above_threshold: true,
+            },
+            "high_risk_threshold",
+        );
+        assert_rejected(
+            CopilotConfig {
+                high_risk_threshold: 0.3,
+                critical_risk_threshold: f64::INFINITY,
+                low_confidence_threshold: 0.5,
+                require_ack_above_threshold: true,
+            },
+            "critical_risk_threshold",
+        );
+        assert_rejected(
+            CopilotConfig {
+                high_risk_threshold: 0.3,
+                critical_risk_threshold: 0.6,
+                low_confidence_threshold: -0.01,
+                require_ack_above_threshold: true,
+            },
+            "low_confidence_threshold",
+        );
+        assert_rejected(
+            CopilotConfig {
+                high_risk_threshold: 1.01,
+                critical_risk_threshold: 1.0,
+                low_confidence_threshold: 0.5,
+                require_ack_above_threshold: true,
+            },
+            "high_risk_threshold",
+        );
     }
 
     #[test]
