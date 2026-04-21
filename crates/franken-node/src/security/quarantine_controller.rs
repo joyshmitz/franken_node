@@ -33,6 +33,15 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     items.push(item);
 }
 
+fn len_to_u64(len: usize) -> u64 {
+    u64::try_from(len).unwrap_or(u64::MAX)
+}
+
+fn update_len_prefixed_mac(mac: &mut Hmac<Sha256>, field: &[u8]) {
+    mac.update(&len_to_u64(field.len()).to_le_bytes());
+    mac.update(field);
+}
+
 #[derive(Debug, Clone, thiserror::Error, PartialEq)]
 pub enum QuarantineControllerError {
     #[error("threshold `{name}` must be in [0.0, 1.0], got {value}")]
@@ -247,13 +256,15 @@ impl QuarantineController {
         posterior: f64,
         trace_id: &str,
     ) -> String {
-        let payload = format!(
-            "franken-node.quarantine-controller.v1|{EVD_QUAR_CTRL_001}|{principal_id}|{}|{posterior:.12}|{trace_id}",
-            action.as_str()
-        );
         let mut mac = Hmac::<Sha256>::new_from_slice(self.signing_key.as_bytes())
             .expect("HMAC accepts arbitrary signing key lengths");
-        mac.update(payload.as_bytes());
+        let posterior_bytes = posterior.to_le_bytes();
+        mac.update(b"quarantine_evidence_v1:");
+        update_len_prefixed_mac(&mut mac, EVD_QUAR_CTRL_001.as_bytes());
+        update_len_prefixed_mac(&mut mac, principal_id.as_bytes());
+        update_len_prefixed_mac(&mut mac, action.as_str().as_bytes());
+        update_len_prefixed_mac(&mut mac, &posterior_bytes);
+        update_len_prefixed_mac(&mut mac, trace_id.as_bytes());
         let digest = mac.finalize().into_bytes();
         format!("sha256:{}", hex::encode(digest))
     }
@@ -443,6 +454,37 @@ mod tests {
         );
 
         assert_ne!(decision.signed_evidence.signature, plain_digest);
+    }
+
+    #[test]
+    fn signed_evidence_length_prefixes_field_boundaries() {
+        let controller = QuarantineController::new(QuarantineThresholdPolicy::default(), "salt")
+            .expect("controller");
+        let principal_a = "ext:a|revoke|0.910000000000|trace";
+        let trace_a = "tail";
+        let principal_b = "ext:a";
+        let trace_b = "trace|throttle|0.450000000000|tail";
+
+        let legacy_payload_a = format!(
+            "franken-node.quarantine-controller.v1|{EVD_QUAR_CTRL_001}|{principal_a}|{}|{:.12}|{trace_a}",
+            ControlAction::Throttle.as_str(),
+            0.45_f64
+        );
+        let legacy_payload_b = format!(
+            "franken-node.quarantine-controller.v1|{EVD_QUAR_CTRL_001}|{principal_b}|{}|{:.12}|{trace_b}",
+            ControlAction::Revoke.as_str(),
+            0.91_f64
+        );
+        assert_eq!(
+            legacy_payload_a, legacy_payload_b,
+            "fixture should collide under delimiter-only transcript"
+        );
+
+        let signature_a =
+            controller.sign_evidence(principal_a, ControlAction::Throttle, 0.45, trace_a);
+        let signature_b = controller.sign_evidence(principal_b, ControlAction::Revoke, 0.91, trace_b);
+
+        assert_ne!(signature_a, signature_b);
     }
 
     #[test]
