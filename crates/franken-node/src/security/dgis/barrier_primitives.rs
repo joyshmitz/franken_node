@@ -9,7 +9,7 @@
 //! All primitives are independently testable, composable (multiple barriers per node),
 //! and produce audit receipts for every enforcement action.
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -81,6 +81,12 @@ pub enum BarrierError {
     CompositionConflict(String),
     #[error("invalid progression criteria: {0}")]
     InvalidProgressionCriteria(String),
+    #[error("barrier expired: barrier={barrier_id}, expires_at={expires_at}, reason={reason}")]
+    BarrierExpired {
+        barrier_id: String,
+        expires_at: String,
+        reason: String,
+    },
     #[error("barrier not found: {0}")]
     NotFound(String),
     #[error("barrier plan too large: count={count}, cap={cap}")]
@@ -708,9 +714,14 @@ impl BarrierEngine {
         let mut matched_barrier = None;
 
         for barrier_id in &barrier_ids {
-            if let Some(barrier) = self.barriers.get(barrier_id).cloned()
-                && let BarrierConfig::SandboxEscalation(ref cfg) = barrier.config
-            {
+            let Some(barrier) = self.barriers.get(barrier_id).cloned() else {
+                continue;
+            };
+            if !matches!(barrier.config, BarrierConfig::SandboxEscalation(_)) {
+                continue;
+            }
+            self.enforce_barrier_not_expired(&barrier, trace_id)?;
+            if let BarrierConfig::SandboxEscalation(ref cfg) = barrier.config {
                 if matched_barrier.is_none() {
                     matched_barrier = Some(barrier.clone());
                 }
@@ -804,10 +815,18 @@ impl BarrierEngine {
         let mut matched_barrier = None;
 
         for barrier_id in &barrier_ids {
-            if let Some(barrier) = self.barriers.get(barrier_id).cloned()
-                && let BarrierConfig::CompositionFirewall(ref cfg) = barrier.config
-                && cfg.boundary_id == target_boundary
-            {
+            let Some(barrier) = self.barriers.get(barrier_id).cloned() else {
+                continue;
+            };
+            let matches_boundary = matches!(
+                &barrier.config,
+                BarrierConfig::CompositionFirewall(cfg) if cfg.boundary_id == target_boundary
+            );
+            if !matches_boundary {
+                continue;
+            }
+            self.enforce_barrier_not_expired(&barrier, trace_id)?;
+            if let BarrierConfig::CompositionFirewall(ref cfg) = barrier.config {
                 if matched_barrier.is_none() {
                     matched_barrier = Some(barrier.clone());
                 }
@@ -882,9 +901,14 @@ impl BarrierEngine {
         let mut matched_barrier = None;
 
         for barrier_id in &barrier_ids {
-            if let Some(barrier) = self.barriers.get(barrier_id).cloned()
-                && let BarrierConfig::VerifiedForkPin(ref cfg) = barrier.config
-            {
+            let Some(barrier) = self.barriers.get(barrier_id).cloned() else {
+                continue;
+            };
+            if !matches!(barrier.config, BarrierConfig::VerifiedForkPin(_)) {
+                continue;
+            }
+            self.enforce_barrier_not_expired(&barrier, trace_id)?;
+            if let BarrierConfig::VerifiedForkPin(ref cfg) = barrier.config {
                 if matched_barrier.is_none() {
                     matched_barrier = Some(barrier.clone());
                 }
@@ -955,6 +979,8 @@ impl BarrierEngine {
             .ok_or_else(|| BarrierError::NotFound(barrier_id.to_string()))?
             .clone();
 
+        self.enforce_barrier_not_expired(&barrier, trace_id)?;
+
         let state = self
             .rollout_states
             .get(barrier_id)
@@ -1007,6 +1033,8 @@ impl BarrierEngine {
             .get(barrier_id)
             .ok_or_else(|| BarrierError::NotFound(barrier_id.to_string()))?
             .clone();
+
+        self.enforce_barrier_not_expired(&barrier, trace_id)?;
 
         let state = self
             .rollout_states
@@ -1151,6 +1179,50 @@ impl BarrierEngine {
 
     fn get_node_barrier_ids(&self, node_id: &str) -> Vec<String> {
         self.node_barriers.get(node_id).cloned().unwrap_or_default()
+    }
+
+    fn enforce_barrier_not_expired(
+        &mut self,
+        barrier: &Barrier,
+        trace_id: &str,
+    ) -> Result<(), BarrierError> {
+        let Some(expires_at) = &barrier.expires_at else {
+            return Ok(());
+        };
+
+        let expiry = DateTime::parse_from_rfc3339(expires_at).map_err(|_| {
+            self.push_expired_receipt(barrier, trace_id, "invalid expires_at timestamp");
+            BarrierError::BarrierExpired {
+                barrier_id: barrier.barrier_id.clone(),
+                expires_at: expires_at.clone(),
+                reason: "invalid expires_at timestamp".to_string(),
+            }
+        })?;
+
+        if Utc::now() >= expiry.with_timezone(&Utc) {
+            self.push_expired_receipt(barrier, trace_id, "now >= expires_at");
+            return Err(BarrierError::BarrierExpired {
+                barrier_id: barrier.barrier_id.clone(),
+                expires_at: expires_at.clone(),
+                reason: "now >= expires_at".to_string(),
+            });
+        }
+
+        Ok(())
+    }
+
+    fn push_expired_receipt(&mut self, barrier: &Barrier, trace_id: &str, reason: &str) {
+        let receipt = BarrierAuditReceipt::new(
+            event_codes::BARRIER_EXPIRED,
+            barrier,
+            BarrierAction::Expired,
+            trace_id,
+            serde_json::json!({
+                "reason": reason,
+                "expires_at": barrier.expires_at.clone(),
+            }),
+        );
+        self.push_audit(receipt);
     }
 
     /// Check that a new barrier does not conflict with existing barriers on the same node.
@@ -1344,6 +1416,11 @@ mod tests {
         }
     }
 
+    fn with_expiry(mut barrier: Barrier, expires_at: String) -> Barrier {
+        barrier.expires_at = Some(expires_at);
+        barrier
+    }
+
     fn make_override_justification() -> OverrideJustification {
         OverrideJustification {
             override_id: Uuid::now_v7().to_string(),
@@ -1530,6 +1607,33 @@ mod tests {
 
         let result = engine.check_rollout_fence(&barrier_id, RolloutPhase::Canary, &trace);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn rollout_fence_fails_closed_at_expiry_boundary() {
+        let mut engine = BarrierEngine::new();
+        let barrier = with_expiry(
+            make_rollout_barrier("expired-rollout"),
+            Utc::now().to_rfc3339(),
+        );
+        let barrier_id = barrier.barrier_id.clone();
+        let trace = make_trace_id();
+        engine.apply_barrier(barrier, &trace).unwrap();
+
+        let err = engine
+            .check_rollout_fence(&barrier_id, RolloutPhase::Canary, &trace)
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            BarrierError::BarrierExpired { barrier_id: expired_id, reason, .. }
+                if expired_id == barrier_id && reason == "now >= expires_at"
+        ));
+        let receipt = engine.audit_log().last().expect("expired receipt");
+        assert_eq!(receipt.event_code, event_codes::BARRIER_EXPIRED);
+        assert_eq!(receipt.action, BarrierAction::Expired);
+        assert_eq!(receipt.barrier_id, barrier_id);
+        assert_eq!(receipt.details["reason"], "now >= expires_at");
     }
 
     #[test]
