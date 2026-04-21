@@ -19,7 +19,9 @@ use super::middleware::{
 };
 use super::trust_card_routes::ApiResponse;
 use super::utf8_prefix;
-use crate::capacity_defaults::aliases::MAX_LEASES;
+use crate::capacity_defaults::aliases::{MAX_LEASES, MAX_NODES_CAP};
+
+const MAX_COORDINATION_TARGETS: usize = MAX_NODES_CAP;
 
 // ── Response Types ─────────────────────────────────────────────────────────
 
@@ -219,6 +221,15 @@ fn validate_coordination_targets(
     if target_nodes.is_empty() {
         return Err(ApiError::BadRequest {
             detail: "coordination requires at least one target node".to_string(),
+            trace_id: trace_id.to_string(),
+        });
+    }
+    if target_nodes.len() > MAX_COORDINATION_TARGETS {
+        return Err(ApiError::BadRequest {
+            detail: format!(
+                "coordination target node count {} exceeds limit {MAX_COORDINATION_TARGETS}",
+                target_nodes.len()
+            ),
             trace_id: trace_id.to_string(),
         });
     }
@@ -697,6 +708,47 @@ mod tests {
         let problem = err.to_problem("/v1/fleet/coordinate");
         assert_eq!(problem.status, 400);
         assert!(problem.detail.contains("duplicate target node `node-1`"));
+    }
+
+    #[test]
+    fn validate_coordination_targets_accepts_maximum_target_count() {
+        let trace = test_trace();
+        let target_nodes: Vec<String> = (0..MAX_COORDINATION_TARGETS)
+            .map(|index| format!("node-{index:05}"))
+            .collect();
+
+        let normalized =
+            validate_coordination_targets(&target_nodes, &trace.trace_id).expect("max targets");
+
+        assert_eq!(normalized.len(), MAX_COORDINATION_TARGETS);
+        assert_eq!(normalized[0], "node-00000");
+        assert_eq!(
+            normalized[MAX_COORDINATION_TARGETS - 1],
+            format!("node-{:05}", MAX_COORDINATION_TARGETS - 1)
+        );
+    }
+
+    #[test]
+    fn execute_coordination_rejects_over_max_target_count_before_command_id() {
+        let _guard = test_guard();
+        reset_fleet_lease_state();
+        let identity = admin_identity();
+        let trace = test_trace();
+        let request = CoordinationRequest {
+            command_type: "policy-update".to_string(),
+            target_nodes: (0..=MAX_COORDINATION_TARGETS)
+                .map(|index| format!("node-{index:05}"))
+                .collect(),
+            timeout_seconds: 30,
+        };
+
+        let err = execute_coordination(&identity, &trace, &request).expect_err("too many targets");
+
+        let problem = err.to_problem("/v1/fleet/coordinate");
+        assert_eq!(problem.status, 400);
+        assert!(problem.detail.contains("exceeds limit"));
+        let state = fleet_lease_state().lock().expect("state lock");
+        assert_eq!(state.next_coordination_seq, 1);
     }
 
     #[test]
