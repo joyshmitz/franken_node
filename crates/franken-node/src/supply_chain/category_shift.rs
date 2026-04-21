@@ -42,6 +42,7 @@ pub const ERR_CSR_SOURCE_UNAVAILABLE: &str = "ERR_CSR_SOURCE_UNAVAILABLE";
 pub const ERR_CSR_CLAIM_STALE: &str = "ERR_CSR_CLAIM_STALE";
 pub const ERR_CSR_CLAIM_INVALID: &str = "ERR_CSR_CLAIM_INVALID";
 pub const ERR_CSR_HASH_MISMATCH: &str = "ERR_CSR_HASH_MISMATCH";
+pub const ERR_CSR_EVIDENCE_MISSING_CONTENT: &str = "ERR_CSR_EVIDENCE_MISSING_CONTENT";
 
 // ── Invariant identifiers ────────────────────────────────────────────────────
 
@@ -132,6 +133,8 @@ pub enum CategoryShiftError {
     ClaimInvalid(String),
     #[error("{ERR_CSR_HASH_MISMATCH}: artifact `{0}` hash mismatch")]
     HashMismatch(String),
+    #[error("{ERR_CSR_EVIDENCE_MISSING_CONTENT}: artifact `{0}` has no verifiable content")]
+    EvidenceMissingContent(String),
     #[error("json serialization error: {0}")]
     Json(String),
     #[error("no dimensions collected; pipeline has no data")]
@@ -343,7 +346,7 @@ impl ReportingPipeline {
                 FreshnessStatus::Missing => ClaimOutcome::Invalid,
             };
 
-            let reproduce_script = generate_reproduce_script(&claim_id, &evidence);
+            let reproduce_script = generate_reproduce_script(&claim_id, &evidence)?;
 
             self.emit(
                 CSR_CLAIM_VERIFIED,
@@ -640,14 +643,22 @@ impl ReportingPipeline {
             FreshnessStatus::Fresh
         };
 
-        // Verify hash if content is provided.
-        if let Some(content) = &input.content {
-            let computed = sha256_hex(content.as_bytes());
-            if !constant_time::ct_eq(&computed, &input.sha256_hash) {
-                return Err(CategoryShiftError::HashMismatch(
-                    input.artifact_path.clone(),
-                ));
-            }
+        let Some(content) = &input.content else {
+            return Err(CategoryShiftError::EvidenceMissingContent(
+                input.artifact_path.clone(),
+            ));
+        };
+        if content.is_empty() {
+            return Err(CategoryShiftError::EvidenceMissingContent(
+                input.artifact_path.clone(),
+            ));
+        }
+
+        let computed = sha256_hex(content.as_bytes());
+        if !constant_time::ct_eq(&computed, &input.sha256_hash) {
+            return Err(CategoryShiftError::HashMismatch(
+                input.artifact_path.clone(),
+            ));
         }
 
         Ok(ShiftEvidence {
@@ -780,36 +791,126 @@ fn evaluate_threshold_status(actual: f64, target: f64) -> ThresholdStatus {
     }
 }
 
+fn validate_reproduce_artifact_path(path: &str) -> Result<(), CategoryShiftError> {
+    if path.is_empty() {
+        return Err(CategoryShiftError::ClaimInvalid(
+            "artifact path must not be empty".to_string(),
+        ));
+    }
+    if path.starts_with('/') {
+        return Err(CategoryShiftError::ClaimInvalid(format!(
+            "artifact path `{path}` must be relative"
+        )));
+    }
+    if path.bytes().any(|byte| byte == 0) {
+        return Err(CategoryShiftError::ClaimInvalid(format!(
+            "artifact path `{path}` contains a null byte"
+        )));
+    }
+    for segment in path.split('/') {
+        if segment.is_empty() || segment == "." || segment == ".." {
+            return Err(CategoryShiftError::ClaimInvalid(format!(
+                "artifact path `{path}` contains an invalid segment"
+            )));
+        }
+    }
+    if path.chars().any(|ch| {
+        matches!(
+            ch,
+            '\n' | '\r'
+                | '\t'
+                | '"'
+                | '\''
+                | '$'
+                | '`'
+                | ';'
+                | '&'
+                | '|'
+                | '<'
+                | '>'
+                | '('
+                | ')'
+                | '{'
+                | '}'
+                | '['
+                | ']'
+                | '*'
+                | '?'
+                | '!'
+                | '\\'
+        )
+    }) {
+        return Err(CategoryShiftError::ClaimInvalid(format!(
+            "artifact path `{path}` contains shell metacharacters"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_reproduce_hash(hash: &str) -> Result<(), CategoryShiftError> {
+    if hash.len() != 64 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(CategoryShiftError::ClaimInvalid(
+            "evidence hash must be 64 hexadecimal characters".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn bash_single_quoted_literal(value: &str) -> String {
+    let mut quoted = String::with_capacity(value.len().saturating_add(2));
+    quoted.push('\'');
+    for ch in value.chars() {
+        if ch == '\'' {
+            quoted.push_str("'\\''");
+        } else {
+            quoted.push(ch);
+        }
+    }
+    quoted.push('\'');
+    quoted
+}
+
 /// Generate a reproduce-this-claim script for a claim.
-fn generate_reproduce_script(claim_id: &str, evidence: &ShiftEvidence) -> String {
-    format!(
+fn generate_reproduce_script(
+    claim_id: &str,
+    evidence: &ShiftEvidence,
+) -> Result<String, CategoryShiftError> {
+    validate_reproduce_artifact_path(&evidence.artifact_path)?;
+    validate_reproduce_hash(&evidence.sha256_hash)?;
+
+    let artifact_literal = bash_single_quoted_literal(&evidence.artifact_path);
+    let hash_literal = bash_single_quoted_literal(&evidence.sha256_hash);
+    let claim_literal = bash_single_quoted_literal(claim_id);
+
+    Ok(format!(
         r#"#!/usr/bin/env bash
-# Reproduce script for {claim_id}
+# Reproduce script for {claim}
 set -euo pipefail
 
-ARTIFACT="{path}"
-EXPECTED_HASH="{hash}"
+ARTIFACT_ARGS=(-- {path})
+EXPECTED_HASH={hash}
+CLAIM_ID={claim}
 
-if [ ! -f "$ARTIFACT" ]; then
-  echo "ERROR: artifact not found: $ARTIFACT"
+if [ ! -f "${{ARTIFACT_ARGS[1]}}" ]; then
+  echo "ERROR: artifact not found: ${{ARTIFACT_ARGS[1]}}"
   exit 1
 fi
 
-ACTUAL_HASH=$(sha256sum "$ARTIFACT" | cut -d' ' -f1)
+ACTUAL_HASH=$(sha256sum "${{ARTIFACT_ARGS[@]}}" | cut -d' ' -f1)
 if [ "$ACTUAL_HASH" != "$EXPECTED_HASH" ]; then
-  echo "ERROR: hash mismatch for $ARTIFACT"
+  echo "ERROR: hash mismatch for ${{ARTIFACT_ARGS[1]}}"
   echo "  expected: $EXPECTED_HASH"
   echo "  actual:   $ACTUAL_HASH"
   exit 1
 fi
 
-echo "OK: {claim_id} verified"
+echo "OK: $CLAIM_ID verified"
 exit 0
 "#,
-        claim_id = claim_id,
-        path = evidence.artifact_path,
-        hash = evidence.sha256_hash,
-    )
+        claim = claim_literal,
+        path = artifact_literal,
+        hash = hash_literal,
+    ))
 }
 
 /// Format a Unix timestamp as ISO 8601.
@@ -1823,7 +1924,7 @@ mod tests {
     }
 
     #[test]
-    fn evidence_without_content_skips_hash_check() {
+    fn evidence_without_content_is_rejected_fail_closed() {
         let mut pipeline = ReportingPipeline::default();
         let now = 1_000_000;
         let evidence = EvidenceInput {
@@ -1846,7 +1947,49 @@ mod tests {
                 now,
                 "trace",
             )
-            .expect("should succeed");
+            .expect_err("missing content must fail closed");
+
+        assert!(matches!(
+            err,
+            CategoryShiftError::EvidenceMissingContent(path)
+                if path == "artifacts/test/no_content.json"
+        ));
+        assert!(pipeline.dimensions.is_empty());
+        assert!(pipeline.telemetry().is_empty());
+    }
+
+    #[test]
+    fn empty_evidence_content_is_rejected_fail_closed() {
+        let mut pipeline = ReportingPipeline::default();
+        let now = 1_000_000;
+        let evidence = EvidenceInput {
+            artifact_path: "artifacts/test/empty_content.json".to_string(),
+            sha256_hash: sha256_hex(b""),
+            generated_at_secs: now,
+            content: Some(String::new()),
+        };
+        let err = pipeline
+            .ingest_dimension(
+                ReportDimension::EconomicImpact,
+                "econ",
+                "bd-10c",
+                vec![ClaimInput {
+                    summary: "empty content claim".to_string(),
+                    value: 3.0,
+                    unit: "ratio".to_string(),
+                    evidence,
+                }],
+                now,
+                "trace",
+            )
+            .expect_err("empty content must fail closed");
+
+        assert!(matches!(
+            err,
+            CategoryShiftError::EvidenceMissingContent(path)
+                if path == "artifacts/test/empty_content.json"
+        ));
+        assert!(pipeline.dimensions.is_empty());
     }
 
     #[test]
@@ -1893,17 +2036,64 @@ mod tests {
 
     #[test]
     fn reproduce_script_contains_expected_fields() {
+        let hash = sha256_hex(b"artifact");
         let evidence = ShiftEvidence {
             artifact_path: "test/file.json".to_string(),
-            sha256_hash: "abc123".to_string(),
+            sha256_hash: hash.clone(),
             generated_at_secs: 1000,
             freshness: FreshnessStatus::Fresh,
         };
-        let script = generate_reproduce_script("CSR-CLAIM-001", &evidence);
+        let script = generate_reproduce_script("CSR-CLAIM-001", &evidence).expect("safe script");
         assert!(script.contains("CSR-CLAIM-001"));
         assert!(script.contains("test/file.json"));
-        assert!(script.contains("abc123"));
+        assert!(script.contains(&hash));
         assert!(script.contains("set -euo pipefail"));
+        assert!(script.contains("ARTIFACT_ARGS=(-- 'test/file.json')"));
+        assert!(!script.contains("ARTIFACT=\""));
+    }
+
+    #[test]
+    fn reproduce_script_rejects_shell_injection_artifact_paths() {
+        let malicious_paths = [
+            "artifacts/$(touch pwned).json",
+            "artifacts/evil\"; touch pwned; echo \".json",
+            "artifacts/evil\nnext.json",
+            "artifacts/evil`touch pwned`.json",
+            "artifacts/../secrets.json",
+            "/tmp/absolute.json",
+            "artifacts/evil\0path.json",
+        ];
+
+        for artifact_path in malicious_paths {
+            let evidence = ShiftEvidence {
+                artifact_path: artifact_path.to_string(),
+                sha256_hash: sha256_hex(b"artifact"),
+                generated_at_secs: 1000,
+                freshness: FreshnessStatus::Fresh,
+            };
+
+            let err = generate_reproduce_script("CSR-CLAIM-001", &evidence)
+                .expect_err("unsafe artifact path must be rejected");
+            assert!(
+                matches!(err, CategoryShiftError::ClaimInvalid(_)),
+                "unexpected error for {artifact_path:?}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn reproduce_script_rejects_non_sha256_hash_literals() {
+        let evidence = ShiftEvidence {
+            artifact_path: "test/file.json".to_string(),
+            sha256_hash: "abc123; touch pwned".to_string(),
+            generated_at_secs: 1000,
+            freshness: FreshnessStatus::Fresh,
+        };
+
+        let err = generate_reproduce_script("CSR-CLAIM-001", &evidence)
+            .expect_err("invalid hash must be rejected");
+        assert!(matches!(err, CategoryShiftError::ClaimInvalid(detail)
+            if detail.contains("64 hexadecimal")));
     }
 
     #[test]
@@ -1930,6 +2120,7 @@ mod tests {
         assert!(ERR_CSR_CLAIM_STALE.starts_with("ERR_CSR_"));
         assert!(ERR_CSR_CLAIM_INVALID.starts_with("ERR_CSR_"));
         assert!(ERR_CSR_HASH_MISMATCH.starts_with("ERR_CSR_"));
+        assert!(ERR_CSR_EVIDENCE_MISSING_CONTENT.starts_with("ERR_CSR_"));
     }
 
     #[test]
@@ -1961,7 +2152,9 @@ mod tests {
         let evidence2 = EvidenceInput {
             artifact_path: "test2.json".to_string(),
             sha256_hash: sha256_hex(content.as_bytes()),
-            generated_at_secs: now.saturating_sub(DEFAULT_FRESHNESS_WINDOW_SECS).saturating_sub(1),
+            generated_at_secs: now
+                .saturating_sub(DEFAULT_FRESHNESS_WINDOW_SECS)
+                .saturating_sub(1),
             content: Some(content.to_string()),
         };
         let result2 = pipeline
