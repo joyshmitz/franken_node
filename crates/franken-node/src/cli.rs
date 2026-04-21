@@ -493,6 +493,10 @@ pub struct TrustSyncArgs {
 pub enum RemoteCapCommand {
     /// Issue a signed capability token for network-bound operations.
     Issue(RemoteCapIssueArgs),
+    /// Use a capability token for one network-bound operation.
+    Use(RemoteCapUseArgs),
+    /// Revoke a capability token in the local CLI state.
+    Revoke(RemoteCapRevokeArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -526,6 +530,44 @@ pub struct RemoteCapIssueArgs {
 
     /// Trace correlation ID for audit logs.
     #[arg(long, default_value = "trace-cli-remotecap")]
+    pub trace_id: String,
+
+    /// Emit machine-readable JSON output.
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Parser)]
+pub struct RemoteCapUseArgs {
+    /// Path to a JSON capability token or full `remotecap issue --json` response.
+    #[arg(long)]
+    pub token_file: PathBuf,
+
+    /// Operation being authorized.
+    #[arg(long)]
+    pub operation: String,
+
+    /// Endpoint being authorized.
+    #[arg(long)]
+    pub endpoint: String,
+
+    /// Trace correlation ID for audit logs.
+    #[arg(long, default_value = "trace-cli-remotecap-use")]
+    pub trace_id: String,
+
+    /// Emit machine-readable JSON output.
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Parser)]
+pub struct RemoteCapRevokeArgs {
+    /// Path to a JSON capability token or full `remotecap issue --json` response.
+    #[arg(long)]
+    pub token_file: PathBuf,
+
+    /// Trace correlation ID for audit logs.
+    #[arg(long, default_value = "trace-cli-remotecap-revoke")]
     pub trace_id: String,
 
     /// Emit machine-readable JSON output.

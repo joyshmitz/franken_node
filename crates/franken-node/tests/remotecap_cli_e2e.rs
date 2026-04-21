@@ -22,6 +22,99 @@ fn remotecap_cmd() -> Command {
     cmd
 }
 
+fn write_json(path: &std::path::Path, value: &Value) {
+    fs::write(
+        path,
+        serde_json::to_vec_pretty(value).expect("serialize json"),
+    )
+    .expect("write json");
+}
+
+fn issue_token(workspace: &TempDir) -> Value {
+    let mut cmd = remotecap_cmd();
+    cmd.arg("issue")
+        .arg("--scope")
+        .arg("network_egress")
+        .arg("--endpoint")
+        .arg("https://api.example.com")
+        .arg("--ttl")
+        .arg("1h")
+        .arg("--operator-approved")
+        .arg("--json")
+        .current_dir(workspace.path())
+        .env("FRANKEN_NODE_REMOTECAP_KEY", "remotecap-cli-e2e-key");
+
+    let output = cmd.assert().success().get_output().stdout.clone();
+    serde_json::from_slice(&output).expect("issue output should be json")
+}
+
+#[test]
+fn remotecap_lifecycle_issue_use_revoke_uses_real_subprocesses() {
+    let workspace = setup_test_workspace();
+    let issue = issue_token(&workspace);
+    let token_path = workspace.path().join("capability.json");
+    write_json(&token_path, &issue["token"]);
+
+    let mut use_cmd = remotecap_cmd();
+    use_cmd
+        .arg("use")
+        .arg("--token-file")
+        .arg(&token_path)
+        .arg("--operation")
+        .arg("network_egress")
+        .arg("--endpoint")
+        .arg("https://api.example.com/v1/status")
+        .arg("--json")
+        .current_dir(workspace.path())
+        .env("FRANKEN_NODE_REMOTECAP_KEY", "remotecap-cli-e2e-key");
+
+    let use_output = use_cmd.assert().success().get_output().stdout.clone();
+    let use_json: Value = serde_json::from_slice(&use_output).expect("use output should be json");
+    assert_eq!(use_json["allowed"].as_bool(), Some(true));
+    assert_eq!(
+        use_json["audit_event"]["event_code"].as_str(),
+        Some("REMOTECAP_CONSUMED")
+    );
+
+    let mut revoke_cmd = remotecap_cmd();
+    revoke_cmd
+        .arg("revoke")
+        .arg("--token-file")
+        .arg(&token_path)
+        .arg("--json")
+        .current_dir(workspace.path())
+        .env("FRANKEN_NODE_REMOTECAP_KEY", "remotecap-cli-e2e-key");
+
+    let revoke_output = revoke_cmd.assert().success().get_output().stdout.clone();
+    let revoke_json: Value =
+        serde_json::from_slice(&revoke_output).expect("revoke output should be json");
+    assert_eq!(revoke_json["revoked"].as_bool(), Some(true));
+    assert_eq!(
+        revoke_json["audit_event"]["event_code"].as_str(),
+        Some("REMOTECAP_REVOKED")
+    );
+
+    let mut denied_cmd = remotecap_cmd();
+    denied_cmd
+        .arg("use")
+        .arg("--token-file")
+        .arg(&token_path)
+        .arg("--operation")
+        .arg("network_egress")
+        .arg("--endpoint")
+        .arg("https://api.example.com/v1/status")
+        .arg("--json")
+        .current_dir(workspace.path())
+        .env("FRANKEN_NODE_REMOTECAP_KEY", "remotecap-cli-e2e-key");
+
+    let denied_output = denied_cmd.assert().failure().get_output().stderr.clone();
+    let stderr = std::str::from_utf8(&denied_output).expect("stderr should be utf8");
+    assert!(
+        stderr.contains("REMOTECAP_REVOKED"),
+        "expected revoked denial, got {stderr}"
+    );
+}
+
 #[test]
 fn remotecap_issue_success() {
     let workspace = setup_test_workspace();
@@ -29,16 +122,17 @@ fn remotecap_issue_success() {
 
     let mut cmd = remotecap_cmd();
     cmd.arg("issue")
-       .arg("--scope")
-       .arg("network_egress,telemetry_export")
-       .arg("--endpoint")
-       .arg("https://api.example.com")
-       .arg("--endpoint")
-       .arg("https://metrics.example.com")
-       .arg("--expires-in-secs")
-       .arg("3600")
-       .arg("--json")
-       .current_dir(workspace_path);
+        .arg("--scope")
+        .arg("network_egress,telemetry_export")
+        .arg("--endpoint")
+        .arg("https://api.example.com")
+        .arg("--endpoint")
+        .arg("https://metrics.example.com")
+        .arg("--ttl")
+        .arg("1h")
+        .arg("--operator-approved")
+        .arg("--json")
+        .current_dir(workspace_path);
 
     let result = cmd.assert().success();
     let output = result.get_output();
@@ -48,15 +142,17 @@ fn remotecap_issue_success() {
     let json: Value = serde_json::from_str(stdout).expect("Invalid JSON output");
 
     // Verify the response structure
-    assert!(json["token"].is_string(), "Expected token field");
-    assert!(json["expires_at"].is_string(), "Expected expires_at field");
-    assert!(json["scope"].is_array(), "Expected scope array");
+    assert!(json["token"].is_object(), "Expected token object");
+    assert_eq!(json["audit_event"]["event_code"], "REMOTECAP_ISSUED");
+    assert_eq!(json["ttl_secs"], 3600);
 
-    let scope = json["scope"].as_array().unwrap();
+    let scope = json["token"]["scope"]["operations"].as_array().unwrap();
     assert!(scope.contains(&Value::String("network_egress".to_string())));
     assert!(scope.contains(&Value::String("telemetry_export".to_string())));
 
-    let endpoints = json["endpoints"].as_array().unwrap();
+    let endpoints = json["token"]["scope"]["endpoint_prefixes"]
+        .as_array()
+        .unwrap();
     assert!(endpoints.contains(&Value::String("https://api.example.com".to_string())));
     assert!(endpoints.contains(&Value::String("https://metrics.example.com".to_string())));
 }
@@ -68,20 +164,25 @@ fn remotecap_issue_single_use_token() {
 
     let mut cmd = remotecap_cmd();
     cmd.arg("issue")
-       .arg("--scope")
-       .arg("federation_sync")
-       .arg("--endpoint")
-       .arg("federation://trusted-node")
-       .arg("--single-use")
-       .arg("--json")
-       .current_dir(workspace_path);
+        .arg("--scope")
+        .arg("federation_sync")
+        .arg("--endpoint")
+        .arg("federation://trusted-node")
+        .arg("--single-use")
+        .arg("--operator-approved")
+        .arg("--json")
+        .current_dir(workspace_path);
 
     let result = cmd.assert().success();
     let output = result.get_output();
     let stdout = std::str::from_utf8(&output.stdout).expect("Invalid UTF-8");
 
     let json: Value = serde_json::from_str(stdout).expect("Invalid JSON output");
-    assert_eq!(json["single_use"].as_bool(), Some(true), "Expected single_use flag");
+    assert_eq!(
+        json["token"]["single_use"].as_bool(),
+        Some(true),
+        "Expected single_use flag"
+    );
 }
 
 #[test]
@@ -91,10 +192,10 @@ fn remotecap_issue_missing_scope_fails() {
 
     let mut cmd = remotecap_cmd();
     cmd.arg("issue")
-       .arg("--endpoint")
-       .arg("https://api.example.com")
-       .arg("--json")
-       .current_dir(workspace_path);
+        .arg("--endpoint")
+        .arg("https://api.example.com")
+        .arg("--json")
+        .current_dir(workspace_path);
 
     cmd.assert().failure();
 }
@@ -106,10 +207,10 @@ fn remotecap_issue_missing_endpoint_fails() {
 
     let mut cmd = remotecap_cmd();
     cmd.arg("issue")
-       .arg("--scope")
-       .arg("network_egress")
-       .arg("--json")
-       .current_dir(workspace_path);
+        .arg("--scope")
+        .arg("network_egress")
+        .arg("--json")
+        .current_dir(workspace_path);
 
     cmd.assert().failure();
 }
@@ -121,43 +222,54 @@ fn remotecap_issue_invalid_scope_fails() {
 
     let mut cmd = remotecap_cmd();
     cmd.arg("issue")
-       .arg("--scope")
-       .arg("invalid_operation,unknown_scope")
-       .arg("--endpoint")
-       .arg("https://api.example.com")
-       .arg("--json")
-       .current_dir(workspace_path);
+        .arg("--scope")
+        .arg("invalid_operation,unknown_scope")
+        .arg("--endpoint")
+        .arg("https://api.example.com")
+        .arg("--json")
+        .current_dir(workspace_path);
 
     let result = cmd.assert().failure();
     let output = result.get_output();
     let stderr = std::str::from_utf8(&output.stderr).expect("Invalid UTF-8");
 
     // Should contain error about invalid scope
-    assert!(stderr.contains("invalid") || stderr.contains("unknown"),
-            "Expected error about invalid scope in stderr: {}", stderr);
+    assert!(
+        stderr.contains("invalid") || stderr.contains("unknown"),
+        "Expected error about invalid scope in stderr: {}",
+        stderr
+    );
 }
 
 #[test]
-fn remotecap_issue_malformed_endpoint_fails() {
+fn remotecap_use_mismatched_endpoint_fails() {
     let workspace = setup_test_workspace();
-    let workspace_path = workspace.path().to_str().unwrap();
+    let issue = issue_token(&workspace);
+    let token_path = workspace.path().join("capability.json");
+    write_json(&token_path, &issue["token"]);
 
     let mut cmd = remotecap_cmd();
-    cmd.arg("issue")
-       .arg("--scope")
-       .arg("network_egress")
-       .arg("--endpoint")
-       .arg("not-a-valid-url")
-       .arg("--json")
-       .current_dir(workspace_path);
+    cmd.arg("use")
+        .arg("--token-file")
+        .arg(&token_path)
+        .arg("--operation")
+        .arg("network_egress")
+        .arg("--endpoint")
+        .arg("not-a-valid-url")
+        .arg("--json")
+        .current_dir(workspace.path())
+        .env("FRANKEN_NODE_REMOTECAP_KEY", "remotecap-cli-e2e-key");
 
     let result = cmd.assert().failure();
     let output = result.get_output();
     let stderr = std::str::from_utf8(&output.stderr).expect("Invalid UTF-8");
 
-    // Should contain error about malformed URL
-    assert!(stderr.contains("url") || stderr.contains("endpoint") || stderr.contains("invalid"),
-            "Expected error about malformed URL in stderr: {}", stderr);
+    // Should contain error about endpoint authorization.
+    assert!(
+        stderr.contains("url") || stderr.contains("endpoint") || stderr.contains("invalid"),
+        "Expected endpoint denial in stderr: {}",
+        stderr
+    );
 }
 
 #[test]
@@ -167,25 +279,32 @@ fn remotecap_issue_human_output() {
 
     let mut cmd = remotecap_cmd();
     cmd.arg("issue")
-       .arg("--scope")
-       .arg("telemetry_export")
-       .arg("--endpoint")
-       .arg("https://metrics.internal")
-       .arg("--expires-in-secs")
-       .arg("1800")
-       .current_dir(workspace_path);
+        .arg("--scope")
+        .arg("telemetry_export")
+        .arg("--endpoint")
+        .arg("https://metrics.internal")
+        .arg("--ttl")
+        .arg("30m")
+        .arg("--operator-approved")
+        .current_dir(workspace_path);
 
     let result = cmd.assert().success();
     let output = result.get_output();
     let stdout = std::str::from_utf8(&output.stdout).expect("Invalid UTF-8");
 
     // Human-readable output should contain key information
-    assert!(stdout.contains("token") || stdout.contains("capability"),
-            "Expected token/capability in human output");
-    assert!(stdout.contains("telemetry_export"),
-            "Expected scope in human output");
-    assert!(stdout.contains("https://metrics.internal"),
-            "Expected endpoint in human output");
+    assert!(
+        stdout.contains("token") || stdout.contains("capability"),
+        "Expected token/capability in human output"
+    );
+    assert!(
+        stdout.contains("telemetry_export"),
+        "Expected scope in human output"
+    );
+    assert!(
+        stdout.contains("https://metrics.internal"),
+        "Expected endpoint in human output"
+    );
 }
 
 #[test]
@@ -195,14 +314,15 @@ fn remotecap_issue_trace_id_propagation() {
 
     let mut cmd = remotecap_cmd();
     cmd.arg("issue")
-       .arg("--scope")
-       .arg("network_egress")
-       .arg("--endpoint")
-       .arg("https://external-api.com")
-       .arg("--trace-id")
-       .arg("test-trace-12345")
-       .arg("--json")
-       .current_dir(workspace_path);
+        .arg("--scope")
+        .arg("network_egress")
+        .arg("--endpoint")
+        .arg("https://external-api.com")
+        .arg("--trace-id")
+        .arg("test-trace-12345")
+        .arg("--operator-approved")
+        .arg("--json")
+        .current_dir(workspace_path);
 
     let result = cmd.assert().success();
     let output = result.get_output();
@@ -211,8 +331,7 @@ fn remotecap_issue_trace_id_propagation() {
     let json: Value = serde_json::from_str(stdout).expect("Invalid JSON output");
 
     // Should include trace ID in response
-    assert!(json["trace_id"].as_str().unwrap_or("").contains("test-trace-12345"),
-            "Expected trace ID in response");
+    assert_eq!(json["audit_event"]["trace_id"], "test-trace-12345");
 }
 
 #[test]
@@ -224,10 +343,14 @@ fn remotecap_help_shows_usage() {
     let output = result.get_output();
     let stdout = std::str::from_utf8(&output.stdout).expect("Invalid UTF-8");
 
-    assert!(stdout.contains("Remote capability token issuance"),
-            "Expected help description");
-    assert!(stdout.contains("issue"),
-            "Expected issue subcommand in help");
+    assert!(
+        stdout.contains("Remote capability token issuance"),
+        "Expected help description"
+    );
+    assert!(
+        stdout.contains("issue"),
+        "Expected issue subcommand in help"
+    );
 }
 
 #[test]
@@ -241,8 +364,15 @@ fn remotecap_issue_help_shows_options() {
 
     assert!(stdout.contains("--scope"), "Expected --scope option");
     assert!(stdout.contains("--endpoint"), "Expected --endpoint option");
-    assert!(stdout.contains("--expires-in-secs"), "Expected --expires-in-secs option");
-    assert!(stdout.contains("--single-use"), "Expected --single-use option");
+    assert!(stdout.contains("--ttl"), "Expected --ttl option");
+    assert!(
+        stdout.contains("--operator-approved"),
+        "Expected --operator-approved option"
+    );
+    assert!(
+        stdout.contains("--single-use"),
+        "Expected --single-use option"
+    );
     assert!(stdout.contains("--json"), "Expected --json option");
 }
 
@@ -253,22 +383,24 @@ fn remotecap_issue_with_long_expiry() {
 
     let mut cmd = remotecap_cmd();
     cmd.arg("issue")
-       .arg("--scope")
-       .arg("network_egress")
-       .arg("--endpoint")
-       .arg("https://api.example.com")
-       .arg("--expires-in-secs")
-       .arg("86400") // 24 hours
-       .arg("--json")
-       .current_dir(workspace_path);
+        .arg("--scope")
+        .arg("network_egress")
+        .arg("--endpoint")
+        .arg("https://api.example.com")
+        .arg("--ttl")
+        .arg("1d")
+        .arg("--operator-approved")
+        .arg("--json")
+        .current_dir(workspace_path);
 
     let result = cmd.assert().success();
     let output = result.get_output();
     let stdout = std::str::from_utf8(&output.stdout).expect("Invalid UTF-8");
 
     let json: Value = serde_json::from_str(stdout).expect("Invalid JSON output");
-    assert!(json["token"].is_string(), "Expected token field");
-    assert!(json["expires_at"].is_string(), "Expected expires_at field");
+    assert!(json["token"].is_object(), "Expected token object");
+    assert!(json["token"]["expires_at_epoch_secs"].is_u64());
+    assert_eq!(json["ttl_secs"], 86_400);
 }
 
 #[test]
@@ -278,22 +410,23 @@ fn remotecap_issue_structured_logging() {
 
     let mut cmd = remotecap_cmd();
     cmd.arg("issue")
-       .arg("--scope")
-       .arg("telemetry_export")
-       .arg("--endpoint")
-       .arg("https://logs.internal")
-       .arg("--trace-id")
-       .arg("structured-log-test")
-       .arg("--json")
-       .current_dir(workspace_path)
-       .env("RUST_LOG", "debug"); // Enable debug logging
+        .arg("--scope")
+        .arg("telemetry_export")
+        .arg("--endpoint")
+        .arg("https://logs.internal")
+        .arg("--trace-id")
+        .arg("structured-log-test")
+        .arg("--operator-approved")
+        .arg("--json")
+        .current_dir(workspace_path)
+        .env("RUST_LOG", "debug"); // Enable debug logging
 
     let result = cmd.assert().success();
     let output = result.get_output();
-    let stderr = std::str::from_utf8(&output.stderr).expect("Invalid UTF-8");
+    let _stderr = std::str::from_utf8(&output.stderr).expect("Invalid UTF-8");
+    let stdout = std::str::from_utf8(&output.stdout).expect("Invalid UTF-8");
+    let json: Value = serde_json::from_str(stdout).expect("Invalid JSON output");
+    assert_eq!(json["audit_event"]["trace_id"], "structured-log-test");
 
-    // Should contain structured logging output with trace ID
-    // Note: The exact format depends on the implementation
-    // This test validates that debug logging is working during capability issuance
-    // In a real implementation, this would check for specific log events
+    // The audit event is the stable structured surface for capability issuance.
 }
