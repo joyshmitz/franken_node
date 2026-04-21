@@ -1193,9 +1193,297 @@ fn should_skip_dir(path: &Path) -> bool {
         .is_some_and(|name| {
             matches!(
                 name,
-                ".git" | "target" | "node_modules" | ".beads" | ".venv" | ".next"
+                ".git"
+                    | "target"
+                    | "node_modules"
+                    | ".beads"
+                    | ".venv"
+                    | ".next"
+                    | MIGRATION_BACKUP_DIR
             )
         })
+}
+
+fn is_migration_source_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "js" | "cjs" | "mjs" | "jsx" | "ts" | "tsx"
+            )
+        })
+}
+
+fn write_migration_backup(
+    project_path: &Path,
+    source_path: &Path,
+    original_content: &str,
+) -> anyhow::Result<PathBuf> {
+    let relative_path = source_path.strip_prefix(project_path).map_err(|err| {
+        anyhow::anyhow!(
+            "failed resolving migration backup path for {}: {err}",
+            source_path.display()
+        )
+    })?;
+    let backup_path = project_path
+        .join(MIGRATION_BACKUP_DIR)
+        .join(relative_path);
+    if let Some(parent) = backup_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| {
+            anyhow::anyhow!(
+                "failed creating migration backup directory {}: {err}",
+                parent.display()
+            )
+        })?;
+    }
+
+    match std::fs::read_to_string(&backup_path) {
+        Ok(existing) if existing == original_content => return Ok(backup_path),
+        Ok(_) => {
+            anyhow::bail!(
+                "refusing to overwrite existing migration backup {} with different content",
+                backup_path.display()
+            );
+        }
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+        Err(err) => {
+            anyhow::bail!(
+                "failed reading existing migration backup {}: {err}",
+                backup_path.display()
+            );
+        }
+    }
+
+    std::fs::write(&backup_path, original_content.as_bytes()).map_err(|err| {
+        anyhow::anyhow!(
+            "failed writing migration backup {}: {err}",
+            backup_path.display()
+        )
+    })?;
+    Ok(backup_path)
+}
+
+struct CommonJsRewrite {
+    rewritten_content: String,
+    rewrite_count: usize,
+    manual_findings: Vec<String>,
+}
+
+fn rewrite_commonjs_requires(source: &str) -> CommonJsRewrite {
+    let has_esm_syntax = source.lines().any(line_has_esm_module_syntax);
+    let has_commonjs_export = source.lines().any(line_has_commonjs_export);
+    let mut simple_requires = 0_usize;
+    let mut risky_requires = 0_usize;
+
+    for line in source.lines() {
+        if !line_contains_require_call(line) {
+            continue;
+        }
+        if rewrite_commonjs_require_line(line).is_some() {
+            simple_requires = simple_requires.saturating_add(1);
+        } else {
+            risky_requires = risky_requires.saturating_add(1);
+        }
+    }
+
+    let mut manual_findings = BTreeSet::new();
+    if has_esm_syntax && (has_commonjs_export || simple_requires > 0 || risky_requires > 0) {
+        manual_findings.insert(
+            "ESM/CJS module mixing detected; automatic require() rewrite skipped".to_string(),
+        );
+    }
+    if has_commonjs_export {
+        manual_findings.insert(
+            "CommonJS export assignment detected; manual ESM export migration required".to_string(),
+        );
+    }
+    if risky_requires > 0 {
+        manual_findings.insert(format!(
+            "dynamic or non-literal require() usage detected in {risky_requires} place(s); manual migration required"
+        ));
+    }
+
+    if !manual_findings.is_empty() || simple_requires == 0 {
+        return CommonJsRewrite {
+            rewritten_content: source.to_string(),
+            rewrite_count: 0,
+            manual_findings: manual_findings.into_iter().collect(),
+        };
+    }
+
+    let mut rewritten_content = String::with_capacity(source.len());
+    for line in source.split_inclusive('\n') {
+        let (body, line_ending) = split_line_ending(line);
+        if let Some(rewritten_line) = rewrite_commonjs_require_line(body) {
+            rewritten_content.push_str(&rewritten_line);
+            rewritten_content.push_str(line_ending);
+        } else {
+            rewritten_content.push_str(line);
+        }
+    }
+
+    CommonJsRewrite {
+        rewritten_content,
+        rewrite_count: simple_requires,
+        manual_findings: Vec::new(),
+    }
+}
+
+fn split_line_ending(line: &str) -> (&str, &str) {
+    if let Some(body) = line.strip_suffix("\r\n") {
+        return (body, "\r\n");
+    }
+    if let Some(body) = line.strip_suffix('\n') {
+        return (body, "\n");
+    }
+    (line, "")
+}
+
+fn line_has_esm_module_syntax(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    if is_ignorable_js_line(trimmed) {
+        return false;
+    }
+    trimmed.starts_with("import ")
+        || trimmed.starts_with("import{")
+        || trimmed.starts_with("import*")
+        || trimmed.starts_with("export ")
+        || trimmed.starts_with("export{")
+}
+
+fn line_has_commonjs_export(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    if is_ignorable_js_line(trimmed) {
+        return false;
+    }
+    trimmed.starts_with("module.exports")
+        || trimmed.starts_with("exports.")
+        || trimmed.starts_with("exports[")
+        || trimmed.starts_with("exports =")
+}
+
+fn line_contains_require_call(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    !is_ignorable_js_line(trimmed) && trimmed.contains("require(")
+}
+
+fn is_ignorable_js_line(trimmed_line: &str) -> bool {
+    trimmed_line.starts_with("//")
+        || trimmed_line.starts_with("/*")
+        || trimmed_line.starts_with('*')
+}
+
+fn rewrite_commonjs_require_line(line: &str) -> Option<String> {
+    if line.chars().next().is_some_and(|ch| ch.is_whitespace()) {
+        return None;
+    }
+    let declaration = line
+        .strip_prefix("const ")
+        .or_else(|| line.strip_prefix("let "))
+        .or_else(|| line.strip_prefix("var "))?;
+    let (binding, initializer) = declaration.split_once('=')?;
+    let binding = binding.trim();
+    if binding.contains('{') || binding.contains('[') || binding.contains(',') {
+        return None;
+    }
+    if !is_simple_js_identifier(binding) {
+        return None;
+    }
+
+    let initializer = initializer.trim();
+    let require_args = initializer.strip_prefix("require(")?;
+    let mut chars = require_args.chars();
+    let quote = chars.next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let specifier_start = quote.len_utf8();
+    let rest = &require_args[specifier_start..];
+    let specifier_end = rest.find(quote)?;
+    let specifier = &rest[..specifier_end];
+    if specifier.trim().is_empty() || specifier.contains('\\') || specifier.contains('"') {
+        return None;
+    }
+
+    let after_specifier = &rest[specifier_end + quote.len_utf8()..];
+    let after_call = after_specifier.trim_start().strip_prefix(')')?.trim();
+    if !after_call.is_empty() && after_call != ";" {
+        return None;
+    }
+
+    Some(format!(
+        "import {binding} from \"{}\";",
+        normalize_import_specifier(specifier)
+    ))
+}
+
+fn is_simple_js_identifier(candidate: &str) -> bool {
+    let mut chars = candidate.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first == '_' || first == '$' || first.is_ascii_alphabetic()) {
+        return false;
+    }
+    chars.all(|ch| ch == '_' || ch == '$' || ch.is_ascii_alphanumeric())
+}
+
+fn normalize_import_specifier(specifier: &str) -> String {
+    if specifier.starts_with("node:") {
+        return specifier.to_string();
+    }
+    if is_node_builtin_specifier(specifier) {
+        return format!("node:{specifier}");
+    }
+    specifier.to_string()
+}
+
+fn is_node_builtin_specifier(specifier: &str) -> bool {
+    let base = specifier.split('/').next().unwrap_or(specifier);
+    matches!(
+        base,
+        "assert"
+            | "async_hooks"
+            | "buffer"
+            | "child_process"
+            | "cluster"
+            | "console"
+            | "constants"
+            | "crypto"
+            | "dgram"
+            | "diagnostics_channel"
+            | "dns"
+            | "domain"
+            | "events"
+            | "fs"
+            | "http"
+            | "http2"
+            | "https"
+            | "inspector"
+            | "module"
+            | "net"
+            | "os"
+            | "path"
+            | "perf_hooks"
+            | "process"
+            | "punycode"
+            | "querystring"
+            | "readline"
+            | "repl"
+            | "stream"
+            | "string_decoder"
+            | "timers"
+            | "tls"
+            | "tty"
+            | "url"
+            | "util"
+            | "v8"
+            | "vm"
+            | "wasi"
+            | "worker_threads"
+            | "zlib"
+    )
 }
 
 fn is_lockfile(name: &str) -> bool {
@@ -1988,6 +2276,71 @@ mod tests {
                 .and_then(serde_json::Value::as_str),
             Some(">=20 <23")
         );
+    }
+
+    #[test]
+    fn run_rewrite_rewrites_commonjs_requires_and_writes_backup() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+        let original_source = "const fs = require(\"fs\");\nconst local = require(\"./local\");\nconsole.log(fs.existsSync(\"package.json\"), local);\n";
+
+        write_hardened_manifest(project);
+        write_project_file(project, "index.js", original_source);
+
+        let report = run_rewrite(project, true).expect("applied source rewrite");
+
+        assert_eq!(report.rewrites_planned, 1);
+        assert_eq!(report.rewrites_applied, 1);
+        assert_eq!(report.rollback_entries.len(), 1);
+        assert!(
+            report
+                .entries
+                .iter()
+                .any(|entry| entry.action == MigrationRewriteAction::RewriteCommonJsRequire)
+        );
+        assert_eq!(report.rollback_entries[0].path, "index.js");
+        assert_eq!(report.rollback_entries[0].original_content, original_source);
+
+        let rewritten = std::fs::read_to_string(project.join("index.js")).expect("read source");
+        assert!(rewritten.contains("import fs from \"node:fs\";"));
+        assert!(rewritten.contains("import local from \"./local\";"));
+        assert!(!rewritten.contains("require("));
+
+        let backup = std::fs::read_to_string(project.join(".migrate-backup/index.js"))
+            .expect("read source backup");
+        assert_eq!(backup, original_source);
+    }
+
+    #[test]
+    fn run_rewrite_flags_non_automatable_module_transforms() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+        let source = "import path from \"node:path\";\nconst loader = require(runtimeName);\nmodule.exports = loader(path);\n";
+
+        write_hardened_manifest(project);
+        write_project_file(project, "index.js", source);
+
+        let report = run_rewrite(project, false).expect("dry-run source rewrite");
+
+        assert_eq!(report.rewrites_planned, 0);
+        assert_eq!(report.rewrites_applied, 0);
+        assert!(report.rollback_entries.is_empty());
+        assert!(report.manual_review_items >= 3);
+        assert!(report.entries.iter().any(|entry| {
+            entry.action == MigrationRewriteAction::ManualModuleReview
+                && entry.detail.contains("ESM/CJS module mixing")
+        }));
+        assert!(report.entries.iter().any(|entry| {
+            entry.action == MigrationRewriteAction::ManualModuleReview
+                && entry.detail.contains("dynamic or non-literal require()")
+        }));
+        assert!(report.entries.iter().any(|entry| {
+            entry.action == MigrationRewriteAction::ManualModuleReview
+                && entry.detail.contains("CommonJS export assignment")
+        }));
+
+        let unchanged = std::fs::read_to_string(project.join("index.js")).expect("read source");
+        assert_eq!(unchanged, source);
     }
 
     #[test]
