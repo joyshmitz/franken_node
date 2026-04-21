@@ -10,6 +10,7 @@
 //! from /testing-conformance-harnesses skill.
 
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 #[cfg(test)]
 use insta::assert_json_snapshot;
@@ -36,6 +37,11 @@ const LEGACY_CARD_SCHEMA: &str = "0.9.0";
 const CURRENT_REGISTRY_SCHEMA: &str = "franken-node/trust-card-registry-state/v1";
 const FUTURE_REGISTRY_SCHEMA: &str = "franken-node/trust-card-registry-state/v2";
 const LEGACY_REGISTRY_SCHEMA: &str = "franken-node/trust-card-registry-state/v0";
+
+const TRUST_CARD_REPORT_JSON: &str =
+    include_str!("../../../artifacts/section_10_4/bd-2yh/trust_card_report.json");
+const TRUST_CARD_SELF_TEST_JSON: &str =
+    include_str!("../../../artifacts/section_10_4/bd-2yh/trust_card_self_test.json");
 
 // ---------------------------------------------------------------------------
 // Fixture Generation
@@ -128,6 +134,14 @@ fn create_registry_snapshot_with_schema(
         cache_ttl_secs: 60,
         cards_by_extension: cards,
     }
+}
+
+fn trust_card_report_artifact() -> serde_json::Value {
+    serde_json::from_str(TRUST_CARD_REPORT_JSON).expect("trust card report parses")
+}
+
+fn trust_card_self_test_artifact() -> serde_json::Value {
+    serde_json::from_str(TRUST_CARD_SELF_TEST_JSON).expect("trust card self-test parses")
 }
 
 // ---------------------------------------------------------------------------
@@ -485,4 +499,104 @@ fn generate_conformance_report() {
     });
 
     assert_json_snapshot!("trust_card_cross_version_conformance_report", final_report);
+}
+
+#[test]
+fn trust_card_section_10_4_artifacts_are_self_consistent() {
+    let report = trust_card_report_artifact();
+    let self_test = trust_card_self_test_artifact();
+
+    assert_eq!(report["bead_id"], "bd-2yh");
+    assert_eq!(report["section"], "10.4");
+    assert_eq!(report["verdict"], "PASS");
+    assert_eq!(report["overall_pass"], true);
+    assert_eq!(self_test["ok"], true);
+
+    let report_checks = report["checks"].as_array().expect("report checks array");
+    let self_test_checks = self_test["checks"]
+        .as_array()
+        .expect("self-test checks array");
+    assert_eq!(
+        report["summary"]["total"].as_u64(),
+        Some(report_checks.len() as u64)
+    );
+    assert_eq!(
+        report["summary"]["passing"].as_u64(),
+        Some(report_checks.len() as u64)
+    );
+    assert_eq!(report["summary"]["failing"].as_u64(), Some(0));
+    assert_eq!(self_test_checks.len(), report_checks.len());
+
+    let report_names: BTreeSet<_> = report_checks
+        .iter()
+        .filter_map(|row| row.get("check").and_then(|value| value.as_str()))
+        .collect();
+    let self_test_names: BTreeSet<_> = self_test_checks
+        .iter()
+        .filter_map(|row| row.get("check").and_then(|value| value.as_str()))
+        .collect();
+    assert_eq!(report_names, self_test_names);
+    assert!(report_checks.iter().all(|row| row["pass"] == true));
+    assert!(self_test_checks.iter().all(|row| row["pass"] == true));
+}
+
+#[test]
+fn trust_card_section_10_4_artifacts_cover_diff_cache_and_signature_contracts() {
+    let report = trust_card_report_artifact();
+    let checks = report["checks"].as_array().expect("report checks array");
+
+    let required_checks = [
+        "trust_card.rs: pub fn verify_card_signature(",
+        "v1 signature verifies",
+        "v2 signature verifies",
+        "hash chain linkage",
+        "trust_card.rs: TRUST_CARD_CACHE_HIT",
+        "trust_card.rs: TRUST_CARD_CACHE_MISS",
+        "trust_card.rs: TRUST_CARD_DIFF_COMPUTED",
+        "trust_card_routes.rs: pub struct Pagination",
+        "diff identifies trust posture changes",
+    ];
+
+    let present: BTreeSet<_> = checks
+        .iter()
+        .filter_map(|row| row.get("check").and_then(|value| value.as_str()))
+        .collect();
+    for check_name in required_checks {
+        assert!(
+            present.contains(check_name),
+            "artifact report missing required section 10.4 check {check_name}"
+        );
+    }
+
+    let changed_fields: BTreeSet<_> = report["simulation"]["changed_fields"]
+        .as_array()
+        .expect("changed_fields array")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect();
+    for field in [
+        "certification_level",
+        "reputation_score_basis_points",
+        "revocation_status",
+        "active_quarantine",
+        "extension",
+    ] {
+        assert!(
+            changed_fields.contains(field),
+            "simulation must expose trust posture delta for {field}"
+        );
+    }
+
+    let v1_hash = report["simulation"]["v1_card_hash"]
+        .as_str()
+        .expect("v1_card_hash string");
+    let v2_hash = report["simulation"]["v2_card_hash"]
+        .as_str()
+        .expect("v2_card_hash string");
+    assert_eq!(v1_hash.len(), 64);
+    assert_eq!(v2_hash.len(), 64);
+    assert_ne!(
+        v1_hash, v2_hash,
+        "mutated trust-card simulation must re-key hash output"
+    );
 }
