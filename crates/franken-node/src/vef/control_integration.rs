@@ -23,6 +23,10 @@ use std::fmt;
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
 
+/// Maximum number of evidence references allowed per authorization request.
+/// Prevents DoS via unbounded evidence collection from hostile requests.
+const MAX_EVIDENCE_REFS_PER_REQUEST: usize = 256;
+
 // ── Schema version ──────────────────────────────────────────────────────────
 
 /// Schema version for the VEF control-integration evidence format.
@@ -558,10 +562,10 @@ impl ControlTransitionGate {
             // Check verification state.
             match ev.state {
                 VerificationState::Verified => {
-                    valid_evidence_ids.push(ev.evidence_id.clone());
+                    push_bounded(&mut valid_evidence_ids, ev.evidence_id.clone(), MAX_EVIDENCE_REFS_PER_REQUEST);
                 }
                 VerificationState::Unverified => {
-                    pending_evidence_ids.push(ev.evidence_id.clone());
+                    push_bounded(&mut pending_evidence_ids, ev.evidence_id.clone(), MAX_EVIDENCE_REFS_PER_REQUEST);
                 }
                 VerificationState::Expired => {
                     saw_expired = true;
@@ -1943,5 +1947,154 @@ mod tests {
         let result: Result<GatePolicy, _> = serde_json::from_str(json);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bounded_evidence_refs_per_request() {
+        let mut gate = default_gate();
+        let tt = TransitionType::ResourceAllocation;
+
+        // Test: normal request within bounds should work normally
+        let normal_request = TransitionRequest {
+            request_id: "norm-req".to_string(),
+            transition_type: tt,
+            evidence_refs: vec![
+                valid_evidence("ev1", vec![tt]),
+                valid_evidence("ev2", vec![tt]),
+                valid_evidence("ev3", vec![tt]),
+            ],
+            trace_id: "trace-normal".to_string(),
+        };
+
+        let result = gate.authorize_transition(&normal_request);
+        assert!(matches!(result, AuthorizationResult::Authorized { .. }));
+
+        if let AuthorizationResult::Authorized { valid_evidence_ids, pending_evidence_ids, .. } = result {
+            assert_eq!(valid_evidence_ids.len(), 3);
+            assert_eq!(pending_evidence_ids.len(), 0);
+        }
+    }
+
+    #[test]
+    fn test_large_request_evidence_bounded() {
+        let mut gate = default_gate();
+        let tt = TransitionType::ResourceAllocation;
+
+        // Test: request exceeding MAX_EVIDENCE_REFS_PER_REQUEST should be bounded
+        let large_count = MAX_EVIDENCE_REFS_PER_REQUEST + 100; // 356 evidence refs
+        let mut evidence_refs = Vec::new();
+
+        // Create mix of verified and unverified evidence
+        for i in 0..large_count {
+            let state = if i % 2 == 0 {
+                VerificationState::Verified
+            } else {
+                VerificationState::Unverified
+            };
+            evidence_refs.push(VefEvidenceRef {
+                evidence_id: format!("ev-{}", i),
+                evidence_hash: format!("sha256:hash{:06}", i),
+                scope: vec![tt],
+                state,
+                created_at_millis: NOW - 1000,
+                expires_at_millis: NOW + 3_600_000,
+            });
+        }
+
+        let large_request = TransitionRequest {
+            request_id: "large-req".to_string(),
+            transition_type: tt,
+            evidence_refs,
+            trace_id: "trace-large".to_string(),
+        };
+
+        let result = gate.authorize_transition(&large_request);
+        assert!(matches!(result, AuthorizationResult::Authorized { .. }));
+
+        if let AuthorizationResult::Authorized { valid_evidence_ids, pending_evidence_ids, .. } = result {
+            // Verify collections are bounded to MAX_EVIDENCE_REFS_PER_REQUEST
+            assert!(valid_evidence_ids.len() <= MAX_EVIDENCE_REFS_PER_REQUEST,
+                "valid_evidence_ids should be bounded to {}, got {}",
+                MAX_EVIDENCE_REFS_PER_REQUEST, valid_evidence_ids.len());
+            assert!(pending_evidence_ids.len() <= MAX_EVIDENCE_REFS_PER_REQUEST,
+                "pending_evidence_ids should be bounded to {}, got {}",
+                MAX_EVIDENCE_REFS_PER_REQUEST, pending_evidence_ids.len());
+
+            // Verify total doesn't exceed capacity limit due to truncation
+            let total_evidence = valid_evidence_ids.len() + pending_evidence_ids.len();
+            assert!(total_evidence <= MAX_EVIDENCE_REFS_PER_REQUEST,
+                "Total evidence IDs should not exceed capacity limit");
+        }
+    }
+
+    #[test]
+    fn test_large_request_memory_safety() {
+        let mut gate = default_gate();
+        let tt = TransitionType::ResourceAllocation;
+
+        // Test: very large request should not cause memory exhaustion
+        let very_large_count = 10_000; // Much larger than MAX_EVIDENCE_REFS_PER_REQUEST
+        let mut evidence_refs = Vec::new();
+
+        for i in 0..very_large_count {
+            evidence_refs.push(valid_evidence(&format!("bulk-ev-{}", i), vec![tt]));
+        }
+
+        let bulk_request = TransitionRequest {
+            request_id: "bulk-req".to_string(),
+            transition_type: tt,
+            evidence_refs,
+            trace_id: "trace-bulk".to_string(),
+        };
+
+        // This should complete without memory issues due to bounded collections
+        let result = gate.authorize_transition(&bulk_request);
+        assert!(matches!(result, AuthorizationResult::Authorized { .. }));
+
+        if let AuthorizationResult::Authorized { valid_evidence_ids, .. } = result {
+            // Result should be bounded regardless of input size
+            assert!(valid_evidence_ids.len() <= MAX_EVIDENCE_REFS_PER_REQUEST,
+                "Memory safety: collections must remain bounded even with huge input");
+        }
+    }
+
+    #[test]
+    fn test_evidence_truncation_semantics() {
+        let mut gate = default_gate();
+        let tt = TransitionType::ResourceAllocation;
+
+        // Test: verify truncation behavior is consistent
+        let over_limit = MAX_EVIDENCE_REFS_PER_REQUEST + 50;
+        let mut evidence_refs = Vec::new();
+
+        // All evidence is valid to focus on truncation behavior
+        for i in 0..over_limit {
+            evidence_refs.push(valid_evidence(&format!("trunc-ev-{}", i), vec![tt]));
+        }
+
+        let truncation_request = TransitionRequest {
+            request_id: "trunc-req".to_string(),
+            transition_type: tt,
+            evidence_refs,
+            trace_id: "trace-trunc".to_string(),
+        };
+
+        let result = gate.authorize_transition(&truncation_request);
+        assert!(matches!(result, AuthorizationResult::Authorized { .. }));
+
+        if let AuthorizationResult::Authorized { valid_evidence_ids, .. } = result {
+            // Should contain exactly the capacity limit worth of evidence
+            assert_eq!(valid_evidence_ids.len(), MAX_EVIDENCE_REFS_PER_REQUEST,
+                "Truncation should result in exactly the capacity limit");
+
+            // Should contain the LAST MAX_EVIDENCE_REFS_PER_REQUEST items (FIFO eviction)
+            // The push_bounded implementation keeps the newest items
+            let expected_start = over_limit - MAX_EVIDENCE_REFS_PER_REQUEST;
+            for (idx, evidence_id) in valid_evidence_ids.iter().enumerate() {
+                let expected_id = format!("trunc-ev-{}", expected_start + idx);
+                assert_eq!(*evidence_id, expected_id,
+                    "Truncation should keep the most recent evidence refs");
+            }
+        }
     }
 }
