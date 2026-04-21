@@ -47,11 +47,9 @@ use super::trust_card_routes::ApiResponse;
 // ── Event Codes ───────────────────────────────────────────────────────────
 
 /// FLEET-001: Quarantine initiated for extension in zone.
-#[cfg(any(test, feature = "extended-surfaces"))]
 pub const FLEET_QUARANTINE_INITIATED: &str = "FLEET-001";
 
 /// FLEET-002: Revocation issued for extension.
-#[cfg(any(test, feature = "extended-surfaces"))]
 pub const FLEET_REVOCATION_ISSUED: &str = "FLEET-002";
 
 /// FLEET-003: Convergence progress updated.
@@ -182,6 +180,8 @@ pub struct FleetActionResult {
 /// Enforces INV-FLEET-RECEIPT.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DecisionReceipt {
+    /// Operation identifier this receipt authorizes.
+    pub operation_id: String,
     /// Receipt identifier.
     pub receipt_id: String,
     /// Principal who issued the action.
@@ -192,9 +192,137 @@ pub struct DecisionReceipt {
     pub zone_id: String,
     /// Hash of the decision payload for tamper detection.
     pub payload_hash: String,
+    /// Canonical action payload bound into `payload_hash` and the signature.
+    pub decision_payload: DecisionReceiptPayload,
     /// Detached Ed25519 signature over the decision receipt fields.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<DecisionReceiptSignature>,
+}
+
+/// Canonical action payload bound into a fleet decision receipt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionReceiptPayload {
+    /// Stable action type: quarantine, revoke, release, or reconcile.
+    pub action_type: String,
+    /// Extension subject for extension-scoped actions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension_id: Option<String>,
+    /// Incident subject for incident-scoped actions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub incident_id: Option<String>,
+    /// Canonical scope snapshot for the decision.
+    pub scope: DecisionReceiptScope,
+    /// Human/operator reason bound to the decision.
+    pub reason: String,
+    /// Fleet event code emitted for this decision.
+    pub event_code: String,
+}
+
+impl DecisionReceiptPayload {
+    #[must_use]
+    pub fn quarantine(extension_id: &str, scope: &QuarantineScope) -> Self {
+        Self {
+            action_type: "quarantine".to_string(),
+            extension_id: Some(extension_id.to_string()),
+            incident_id: None,
+            scope: DecisionReceiptScope {
+                zone_id: scope.zone_id.clone(),
+                tenant_id: scope.tenant_id.clone(),
+                affected_nodes: Some(scope.affected_nodes),
+                revocation_severity: None,
+            },
+            reason: scope.reason.clone(),
+            event_code: FLEET_QUARANTINE_INITIATED.to_string(),
+        }
+    }
+
+    #[must_use]
+    pub fn revoke(extension_id: &str, scope: &RevocationScope) -> Self {
+        Self {
+            action_type: "revoke".to_string(),
+            extension_id: Some(extension_id.to_string()),
+            incident_id: None,
+            scope: DecisionReceiptScope {
+                zone_id: scope.zone_id.clone(),
+                tenant_id: scope.tenant_id.clone(),
+                affected_nodes: None,
+                revocation_severity: Some(scope.severity),
+            },
+            reason: scope.reason.clone(),
+            event_code: FLEET_REVOCATION_ISSUED.to_string(),
+        }
+    }
+
+    #[must_use]
+    pub fn release(incident_id: &str, zone_id: &str, reason: &str) -> Self {
+        Self {
+            action_type: "release".to_string(),
+            extension_id: None,
+            incident_id: Some(incident_id.to_string()),
+            scope: DecisionReceiptScope::zone(zone_id),
+            reason: reason.to_string(),
+            event_code: FLEET_RELEASED.to_string(),
+        }
+    }
+
+    #[must_use]
+    pub fn reconcile() -> Self {
+        Self {
+            action_type: "reconcile".to_string(),
+            extension_id: None,
+            incident_id: None,
+            scope: DecisionReceiptScope::zone("all"),
+            reason: "fleet reconcile".to_string(),
+            event_code: FLEET_RECONCILE_COMPLETED.to_string(),
+        }
+    }
+
+    fn append_framed(&self, buffer: &mut Vec<u8>) {
+        extend_len_prefixed(buffer, &self.action_type);
+        extend_optional_len_prefixed(buffer, self.extension_id.as_deref());
+        extend_optional_len_prefixed(buffer, self.incident_id.as_deref());
+        self.scope.append_framed(buffer);
+        extend_len_prefixed(buffer, &self.reason);
+        extend_len_prefixed(buffer, &self.event_code);
+    }
+}
+
+/// Canonical scope payload bound into a fleet decision receipt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionReceiptScope {
+    /// Zone identifier for the decision scope.
+    pub zone_id: String,
+    /// Optional tenant narrowing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant_id: Option<String>,
+    /// Affected node count when present in the source scope.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub affected_nodes: Option<u32>,
+    /// Revocation severity when present in the source scope.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revocation_severity: Option<RevocationSeverity>,
+}
+
+impl DecisionReceiptScope {
+    #[must_use]
+    pub fn zone(zone_id: &str) -> Self {
+        Self {
+            zone_id: zone_id.to_string(),
+            tenant_id: None,
+            affected_nodes: None,
+            revocation_severity: None,
+        }
+    }
+
+    fn append_framed(&self, buffer: &mut Vec<u8>) {
+        extend_len_prefixed(buffer, &self.zone_id);
+        extend_optional_len_prefixed(buffer, self.tenant_id.as_deref());
+        extend_optional_u32(buffer, self.affected_nodes);
+        extend_optional_len_prefixed(
+            buffer,
+            self.revocation_severity.map(revocation_severity_tag),
+        );
+    }
 }
 
 /// Ed25519 signature envelope for fleet decision receipts.
@@ -224,10 +352,56 @@ fn extend_len_prefixed(buffer: &mut Vec<u8>, field: &str) {
     buffer.extend_from_slice(field.as_bytes());
 }
 
+fn extend_optional_len_prefixed(buffer: &mut Vec<u8>, field: Option<&str>) {
+    match field {
+        Some(field) => {
+            buffer.push(1);
+            extend_len_prefixed(buffer, field);
+        }
+        None => buffer.push(0),
+    }
+}
+
+fn extend_optional_u32(buffer: &mut Vec<u8>, value: Option<u32>) {
+    match value {
+        Some(value) => {
+            buffer.push(1);
+            buffer.extend_from_slice(&value.to_le_bytes());
+        }
+        None => buffer.push(0),
+    }
+}
+
+fn revocation_severity_tag(severity: RevocationSeverity) -> &'static str {
+    match severity {
+        RevocationSeverity::Advisory => "advisory",
+        RevocationSeverity::Mandatory => "mandatory",
+        RevocationSeverity::Emergency => "emergency",
+    }
+}
+
+#[must_use]
+pub fn canonical_decision_receipt_payload_hash(
+    operation_id: &str,
+    principal: &str,
+    zone_id: &str,
+    timestamp: &str,
+    decision_payload: &DecisionReceiptPayload,
+) -> String {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(b"fleet_receipt_v1:");
+    for field in [operation_id, principal, zone_id, timestamp] {
+        extend_len_prefixed(&mut payload, field);
+    }
+    decision_payload.append_framed(&mut payload);
+    hex::encode(Sha256::digest(&payload))
+}
+
 fn decision_receipt_payload_bytes(receipt: &DecisionReceipt) -> Vec<u8> {
     let mut payload = Vec::new();
     payload.extend_from_slice(b"franken_node_fleet_decision_receipt_v1:");
     for field in [
+        receipt.operation_id.as_str(),
         receipt.receipt_id.as_str(),
         receipt.issuer.as_str(),
         receipt.issued_at.as_str(),
@@ -236,6 +410,7 @@ fn decision_receipt_payload_bytes(receipt: &DecisionReceipt) -> Vec<u8> {
     ] {
         extend_len_prefixed(&mut payload, field);
     }
+    receipt.decision_payload.append_framed(&mut payload);
     payload
 }
 
@@ -291,6 +466,20 @@ pub fn verify_decision_receipt_signature(receipt: &DecisionReceipt) -> bool {
         crate::supply_chain::artifact_signing::KeyId::from_verifying_key(&verifying_key)
             .to_string();
     if !crate::security::constant_time::ct_eq(&signature.key_id, &expected_key_id) {
+        return false;
+    }
+
+    let expected_decision_payload_hash = canonical_decision_receipt_payload_hash(
+        &receipt.operation_id,
+        &receipt.issuer,
+        &receipt.zone_id,
+        &receipt.issued_at,
+        &receipt.decision_payload,
+    );
+    if !crate::security::constant_time::ct_eq(
+        &receipt.payload_hash,
+        &expected_decision_payload_hash,
+    ) {
         return false;
     }
 
@@ -1227,7 +1416,13 @@ impl FleetControlManager {
         zone.active_quarantines = zone.active_quarantines.saturating_add(1);
 
         // Build receipt (INV-FLEET-RECEIPT)
-        let receipt = self.build_receipt(&op_id, &identity.principal, zone_id, &now)?;
+        let receipt = self.build_receipt(
+            &op_id,
+            &identity.principal,
+            zone_id,
+            &now,
+            DecisionReceiptPayload::quarantine(extension_id, scope),
+        )?;
 
         // Convergence state (INV-FLEET-CONVERGENCE)
         let total_nodes = scope.affected_nodes;
@@ -1314,7 +1509,13 @@ impl FleetControlManager {
             });
         zone.active_revocations = zone.active_revocations.saturating_add(1);
 
-        let receipt = self.build_receipt(&op_id, &identity.principal, zone_id, &now)?;
+        let receipt = self.build_receipt(
+            &op_id,
+            &identity.principal,
+            zone_id,
+            &now,
+            DecisionReceiptPayload::revoke(extension_id, scope),
+        )?;
 
         // Emergency revocations create incidents
         if scope.severity == RevocationSeverity::Emergency {
@@ -1395,7 +1596,13 @@ impl FleetControlManager {
         self.incident_convergences.remove(incident_id);
         self.sync_zone_pending_convergences(&zone_id);
 
-        let receipt = self.build_receipt(&op_id, &identity.principal, &zone_id, &now)?;
+        let receipt = self.build_receipt(
+            &op_id,
+            &identity.principal,
+            &zone_id,
+            &now,
+            DecisionReceiptPayload::release(incident_id, &zone_id, "release incident"),
+        )?;
 
         let event = FleetControlEvent::fleet_released(&trace.trace_id, &zone_id, incident_id);
         push_bounded(&mut self.events, event, MAX_FLEET_EVENTS);
@@ -1469,7 +1676,13 @@ impl FleetControlManager {
             self.sync_zone_pending_convergences(&zone_id);
         }
 
-        let receipt = self.build_receipt(&op_id, &identity.principal, "all", &now)?;
+        let receipt = self.build_receipt(
+            &op_id,
+            &identity.principal,
+            "all",
+            &now,
+            DecisionReceiptPayload::reconcile(),
+        )?;
 
         let convergence = ConvergenceState {
             converged_nodes: u32::try_from(zone_count).unwrap_or(u32::MAX),
@@ -1675,22 +1888,24 @@ impl FleetControlManager {
         principal: &str,
         zone_id: &str,
         timestamp: &str,
+        decision_payload: DecisionReceiptPayload,
     ) -> Result<DecisionReceipt, FleetControlError> {
         let signing_material = self.ensure_decision_signing_material()?;
-        // Length-prefixed encoding prevents delimiter-collision ambiguity.
-        let mut hasher = Sha256::new();
-        hasher.update(b"fleet_receipt_v1:");
-        for field in [op_id, principal, zone_id, timestamp] {
-            hasher.update(u64::try_from(field.len()).unwrap_or(u64::MAX).to_le_bytes());
-            hasher.update(field.as_bytes());
-        }
-        let payload_hash = hex::encode(hasher.finalize());
+        let payload_hash = canonical_decision_receipt_payload_hash(
+            op_id,
+            principal,
+            zone_id,
+            timestamp,
+            &decision_payload,
+        );
         let mut receipt = DecisionReceipt {
+            operation_id: op_id.to_string(),
             receipt_id: format!("rcpt-{op_id}"),
             issuer: principal.to_string(),
             issued_at: timestamp.to_string(),
             zone_id: zone_id.to_string(),
             payload_hash,
+            decision_payload,
             signature: None,
         };
         receipt.signature = Some(sign_decision_receipt(
@@ -3334,12 +3549,22 @@ mod tests {
 
     #[test]
     fn decision_receipt_serde() {
+        let decision_payload =
+            DecisionReceiptPayload::release("inc-1", "zone-1", "serde round-trip release");
         let receipt = DecisionReceipt {
+            operation_id: "op-1".to_string(),
             receipt_id: "rcpt-1".to_string(),
             issuer: "admin".to_string(),
             issued_at: "2026-02-21T00:00:00Z".to_string(),
             zone_id: "zone-1".to_string(),
-            payload_hash: "abcdef".to_string(),
+            payload_hash: canonical_decision_receipt_payload_hash(
+                "op-1",
+                "admin",
+                "zone-1",
+                "2026-02-21T00:00:00Z",
+                &decision_payload,
+            ),
+            decision_payload,
             signature: None,
         };
         let json = serde_json::to_string(&receipt).expect("serialize");
@@ -3489,14 +3714,30 @@ mod tests {
 
     // ── Hash determinism test ─────────────────────────────────────────────
 
+    fn test_decision_payload() -> DecisionReceiptPayload {
+        DecisionReceiptPayload::release("inc-test", "zone-1", "test release")
+    }
+
     #[test]
     fn receipt_hash_is_deterministic() {
         let mgr = FleetControlManager::new();
         let r1 = mgr
-            .build_receipt("op-1", "admin", "zone-1", "2026-01-01T00:00:00Z")
+            .build_receipt(
+                "op-1",
+                "admin",
+                "zone-1",
+                "2026-01-01T00:00:00Z",
+                test_decision_payload(),
+            )
             .expect("receipt");
         let r2 = mgr
-            .build_receipt("op-1", "admin", "zone-1", "2026-01-01T00:00:00Z")
+            .build_receipt(
+                "op-1",
+                "admin",
+                "zone-1",
+                "2026-01-01T00:00:00Z",
+                test_decision_payload(),
+            )
             .expect("receipt");
         assert_eq!(r1.payload_hash, r2.payload_hash);
         assert!(verify_decision_receipt_signature(&r1));
@@ -3506,10 +3747,22 @@ mod tests {
     fn receipt_hash_changes_with_input() {
         let mgr = FleetControlManager::new();
         let r1 = mgr
-            .build_receipt("op-1", "admin", "zone-1", "2026-01-01T00:00:00Z")
+            .build_receipt(
+                "op-1",
+                "admin",
+                "zone-1",
+                "2026-01-01T00:00:00Z",
+                test_decision_payload(),
+            )
             .expect("receipt");
         let r2 = mgr
-            .build_receipt("op-2", "admin", "zone-1", "2026-01-01T00:00:00Z")
+            .build_receipt(
+                "op-2",
+                "admin",
+                "zone-1",
+                "2026-01-01T00:00:00Z",
+                test_decision_payload(),
+            )
             .expect("receipt");
         assert_ne!(r1.payload_hash, r2.payload_hash);
     }
@@ -3519,10 +3772,10 @@ mod tests {
         let mgr = FleetControlManager::new();
         // Without length-prefixing, "a:b" + "c" and "a" + "b:c" could collide.
         let r1 = mgr
-            .build_receipt("op", "admin:x", "zone", "ts")
+            .build_receipt("op", "admin:x", "zone", "ts", test_decision_payload())
             .expect("receipt");
         let r2 = mgr
-            .build_receipt("op", "admin", "x:zone", "ts")
+            .build_receipt("op", "admin", "x:zone", "ts", test_decision_payload())
             .expect("receipt");
         assert_ne!(
             r1.payload_hash, r2.payload_hash,
@@ -3534,7 +3787,13 @@ mod tests {
     fn unsigned_decision_receipt_is_rejected() {
         let mgr = FleetControlManager::new();
         let mut receipt = mgr
-            .build_receipt("op-unsigned", "admin", "zone-1", "2026-01-01T00:00:00Z")
+            .build_receipt(
+                "op-unsigned",
+                "admin",
+                "zone-1",
+                "2026-01-01T00:00:00Z",
+                test_decision_payload(),
+            )
             .expect("receipt");
         receipt.signature = None;
 
@@ -3545,11 +3804,36 @@ mod tests {
     fn tampered_decision_receipt_is_rejected() {
         let mgr = FleetControlManager::new();
         let mut receipt = mgr
-            .build_receipt("op-tampered", "admin", "zone-1", "2026-01-01T00:00:00Z")
+            .build_receipt(
+                "op-tampered",
+                "admin",
+                "zone-1",
+                "2026-01-01T00:00:00Z",
+                test_decision_payload(),
+            )
             .expect("receipt");
         assert!(verify_decision_receipt_signature(&receipt));
 
         receipt.zone_id = "zone-2".to_string();
+
+        assert!(!verify_decision_receipt_signature(&receipt));
+    }
+
+    #[test]
+    fn decision_payload_action_type_tampering_is_rejected() {
+        let mgr = FleetControlManager::new();
+        let mut receipt = mgr
+            .build_receipt(
+                "op-action-tampered",
+                "admin",
+                "zone-1",
+                "2026-01-01T00:00:00Z",
+                DecisionReceiptPayload::quarantine("ext-1", &test_quarantine_scope()),
+            )
+            .expect("receipt");
+        assert!(verify_decision_receipt_signature(&receipt));
+
+        receipt.decision_payload.action_type = "release".to_string();
 
         assert!(!verify_decision_receipt_signature(&receipt));
     }

@@ -44,8 +44,9 @@ mod policy {
 
 use crate::api::{
     fleet_quarantine::{
-        ConvergencePhase, ConvergenceState, DecisionReceipt, FLEET_RECONCILE_COMPLETED,
-        FLEET_RELEASED, FleetActionResult, FleetStatus, sign_decision_receipt,
+        ConvergencePhase, ConvergenceState, DecisionReceipt, DecisionReceiptPayload,
+        FLEET_RECONCILE_COMPLETED, FLEET_RELEASED, FleetActionResult, FleetStatus,
+        canonical_decision_receipt_payload_hash, sign_decision_receipt,
     },
     middleware::{AuthIdentity, AuthMethod, TraceContext},
     trust_card_routes::{
@@ -9137,11 +9138,19 @@ mod fleet_command_tests {
             action_type: "reconcile".to_string(),
             success: true,
             receipt: DecisionReceipt {
+                operation_id: "fleet-op-7".to_string(),
                 receipt_id: "rcpt-7".to_string(),
                 issuer: "cli-fleet-operator".to_string(),
                 issued_at: "2026-02-25T00:00:00Z".to_string(),
                 zone_id: "all".to_string(),
-                payload_hash: "hash".to_string(),
+                payload_hash: canonical_decision_receipt_payload_hash(
+                    "fleet-op-7",
+                    "cli-fleet-operator",
+                    "all",
+                    "2026-02-25T00:00:00Z",
+                    &DecisionReceiptPayload::reconcile(),
+                ),
+                decision_payload: DecisionReceiptPayload::reconcile(),
                 signature: None,
             },
             convergence: Some(ConvergenceState {
@@ -13761,20 +13770,24 @@ fn build_fleet_decision_receipt(
     principal: &str,
     zone_id: &str,
     issued_at: &str,
+    decision_payload: DecisionReceiptPayload,
     signing_material: &Ed25519SigningMaterial,
 ) -> DecisionReceipt {
-    let mut hasher = sha2::Sha256::new();
-    hasher.update(b"fleet_receipt_v1:");
-    for field in [operation_id, principal, zone_id, issued_at] {
-        hasher.update(u64::try_from(field.len()).unwrap_or(u64::MAX).to_le_bytes());
-        hasher.update(field.as_bytes());
-    }
+    let payload_hash = canonical_decision_receipt_payload_hash(
+        operation_id,
+        principal,
+        zone_id,
+        issued_at,
+        &decision_payload,
+    );
     let mut receipt = DecisionReceipt {
+        operation_id: operation_id.to_string(),
         receipt_id: format!("rcpt-{operation_id}"),
         issuer: principal.to_string(),
         issued_at: issued_at.to_string(),
         zone_id: zone_id.to_string(),
-        payload_hash: hex::encode(hasher.finalize()),
+        payload_hash,
+        decision_payload,
         signature: None,
     };
     receipt.signature = Some(sign_decision_receipt(
@@ -18281,6 +18294,11 @@ fn main() -> Result<()> {
                             &identity.principal,
                             &incident.zone_id,
                             &issued_at,
+                            DecisionReceiptPayload::release(
+                                &incident.incident_id,
+                                &incident.zone_id,
+                                "manual release via fleet CLI",
+                            ),
                             &fleet_signing_material,
                         ),
                         convergence: Some(convergence.clone()),
@@ -18343,6 +18361,7 @@ fn main() -> Result<()> {
                             &identity.principal,
                             "all",
                             &issued_at,
+                            DecisionReceiptPayload::reconcile(),
                             &fleet_signing_material,
                         ),
                         convergence: convergence.clone(),
