@@ -11954,7 +11954,7 @@ fn registry_cli_provenance_policy() -> supply_chain::provenance::VerificationPol
 
 fn registry_cli_transparency_policy() -> supply_chain::transparency_verifier::TransparencyPolicy {
     supply_chain::transparency_verifier::TransparencyPolicy {
-        required: false,
+        required: true,
         pinned_roots: vec![],
     }
 }
