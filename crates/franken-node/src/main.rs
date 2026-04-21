@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![cfg(not(test))]
 
 // The api and policy modules are included via #[path] so the bin target
 // can use a subset of functions from these files. The lib target uses
