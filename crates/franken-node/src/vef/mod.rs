@@ -98,7 +98,8 @@ mod negative_path_tests {
         input
             .metadata
             .insert("simulate_failure".to_string(), "latency_spike".to_string());
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
 
         let err = service
             .generate_proof(&input, None, 1_705_400_000_000)
@@ -115,7 +116,8 @@ mod negative_path_tests {
         let config = ProofServiceConfig {
             default_backend: ProofBackendId::DoubleHashAttestationV1,
             enabled_backends: BTreeSet::from([ProofBackendId::HashAttestationV1]),
-            backend_parameters: BTreeMap::new(),
+            backend_parameters: ProofServiceConfig::reference_attestation_defaults()
+                .backend_parameters,
         };
         let mut service = VefProofService::new(config);
 
@@ -130,7 +132,8 @@ mod negative_path_tests {
     #[test]
     fn proof_output_rejects_schema_downgrade() {
         let input = valid_input();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let mut proof = service
             .generate_proof(
                 &input,
@@ -151,7 +154,8 @@ mod negative_path_tests {
     #[test]
     fn proof_output_rejects_empty_trace_id() {
         let input = valid_input();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let mut proof = service
             .generate_proof(
                 &input,
@@ -172,7 +176,8 @@ mod negative_path_tests {
     #[test]
     fn proof_output_rejects_trace_mismatch() {
         let input = valid_input();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let mut proof = service
             .generate_proof(
                 &input,
@@ -193,7 +198,8 @@ mod negative_path_tests {
     #[test]
     fn proof_verification_rejects_tampered_material() {
         let input = valid_input();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let mut proof = service
             .generate_proof(
                 &input,
@@ -214,7 +220,8 @@ mod negative_path_tests {
     #[test]
     fn proof_verification_rejects_backend_disabled_after_generation() {
         let input = valid_input();
-        let mut generator = VefProofService::new(ProofServiceConfig::default());
+        let mut generator =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let proof = generator
             .generate_proof(
                 &input,
@@ -225,7 +232,8 @@ mod negative_path_tests {
         let verifier_config = ProofServiceConfig {
             default_backend: ProofBackendId::DoubleHashAttestationV1,
             enabled_backends: BTreeSet::from([ProofBackendId::DoubleHashAttestationV1]),
-            backend_parameters: BTreeMap::new(),
+            backend_parameters: ProofServiceConfig::reference_attestation_defaults()
+                .backend_parameters,
         };
         let verifier = VefProofService::new(verifier_config);
 
@@ -323,7 +331,8 @@ mod negative_path_tests {
     #[test]
     fn proof_output_rejects_blank_proof_id() {
         let input = valid_input();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let mut proof = service
             .generate_proof(
                 &input,
@@ -344,7 +353,8 @@ mod negative_path_tests {
     #[test]
     fn proof_output_rejects_malformed_input_commitment_hash() {
         let input = valid_input();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let mut proof = service
             .generate_proof(
                 &input,
@@ -407,7 +417,8 @@ mod negative_path_tests {
     #[test]
     fn proof_output_rejects_blank_backend_version() {
         let input = valid_input();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let mut proof = service
             .generate_proof(
                 &input,
@@ -428,7 +439,8 @@ mod negative_path_tests {
     #[test]
     fn proof_output_rejects_malformed_proof_material() {
         let input = valid_input();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let mut proof = service
             .generate_proof(
                 &input,
@@ -449,7 +461,8 @@ mod negative_path_tests {
     #[test]
     fn proof_output_rejects_well_formed_commitment_mismatch() {
         let input = valid_input();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let mut proof = service
             .generate_proof(
                 &input,
@@ -470,7 +483,8 @@ mod negative_path_tests {
     #[test]
     fn proof_verification_rejects_backend_id_tamper() {
         let input = valid_input();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let mut proof = service
             .generate_proof(
                 &input,

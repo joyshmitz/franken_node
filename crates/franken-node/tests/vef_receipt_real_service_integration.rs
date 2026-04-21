@@ -54,14 +54,7 @@ struct OperationLog {
 
 impl VefReceiptTestHarness {
     async fn new() -> Self {
-        let proof_config = ProofServiceConfig {
-            default_backend: ProofBackendId::HashAttestationV1,
-            enabled_backends: BTreeSet::from([
-                ProofBackendId::HashAttestationV1,
-                ProofBackendId::DoubleHashAttestationV1,
-            ]),
-            backend_parameters: BTreeMap::new(),
-        };
+        let proof_config = ProofServiceConfig::reference_attestation_defaults();
 
         let scheduler_config = SchedulerConfig {
             max_concurrent_proofs: 10,

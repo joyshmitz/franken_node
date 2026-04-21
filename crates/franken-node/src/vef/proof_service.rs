@@ -596,8 +596,8 @@ pub struct ProofServiceConfig {
     pub backend_parameters: BTreeMap<ProofBackendId, BTreeMap<String, String>>,
 }
 
-impl Default for ProofServiceConfig {
-    fn default() -> Self {
+impl ProofServiceConfig {
+    pub fn reference_attestation_defaults() -> Self {
         let enabled_backends = BTreeSet::from([
             ProofBackendId::HashAttestationV1,
             ProofBackendId::DoubleHashAttestationV1,
@@ -610,6 +610,16 @@ impl Default for ProofServiceConfig {
             default_backend: ProofBackendId::HashAttestationV1,
             enabled_backends,
             backend_parameters,
+        }
+    }
+}
+
+impl Default for ProofServiceConfig {
+    fn default() -> Self {
+        Self {
+            default_backend: ProofBackendId::HashAttestationV1,
+            enabled_backends: BTreeSet::new(),
+            backend_parameters: BTreeMap::new(),
         }
     }
 }
@@ -918,7 +928,8 @@ mod tests {
     #[test]
     fn hash_attestation_backend_round_trip_succeeds() {
         let (input, _, _) = sample_request();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let proof = service
             .generate_proof(
                 &input,
@@ -933,7 +944,8 @@ mod tests {
     #[test]
     fn double_hash_backend_round_trip_succeeds() {
         let (input, _, _) = sample_request();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let proof = service
             .generate_proof(
                 &input,
@@ -948,7 +960,8 @@ mod tests {
     #[test]
     fn backend_swap_changes_proof_material_without_changing_verification_semantics() {
         let (input, _, _) = sample_request();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
 
         let proof_a = service
             .generate_proof(
@@ -976,7 +989,8 @@ mod tests {
         let config = ProofServiceConfig {
             default_backend: ProofBackendId::HashAttestationV1,
             enabled_backends: BTreeSet::from([ProofBackendId::HashAttestationV1]),
-            backend_parameters: BTreeMap::new(),
+            backend_parameters: ProofServiceConfig::reference_attestation_defaults()
+                .backend_parameters,
         };
         let mut service = VefProofService::new(config);
 
@@ -996,7 +1010,8 @@ mod tests {
         input
             .metadata
             .insert("simulate_failure".to_string(), "timeout".to_string());
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
 
         let err = service
             .generate_proof(&input, None, 1_705_300_000_400)
@@ -1012,7 +1027,8 @@ mod tests {
         input
             .metadata
             .insert("simulate_failure".to_string(), "crash".to_string());
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
 
         let err = service
             .generate_proof(&input, None, 1_705_300_000_500)
@@ -1029,7 +1045,8 @@ mod tests {
             "simulate_failure".to_string(),
             "malformed_output".to_string(),
         );
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
 
         let err = service
             .generate_proof(&input, None, 1_705_300_000_600)
@@ -1045,7 +1062,8 @@ mod tests {
     #[test]
     fn generated_proofs_are_deterministic_per_backend() {
         let (input, _, _) = sample_request();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
 
         let proof_a = service
             .generate_proof(
@@ -1147,7 +1165,8 @@ mod tests {
     #[test]
     fn proof_validation_rejects_input_commitment_tampering() {
         let (input, _, _) = sample_request();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let mut proof = service
             .generate_proof(
                 &input,
@@ -1167,7 +1186,8 @@ mod tests {
     #[test]
     fn proof_validation_rejects_trace_id_tampering() {
         let (input, _, _) = sample_request();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let mut proof = service
             .generate_proof(
                 &input,
@@ -1190,7 +1210,8 @@ mod tests {
         input
             .metadata
             .insert("simulate_failure".to_string(), "pause".to_string());
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
 
         let err = service
             .generate_proof(&input, None, 1_705_300_001_000)
@@ -1205,7 +1226,8 @@ mod tests {
     #[test]
     fn verify_proof_rejects_backend_disabled_after_generation() {
         let (input, _, _) = sample_request();
-        let mut generating_service = VefProofService::new(ProofServiceConfig::default());
+        let mut generating_service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let proof = generating_service
             .generate_proof(
                 &input,
@@ -1216,7 +1238,8 @@ mod tests {
         let verifying_service = VefProofService::new(ProofServiceConfig {
             default_backend: ProofBackendId::HashAttestationV1,
             enabled_backends: BTreeSet::from([ProofBackendId::HashAttestationV1]),
-            backend_parameters: BTreeMap::new(),
+            backend_parameters: ProofServiceConfig::reference_attestation_defaults()
+                .backend_parameters,
         });
 
         let err = verifying_service
@@ -1266,7 +1289,8 @@ mod tests {
     #[test]
     fn proof_validation_rejects_blank_output_identity_fields() {
         let (input, _, _) = sample_request();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let mut proof = service
             .generate_proof(
                 &input,
@@ -1287,7 +1311,8 @@ mod tests {
     #[test]
     fn proof_validation_rejects_malformed_proof_material_hash() {
         let (input, _, _) = sample_request();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let mut proof = service
             .generate_proof(
                 &input,
@@ -1308,7 +1333,8 @@ mod tests {
     #[test]
     fn verify_proof_rejects_tampered_backend_material() {
         let (input, _, _) = sample_request();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let mut proof = service
             .generate_proof(
                 &input,
@@ -1330,7 +1356,8 @@ mod tests {
     fn generate_proof_rejects_invalid_input_without_generated_event() {
         let (mut input, _, _) = sample_request();
         input.trace_id.clear();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
 
         let err = service
             .generate_proof(&input, None, 1_705_300_001_500)
@@ -1348,7 +1375,8 @@ mod tests {
         let mut service = VefProofService::new(ProofServiceConfig {
             default_backend: ProofBackendId::DoubleHashAttestationV1,
             enabled_backends: BTreeSet::from([ProofBackendId::HashAttestationV1]),
-            backend_parameters: BTreeMap::new(),
+            backend_parameters: ProofServiceConfig::reference_attestation_defaults()
+                .backend_parameters,
         });
 
         let err = service

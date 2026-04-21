@@ -53,7 +53,8 @@ fn generate_rejects_missing_enabled_backend_parameters() {
 #[test]
 fn verify_rejects_missing_enabled_backend_parameters() {
     let input = sample_input();
-    let mut generating_service = VefProofService::new(ProofServiceConfig::default());
+    let mut generating_service =
+        VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
     let proof = generating_service
         .generate_proof(
             &input,
@@ -74,5 +75,19 @@ fn verify_rejects_missing_enabled_backend_parameters() {
 
     assert_eq!(err.code, error_codes::ERR_VEF_PROOF_BACKEND_UNAVAILABLE);
     assert!(err.message.contains("missing backend_parameters"));
+    assert!(!err.retriable);
+}
+
+#[test]
+fn default_config_rejects_generate_until_backend_is_explicitly_enabled() {
+    let input = sample_input();
+    let mut service = VefProofService::new(ProofServiceConfig::default());
+
+    let err = service
+        .generate_proof(&input, None, 1_706_100_000_200)
+        .expect_err("default proof-service config must fail closed");
+
+    assert_eq!(err.code, error_codes::ERR_VEF_PROOF_BACKEND_UNAVAILABLE);
+    assert!(err.message.contains("not enabled"));
     assert!(!err.retriable);
 }

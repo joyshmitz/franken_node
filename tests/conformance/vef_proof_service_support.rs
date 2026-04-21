@@ -60,7 +60,8 @@ mod tests {
     #[test]
     fn backend_override_selects_expected_backend_and_emits_selection_event() {
         let input = sample_input(10, 19, 1);
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let proof = service
             .generate_proof(
                 &input,
@@ -93,7 +94,8 @@ mod tests {
         let config = ProofServiceConfig {
             default_backend: ProofBackendId::HashAttestationV1,
             enabled_backends: BTreeSet::from([ProofBackendId::HashAttestationV1]),
-            backend_parameters: BTreeMap::new(),
+            backend_parameters: ProofServiceConfig::reference_attestation_defaults()
+                .backend_parameters,
         };
         let mut service = VefProofService::new(config);
         let err = service
@@ -113,7 +115,8 @@ mod tests {
         input
             .metadata
             .insert("simulate_failure".to_string(), "timeout".to_string());
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let err = service
             .generate_proof(&input, None, 1_705_000_300_000)
             .expect_err("simulated timeout must fail");
@@ -132,7 +135,8 @@ mod tests {
     #[test]
     fn backend_swap_changes_material_but_keeps_verification_semantics() {
         let input = sample_input(100, 111, 4);
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let proof_a = service
             .generate_proof(
                 &input,

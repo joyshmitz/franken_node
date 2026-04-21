@@ -107,7 +107,8 @@ mod tests {
     #[test]
     fn proof_service_round_trip_default_backend() {
         let input = build_input();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let proof = service
             .generate_proof(&input, None, 1_706_000_300_000)
             .expect("generate proof");
@@ -117,7 +118,8 @@ mod tests {
     #[test]
     fn proof_service_backend_swap_keeps_verification_semantics() {
         let input = build_input();
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
 
         let proof_a = service
             .generate_proof(
@@ -145,7 +147,8 @@ mod tests {
         input
             .metadata
             .insert("simulate_failure".to_string(), "timeout".to_string());
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let err = service
             .generate_proof(&input, None, 1_706_000_300_300)
             .expect_err("timeout should fail closed");

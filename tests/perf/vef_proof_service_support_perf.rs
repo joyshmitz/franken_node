@@ -60,7 +60,8 @@ mod tests {
 
     #[test]
     fn high_volume_generation_emits_one_completion_event_per_job() {
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let total_jobs: u64 = 256;
         for index in 0..total_jobs {
             let input = input_for(index);
@@ -83,7 +84,8 @@ mod tests {
     #[test]
     fn proofs_are_deterministic_for_identical_inputs_per_backend() {
         let input = input_for(512);
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
 
         for backend in [
             ProofBackendId::HashAttestationV1,
@@ -105,7 +107,8 @@ mod tests {
 
     #[test]
     fn mixed_backend_sequence_preserves_verification_integrity() {
-        let mut service = VefProofService::new(ProofServiceConfig::default());
+        let mut service =
+            VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
         let total_jobs: u64 = 64;
         let mut hash_jobs = 0_u64;
         let mut double_hash_jobs = 0_u64;
