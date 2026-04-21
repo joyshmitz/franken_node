@@ -1128,6 +1128,24 @@ impl TelemetryBridge {
                     }
                 }
                 Err(err) if matches!(err.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                    // SECURITY: Check buffer size after timeout/wouldblock to prevent slowloris attacks
+                    // read_until may have appended bytes before timing out - enforce cap here too
+                    if event_bytes.len() > MAX_EVENT_BYTES {
+                        Self::with_state(&state, |metrics| {
+                            metrics.shed_total = metrics.shed_total.saturating_add(1);
+                            metrics.record_event(
+                                event_codes::ADMISSION_SHED,
+                                Some(connection_id),
+                                None,
+                                Some(reason_codes::EVENT_TOO_LARGE),
+                                format!(
+                                    "partial line exceeded {} bytes after timeout (slowloris protection)",
+                                    MAX_EVENT_BYTES
+                                ),
+                            );
+                        });
+                        event_bytes.clear();
+                    }
                     continue;
                 }
                 Err(err) => {
@@ -3824,5 +3842,66 @@ mod tests {
         assert_eq!(test_vec.len(), 5, "should maintain capacity");
         assert_eq!(test_vec[0], 1, "should have drained oldest (0)");
         assert_eq!(test_vec[4], 5, "should have newest at end");
+    }
+
+    #[test]
+    fn slowloris_partial_fragments_exceed_cap_after_timeout_shed() {
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let sock = tmp.path().join("test_slowloris.sock");
+        let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+        let bridge = TelemetryBridge::new(sock.to_str().expect("utf8"), adapter);
+        let handle = bridge.start().expect("start");
+
+        let mut stream = UnixStream::connect(&sock).expect("connect");
+
+        // Send fragments that accumulate to exceed MAX_EVENT_BYTES (64KB) without newlines
+        // This simulates a slowloris attack where partial reads timeout but buffer grows
+        let fragment_size = 8192; // 8KB fragments
+        let fragment = "x".repeat(fragment_size);
+        let num_fragments = (MAX_EVENT_BYTES / fragment_size) + 2; // Exceed cap by 2 fragments
+
+        for _i in 0..num_fragments {
+            stream.write_all(fragment.as_bytes()).expect("write fragment");
+            // Force timeout by waiting longer than CONNECTION_READ_TIMEOUT_MS
+            thread::sleep(Duration::from_millis(CONNECTION_READ_TIMEOUT_MS + 50));
+        }
+
+        // Send a valid event after the attack to verify connection still works
+        writeln!(stream, r#"{{"event":"after_attack"}}"#).expect("write valid event");
+        drop(stream);
+
+        thread::sleep(Duration::from_millis(500));
+
+        let report = handle
+            .stop_and_join(ShutdownReason::Requested)
+            .expect("stop_and_join");
+        assert!(report.drain_completed);
+
+        // The slowloris attack should trigger shedding when buffer exceeds cap after timeouts
+        assert!(
+            report.shed_total > 0,
+            "slowloris attack should trigger buffer shedding after timeout"
+        );
+
+        // Verify the specific shed reason is recorded
+        assert!(
+            report
+                .recent_events
+                .iter()
+                .any(|e| e.code == event_codes::ADMISSION_SHED
+                    && e.reason_code.as_deref() == Some(reason_codes::EVENT_TOO_LARGE)
+                    && e.description.contains("after timeout")
+                    && e.description.contains("slowloris protection")),
+            "should record timeout-specific slowloris protection shed event"
+        );
+
+        // The valid event after attack should still be processed
+        assert!(
+            report.accepted_total > 0,
+            "connection should remain functional after slowloris attack"
+        );
     }
 }
