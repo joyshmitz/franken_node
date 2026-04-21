@@ -692,7 +692,7 @@ impl ChallengeFlowController {
             for proof in &challenge.received_proofs {
                 // Verify the proof data hash is consistent with the artifact being challenged
                 let expected_hash =
-                    self.compute_expected_proof_hash(&challenge.artifact_id, &proof.proof_type)?;
+                    Self::compute_expected_proof_hash(&challenge.artifact_id, &proof.proof_type)?;
 
                 if !crate::security::constant_time::ct_eq(&proof.data_hash, &expected_hash) {
                     return Err(ChallengeError::new(
@@ -913,7 +913,6 @@ impl ChallengeFlowController {
     /// SECURITY: This provides domain separation between different proof types
     /// and artifacts to prevent cross-proof attacks.
     fn compute_expected_proof_hash(
-        &self,
         artifact_id: &ArtifactId,
         proof_type: &RequiredProofType,
     ) -> Result<String, ChallengeError> {
