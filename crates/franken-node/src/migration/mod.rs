@@ -166,7 +166,9 @@ pub struct MigrationAuditReport {
 #[serde(rename_all = "snake_case")]
 pub enum MigrationRewriteAction {
     PinNodeEngine,
+    RewritePackageScript,
     RewriteCommonJsRequire,
+    ModuleGraphDiscovery,
     ManualModuleReview,
     ManualScriptReview,
     ManifestReadError,
@@ -287,6 +289,32 @@ impl MigrationRuntimeTarget {
 enum ScriptFindingKind {
     Risky,
     MissingNodeEngine,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PackageScriptRuntime {
+    Node,
+    Bun,
+    FrankenNode,
+}
+
+impl PackageScriptRuntime {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Node => "node",
+            Self::Bun => "bun",
+            Self::FrankenNode => "franken-node",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PackageScriptRewrite {
+    script_name: String,
+    runtime: PackageScriptRuntime,
+    entry_path: String,
+    original_command: String,
+    rewritten_command: Option<String>,
 }
 
 fn ensure_migration_project_path(project_path: &Path, operation: &str) -> anyhow::Result<()> {
@@ -452,7 +480,21 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
                 );
             }
 
-            if ensure_node_engine_pin(&mut manifest) {
+            let script_rewrites = collect_package_script_rewrites(&manifest);
+            let engine_pin_changed = ensure_node_engine_pin(&mut manifest);
+            let package_script_rewrite_count =
+                apply_package_script_rewrites(&mut manifest, &script_rewrites);
+            let manifest_changed = engine_pin_changed || package_script_rewrite_count > 0;
+
+            for script_rewrite in &script_rewrites {
+                if let Some(graph_entry) =
+                    build_module_graph_entry(project_path, &path, &relative_path, script_rewrite)
+                {
+                    push_bounded(&mut entries, graph_entry, MAX_TOTAL_FINDINGS);
+                }
+            }
+
+            if manifest_changed {
                 rewrites_planned = rewrites_planned.saturating_add(1);
                 let rewritten = serde_json::to_string_pretty(&manifest)
                     .map(|rendered| format!("{rendered}\n"))
@@ -474,18 +516,41 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
                     rewrites_applied = rewrites_applied.saturating_add(1);
                 }
 
-                push_bounded(
-                    &mut entries,
-                    MigrationRewriteEntry {
-                        id: String::new(),
-                        path: Some(relative_path.clone()),
-                        action: MigrationRewriteAction::PinNodeEngine,
-                        detail: "set engines.node to >=20 <23 to reduce migration runtime drift"
-                            .to_string(),
-                        applied: apply,
-                    },
-                    MAX_TOTAL_FINDINGS,
-                );
+                if engine_pin_changed {
+                    push_bounded(
+                        &mut entries,
+                        MigrationRewriteEntry {
+                            id: String::new(),
+                            path: Some(relative_path.clone()),
+                            action: MigrationRewriteAction::PinNodeEngine,
+                            detail: "set engines.node to >=20 <23 to reduce migration runtime drift"
+                                .to_string(),
+                            applied: apply,
+                        },
+                        MAX_TOTAL_FINDINGS,
+                    );
+                }
+                for script_rewrite in &script_rewrites {
+                    if let Some(rewritten_command) = &script_rewrite.rewritten_command {
+                        push_bounded(
+                            &mut entries,
+                            MigrationRewriteEntry {
+                                id: String::new(),
+                                path: Some(relative_path.clone()),
+                                action: MigrationRewriteAction::RewritePackageScript,
+                                detail: format!(
+                                    "rewrote package script `{}` from `{}` runtime to `franken-node`: `{}` -> `{}`",
+                                    script_rewrite.script_name,
+                                    script_rewrite.runtime.as_str(),
+                                    script_rewrite.original_command,
+                                    rewritten_command
+                                ),
+                                applied: apply,
+                            },
+                            MAX_TOTAL_FINDINGS,
+                        );
+                    }
+                }
                 push_bounded(
                     &mut rollback_entries,
                     MigrationRollbackEntry {
@@ -1681,6 +1746,324 @@ fn ensure_node_engine_pin(manifest: &mut serde_json::Value) -> bool {
 
     engines_obj.insert("node".to_string(), serde_json::json!(">=20 <23"));
     true
+}
+
+fn collect_package_script_rewrites(manifest: &serde_json::Value) -> Vec<PackageScriptRewrite> {
+    let mut rewrites = Vec::new();
+    let Some(scripts) = manifest
+        .get("scripts")
+        .and_then(serde_json::Value::as_object)
+    else {
+        return rewrites;
+    };
+
+    for (script_name, command_value) in scripts {
+        let Some(command) = command_value.as_str() else {
+            continue;
+        };
+        if let Some(script_rewrite) = classify_package_script_command(script_name, command) {
+            push_bounded(&mut rewrites, script_rewrite, MAX_TOTAL_FINDINGS);
+        }
+    }
+
+    rewrites.sort_by(|left, right| left.script_name.cmp(&right.script_name));
+    rewrites
+}
+
+fn classify_package_script_command(
+    script_name: &str,
+    command: &str,
+) -> Option<PackageScriptRewrite> {
+    let trimmed = command.trim();
+    let runtime_token = trimmed.split_whitespace().next()?;
+    let runtime = match runtime_token {
+        "node" => PackageScriptRuntime::Node,
+        "bun" => PackageScriptRuntime::Bun,
+        "franken-node" => PackageScriptRuntime::FrankenNode,
+        _ => return None,
+    };
+
+    let command_tail = trimmed.get(runtime_token.len()..)?.trim_start();
+    let entry_path = command_tail.split_whitespace().next()?;
+    if !is_package_script_entry_path(entry_path) {
+        return None;
+    }
+
+    let rewritten_command = match runtime {
+        PackageScriptRuntime::Node | PackageScriptRuntime::Bun => {
+            Some(format!("franken-node {command_tail}"))
+        }
+        PackageScriptRuntime::FrankenNode => None,
+    };
+
+    Some(PackageScriptRewrite {
+        script_name: script_name.to_string(),
+        runtime,
+        entry_path: unquote_script_token(entry_path).to_string(),
+        original_command: command.to_string(),
+        rewritten_command,
+    })
+}
+
+fn apply_package_script_rewrites(
+    manifest: &mut serde_json::Value,
+    rewrites: &[PackageScriptRewrite],
+) -> usize {
+    let Some(scripts) = manifest
+        .get_mut("scripts")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return 0;
+    };
+
+    let mut rewrite_count = 0_usize;
+    for script_rewrite in rewrites {
+        let Some(rewritten_command) = &script_rewrite.rewritten_command else {
+            continue;
+        };
+        let Some(command_value) = scripts.get_mut(&script_rewrite.script_name) else {
+            continue;
+        };
+        if command_value.as_str() == Some(script_rewrite.original_command.as_str()) {
+            *command_value = serde_json::Value::String(rewritten_command.clone());
+            rewrite_count = rewrite_count.saturating_add(1);
+        }
+    }
+    rewrite_count
+}
+
+fn is_package_script_entry_path(token: &str) -> bool {
+    let token = unquote_script_token(token);
+    if token.is_empty()
+        || token.starts_with('-')
+        || token.contains(';')
+        || token.contains('|')
+        || token.contains('&')
+        || token.contains("$(")
+    {
+        return false;
+    }
+    matches!(
+        Path::new(token)
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some("js" | "mjs")
+    )
+}
+
+fn unquote_script_token(token: &str) -> &str {
+    token
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .or_else(|| {
+            token
+                .strip_prefix('\'')
+                .and_then(|rest| rest.strip_suffix('\''))
+        })
+        .unwrap_or(token)
+}
+
+fn build_module_graph_entry(
+    project_path: &Path,
+    manifest_path: &Path,
+    manifest_relative_path: &str,
+    script_rewrite: &PackageScriptRewrite,
+) -> Option<MigrationRewriteEntry> {
+    let manifest_dir = manifest_path.parent().unwrap_or(project_path);
+    let entry_path = resolve_script_entry_path(project_path, manifest_dir, &script_rewrite.entry_path)?;
+    let graph_files = collect_module_graph_files(project_path, &entry_path);
+    if graph_files.is_empty() {
+        return None;
+    }
+
+    let displayed_files = graph_files
+        .iter()
+        .take(8)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    let overflow = graph_files.len().saturating_sub(8);
+    let overflow_detail = if overflow > 0 {
+        format!(" (+{overflow} more)")
+    } else {
+        String::new()
+    };
+
+    Some(MigrationRewriteEntry {
+        id: String::new(),
+        path: Some(manifest_relative_path.to_string()),
+        action: MigrationRewriteAction::ModuleGraphDiscovery,
+        detail: format!(
+            "script `{}` uses `{}` entry `{}`; module graph discovered {} JS/MJS file(s): {}{}",
+            script_rewrite.script_name,
+            script_rewrite.runtime.as_str(),
+            script_rewrite.entry_path,
+            graph_files.len(),
+            displayed_files,
+            overflow_detail
+        ),
+        applied: false,
+    })
+}
+
+fn resolve_script_entry_path(
+    project_path: &Path,
+    manifest_dir: &Path,
+    entry_path: &str,
+) -> Option<PathBuf> {
+    let entry = Path::new(entry_path);
+    if entry.is_absolute() {
+        return None;
+    }
+    let candidate = manifest_dir.join(entry);
+    resolve_existing_graph_file(project_path, &candidate)
+}
+
+fn collect_module_graph_files(project_path: &Path, entry_path: &Path) -> Vec<String> {
+    let Ok(project_root) = std::fs::canonicalize(project_path) else {
+        return Vec::new();
+    };
+    let Some(entry_path) = resolve_existing_graph_file(&project_root, entry_path) else {
+        return Vec::new();
+    };
+
+    let mut discovered = BTreeSet::new();
+    let mut pending = vec![entry_path];
+
+    while let Some(path) = pending.pop() {
+        if discovered.len() >= MAX_PROJECT_FILES {
+            break;
+        }
+        let Some(path) = resolve_existing_graph_file(&project_root, &path) else {
+            continue;
+        };
+        if !discovered.insert(path.clone()) {
+            continue;
+        }
+
+        let Ok(source) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let base_dir = path.parent().unwrap_or(&project_root);
+        for specifier in extract_relative_module_specifiers(&source) {
+            if let Some(next_path) =
+                resolve_relative_module_specifier(&project_root, base_dir, &specifier)
+                && !discovered.contains(&next_path)
+            {
+                push_bounded(&mut pending, next_path, MAX_PENDING_DIRS);
+            }
+        }
+    }
+
+    discovered
+        .into_iter()
+        .map(|path| relative_display(&project_root, &path))
+        .collect()
+}
+
+fn resolve_relative_module_specifier(
+    project_root: &Path,
+    base_dir: &Path,
+    specifier: &str,
+) -> Option<PathBuf> {
+    let specifier = specifier
+        .split_once('?')
+        .map_or(specifier, |(path, _query)| path)
+        .split_once('#')
+        .map_or(specifier, |(path, _fragment)| path);
+    let candidate = base_dir.join(specifier);
+    if is_graph_source_file(&candidate) {
+        return resolve_existing_graph_file(project_root, &candidate);
+    }
+
+    for candidate in [
+        candidate.with_extension("js"),
+        candidate.with_extension("mjs"),
+        candidate.join("index.js"),
+        candidate.join("index.mjs"),
+    ] {
+        if let Some(path) = resolve_existing_graph_file(project_root, &candidate) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn resolve_existing_graph_file(project_root: &Path, path: &Path) -> Option<PathBuf> {
+    let path = std::fs::canonicalize(path).ok()?;
+    if path.starts_with(project_root) && path.is_file() && is_graph_source_file(&path) {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+fn is_graph_source_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .is_some_and(|extension| matches!(extension.to_ascii_lowercase().as_str(), "js" | "mjs"))
+}
+
+fn extract_relative_module_specifiers(source: &str) -> Vec<String> {
+    let mut specifiers = BTreeSet::new();
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        if is_ignorable_js_line(trimmed) {
+            continue;
+        }
+        let module_like = trimmed.starts_with("import ")
+            || trimmed.starts_with("export ")
+            || trimmed.contains(" require(")
+            || trimmed.contains("require(");
+        if !module_like {
+            continue;
+        }
+        for literal in quoted_relative_literals(trimmed) {
+            specifiers.insert(literal);
+        }
+    }
+    specifiers.into_iter().collect()
+}
+
+fn quoted_relative_literals(line: &str) -> Vec<String> {
+    let bytes = line.as_bytes();
+    let mut literals = BTreeSet::new();
+    let mut index = 0_usize;
+    while index < bytes.len() {
+        let quote = bytes[index];
+        if quote != b'\'' && quote != b'"' {
+            index = index.saturating_add(1);
+            continue;
+        }
+
+        let literal_start = index.saturating_add(1);
+        index = literal_start;
+        let mut escaped = false;
+        while index < bytes.len() {
+            let byte = bytes[index];
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == quote {
+                if let Some(literal) = line.get(literal_start..index)
+                    && is_relative_module_specifier(literal)
+                {
+                    literals.insert(literal.to_string());
+                }
+                break;
+            }
+            index = index.saturating_add(1);
+        }
+        index = index.saturating_add(1);
+    }
+    literals.into_iter().collect()
+}
+
+fn is_relative_module_specifier(specifier: &str) -> bool {
+    specifier.starts_with("./") || specifier.starts_with("../")
 }
 
 fn collect_risky_script_names(manifest: &serde_json::Value) -> Vec<String> {
