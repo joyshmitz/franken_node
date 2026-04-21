@@ -595,5 +595,257 @@ mod tests {
             assert_eq!(result, decoded_result,
                 "CompilationResult structure changed during roundtrip");
         }
+
+        // === GOLDEN ARTIFACT TESTING ===
+        // Golden file tests for claim envelope serialization with canonicalization
+
+        use insta::Settings;
+        use regex::Regex;
+
+        /// Scrub non-deterministic values for golden comparison of claim envelopes
+        fn scrub_claim_envelope(json: &str) -> String {
+            let mut scrubbed = json.to_string();
+
+            // UUIDs → [UUID]
+            let uuid_re = Regex::new(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+            ).unwrap();
+            scrubbed = uuid_re.replace_all(&scrubbed, "[UUID]").to_string();
+
+            // ISO timestamps → [TIMESTAMP]
+            let ts_re = Regex::new(
+                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?"
+            ).unwrap();
+            scrubbed = ts_re.replace_all(&scrubbed, "[TIMESTAMP]").to_string();
+
+            // Epoch timestamps → [EPOCH]
+            let epoch_re = Regex::new(r"\b\d{10,13}\b").unwrap();
+            scrubbed = epoch_re.replace_all(&scrubbed, "[EPOCH]").to_string();
+
+            // SHA256 hashes → [HASH]
+            let hash_re = Regex::new(r"sha256:[a-f0-9]{64}").unwrap();
+            scrubbed = hash_re.replace_all(&scrubbed, "sha256:[HASH]").to_string();
+
+            // Hex signatures → [SIG]
+            let sig_re = Regex::new(r"[a-f0-9]{128,256}").unwrap();
+            scrubbed = sig_re.replace_all(&scrubbed, "[SIG]").to_string();
+
+            scrubbed
+        }
+
+        fn canonical_external_claim() -> ExternalClaim {
+            ExternalClaim {
+                claim_id: "claim-12345".to_string(),
+                claim_type: "security-audit".to_string(),
+                subject_extension_id: "npm:@acme/security-lib".to_string(),
+                subject_version: "1.2.3".to_string(),
+                issuer_identity: "security-auditor-corp".to_string(),
+                claim_content: ClaimContent {
+                    summary: "Comprehensive security audit passed with minor recommendations".to_string(),
+                    detailed_findings: vec![
+                        "No critical vulnerabilities found".to_string(),
+                        "Input validation patterns are robust".to_string(),
+                        "Authentication mechanisms properly implemented".to_string(),
+                        "Recommendation: Add rate limiting to API endpoints".to_string(),
+                    ],
+                    risk_assessment: "LOW".to_string(),
+                    compliance_tags: vec![
+                        "SOC2-TYPE2".to_string(),
+                        "NIST-800-53".to_string(),
+                        "OWASP-TOP10".to_string(),
+                    ],
+                },
+                validity_period: ValidityPeriod {
+                    issued_at: "2026-04-21T00:00:00Z".to_string(),
+                    expires_at: "2027-04-21T00:00:00Z".to_string(),
+                    not_before: "2026-04-21T00:00:00Z".to_string(),
+                },
+                evidence_bundle: EvidenceBundle {
+                    evidence_refs: vec![
+                        "audit-report-2026-Q1.pdf".to_string(),
+                        "penetration-test-results.json".to_string(),
+                        "static-analysis-sarif.json".to_string(),
+                    ],
+                    attestation_signatures: vec![
+                        "sig1:0123456789abcdef".to_string(),
+                        "sig2:fedcba9876543210".to_string(),
+                    ],
+                    provenance_chain: vec![
+                        "github.com/acme-corp/security-lib@v1.2.3".to_string(),
+                        "build-server.acme.com/build/12345".to_string(),
+                    ],
+                },
+            }
+        }
+
+        #[test]
+        fn golden_external_claim_envelope_serialization() {
+            let claim = canonical_external_claim();
+            let serialized = serde_json::to_string_pretty(&claim)
+                .expect("claim should serialize");
+            let scrubbed = scrub_claim_envelope(&serialized);
+
+            insta::assert_snapshot!("external_claim_envelope", scrubbed);
+        }
+
+        #[test]
+        fn golden_compiled_contract_envelope() {
+            let claim = canonical_external_claim();
+            let config = CompilerConfig::new("test-signer", "test-key-id", 60);
+            let compiler = ClaimCompiler::new(config);
+
+            let result = compiler.compile(&claim, "test-trace")
+                .expect("compilation should succeed");
+
+            let contract_json = serde_json::to_string_pretty(&result.compiled_contract)
+                .expect("contract should serialize");
+            let scrubbed = scrub_claim_envelope(&contract_json);
+
+            insta::assert_snapshot!("compiled_contract_envelope", scrubbed);
+        }
+
+        #[test]
+        fn golden_compilation_result_envelope() {
+            let claim = canonical_external_claim();
+            let config = CompilerConfig::new("test-signer", "test-key-id", 60);
+            let compiler = ClaimCompiler::new(config);
+
+            let result = compiler.compile(&claim, "test-trace")
+                .expect("compilation should succeed");
+
+            let result_json = serde_json::to_string_pretty(&result)
+                .expect("result should serialize");
+            let scrubbed = scrub_claim_envelope(&result_json);
+
+            insta::assert_snapshot!("compilation_result_envelope", scrubbed);
+        }
+
+        #[test]
+        fn golden_claim_envelope_minimal() {
+            // Test minimal claim envelope
+            let minimal_claim = ExternalClaim {
+                claim_id: "minimal-claim".to_string(),
+                claim_type: "basic-validation".to_string(),
+                subject_extension_id: "npm:@minimal/package".to_string(),
+                subject_version: "0.1.0".to_string(),
+                issuer_identity: "test-issuer".to_string(),
+                claim_content: ClaimContent {
+                    summary: "Basic validation passed".to_string(),
+                    detailed_findings: vec![], // Empty findings
+                    risk_assessment: "UNKNOWN".to_string(),
+                    compliance_tags: vec![], // Empty tags
+                },
+                validity_period: ValidityPeriod {
+                    issued_at: "2026-01-01T00:00:00Z".to_string(),
+                    expires_at: "2026-12-31T23:59:59Z".to_string(),
+                    not_before: "2026-01-01T00:00:00Z".to_string(),
+                },
+                evidence_bundle: EvidenceBundle {
+                    evidence_refs: vec![], // Empty evidence
+                    attestation_signatures: vec![], // No signatures
+                    provenance_chain: vec!["unknown".to_string()], // Minimal provenance
+                },
+            };
+
+            let serialized = serde_json::to_string_pretty(&minimal_claim)
+                .expect("minimal claim should serialize");
+            let scrubbed = scrub_claim_envelope(&serialized);
+
+            insta::assert_snapshot!("claim_envelope_minimal", scrubbed);
+        }
+
+        #[test]
+        fn golden_claim_envelope_maximal() {
+            // Test claim envelope with maximum data
+            let maximal_claim = ExternalClaim {
+                claim_id: "comprehensive-audit-12345-abcdef".to_string(),
+                claim_type: "comprehensive-security-audit".to_string(),
+                subject_extension_id: "npm:@enterprise/critical-security-framework".to_string(),
+                subject_version: "2.5.1-enterprise.1".to_string(),
+                issuer_identity: "tier-1-security-auditing-firm".to_string(),
+                claim_content: ClaimContent {
+                    summary: "Comprehensive enterprise security audit with penetration testing, static analysis, dependency scanning, and compliance validation".to_string(),
+                    detailed_findings: vec![
+                        "PASS: No critical vulnerabilities detected across 15,000 lines of code".to_string(),
+                        "PASS: All authentication pathways use secure session management".to_string(),
+                        "PASS: Input validation comprehensive with proper sanitization".to_string(),
+                        "PASS: Cryptographic implementations follow FIPS-140-2 standards".to_string(),
+                        "PASS: No hardcoded secrets or credentials found".to_string(),
+                        "PASS: SQL injection attack vectors properly mitigated".to_string(),
+                        "PASS: XSS prevention mechanisms correctly implemented".to_string(),
+                        "PASS: CSRF protection active on all state-changing endpoints".to_string(),
+                        "PASS: Access control properly enforces least-privilege principle".to_string(),
+                        "INFO: Recommendation - Consider implementing additional rate limiting".to_string(),
+                        "INFO: Recommendation - Add structured logging for security events".to_string(),
+                        "INFO: Recommendation - Implement automated dependency scanning in CI".to_string(),
+                    ],
+                    risk_assessment: "LOW-ENTERPRISE-APPROVED".to_string(),
+                    compliance_tags: vec![
+                        "SOC2-TYPE2-2026-PASSED".to_string(),
+                        "NIST-800-53-REV5-COMPLIANT".to_string(),
+                        "OWASP-TOP10-2023-VALIDATED".to_string(),
+                        "ISO27001-ALIGNED".to_string(),
+                        "GDPR-PRIVACY-COMPLIANT".to_string(),
+                        "FIPS-140-2-CRYPTOGRAPHY".to_string(),
+                        "CIS-CONTROLS-V8-ALIGNED".to_string(),
+                    ],
+                },
+                validity_period: ValidityPeriod {
+                    issued_at: "2026-04-21T08:30:00.123Z".to_string(),
+                    expires_at: "2027-04-21T08:30:00.123Z".to_string(),
+                    not_before: "2026-04-21T08:30:00.123Z".to_string(),
+                },
+                evidence_bundle: EvidenceBundle {
+                    evidence_refs: vec![
+                        "comprehensive-audit-report-2026-Q1.pdf".to_string(),
+                        "penetration-test-detailed-results.json".to_string(),
+                        "static-analysis-sonarqube-report.sarif".to_string(),
+                        "dependency-vulnerability-scan.json".to_string(),
+                        "security-code-review-checklist.md".to_string(),
+                        "compliance-validation-matrix.xlsx".to_string(),
+                        "threat-model-analysis.drawio".to_string(),
+                    ],
+                    attestation_signatures: vec![
+                        "lead-auditor-sig:a1b2c3d4e5f6789012345678901234567890abcdefabcdef1234567890abcdef".to_string(),
+                        "senior-auditor-sig:fedcba0987654321098765432109876543210fedcba9876543210fedcba987654".to_string(),
+                        "compliance-officer-sig:1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff".to_string(),
+                        "external-validator-sig:fffeeedddcccbbbaaa9999888877776666555544443333222211110000ffff".to_string(),
+                    ],
+                    provenance_chain: vec![
+                        "github.com/enterprise/critical-security-framework@v2.5.1-enterprise.1".to_string(),
+                        "jenkins.enterprise.com/security-build/job/12345/build/67890".to_string(),
+                        "artifactory.enterprise.com/enterprise-npm/critical-security-framework/2.5.1-enterprise.1".to_string(),
+                        "security-scanner.enterprise.com/scan/98765/timestamp/1735689600".to_string(),
+                    ],
+                },
+            };
+
+            let serialized = serde_json::to_string_pretty(&maximal_claim)
+                .expect("maximal claim should serialize");
+            let scrubbed = scrub_claim_envelope(&serialized);
+
+            insta::assert_snapshot!("claim_envelope_maximal", scrubbed);
+        }
+
+        #[test]
+        fn golden_claim_envelope_roundtrip_canonical() {
+            // Test that roundtrip serialization produces canonical results
+            let claim = canonical_external_claim();
+
+            let serialized_1 = serde_json::to_string(&claim)
+                .expect("first serialization");
+
+            let deserialized: ExternalClaim = serde_json::from_str(&serialized_1)
+                .expect("deserialization should work");
+
+            let serialized_2 = serde_json::to_string(&deserialized)
+                .expect("second serialization");
+
+            // Both serializations should be identical (canonical)
+            assert_eq!(serialized_1, serialized_2, "roundtrip serialization should be canonical");
+
+            let scrubbed = scrub_claim_envelope(&serialized_1);
+            insta::assert_snapshot!("claim_envelope_roundtrip_canonical", scrubbed);
+        }
     }
 }

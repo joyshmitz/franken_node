@@ -3757,4 +3757,284 @@ mod staking_governance_boundary_negative_tests {
             }
         }
     }
+
+    // === GOLDEN ARTIFACT TESTING ===
+    // Golden file tests for registry receipts with canonicalization
+
+    use insta::Settings;
+    use regex::Regex;
+
+    /// Scrub non-deterministic values for golden comparison of registry receipts
+    fn scrub_registry_receipt(json: &str) -> String {
+        let mut scrubbed = json.to_string();
+
+        // UUIDs → [UUID]
+        let uuid_re = Regex::new(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        ).unwrap();
+        scrubbed = uuid_re.replace_all(&scrubbed, "[UUID]").to_string();
+
+        // ISO timestamps → [TIMESTAMP]
+        let ts_re = Regex::new(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?"
+        ).unwrap();
+        scrubbed = ts_re.replace_all(&scrubbed, "[TIMESTAMP]").to_string();
+
+        // Epoch timestamps → [EPOCH]
+        let epoch_re = Regex::new(r"\b\d{10,13}\b").unwrap();
+        scrubbed = epoch_re.replace_all(&scrubbed, "[EPOCH]").to_string();
+
+        // SHA256 hashes → [HASH]
+        let hash_re = Regex::new(r"sha256:[a-f0-9]{64}").unwrap();
+        scrubbed = hash_re.replace_all(&scrubbed, "sha256:[HASH]").to_string();
+
+        // Hex signatures → [SIG]
+        let sig_re = Regex::new(r"[a-f0-9]{128,256}").unwrap();
+        scrubbed = sig_re.replace_all(&scrubbed, "[SIG]").to_string();
+
+        scrubbed
+    }
+
+    #[test]
+    fn golden_staking_audit_entry_receipt() {
+        let audit_entry = StakingAuditEntry {
+            entry_id: 12345,
+            operation_type: "DEPOSIT".to_string(),
+            publisher_id: PublisherId("acme-corp".to_string()),
+            stake_id: Some(StakeId(67890)),
+            amount: Some(1000),
+            timestamp: 1735689600, // Fixed timestamp for golden
+            trace_id: "trace-audit-12345".to_string(),
+            details: "Stake deposit for high-risk tier capability".to_string(),
+            risk_tier: Some(RiskTier::High),
+            metadata: Some("compliance_check=passed,automated=true".to_string()),
+        };
+
+        let json = serde_json::to_string_pretty(&audit_entry)
+            .expect("audit entry should serialize");
+        let scrubbed = scrub_registry_receipt(&json);
+
+        insta::assert_snapshot!("staking_audit_entry_receipt", scrubbed);
+    }
+
+    #[test]
+    fn golden_slash_event_receipt() {
+        let evidence = SlashEvidence::new(
+            ViolationType::PolicyViolation,
+            "Critical security policy violation detected",
+            "unauthorized file system access outside sandbox",
+            "security-monitor-alpha",
+            1735689600,
+        );
+
+        let slash_event = SlashEvent {
+            slash_id: 9876,
+            stake_id: StakeId(54321),
+            publisher_id: PublisherId("rogue-publisher".to_string()),
+            violation_type: ViolationType::PolicyViolation,
+            evidence_digest: "sha256:abcdef123456789".to_string(),
+            penalty_amount: 500,
+            slashed_at: 1735689600,
+            slash_record: SlashRecord {
+                violation_id: "VIOL-2026-001".to_string(),
+                description: "Unauthorized sandbox escape detected".to_string(),
+                penalty_amount: 500,
+                slashed_at: 1735689600,
+                evidence,
+            },
+        };
+
+        let json = serde_json::to_string_pretty(&slash_event)
+            .expect("slash event should serialize");
+        let scrubbed = scrub_registry_receipt(&json);
+
+        insta::assert_snapshot!("slash_event_receipt", scrubbed);
+    }
+
+    #[test]
+    fn golden_appeal_record_receipt() {
+        let appeal_record = AppealRecord {
+            appeal_id: 11223,
+            slash_id: 9876,
+            stake_id: StakeId(54321),
+            publisher_id: PublisherId("appealing-publisher".to_string()),
+            appeal_reason: "Evidence was based on false positive security scan".to_string(),
+            appeal_submitted_at: 1735689700,
+            outcome: Some(AppealOutcome::Upheld),
+            outcome_reason: Some("Security team confirmed false positive detection".to_string()),
+            reviewed_at: Some(1735689800),
+            reviewer_id: Some("appeal-board-senior".to_string()),
+        };
+
+        let json = serde_json::to_string_pretty(&appeal_record)
+            .expect("appeal record should serialize");
+        let scrubbed = scrub_registry_receipt(&json);
+
+        insta::assert_snapshot!("appeal_record_receipt", scrubbed);
+    }
+
+    #[test]
+    fn golden_stake_record_receipt() {
+        let stake_record = StakeRecord {
+            id: StakeId(99887),
+            publisher_id: PublisherId("enterprise-publisher".to_string()),
+            stake_amount: 5000,
+            risk_tier: RiskTier::Critical,
+            deposited_at: 1735689500,
+            state: StakeState::Active,
+            slashed_amount: 0,
+            appeal_deadline: None,
+            slashed_at: None,
+        };
+
+        let json = serde_json::to_string_pretty(&stake_record)
+            .expect("stake record should serialize");
+        let scrubbed = scrub_registry_receipt(&json);
+
+        insta::assert_snapshot!("stake_record_receipt", scrubbed);
+    }
+
+    #[test]
+    fn golden_trust_governance_state_receipt() {
+        let mut state = TrustGovernanceState::default();
+
+        // Add sample data
+        state.stakes.insert(1, StakeRecord {
+            id: StakeId(1),
+            publisher_id: PublisherId("pub-alpha".to_string()),
+            stake_amount: 1000,
+            risk_tier: RiskTier::Medium,
+            deposited_at: 1735689400,
+            state: StakeState::Active,
+            slashed_amount: 0,
+            appeal_deadline: None,
+            slashed_at: None,
+        });
+
+        state.stakes.insert(2, StakeRecord {
+            id: StakeId(2),
+            publisher_id: PublisherId("pub-beta".to_string()),
+            stake_amount: 2000,
+            risk_tier: RiskTier::High,
+            deposited_at: 1735689500,
+            state: StakeState::Slashed,
+            slashed_amount: 750,
+            appeal_deadline: Some(1735689900),
+            slashed_at: Some(1735689600),
+        });
+
+        state.slash_events.insert(100, SlashEvent {
+            slash_id: 100,
+            stake_id: StakeId(2),
+            publisher_id: PublisherId("pub-beta".to_string()),
+            violation_type: ViolationType::MaliciousCode,
+            evidence_digest: "sha256:evidence123".to_string(),
+            penalty_amount: 750,
+            slashed_at: 1735689600,
+            slash_record: SlashRecord {
+                violation_id: "MALICIOUS-001".to_string(),
+                description: "Malicious code injection detected".to_string(),
+                penalty_amount: 750,
+                slashed_at: 1735689600,
+                evidence: SlashEvidence::new(
+                    ViolationType::MaliciousCode,
+                    "Code injection found",
+                    "eval() call with user input",
+                    "static-analyzer",
+                    1735689600,
+                ),
+            },
+        });
+
+        let json = serde_json::to_string_pretty(&state)
+            .expect("governance state should serialize");
+        let scrubbed = scrub_registry_receipt(&json);
+
+        insta::assert_snapshot!("trust_governance_state_receipt", scrubbed);
+    }
+
+    #[test]
+    fn golden_staking_ledger_complete_lifecycle_receipt() {
+        let mut ledger = StakingLedger::new();
+
+        // Complete lifecycle: deposit → slash → appeal → restore
+        let stake_id = ledger
+            .deposit("lifecycle-publisher", 2000, RiskTier::High, 1000)
+            .expect("deposit should succeed");
+
+        let evidence = SlashEvidence::new(
+            ViolationType::PolicyViolation,
+            "Lifecycle test violation",
+            "Test payload for complete lifecycle",
+            "test-collector",
+            1100,
+        );
+
+        let slash_event = ledger
+            .slash(stake_id, evidence, 1200)
+            .expect("slash should succeed");
+
+        let appeal_record = ledger
+            .file_appeal(stake_id, slash_event.slash_id, "False positive test appeal", 1300)
+            .expect("appeal should succeed");
+
+        let _restore_result = ledger
+            .restore_appeal(appeal_record.appeal_id, AppealOutcome::Upheld, "Test restoration", "test-reviewer", 1400)
+            .expect("restore should succeed");
+
+        // Serialize the complete ledger state showing full lifecycle
+        let json = serde_json::to_string_pretty(&ledger)
+            .expect("ledger should serialize");
+        let scrubbed = scrub_registry_receipt(&json);
+
+        insta::assert_snapshot!("staking_ledger_complete_lifecycle_receipt", scrubbed);
+    }
+
+    #[test]
+    fn golden_staking_policy_configuration_receipt() {
+        let policy = StakePolicy::default_policy();
+
+        let json = serde_json::to_string_pretty(&policy)
+            .expect("policy should serialize");
+        let scrubbed = scrub_registry_receipt(&json);
+
+        insta::assert_snapshot!("staking_policy_configuration_receipt", scrubbed);
+    }
+
+    #[test]
+    fn golden_capability_stake_gate_decision_receipt() {
+        let gate = CapabilityStakeGate::new(StakePolicy::default_policy());
+        let mut ledger = StakingLedger::new();
+
+        // Set up test scenario
+        let stake_id = ledger
+            .deposit("gate-test-publisher", 1500, RiskTier::Medium, 1000)
+            .expect("deposit should succeed");
+
+        // Test gate decision
+        let (allowed, event_code, detail) = gate.check_stake(&ledger, "gate-test-publisher", &RiskTier::Medium, 1200);
+
+        // Create a structured receipt for the gate decision
+        let gate_decision = serde_json::json!({
+            "gate_check": {
+                "publisher_id": "gate-test-publisher",
+                "requested_tier": "Medium",
+                "requested_amount": 1200,
+                "decision": {
+                    "allowed": allowed,
+                    "event_code": event_code,
+                    "detail": detail,
+                },
+                "stake_id": stake_id.0,
+                "timestamp": 1735689600,
+                "gate_policy_version": "default-v1.0"
+            }
+        });
+
+        let json = serde_json::to_string_pretty(&gate_decision)
+            .expect("gate decision should serialize");
+        let scrubbed = scrub_registry_receipt(&json);
+
+        insta::assert_snapshot!("capability_stake_gate_decision_receipt", scrubbed);
+    }
 }
