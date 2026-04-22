@@ -4,6 +4,9 @@ use std::sync::{Arc, Mutex};
 use frankenengine_node::observability::evidence_ledger::{
     DecisionKind, EvidenceEntry, EvidenceLedger, LabSpillMode, LedgerCapacity,
 };
+use frankenengine_node::observability::witness_ref::{
+    WitnessKind, WitnessRef, WitnessSet, WitnessValidator,
+};
 
 #[derive(Clone)]
 struct CaptureWriter {
@@ -37,6 +40,41 @@ fn misleading_size_entry(decision_id: &str, size_bytes: usize) -> EvidenceEntry 
         payload: serde_json::json!({"actual": "small"}),
         size_bytes,
     }
+}
+
+fn witness_entry(decision_id: &str) -> EvidenceEntry {
+    EvidenceEntry {
+        schema_version: "observability-witness-regression-v1".to_string(),
+        entry_id: None,
+        decision_id: decision_id.to_string(),
+        decision_kind: DecisionKind::Release,
+        decision_time: "2026-04-22T00:00:00Z".to_string(),
+        timestamp_ms: 1_776_816_000_000,
+        trace_id: format!("trace-{decision_id}"),
+        epoch_id: 43,
+        payload: serde_json::Value::Null,
+        size_bytes: 0,
+    }
+}
+
+fn witness_hash(seed: u8) -> [u8; 32] {
+    let mut hash = [0_u8; 32];
+    hash[0] = seed;
+    hash[31] = seed;
+    hash
+}
+
+fn witness_set_with_locator(locator: &str) -> WitnessSet {
+    let mut witnesses = WitnessSet::new();
+    witnesses.add(
+        WitnessRef::new(
+            "WIT-STRICT-LOCATOR",
+            WitnessKind::ProofArtifact,
+            witness_hash(7),
+        )
+        .with_locator(locator),
+    );
+    witnesses
 }
 
 #[test]
@@ -84,4 +122,63 @@ fn observability_ledger_uses_server_computed_size_for_snapshot_and_spill() {
     );
     assert_eq!(retained.size_bytes, spilled.size_bytes);
     assert_eq!(spilled_snapshot.current_bytes, spilled.size_bytes);
+}
+
+#[test]
+fn witness_strict_locator_accepts_safe_relative_paths() {
+    let safe_locators = [
+        "replay-001.jsonl",
+        "bundles/replay-001.jsonl",
+        "tenant_01/witness.proof",
+        "evidence/bundle_2026-04-22.jsonl",
+    ];
+
+    for locator in safe_locators {
+        let mut validator = WitnessValidator::strict();
+        let entry = witness_entry("strict-witness-safe-locator");
+        let witnesses = witness_set_with_locator(locator);
+
+        let result = validator.validate(&entry, &witnesses);
+
+        assert!(
+            result.is_ok(),
+            "safe locator should pass strict mode: {locator}: {result:?}"
+        );
+    }
+}
+
+#[test]
+fn witness_strict_locator_rejects_traversal_and_network_locators() {
+    let mut attack_locators = vec![
+        "../secret.jsonl".to_string(),
+        "bundles/../secret.jsonl".to_string(),
+        "/tmp/replay.jsonl".to_string(),
+        "//host/share/replay.jsonl".to_string(),
+        "bundles//replay.jsonl".to_string(),
+        "http://evil.example/replay.jsonl".to_string(),
+        "https://evil.example/replay.jsonl".to_string(),
+        "file:///tmp/replay.jsonl".to_string(),
+        "@host/replay.jsonl".to_string(),
+        "host@evil/replay.jsonl".to_string(),
+        "C:/Windows/System32/config/SAM".to_string(),
+        "bundles\\replay.jsonl".to_string(),
+        "bundles/%2e%2e/passwd".to_string(),
+        "bundles/replay%00.jsonl".to_string(),
+        "bundles/replay.jsonl\0".to_string(),
+        "bundles/replay.jsonl;rm".to_string(),
+        "bundles/replay.jsonl?query".to_string(),
+        "bundles/replay.jsonl#fragment".to_string(),
+    ];
+    attack_locators.push("a".repeat(513));
+
+    for locator in attack_locators {
+        let mut validator = WitnessValidator::strict();
+        let entry = witness_entry("strict-witness-unsafe-locator");
+        let witnesses = witness_set_with_locator(&locator);
+
+        assert!(
+            validator.validate(&entry, &witnesses).is_err(),
+            "unsafe locator should fail closed in strict mode: {locator:?}"
+        );
+    }
 }

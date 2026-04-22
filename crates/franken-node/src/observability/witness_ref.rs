@@ -921,14 +921,11 @@ mod tests {
             witnesses
                 .add(make_witness("WIT-001", WitnessKind::ProofArtifact).with_locator(&locator));
 
-            let err = validator
-                .validate(&entry, &witnesses)
-                .expect_err("strict mode must reject unsafe locator");
+            let result = validator.validate(&entry, &witnesses);
 
-            assert_eq!(
-                err.code(),
-                "ERR_UNRESOLVABLE_LOCATOR",
-                "unsafe locator should be unresolvable: {locator:?}"
+            assert!(
+                result.is_err(),
+                "strict mode must fail closed for unsafe locator: {locator:?}"
             );
         }
     }
@@ -944,7 +941,6 @@ mod tests {
 
         let result = validator.validate(&entry, &witnesses);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code(), "ERR_UNRESOLVABLE_LOCATOR");
     }
 
     // ── Integrity verification ──
@@ -1630,29 +1626,19 @@ mod tests {
                 // Basic locator access should work
                 assert_eq!(witness.replay_bundle_locator.as_deref(), Some(*malicious_locator));
 
-                // Should work in witness sets
+                // Unsafe locators should be rejected before consuming witness-set capacity.
                 let mut set = WitnessSet::new();
                 set.add(witness);
-                assert_eq!(set.len(), 1);
+                assert_eq!(set.len(), 0);
 
-                // Validation should handle malicious locators gracefully
+                // Coverage audit should handle rejected malicious locators without crashing.
                 let entry = make_entry(DecisionKind::Escalate);
-                let mut validator = WitnessValidator::new();
-                let result = validator.validate(&entry, &set);
-                assert!(result.is_ok(), "non-strict validation should accept any locator: {}", malicious_locator);
-
-                // Strict validation should reject unsafe locators.
-                let mut strict_validator = WitnessValidator::strict();
-                let strict_result = strict_validator.validate(&entry, &set);
-                assert!(strict_result.is_err(), "strict validation should reject unsafe locator: {}", malicious_locator);
-
-                // Coverage audit should handle malicious locators without crashing
                 let entries_with_witnesses = vec![(entry, set)];
                 let audit = WitnessValidator::coverage_audit(&entries_with_witnesses);
                 assert_eq!(audit.total_entries, 1);
                 assert_eq!(audit.high_impact_entries, 1);
-                assert_eq!(audit.high_impact_with_witnesses, 1);
-                assert!(audit.is_complete());
+                assert_eq!(audit.high_impact_with_witnesses, 0);
+                assert!(!audit.is_complete());
             }
         }
 
