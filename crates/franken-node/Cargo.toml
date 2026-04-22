@@ -246,3 +246,7 @@ path = "tests/replay_bundle_metamorphic.rs"
 [[test]]
 name = "canonical_serializer_metamorphic"
 path = "tests/canonical_serializer_metamorphic.rs"
+
+[[test]]
+name = "control_epoch_metamorphic"
+path = "tests/control_epoch_metamorphic.rs"
