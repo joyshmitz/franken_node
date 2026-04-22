@@ -193,10 +193,10 @@ pub struct IdsAuditRecord {
 /// SHA-256 hex digest of a payload byte slice.
 #[must_use]
 pub fn hash_payload(payload: &[u8]) -> String {
-    format!(
-        "{:x}",
-        Sha256::digest([b"idempotency_payload_v1:" as &[u8], payload].concat())
-    )
+    let mut hasher = Sha256::new();
+    hasher.update(b"idempotency_payload_v1:");
+    hash_len_prefixed_bytes(&mut hasher, payload);
+    format!("{:x}", hasher.finalize())
 }
 
 // ── Dedupe store ─────────────────────────────────────────────────────────

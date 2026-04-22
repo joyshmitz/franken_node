@@ -198,9 +198,13 @@ impl IdempotencyKeyDeriver {
             return Err(IdempotencyError::EmptyComputationName);
         }
 
-        let mut input = Vec::with_capacity(
-            self.domain_prefix.len() + computation_name.len() + request_bytes.len() + 32,
-        );
+        let input_capacity = self
+            .domain_prefix
+            .len()
+            .saturating_add(computation_name.len())
+            .saturating_add(request_bytes.len())
+            .saturating_add(32);
+        let mut input = Vec::with_capacity(input_capacity);
         Self::append_len_prefixed_field(&mut input, &self.domain_prefix);
         Self::append_len_prefixed_field(&mut input, computation_name.as_bytes());
         input.extend_from_slice(&epoch.to_be_bytes());
@@ -262,7 +266,15 @@ impl IdempotencyKeyDeriver {
 
 #[must_use]
 pub fn key_fingerprint(key: &IdempotencyKey) -> String {
-    let digest = Sha256::digest([b"idempotency_fingerprint_v1:" as &[u8], key.as_bytes()].concat());
+    let mut hasher = Sha256::new();
+    hasher.update(b"idempotency_fingerprint_v1:");
+    hasher.update(
+        u64::try_from(key.as_bytes().len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
+    hasher.update(key.as_bytes());
+    let digest = hasher.finalize();
     format!("fp:{}", &hex::encode(digest)[..16])
 }
 

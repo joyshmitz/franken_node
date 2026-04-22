@@ -1,9 +1,11 @@
 //! Conformance tests for bd-12n3 idempotency key derivation vectors.
 
 use frankenengine_node::remote::computation_registry::{ComputationEntry, ComputationRegistry};
-use frankenengine_node::remote::idempotency::IdempotencyKeyDeriver;
+use frankenengine_node::remote::idempotency::{IdempotencyKeyDeriver, key_fingerprint};
+use frankenengine_node::remote::idempotency_store::hash_payload;
 use frankenengine_node::security::remote_cap::RemoteOperation;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
 
@@ -110,6 +112,52 @@ fn derivation_enforces_domain_and_epoch_separation() {
 
     assert_ne!(key_a, key_b, "domain separation failed");
     assert_ne!(key_a, key_c, "epoch binding failed");
+}
+
+#[test]
+fn payload_hash_and_fingerprint_use_length_prefixed_hash_inputs() {
+    let payload = b"payload-with:idempotency-prefix";
+    let mut expected_payload = Sha256::new();
+    expected_payload.update(b"idempotency_payload_v1:");
+    expected_payload.update(
+        u64::try_from(payload.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
+    expected_payload.update(payload);
+    let legacy_payload = format!(
+        "{:x}",
+        Sha256::digest([b"idempotency_payload_v1:" as &[u8], payload].concat())
+    );
+
+    assert_eq!(
+        hash_payload(payload),
+        format!("{:x}", expected_payload.finalize())
+    );
+    assert_ne!(hash_payload(payload), legacy_payload);
+
+    let key = IdempotencyKeyDeriver::default()
+        .derive_key("core.remote_compute.v1", 42, payload)
+        .expect("derive key");
+    let mut expected_fingerprint = Sha256::new();
+    expected_fingerprint.update(b"idempotency_fingerprint_v1:");
+    expected_fingerprint.update(
+        u64::try_from(key.as_bytes().len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
+    expected_fingerprint.update(key.as_bytes());
+    let legacy_fingerprint =
+        Sha256::digest([b"idempotency_fingerprint_v1:" as &[u8], key.as_bytes()].concat());
+
+    assert_eq!(
+        key_fingerprint(&key),
+        format!("fp:{}", &hex::encode(expected_fingerprint.finalize())[..16])
+    );
+    assert_ne!(
+        key_fingerprint(&key),
+        format!("fp:{}", &hex::encode(legacy_fingerprint)[..16])
+    );
 }
 
 #[test]

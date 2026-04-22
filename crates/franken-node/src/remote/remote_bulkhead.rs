@@ -697,7 +697,7 @@ impl RemoteBulkhead {
         if position != 0 || self.in_flight >= self.max_in_flight {
             return Err(BulkheadError::Queued {
                 request_id: request_id.to_string(),
-                position: position + 1,
+                position: position.saturating_add(1),
                 timeout_ms,
             });
         }
