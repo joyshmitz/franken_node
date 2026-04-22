@@ -14,6 +14,7 @@ struct FleetState {
     zone_status: HashMap<String, FleetStatus>,
     total_quarantines: u32,
     total_revocations: u32,
+    incident_count: usize,
 }
 
 impl FleetState {
@@ -25,7 +26,13 @@ impl FleetState {
 
         // We need to capture zone status by examining the manager's internal state
         // For metamorphic testing, we'll focus on the aggregate counters
-        for zone_id in ["zone-a", "zone-b", "zone-c", "default-zone", "zone-metamorphic"] {
+        for zone_id in [
+            "zone-a",
+            "zone-b",
+            "zone-c",
+            "default-zone",
+            "zone-metamorphic",
+        ] {
             if let Ok(status) = mgr.status(zone_id) {
                 if status.activated {
                     total_quarantines = total_quarantines.saturating_add(status.active_quarantines);
@@ -39,6 +46,7 @@ impl FleetState {
             zone_status,
             total_quarantines,
             total_revocations,
+            incident_count: mgr.incident_count(),
         }
     }
 }
@@ -57,6 +65,16 @@ fn test_trace(operation: &str) -> TraceContext {
         span_id: "0000000000000001".to_string(),
         trace_flags: 1,
     }
+}
+
+fn activated_fleet_manager() -> FleetControlManager {
+    let mut manager = FleetControlManager::with_decision_signing_key(
+        ed25519_dalek::SigningKey::from_bytes(&[63_u8; 32]),
+        "fleet-quarantine-metamorphic-test",
+        "fleet-quarantine-metamorphic",
+    );
+    manager.activate();
+    manager
 }
 
 /// Generate test scope with controlled randomness
@@ -82,8 +100,7 @@ mod mr_fleet_quarantine_inversion {
     #[test]
     fn quarantine_release_restores_original_state_simple() {
         // Use fixed inputs for deterministic baseline test
-        let mut mgr = FleetControlManager::new();
-        mgr.activate();
+        let mut mgr = activated_fleet_manager();
 
         let scope = QuarantineScope {
             zone_id: "zone-metamorphic".to_string(),
@@ -99,12 +116,7 @@ mod mr_fleet_quarantine_inversion {
 
         // Apply quarantine decision
         let quarantine_result = mgr
-            .quarantine(
-                extension_id,
-                &scope,
-                &identity,
-                &test_trace("quarantine"),
-            )
+            .quarantine(extension_id, &scope, &identity, &test_trace("quarantine"))
             .expect("quarantine should succeed");
 
         // Verify state changed
@@ -142,6 +154,10 @@ mod mr_fleet_quarantine_inversion {
             final_state.total_revocations, initial_state.total_revocations,
             "Total revocations should be restored"
         );
+        assert_eq!(
+            final_state.incident_count, initial_state.incident_count,
+            "Incident handles should be restored"
+        );
 
         // Verify zone status specifically
         let final_zone_status = mgr.status(&scope.zone_id).expect("final zone status");
@@ -163,8 +179,7 @@ mod mr_fleet_quarantine_inversion {
             let identity = admin_identity();
 
             // Create fresh manager for each iteration
-            let mut mgr = FleetControlManager::new();
-            mgr.activate();
+            let mut mgr = activated_fleet_manager();
 
             // Capture initial state
             let initial_state = FleetState::capture_from_manager(&mgr);
@@ -197,14 +212,18 @@ mod mr_fleet_quarantine_inversion {
                 "Iteration {}: quarantine/release inversion failed - quarantine count not restored. Initial: {}, Final: {}",
                 iteration, initial_state.total_quarantines, final_state.total_quarantines
             );
+            assert_eq!(
+                final_state.incident_count, initial_state.incident_count,
+                "Iteration {}: incident map cardinality not restored. Initial: {}, Final: {}",
+                iteration, initial_state.incident_count, final_state.incident_count
+            );
 
             // Verify specific zone was restored
             let final_zone_status = mgr.status(&scope.zone_id).expect("final zone status");
             assert_eq!(
                 final_zone_status.active_quarantines, 0,
                 "Iteration {}: Zone {} quarantine count not restored to 0",
-                iteration,
-                scope.zone_id
+                iteration, scope.zone_id
             );
         }
     }
@@ -212,8 +231,7 @@ mod mr_fleet_quarantine_inversion {
     #[test]
     fn multiple_quarantine_release_cycles_property() {
         // Test multiple cycles: quarantine -> release -> quarantine -> release
-        let mut mgr = FleetControlManager::new();
-        mgr.activate();
+        let mut mgr = activated_fleet_manager();
 
         let scope = QuarantineScope {
             zone_id: "zone-multi-cycle".to_string(),
@@ -252,7 +270,13 @@ mod mr_fleet_quarantine_inversion {
             let cycle_state = FleetState::capture_from_manager(&mgr);
             assert_eq!(
                 cycle_state.total_quarantines, initial_state.total_quarantines,
-                "Cycle {}: total quarantines not restored", cycle
+                "Cycle {}: total quarantines not restored",
+                cycle
+            );
+            assert_eq!(
+                cycle_state.incident_count, initial_state.incident_count,
+                "Cycle {}: incident handles not restored",
+                cycle
             );
         }
     }
@@ -265,8 +289,7 @@ mod mr_fleet_status_idempotence {
 
     #[test]
     fn status_query_idempotence() {
-        let mut mgr = FleetControlManager::new();
-        mgr.activate();
+        let mgr = activated_fleet_manager();
 
         let zone_id = "zone-idempotent";
 

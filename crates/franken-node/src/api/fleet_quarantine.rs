@@ -1216,7 +1216,7 @@ fn default_decision_signing_material() -> Option<FleetDecisionSigningMaterial> {
 pub struct FleetControlManager {
     /// Whether the API is activated (false = safe-start read-only mode).
     activated: bool,
-    /// Incident handles keyed by incident_id; released entries persist until reconcile.
+    /// Incident handles keyed by incident_id; released entries are removed during release/reconcile.
     incidents: BTreeMap<String, IncidentHandle>,
     /// Convergence state keyed by quarantine incident_id for precise lifecycle cleanup.
     incident_convergences: BTreeMap<String, ConvergenceState>,
@@ -1402,7 +1402,12 @@ impl FleetControlManager {
     /// Create a new manager in safe-start (read-only) mode.
     /// INV-FLEET-SAFE-START: API starts read-only.
     pub fn new() -> Self {
-        let decision_signing_material = default_decision_signing_material();
+        Self::with_optional_decision_signing_material(default_decision_signing_material())
+    }
+
+    fn with_optional_decision_signing_material(
+        decision_signing_material: Option<FleetDecisionSigningMaterial>,
+    ) -> Self {
         let decision_trust_roots = decision_signing_material
             .as_ref()
             .map(FleetDecisionSigningMaterial::trust_root)
@@ -1420,6 +1425,23 @@ impl FleetControlManager {
             decision_signing_material,
             decision_trust_roots,
         }
+    }
+
+    /// Create a manager with explicit decision-receipt signing material.
+    ///
+    /// This keeps integration/conformance harnesses on the production signing
+    /// path instead of relying on `cfg(test)` demo material.
+    #[cfg(any(test, feature = "extended-surfaces"))]
+    pub fn with_decision_signing_key(
+        signing_key: ed25519_dalek::SigningKey,
+        key_source: &'static str,
+        signing_identity: &'static str,
+    ) -> Self {
+        Self::with_optional_decision_signing_material(Some(FleetDecisionSigningMaterial {
+            signing_key,
+            key_source,
+            signing_identity,
+        }))
     }
 
     /// Activate the fleet control API for mutations.
@@ -1670,11 +1692,18 @@ impl FleetControlManager {
         let op_id = self.next_operation_id()?;
         let now = chrono::Utc::now().to_rfc3339();
 
-        // Mark as released
-        let incident = self.incidents.get_mut(incident_id).ok_or_else(|| {
+        let receipt = self.build_receipt(
+            &op_id,
+            &identity.principal,
+            &zone_id,
+            &now,
+            DecisionReceiptPayload::release(incident_id, &zone_id, "release incident"),
+        )?;
+
+        // Remove released incident handle so inverse reconcile restores map cardinality.
+        self.incidents.remove(incident_id).ok_or_else(|| {
             FleetControlError::rollback_failed(incident_id, "incident disappeared during release")
         })?;
-        incident.status = IncidentStatus::Released;
 
         // Decrement zone active count
         if let Some(zone) = self.zone_status.get_mut(&zone_id) {
@@ -1686,14 +1715,6 @@ impl FleetControlManager {
         }
         self.incident_convergences.remove(incident_id);
         self.sync_zone_pending_convergences(&zone_id);
-
-        let receipt = self.build_receipt(
-            &op_id,
-            &identity.principal,
-            &zone_id,
-            &now,
-            DecisionReceiptPayload::release(incident_id, &zone_id, "release incident"),
-        )?;
 
         let event = FleetControlEvent::fleet_released(&trace.trace_id, &zone_id, incident_id);
         push_bounded(&mut self.events, event, MAX_FLEET_EVENTS);
@@ -2984,6 +3005,7 @@ mod tests {
         assert!(result.success);
         assert_eq!(result.action_type, "release");
         assert_eq!(result.event_code, FLEET_RELEASED);
+        assert_eq!(mgr.incident_count(), 0);
     }
 
     #[test]
