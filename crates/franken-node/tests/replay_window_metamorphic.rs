@@ -141,3 +141,66 @@ fn duplicate_augmented_replay_stream_preserves_window_state_and_fifo_capacity() 
         );
     }
 }
+
+#[test]
+fn duplicate_replay_attempt_does_not_refresh_fifo_eviction_order() {
+    let oldest_nonce = "rwmm-order-oldest";
+    let mut unique_only = gate();
+    let mut duplicate_augmented = gate();
+
+    insert_nonce(&mut unique_only, oldest_nonce, "trace-rwmm-order-unique");
+    insert_nonce(
+        &mut duplicate_augmented,
+        oldest_nonce,
+        "trace-rwmm-order-duplicate-first",
+    );
+
+    let duplicate = proof_for(oldest_nonce);
+    let duplicate_result = duplicate_augmented.check(
+        &duplicate,
+        CURRENT_EPOCH,
+        true,
+        false,
+        ACTION_ID,
+        "trace-rwmm-order-duplicate-replay",
+    );
+    assert!(
+        matches!(
+            duplicate_result,
+            Err(FreshnessError::ReplayDetected { ref nonce }) if nonce.as_str() == oldest_nonce
+        ),
+        "duplicate replay attempt should be typed replay rejection, got {duplicate_result:?}"
+    );
+    assert_eq!(
+        duplicate_augmented.consumed_nonce_count(),
+        unique_only.consumed_nonce_count(),
+        "duplicate replay attempt must not grow the window"
+    );
+
+    for idx in 1..=MAX_CONSUMED_NONCES {
+        let nonce = format!("rwmm-order-{idx:06}");
+        let trace_id = format!("trace-rwmm-order-{idx:06}");
+        insert_nonce(&mut unique_only, &nonce, &trace_id);
+        insert_nonce(&mut duplicate_augmented, &nonce, &trace_id);
+
+        assert!(
+            duplicate_augmented.consumed_nonce_count() <= MAX_CONSUMED_NONCES,
+            "duplicate-augmented replay window grew past MAX_CONSUMED_NONCES"
+        );
+    }
+
+    assert_eq!(
+        duplicate_augmented.consumed_nonce_count(),
+        unique_only.consumed_nonce_count(),
+        "duplicate replay attempt changed final window size after overflow"
+    );
+    assert_eq!(
+        duplicate_augmented.is_nonce_consumed(oldest_nonce),
+        unique_only.is_nonce_consumed(oldest_nonce),
+        "duplicate replay attempt refreshed FIFO position for {oldest_nonce}"
+    );
+    assert!(
+        !duplicate_augmented.is_nonce_consumed(oldest_nonce),
+        "oldest nonce should be evicted after MAX_CONSUMED_NONCES newer unique inserts"
+    );
+}
