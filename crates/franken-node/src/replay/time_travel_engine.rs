@@ -54,6 +54,12 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     items.push(item);
 }
 
+fn update_hash_len_prefixed(hasher: &mut Sha256, bytes: &[u8]) {
+    let len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+    hasher.update(len.to_le_bytes());
+    hasher.update(bytes);
+}
+
 // ---------------------------------------------------------------------------
 // Invariant constants (internal TTR invariants)
 // ---------------------------------------------------------------------------
@@ -402,7 +408,7 @@ impl TraceStep {
     pub fn output_digest(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"replay_step_output_v1:");
-        hasher.update(&self.output);
+        update_hash_len_prefixed(&mut hasher, &self.output);
         hex::encode(hasher.finalize())
     }
 
@@ -877,7 +883,7 @@ impl ReplayEngine {
             let replayed_output_digest = {
                 let mut hasher = Sha256::new();
                 hasher.update(b"replay_step_output_v1:");
-                hasher.update(&replayed_output);
+                update_hash_len_prefixed(&mut hasher, &replayed_output);
                 hex::encode(hasher.finalize())
             };
             let replayed_effects_digest = {
@@ -1859,7 +1865,9 @@ mod tests {
         let mut trace = trace_with_timestamps("tampered-timestamp", &[100, 200]);
         trace.steps[0].timestamp_ns = 101;
 
-        let err = trace.validate().expect_err("timestamp mutation must break digest");
+        let err = trace
+            .validate()
+            .expect_err("timestamp mutation must break digest");
         assert!(matches!(err, TimeTravelError::DigestMismatch { .. }));
     }
 
@@ -3196,6 +3204,30 @@ mod tests {
         // Lines 399, 407, 441: Proper domain prefixes for all hash operations
         // Lines 860, 866: Replay uses same domain prefixes ensuring consistency
         // Length-prefixed encoding prevents field boundary collision attacks
+    }
+
+    #[test]
+    fn replay_step_output_digest_uses_length_prefixed_payload() {
+        let step = TraceStep::new(0, vec![], b"output-boundary".to_vec(), vec![], 1000);
+
+        let mut legacy_hasher = Sha256::new();
+        legacy_hasher.update(b"replay_step_output_v1:");
+        legacy_hasher.update(&step.output);
+        let legacy_digest = hex::encode(legacy_hasher.finalize());
+
+        assert_ne!(
+            step.output_digest(),
+            legacy_digest,
+            "step output digest must not use the legacy unframed payload hash"
+        );
+
+        let mut expected_hasher = Sha256::new();
+        expected_hasher.update(b"replay_step_output_v1:");
+        update_hash_len_prefixed(&mut expected_hasher, &step.output);
+        assert_eq!(
+            step.output_digest(),
+            hex::encode(expected_hasher.finalize())
+        );
     }
 
     #[test]
