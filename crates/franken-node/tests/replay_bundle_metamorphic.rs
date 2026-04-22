@@ -8,7 +8,7 @@
 //! If this relation fails, it indicates a serialization bug that could cause data loss.
 
 use frankenengine_node::tools::replay_bundle::{
-    RawEvent, ReplayBundle, generate_replay_bundle, write_bundle_to_path, read_bundle_from_path,
+    RawEvent, ReplayBundle, EventType, generate_replay_bundle, write_bundle_to_path, read_bundle_from_path,
 };
 use rand::{Rng, SeedableRng};
 use rand::distributions::{Alphanumeric, DistString};
@@ -19,62 +19,46 @@ use tempfile::TempDir;
 /// Generate arbitrary RawEvent for property-based testing
 fn arbitrary_raw_event(rng: &mut impl Rng, sequence_base: u64) -> RawEvent {
     let event_types = [
-        "network_access",
-        "filesystem_operation",
-        "process_spawn",
-        "secret_access",
-        "policy_transition",
-        "artifact_promotion",
+        EventType::StateChange,
+        EventType::PolicyEval,
+        EventType::ExternalSignal,
+        EventType::OperatorAction,
     ];
 
-    let event_type = event_types[rng.gen_range(0..event_types.len())];
-    let timestamp_ms = rng.gen_range(1_600_000_000_000..2_000_000_000_000); // 2020-2033
+    let event_type = event_types[rng.gen_range(0..event_types.len())].clone();
 
     // Generate realistic but random payload based on event type
     let payload = match event_type {
-        "network_access" => {
-            let methods = ["GET", "POST", "PUT"];
+        EventType::StateChange => {
             json!({
-                "url": format!("https://api.example.com/v{}", rng.gen_range(1..5)),
-                "method": methods[rng.gen_range(0..3)],
-                "status_code": rng.gen_range(200..599)
+                "component": format!("component_{}", rng.gen_range(1..10)),
+                "from_state": format!("state_{}", rng.gen_range(1..5)),
+                "to_state": format!("state_{}", rng.gen_range(1..5)),
+                "trigger": "automated_transition"
             })
         },
-        "filesystem_operation" => {
-            let operations = ["read", "write", "delete"];
+        EventType::PolicyEval => {
             json!({
-                "path": format!("/tmp/test_{}.dat", rng.gen_range(1000..9999)),
-                "operation": operations[rng.gen_range(0..3)],
-                "size_bytes": rng.gen_range(0..1_000_000)
+                "policy_id": format!("policy_{}", Alphanumeric.sample_string(rng, 8)),
+                "decision": ["allow", "deny", "defer"][rng.gen_range(0..3)],
+                "confidence": rng.gen_range(0.0..1.0)
             })
         },
-        "process_spawn" => json!({
-            "command": format!("test-process-{}", rng.gen_range(1..100)),
-            "args": vec![format!("--flag-{}", rng.gen_range(1..10))],
-            "exit_code": rng.gen_range(0..128)
-        }),
-        "secret_access" => {
-            let operations = ["read", "rotate"];
+        EventType::ExternalSignal => {
             json!({
-                "secret_id": format!("secret_{}", Alphanumeric.sample_string(rng, 16)),
-                "operation": operations[rng.gen_range(0..2)]
+                "signal_type": format!("signal_{}", rng.gen_range(1..20)),
+                "source": format!("external_system_{}", rng.gen_range(1..5)),
+                "payload_size": rng.gen_range(0..10_000)
             })
         },
-        "policy_transition" => json!({
-            "from_policy": format!("policy_v{}", rng.gen_range(1..10)),
-            "to_policy": format!("policy_v{}", rng.gen_range(1..10)),
-            "reason": "automated_transition"
-        }),
-        "artifact_promotion" => {
-            let from_stages = ["dev", "staging"];
-            let to_stages = ["staging", "production"];
+        EventType::OperatorAction => {
+            let actions = ["deploy", "rollback", "scale", "restart"];
             json!({
-                "artifact_id": format!("artifact_{}", Alphanumeric.sample_string(rng, 32)),
-                "from_stage": from_stages[rng.gen_range(0..2)],
-                "to_stage": to_stages[rng.gen_range(0..2)]
+                "action": actions[rng.gen_range(0..4)],
+                "operator": format!("operator_{}", rng.gen_range(1..10)),
+                "target": format!("service_{}", rng.gen_range(1..20))
             })
         },
-        _ => json!({"unknown": true})
     };
 
     let causal_parent = if rng.gen_bool(0.3) && sequence_base > 0 {
@@ -84,14 +68,15 @@ fn arbitrary_raw_event(rng: &mut impl Rng, sequence_base: u64) -> RawEvent {
     };
 
     RawEvent {
-        sequence_number: sequence_base + rng.gen_range(1..100),
         timestamp: format!("2024-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
             rng.gen_range(1..13), rng.gen_range(1..29),
             rng.gen_range(0..24), rng.gen_range(0..60), rng.gen_range(0..60),
             rng.gen_range(0..1000)),
-        event_type: event_type.into(),
+        event_type,
         payload,
         causal_parent,
+        state_snapshot: None, // Keep simple for metamorphic testing
+        policy_version: None,
     }
 }
 
@@ -170,11 +155,12 @@ fn metamorphic_replay_bundle_edge_cases() {
 
     // Edge case 1: Single event bundle
     let single_event = vec![RawEvent {
-        sequence_number: 1,
         timestamp: "2024-01-01T00:00:00.000Z".into(),
-        event_type: "network_access".into(),
+        event_type: EventType::StateChange,
         payload: json!({"minimal": true}),
         causal_parent: None,
+        state_snapshot: None,
+        policy_version: None,
     }];
     let single_bundle = generate_replay_bundle("edge_single", &single_event)
         .expect("Single event should generate valid bundle");
@@ -186,11 +172,12 @@ fn metamorphic_replay_bundle_edge_cases() {
 
     // Edge case 2: Empty payload bundle
     let empty_payload = vec![RawEvent {
-        sequence_number: 42,
         timestamp: "2024-12-31T23:59:59.999Z".into(),
-        event_type: "policy_transition".into(),
+        event_type: EventType::PolicyEval,
         payload: json!({}),
         causal_parent: Some(41),
+        state_snapshot: None,
+        policy_version: None,
     }];
     let empty_bundle = generate_replay_bundle("edge_empty", &empty_payload)
         .expect("Empty payload should generate valid bundle");
@@ -202,9 +189,8 @@ fn metamorphic_replay_bundle_edge_cases() {
 
     // Edge case 3: Complex nested payload
     let complex_event = vec![RawEvent {
-        sequence_number: 1000,
         timestamp: "2024-06-15T12:30:45.123Z".into(),
-        event_type: "artifact_promotion".into(),
+        event_type: EventType::ExternalSignal,
         payload: json!({
             "nested": {
                 "array": [1, 2, 3, null, "string"],
@@ -222,6 +208,8 @@ fn metamorphic_replay_bundle_edge_cases() {
             }
         }),
         causal_parent: None,
+        state_snapshot: None,
+        policy_version: None,
     }];
     let complex_bundle = generate_replay_bundle("edge_complex", &complex_event)
         .expect("Complex payload should generate valid bundle");
@@ -245,10 +233,9 @@ fn metamorphic_replay_bundle_stress_test() {
     // Create enough events to force multiple chunks
     for i in 0..500 {
         events.push(RawEvent {
-            sequence_number: i as u64,
             timestamp: format!("2024-01-{:02}T{:02}:{:02}:{:02}.{:03}Z",
                 (i % 28) + 1, (i % 24), (i % 60), (i % 60), i % 1000),
-            event_type: format!("stress_event_{}", i % 10),
+            event_type: [EventType::StateChange, EventType::PolicyEval, EventType::ExternalSignal, EventType::OperatorAction][i % 4].clone(),
             payload: json!({
                 "stress_data": "x".repeat(rng.gen_range(10..1000)),
                 "index": i,
@@ -259,6 +246,8 @@ fn metamorphic_replay_bundle_stress_test() {
             } else {
                 None
             },
+            state_snapshot: None,
+            policy_version: None,
         });
     }
 
@@ -283,8 +272,8 @@ fn metamorphic_replay_bundle_stress_test() {
     assert_eq!(stress_bundle.timeline.len(), recovered_stress.timeline.len());
     for (i, (orig, recovered)) in stress_bundle.timeline.iter()
         .zip(recovered_stress.timeline.iter()).enumerate() {
-        assert_eq!(orig.sequence_number, recovered.sequence_number,
-            "Event {}: sequence number mismatch", i);
+        assert_eq!(orig.timestamp, recovered.timestamp,
+            "Event {}: timestamp mismatch", i);
         assert_eq!(orig.payload, recovered.payload,
             "Event {}: payload mismatch", i);
     }
