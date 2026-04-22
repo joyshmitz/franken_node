@@ -1,0 +1,86 @@
+---
+source: crates/franken-node/tests/fleet_cli_e2e.rs
+expression: "&matrix[\"status_all\"]"
+---
+{
+  "status": {
+    "zone_id": "all",
+    "active_quarantines": 1,
+    "active_revocations": 0,
+    "healthy_nodes": 1,
+    "total_nodes": 2,
+    "activated": true,
+    "pending_convergences": [
+      {
+        "converged_nodes": 1,
+        "total_nodes": 2,
+        "progress_pct": 50,
+        "eta_seconds": null,
+        "phase": "TimedOut"
+      }
+    ]
+  },
+  "state_dir": "[fleet-state]",
+  "convergence_timeout_seconds": 120,
+  "stale_nodes": [
+    {
+      "zone_id": "zone-golden-status",
+      "node_id": "node-golden-stale",
+      "last_seen": "[last_seen]",
+      "quarantine_version": 1,
+      "health": "degraded"
+    }
+  ],
+  "active_incidents": [
+    {
+      "incident_id": "inc-golden-status",
+      "zone_id": "zone-golden-status",
+      "target_id": "sha256:golden-status",
+      "target_kind": "artifact",
+      "reason": "golden status quarantine",
+      "quarantine_version": 3,
+      "emitted_at": "[emitted_at]",
+      "convergence": {
+        "converged_nodes": 1,
+        "total_nodes": 2,
+        "progress_pct": 50,
+        "eta_seconds": null,
+        "phase": "TimedOut"
+      }
+    }
+  ],
+  "state": {
+    "schema_version": "franken-node/fleet-transport-state/v1",
+    "actions": [
+      {
+        "action_id": "fleet-op-quarantine-golden-status",
+        "emitted_at": "[emitted_at]",
+        "action": {
+          "kind": "quarantine",
+          "zone_id": "zone-golden-status",
+          "incident_id": "inc-golden-status",
+          "target_id": "sha256:golden-status",
+          "target_kind": "artifact",
+          "reason": "golden status quarantine",
+          "quarantine_version": 3
+        }
+      }
+    ],
+    "nodes": [
+      {
+        "zone_id": "zone-golden-status",
+        "node_id": "node-golden-fresh",
+        "last_seen": "[last_seen]",
+        "quarantine_version": 3,
+        "health": "healthy"
+      },
+      {
+        "zone_id": "zone-golden-status",
+        "node_id": "node-golden-stale",
+        "last_seen": "[last_seen]",
+        "quarantine_version": 1,
+        "health": "degraded"
+      }
+    ]
+  }
+}

@@ -2409,6 +2409,13 @@ fn fleet_cli_json_output_matrix_matches_snapshots() {
         ),
     });
 
+    assert_json_snapshot!("fleet_status_json", &matrix["status_all"]);
+    assert_json_snapshot!("fleet_reconcile_matrix_json", &matrix["reconcile"]);
+    assert_json_snapshot!(
+        "trust_card_verify_json",
+        &matrix["trust_card_show_verified"]
+    );
+    assert_json_snapshot!("remotecap_verify_json", &matrix["remotecap_verify"]);
     assert_json_snapshot!("fleet_cli_json_output_matrix", matrix);
 }
 

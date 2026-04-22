@@ -1,0 +1,23 @@
+---
+source: crates/franken-node/tests/fleet_cli_e2e.rs
+expression: "&matrix[\"remotecap_verify\"]"
+---
+{
+  "valid": true,
+  "authorized": true,
+  "token_id": "[token-id]",
+  "operation": "network_egress",
+  "endpoint": "https://api.example.com/v1/status",
+  "audit_event": {
+    "event_code": "REMOTECAP_RECHECK_PASSED",
+    "legacy_event_code": "RC_RECHECK_PASSED",
+    "token_id": "[token-id]",
+    "issuer_identity": "operator-cli",
+    "operation": "network_egress",
+    "endpoint": "https://api.example.com/v1/status",
+    "trace_id": "trace-golden-remotecap-verify",
+    "timestamp_epoch_secs": 0,
+    "allowed": true,
+    "denial_code": null
+  }
+}
