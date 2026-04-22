@@ -17,6 +17,7 @@ use super::evidence_ledger::{DecisionKind, EvidenceEntry};
 use crate::security::constant_time;
 
 const MAX_REFS: usize = 4096;
+const MAX_REPLAY_BUNDLE_LOCATOR_LEN: usize = 512;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
@@ -28,6 +29,74 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
         items.drain(0..overflow.min(items.len()));
     }
     items.push(item);
+}
+
+fn strict_replay_bundle_locator_is_safe(locator: &str) -> bool {
+    if locator.trim() != locator || locator.is_empty() {
+        return false;
+    }
+    if locator.len() > MAX_REPLAY_BUNDLE_LOCATOR_LEN {
+        return false;
+    }
+    if locator.starts_with('/') || locator.starts_with("//") || locator.contains("//") {
+        return false;
+    }
+    if locator.chars().any(|ch| {
+        !ch.is_ascii()
+            || ch.is_control()
+            || matches!(ch, '%' | ':' | '@' | '\\')
+            || !matches!(
+                ch,
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | '.' | '/'
+            )
+    }) {
+        return false;
+    }
+
+    locator
+        .split('/')
+        .all(|component| !component.is_empty() && component != "." && component != "..")
+}
+
+/// Validate basic witness structure to prevent garbage witnesses from evicting valid ones.
+///
+/// This is a lightweight pre-filter for `WitnessSet::add` that rejects obviously
+/// malformed witnesses before they can consume bounded capacity (bd-2qre3 fix).
+fn is_valid_witness_structure(witness: &WitnessRef) -> bool {
+    // Reject empty witness IDs
+    if witness.witness_id.as_str().is_empty() {
+        return false;
+    }
+
+    // Reject witness IDs that are just whitespace
+    if witness.witness_id.as_str().trim().is_empty() {
+        return false;
+    }
+
+    // Reject excessively long witness IDs (potential DoS)
+    if witness.witness_id.as_str().len() > 1024 {
+        return false;
+    }
+
+    // If locator is present, it must pass basic safety checks
+    if let Some(ref locator) = witness.replay_bundle_locator {
+        if !strict_replay_bundle_locator_is_safe(locator) {
+            return false;
+        }
+    }
+
+    // Reject all-zero integrity hashes (likely garbage/uninitialized)
+    if witness.integrity_hash == [0u8; 32] {
+        return false;
+    }
+
+    // Additional check: reject all-same-byte hashes (likely generated garbage)
+    let first_byte = witness.integrity_hash[0];
+    if witness.integrity_hash.iter().all(|&b| b == first_byte) {
+        return false;
+    }
+
+    true
 }
 
 /// Stable event codes for structured logging.
@@ -158,8 +227,15 @@ impl WitnessSet {
     }
 
     /// Add a witness reference.
+    ///
+    /// Validates witness before adding to prevent garbage witnesses from
+    /// evicting valid ones (security fix for bd-2qre3).
     pub fn add(&mut self, witness: WitnessRef) {
-        push_bounded(&mut self.refs, witness, MAX_REFS);
+        // Basic structural validation before allowing witness into bounded collection
+        if is_valid_witness_structure(&witness) {
+            push_bounded(&mut self.refs, witness, MAX_REFS);
+        }
+        // Invalid witnesses are silently dropped - they don't consume capacity
     }
 
     /// Number of witness references.
@@ -395,8 +471,7 @@ impl WitnessValidator {
             for w in witnesses.refs() {
                 let needs_rejection = match &w.replay_bundle_locator {
                     None => true,
-                    Some(s) if s.trim().is_empty() => true,
-                    _ => false,
+                    Some(locator) => !strict_replay_bundle_locator_is_safe(locator),
                 };
                 if needs_rejection {
                     self.rejected_count = self.rejected_count.saturating_add(1);
@@ -784,11 +859,78 @@ mod tests {
         let mut witnesses = WitnessSet::new();
         witnesses.add(
             make_witness("WIT-001", WitnessKind::Telemetry)
-                .with_locator("file:///bundles/replay-001.jsonl"),
+                .with_locator("bundles/replay-001.jsonl"),
         );
 
         let result = validator.validate(&entry, &witnesses);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn strict_mode_accepts_safe_relative_locators() {
+        let safe_locators = [
+            "replay-001.jsonl",
+            "bundles/replay-001.jsonl",
+            "tenant_01/witness.proof",
+            "evidence/bundle_2026-04-22.jsonl",
+        ];
+
+        for locator in safe_locators {
+            let mut validator = WitnessValidator::strict();
+            let entry = make_entry(DecisionKind::Quarantine);
+            let mut witnesses = WitnessSet::new();
+            witnesses.add(make_witness("WIT-001", WitnessKind::Telemetry).with_locator(locator));
+
+            let result = validator.validate(&entry, &witnesses);
+
+            assert!(
+                result.is_ok(),
+                "strict mode should accept safe relative locator: {locator}"
+            );
+        }
+    }
+
+    #[test]
+    fn strict_mode_rejects_traversal_and_network_locators() {
+        let mut attack_locators = vec![
+            "../secret.jsonl".to_string(),
+            "bundles/../secret.jsonl".to_string(),
+            "/tmp/replay.jsonl".to_string(),
+            "//host/share/replay.jsonl".to_string(),
+            "bundles//replay.jsonl".to_string(),
+            "http://evil.example/replay.jsonl".to_string(),
+            "https://evil.example/replay.jsonl".to_string(),
+            "file:///tmp/replay.jsonl".to_string(),
+            "@host/replay.jsonl".to_string(),
+            "host@evil/replay.jsonl".to_string(),
+            "C:/Windows/System32/config/SAM".to_string(),
+            "bundles\\replay.jsonl".to_string(),
+            "bundles/%2e%2e/passwd".to_string(),
+            "bundles/replay%00.jsonl".to_string(),
+            "bundles/replay.jsonl\0".to_string(),
+            "bundles/replay.jsonl;rm".to_string(),
+            "bundles/replay.jsonl?query".to_string(),
+            "bundles/replay.jsonl#fragment".to_string(),
+        ];
+        attack_locators.push("a".repeat(MAX_REPLAY_BUNDLE_LOCATOR_LEN.saturating_add(1)));
+
+        for locator in attack_locators {
+            let mut validator = WitnessValidator::strict();
+            let entry = make_entry(DecisionKind::Release);
+            let mut witnesses = WitnessSet::new();
+            witnesses
+                .add(make_witness("WIT-001", WitnessKind::ProofArtifact).with_locator(&locator));
+
+            let err = validator
+                .validate(&entry, &witnesses)
+                .expect_err("strict mode must reject unsafe locator");
+
+            assert_eq!(
+                err.code(),
+                "ERR_UNRESOLVABLE_LOCATOR",
+                "unsafe locator should be unresolvable: {locator:?}"
+            );
+        }
     }
 
     #[test]
@@ -1143,7 +1285,7 @@ mod tests {
             let witnesses_with_locator = locator_set(&[(
                 "WIT-A",
                 WitnessKind::Telemetry,
-                "file:///bundles/replay-001.jsonl",
+                "bundles/replay-001.jsonl",
             )]);
 
             assert!(
@@ -1302,6 +1444,105 @@ mod tests {
             assert_eq!(values.len(), 3);
             assert_eq!(values, vec![2, 3, 4]); // Oldest item (1) evicted
         }
+
+        #[test]
+        fn witness_set_add_rejects_garbage_witnesses_preserves_valid_ones() {
+            // bd-2qre3: Test that garbage witnesses cannot evict valid proof witnesses
+            let mut set = WitnessSet::new();
+
+            // Add one valid witness first
+            let valid_witness = WitnessRef::new("WIT-VALID-PROOF", WitnessKind::ProofArtifact, make_hash(42))
+                .with_locator("proofs/bundle-001.jsonl");
+            set.add(valid_witness.clone());
+            assert_eq!(set.len(), 1);
+            assert_eq!(set.refs()[0].witness_id.as_str(), "WIT-VALID-PROOF");
+
+            // Create various types of garbage witnesses that should be rejected
+            let garbage_witnesses = vec![
+                // Empty witness ID
+                WitnessRef::new("", WitnessKind::Telemetry, make_hash(1)),
+
+                // Whitespace-only witness ID
+                WitnessRef::new("   \t\n   ", WitnessKind::StateSnapshot, make_hash(2)),
+
+                // Excessively long witness ID
+                WitnessRef::new("X".repeat(2000), WitnessKind::ExternalSignal, make_hash(3)),
+
+                // All-zero integrity hash
+                WitnessRef::new("WIT-GARBAGE-1", WitnessKind::Telemetry, [0u8; 32]),
+
+                // All-same-byte integrity hash
+                WitnessRef::new("WIT-GARBAGE-2", WitnessKind::StateSnapshot, [0xFF; 32]),
+
+                // Invalid locator (path traversal)
+                WitnessRef::new("WIT-GARBAGE-3", WitnessKind::ProofArtifact, make_hash(4))
+                    .with_locator("../../../etc/passwd"),
+
+                // Invalid locator (URL scheme)
+                WitnessRef::new("WIT-GARBAGE-4", WitnessKind::ExternalSignal, make_hash(5))
+                    .with_locator("http://evil.com/steal"),
+            ];
+
+            // Try to add many garbage witnesses - they should all be rejected
+            for garbage_witness in garbage_witnesses {
+                set.add(garbage_witness);
+            }
+
+            // The valid witness should still be there and be the only one
+            assert_eq!(set.len(), 1, "garbage witnesses should not consume capacity");
+            assert_eq!(set.refs()[0].witness_id.as_str(), "WIT-VALID-PROOF");
+            assert_eq!(set.refs()[0].witness_kind, WitnessKind::ProofArtifact);
+
+            // Add another valid witness to ensure normal operation still works
+            let valid_witness_2 = WitnessRef::new("WIT-VALID-TELEMETRY", WitnessKind::Telemetry, make_hash(99))
+                .with_locator("telemetry/metrics-001.jsonl");
+            set.add(valid_witness_2);
+            assert_eq!(set.len(), 2);
+            assert_eq!(set.refs()[1].witness_id.as_str(), "WIT-VALID-TELEMETRY");
+        }
+
+        #[test]
+        fn witness_structure_validation_boundary_cases() {
+            // Test the witness structure validation function directly
+
+            // Valid witness
+            let valid = WitnessRef::new("WIT-GOOD", WitnessKind::ProofArtifact, make_hash(42))
+                .with_locator("bundles/proof.jsonl");
+            assert!(is_valid_witness_structure(&valid));
+
+            // Invalid: empty ID
+            let empty_id = WitnessRef::new("", WitnessKind::Telemetry, make_hash(1));
+            assert!(!is_valid_witness_structure(&empty_id));
+
+            // Invalid: whitespace-only ID
+            let whitespace_id = WitnessRef::new("   \t\n   ", WitnessKind::StateSnapshot, make_hash(2));
+            assert!(!is_valid_witness_structure(&whitespace_id));
+
+            // Invalid: too long ID
+            let long_id = WitnessRef::new("A".repeat(2000), WitnessKind::ExternalSignal, make_hash(3));
+            assert!(!is_valid_witness_structure(&long_id));
+
+            // Invalid: all-zero hash
+            let zero_hash = WitnessRef::new("WIT-TEST", WitnessKind::Telemetry, [0u8; 32]);
+            assert!(!is_valid_witness_structure(&zero_hash));
+
+            // Invalid: all-same-byte hash
+            let same_byte_hash = WitnessRef::new("WIT-TEST", WitnessKind::StateSnapshot, [0x42; 32]);
+            assert!(!is_valid_witness_structure(&same_byte_hash));
+
+            // Invalid: unsafe locator
+            let unsafe_locator = WitnessRef::new("WIT-TEST", WitnessKind::ProofArtifact, make_hash(4))
+                .with_locator("../../../secret");
+            assert!(!is_valid_witness_structure(&unsafe_locator));
+
+            // Valid: no locator (should pass)
+            let no_locator = WitnessRef::new("WIT-GOOD-NO-LOC", WitnessKind::ExternalSignal, make_hash(5));
+            assert!(is_valid_witness_structure(&no_locator));
+
+            // Valid: acceptable length ID at boundary
+            let boundary_id = WitnessRef::new("A".repeat(1024), WitnessKind::Telemetry, make_hash(6));
+            assert!(is_valid_witness_structure(&boundary_id));
+        }
     }
 
     // ── Comprehensive negative-path edge case tests ──────────────────────
@@ -1331,7 +1572,7 @@ mod tests {
             for pattern in &malicious_witness_patterns {
                 let witness_id = WitnessId::new(pattern);
                 let witness = WitnessRef::new(pattern, WitnessKind::ExternalSignal, make_hash(42))
-                    .with_locator("file:///test/replay.jsonl");
+                    .with_locator("test/replay.jsonl");
 
                 // Basic operations should work
                 assert_eq!(witness_id.as_str(), *pattern);
@@ -1400,10 +1641,10 @@ mod tests {
                 let result = validator.validate(&entry, &set);
                 assert!(result.is_ok(), "non-strict validation should accept any locator: {}", malicious_locator);
 
-                // Strict validation should accept non-empty locators (even malicious ones)
+                // Strict validation should reject unsafe locators.
                 let mut strict_validator = WitnessValidator::strict();
                 let strict_result = strict_validator.validate(&entry, &set);
-                assert!(strict_result.is_ok(), "strict validation should accept non-empty locator: {}", malicious_locator);
+                assert!(strict_result.is_err(), "strict validation should reject unsafe locator: {}", malicious_locator);
 
                 // Coverage audit should handle malicious locators without crashing
                 let entries_with_witnesses = vec![(entry, set)];

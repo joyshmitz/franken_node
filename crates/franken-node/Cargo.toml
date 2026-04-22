@@ -222,5 +222,9 @@ name = "vef_receipt_schema_conformance"
 path = "tests/vef_receipt_schema_conformance.rs"
 
 [[test]]
+name = "observability_evidence_ledger_regressions"
+path = "tests/observability_evidence_ledger_regressions.rs"
+
+[[test]]
 name = "replay_bundle_metamorphic"
 path = "tests/replay_bundle_metamorphic.rs"

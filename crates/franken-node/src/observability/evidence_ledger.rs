@@ -106,6 +106,23 @@ impl EvidenceEntry {
     }
 }
 
+fn entry_with_server_computed_size(entry: &EvidenceEntry) -> (EvidenceEntry, usize) {
+    let mut normalized = entry.clone();
+    normalized.size_bytes = 0;
+
+    for _ in 0..24 {
+        let computed_size = normalized.estimated_size();
+        if normalized.size_bytes == computed_size {
+            return (normalized, computed_size);
+        }
+        normalized.size_bytes = computed_size;
+    }
+
+    let computed_size = normalized.estimated_size();
+    normalized.size_bytes = computed_size;
+    (normalized, computed_size)
+}
+
 // ── LedgerError ─────────────────────────────────────────────────────
 
 /// Errors from ledger operations.
@@ -267,13 +284,16 @@ pub struct EvidenceLedger {
 }
 
 impl EvidenceLedger {
-    fn validate_append(&self, entry: &EvidenceEntry) -> Result<usize, LedgerError> {
+    fn validate_append(
+        &self,
+        entry: &EvidenceEntry,
+    ) -> Result<(EvidenceEntry, usize), LedgerError> {
         if self.capacity.max_entries == 0 {
             eprintln!("{}", format_ledger_zero_capacity_event(entry));
             return Err(LedgerError::ZeroEntryCapacity);
         }
 
-        let entry_size = entry.estimated_size();
+        let (normalized_entry, entry_size) = entry_with_server_computed_size(entry);
 
         if entry_size > self.capacity.max_bytes {
             eprintln!(
@@ -290,10 +310,11 @@ impl EvidenceLedger {
             });
         }
 
-        Ok(entry_size)
+        Ok((normalized_entry, entry_size))
     }
 
-    fn append_prevalidated(&mut self, entry: EvidenceEntry, entry_size: usize) -> EntryId {
+    fn append_prevalidated(&mut self, mut entry: EvidenceEntry, entry_size: usize) -> EntryId {
+        entry.size_bytes = entry_size;
         // Evict oldest entries to make room
         while self.entries.len() >= self.capacity.max_entries && !self.entries.is_empty() {
             self.evict_oldest();
@@ -375,7 +396,7 @@ impl EvidenceLedger {
     /// Evicts oldest entries as needed to stay within capacity bounds.
     /// Returns the assigned EntryId on success.
     pub fn append(&mut self, entry: EvidenceEntry) -> Result<EntryId, LedgerError> {
-        let entry_size = self.validate_append(&entry)?;
+        let (entry, entry_size) = self.validate_append(&entry)?;
         Ok(self.append_prevalidated(entry, entry_size))
     }
 
@@ -548,10 +569,10 @@ impl LabSpillMode {
 
     /// Append an entry, also writing it to the spill file.
     pub fn append(&mut self, entry: EvidenceEntry) -> Result<EntryId, LedgerError> {
+        let (entry, entry_size) = self.ledger.validate_append(&entry)?;
         let json_line = serde_json::to_string(&entry).map_err(|e| LedgerError::SpillError {
             reason: format!("JSON error: {e}"),
         })?;
-        let entry_size = self.ledger.validate_append(&entry)?;
 
         self.spill_writer.append_json_line(&json_line)?;
         let id = self.ledger.append_prevalidated(entry, entry_size);
