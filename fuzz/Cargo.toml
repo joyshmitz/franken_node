@@ -125,6 +125,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "fuzz_sandbox_policy_parse"
+path = "fuzz_targets/fuzz_sandbox_policy_parse.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "fuzz_connector_lifecycle_inputs"
 path = "fuzz_targets/fuzz_connector_lifecycle_inputs.rs"
 test = false
