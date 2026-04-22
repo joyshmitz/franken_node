@@ -7,10 +7,10 @@
 use assert_cmd::Command;
 use insta::assert_snapshot;
 
-#[path = "migrate_golden_helpers.rs"]
-mod migrate_golden_helpers;
+#[path = "cli_golden_helpers.rs"]
+mod cli_golden_helpers;
 
-use migrate_golden_helpers::with_scrubbed_snapshot_settings;
+use cli_golden_helpers::with_scrubbed_snapshot_settings;
 
 /// Test error output for missing required arguments.
 #[test]

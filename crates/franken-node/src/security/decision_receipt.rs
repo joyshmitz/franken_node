@@ -21,6 +21,32 @@ use uuid::Uuid;
 
 use crate::capacity_defaults::aliases::MAX_RECEIPT_CHAIN;
 
+mod canonical_f64 {
+    use serde::{Deserialize, Deserializer, Serializer, de};
+
+    pub fn serialize<S>(value: &f64, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u64(value.to_bits())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<f64, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bits = u64::deserialize(deserializer)?;
+        let value = f64::from_bits(bits);
+        if value.is_finite() {
+            Ok(value)
+        } else {
+            Err(de::Error::custom(
+                "canonical f64 value must decode to a finite float",
+            ))
+        }
+    }
+}
+
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
         items.clear();
@@ -58,6 +84,7 @@ pub struct Receipt {
     pub rationale: String,
     pub evidence_refs: Vec<String>,
     pub policy_rule_chain: Vec<String>,
+    #[serde(with = "canonical_f64")]
     pub confidence: f64,
     pub rollback_command: String,
     pub previous_receipt_hash: Option<String>,
@@ -419,7 +446,12 @@ pub fn export_receipts_cbor(
 /// Import receipts from CBOR.
 #[cfg(feature = "cbor-serialization")]
 pub fn import_receipts_cbor(bytes: &[u8]) -> Result<Vec<SignedReceipt>, ReceiptError> {
-    serde_cbor::from_slice(bytes).map_err(ReceiptError::CborDecode)
+    let receipts: Vec<SignedReceipt> =
+        serde_cbor::from_slice(bytes).map_err(ReceiptError::CborDecode)?;
+    for signed in &receipts {
+        validate_confidence(signed.receipt.confidence)?;
+    }
+    Ok(receipts)
 }
 
 /// Write filtered receipt export to file. `.cbor` writes binary CBOR; all other

@@ -12,18 +12,16 @@ use insta::assert_snapshot;
 use std::fs;
 use tempfile::TempDir;
 
-#[path = "migrate_golden_helpers.rs"]
-mod migrate_golden_helpers;
+#[path = "cli_golden_helpers.rs"]
+mod cli_golden_helpers;
 
-use migrate_golden_helpers::{
-    pretty_json_stdout, with_scrubbed_snapshot_settings,
-};
+use cli_golden_helpers::{pretty_json_stdout, with_scrubbed_snapshot_settings};
 
 /// Helper to run CLI commands that may fail gracefully.
 fn run_cli_command_with_fallback(
     args: &[&str],
     expect_json: bool,
-    command_name: &str
+    command_name: &str,
 ) -> Result<String, String> {
     let mut cmd = Command::cargo_bin("franken-node").expect("franken-node binary");
     let output = cmd.args(args).output().expect("command execution");

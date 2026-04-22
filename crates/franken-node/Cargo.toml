@@ -82,6 +82,7 @@ sqlmodel-schema = { path = "/dp/sqlmodel_rust/crates/sqlmodel-schema" }
 syn = { version = "2.0", features = ["full"] }
 tracing-subscriber = { workspace = true }
 insta = { version = "1.40", features = ["json"] }
+arbitrary = { version = "1.3", features = ["derive"] }
 
 [[test]]
 name = "migrate_cli_e2e"
@@ -224,6 +225,15 @@ path = "tests/vef_receipt_schema_conformance.rs"
 [[test]]
 name = "observability_evidence_ledger_regressions"
 path = "tests/observability_evidence_ledger_regressions.rs"
+
+[[test]]
+name = "observability_adversarial_regressions"
+path = "tests/observability_adversarial_regressions.rs"
+required-features = ["test-support"]
+
+[[test]]
+name = "fleet_quarantine_metamorphic"
+path = "tests/fleet_quarantine_metamorphic.rs"
 
 [[test]]
 name = "replay_bundle_metamorphic"

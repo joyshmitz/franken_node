@@ -19,10 +19,7 @@ pub fn pretty_json_stdout(command_name: &str, stdout: &[u8]) -> String {
     serde_json::to_string_pretty(&value).expect("pretty json")
 }
 
-pub fn with_scrubbed_snapshot_settings<R>(
-    snapshot_dir: &str,
-    assertion: impl FnOnce() -> R,
-) -> R {
+pub fn with_scrubbed_snapshot_settings<R>(snapshot_dir: &str, assertion: impl FnOnce() -> R) -> R {
     let mut settings = Settings::clone_current();
     settings.set_snapshot_path(
         Path::new(env!("CARGO_MANIFEST_DIR"))

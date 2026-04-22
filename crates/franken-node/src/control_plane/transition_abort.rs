@@ -209,7 +209,7 @@ impl ForceTransitionPolicy {
             sha2::Digest::update(&mut hasher, u64::try_from(field.len()).unwrap_or(u64::MAX).to_le_bytes());
             sha2::Digest::update(&mut hasher, field.as_bytes());
         }
-        sha2::Digest::update(&mut hasher, (self.max_skippable as u64).to_le_bytes());
+        sha2::Digest::update(&mut hasher, u64::try_from(self.max_skippable).unwrap_or(u64::MAX).to_le_bytes());
         format!("policy:{:x}", sha2::Digest::finalize(hasher))
     }
 }
@@ -928,11 +928,11 @@ mod tests {
             mgr.record_abort(
                 &format!("abort-{i}"),
                 TransitionAbortReason::Timeout { elapsed_ms: 1000 },
-                i as u64,
-                i as u64 + 1,
+                u64::try_from(i).unwrap_or(u64::MAX),
+                u64::try_from(i).unwrap_or(u64::MAX).saturating_add(1),
                 vec![],
                 1000,
-                2000 + i as u64,
+                2000_u64.saturating_add(u64::try_from(i).unwrap_or(u64::MAX)),
                 &format!("trace-{i}"),
             );
         }
@@ -957,9 +957,9 @@ mod tests {
                 &format!("force-{i}"),
                 &policy,
                 &[],
-                i as u64,
-                i as u64 + 1,
-                1000 + i as u64,
+                u64::try_from(i).unwrap_or(u64::MAX),
+                u64::try_from(i).unwrap_or(u64::MAX).saturating_add(1),
+                1000_u64.saturating_add(u64::try_from(i).unwrap_or(u64::MAX)),
                 &format!("trace-{i}"),
             );
         }

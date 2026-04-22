@@ -1516,10 +1516,7 @@ fn verify_json_round_trip(value: &serde_json::Value, label: &str) -> anyhow::Res
     Ok(())
 }
 
-fn migration_runtime_smoke_output_sha256_hex(
-    stream_field: &'static [u8],
-    bytes: &[u8],
-) -> String {
+fn migration_runtime_smoke_output_sha256_hex(stream_field: &'static [u8], bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(MIGRATION_RUNTIME_SMOKE_OUTPUT_HASH_DOMAIN);
     update_sha256_len_prefixed(&mut hasher, stream_field);

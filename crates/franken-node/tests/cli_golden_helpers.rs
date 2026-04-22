@@ -5,7 +5,7 @@
 //! file paths, and memory addresses.
 
 use assert_cmd::Command;
-use insta::{assert_snapshot, Settings};
+use insta::{Settings, assert_snapshot};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -26,10 +26,7 @@ pub fn pretty_json_stdout(command_name: &str, stdout: &[u8]) -> String {
 }
 
 /// Apply comprehensive scrubbing filters for CLI output.
-pub fn with_scrubbed_snapshot_settings<R>(
-    snapshot_dir: &str,
-    assertion: impl FnOnce() -> R,
-) -> R {
+pub fn with_scrubbed_snapshot_settings<R>(snapshot_dir: &str, assertion: impl FnOnce() -> R) -> R {
     let mut settings = Settings::clone_current();
     settings.set_snapshot_path(
         Path::new(env!("CARGO_MANIFEST_DIR"))

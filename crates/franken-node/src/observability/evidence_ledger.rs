@@ -1277,7 +1277,8 @@ mod tests {
         assert_eq!(acknowledged_id, EntryId(1));
         assert_eq!(lines.len(), 1);
 
-        let parsed: EvidenceEntry = serde_json::from_str(lines[0]).expect("spill line should parse");
+        let parsed: EvidenceEntry =
+            serde_json::from_str(lines[0]).expect("spill line should parse");
         assert_eq!(parsed.decision_id, "DEC-DURABLE");
         assert_eq!(parsed.epoch_id, 7);
     }
@@ -1867,13 +1868,13 @@ mod tests {
             let ledger = EvidenceLedger::new(LedgerCapacity::new(100, 1_000_000));
 
             let malicious_ids = vec![
-                "normal\u{202e}evil\u{202c}decision",  // BiDi override
-                "decision\u{200b}\u{feff}hidden",      // Zero-width chars
-                "decision\nnewline",                    // Newline injection
-                "decision\ttab",                        // Tab injection
-                "decision\x00null",                     // Null byte
-                "../../../etc/passwd",                  // Path traversal
-                "decision\"quote",                      // Quote injection
+                "normal\u{202e}evil\u{202c}decision", // BiDi override
+                "decision\u{200b}\u{feff}hidden",     // Zero-width chars
+                "decision\nnewline",                  // Newline injection
+                "decision\ttab",                      // Tab injection
+                "decision\x00null",                   // Null byte
+                "../../../etc/passwd",                // Path traversal
+                "decision\"quote",                    // Quote injection
             ];
 
             for (i, malicious_id) in malicious_ids.iter().enumerate() {
@@ -1930,7 +1931,7 @@ mod tests {
                 u64::MAX - 1,
                 u64::MAX / 2,
                 (1u64 << 63) - 1,
-                0,  // Epoch start
+                0, // Epoch start
             ];
 
             for (i, timestamp) in overflow_timestamps.iter().enumerate() {
@@ -1953,13 +1954,7 @@ mod tests {
         fn negative_epoch_id_boundary_conditions() {
             let ledger = EvidenceLedger::new(LedgerCapacity::new(20, 500_000));
 
-            let boundary_epochs = vec![
-                0,
-                1,
-                u64::MAX,
-                u64::MAX - 1,
-                u64::MAX / 2,
-            ];
+            let boundary_epochs = vec![0, 1, u64::MAX, u64::MAX - 1, u64::MAX / 2];
 
             for (i, epoch) in boundary_epochs.iter().enumerate() {
                 let mut entry = make_entry(&format!("EPOCH-{}", i), i as u64);
@@ -2018,11 +2013,16 @@ mod tests {
             assert_eq!(snapshot.entries.len(), 3);
 
             // Should retain the last 3 entries (97, 98, 99)
-            let retained_ids: Vec<String> = snapshot.entries.iter()
+            let retained_ids: Vec<String> = snapshot
+                .entries
+                .iter()
                 .map(|e| e.decision_id.clone())
                 .collect();
 
-            assert_eq!(retained_ids, vec!["STRESS-0097", "STRESS-0098", "STRESS-0099"]);
+            assert_eq!(
+                retained_ids,
+                vec!["STRESS-0097", "STRESS-0098", "STRESS-0099"]
+            );
         }
 
         #[test]
@@ -2030,9 +2030,9 @@ mod tests {
             use std::sync::Arc;
             use std::thread;
 
-            let shared_ledger = Arc::new(SharedEvidenceLedger::new(
-                LedgerCapacity::new(1000, 10_000_000)
-            ));
+            let shared_ledger = Arc::new(SharedEvidenceLedger::new(LedgerCapacity::new(
+                1000, 10_000_000,
+            )));
 
             let mut handles = Vec::new();
 
@@ -2040,8 +2040,10 @@ mod tests {
                 let ledger = Arc::clone(&shared_ledger);
                 let handle = thread::spawn(move || {
                     for i in 0..250 {
-                        let entry = make_entry(&format!("T{}-{:03}", thread_id, i),
-                                             (thread_id * 1000 + i) as u64);
+                        let entry = make_entry(
+                            &format!("T{}-{:03}", thread_id, i),
+                            (thread_id * 1000 + i) as u64,
+                        );
                         let _ = ledger.append(entry);
                     }
                 });
@@ -2105,7 +2107,7 @@ mod tests {
                 },
                 EvidenceEntry {
                     schema_version: "v1.0".to_string(),
-                    entry_id: None,  // None variant
+                    entry_id: None, // None variant
                     decision_id: "valid-id".to_string(),
                     decision_kind: DecisionKind::Deny,
                     decision_time: "2024-01-01T00:00:00Z".to_string(),
@@ -2114,7 +2116,7 @@ mod tests {
                     epoch_id: 1,
                     payload: serde_json::json!({"empty": {}}),
                     size_bytes: 100,
-                }
+                },
             ];
 
             for entry in empty_field_entries {
@@ -2141,9 +2143,9 @@ mod tests {
                 "decision\"}{\"admin\":true,\"bypass", // JSON injection attempt
                 "decision/../../etc/passwd",           // Path traversal attempt
                 "decision\u{FEFF}BOM",                 // Byte order mark
-                "decision\u{200B}\u{200C}\u{200D}",   // Zero-width characters
-                "decision<script>alert(1)</script>",  // XSS attempt
-                "decision'; DROP TABLE evidence; --", // SQL injection attempt
+                "decision\u{200B}\u{200C}\u{200D}",    // Zero-width characters
+                "decision<script>alert(1)</script>",   // XSS attempt
+                "decision'; DROP TABLE evidence; --",  // SQL injection attempt
                 "decision||rm -rf /",                  // Shell injection attempt
                 "x".repeat(100_000),                   // Extremely long decision ID (100KB)
             ];
@@ -2164,45 +2166,64 @@ mod tests {
 
                 // Test ledger append with malicious decision ID
                 let result = ledger.append(malicious_entry.clone());
-                assert!(result.is_ok(), "ledger should handle malicious decision IDs");
+                assert!(
+                    result.is_ok(),
+                    "ledger should handle malicious decision IDs"
+                );
 
                 if let Ok(entry_id) = result {
                     // Verify entry is stored with decision ID preserved
                     let snapshot = ledger.snapshot();
-                    let stored_entry = snapshot.entries.iter()
+                    let stored_entry = snapshot
+                        .entries
+                        .iter()
                         .find(|e| e.1.entry_id == Some(entry_id.to_string()))
                         .map(|(_, entry)| entry);
 
                     if let Some(entry) = stored_entry {
-                        assert_eq!(entry.decision_id, malicious_id, "decision ID should be preserved for forensics");
+                        assert_eq!(
+                            entry.decision_id, malicious_id,
+                            "decision ID should be preserved for forensics"
+                        );
                     }
                 }
 
                 // Test JSON serialization safety
-                let json = serde_json::to_string(&malicious_entry).expect("serialization should work");
-                let parsed: serde_json::Value = serde_json::from_str(&json).expect("JSON should be valid");
+                let json =
+                    serde_json::to_string(&malicious_entry).expect("serialization should work");
+                let parsed: serde_json::Value =
+                    serde_json::from_str(&json).expect("JSON should be valid");
 
                 // Verify no injection occurred in JSON structure
-                assert!(parsed.get("admin").is_none(), "JSON injection should not create admin field");
-                assert!(parsed.get("bypass").is_none(), "JSON injection should not create bypass field");
+                assert!(
+                    parsed.get("admin").is_none(),
+                    "JSON injection should not create admin field"
+                );
+                assert!(
+                    parsed.get("bypass").is_none(),
+                    "JSON injection should not create bypass field"
+                );
 
                 // Test constant-time comparison for decision IDs
                 let normal_id = "normal-decision-123";
-                assert!(!constant_time::ct_eq(malicious_id, normal_id), "decision ID comparison should be constant-time");
+                assert!(
+                    !constant_time::ct_eq(malicious_id, normal_id),
+                    "decision ID comparison should be constant-time"
+                );
             }
 
             // Test with decision IDs that might bypass audit trails
             let audit_bypass_ids = [
-                "",                           // Empty decision ID
-                "null",                       // Literal "null"
-                "undefined",                  // Literal "undefined"
-                "false",                      // Boolean-like
-                "0",                          // Number-like
-                "{}",                         // Object-like
-                "[]",                         // Array-like
-                "admin.override.bypass",      // Administrative bypass attempt
-                "system.internal.debug",     // System internal operation
-                "security.audit.disable",    // Audit disabling attempt
+                "",                       // Empty decision ID
+                "null",                   // Literal "null"
+                "undefined",              // Literal "undefined"
+                "false",                  // Boolean-like
+                "0",                      // Number-like
+                "{}",                     // Object-like
+                "[]",                     // Array-like
+                "admin.override.bypass",  // Administrative bypass attempt
+                "system.internal.debug",  // System internal operation
+                "security.audit.disable", // Audit disabling attempt
             ];
 
             for bypass_id in audit_bypass_ids {
@@ -2220,7 +2241,10 @@ mod tests {
                 };
 
                 let result = ledger.append(bypass_entry);
-                assert!(result.is_ok(), "ledger should handle audit bypass attempts safely");
+                assert!(
+                    result.is_ok(),
+                    "ledger should handle audit bypass attempts safely"
+                );
             }
         }
 
@@ -2250,20 +2274,34 @@ mod tests {
 
             // Verify massive trace ID is preserved
             let snapshot = ledger.snapshot();
-            let stored_entry = snapshot.entries.iter().find(|(_, entry)| entry.trace_id == massive_trace_id);
+            let stored_entry = snapshot
+                .entries
+                .iter()
+                .find(|(_, entry)| entry.trace_id == massive_trace_id);
             assert!(stored_entry.is_some(), "massive entry should be stored");
 
             if let Some((_, entry)) = stored_entry {
-                assert_eq!(entry.trace_id, massive_trace_id, "massive trace ID should be preserved");
+                assert_eq!(
+                    entry.trace_id, massive_trace_id,
+                    "massive trace ID should be preserved"
+                );
             }
 
             // Test serialization with massive data
-            let json = serde_json::to_string(&massive_entry).expect("serialization should handle massive entry");
-            assert!(json.len() > 6_000_000, "serialized JSON should include massive data");
+            let json = serde_json::to_string(&massive_entry)
+                .expect("serialization should handle massive entry");
+            assert!(
+                json.len() > 6_000_000,
+                "serialized JSON should include massive data"
+            );
 
             // Test deserialization roundtrip
-            let parsed: EvidenceEntry = serde_json::from_str(&json).expect("deserialization should work");
-            assert_eq!(parsed.trace_id, massive_trace_id, "trace ID should survive roundtrip");
+            let parsed: EvidenceEntry =
+                serde_json::from_str(&json).expect("deserialization should work");
+            assert_eq!(
+                parsed.trace_id, massive_trace_id,
+                "trace ID should survive roundtrip"
+            );
 
             // Test with injection patterns in trace ID
             let injection_trace_ids = [
@@ -2291,15 +2329,26 @@ mod tests {
                 };
 
                 let result = ledger.append(injection_entry.clone());
-                assert!(result.is_ok(), "ledger should handle injection trace IDs safely");
+                assert!(
+                    result.is_ok(),
+                    "ledger should handle injection trace IDs safely"
+                );
 
                 // Verify JSON serialization is safe
-                let json = serde_json::to_string(&injection_entry).expect("serialization should work");
-                let parsed: serde_json::Value = serde_json::from_str(&json).expect("JSON should be valid");
+                let json =
+                    serde_json::to_string(&injection_entry).expect("serialization should work");
+                let parsed: serde_json::Value =
+                    serde_json::from_str(&json).expect("JSON should be valid");
 
                 // Verify no additional fields were injected
-                assert!(parsed.get("admin").is_none(), "JSON injection should not create admin field");
-                assert!(parsed.get("bypass").is_none(), "JSON injection should not create bypass field");
+                assert!(
+                    parsed.get("admin").is_none(),
+                    "JSON injection should not create admin field"
+                );
+                assert!(
+                    parsed.get("bypass").is_none(),
+                    "JSON injection should not create bypass field"
+                );
             }
         }
 
@@ -2311,21 +2360,16 @@ mod tests {
             let malicious_payloads = [
                 // JSON injection attempts
                 serde_json::json!({"normal": "data", "injection": "\"},\"admin\":true,\"bypass\":{"}),
-
                 // XSS attempts
                 serde_json::json!({"script": "<script>alert('XSS')</script>"}),
-
                 // SQL injection attempts
                 serde_json::json!({"query": "'; DROP TABLE evidence; --"}),
-
                 // Shell injection attempts
                 serde_json::json!({"command": "; rm -rf / #"}),
-
                 // Unicode attacks
                 serde_json::json!({"bidi": "\u{202E}fake\u{202C}"}),
                 serde_json::json!({"ansi": "\x1b[31mred\x1b[0m"}),
                 serde_json::json!({"control": "data\0null\r\n\t"}),
-
                 // Massive nested structure (memory exhaustion attempt)
                 serde_json::json!({
                     "level1": {
@@ -2341,19 +2385,17 @@ mod tests {
                         }
                     }
                 }),
-
                 // Type confusion attempts
                 serde_json::json!(null),
                 serde_json::json!([1, 2, 3, "string", {"nested": "object"}]),
                 serde_json::json!(42),
                 serde_json::json!(true),
                 serde_json::json!("just_a_string"),
-
                 // Circular reference simulation (deeply nested)
-                (0..1000).fold(serde_json::json!({"end": true}), |acc, i| {
-                    serde_json::json!({"level": i, "next": acc})
-                }),
-
+                (0..1000).fold(
+                    serde_json::json!({"end": true}),
+                    |acc, i| serde_json::json!({"level": i, "next": acc}),
+                ),
                 // Field name attacks
                 serde_json::json!({
                     "": "empty_key",
@@ -2386,11 +2428,16 @@ mod tests {
                 assert!(result.is_ok(), "ledger should handle malicious payloads");
 
                 // Test serialization safety
-                let json = serde_json::to_string(&malicious_entry).expect("serialization should work");
-                let parsed: EvidenceEntry = serde_json::from_str(&json).expect("deserialization should work");
+                let json =
+                    serde_json::to_string(&malicious_entry).expect("serialization should work");
+                let parsed: EvidenceEntry =
+                    serde_json::from_str(&json).expect("deserialization should work");
 
                 // Verify payload is preserved exactly
-                assert_eq!(parsed.payload, malicious_payload, "payload should be preserved exactly");
+                assert_eq!(
+                    parsed.payload, malicious_payload,
+                    "payload should be preserved exactly"
+                );
 
                 // Verify entry structure integrity
                 assert_eq!(parsed.decision_id, "payload-test");
@@ -2408,16 +2455,16 @@ mod tests {
 
             // Test various epoch ID values that might cause arithmetic issues
             let epoch_values = [
-                0,                          // Zero epoch
-                1,                          // Minimal epoch
-                u64::MAX,                   // Maximum epoch
-                u64::MAX - 1,               // Near maximum
-                u64::MAX / 2,               // Half maximum
-                0x8000000000000000u64,      // High bit set
-                0x7FFFFFFFFFFFFFFFu64,      // Max signed value
-                0xAAAAAAAAAAAAAAAAu64,     // Alternating pattern
-                0x5555555555555555u64,      // Inverse pattern
-                1234567890,                 // Standard timestamp
+                0,                     // Zero epoch
+                1,                     // Minimal epoch
+                u64::MAX,              // Maximum epoch
+                u64::MAX - 1,          // Near maximum
+                u64::MAX / 2,          // Half maximum
+                0x8000000000000000u64, // High bit set
+                0x7FFFFFFFFFFFFFFFu64, // Max signed value
+                0xAAAAAAAAAAAAAAAAu64, // Alternating pattern
+                0x5555555555555555u64, // Inverse pattern
+                1234567890,            // Standard timestamp
             ];
 
             let mut previous_entries = Vec::new();
@@ -2445,8 +2492,13 @@ mod tests {
 
                 // Test JSON serialization with extreme epoch values
                 let json = serde_json::to_string(&epoch_entry).expect("serialization should work");
-                let parsed: EvidenceEntry = serde_json::from_str(&json).expect("deserialization should work");
-                assert_eq!(parsed.epoch_id, epoch_id, "epoch ID should be preserved: {}", epoch_id);
+                let parsed: EvidenceEntry =
+                    serde_json::from_str(&json).expect("deserialization should work");
+                assert_eq!(
+                    parsed.epoch_id, epoch_id,
+                    "epoch ID should be preserved: {}",
+                    epoch_id
+                );
             }
 
             // Test epoch ID arithmetic (overflow protection)
@@ -2468,12 +2520,18 @@ mod tests {
                 };
 
                 let result = ledger.append(entry);
-                assert!(result.is_ok(), "ledger should handle near-overflow epoch arithmetic");
+                assert!(
+                    result.is_ok(),
+                    "ledger should handle near-overflow epoch arithmetic"
+                );
             }
 
             // Verify ledger still functions correctly after epoch stress testing
             let snapshot = ledger.snapshot();
-            assert!(snapshot.entries.len() > 0, "ledger should contain entries after epoch testing");
+            assert!(
+                snapshot.entries.len() > 0,
+                "ledger should contain entries after epoch testing"
+            );
         }
 
         #[test]
@@ -2483,34 +2541,29 @@ mod tests {
             // Test various timestamp manipulation attempts
             let timestamp_attacks = [
                 // Basic cases
-                0,                          // Unix epoch start
-                1,                          // Minimal timestamp
-                u64::MAX,                   // Maximum timestamp (far future)
-
+                0,        // Unix epoch start
+                1,        // Minimal timestamp
+                u64::MAX, // Maximum timestamp (far future)
                 // Realistic boundaries
-                946684800000,               // Year 2000
-                1609459200000,              // Year 2021
-                2147483647000,              // Year 2038 (32-bit overflow)
-                4102444800000,              // Year 2100
-
+                946684800000,  // Year 2000
+                1609459200000, // Year 2021
+                2147483647000, // Year 2038 (32-bit overflow)
+                4102444800000, // Year 2100
                 // Attack patterns
-                1234567890000,              // Base timestamp
-                1234567890001,              // 1ms after base
-                1234567889999,              // 1ms before base
-
+                1234567890000, // Base timestamp
+                1234567890001, // 1ms after base
+                1234567889999, // 1ms before base
                 // Overflow attempts
-                u64::MAX - 1000,            // Near maximum
-                u64::MAX - 1,               // One less than max
-
+                u64::MAX - 1000, // Near maximum
+                u64::MAX - 1,    // One less than max
                 // Time travel attempts (future)
-                253402300799000,            // Year 9999
-                u64::MAX / 2,               // Half of max timestamp
-
+                253402300799000, // Year 9999
+                u64::MAX / 2,    // Half of max timestamp
                 // Bit pattern attacks
-                0x8000000000000000u64,      // High bit set
-                0x7FFFFFFFFFFFFFFFu64,      // Max positive
-                0xAAAAAAAAAAAAAAAAu64,     // Alternating bits
-                0x5555555555555555u64,      // Inverse alternating
+                0x8000000000000000u64, // High bit set
+                0x7FFFFFFFFFFFFFFFu64, // Max positive
+                0xAAAAAAAAAAAAAAAAu64, // Alternating bits
+                0x5555555555555555u64, // Inverse alternating
             ];
 
             let mut timestamp_entries = Vec::new();
@@ -2530,21 +2583,31 @@ mod tests {
                 };
 
                 let result = ledger.append(time_entry.clone());
-                assert!(result.is_ok(), "ledger should handle timestamp {}", timestamp_ms);
+                assert!(
+                    result.is_ok(),
+                    "ledger should handle timestamp {}",
+                    timestamp_ms
+                );
 
                 timestamp_entries.push((timestamp_ms, time_entry));
 
                 // Test serialization with extreme timestamps
                 let json = serde_json::to_string(&time_entry).expect("serialization should work");
-                let parsed: EvidenceEntry = serde_json::from_str(&json).expect("deserialization should work");
-                assert_eq!(parsed.timestamp_ms, timestamp_ms, "timestamp should be preserved");
+                let parsed: EvidenceEntry =
+                    serde_json::from_str(&json).expect("deserialization should work");
+                assert_eq!(
+                    parsed.timestamp_ms, timestamp_ms,
+                    "timestamp should be preserved"
+                );
             }
 
             // Test timestamp ordering consistency
             let snapshot = ledger.snapshot();
             for (_, entry) in &snapshot.entries {
                 // Verify all timestamps are preserved correctly
-                let found = timestamp_entries.iter().any(|(ts, _)| *ts == entry.timestamp_ms);
+                let found = timestamp_entries
+                    .iter()
+                    .any(|(ts, _)| *ts == entry.timestamp_ms);
                 if !found {
                     // Entry might have been evicted due to capacity limits
                     continue;
@@ -2574,7 +2637,10 @@ mod tests {
                 };
 
                 let result = ledger.append(inconsistent_entry);
-                assert!(result.is_ok(), "ledger should handle chronologically inconsistent timestamps");
+                assert!(
+                    result.is_ok(),
+                    "ledger should handle chronologically inconsistent timestamps"
+                );
             }
         }
 
@@ -2608,17 +2674,23 @@ mod tests {
 
             // Verify bounded capacity is enforced
             let snapshot = small_ledger.snapshot();
-            assert!(snapshot.entries.len() <= 10, "ledger should respect max_entries bound");
+            assert!(
+                snapshot.entries.len() <= 10,
+                "ledger should respect max_entries bound"
+            );
 
             // Verify memory usage is bounded (approximate check)
-            let total_estimated_size: usize = snapshot.entries.iter()
-                .map(|(_, entry)| {
-                    serde_json::to_string(entry).unwrap_or_default().len()
-                })
+            let total_estimated_size: usize = snapshot
+                .entries
+                .iter()
+                .map(|(_, entry)| serde_json::to_string(entry).unwrap_or_default().len())
                 .sum();
 
             // Should be reasonably close to 50KB limit (allowing for some overhead)
-            assert!(total_estimated_size < 100_000, "ledger should respect memory bounds approximately");
+            assert!(
+                total_estimated_size < 100_000,
+                "ledger should respect memory bounds approximately"
+            );
 
             // Test with extremely large single entry
             let massive_entry = EvidenceEntry {
@@ -2642,7 +2714,10 @@ mod tests {
 
             let result = small_ledger.append(massive_entry);
             // Should handle massive entry (might evict all others or reject)
-            assert!(result.is_ok() || result.is_err(), "ledger should handle or reject massive entry safely");
+            assert!(
+                result.is_ok() || result.is_err(),
+                "ledger should handle or reject massive entry safely"
+            );
 
             // Test rapid-fire small entries (FIFO overflow stress test)
             for i in 0..1000 {
@@ -2665,13 +2740,20 @@ mod tests {
 
             // Verify FIFO eviction worked correctly
             let final_snapshot = small_ledger.snapshot();
-            assert!(final_snapshot.entries.len() <= 10, "ledger should maintain capacity bounds");
+            assert!(
+                final_snapshot.entries.len() <= 10,
+                "ledger should maintain capacity bounds"
+            );
 
             // Most recent entries should be preserved
-            let has_recent = final_snapshot.entries.iter()
+            let has_recent = final_snapshot
+                .entries
+                .iter()
                 .any(|(_, entry)| entry.decision_id.starts_with("rapid-09"));
-            assert!(has_recent || final_snapshot.entries.is_empty(),
-                   "most recent entries should be preserved (or ledger reset due to capacity)");
+            assert!(
+                has_recent || final_snapshot.entries.is_empty(),
+                "most recent entries should be preserved (or ledger reset due to capacity)"
+            );
         }
 
         #[test]
@@ -2704,17 +2786,34 @@ mod tests {
                 };
 
                 let result = ledger.append(valid_entry.clone());
-                assert!(result.is_ok(), "ledger should accept valid decision kind: {:?}", decision_kind);
+                assert!(
+                    result.is_ok(),
+                    "ledger should accept valid decision kind: {:?}",
+                    decision_kind
+                );
 
                 // Test JSON roundtrip for each decision kind
                 let json = serde_json::to_string(&valid_entry).expect("serialization should work");
-                let parsed: EvidenceEntry = serde_json::from_str(&json).expect("deserialization should work");
-                assert_eq!(parsed.decision_kind, decision_kind, "decision kind should survive roundtrip");
+                let parsed: EvidenceEntry =
+                    serde_json::from_str(&json).expect("deserialization should work");
+                assert_eq!(
+                    parsed.decision_kind, decision_kind,
+                    "decision kind should survive roundtrip"
+                );
 
                 // Test label consistency
-                assert!(!decision_kind.label().is_empty(), "decision kind label should not be empty");
-                assert!(!decision_kind.label().contains('\0'), "decision kind label should not contain nulls");
-                assert!(!decision_kind.label().contains('\n'), "decision kind label should not contain newlines");
+                assert!(
+                    !decision_kind.label().is_empty(),
+                    "decision kind label should not be empty"
+                );
+                assert!(
+                    !decision_kind.label().contains('\0'),
+                    "decision kind label should not contain nulls"
+                );
+                assert!(
+                    !decision_kind.label().contains('\n'),
+                    "decision kind label should not contain newlines"
+                );
             }
 
             // Test invalid JSON for decision kind deserialization
@@ -2732,7 +2831,8 @@ mod tests {
 
             for invalid_json in invalid_decision_jsons {
                 // Create full JSON with invalid decision_kind
-                let full_json = format!(r#"{{
+                let full_json = format!(
+                    r#"{{
                     "schema_version": "test-v1",
                     "entry_id": null,
                     "decision_id": "invalid-test",
@@ -2743,18 +2843,33 @@ mod tests {
                     "epoch_id": 1,
                     "payload": {{"test": "invalid"}},
                     "size_bytes": 0
-                }}"#, &invalid_json[1..invalid_json.len()-1]); // Extract decision_kind part
+                }}"#,
+                    &invalid_json[1..invalid_json.len() - 1]
+                ); // Extract decision_kind part
 
                 let result: Result<EvidenceEntry, _> = serde_json::from_str(&full_json);
-                assert!(result.is_err(), "invalid decision kind should fail deserialization: {}", invalid_json);
+                assert!(
+                    result.is_err(),
+                    "invalid decision kind should fail deserialization: {}",
+                    invalid_json
+                );
             }
 
             // Test decision kind display consistency
             for decision_kind in valid_decisions {
                 let display = format!("{:?}", decision_kind);
-                assert!(!display.is_empty(), "decision kind debug display should not be empty");
-                assert!(!display.contains('\x1b'), "decision kind display should not contain ANSI escapes");
-                assert!(!display.contains('\0'), "decision kind display should not contain null bytes");
+                assert!(
+                    !display.is_empty(),
+                    "decision kind debug display should not be empty"
+                );
+                assert!(
+                    !display.contains('\x1b'),
+                    "decision kind display should not contain ANSI escapes"
+                );
+                assert!(
+                    !display.contains('\0'),
+                    "decision kind display should not contain null bytes"
+                );
             }
         }
 
@@ -2824,11 +2939,17 @@ mod tests {
             let final_snapshot = shared_ledger.snapshot();
 
             // Should have some entries (exact count depends on eviction)
-            assert!(final_snapshot.entries.len() <= 100, "should respect capacity bounds");
+            assert!(
+                final_snapshot.entries.len() <= 100,
+                "should respect capacity bounds"
+            );
 
             // Verify entries are valid
             for (entry_id, entry) in &final_snapshot.entries {
-                assert!(entry.decision_id.starts_with("concurrent-"), "entries should be from concurrent test");
+                assert!(
+                    entry.decision_id.starts_with("concurrent-"),
+                    "entries should be from concurrent test"
+                );
                 assert!(entry_id.0 > 0, "entry IDs should be positive");
             }
 
@@ -2848,7 +2969,10 @@ mod tests {
             });
 
             // Should still work after concurrent stress testing
-            assert!(recovery_test_result.is_ok(), "ledger should function after concurrent access");
+            assert!(
+                recovery_test_result.is_ok(),
+                "ledger should function after concurrent access"
+            );
         }
     }
 
@@ -2871,13 +2995,13 @@ mod tests {
         // Unicode injection attempts in various evidence entry fields
         let malicious_entries = vec![
             EvidenceEntry {
-                schema_version: "evidence_v1.0\u{202E}malicious\u{202D}".to_string(),  // BiDi override
-                entry_id: Some("\u{200B}admin".to_string()),  // Zero-width space
-                decision_id: "decision\u{FEFF}001".to_string(),  // Zero-width no-break space
+                schema_version: "evidence_v1.0\u{202E}malicious\u{202D}".to_string(), // BiDi override
+                entry_id: Some("\u{200B}admin".to_string()), // Zero-width space
+                decision_id: "decision\u{FEFF}001".to_string(), // Zero-width no-break space
                 decision_kind: DecisionKind::Admit,
-                decision_time: "2026-01-01T00:00:00Z\u{0000}".to_string(),  // Null injection
+                decision_time: "2026-01-01T00:00:00Z\u{0000}".to_string(), // Null injection
                 timestamp_ms: 1000000000,
-                trace_id: "trace\u{2028}admin".to_string(),  // Line separator
+                trace_id: "trace\u{2028}admin".to_string(), // Line separator
                 epoch_id: 1,
                 payload: serde_json::json!({
                     "user": "safe\u{2029}admin",  // Paragraph separator
@@ -2887,12 +3011,12 @@ mod tests {
             },
             EvidenceEntry {
                 schema_version: "evidence_v1.0".to_string(),
-                entry_id: Some("E\u{202C}reset".to_string()),  // Pop directional formatting
-                decision_id: "decision\u{0000}bypass".to_string(),  // Null injection
+                entry_id: Some("E\u{202C}reset".to_string()), // Pop directional formatting
+                decision_id: "decision\u{0000}bypass".to_string(), // Null injection
                 decision_kind: DecisionKind::Deny,
                 decision_time: "2026-01-01T00:00:00Z".to_string(),
                 timestamp_ms: 1000000001,
-                trace_id: "\u{200B}\u{200C}\u{200D}trace002".to_string(),  // Multiple zero-width chars
+                trace_id: "\u{200B}\u{200C}\u{200D}trace002".to_string(), // Multiple zero-width chars
                 epoch_id: 1,
                 payload: serde_json::json!({
                     "injection": "\";alert('xss');//",  // JS injection in payload
@@ -2911,39 +3035,58 @@ mod tests {
                     let snapshot = ledger.snapshot();
 
                     // Find the appended entry
-                    if let Some(found_entry) = snapshot.entries.iter().find(|e| {
-                        e.decision_id == malicious_entry.decision_id
-                    }) {
+                    if let Some(found_entry) = snapshot
+                        .entries
+                        .iter()
+                        .find(|e| e.decision_id == malicious_entry.decision_id)
+                    {
                         // Unicode should not create privileged identifiers
-                        assert!(!constant_time::ct_eq(found_entry.decision_id.as_bytes(), b"admin"),
-                               "Unicode injection should not create admin decisions");
+                        assert!(
+                            !constant_time::ct_eq(found_entry.decision_id.as_bytes(), b"admin"),
+                            "Unicode injection should not create admin decisions"
+                        );
 
                         if let Some(ref entry_id_str) = found_entry.entry_id {
-                            assert!(!constant_time::ct_eq(entry_id_str.as_bytes(), b"admin"),
-                                   "Unicode injection should not create admin entry IDs");
+                            assert!(
+                                !constant_time::ct_eq(entry_id_str.as_bytes(), b"admin"),
+                                "Unicode injection should not create admin entry IDs"
+                            );
                         }
 
-                        assert!(!constant_time::ct_eq(found_entry.trace_id.as_bytes(), b"admin"),
-                               "Unicode injection should not create admin trace IDs");
+                        assert!(
+                            !constant_time::ct_eq(found_entry.trace_id.as_bytes(), b"admin"),
+                            "Unicode injection should not create admin trace IDs"
+                        );
 
                         // Null bytes should not appear in string fields
-                        assert!(!found_entry.decision_id.contains('\0'),
-                               "Decision ID should not contain null bytes");
-                        assert!(!found_entry.decision_time.contains('\0'),
-                               "Decision time should not contain null bytes");
-                        assert!(!found_entry.trace_id.contains('\0'),
-                               "Trace ID should not contain null bytes");
+                        assert!(
+                            !found_entry.decision_id.contains('\0'),
+                            "Decision ID should not contain null bytes"
+                        );
+                        assert!(
+                            !found_entry.decision_time.contains('\0'),
+                            "Decision time should not contain null bytes"
+                        );
+                        assert!(
+                            !found_entry.trace_id.contains('\0'),
+                            "Trace ID should not contain null bytes"
+                        );
 
                         // Verify payload serialization is safe
                         let payload_str = found_entry.payload.to_string();
-                        assert!(!payload_str.contains("alert('xss')") || payload_str.contains("\\\""),
-                               "JavaScript injection should be escaped in JSON");
+                        assert!(
+                            !payload_str.contains("alert('xss')") || payload_str.contains("\\\""),
+                            "JavaScript injection should be escaped in JSON"
+                        );
                     }
 
                     // Verify deterministic behavior with Unicode content
                     let second_result = ledger.append(malicious_entry.clone());
-                    assert!(second_result.is_ok(), "Unicode content should be handled deterministically");
-                },
+                    assert!(
+                        second_result.is_ok(),
+                        "Unicode content should be handled deterministically"
+                    );
+                }
                 Err(_) => {
                     // Graceful rejection of malformed Unicode entries is acceptable
                 }
@@ -2955,7 +3098,7 @@ mod tests {
     fn test_security_memory_exhaustion_through_large_payloads() {
         let config = EvidenceLedgerConfig {
             max_entries: 10,
-            max_bytes: 1024 * 1024,  // 1MB limit
+            max_bytes: 1024 * 1024, // 1MB limit
             lab_mode: false,
             enable_spill: false,
             spill_writer: None,
@@ -2981,7 +3124,11 @@ mod tests {
                 nested
             },
             // Array with many elements
-            serde_json::json!((0..100_000).map(|i| format!("element_{}", i)).collect::<Vec<_>>()),
+            serde_json::json!(
+                (0..100_000)
+                    .map(|i| format!("element_{}", i))
+                    .collect::<Vec<_>>()
+            ),
         ];
 
         for (i, large_payload) in exhaustion_attempts.iter().enumerate() {
@@ -2995,7 +3142,7 @@ mod tests {
                 trace_id: format!("trace_{}", i),
                 epoch_id: 1,
                 payload: large_payload.clone(),
-                size_bytes: 0,  // Let ledger compute size
+                size_bytes: 0, // Let ledger compute size
             };
 
             let append_result = ledger.append(large_entry);
@@ -3006,13 +3153,15 @@ mod tests {
                     let snapshot = ledger.snapshot();
 
                     // Verify memory bounds are respected
-                    let total_size: usize = snapshot.entries.iter()
-                        .map(|e| e.size_bytes)
-                        .sum();
+                    let total_size: usize = snapshot.entries.iter().map(|e| e.size_bytes).sum();
 
                     // Should not exceed configured limits by too much
-                    assert!(total_size <= config.max_bytes * 2,
-                           "Total size {} should not exceed 2x limit {}", total_size, config.max_bytes);
+                    assert!(
+                        total_size <= config.max_bytes * 2,
+                        "Total size {} should not exceed 2x limit {}",
+                        total_size,
+                        config.max_bytes
+                    );
 
                     // Ledger should still be functional
                     let test_entry = EvidenceEntry {
@@ -3029,8 +3178,11 @@ mod tests {
                     };
 
                     let post_result = ledger.append(test_entry);
-                    assert!(post_result.is_ok(), "Ledger should remain functional after large payload");
-                },
+                    assert!(
+                        post_result.is_ok(),
+                        "Ledger should remain functional after large payload"
+                    );
+                }
                 Err(_) => {
                     // Graceful rejection of oversized entries is expected
                 }
@@ -3042,7 +3194,7 @@ mod tests {
     #[test]
     fn test_security_fifo_overflow_manipulation_attempts() {
         let config = EvidenceLedgerConfig {
-            max_entries: 5,  // Small capacity for overflow testing
+            max_entries: 5, // Small capacity for overflow testing
             max_bytes: 1024,
             lab_mode: false,
             enable_spill: false,
@@ -3081,10 +3233,10 @@ mod tests {
                 entry_id: Some("future_entry".to_string()),
                 decision_id: "future_decision".to_string(),
                 decision_kind: DecisionKind::Deny,
-                decision_time: "9999-12-31T23:59:59Z".to_string(),  // Far future
-                timestamp_ms: u64::MAX,  // Maximum timestamp
+                decision_time: "9999-12-31T23:59:59Z".to_string(), // Far future
+                timestamp_ms: u64::MAX,                            // Maximum timestamp
                 trace_id: "future_trace".to_string(),
-                epoch_id: u64::MAX,  // Maximum epoch
+                epoch_id: u64::MAX, // Maximum epoch
                 payload: serde_json::json!({"priority": "high"}),
                 size_bytes: 0,
             },
@@ -3094,10 +3246,10 @@ mod tests {
                 entry_id: Some("zero_entry".to_string()),
                 decision_id: "zero_decision".to_string(),
                 decision_kind: DecisionKind::Escalate,
-                decision_time: "1970-01-01T00:00:00Z".to_string(),  // Unix epoch
-                timestamp_ms: 0,  // Zero timestamp
+                decision_time: "1970-01-01T00:00:00Z".to_string(), // Unix epoch
+                timestamp_ms: 0,                                   // Zero timestamp
                 trace_id: "zero_trace".to_string(),
-                epoch_id: 0,  // Zero epoch
+                epoch_id: 0, // Zero epoch
                 payload: serde_json::json!({"priority": "urgent"}),
                 size_bytes: 0,
             },
@@ -3114,20 +3266,30 @@ mod tests {
                     let post_append_snapshot = ledger.snapshot();
 
                     // FIFO should be maintained regardless of timestamp manipulation
-                    assert_eq!(post_append_snapshot.entries.len(), 5,
-                             "Should maintain max capacity");
+                    assert_eq!(
+                        post_append_snapshot.entries.len(),
+                        5,
+                        "Should maintain max capacity"
+                    );
 
                     // Oldest entry should be evicted (FIFO semantics)
-                    let oldest_still_present = post_append_snapshot.entries.iter()
+                    let oldest_still_present = post_append_snapshot
+                        .entries
+                        .iter()
                         .any(|e| e.decision_id == oldest_decision_id);
-                    assert!(!oldest_still_present,
-                           "Oldest entry should be evicted regardless of timestamp manipulation");
+                    assert!(
+                        !oldest_still_present,
+                        "Oldest entry should be evicted regardless of timestamp manipulation"
+                    );
 
                     // New entry should be at the end
-                    let newest_entry = &post_append_snapshot.entries[post_append_snapshot.entries.len() - 1];
-                    assert_eq!(newest_entry.decision_id, overflow_entry.decision_id,
-                             "Newest entry should be at the end");
-                },
+                    let newest_entry =
+                        &post_append_snapshot.entries[post_append_snapshot.entries.len() - 1];
+                    assert_eq!(
+                        newest_entry.decision_id, overflow_entry.decision_id,
+                        "Newest entry should be at the end"
+                    );
+                }
                 Err(_) => {
                     // Graceful rejection of manipulated entries is acceptable
                 }
@@ -3149,9 +3311,9 @@ mod tests {
                 decision_id: "overflow_decision".to_string(),
                 decision_kind: DecisionKind::Admit,
                 decision_time: "2026-01-01T00:00:00Z".to_string(),
-                timestamp_ms: u64::MAX,  // Overflow attempt
+                timestamp_ms: u64::MAX, // Overflow attempt
                 trace_id: "overflow_trace".to_string(),
-                epoch_id: u64::MAX,  // Maximum epoch
+                epoch_id: u64::MAX, // Maximum epoch
                 payload: serde_json::json!({"type": "overflow"}),
                 size_bytes: 0,
             },
@@ -3161,10 +3323,10 @@ mod tests {
                 entry_id: Some("replay_test".to_string()),
                 decision_id: "replay_decision".to_string(),
                 decision_kind: DecisionKind::Deny,
-                decision_time: "1970-01-01T00:00:00Z".to_string(),  // Unix epoch
-                timestamp_ms: 1,  // Very early timestamp
+                decision_time: "1970-01-01T00:00:00Z".to_string(), // Unix epoch
+                timestamp_ms: 1,                                   // Very early timestamp
                 trace_id: "replay_trace".to_string(),
-                epoch_id: 0,  // Zero epoch
+                epoch_id: 0, // Zero epoch
                 payload: serde_json::json!({"type": "replay_attack"}),
                 size_bytes: 0,
             },
@@ -3174,8 +3336,8 @@ mod tests {
                 entry_id: Some("inconsistent_test".to_string()),
                 decision_id: "inconsistent_decision".to_string(),
                 decision_kind: DecisionKind::Quarantine,
-                decision_time: "2026-01-01T00:00:00Z".to_string(),  // 2026
-                timestamp_ms: 946684800000,  // Year 2000 in milliseconds
+                decision_time: "2026-01-01T00:00:00Z".to_string(), // 2026
+                timestamp_ms: 946684800000,                        // Year 2000 in milliseconds
                 trace_id: "inconsistent_trace".to_string(),
                 epoch_id: 1,
                 payload: serde_json::json!({"type": "inconsistent"}),
@@ -3191,14 +3353,20 @@ mod tests {
                     // If append succeeded, verify timestamp values are preserved
                     let snapshot = ledger.snapshot();
 
-                    if let Some(found_entry) = snapshot.entries.iter().find(|e| {
-                        e.decision_id == manipulation_entry.decision_id
-                    }) {
+                    if let Some(found_entry) = snapshot
+                        .entries
+                        .iter()
+                        .find(|e| e.decision_id == manipulation_entry.decision_id)
+                    {
                         // Values should be preserved exactly as provided
-                        assert_eq!(found_entry.timestamp_ms, manipulation_entry.timestamp_ms,
-                                 "Timestamp should be preserved exactly");
-                        assert_eq!(found_entry.epoch_id, manipulation_entry.epoch_id,
-                                 "Epoch ID should be preserved exactly");
+                        assert_eq!(
+                            found_entry.timestamp_ms, manipulation_entry.timestamp_ms,
+                            "Timestamp should be preserved exactly"
+                        );
+                        assert_eq!(
+                            found_entry.epoch_id, manipulation_entry.epoch_id,
+                            "Epoch ID should be preserved exactly"
+                        );
 
                         // Entry should have valid EntryId regardless of timestamp manipulation
                         assert!(entry_id.0 > 0, "Entry ID should be positive");
@@ -3209,8 +3377,8 @@ mod tests {
                     for i in 1..ordered_entries.len() {
                         // EntryId should increase monotonically (insertion order)
                         if let (Some(prev_id), Some(curr_id)) = (
-                            ordered_entries[i-1].entry_id.as_ref(),
-                            ordered_entries[i].entry_id.as_ref()
+                            ordered_entries[i - 1].entry_id.as_ref(),
+                            ordered_entries[i].entry_id.as_ref(),
                         ) {
                             // Parse EntryIds for comparison if they follow E-XXXXXXXX format
                             if prev_id.starts_with("E-") && curr_id.starts_with("E-") {
@@ -3218,13 +3386,15 @@ mod tests {
                                 let curr_num: Result<u64, _> = curr_id[2..].parse();
 
                                 if let (Ok(prev), Ok(curr)) = (prev_num, curr_num) {
-                                    assert!(curr >= prev,
-                                           "Entry IDs should increase monotonically regardless of timestamp manipulation");
+                                    assert!(
+                                        curr >= prev,
+                                        "Entry IDs should increase monotonically regardless of timestamp manipulation"
+                                    );
                                 }
                             }
                         }
                     }
-                },
+                }
                 Err(_) => {
                     // Graceful rejection of extreme timestamp values is acceptable
                 }
@@ -3267,17 +3437,27 @@ mod tests {
             };
 
             let append_result = ledger.append(entry.clone());
-            assert!(append_result.is_ok(), "All decision kinds should be accepted");
+            assert!(
+                append_result.is_ok(),
+                "All decision kinds should be accepted"
+            );
 
             // Verify decision kind is preserved correctly
             let snapshot = ledger.snapshot();
-            if let Some(found_entry) = snapshot.entries.iter().find(|e| {
-                e.decision_id == entry.decision_id
-            }) {
-                assert_eq!(found_entry.decision_kind, entry.decision_kind,
-                         "Decision kind should be preserved exactly");
-                assert_eq!(found_entry.decision_kind.label(), decision_kind.label(),
-                         "Decision kind label should match");
+            if let Some(found_entry) = snapshot
+                .entries
+                .iter()
+                .find(|e| e.decision_id == entry.decision_id)
+            {
+                assert_eq!(
+                    found_entry.decision_kind, entry.decision_kind,
+                    "Decision kind should be preserved exactly"
+                );
+                assert_eq!(
+                    found_entry.decision_kind.label(),
+                    decision_kind.label(),
+                    "Decision kind label should match"
+                );
             }
         }
 
@@ -3287,19 +3467,27 @@ mod tests {
 
         // JSON should contain all decision kind labels
         for decision_kind in &all_decision_kinds {
-            assert!(json.contains(decision_kind.label()),
-                   "JSON should contain decision kind: {}", decision_kind.label());
+            assert!(
+                json.contains(decision_kind.label()),
+                "JSON should contain decision kind: {}",
+                decision_kind.label()
+            );
         }
 
         // Roundtrip verification
-        let parsed_entries: Vec<EvidenceEntry> = serde_json::from_str(&json)
-            .expect("should deserialize");
-        assert_eq!(parsed_entries.len(), all_decision_kinds.len(),
-                 "All entries should survive roundtrip");
+        let parsed_entries: Vec<EvidenceEntry> =
+            serde_json::from_str(&json).expect("should deserialize");
+        assert_eq!(
+            parsed_entries.len(),
+            all_decision_kinds.len(),
+            "All entries should survive roundtrip"
+        );
 
         for (original, parsed) in all_decision_kinds.iter().zip(parsed_entries.iter()) {
-            assert_eq!(parsed.decision_kind, *original,
-                     "Decision kind should survive JSON roundtrip");
+            assert_eq!(
+                parsed.decision_kind, *original,
+                "Decision kind should survive JSON roundtrip"
+            );
         }
     }
 
@@ -3358,43 +3546,68 @@ mod tests {
             };
 
             let append_result = ledger.append(entry);
-            assert!(append_result.is_ok(), "Injection payload should be stored safely");
+            assert!(
+                append_result.is_ok(),
+                "Injection payload should be stored safely"
+            );
 
             // Verify payload is stored and serialized safely
             let snapshot = ledger.snapshot();
             let json = serde_json::to_string(&snapshot.entries).expect("should serialize");
 
             // JSON should escape all injection attempts
-            assert!(!json.contains("alert('xss')") || json.contains("\\\""),
-                   "JavaScript injection should be escaped");
-            assert!(!json.contains("</script>") || json.contains("\\u003c"),
-                   "HTML injection should be escaped");
-            assert!(!json.contains("rm -rf") || json.contains("\\"),
-                   "Command injection should be escaped");
-            assert!(!json.contains("DROP TABLE") || json.contains("\\"),
-                   "SQL injection should be escaped");
-            assert!(!json.contains("\n") || json.contains("\\n"),
-                   "Newline injection should be escaped");
-            assert!(!json.contains("\r") || json.contains("\\r"),
-                   "Carriage return injection should be escaped");
-            assert!(!json.contains("\t") || json.contains("\\t"),
-                   "Tab injection should be escaped");
-            assert!(!json.contains("\u{0000}") || json.contains("\\u0000"),
-                   "Null injection should be escaped");
+            assert!(
+                !json.contains("alert('xss')") || json.contains("\\\""),
+                "JavaScript injection should be escaped"
+            );
+            assert!(
+                !json.contains("</script>") || json.contains("\\u003c"),
+                "HTML injection should be escaped"
+            );
+            assert!(
+                !json.contains("rm -rf") || json.contains("\\"),
+                "Command injection should be escaped"
+            );
+            assert!(
+                !json.contains("DROP TABLE") || json.contains("\\"),
+                "SQL injection should be escaped"
+            );
+            assert!(
+                !json.contains("\n") || json.contains("\\n"),
+                "Newline injection should be escaped"
+            );
+            assert!(
+                !json.contains("\r") || json.contains("\\r"),
+                "Carriage return injection should be escaped"
+            );
+            assert!(
+                !json.contains("\t") || json.contains("\\t"),
+                "Tab injection should be escaped"
+            );
+            assert!(
+                !json.contains("\u{0000}") || json.contains("\\u0000"),
+                "Null injection should be escaped"
+            );
 
             // Roundtrip should preserve structure but escape dangerous content
-            let parsed_entries: Vec<EvidenceEntry> = serde_json::from_str(&json)
-                .expect("should deserialize safely");
+            let parsed_entries: Vec<EvidenceEntry> =
+                serde_json::from_str(&json).expect("should deserialize safely");
 
-            assert!(parsed_entries.len() > 0, "Should have entries after injection test");
+            assert!(
+                parsed_entries.len() > 0,
+                "Should have entries after injection test"
+            );
 
             // Find the injection test entry
-            if let Some(found_entry) = parsed_entries.iter().find(|e| {
-                e.decision_id.contains(&format!("injection_decision_{}", i))
-            }) {
+            if let Some(found_entry) = parsed_entries
+                .iter()
+                .find(|e| e.decision_id.contains(&format!("injection_decision_{}", i)))
+            {
                 // Payload should be preserved as JSON but safely escaped
-                assert!(found_entry.payload.is_object() || found_entry.payload.is_string(),
-                       "Payload structure should be preserved");
+                assert!(
+                    found_entry.payload.is_object() || found_entry.payload.is_string(),
+                    "Payload structure should be preserved"
+                );
             }
         }
     }
@@ -3408,7 +3621,7 @@ mod tests {
         let tampered_entries = vec![
             EvidenceEntry {
                 schema_version: "evidence_v1.0".to_string(),
-                entry_id: Some("E-00000000".to_string()),  // Attempt to use low ID
+                entry_id: Some("E-00000000".to_string()), // Attempt to use low ID
                 decision_id: "tampered_decision_1".to_string(),
                 decision_kind: DecisionKind::Admit,
                 decision_time: "2026-01-01T00:00:00Z".to_string(),
@@ -3420,7 +3633,7 @@ mod tests {
             },
             EvidenceEntry {
                 schema_version: "evidence_v1.0".to_string(),
-                entry_id: Some("E-99999999".to_string()),  // Attempt to use high ID
+                entry_id: Some("E-99999999".to_string()), // Attempt to use high ID
                 decision_id: "tampered_decision_2".to_string(),
                 decision_kind: DecisionKind::Deny,
                 decision_time: "2026-01-01T00:00:00Z".to_string(),
@@ -3432,7 +3645,7 @@ mod tests {
             },
             EvidenceEntry {
                 schema_version: "evidence_v1.0".to_string(),
-                entry_id: Some("ADMIN-ENTRY".to_string()),  // Attempt privileged ID format
+                entry_id: Some("ADMIN-ENTRY".to_string()), // Attempt privileged ID format
                 decision_id: "tampered_decision_3".to_string(),
                 decision_kind: DecisionKind::Escalate,
                 decision_time: "2026-01-01T00:00:00Z".to_string(),
@@ -3456,9 +3669,11 @@ mod tests {
                     // Verify entry ID tampering doesn't affect ledger integrity
                     let snapshot = ledger.snapshot();
 
-                    if let Some(found_entry) = snapshot.entries.iter().find(|e| {
-                        e.decision_id == tampered_entry.decision_id
-                    }) {
+                    if let Some(found_entry) = snapshot
+                        .entries
+                        .iter()
+                        .find(|e| e.decision_id == tampered_entry.decision_id)
+                    {
                         // Entry should be stored with correct data
                         assert_eq!(found_entry.decision_id, tampered_entry.decision_id);
                         assert_eq!(found_entry.decision_kind, tampered_entry.decision_kind);
@@ -3467,11 +3682,13 @@ mod tests {
                         // (ledger may assign its own IDs)
                         if let Some(ref stored_entry_id) = found_entry.entry_id {
                             // Should not contain administrative patterns
-                            assert!(!stored_entry_id.to_uppercase().contains("ADMIN"),
-                                   "Stored entry ID should not contain admin patterns");
+                            assert!(
+                                !stored_entry_id.to_uppercase().contains("ADMIN"),
+                                "Stored entry ID should not contain admin patterns"
+                            );
                         }
                     }
-                },
+                }
                 Err(_) => {
                     // Graceful rejection of tampered entry IDs is acceptable
                 }
@@ -3480,8 +3697,10 @@ mod tests {
 
         // Returned entry IDs should be monotonically increasing regardless of input tampering
         for i in 1..returned_entry_ids.len() {
-            assert!(returned_entry_ids[i].0 > returned_entry_ids[i-1].0,
-                   "Returned entry IDs should increase monotonically despite tampering attempts");
+            assert!(
+                returned_entry_ids[i].0 > returned_entry_ids[i - 1].0,
+                "Returned entry IDs should increase monotonically despite tampering attempts"
+            );
         }
     }
 
@@ -3492,7 +3711,7 @@ mod tests {
 
         let config = EvidenceLedgerConfig {
             max_entries: 1000,
-            max_bytes: 10 * 1024 * 1024,  // 10MB
+            max_bytes: 10 * 1024 * 1024, // 10MB
             lab_mode: false,
             enable_spill: false,
             spill_writer: None,
@@ -3531,17 +3750,20 @@ mod tests {
 
                             let result = ledger_clone.append(entry);
                             thread_results.push(("append", result.is_ok()));
-                        },
+                        }
                         1 => {
                             // Take snapshot
                             let snapshot = ledger_clone.snapshot();
                             thread_results.push(("snapshot", snapshot.entries.len() > 0));
-                        },
+                        }
                         2 => {
                             // Append large entry
                             let large_entry = EvidenceEntry {
                                 schema_version: "evidence_v1.0".to_string(),
-                                entry_id: Some(format!("large_thread_{}_op_{}", thread_id, operation)),
+                                entry_id: Some(format!(
+                                    "large_thread_{}_op_{}",
+                                    thread_id, operation
+                                )),
                                 decision_id: format!("large_decision_{}_{}", thread_id, operation),
                                 decision_kind: DecisionKind::Quarantine,
                                 decision_time: "2026-01-01T00:00:00Z".to_string(),
@@ -3558,14 +3780,14 @@ mod tests {
 
                             let result = ledger_clone.append(large_entry);
                             thread_results.push(("large_append", result.is_ok()));
-                        },
+                        }
                         3 => {
                             // Rapid snapshots
                             for _ in 0..5 {
                                 let _ = ledger_clone.snapshot();
                             }
                             thread_results.push(("rapid_snapshots", true));
-                        },
+                        }
                         _ => unreachable!(),
                     }
                 }
@@ -3585,27 +3807,44 @@ mod tests {
 
         // Verify concurrent operations completed successfully
         for (thread_id, thread_results) in all_results {
-            let success_count = thread_results.iter()
+            let success_count = thread_results
+                .iter()
                 .filter(|(_, success)| *success)
                 .count();
 
-            assert!(success_count > 0,
-                   "Thread {} should have at least some successful operations", thread_id);
+            assert!(
+                success_count > 0,
+                "Thread {} should have at least some successful operations",
+                thread_id
+            );
 
             // Verify thread had reasonable success rate
             let success_rate = success_count as f64 / thread_results.len() as f64;
-            assert!(success_rate > 0.5,
-                   "Thread {} should have >50% success rate, got {:.2}%", thread_id, success_rate * 100.0);
+            assert!(
+                success_rate > 0.5,
+                "Thread {} should have >50% success rate, got {:.2}%",
+                thread_id,
+                success_rate * 100.0
+            );
         }
 
         // Verify ledger integrity after stress test
         let final_snapshot = ledger.snapshot();
-        assert!(final_snapshot.entries.len() > 0, "Should have entries after stress test");
-        assert!(final_snapshot.entries.len() <= 1000, "Should respect max_entries limit");
+        assert!(
+            final_snapshot.entries.len() > 0,
+            "Should have entries after stress test"
+        );
+        assert!(
+            final_snapshot.entries.len() <= 1000,
+            "Should respect max_entries limit"
+        );
 
         // Verify entries are still well-formed
         for entry in &final_snapshot.entries {
-            assert!(!entry.decision_id.is_empty(), "Decision ID should not be empty");
+            assert!(
+                !entry.decision_id.is_empty(),
+                "Decision ID should not be empty"
+            );
             assert!(!entry.trace_id.is_empty(), "Trace ID should not be empty");
             assert!(entry.timestamp_ms > 0, "Timestamp should be positive");
         }
@@ -3615,7 +3854,7 @@ mod tests {
     fn test_security_size_budget_manipulation() {
         let config = EvidenceLedgerConfig {
             max_entries: 100,
-            max_bytes: 1024,  // Small byte limit
+            max_bytes: 1024, // Small byte limit
             lab_mode: false,
             enable_spill: false,
             spill_writer: None,
@@ -3637,7 +3876,7 @@ mod tests {
                 payload: serde_json::json!({
                     "large_field": "x".repeat(2000)  // 2KB actual data
                 }),
-                size_bytes: 0,  // Lies about size
+                size_bytes: 0, // Lies about size
             },
             // Entry claiming small size but containing large payload
             EvidenceEntry {
@@ -3652,7 +3891,7 @@ mod tests {
                 payload: serde_json::json!({
                     "another_large_field": "y".repeat(3000)  // 3KB actual data
                 }),
-                size_bytes: 10,  // Claims only 10 bytes
+                size_bytes: 10, // Claims only 10 bytes
             },
             // Entry claiming huge size but containing small payload
             EvidenceEntry {
@@ -3664,8 +3903,8 @@ mod tests {
                 timestamp_ms: 1000000002,
                 trace_id: "size_trace_3".to_string(),
                 epoch_id: 1,
-                payload: serde_json::json!({"small": "data"}),  // Small payload
-                size_bytes: 1000000,  // Claims 1MB
+                payload: serde_json::json!({"small": "data"}), // Small payload
+                size_bytes: 1000000,                           // Claims 1MB
             },
         ];
 
@@ -3677,36 +3916,43 @@ mod tests {
                     // If append succeeded, verify size budget is computed correctly
                     let snapshot = ledger.snapshot();
 
-                    if let Some(found_entry) = snapshot.entries.iter().find(|e| {
-                        e.decision_id == manipulation_entry.decision_id
-                    }) {
+                    if let Some(found_entry) = snapshot
+                        .entries
+                        .iter()
+                        .find(|e| e.decision_id == manipulation_entry.decision_id)
+                    {
                         // Ledger should compute actual size, not trust provided size_bytes
                         let payload_json = serde_json::to_string(&found_entry.payload)
                             .expect("payload should serialize");
                         let actual_payload_size = payload_json.len();
 
                         // Size computation should be based on actual content
-                        if actual_payload_size > 100 {  // Non-trivial size
-                            assert!(found_entry.size_bytes >= actual_payload_size / 2,
-                                   "Computed size should be reasonable for actual content");
+                        if actual_payload_size > 100 {
+                            // Non-trivial size
+                            assert!(
+                                found_entry.size_bytes >= actual_payload_size / 2,
+                                "Computed size should be reasonable for actual content"
+                            );
                         }
 
                         // Very small payloads claiming huge sizes should be adjusted
                         if manipulation_entry.size_bytes == 1000000 && actual_payload_size < 100 {
-                            assert!(found_entry.size_bytes < 10000,
-                                   "Size should be adjusted for small payloads claiming huge sizes");
+                            assert!(
+                                found_entry.size_bytes < 10000,
+                                "Size should be adjusted for small payloads claiming huge sizes"
+                            );
                         }
                     }
 
                     // Overall budget should be respected
-                    let total_size: usize = snapshot.entries.iter()
-                        .map(|e| e.size_bytes)
-                        .sum();
+                    let total_size: usize = snapshot.entries.iter().map(|e| e.size_bytes).sum();
 
                     // Total should not grossly exceed configured limit
-                    assert!(total_size <= config.max_bytes * 5,
-                           "Total size should not exceed 5x configured limit due to manipulation");
-                },
+                    assert!(
+                        total_size <= config.max_bytes * 5,
+                        "Total size should not exceed 5x configured limit due to manipulation"
+                    );
+                }
                 Err(_) => {
                     // Graceful rejection of size manipulation is expected
                 }

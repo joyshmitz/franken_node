@@ -17,6 +17,9 @@ use serde_json::json;
 
 const MAX_ACTIVE_HALTS: usize = 4096;
 const MAX_BUNDLES: usize = 4096;
+const MAX_CAUSAL_EVENTS: usize = 1024;
+const MAX_FAILED_ARTIFACTS: usize = 512;
+const MAX_PROOF_REFS: usize = 256;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
@@ -167,6 +170,21 @@ impl ProofContext {
     pub fn all_failed(&self) -> bool {
         self.passed_proofs.is_empty() && self.total() > 0
     }
+
+    /// Add a failed proof with capacity bounds.
+    pub fn add_failed_proof(&mut self, proof: String) {
+        push_bounded(&mut self.failed_proofs, proof, MAX_PROOF_REFS);
+    }
+
+    /// Add a missing proof with capacity bounds.
+    pub fn add_missing_proof(&mut self, proof: String) {
+        push_bounded(&mut self.missing_proofs, proof, MAX_PROOF_REFS);
+    }
+
+    /// Add a passed proof with capacity bounds.
+    pub fn add_passed_proof(&mut self, proof: String) {
+        push_bounded(&mut self.passed_proofs, proof, MAX_PROOF_REFS);
+    }
 }
 
 impl Default for ProofContext {
@@ -304,6 +322,47 @@ pub struct ViolationContext {
     pub epoch_id: u64,
     /// Timestamp of violation detection.
     pub timestamp_ms: u64,
+}
+
+impl ViolationContext {
+    /// Add a causal event with capacity bounds.
+    pub fn add_causal_event(&mut self, event: CausalEvent) {
+        push_bounded(&mut self.events, event, MAX_CAUSAL_EVENTS);
+    }
+
+    /// Add a failed artifact with capacity bounds.
+    pub fn add_failed_artifact(&mut self, artifact: FailedArtifact) {
+        push_bounded(&mut self.artifacts, artifact, MAX_FAILED_ARTIFACTS);
+    }
+
+    /// Ensure all vectors are within bounds before bundle generation.
+    pub fn ensure_bounded(&mut self) {
+        // Truncate events if over capacity
+        if self.events.len() > MAX_CAUSAL_EVENTS {
+            let overflow = self.events.len().saturating_sub(MAX_CAUSAL_EVENTS);
+            self.events.drain(0..overflow.min(self.events.len()));
+        }
+
+        // Truncate artifacts if over capacity
+        if self.artifacts.len() > MAX_FAILED_ARTIFACTS {
+            let overflow = self.artifacts.len().saturating_sub(MAX_FAILED_ARTIFACTS);
+            self.artifacts.drain(0..overflow.min(self.artifacts.len()));
+        }
+
+        // Truncate proof vectors if over capacity
+        if self.proofs.failed_proofs.len() > MAX_PROOF_REFS {
+            let overflow = self.proofs.failed_proofs.len().saturating_sub(MAX_PROOF_REFS);
+            self.proofs.failed_proofs.drain(0..overflow.min(self.proofs.failed_proofs.len()));
+        }
+        if self.proofs.missing_proofs.len() > MAX_PROOF_REFS {
+            let overflow = self.proofs.missing_proofs.len().saturating_sub(MAX_PROOF_REFS);
+            self.proofs.missing_proofs.drain(0..overflow.min(self.proofs.missing_proofs.len()));
+        }
+        if self.proofs.passed_proofs.len() > MAX_PROOF_REFS {
+            let overflow = self.proofs.passed_proofs.len().saturating_sub(MAX_PROOF_REFS);
+            self.proofs.passed_proofs.drain(0..overflow.min(self.proofs.passed_proofs.len()));
+        }
+    }
 }
 
 // ── DurabilityViolationDetector ────────────────────────────────────
@@ -479,6 +538,10 @@ fn update_hash_string_list(hasher: &mut Sha256, domain: &'static [u8], values: &
 
 /// Generate a violation bundle deterministically from context.
 pub fn generate_bundle(context: &ViolationContext) -> ViolationBundle {
+    // Ensure vectors are bounded to prevent memory exhaustion attacks
+    let mut bounded_context = context.clone();
+    bounded_context.ensure_bounded();
+
     // Derive bundle_id deterministically from content.
     // Length-prefix variable-length strings and domain-separate fields to
     // prevent delimiter, section, and optional-field collisions.
@@ -487,21 +550,21 @@ pub fn generate_bundle(context: &ViolationContext) -> ViolationBundle {
     update_hash_u64(
         &mut hasher,
         b"durability_violation_bundle_v1:epoch_id",
-        context.epoch_id,
+        bounded_context.epoch_id,
     );
     update_hash_u64(
         &mut hasher,
         b"durability_violation_bundle_v1:timestamp_ms",
-        context.timestamp_ms,
+        bounded_context.timestamp_ms,
     );
     update_hash_bytes(
         &mut hasher,
         b"durability_violation_bundle_v1:hardening_level",
-        context.hardening_level.as_bytes(),
+        bounded_context.hardening_level.as_bytes(),
     );
     hasher.update(b"durability_violation_bundle_v1:events");
-    hasher.update(hash_len(context.events.len()));
-    for event in &context.events {
+    hasher.update(hash_len(bounded_context.events.len()));
+    for event in &bounded_context.events {
         let label = event.event_type.label();
         hasher.update(b"durability_violation_bundle_v1:event");
         update_hash_bytes(
@@ -529,8 +592,8 @@ pub fn generate_bundle(context: &ViolationContext) -> ViolationBundle {
         }
     }
     hasher.update(b"durability_violation_bundle_v1:artifacts");
-    hasher.update(hash_len(context.artifacts.len()));
-    for artifact in &context.artifacts {
+    hasher.update(hash_len(bounded_context.artifacts.len()));
+    for artifact in &bounded_context.artifacts {
         hasher.update(b"durability_violation_bundle_v1:artifact");
         update_hash_bytes(
             &mut hasher,
@@ -556,12 +619,12 @@ pub fn generate_bundle(context: &ViolationContext) -> ViolationBundle {
     update_hash_string_list(
         &mut hasher,
         b"durability_violation_bundle_v1:proofs_failed",
-        &context.proofs.failed_proofs,
+        &bounded_context.proofs.failed_proofs,
     );
     update_hash_string_list(
         &mut hasher,
         b"durability_violation_bundle_v1:proofs_missing",
-        &context.proofs.missing_proofs,
+        &bounded_context.proofs.missing_proofs,
     );
     update_hash_string_list(
         &mut hasher,
@@ -875,7 +938,7 @@ mod tests {
         ctx.events[0].description = "quote \"danger\" newline\nok".into();
         ctx.events[0].evidence_ref = Some("EVD-\"A\"".into());
         ctx.artifacts[0].failure_reason = "bad path C:\\tmp\\bundle".into();
-        ctx.proofs.missing_proofs.push("proof-\"zzz\"".into());
+        ctx.proofs.add_missing_proof("proof-\"zzz\"".into());
 
         let bundle = generate_bundle(&ctx);
         let json = bundle.to_json();
@@ -1350,7 +1413,7 @@ mod tests {
     #[test]
     fn mr_failed_artifact_order_rebinds_bundle_id_without_losing_artifacts() {
         let mut ctx1 = make_context();
-        ctx1.artifacts.push(FailedArtifact {
+        ctx1.add_failed_artifact(FailedArtifact {
             artifact_path: "objects/def456".into(),
             expected_hash: "abcd".into(),
             actual_hash: "1234".into(),
@@ -1370,7 +1433,7 @@ mod tests {
     fn mr_extra_causal_event_increments_json_count_and_rebinds_id() {
         let ctx1 = make_context();
         let mut ctx2 = make_context();
-        ctx2.events.push(CausalEvent {
+        ctx2.add_causal_event(CausalEvent {
             event_type: CausalEventType::ArtifactUnverifiable,
             timestamp_ms: 1600,
             description: "artifact could not be reconstructed".into(),
@@ -1394,7 +1457,7 @@ mod tests {
     fn mr_extra_failed_artifact_increments_json_count_and_rebinds_id() {
         let ctx1 = make_context();
         let mut ctx2 = make_context();
-        ctx2.artifacts.push(FailedArtifact {
+        ctx2.add_failed_artifact(FailedArtifact {
             artifact_path: "objects/ghi789".into(),
             expected_hash: "eeee".into(),
             actual_hash: "".into(),
@@ -1452,6 +1515,59 @@ mod tests {
         assert_eq!(detector.bundle_count(), 1);
         assert!(detector.active_halts().is_empty());
         assert!(detector.check_durable_op("db").is_ok());
+    }
+
+    #[test]
+    fn test_violation_context_capacity_bounds() {
+        let mut ctx = ViolationContext {
+            events: Vec::new(),
+            artifacts: Vec::new(),
+            proofs: ProofContext::new(),
+            hardening_level: "test".into(),
+            epoch_id: 42,
+            timestamp_ms: 1000,
+        };
+
+        // Fill causal events beyond MAX_CAUSAL_EVENTS (1024)
+        for i in 0..1026 {
+            let event = CausalEvent {
+                event_type: CausalEventType::GuardrailRejection,
+                timestamp_ms: i as u64,
+                description: format!("event_{}", i),
+                evidence_ref: Some(format!("evt_{}", i)),
+            };
+            ctx.add_causal_event(event);
+        }
+
+        // Should cap at MAX_CAUSAL_EVENTS, oldest evicted
+        assert_eq!(ctx.events.len(), MAX_CAUSAL_EVENTS);
+        assert_eq!(ctx.events[0].description, "event_2"); // evt_0, evt_1 evicted
+        assert_eq!(ctx.events.last().unwrap().description, "event_1025");
+
+        // Fill failed artifacts beyond MAX_FAILED_ARTIFACTS (512)
+        for i in 0..514 {
+            let artifact = FailedArtifact {
+                artifact_path: format!("path_{}", i),
+                expected_hash: format!("hash_{}", i),
+                actual_hash: format!("actual_{}", i),
+                failure_reason: format!("reason_{}", i),
+            };
+            ctx.add_failed_artifact(artifact);
+        }
+
+        // Should cap at MAX_FAILED_ARTIFACTS, oldest evicted
+        assert_eq!(ctx.artifacts.len(), MAX_FAILED_ARTIFACTS);
+        assert_eq!(ctx.artifacts[0].artifact_path, "path_2"); // path_0, path_1 evicted
+
+        // Fill proof refs beyond MAX_PROOF_REFS (256)
+        for i in 0..258 {
+            ctx.proofs.add_failed_proof(format!("proof_{}", i));
+        }
+
+        // Should cap at MAX_PROOF_REFS, oldest evicted
+        assert_eq!(ctx.proofs.failed_proofs.len(), MAX_PROOF_REFS);
+        assert_eq!(ctx.proofs.failed_proofs[0], "proof_2"); // proof_0, proof_1 evicted
+        assert_eq!(ctx.proofs.failed_proofs.last().unwrap(), "proof_257");
     }
 
     #[test]
