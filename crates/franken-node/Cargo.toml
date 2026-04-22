@@ -252,6 +252,10 @@ name = "replay_bundle_metamorphic"
 path = "tests/replay_bundle_metamorphic.rs"
 
 [[test]]
+name = "bench_conformance_matrix"
+path = "tests/bench_conformance_matrix.rs"
+
+[[test]]
 name = "canonical_serializer_metamorphic"
 path = "tests/canonical_serializer_metamorphic.rs"
 
@@ -262,3 +266,7 @@ path = "tests/control_epoch_metamorphic.rs"
 [[test]]
 name = "replay_window_metamorphic"
 path = "tests/replay_window_metamorphic.rs"
+
+[[test]]
+name = "trust_cli_e2e_real_runtime"
+path = "tests/trust_cli_e2e_real_runtime.rs"
