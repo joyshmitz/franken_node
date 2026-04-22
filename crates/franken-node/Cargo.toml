@@ -62,7 +62,7 @@ subtle = "2.6.1"
 tempfile = "3.15"
 arbitrary = { version = "1.3", optional = true, features = ["derive"] }
 # Heavy compilation dependencies made optional for faster fuzz builds
-ureq = { version = "2", optional = true }
+ureq = { version = "3", optional = true }
 url = { version = "2.5", optional = true }
 which = { version = "8.0.2", optional = true }
 ctrlc = { version = "3", optional = true, features = ["termination"] }

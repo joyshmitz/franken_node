@@ -11043,11 +11043,11 @@ fn fetch_trust_scan_dependent_count(dependency_name: &str, resolved_version: &st
     let url = format!(
         "{TRUST_SCAN_DEPS_DEV_BASE_URL}/systems/npm/packages/{package_name}/versions/{version}:dependents"
     );
-    let response = ureq::get(&url)
-        .set("User-Agent", &trust_scan_user_agent())
+    let mut response = ureq::get(&url)
+        .header("User-Agent", &trust_scan_user_agent())
         .call()
         .map_err(|err| anyhow::anyhow!("dependents query failed for {dependency_name}: {err}"))?;
-    let body = response.into_string().map_err(|err| {
+    let body = response.body_mut().read_to_string().map_err(|err| {
         anyhow::anyhow!("failed reading dependents response for {dependency_name}: {err}")
     })?;
     let payload = serde_json::from_str::<serde_json::Value>(&body).with_context(|| {
@@ -11069,11 +11069,11 @@ fn fetch_trust_scan_npm_metadata(
 ) -> Result<TrustScanDeepMetadata> {
     let package_name = percent_encode_path_component(dependency_name);
     let url = format!("{TRUST_SCAN_NPM_REGISTRY_BASE_URL}/{package_name}");
-    let response = ureq::get(&url)
-        .set("User-Agent", &trust_scan_user_agent())
+    let mut response = ureq::get(&url)
+        .header("User-Agent", &trust_scan_user_agent())
         .call()
         .map_err(|err| anyhow::anyhow!("npm registry query failed for {dependency_name}: {err}"))?;
-    let body = response.into_string().map_err(|err| {
+    let body = response.body_mut().read_to_string().map_err(|err| {
         anyhow::anyhow!("failed reading npm registry response for {dependency_name}: {err}")
     })?;
     let payload = serde_json::from_str::<serde_json::Value>(&body)
@@ -11120,12 +11120,12 @@ fn fetch_trust_scan_audit_metadata(
         body["version"] = serde_json::Value::String(version.to_string());
     }
 
-    let response = ureq::post(&trust_scan_osv_query_url())
-        .set("User-Agent", &trust_scan_user_agent())
-        .set("Content-Type", "application/json")
-        .send_string(&body.to_string())
+    let mut response = ureq::post(&trust_scan_osv_query_url())
+        .header("User-Agent", &trust_scan_user_agent())
+        .header("Content-Type", "application/json")
+        .send(body.to_string())
         .map_err(|err| anyhow::anyhow!("OSV query failed for {dependency_name}: {err}"))?;
-    let payload = response.into_string().map_err(|err| {
+    let payload = response.body_mut().read_to_string().map_err(|err| {
         anyhow::anyhow!("failed reading OSV response for {dependency_name}: {err}")
     })?;
     let payload = serde_json::from_str::<serde_json::Value>(&payload)
