@@ -220,3 +220,7 @@ required-features = ["test-support"]
 [[test]]
 name = "vef_receipt_schema_conformance"
 path = "tests/vef_receipt_schema_conformance.rs"
+
+[[test]]
+name = "replay_bundle_metamorphic"
+path = "tests/replay_bundle_metamorphic.rs"
