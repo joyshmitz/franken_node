@@ -8,9 +8,11 @@
 //! Run with UPDATE_GOLDENS=1 or `cargo insta review` to accept initial outputs.
 
 use assert_cmd::Command;
+use frankenengine_node::supply_chain::artifact_signing::{build_and_sign_manifest, sign_artifact};
 use insta::{Settings, assert_json_snapshot, assert_snapshot};
 use serde_json::{Value, json};
-use std::{error::Error, io, path::Path};
+use sha2::{Digest, Sha256};
+use std::{error::Error, fs, io, path::Path};
 use tempfile::TempDir;
 
 #[path = "cli_golden_helpers.rs"]
@@ -67,6 +69,254 @@ fn canonicalize_doctor_json(value: &mut Value, cwd: &Path) {
         }
         _ => {}
     }
+}
+
+fn fixture_signing_key(domain: &[u8], label: &[u8]) -> ed25519_dalek::SigningKey {
+    let mut hasher = Sha256::new();
+    hasher.update(domain);
+    hasher.update(u64::try_from(label.len()).unwrap_or(u64::MAX).to_le_bytes());
+    hasher.update(label);
+    let seed: [u8; 32] = hasher.finalize().into();
+    ed25519_dalek::SigningKey::from_bytes(&seed)
+}
+
+fn write_seed_signing_key(root: &Path, relative_path: &str, seed_byte: u8) -> io::Result<String> {
+    let path = root.join(relative_path);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&path, hex::encode([seed_byte; 32]))?;
+    Ok(path.display().to_string())
+}
+
+fn ensure_parent_dir(path: &Path) -> io::Result<()> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)?;
+    }
+    Ok(())
+}
+
+fn write_signed_release_fixture(release_dir: &Path, artifacts: &[(&str, &[u8])]) -> io::Result<()> {
+    let signing_key = fixture_signing_key(b"cli_subcommand_goldens_release_key_v1:", b"current");
+    let manifest = build_and_sign_manifest(artifacts, &signing_key);
+
+    for (name, bytes) in artifacts {
+        let artifact_path = release_dir.join(name);
+        ensure_parent_dir(&artifact_path)?;
+        fs::write(&artifact_path, bytes)?;
+
+        let signature = sign_artifact(&signing_key, bytes);
+        let signature_path = release_dir.join(format!("{name}.sig"));
+        ensure_parent_dir(&signature_path)?;
+        fs::write(signature_path, hex::encode(signature))?;
+    }
+
+    fs::write(release_dir.join("SHA256SUMS"), manifest.canonical_bytes())?;
+    fs::write(
+        release_dir.join("SHA256SUMS.sig"),
+        hex::encode(manifest.signature),
+    )?;
+    Ok(())
+}
+
+fn write_release_key_dir(key_dir: &Path) -> io::Result<()> {
+    fs::create_dir_all(key_dir)?;
+    let rotated_key = fixture_signing_key(b"cli_subcommand_goldens_release_key_v1:", b"rotated");
+    let current_key = fixture_signing_key(b"cli_subcommand_goldens_release_key_v1:", b"current");
+    fs::write(
+        key_dir.join("00-rotated.pub"),
+        hex::encode(rotated_key.verifying_key().as_bytes()),
+    )?;
+    fs::write(
+        key_dir.join("10-current.pub"),
+        hex::encode(current_key.verifying_key().as_bytes()),
+    )?;
+    fs::write(key_dir.join("README.txt"), "non-key metadata")?;
+    Ok(())
+}
+
+fn canonicalize_verify_release_json(mut value: Value, release_dir: &Path, key_dir: &Path) -> Value {
+    let release_exact = release_dir.display().to_string();
+    let release_prefix = format!("{release_exact}/");
+    let key_exact = key_dir.display().to_string();
+    let key_prefix = format!("{key_exact}/");
+
+    fn scrub(
+        value: &mut Value,
+        release_exact: &str,
+        release_prefix: &str,
+        key_exact: &str,
+        key_prefix: &str,
+    ) {
+        match value {
+            Value::Array(items) => {
+                for item in items {
+                    scrub(item, release_exact, release_prefix, key_exact, key_prefix);
+                }
+            }
+            Value::Object(map) => {
+                for nested in map.values_mut() {
+                    scrub(nested, release_exact, release_prefix, key_exact, key_prefix);
+                }
+            }
+            Value::String(text) => {
+                if text == release_exact {
+                    *value = json!("[release]");
+                } else if let Some(path) = text.strip_prefix(release_prefix) {
+                    *value = json!(format!("[release]/{path}"));
+                } else if text == key_exact {
+                    *value = json!("[keys]");
+                } else if let Some(path) = text.strip_prefix(key_prefix) {
+                    *value = json!(format!("[keys]/{path}"));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    scrub(
+        &mut value,
+        &release_exact,
+        &release_prefix,
+        &key_exact,
+        &key_prefix,
+    );
+    value
+}
+
+fn canonicalize_fleet_reconcile_json(mut value: Value, fleet_state_dir: &Path) -> Value {
+    let fleet_state_prefix = format!("{}/", fleet_state_dir.display());
+
+    fn scrub(value: &mut Value, fleet_state_prefix: &str) {
+        match value {
+            Value::Array(items) => {
+                for item in items {
+                    scrub(item, fleet_state_prefix);
+                }
+            }
+            Value::Object(map) => {
+                for (key, nested) in map {
+                    match key.as_str() {
+                        "operation_id" => {
+                            *nested = json!("[operation-id]");
+                        }
+                        "receipt_id" => {
+                            *nested = json!("[receipt-id]");
+                        }
+                        "signature_hex" => {
+                            *nested = json!("[signature-hex]");
+                        }
+                        "signed_payload_sha256" => {
+                            *nested = json!("[signed-payload-sha256]");
+                        }
+                        "payload_hash" => {
+                            *nested = json!("[payload-hash]");
+                        }
+                        "elapsed_ms" => {
+                            *nested = json!(0);
+                        }
+                        "timestamp" | "signed_at" | "emitted_at" | "recorded_at" | "issued_at"
+                        | "completed_at" | "last_seen" | "as_of" | "poll_timestamp" => {
+                            *nested = json!(format!("[{key}]"));
+                        }
+                        "state_dir" => {
+                            if let Some(path) = nested.as_str() {
+                                *nested = path
+                                    .strip_prefix(fleet_state_prefix)
+                                    .map(|suffix| json!(format!("[fleet-state]/{suffix}")))
+                                    .unwrap_or_else(|| json!("[fleet-state]"));
+                            }
+                        }
+                        _ => scrub(nested, fleet_state_prefix),
+                    }
+                }
+            }
+            Value::String(text) => {
+                if let Some(path) = text.strip_prefix(fleet_state_prefix) {
+                    *value = json!(format!("[fleet-state]/{path}"));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    scrub(&mut value, &fleet_state_prefix);
+    value
+}
+
+fn write_close_condition_fixture(root: &Path) -> io::Result<()> {
+    fn write_fixture(path: &Path, contents: &str) -> io::Result<()> {
+        ensure_parent_dir(path)?;
+        fs::write(path, contents)
+    }
+
+    write_fixture(
+        &root.join("Cargo.toml"),
+        r#"
+[workspace]
+members = ["crates/franken-node"]
+"#,
+    )?;
+    write_fixture(
+        &root.join("crates/franken-node/Cargo.toml"),
+        r#"
+[package]
+name = "fixture-franken-node"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+frankenengine-engine = { path = "../../../franken_engine/crates/franken-engine" }
+frankenengine-extension-host = { path = "../../../franken_engine/crates/franken-extension-host" }
+"#,
+    )?;
+    write_fixture(
+        &root.join("crates/franken-node/src/lib.rs"),
+        "pub fn fixture() -> bool { true }\n",
+    )?;
+    write_fixture(
+        &root.join("docs/ENGINE_SPLIT_CONTRACT.md"),
+        "franken_engine path dependencies MUST NOT be replaced by local engine crates.\n",
+    )?;
+    write_fixture(
+        &root.join("docs/PRODUCT_CHARTER.md"),
+        "Dual-oracle close condition requires all dimensions to be green.\n",
+    )?;
+    write_fixture(
+        &root.join("artifacts/13/compatibility_corpus_results.json"),
+        r#"{
+  "corpus": {
+    "corpus_version": "compat-corpus-golden"
+  },
+  "thresholds": {
+    "overall_pass_rate_min_pct": 95.0
+  },
+  "totals": {
+    "total_test_cases": 100,
+    "passed_test_cases": 98,
+    "failed_test_cases": 2,
+    "errored_test_cases": 0,
+    "skipped_test_cases": 0,
+    "overall_pass_rate_pct": 98.0
+  }
+}"#,
+    )?;
+    write_fixture(
+        &root.join("artifacts/section/10.N/gate_verdict/bd-1neb_section_gate.json"),
+        r#"{
+  "gate": "section_10n_verification",
+  "checks": [
+    {
+      "check_id": "10N-ORACLE",
+      "name": "Dual-Oracle Close Condition Gate",
+      "status": "PASS"
+    }
+  ]
+}"#,
+    )?;
+    Ok(())
 }
 
 /// Helper to run CLI commands that may fail gracefully.
@@ -220,6 +470,114 @@ fn doctor_json_output() -> Result<(), Box<dyn Error>> {
     canonicalize_doctor_json(&mut stdout, temp.path());
     with_json_snapshot_settings("doctor_cli", || {
         assert_json_snapshot!("doctor_json", stdout);
+    });
+    Ok(())
+}
+
+#[test]
+fn cli_json_golden_verify_release_output() -> Result<(), Box<dyn Error>> {
+    let temp = TempDir::new()?;
+    let release_dir = temp.path().join("release");
+    let key_dir = temp.path().join("keys");
+    fs::create_dir_all(&release_dir)?;
+
+    let artifacts = [
+        (
+            "franken-node-linux-x64.tar.xz",
+            b"golden-artifact-linux-x64" as &[u8],
+        ),
+        (
+            "franken-node-darwin-arm64.tar.xz",
+            b"golden-artifact-darwin-arm64" as &[u8],
+        ),
+    ];
+    write_signed_release_fixture(&release_dir, &artifacts)?;
+    write_release_key_dir(&key_dir)?;
+
+    let release_arg = release_dir.display().to_string();
+    let key_dir_arg = key_dir.display().to_string();
+    let mut cmd = Command::cargo_bin("franken-node")?;
+    let assertion = cmd
+        .args([
+            "verify",
+            "release",
+            release_arg.as_str(),
+            "--key-dir",
+            key_dir_arg.as_str(),
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    let stdout = parse_json_stdout("verify release --json", &assertion.get_output().stdout)?;
+    with_json_snapshot_settings("verify_cli", || {
+        assert_json_snapshot!(
+            "verify_release_json",
+            canonicalize_verify_release_json(stdout, &release_dir, &key_dir)
+        );
+    });
+    Ok(())
+}
+
+#[test]
+fn cli_json_golden_fleet_reconcile_output() -> Result<(), Box<dyn Error>> {
+    let temp = TempDir::new()?;
+    let fleet_state_dir = temp.path().join("fleet-state");
+    let signing_key_path = write_seed_signing_key(temp.path(), "keys/fleet.key", 31)?;
+
+    let mut cmd = Command::cargo_bin("franken-node")?;
+    let assertion = cmd
+        .current_dir(temp.path())
+        .env("FRANKEN_NODE_FLEET_STATE_DIR", &fleet_state_dir)
+        .env(
+            "FRANKEN_NODE_SECURITY_DECISION_RECEIPT_SIGNING_KEY_PATH",
+            signing_key_path,
+        )
+        .env_remove("FRANKEN_NODE_PROFILE")
+        .args(["fleet", "reconcile", "--json"])
+        .assert()
+        .success();
+
+    let stdout = parse_json_stdout("fleet reconcile --json", &assertion.get_output().stdout)?;
+    with_json_snapshot_settings("fleet_cli", || {
+        assert_json_snapshot!(
+            "fleet_reconcile_json",
+            canonicalize_fleet_reconcile_json(stdout, &fleet_state_dir)
+        );
+    });
+    Ok(())
+}
+
+#[test]
+fn cli_json_golden_doctor_close_condition_output() -> Result<(), Box<dyn Error>> {
+    let temp = TempDir::new()?;
+    write_close_condition_fixture(temp.path())?;
+    let signing_key_path =
+        write_seed_signing_key(temp.path(), ".franken-node/keys/oracle-close.key", 41)?;
+
+    let mut cmd = Command::cargo_bin("franken-node")?;
+    let assertion = cmd
+        .current_dir(temp.path())
+        .env(
+            "FRANKEN_NODE_CLOSE_CONDITION_TIMESTAMP_UTC",
+            "2026-02-21T00:00:00Z",
+        )
+        .args([
+            "doctor",
+            "close-condition",
+            "--json",
+            "--receipt-signing-key",
+            signing_key_path.as_str(),
+        ])
+        .assert()
+        .success();
+
+    let stdout = parse_json_stdout(
+        "doctor close-condition --json",
+        &assertion.get_output().stdout,
+    )?;
+    with_json_snapshot_settings("doctor_cli", || {
+        assert_json_snapshot!("doctor_close_condition_json", stdout);
     });
     Ok(())
 }

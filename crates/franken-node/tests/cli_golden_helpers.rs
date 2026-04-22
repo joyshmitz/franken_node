@@ -76,7 +76,7 @@ pub fn with_scrubbed_snapshot_settings<R>(snapshot_dir: &str, assertion: impl Fn
     settings.add_filter(r"[A-F0-9]{40,64}", "[HASH]");
 
     // Port number scrubbing
-    settings.add_filter(r":\d{4,5}(?=/|$|\s)", ":[PORT]");
+    settings.add_filter(r":\d{4,5}([/\s]|$)", ":[PORT]$1");
 
     // Temp directory scrubbing
     settings.add_filter(r"/tmp/[A-Za-z0-9_.-]+", "/tmp/[TEMPDIR]");

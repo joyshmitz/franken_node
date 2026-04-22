@@ -1,0 +1,23 @@
+---
+source: crates/franken-node/tests/cli_subcommand_goldens.rs
+---
+{
+  "release_path": "[release]",
+  "manifest_signature_ok": true,
+  "results": [
+    {
+      "artifact_name": "franken-node-darwin-arm64.tar.xz",
+      "passed": true,
+      "key_id": "6697a8f0f8eff9c0",
+      "failure_reason": null
+    },
+    {
+      "artifact_name": "franken-node-linux-x64.tar.xz",
+      "passed": true,
+      "key_id": "6697a8f0f8eff9c0",
+      "failure_reason": null
+    }
+  ],
+  "overall_pass": true,
+  "unlisted_artifact_count": 0
+}
