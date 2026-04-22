@@ -10,10 +10,9 @@
 use frankenengine_node::tools::replay_bundle::{
     RawEvent, ReplayBundle, EventType, generate_replay_bundle, write_bundle_to_path, read_bundle_from_path,
 };
-use rand::{Rng, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng};
 use rand::distributions::{Alphanumeric, DistString};
-use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use serde_json::json;
 use tempfile::TempDir;
 
 /// Generate arbitrary RawEvent for property-based testing
