@@ -435,6 +435,19 @@ impl fmt::Display for OracleError {
 
 impl std::error::Error for OracleError {}
 
+fn quorum_required_for(total_runtimes: usize, threshold_percent: u8) -> Result<usize, OracleError> {
+    let total = u128::try_from(total_runtimes).map_err(|_| OracleError {
+        code: error_codes::ERR_NVO_QUORUM_FAILED,
+        message: "invalid quorum calculation: runtime count conversion failed".to_string(),
+    })?;
+    let percent = u128::from(threshold_percent.clamp(1, 100));
+    let required = total.saturating_mul(percent).div_ceil(100);
+    usize::try_from(required).map_err(|_| OracleError {
+        code: error_codes::ERR_NVO_QUORUM_FAILED,
+        message: "invalid quorum calculation: threshold exceeds platform capacity".to_string(),
+    })
+}
+
 // ---------------------------------------------------------------------------
 // RuntimeOracle
 // ---------------------------------------------------------------------------
@@ -657,15 +670,7 @@ impl RuntimeOracle {
                 message: "no runtimes registered".to_string(),
             });
         }
-        let total_f64 = total as f64;
-        let percentage_f64 = self.quorum_threshold_percent as f64 / 100.0;
-        if !total_f64.is_finite() || !percentage_f64.is_finite() {
-            return Err(OracleError {
-                code: error_codes::ERR_NVO_QUORUM_FAILED,
-                message: "invalid quorum calculation: non-finite values".to_string(),
-            });
-        }
-        let quorum_required = (total_f64 * percentage_f64).ceil() as usize;
+        let quorum_required = quorum_required_for(total, self.quorum_threshold_percent)?;
 
         // Count how many runtimes agree with the most common output.
         let mut output_counts: BTreeMap<&[u8], usize> = BTreeMap::new();
@@ -965,6 +970,20 @@ mod tests {
         let result = oracle.tally_votes("check-1").unwrap();
         assert!(result.quorum_reached);
         assert_eq!(result.quorum_threshold, 3);
+    }
+
+    #[test]
+    fn quorum_required_uses_integer_ceiling_without_float_rounding() {
+        assert_eq!(quorum_required_for(3, 66).unwrap(), 2);
+        assert_eq!(quorum_required_for(3, 67).unwrap(), 3);
+        assert_eq!(quorum_required_for(usize::MAX, 100).unwrap(), usize::MAX);
+
+        let total = u128::try_from(usize::MAX).unwrap();
+        let expected = total.saturating_mul(66).div_ceil(100);
+        assert_eq!(
+            quorum_required_for(usize::MAX, 66).unwrap(),
+            usize::try_from(expected).unwrap()
+        );
     }
 
     // 2) Register runtime success
