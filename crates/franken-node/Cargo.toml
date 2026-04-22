@@ -139,6 +139,10 @@ name = "replay_bundle_adversarial_fuzz"
 path = "tests/replay_bundle_adversarial_fuzz.rs"
 
 [[test]]
+name = "replay_bundle_integrity_conformance"
+path = "tests/replay_bundle_integrity_conformance.rs"
+
+[[test]]
 name = "runtime_cli_e2e"
 path = "tests/runtime_cli_e2e.rs"
 
@@ -192,4 +196,14 @@ required-features = ["test-support"]
 [[test]]
 name = "telemetry_bridge_regressions"
 path = "tests/telemetry_bridge_regressions.rs"
+required-features = ["test-support"]
+
+[[test]]
+name = "cli_subcommand_goldens"
+path = "tests/cli_subcommand_goldens.rs"
+required-features = ["test-support"]
+
+[[test]]
+name = "cli_error_goldens"
+path = "tests/cli_error_goldens.rs"
 required-features = ["test-support"]

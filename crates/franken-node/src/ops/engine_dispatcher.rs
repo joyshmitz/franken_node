@@ -236,7 +236,29 @@ fn default_engine_binary_candidates() -> Vec<PathBuf> {
     candidates
 }
 
-#[cfg(not(feature = "external-commands"))]
+#[cfg(any(not(feature = "external-commands"), feature = "test-support"))]
+fn is_executable_path_candidate(path: &Path) -> bool {
+    let Ok(metadata) = path.metadata() else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        metadata.permissions().mode() & 0o111 != 0
+    }
+
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+#[cfg(any(not(feature = "external-commands"), feature = "test-support"))]
 fn search_in_path(command: &str, path_env: Option<&OsString>, _cwd: &Path) -> Option<PathBuf> {
     use std::env;
 
@@ -256,13 +278,13 @@ fn search_in_path(command: &str, path_env: Option<&OsString>, _cwd: &Path) -> Op
             } else {
                 candidate.with_extension(&ext[1..])
             };
-            if path_with_ext.is_file() {
+            if is_executable_path_candidate(&path_with_ext) {
                 return Some(path_with_ext);
             }
         }
 
         #[cfg(not(windows))]
-        if candidate.is_file() {
+        if is_executable_path_candidate(&candidate) {
             return Some(candidate);
         }
     }
@@ -385,6 +407,27 @@ pub(crate) fn resolve_engine_binary_path(configured_hint: &str) -> String {
         &default_engine_binary_candidates(),
         &|path| path.exists(),
     )
+}
+
+#[cfg(all(unix, feature = "test-support"))]
+pub fn assert_no_external_command_lookup_rejects_non_executable_path_entry_for_tests() {
+    let temp_dir = tempfile::TempDir::new().expect("tempdir");
+    let fake_runtime = temp_dir.path().join("node");
+    std::fs::write(&fake_runtime, "#!/bin/sh\n").expect("write fake runtime");
+
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = std::fs::metadata(&fake_runtime)
+        .expect("fake runtime metadata")
+        .permissions();
+    permissions.set_mode(0o600);
+    std::fs::set_permissions(&fake_runtime, permissions).expect("remove executable bit");
+
+    let path_env = Some(temp_dir.path().as_os_str().to_os_string());
+    let resolved = search_in_path("node", path_env.as_ref(), temp_dir.path());
+    assert!(
+        resolved.is_none(),
+        "no-external-commands PATH fallback must not resolve non-executable runtime files"
+    );
 }
 
 fn project_root_for_path(app_path: &Path) -> &Path {

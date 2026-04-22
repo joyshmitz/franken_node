@@ -51,6 +51,12 @@ fn engine_dispatcher_reaps_descendant_pipe_holders() {
 #[test]
 fn engine_dispatcher_reaps_descendant_pipe_holders() {}
 
+#[cfg(all(unix, feature = "test-support"))]
+#[test]
+fn engine_dispatcher_no_external_commands_rejects_non_executable_path_entry() {
+    frankenengine_node::ops::engine_dispatcher::assert_no_external_command_lookup_rejects_non_executable_path_entry_for_tests();
+}
+
 #[cfg(feature = "test-support")]
 #[test]
 fn telemetry_join_timeout_does_not_detach_connection_worker() {
