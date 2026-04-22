@@ -35,6 +35,7 @@
 //! - **ERR_IBD_BLOCKED**: Operation blocked because capability is not enabled.
 //! - **ERR_IBD_TOKEN_EXPIRED**: The capability token has expired.
 //! - **ERR_IBD_INVALID_SIGNATURE**: The capability token signature is invalid.
+//! - **ERR_IBD_SUBJECT_MISMATCH**: The token subject does not match the caller.
 //! - **ERR_IBD_SILENT_DISABLE**: Attempt to silently disable a capability detected.
 
 use serde::{Deserialize, Serialize};
@@ -63,6 +64,7 @@ pub const IBD_004_SILENT_DISABLE_DETECTED: &str = "IBD-004";
 pub const ERR_IBD_BLOCKED: &str = "ERR_IBD_BLOCKED";
 pub const ERR_IBD_TOKEN_EXPIRED: &str = "ERR_IBD_TOKEN_EXPIRED";
 pub const ERR_IBD_INVALID_SIGNATURE: &str = "ERR_IBD_INVALID_SIGNATURE";
+pub const ERR_IBD_SUBJECT_MISMATCH: &str = "ERR_IBD_SUBJECT_MISMATCH";
 pub const ERR_IBD_SILENT_DISABLE: &str = "ERR_IBD_SILENT_DISABLE";
 
 // ---------------------------------------------------------------------------
@@ -276,6 +278,19 @@ impl EnforcementError {
         }
     }
 
+    pub fn subject_mismatch(capability: ImpossibleCapability, token_id: &str) -> Self {
+        Self {
+            code: ERR_IBD_SUBJECT_MISMATCH.to_string(),
+            message: format!(
+                "[{}] CapabilityToken '{}' for '{}' is bound to a different subject.",
+                ERR_IBD_SUBJECT_MISMATCH,
+                token_id,
+                capability.label()
+            ),
+            capability,
+        }
+    }
+
     pub fn silent_disable(capability: ImpossibleCapability) -> Self {
         Self {
             code: ERR_IBD_SILENT_DISABLE.to_string(),
@@ -444,6 +459,10 @@ impl SignatureVerifier for Ed25519SignatureVerifier {
     }
 }
 
+fn token_subject_matches_actor(token: &CapabilityToken, actor: &str) -> bool {
+    crate::security::constant_time::ct_eq(&token.subject, actor)
+}
+
 // ---------------------------------------------------------------------------
 // CapabilityEnforcer
 // ---------------------------------------------------------------------------
@@ -539,29 +558,53 @@ impl CapabilityEnforcer {
             return Err(EnforcementError::token_expired(capability, &token_id));
         }
 
-        match self.state.get(&capability) {
-            Some(EnforcementStatus::Enabled { .. }) => Ok(()),
-            _ => {
-                self.metrics.blocked_total = self.metrics.blocked_total.saturating_add(1);
-                let bc = self.blocked_counts.entry(capability).or_insert(0);
-                *bc = bc.saturating_add(1);
-
-                self.log_event(
-                    IBD_001_CAPABILITY_BLOCKED,
-                    capability,
-                    actor,
-                    current_time_ms,
-                    &format!(
-                        "Capability '{}' is blocked by default. {}",
-                        capability.label(),
-                        capability.description()
-                    ),
-                    None,
-                );
-
-                Err(EnforcementError::blocked(capability))
+        if let Some(EnforcementStatus::Enabled { token_id, .. }) =
+            self.state.get(&capability).cloned()
+        {
+            if self
+                .tokens
+                .get(&capability)
+                .is_some_and(|token| token_subject_matches_actor(token, actor))
+            {
+                return Ok(());
             }
+
+            self.metrics.blocked_total = self.metrics.blocked_total.saturating_add(1);
+            let bc = self.blocked_counts.entry(capability).or_insert(0);
+            *bc = bc.saturating_add(1);
+            self.log_event(
+                ERR_IBD_SUBJECT_MISMATCH,
+                capability,
+                actor,
+                current_time_ms,
+                &format!(
+                    "Capability token '{}' for '{}' is bound to a different subject",
+                    token_id,
+                    capability.label()
+                ),
+                Some(&token_id),
+            );
+            return Err(EnforcementError::subject_mismatch(capability, &token_id));
         }
+
+        self.metrics.blocked_total = self.metrics.blocked_total.saturating_add(1);
+        let bc = self.blocked_counts.entry(capability).or_insert(0);
+        *bc = bc.saturating_add(1);
+
+        self.log_event(
+            IBD_001_CAPABILITY_BLOCKED,
+            capability,
+            actor,
+            current_time_ms,
+            &format!(
+                "Capability '{}' is blocked by default. {}",
+                capability.label(),
+                capability.description()
+            ),
+            None,
+        );
+
+        Err(EnforcementError::blocked(capability))
     }
 
     /// Opt-in: present a signed capability token to enable a capability.
@@ -590,6 +633,28 @@ impl CapabilityEnforcer {
                 Some(&token.token_id),
             );
             return Err(EnforcementError::invalid_signature(
+                capability,
+                &token.token_id,
+            ));
+        }
+
+        // Verify the caller is the same principal bound into the signed token.
+        if !token_subject_matches_actor(&token, actor) {
+            self.log_event(
+                ERR_IBD_SUBJECT_MISMATCH,
+                capability,
+                actor,
+                current_time_ms,
+                &format!(
+                    "Token '{}' for '{}' is bound to subject '{}', not caller '{}'",
+                    token.token_id,
+                    capability.label(),
+                    token.subject,
+                    actor
+                ),
+                Some(&token.token_id),
+            );
+            return Err(EnforcementError::subject_mismatch(
                 capability,
                 &token.token_id,
             ));

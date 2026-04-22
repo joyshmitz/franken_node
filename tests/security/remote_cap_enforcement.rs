@@ -6,6 +6,10 @@
 //! - local-only operations remain functional without RemoteCap
 //! - network guard enforces centralized capability gate
 
+use ed25519_dalek::{Signer, SigningKey};
+use frankenengine_node::security::impossible_default::{
+    CapabilityEnforcer, CapabilityToken, ERR_IBD_SUBJECT_MISMATCH, ImpossibleCapability,
+};
 use frankenengine_node::security::network_guard::{
     Action, EgressPolicy, EgressRule, NetworkGuard, Protocol,
 };
@@ -50,6 +54,31 @@ fn issue_cap(single_use: bool) -> frankenengine_node::security::remote_cap::Remo
         .0
 }
 
+fn sign_impossible_default_token(token: &mut CapabilityToken, signing_key: &SigningKey) {
+    let hash = token.content_hash();
+    let signature = signing_key.sign(hash.as_bytes());
+    token.signature = hex::encode(signature.to_bytes());
+}
+
+fn impossible_default_token_for(
+    subject: &str,
+    capability: ImpossibleCapability,
+    signing_key: &SigningKey,
+) -> CapabilityToken {
+    let mut token = CapabilityToken {
+        token_id: format!("subject-bound-{}", capability.label()),
+        capability,
+        issuer: "security-test-issuer".to_string(),
+        subject: subject.to_string(),
+        issued_at_ms: 1_700_000_000_000,
+        expires_at_ms: 1_700_000_060_000,
+        signature: String::new(),
+        justification: "subject-bound capability regression".to_string(),
+    };
+    sign_impossible_default_token(&mut token, signing_key);
+    token
+}
+
 #[test]
 fn all_network_operations_require_token() {
     let mut gate = CapabilityGate::new("remote-cap-test-secret");
@@ -84,6 +113,39 @@ fn all_network_operations_require_token() {
         assert_eq!(err.code(), "REMOTECAP_MISSING");
         assert_eq!(err.compatibility_code(), Some("ERR_REMOTE_CAP_REQUIRED"));
     }
+}
+
+#[test]
+fn remote_cap_signed_subject_mismatch_is_rejected() {
+    let signing_key = SigningKey::from_bytes(&[0x42; 32]);
+    let capability = ImpossibleCapability::OutboundNetwork;
+    let token = impossible_default_token_for("subject-a", capability, &signing_key);
+    let mut enforcer = CapabilityEnforcer::with_ed25519_verifier(signing_key.verifying_key());
+
+    let mismatch_err = enforcer
+        .opt_in(token.clone(), "subject-b", 1_700_000_001_000)
+        .expect_err("token signed for subject A must not opt in subject B");
+    assert_eq!(mismatch_err.code, ERR_IBD_SUBJECT_MISMATCH);
+    assert!(!enforcer.is_enabled(capability));
+    assert_eq!(
+        enforcer
+            .audit_log()
+            .last()
+            .map(|entry| entry.event_code.as_str()),
+        Some(ERR_IBD_SUBJECT_MISMATCH)
+    );
+
+    enforcer
+        .opt_in(token, "subject-a", 1_700_000_001_000)
+        .expect("signed subject may opt in itself");
+    enforcer
+        .enforce(capability, "subject-a", 1_700_000_002_000)
+        .expect("signed subject may use its capability");
+
+    let cross_actor_err = enforcer
+        .enforce(capability, "subject-b", 1_700_000_003_000)
+        .expect_err("enabled capability must not become global");
+    assert_eq!(cross_actor_err.code, ERR_IBD_SUBJECT_MISMATCH);
 }
 
 #[test]
