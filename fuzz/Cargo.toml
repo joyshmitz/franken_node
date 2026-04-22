@@ -13,7 +13,9 @@ arbitrary = { version = "1.3", features = ["derive"] }
 # Remove rand_core feature to avoid randomness dependencies for deterministic fuzzing
 ed25519-dalek = { version = "2.1.1" }
 hex = "0.4.3"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_cbor = "0.11.2"
 # Remove zeroize_derive to reduce proc-macro compilation overhead
 zeroize = { version = "1.8.2" }
 
@@ -24,13 +26,18 @@ default-features = false
 # - parsing: tree-sitter (~3-4min savings)
 # - http-client: ureq/url (~1-2min savings)
 # - external-commands: which/ctrlc (~30s savings)
-features = ["fuzz", "test-support"]
+features = [
+    "fuzz",
+    "test-support",
+    "cbor-serialization",
+    "extended-surfaces",
+    "parsing",
+    "external-commands",
+]
 
-# Remove frankenengine-verifier-sdk to reduce compilation overhead
-# Only enable for fuzz targets that specifically need SDK functionality
-# [dependencies.frankenengine-verifier-sdk]
-# path = "../sdk/verifier"
-# features = ["fuzz"]
+[dependencies.frankenengine-verifier-sdk]
+path = "../sdk/verifier"
+features = ["fuzz"]
 
 # Prevent fuzzing dependencies from leaking into production
 [[bin]]
@@ -84,5 +91,65 @@ doc = false
 [[bin]]
 name = "fuzz_trust_card_envelope_parsing"
 path = "fuzz_targets/fuzz_trust_card_envelope_parsing.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_ed25519_signature_boundaries"
+path = "fuzz_targets/fuzz_ed25519_signature_boundaries.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_capability_token_parser"
+path = "fuzz_targets/fuzz_capability_token_parser.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_trust_card_compare_cbor"
+path = "fuzz_targets/fuzz_trust_card_compare_cbor.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_remote_cap_scope_check"
+path = "fuzz_targets/fuzz_remote_cap_scope_check.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_connector_lifecycle_inputs"
+path = "fuzz_targets/fuzz_connector_lifecycle_inputs.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_canonical_serializer_roundtrip"
+path = "fuzz_targets/fuzz_canonical_serializer_roundtrip.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_replay_bundle_chunking_export"
+path = "fuzz_targets/fuzz_replay_bundle_chunking_export.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_receipt_trust_card_roundtrip"
+path = "fuzz_targets/fuzz_receipt_trust_card_roundtrip.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_migration_report_serialization"
+path = "fuzz_targets/fuzz_migration_report_serialization.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_migration_rollback"
+path = "fuzz_targets/fuzz_migration_rollback.rs"
 test = false
 doc = false
