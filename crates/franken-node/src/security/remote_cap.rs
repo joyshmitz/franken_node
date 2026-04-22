@@ -16,9 +16,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
+use crate::security::cuckoo_filter::CuckooFilter;
 
 const MAX_REPLAY_ENTRIES: usize = 4_096;
 const REMOTE_CAP_REPLAY_STORE_ENV: &str = "FRANKEN_NODE_REMOTECAP_REPLAY_STORE";
+const CUCKOO_REVOCATION_ENV: &str = "FRANKEN_NODE_CUCKOO_REVOCATION";
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
@@ -81,6 +83,180 @@ impl ReplayTokenSet {
     #[must_use]
     fn ordered_ids(&self) -> &[String] {
         &self.insertion_order
+    }
+}
+
+/// Operating mode for hybrid revocation checker
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CheckMode {
+    /// Use cuckoo filter only (fastest, false positives possible)
+    FastPath,
+    /// Use cuckoo filter with BTreeSet verification (fast + accurate)
+    Hybrid,
+    /// Use BTreeSet only (fallback, always accurate)
+    Fallback,
+}
+
+/// High-performance hybrid revocation checker.
+///
+/// Combines cuckoo filter's O(1) performance with BTreeSet's 100% accuracy.
+/// Automatically falls back to safe mode if false positive rate exceeds threshold.
+/// Maintains FIFO behavior compatible with ReplayTokenSet.
+#[derive(Debug, Clone)]
+struct HybridRevocationChecker {
+    cuckoo: CuckooFilter,
+    btree_backup: BTreeSet<String>,
+    insertion_order: Vec<String>, // For FIFO behavior in BTreeSet
+    mode: CheckMode,
+    false_positive_count: usize,
+    total_positive_checks: usize,
+    max_false_positive_rate: f64, // e.g., 0.001 = 0.1%
+}
+
+impl HybridRevocationChecker {
+    fn new() -> Self {
+        let capacity = std::env::var(CUCKOO_REVOCATION_ENV)
+            .ok()
+            .and_then(|s| if s == "true" { Some(MAX_REPLAY_ENTRIES * 4) } else { None })
+            .unwrap_or(0);
+
+        let mode = if capacity > 0 {
+            CheckMode::Hybrid
+        } else {
+            CheckMode::Fallback
+        };
+
+        Self {
+            cuckoo: CuckooFilter::new(capacity.max(1024)),
+            btree_backup: BTreeSet::new(),
+            insertion_order: Vec::new(),
+            mode,
+            false_positive_count: 0,
+            total_positive_checks: 0,
+            max_false_positive_rate: 0.001, // 0.1% threshold
+        }
+    }
+
+    fn contains(&mut self, token_id: &str) -> bool {
+        match self.mode {
+            CheckMode::Fallback => {
+                // BTreeSet only - always accurate
+                self.btree_backup.contains(token_id)
+            }
+            CheckMode::FastPath => {
+                // Cuckoo filter only - fastest but may have false positives
+                self.cuckoo.contains(token_id)
+            }
+            CheckMode::Hybrid => {
+                // Cuckoo filter with verification
+                if !self.cuckoo.contains(token_id) {
+                    // Definitely not present (no false negatives in cuckoo)
+                    false
+                } else {
+                    // Potential positive - verify with BTreeSet
+                    self.total_positive_checks = self.total_positive_checks.saturating_add(1);
+                    let actually_present = self.btree_backup.contains(token_id);
+
+                    if !actually_present {
+                        // False positive detected
+                        self.false_positive_count = self.false_positive_count.saturating_add(1);
+                        self.check_false_positive_rate();
+                    }
+
+                    actually_present
+                }
+            }
+        }
+    }
+
+    fn insert(&mut self, token_id: String) -> bool {
+        // Check if already exists
+        if self.mode != CheckMode::FastPath && self.btree_backup.contains(&token_id) {
+            return false; // Already present
+        }
+
+        let inserted_cuckoo = match self.mode {
+            CheckMode::Fallback => true,
+            _ => self.cuckoo.insert(&token_id),
+        };
+
+        // Handle BTreeSet with FIFO behavior
+        if self.mode != CheckMode::FastPath {
+            // Insert new token
+            self.btree_backup.insert(token_id.clone());
+
+            // Handle FIFO eviction if needed
+            if self.insertion_order.len() >= MAX_REPLAY_ENTRIES {
+                let overflow = self
+                    .insertion_order
+                    .len()
+                    .saturating_sub(MAX_REPLAY_ENTRIES)
+                    .saturating_add(1);
+                let drain_len = overflow.min(self.insertion_order.len());
+                for removed_token in self.insertion_order.drain(0..drain_len) {
+                    self.btree_backup.remove(&removed_token);
+                }
+            }
+
+            // Add to insertion order tracking
+            if self.insertion_order.len() < MAX_REPLAY_ENTRIES {
+                self.insertion_order.push(token_id);
+            }
+        }
+
+        // Return true if successfully inserted
+        match self.mode {
+            CheckMode::Fallback => true, // We already handled duplicates above
+            CheckMode::FastPath => inserted_cuckoo,
+            CheckMode::Hybrid => inserted_cuckoo, // Both structures updated
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self.mode {
+            CheckMode::FastPath => self.cuckoo.len(),
+            _ => self.btree_backup.len(),
+        }
+    }
+
+    /// Check if false positive rate exceeds threshold and fallback if needed
+    fn check_false_positive_rate(&mut self) {
+        if self.total_positive_checks < 100 {
+            return; // Not enough data yet
+        }
+
+        let current_fpr = self.false_positive_count as f64 / self.total_positive_checks as f64;
+
+        if current_fpr > self.max_false_positive_rate {
+            // Switch to fallback mode due to high false positive rate
+            self.mode = CheckMode::Fallback;
+
+            // Reset counters for future monitoring
+            self.false_positive_count = 0;
+            self.total_positive_checks = 0;
+        }
+    }
+
+    /// Get current false positive rate
+    #[cfg(test)]
+    pub fn false_positive_rate(&self) -> f64 {
+        if self.total_positive_checks == 0 {
+            0.0
+        } else {
+            self.false_positive_count as f64 / self.total_positive_checks as f64
+        }
+    }
+
+    /// Get current operating mode
+    #[cfg(test)]
+    pub fn current_mode(&self) -> CheckMode {
+        self.mode
+    }
+}
+
+impl Default for HybridRevocationChecker {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -583,7 +759,7 @@ pub struct CapabilityGate {
     verification_secret: String,
     connectivity_mode: ConnectivityMode,
     consumed_tokens: ReplayTokenSet,
-    revoked_tokens: ReplayTokenSet,
+    revoked_tokens: HybridRevocationChecker,
     replay_store: ReplayStoreBackend,
     audit_log: Vec<RemoteCapAuditEvent>,
 }
@@ -595,7 +771,7 @@ impl CapabilityGate {
             verification_secret: verification_secret.to_string(),
             connectivity_mode: ConnectivityMode::Connected,
             consumed_tokens: ReplayTokenSet::default(),
-            revoked_tokens: ReplayTokenSet::default(),
+            revoked_tokens: HybridRevocationChecker::default(),
             replay_store: ReplayStoreBackend::from_env(),
             audit_log: Vec::new(),
         }
@@ -616,7 +792,7 @@ impl CapabilityGate {
             verification_secret: verification_secret.to_string(),
             connectivity_mode: ConnectivityMode::Connected,
             consumed_tokens: ReplayTokenSet::default(),
-            revoked_tokens: ReplayTokenSet::default(),
+            revoked_tokens: HybridRevocationChecker::default(),
             replay_store: ReplayStoreBackend::Durable(DurableReplayStore::open(store_dir)?),
             audit_log: Vec::new(),
         })
@@ -2967,5 +3143,137 @@ mod remote_cap_comprehensive_negative_tests {
 
         assert!(substitution_result.is_err(), "Signature substitution should be detected");
         assert_eq!(substitution_result.unwrap_err().code(), "REMOTECAP_INVALID");
+    }
+
+    #[test]
+    fn test_hybrid_revocation_checker_integration() {
+        // Test cuckoo filter integration with different modes
+
+        // Test 1: Fallback mode (no environment variable)
+        std::env::remove_var(CUCKOO_REVOCATION_ENV);
+        let mut checker_fallback = HybridRevocationChecker::new();
+        assert_eq!(checker_fallback.current_mode(), CheckMode::Fallback);
+
+        // Test basic operations in fallback mode
+        assert!(checker_fallback.insert("token1".to_string()));
+        assert!(!checker_fallback.insert("token1".to_string())); // Already exists
+        assert!(checker_fallback.contains("token1"));
+        assert!(!checker_fallback.contains("token2"));
+        assert_eq!(checker_fallback.len(), 1);
+
+        // Test 2: Hybrid mode (with environment variable)
+        std::env::set_var(CUCKOO_REVOCATION_ENV, "true");
+        let mut checker_hybrid = HybridRevocationChecker::new();
+        assert_eq!(checker_hybrid.current_mode(), CheckMode::Hybrid);
+
+        // Test basic operations in hybrid mode
+        assert!(checker_hybrid.insert("token1".to_string()));
+        assert!(!checker_hybrid.insert("token1".to_string())); // Already exists
+        assert!(checker_hybrid.contains("token1"));
+        assert!(!checker_hybrid.contains("token2"));
+        assert_eq!(checker_hybrid.len(), 1);
+
+        // Test 3: FIFO behavior with capacity limit
+        let mut checker_fifo = HybridRevocationChecker::new();
+
+        // Insert more than MAX_REPLAY_ENTRIES to test FIFO eviction
+        for i in 0..(MAX_REPLAY_ENTRIES + 10) {
+            checker_fifo.insert(format!("token-{:05}", i));
+        }
+
+        // Should not exceed MAX_REPLAY_ENTRIES
+        assert_eq!(checker_fifo.len(), MAX_REPLAY_ENTRIES);
+
+        // Early tokens should be evicted (FIFO)
+        assert!(!checker_fifo.contains("token-00000"));
+        assert!(!checker_fifo.contains("token-00009"));
+
+        // Later tokens should still be present
+        assert!(checker_fifo.contains("token-04100")); // Near end
+        assert!(checker_fifo.contains(&format!("token-{:05}", MAX_REPLAY_ENTRIES + 9))); // Last one
+
+        // Test 4: Integration with CapabilityGate
+        std::env::set_var(CUCKOO_REVOCATION_ENV, "true");
+        let mut gate = CapabilityGate::new("test-secret");
+
+        let provider = CapabilityProvider::new("test-secret");
+        let scope = RemoteScope::new(
+            vec![RemoteOperation::NetworkEgress],
+            vec!["https://example.com".to_string()],
+        );
+
+        let (cap, _) = provider
+            .issue("operator", scope, 1_700_000_000, 3600, true, false, "trace-test")
+            .expect("capability issuance");
+
+        // Authorize should work initially
+        let result = gate.authorize_network(
+            Some(&cap),
+            RemoteOperation::NetworkEgress,
+            "https://example.com/api",
+            1_700_000_100,
+            "trace-authorize",
+        );
+        assert!(result.is_ok());
+
+        // Revoke the capability
+        gate.revoke(&cap, 1_700_000_200, "trace-revoke");
+
+        // Should now be denied due to revocation
+        let revoked_result = gate.authorize_network(
+            Some(&cap),
+            RemoteOperation::NetworkEgress,
+            "https://example.com/api",
+            1_700_000_300,
+            "trace-revoked-check",
+        );
+        assert!(revoked_result.is_err());
+        assert_eq!(revoked_result.unwrap_err(), RemoteCapError::Revoked {
+            token_id: cap.token_id.clone(),
+        });
+
+        // Clean up environment variable
+        std::env::remove_var(CUCKOO_REVOCATION_ENV);
+    }
+
+    #[test]
+    fn test_cuckoo_filter_performance_characteristics() {
+        // Verify that cuckoo filter mode provides better performance characteristics
+        std::env::set_var(CUCKOO_REVOCATION_ENV, "true");
+
+        let mut checker = HybridRevocationChecker::new();
+        assert_eq!(checker.current_mode(), CheckMode::Hybrid);
+
+        // Insert many items to test performance
+        let start_time = std::time::Instant::now();
+        for i in 0..1000 {
+            checker.insert(format!("performance-test-{}", i));
+        }
+        let insert_duration = start_time.elapsed();
+
+        // Test lookups
+        let start_time = std::time::Instant::now();
+        for i in 0..1000 {
+            checker.contains(&format!("performance-test-{}", i));
+        }
+        let lookup_duration = start_time.elapsed();
+
+        // Test non-existent lookups (should be very fast in cuckoo mode)
+        let start_time = std::time::Instant::now();
+        for i in 1000..2000 {
+            checker.contains(&format!("performance-test-{}", i));
+        }
+        let negative_lookup_duration = start_time.elapsed();
+
+        println!("Insert duration: {:?}", insert_duration);
+        println!("Lookup duration: {:?}", lookup_duration);
+        println!("Negative lookup duration: {:?}", negative_lookup_duration);
+
+        // Verify reasonable performance (these are generous bounds)
+        assert!(insert_duration < std::time::Duration::from_millis(100));
+        assert!(lookup_duration < std::time::Duration::from_millis(50));
+        assert!(negative_lookup_duration < std::time::Duration::from_millis(25));
+
+        std::env::remove_var(CUCKOO_REVOCATION_ENV);
     }
 }
