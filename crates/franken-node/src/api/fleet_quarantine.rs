@@ -1847,10 +1847,10 @@ impl FleetControlManager {
             sequence: self.next_op_id,
         };
 
-        if let Some(next) = self.next_op_id.checked_add(1) {
-            self.next_op_id = next;
-        } else {
+        if self.next_op_id == u64::MAX {
             self.operation_ids_exhausted = true;
+        } else {
+            self.next_op_id = self.next_op_id.saturating_add(1);
         }
 
         Ok(slot)
