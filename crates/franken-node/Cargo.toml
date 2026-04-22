@@ -83,6 +83,7 @@ syn = { version = "2.0", features = ["full"] }
 tracing-subscriber = { workspace = true }
 insta = { version = "1.40", features = ["json", "filters"] }
 arbitrary = { version = "1.3", features = ["derive"] }
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [[test]]
 name = "migrate_cli_e2e"
@@ -270,3 +271,11 @@ path = "tests/replay_window_metamorphic.rs"
 [[test]]
 name = "trust_cli_e2e_real_runtime"
 path = "tests/trust_cli_e2e_real_runtime.rs"
+
+[[test]]
+name = "session_auth_real_lifecycle_structured"
+path = "tests/session_auth_real_lifecycle_structured.rs"
+
+[[bench]]
+name = "cuckoo_revocation_bench"
+harness = false
