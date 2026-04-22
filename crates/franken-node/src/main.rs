@@ -58,9 +58,9 @@ use crate::api::{
 use crate::cli::{
     BenchCommand, Cli, Command, DoctorCloseConditionArgs, DoctorCommand, FleetAgentArgs,
     FleetCommand, IncidentCommand, MigrateCommand, RegistryCommand, RemoteCapCommand,
-    RemoteCapIssueArgs, RemoteCapRevokeArgs, RemoteCapUseArgs, RuntimeCommand, RuntimeLaneCommand,
-    TrustCardCommand, TrustCommand, VerifyCommand, VerifyCompatibilityArgs, VerifyCorpusArgs,
-    VerifyMigrationArgs, VerifyModuleArgs, VerifyReleaseArgs,
+    RemoteCapIssueArgs, RemoteCapRevokeArgs, RemoteCapUseArgs, RemoteCapVerifyArgs, RuntimeCommand,
+    RuntimeLaneCommand, TrustCardCommand, TrustCommand, VerifyCommand, VerifyCompatibilityArgs,
+    VerifyCorpusArgs, VerifyMigrationArgs, VerifyModuleArgs, VerifyReleaseArgs,
 };
 use crate::policy::{
     bayesian_diagnostics::{BayesianDiagnostics, CandidateRef, Observation},
@@ -10497,6 +10497,59 @@ fn handle_remotecap_use(args: &RemoteCapUseArgs) -> Result<()> {
     Ok(())
 }
 
+fn handle_remotecap_verify(args: &RemoteCapVerifyArgs) -> Result<()> {
+    let cap = read_remotecap_token(&args.token_file)?;
+    let state = load_remotecap_cli_state()?;
+    if state.revoked_token_ids.contains(cap.token_id()) {
+        return Err(anyhow::anyhow!(
+            "{}",
+            RemoteCapError::Revoked {
+                token_id: cap.token_id().to_string()
+            }
+        ));
+    }
+
+    let operation = parse_remote_operation(&args.operation)?;
+    let now_epoch_secs = now_unix_secs();
+    let signing_key = resolve_remotecap_signing_key()?;
+    let mut gate = CapabilityGate::new(&signing_key);
+    gate.recheck_network(
+        Some(&cap),
+        operation,
+        &args.endpoint,
+        now_epoch_secs,
+        &args.trace_id,
+    )
+    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+    let audit_event = gate
+        .audit_log()
+        .last()
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("remotecap verify did not emit an audit event"))?;
+
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "valid": true,
+                "authorized": true,
+                "token_id": cap.token_id(),
+                "operation": operation,
+                "endpoint": args.endpoint,
+                "audit_event": audit_event,
+            }))?
+        );
+    } else {
+        println!("RemoteCap verified");
+        println!("  token_id: {}", cap.token_id());
+        println!("  operation: {operation}");
+        println!("  endpoint: {}", args.endpoint);
+        println!("  event_code: {}", audit_event.event_code);
+    }
+
+    Ok(())
+}
+
 fn handle_remotecap_revoke(args: &RemoteCapRevokeArgs) -> Result<()> {
     let cap = read_remotecap_token(&args.token_file)?;
     let now_epoch_secs = now_unix_secs();
@@ -18850,6 +18903,9 @@ fn main() -> Result<()> {
         Command::Remotecap(sub) => match sub {
             RemoteCapCommand::Issue(args) => {
                 handle_remotecap_issue(&args)?;
+            }
+            RemoteCapCommand::Verify(args) => {
+                handle_remotecap_verify(&args)?;
             }
             RemoteCapCommand::Use(args) => {
                 handle_remotecap_use(&args)?;

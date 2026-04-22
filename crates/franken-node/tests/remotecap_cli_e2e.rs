@@ -186,6 +186,81 @@ fn remotecap_issue_single_use_token() {
 }
 
 #[test]
+fn remotecap_verify_authorizes_without_consuming_single_use_token() {
+    let workspace = setup_test_workspace();
+    let workspace_path = workspace.path().to_str().unwrap();
+
+    let mut issue_cmd = remotecap_cmd();
+    issue_cmd
+        .arg("issue")
+        .arg("--scope")
+        .arg("network_egress")
+        .arg("--endpoint")
+        .arg("https://api.example.com")
+        .arg("--single-use")
+        .arg("--operator-approved")
+        .arg("--json")
+        .current_dir(workspace_path)
+        .env("FRANKEN_NODE_REMOTECAP_KEY", "remotecap-cli-e2e-key");
+
+    let issue_output = issue_cmd.assert().success().get_output().stdout.clone();
+    let issue_json: Value = serde_json::from_slice(&issue_output).expect("issue output json");
+    let token_path = workspace.path().join("single_use_capability.json");
+    write_json(&token_path, &issue_json["token"]);
+
+    for trace_id in ["verify-trace-1", "verify-trace-2"] {
+        let mut verify_cmd = remotecap_cmd();
+        verify_cmd
+            .arg("verify")
+            .arg("--token-file")
+            .arg(&token_path)
+            .arg("--operation")
+            .arg("network_egress")
+            .arg("--endpoint")
+            .arg("https://api.example.com/v1/status")
+            .arg("--trace-id")
+            .arg(trace_id)
+            .arg("--json")
+            .current_dir(workspace_path)
+            .env("FRANKEN_NODE_REMOTECAP_KEY", "remotecap-cli-e2e-key");
+
+        let verify_output = verify_cmd.assert().success().get_output().stdout.clone();
+        let verify_json: Value =
+            serde_json::from_slice(&verify_output).expect("verify output json");
+        assert_eq!(verify_json["valid"].as_bool(), Some(true));
+        assert_eq!(verify_json["authorized"].as_bool(), Some(true));
+        assert_eq!(
+            verify_json["audit_event"]["event_code"].as_str(),
+            Some("REMOTECAP_RECHECK_PASSED")
+        );
+        assert_eq!(
+            verify_json["audit_event"]["trace_id"].as_str(),
+            Some(trace_id)
+        );
+    }
+
+    let mut use_cmd = remotecap_cmd();
+    use_cmd
+        .arg("use")
+        .arg("--token-file")
+        .arg(&token_path)
+        .arg("--operation")
+        .arg("network_egress")
+        .arg("--endpoint")
+        .arg("https://api.example.com/v1/status")
+        .arg("--json")
+        .current_dir(workspace_path)
+        .env("FRANKEN_NODE_REMOTECAP_KEY", "remotecap-cli-e2e-key");
+
+    let use_output = use_cmd.assert().success().get_output().stdout.clone();
+    let use_json: Value = serde_json::from_slice(&use_output).expect("use output json");
+    assert_eq!(
+        use_json["audit_event"]["event_code"].as_str(),
+        Some("REMOTECAP_CONSUMED")
+    );
+}
+
+#[test]
 fn remotecap_issue_missing_scope_fails() {
     let workspace = setup_test_workspace();
     let workspace_path = workspace.path().to_str().unwrap();
@@ -351,6 +426,10 @@ fn remotecap_help_shows_usage() {
         stdout.contains("issue"),
         "Expected issue subcommand in help"
     );
+    assert!(
+        stdout.contains("verify"),
+        "Expected verify subcommand in help"
+    );
 }
 
 #[test]
@@ -373,6 +452,28 @@ fn remotecap_issue_help_shows_options() {
         stdout.contains("--single-use"),
         "Expected --single-use option"
     );
+    assert!(stdout.contains("--json"), "Expected --json option");
+}
+
+#[test]
+fn remotecap_verify_help_shows_options() {
+    let mut cmd = remotecap_cmd();
+    cmd.arg("verify").arg("--help");
+
+    let result = cmd.assert().success();
+    let output = result.get_output();
+    let stdout = std::str::from_utf8(&output.stdout).expect("Invalid UTF-8");
+
+    assert!(
+        stdout.contains("--token-file"),
+        "Expected --token-file option"
+    );
+    assert!(
+        stdout.contains("--operation"),
+        "Expected --operation option"
+    );
+    assert!(stdout.contains("--endpoint"), "Expected --endpoint option");
+    assert!(stdout.contains("--trace-id"), "Expected --trace-id option");
     assert!(stdout.contains("--json"), "Expected --json option");
 }
 
