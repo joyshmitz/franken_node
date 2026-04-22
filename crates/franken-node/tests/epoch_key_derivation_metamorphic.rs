@@ -4,7 +4,7 @@ use frankenengine_node::security::epoch_scoped_keys::{
 };
 
 #[test]
-fn epoch_domain_shift_preserves_same_pair_acceptance_and_cross_pair_rejection() {
+fn epoch_domain_shift_preserves_determinism_and_cross_pair_rejection() {
     let root = RootSecret::from_bytes([0x42; 32]);
     let payloads: [&[u8]; 3] = [
         b"runtime-manifest".as_slice(),
@@ -21,6 +21,11 @@ fn epoch_domain_shift_preserves_same_pair_acceptance_and_cross_pair_rejection() 
 
             let base_key = derive_epoch_key(&root, base_epoch, domain);
             let shifted_key = derive_epoch_key(&root, shifted_epoch, &shifted_domain);
+            let repeated_base_key = derive_epoch_key(&root, base_epoch, domain);
+            assert_eq!(
+                base_key, repeated_base_key,
+                "same root/epoch/domain must deterministically derive the same key material"
+            );
             assert_ne!(
                 base_key, shifted_key,
                 "metamorphic epoch/domain shift must change derived key material"
