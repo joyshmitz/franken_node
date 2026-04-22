@@ -20,6 +20,11 @@ fuzz_target!(|case: RemoteCapTokenParseCase| {
         case.operation.into_operation(),
         &case.requested_endpoint,
     );
+    fuzz_raw_token_text(
+        &case.raw_text,
+        case.operation.into_operation(),
+        &case.requested_endpoint,
+    );
     fuzz_token_shaped_json(
         &case.token_shape,
         case.operation.into_operation(),
@@ -50,8 +55,30 @@ fn fuzz_raw_token_json(bytes: &[u8], operation: RemoteOperation, endpoint: &str)
     }
 }
 
+fn fuzz_raw_token_text(text: &str, operation: RemoteOperation, endpoint: &str) {
+    if text.len() > MAX_RAW_JSON_BYTES {
+        return;
+    }
+
+    let endpoint = bounded_text(endpoint, "https://fuzz.example.com/api/resource");
+    let _ = serde_json::from_str::<serde_json::Value>(text);
+    if let Ok(cap) = serde_json::from_str::<RemoteCap>(text) {
+        json_roundtrip(&cap);
+        exercise_parsed_cap(&cap, operation, &endpoint, NOW.saturating_add(1));
+    }
+    if let Ok(scope) = serde_json::from_str::<RemoteScope>(text) {
+        json_roundtrip(&scope);
+        assert_scope_predicates_are_stable(&scope, operation, &endpoint);
+    }
+    if let Ok(error) = serde_json::from_str::<RemoteCapError>(text) {
+        json_roundtrip(&error);
+        assert!(!error.code().is_empty());
+        assert!(!error.to_string().is_empty());
+    }
+}
+
 fn fuzz_token_shaped_json(shape: &RemoteCapTokenShape, operation: RemoteOperation, endpoint: &str) {
-    let object = serde_json::json!({
+    let mut object = serde_json::json!({
         "token_id": bounded_text(&shape.token_id, "token-shape"),
         "issuer_identity": bounded_text(&shape.issuer_identity, "issuer-shape"),
         "issued_at_epoch_secs": shape.issued_at_epoch_secs,
@@ -63,6 +90,7 @@ fn fuzz_token_shaped_json(shape: &RemoteCapTokenShape, operation: RemoteOperatio
         "signature": bounded_text(&shape.signature, "signature-shape"),
         "single_use": shape.single_use,
     });
+    apply_token_shape_mutation(&mut object, shape.shape_mutation);
     let encoded = serde_json::to_vec(&object).expect("token-shaped JSON must serialize");
     if let Ok(cap) = serde_json::from_slice::<RemoteCap>(&encoded) {
         json_roundtrip(&cap);
@@ -72,6 +100,75 @@ fn fuzz_token_shaped_json(shape: &RemoteCapTokenShape, operation: RemoteOperatio
             &bounded_text(endpoint, "https://fuzz.example.com/api/resource"),
             NOW.saturating_add(1),
         );
+    }
+}
+
+fn apply_token_shape_mutation(value: &mut serde_json::Value, mutation: TokenShapeMutation) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+    match mutation {
+        TokenShapeMutation::None => {}
+        TokenShapeMutation::MissingTokenId => {
+            object.remove("token_id");
+        }
+        TokenShapeMutation::MissingScope => {
+            object.remove("scope");
+        }
+        TokenShapeMutation::NullSignature => {
+            object.insert("signature".to_string(), serde_json::Value::Null);
+        }
+        TokenShapeMutation::StringIssuedAt => {
+            object.insert(
+                "issued_at_epoch_secs".to_string(),
+                serde_json::Value::String("not-a-u64".to_string()),
+            );
+        }
+        TokenShapeMutation::NegativeExpiresAt => {
+            object.insert(
+                "expires_at_epoch_secs".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(-1)),
+            );
+        }
+        TokenShapeMutation::ScopeAsString => {
+            object.insert(
+                "scope".to_string(),
+                serde_json::Value::String("not-a-scope".to_string()),
+            );
+        }
+        TokenShapeMutation::OperationsAsString => {
+            if let Some(scope) = object
+                .get_mut("scope")
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                scope.insert(
+                    "operations".to_string(),
+                    serde_json::Value::String("network_egress".to_string()),
+                );
+            }
+        }
+        TokenShapeMutation::EndpointPrefixesAsString => {
+            if let Some(scope) = object
+                .get_mut("scope")
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                scope.insert(
+                    "endpoint_prefixes".to_string(),
+                    serde_json::Value::String("https://fuzz.example.com".to_string()),
+                );
+            }
+        }
+        TokenShapeMutation::ExtraNestedFields => {
+            object.insert(
+                "untrusted_extra".to_string(),
+                serde_json::json!({
+                    "nested": {
+                        "token_id": "shadow-token",
+                        "signature": ["not", "canonical"],
+                    },
+                }),
+            );
+        }
     }
 }
 
@@ -260,7 +357,7 @@ fn operation_values(operations: &[FuzzOperationField]) -> Vec<serde_json::Value>
     operations
         .iter()
         .take(MAX_SCOPE_ITEMS)
-        .map(FuzzOperationField::to_value)
+        .map(|operation| operation.to_value())
         .collect()
 }
 
@@ -293,6 +390,7 @@ fn endpoint_for_prefix(prefix: &str) -> String {
 #[derive(Debug, Arbitrary)]
 struct RemoteCapTokenParseCase {
     raw_json: Vec<u8>,
+    raw_text: String,
     token_shape: RemoteCapTokenShape,
     issuer_identity: String,
     trace_id: String,
@@ -314,6 +412,7 @@ struct RemoteCapTokenShape {
     endpoint_prefixes: Vec<String>,
     signature: String,
     single_use: bool,
+    shape_mutation: TokenShapeMutation,
 }
 
 #[derive(Debug, Clone, Copy, Arbitrary)]
@@ -375,4 +474,18 @@ enum TokenMutation {
     ScopeOperation,
     ScopeEndpoint,
     DeleteSignature,
+}
+
+#[derive(Debug, Clone, Copy, Arbitrary)]
+enum TokenShapeMutation {
+    None,
+    MissingTokenId,
+    MissingScope,
+    NullSignature,
+    StringIssuedAt,
+    NegativeExpiresAt,
+    ScopeAsString,
+    OperationsAsString,
+    EndpointPrefixesAsString,
+    ExtraNestedFields,
 }
