@@ -1,0 +1,11 @@
+{
+  "test_case": "canonical_encoding_optimization",
+  "input": {
+    "b_field": "second",
+    "a_field": "first",
+    "c_field": {
+      "nested_z": "last",
+      "nested_a": "first_nested"
+    }
+  }
+}

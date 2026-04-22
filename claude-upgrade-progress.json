@@ -1,0 +1,53 @@
+{
+  "status": "in_progress",
+  "started_at": "2026-04-22T05:15:00Z",
+  "phase": "A",
+  "current": null,
+  "completed": [],
+  "failed": [],
+  "skipped_unchanged": [
+    "anyhow",
+    "thiserror",
+    "serde",
+    "serde_json",
+    "tokio",
+    "tracing",
+    "tracing-subscriber",
+    "url",
+    "ctrlc",
+    "syn",
+    "libfuzzer-sys",
+    "zeroize",
+    "hex",
+    "base64",
+    "subtle",
+    "tree-sitter",
+    "tree-sitter-javascript",
+    "which",
+    "assert2",
+    "asupersync"
+  ],
+  "flagged_for_user": [
+    "serde_cbor"
+  ],
+  "pending_phase_a": [
+    "clap",
+    "chrono",
+    "uuid",
+    "flate2",
+    "tempfile",
+    "ed25519-dalek",
+    "assert_cmd",
+    "regex",
+    "insta",
+    "arbitrary"
+  ],
+  "pending_phase_b": [
+    "toml",
+    "sha2",
+    "hmac",
+    "hkdf",
+    "rand",
+    "ureq"
+  ]
+}

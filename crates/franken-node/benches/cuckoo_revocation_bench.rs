@@ -4,7 +4,7 @@
 //! for O(1) revocation checking instead of O(log n) BTreeSet lookups.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use franken_node::security::cuckoo_filter::CuckooFilter;
+use frankenengine_node::security::cuckoo_filter::CuckooFilter;
 use std::collections::BTreeSet;
 use std::time::Duration;
 

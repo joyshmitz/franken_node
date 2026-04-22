@@ -95,7 +95,9 @@
       },
       "expected_card_hash": "8a06ee0efc346f9afcc3900491870dad83ae88d13f432e8b6e846d6a97150157",
       "expected_registry_signature": "a4de6a2635c8d0cde0021d3359eaba6b3aa70b5999bf4d559180beb09c2ee1ba",
-      "expected_wire_artifact": "artifacts/conformance/trust_card_wire/signed_card_baseline.canonical.json"
+      "expected_wire_artifact": "artifacts/conformance/trust_card_wire/signed_card_baseline.canonical.json",
+      "expected_hash_preimage_artifact": "artifacts/conformance/trust_card_wire/signed_card_baseline.hash_preimage.canonical.json",
+      "expected_signature_preimage_hex_artifact": "artifacts/conformance/trust_card_wire/signed_card_baseline.signature_preimage.hex"
     }
   ]
 }

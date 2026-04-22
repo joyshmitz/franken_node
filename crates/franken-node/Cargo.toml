@@ -269,6 +269,10 @@ name = "replay_window_metamorphic"
 path = "tests/replay_window_metamorphic.rs"
 
 [[test]]
+name = "epoch_key_derivation_metamorphic"
+path = "tests/epoch_key_derivation_metamorphic.rs"
+
+[[test]]
 name = "trust_cli_e2e_real_runtime"
 path = "tests/trust_cli_e2e_real_runtime.rs"
 
@@ -278,4 +282,12 @@ path = "tests/session_auth_real_lifecycle_structured.rs"
 
 [[bench]]
 name = "cuckoo_revocation_bench"
+harness = false
+
+[[bench]]
+name = "replay_bundle_gzip_bench"
+harness = false
+
+[[bench]]
+name = "trust_card_canonical_bench"
 harness = false

@@ -8,17 +8,17 @@
 
 use assert_cmd::Command;
 use insta::{assert_json_snapshot, assert_snapshot, with_settings};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::error::Error;
 
 /// Bench command test configuration
 #[derive(Debug, Clone)]
 struct BenchTestConfig {
-    scenario: Option<String>,
-    cpu_override: Option<String>,
-    memory_mb_override: Option<String>,
-    timestamp_override: Option<String>,
+    scenario: Option<&'static str>,
+    cpu_override: Option<&'static str>,
+    memory_mb_override: Option<&'static str>,
+    timestamp_override: Option<&'static str>,
     expected_status: TestExpectation,
     description: &'static str,
 }
@@ -29,76 +29,78 @@ enum TestExpectation {
     Failure,
 }
 
-/// Conformance test matrix for bench command
-const BENCH_CONFORMANCE_MATRIX: &[BenchTestConfig] = &[
-    // Valid scenarios
-    BenchTestConfig {
-        scenario: Some("secure-extension-heavy".to_string()),
-        cpu_override: Some("deterministic-golden-cpu".to_string()),
-        memory_mb_override: Some("32768".to_string()),
-        timestamp_override: Some("2026-02-21T00:00:00Z".to_string()),
-        expected_status: TestExpectation::Success,
-        description: "secure-extension-heavy scenario with deterministic environment",
-    },
-    BenchTestConfig {
-        scenario: Some("memory-stress".to_string()),
-        cpu_override: Some("deterministic-golden-cpu".to_string()),
-        memory_mb_override: Some("16384".to_string()),
-        timestamp_override: Some("2026-02-21T00:00:00Z".to_string()),
-        expected_status: TestExpectation::Success,
-        description: "memory-stress scenario",
-    },
-    BenchTestConfig {
-        scenario: Some("trust-verification".to_string()),
-        cpu_override: Some("deterministic-golden-cpu".to_string()),
-        memory_mb_override: Some("8192".to_string()),
-        timestamp_override: Some("2026-02-21T00:00:00Z".to_string()),
-        expected_status: TestExpectation::Success,
-        description: "trust-verification scenario",
-    },
-    BenchTestConfig {
-        scenario: Some("isolation-overhead".to_string()),
-        cpu_override: Some("deterministic-golden-cpu".to_string()),
-        memory_mb_override: Some("4096".to_string()),
-        timestamp_override: Some("2026-02-21T00:00:00Z".to_string()),
-        expected_status: TestExpectation::Success,
-        description: "isolation-overhead scenario",
-    },
-    // Default scenario (no explicit scenario argument)
-    BenchTestConfig {
-        scenario: None,
-        cpu_override: Some("deterministic-golden-cpu".to_string()),
-        memory_mb_override: Some("32768".to_string()),
-        timestamp_override: Some("2026-02-21T00:00:00Z".to_string()),
-        expected_status: TestExpectation::Success,
-        description: "default scenario when none specified",
-    },
-    // Error conditions
-    BenchTestConfig {
-        scenario: Some("invalid-scenario-name".to_string()),
-        cpu_override: Some("deterministic-golden-cpu".to_string()),
-        memory_mb_override: Some("32768".to_string()),
-        timestamp_override: Some("2026-02-21T00:00:00Z".to_string()),
-        expected_status: TestExpectation::Failure,
-        description: "invalid scenario name should fail",
-    },
-    BenchTestConfig {
-        scenario: Some("secure-extension-heavy".to_string()),
-        cpu_override: Some("deterministic-golden-cpu".to_string()),
-        memory_mb_override: Some("invalid-memory".to_string()),
-        timestamp_override: Some("2026-02-21T00:00:00Z".to_string()),
-        expected_status: TestExpectation::Failure,
-        description: "invalid memory override should fail",
-    },
-    BenchTestConfig {
-        scenario: Some("secure-extension-heavy".to_string()),
-        cpu_override: Some("deterministic-golden-cpu".to_string()),
-        memory_mb_override: Some("32768".to_string()),
-        timestamp_override: Some("invalid-timestamp".to_string()),
-        expected_status: TestExpectation::Failure,
-        description: "invalid timestamp override should fail",
-    },
-];
+/// Create the conformance test matrix at runtime to avoid const limitations
+fn bench_conformance_matrix() -> Vec<BenchTestConfig> {
+    vec![
+        // Valid scenarios
+        BenchTestConfig {
+            scenario: Some("secure-extension-heavy"),
+            cpu_override: Some("deterministic-golden-cpu"),
+            memory_mb_override: Some("32768"),
+            timestamp_override: Some("2026-02-21T00:00:00Z"),
+            expected_status: TestExpectation::Success,
+            description: "secure-extension-heavy scenario with deterministic environment",
+        },
+        BenchTestConfig {
+            scenario: Some("memory-stress"),
+            cpu_override: Some("deterministic-golden-cpu"),
+            memory_mb_override: Some("16384"),
+            timestamp_override: Some("2026-02-21T00:00:00Z"),
+            expected_status: TestExpectation::Success,
+            description: "memory-stress scenario",
+        },
+        BenchTestConfig {
+            scenario: Some("trust-verification"),
+            cpu_override: Some("deterministic-golden-cpu"),
+            memory_mb_override: Some("8192"),
+            timestamp_override: Some("2026-02-21T00:00:00Z"),
+            expected_status: TestExpectation::Success,
+            description: "trust-verification scenario",
+        },
+        BenchTestConfig {
+            scenario: Some("isolation-overhead"),
+            cpu_override: Some("deterministic-golden-cpu"),
+            memory_mb_override: Some("4096"),
+            timestamp_override: Some("2026-02-21T00:00:00Z"),
+            expected_status: TestExpectation::Success,
+            description: "isolation-overhead scenario",
+        },
+        // Default scenario (no explicit scenario argument)
+        BenchTestConfig {
+            scenario: None,
+            cpu_override: Some("deterministic-golden-cpu"),
+            memory_mb_override: Some("32768"),
+            timestamp_override: Some("2026-02-21T00:00:00Z"),
+            expected_status: TestExpectation::Success,
+            description: "default scenario when none specified",
+        },
+        // Error conditions
+        BenchTestConfig {
+            scenario: Some("invalid-scenario-name"),
+            cpu_override: Some("deterministic-golden-cpu"),
+            memory_mb_override: Some("32768"),
+            timestamp_override: Some("2026-02-21T00:00:00Z"),
+            expected_status: TestExpectation::Failure,
+            description: "invalid scenario name should fail",
+        },
+        BenchTestConfig {
+            scenario: Some("secure-extension-heavy"),
+            cpu_override: Some("deterministic-golden-cpu"),
+            memory_mb_override: Some("invalid-memory"),
+            timestamp_override: Some("2026-02-21T00:00:00Z"),
+            expected_status: TestExpectation::Failure,
+            description: "invalid memory override should fail",
+        },
+        BenchTestConfig {
+            scenario: Some("secure-extension-heavy"),
+            cpu_override: Some("deterministic-golden-cpu"),
+            memory_mb_override: Some("32768"),
+            timestamp_override: Some("invalid-timestamp"),
+            expected_status: TestExpectation::Failure,
+            description: "invalid timestamp override should fail",
+        },
+    ]
+}
 
 /// Parse JSON stdout from bench command, handling both valid and error cases
 fn parse_bench_json_stdout(stdout: &[u8]) -> Result<Value, String> {
@@ -165,7 +167,8 @@ fn execute_bench_test(config: &BenchTestConfig) -> Result<Value, Box<dyn Error>>
 fn bench_conformance_matrix() -> Result<(), Box<dyn Error>> {
     let mut results = BTreeMap::new();
 
-    for (idx, config) in BENCH_CONFORMANCE_MATRIX.iter().enumerate() {
+    let matrix = bench_conformance_matrix();
+    for (idx, config) in matrix.iter().enumerate() {
         let test_name = format!("test_{:02}_{}", idx + 1,
             config.scenario.as_deref().unwrap_or("default")
                 .replace('-', "_"));
@@ -199,7 +202,7 @@ fn bench_conformance_matrix() -> Result<(), Box<dyn Error>> {
     }
 
     // Generate conformance report
-    let total_tests = BENCH_CONFORMANCE_MATRIX.len();
+    let total_tests = matrix.len();
     let successful_tests = results.values()
         .filter(|r| r.get("status").and_then(|s| s.as_str()) == Some("completed"))
         .count();
@@ -251,7 +254,8 @@ fn bench_run_help_output_format() -> Result<(), Box<dyn Error>> {
 #[test]
 fn bench_deterministic_output_stability() -> Result<(), Box<dyn Error>> {
     // Run the same bench scenario twice to ensure deterministic output
-    let config = &BENCH_CONFORMANCE_MATRIX[0]; // secure-extension-heavy scenario
+    let matrix = bench_conformance_matrix();
+    let config = &matrix[0]; // secure-extension-heavy scenario
 
     let result1 = execute_bench_test(config)?;
     let result2 = execute_bench_test(config)?;
@@ -266,7 +270,8 @@ fn bench_deterministic_output_stability() -> Result<(), Box<dyn Error>> {
 #[test]
 fn bench_scenario_coverage() {
     // Verify that our conformance matrix covers expected scenarios
-    let tested_scenarios: Vec<_> = BENCH_CONFORMANCE_MATRIX.iter()
+    let matrix = bench_conformance_matrix();
+    let tested_scenarios: Vec<_> = matrix.iter()
         .filter_map(|config| config.scenario.as_deref())
         .collect();
 
