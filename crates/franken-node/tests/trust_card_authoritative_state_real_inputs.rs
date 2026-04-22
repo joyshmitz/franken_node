@@ -3,7 +3,7 @@ use frankenengine_node::supply_chain::trust_card::{
     BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
     DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary, PublisherIdentity,
     ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCardInput,
-    TrustCardRegistry,
+    TrustCardMutation, TrustCardRegistry,
 };
 
 fn real_trust_card_input() -> TrustCardInput {
@@ -130,4 +130,63 @@ fn authoritative_registry_rejects_tampered_snapshot() {
             || err.to_string().contains("hash")
             || err.to_string().contains("snapshot")
     );
+}
+
+#[test]
+fn authoritative_registry_rejects_stale_writer_after_high_water_advances() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let snapshot_path = temp_dir
+        .path()
+        .join(".franken-node/state/trust-card-registry.v1.json");
+    let mut stale_writer = TrustCardRegistry::default();
+    stale_writer
+        .create(
+            real_trust_card_input(),
+            1_776_792_600,
+            "trace-stale-writer-seed",
+        )
+        .expect("create stale writer state");
+
+    let mut newer_writer = stale_writer.clone();
+    newer_writer
+        .update(
+            "npm:@operator/auth-guard",
+            TrustCardMutation {
+                certification_level: Some(CertificationLevel::Platinum),
+                revocation_status: None,
+                active_quarantine: None,
+                reputation_score_basis_points: None,
+                reputation_trend: None,
+                user_facing_risk_assessment: None,
+                last_verified_timestamp: Some("2026-04-21T16:31:00Z".to_string()),
+                evidence_refs: Some(real_trust_card_input().evidence_refs),
+            },
+            1_776_792_660,
+            "trace-newer-writer",
+        )
+        .expect("advance newer writer state");
+    newer_writer
+        .persist_authoritative_state(&snapshot_path)
+        .expect("persist newer writer state");
+
+    let err = stale_writer
+        .persist_authoritative_state(&snapshot_path)
+        .expect_err("stale writer must fail after high-water advances");
+    assert!(
+        err.to_string().contains("rollback rejected"),
+        "unexpected error: {err:?}"
+    );
+
+    let mut loaded =
+        TrustCardRegistry::load_authoritative_state(&snapshot_path, 60, 1_776_792_700)
+            .expect("load authoritative state");
+    let card = loaded
+        .read(
+            "npm:@operator/auth-guard",
+            1_776_792_701,
+            "trace-authoritative-stale-check",
+        )
+        .expect("read authoritative card")
+        .expect("card exists");
+    assert_eq!(card.certification_level, CertificationLevel::Platinum);
 }

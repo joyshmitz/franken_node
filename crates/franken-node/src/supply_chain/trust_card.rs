@@ -532,15 +532,14 @@ impl TrustCardRegistry {
 
     pub fn persist_authoritative_state(&self, path: &Path) -> Result<(), TrustCardError> {
         let snapshot = self.snapshot();
-        let high_water = read_snapshot_high_water(path, &self.registry_key)?;
-        validate_snapshot_high_water(path, &snapshot, high_water.as_ref())?;
-        let encoded = to_canonical_json(&snapshot)?;
-        let next_high_water =
-            signed_snapshot_high_water(&snapshot, &self.registry_key)?;
-        let high_water_encoded = to_canonical_json(&next_high_water)?;
         let high_water_path = authoritative_snapshot_high_water_path(path);
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
         with_authoritative_snapshot_persist_lock(path, || {
+            let high_water = read_snapshot_high_water(path, &self.registry_key)?;
+            validate_snapshot_high_water(path, &snapshot, high_water.as_ref())?;
+            let encoded = to_canonical_json(&snapshot)?;
+            let next_high_water = signed_snapshot_high_water(&snapshot, &self.registry_key)?;
+            let high_water_encoded = to_canonical_json(&next_high_water)?;
             let mut temp =
                 NamedTempFile::new_in(parent).map_err(|err| TrustCardError::SnapshotWrite {
                     path: path.to_path_buf(),
