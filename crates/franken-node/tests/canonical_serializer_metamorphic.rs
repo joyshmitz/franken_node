@@ -8,10 +8,10 @@
 use arbitrary::Arbitrary;
 use frankenengine_node::supply_chain::certification::{EvidenceType, VerifiedEvidenceRef};
 use frankenengine_node::supply_chain::trust_card::{
-    BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
-    DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary, PublisherIdentity,
-    ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard, TrustCardInput,
-    to_canonical_json,
+    to_canonical_json, BehavioralProfile, CapabilityDeclaration, CapabilityRisk,
+    CertificationLevel, DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary,
+    PublisherIdentity, ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard,
+    TrustCardInput,
 };
 use serde_json::{Map, Value};
 
@@ -249,6 +249,83 @@ fn canonical_serializer_idempotence_property() {
             }
         }
     }
+}
+
+/// Test object insertion order does not change canonical content.
+#[test]
+fn canonical_serializer_preserves_content_under_object_insertion_permutation() -> Result<(), String>
+{
+    let mut forward = Map::new();
+    forward.insert(
+        "extension".to_string(),
+        serde_json::json!({
+            "id": "npm:@franken/example",
+            "version": "1.2.3",
+            "capabilities": ["network", "filesystem"]
+        }),
+    );
+    forward.insert(
+        "publisher".to_string(),
+        serde_json::json!({
+            "display_name": "Franken Example",
+            "publisher_id": "https://publisher.example"
+        }),
+    );
+    forward.insert(
+        "risk".to_string(),
+        serde_json::json!({
+            "level": "medium",
+            "score_basis_points": 4250
+        }),
+    );
+
+    let mut reverse = Map::new();
+    reverse.insert(
+        "risk".to_string(),
+        serde_json::json!({
+            "score_basis_points": 4250,
+            "level": "medium"
+        }),
+    );
+    reverse.insert(
+        "publisher".to_string(),
+        serde_json::json!({
+            "publisher_id": "https://publisher.example",
+            "display_name": "Franken Example"
+        }),
+    );
+    reverse.insert(
+        "extension".to_string(),
+        serde_json::json!({
+            "capabilities": ["network", "filesystem"],
+            "version": "1.2.3",
+            "id": "npm:@franken/example"
+        }),
+    );
+
+    let forward_canonical =
+        to_canonical_json(&Value::Object(forward)).map_err(|error| error.to_string())?;
+    let reverse_canonical =
+        to_canonical_json(&Value::Object(reverse)).map_err(|error| error.to_string())?;
+
+    if forward_canonical
+        .as_bytes()
+        .ne(reverse_canonical.as_bytes())
+    {
+        return Err("canonical JSON changed under object insertion-order permutation".to_string());
+    }
+
+    let parsed_forward: Value =
+        serde_json::from_str(&forward_canonical).map_err(|error| error.to_string())?;
+    let parsed_reverse: Value =
+        serde_json::from_str(&reverse_canonical).map_err(|error| error.to_string())?;
+    if !std::cmp::PartialEq::eq(&parsed_forward, &parsed_reverse) {
+        return Err(
+            "canonical content changed after object insertion-order permutation".to_string(),
+        );
+    }
+
+    Ok(())
 }
 
 /// Test canonical serialization preserves semantic equivalence
