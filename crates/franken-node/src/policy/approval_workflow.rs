@@ -1644,6 +1644,7 @@ mod policy_observability_integration_tests {
             epoch_id: epoch,
             payload: serde_json::json!({}),
             size_bytes: 0,
+            signature: String::new(),
         }
     }
 
@@ -1811,6 +1812,7 @@ mod policy_observability_integration_tests {
                 "event_count": bundle.event_count(),
             }),
             size_bytes: 0,
+            signature: String::new(),
         };
         ledger.append(violation_entry).unwrap();
         assert!(detector.is_halted());
@@ -2026,6 +2028,7 @@ mod policy_observability_integration_tests {
                 epoch_id: epoch,
                 payload: serde_json::json!({}),
                 size_bytes: 0,
+                signature: String::new(),
             };
             ledger.append(entry).unwrap();
         }
@@ -2072,6 +2075,7 @@ mod policy_observability_integration_tests {
                 "diff_count": evidence.policy_diff.len(),
             }),
             size_bytes: 0,
+            signature: String::new(),
         };
         let eid = ledger.append(entry).unwrap();
         assert_eq!(eid.0, 1);
