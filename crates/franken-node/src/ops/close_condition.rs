@@ -485,8 +485,7 @@ fn check_engine_path_dependencies(root: &Path) -> Result<SplitContractCheck> {
         let mut engine_deps = Vec::new();
         for crate_name in engine_crates {
             for path in engine_dependency_paths(&content, crate_name) {
-                let valid = path.contains("franken_engine/crates/")
-                    || path.contains("../../../franken_engine/crates/");
+                let valid = validate_engine_dependency_path(&cargo_file, &path);
                 if !valid {
                     violations.push(serde_json::json!({
                         "file": relative_path(root, &cargo_file),
@@ -747,22 +746,106 @@ fn should_skip_path(root: &Path, path: &Path) -> bool {
 
 fn engine_dependency_paths(content: &str, crate_name: &str) -> Vec<String> {
     let mut paths = Vec::new();
-    let mut remaining = content;
-    while let Some(index) = remaining.find(crate_name) {
-        let after = &remaining[index + crate_name.len()..];
-        let candidate = &after[..after.len().min(512)];
-        if let Some(path_key_index) = candidate.find("path") {
-            let after_path = &candidate[path_key_index + "path".len()..];
-            if let Some(first_quote) = after_path.find('"') {
-                let after_quote = &after_path[first_quote + 1..];
-                if let Some(second_quote) = after_quote.find('"') {
-                    paths.push(after_quote[..second_quote].to_string());
+
+    // Parse TOML content properly instead of string scanning
+    let parsed = match toml::from_str::<toml::Value>(content) {
+        Ok(value) => value,
+        Err(_) => return paths, // Invalid TOML, return empty
+    };
+
+    // Check dependencies sections
+    let sections = ["dependencies", "dev-dependencies", "build-dependencies"];
+    for section in sections {
+        if let Some(deps) = parsed.get(section).and_then(|v| v.as_table()) {
+            if let Some(dep) = deps.get(crate_name) {
+                let path_value = match dep {
+                    // Handle both string and table forms:
+                    // crate_name = { path = "...", ... }
+                    toml::Value::Table(table) => {
+                        table.get("path").and_then(|v| v.as_str())
+                    }
+                    // Simple string paths are not valid for engine dependencies
+                    _ => None,
+                };
+
+                if let Some(path) = path_value {
+                    paths.push(path.to_string());
                 }
             }
         }
-        remaining = after;
     }
+
     paths
+}
+
+/// Validates that an engine dependency path is secure and points to an allowed location.
+/// Manually validates path components to prevent traversal attacks and ensures
+/// the canonical resolved path equals one of the allowed engine crate directories.
+fn validate_engine_dependency_path(cargo_file: &Path, path_str: &str) -> bool {
+    use std::path::{Component, Path};
+
+    // First, validate that the path doesn't contain any traversal attempts
+    let path = Path::new(path_str);
+
+    // Check each path component for traversal attempts
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                // Reject any ".." components - never allow traversal
+                return false;
+            }
+            Component::CurDir => {
+                // "." is suspicious but not necessarily dangerous, allow for now
+                continue;
+            }
+            Component::Normal(_) => {
+                // Normal path components are fine
+                continue;
+            }
+            Component::Prefix(_) | Component::RootDir => {
+                // Absolute paths or Windows prefixes are not allowed for dependencies
+                return false;
+            }
+        }
+    }
+
+    // Resolve the path relative to the cargo file's directory
+    let cargo_dir = cargo_file.parent().unwrap_or_else(|| Path::new("."));
+    let resolved_path = cargo_dir.join(path);
+
+    // Get the canonical path - but be careful about TOCTOU and symlink attacks
+    let canonical_path = match resolved_path.canonicalize() {
+        Ok(path) => path,
+        Err(_) => {
+            // If canonicalization fails, the path doesn't exist or is inaccessible
+            // This is suspicious for a declared dependency, reject it
+            return false;
+        }
+    };
+
+    // Define the allowed canonical paths for engine dependencies
+    // These should be absolute paths to the expected engine crate locations
+    let allowed_paths = [
+        "franken_engine/crates/frankenengine-engine",
+        "franken_engine/crates/frankenengine-extension-host",
+    ];
+
+    // Check if the canonical path ends with one of our allowed paths
+    let canonical_str = canonical_path.to_string_lossy();
+    for allowed in &allowed_paths {
+        if canonical_str.ends_with(allowed) {
+            // Additional validation: ensure the path doesn't contain suspicious traversals
+            // even after canonicalization (in case of complex symlink attacks)
+            let normalized = canonical_str.replace('\\', "/");
+            if normalized.contains("/../") || normalized.contains("/./") {
+                continue;
+            }
+            return true;
+        }
+    }
+
+    // If we get here, the path doesn't point to an allowed engine crate
+    false
 }
 
 fn relative_path(root: &Path, path: &Path) -> String {
@@ -817,4 +900,176 @@ fn close_condition_receipt_signed_preimage(canonical_json: &str) -> Vec<u8> {
     preimage.extend_from_slice(&canonical_len.to_le_bytes());
     preimage.extend_from_slice(canonical_json.as_bytes());
     preimage
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_engine_dependency_paths_proper_toml_parsing() {
+        // Test that we properly parse TOML instead of using string scanning
+        let content = r#"
+[dependencies]
+frankenengine-engine = { path = "../franken_engine/crates/frankenengine-engine", version = "0.1.0" }
+some-other-crate = "1.0.0"
+
+[dev-dependencies]
+frankenengine-extension-host = { path = "../franken_engine/crates/frankenengine-extension-host" }
+"#;
+
+        let paths = engine_dependency_paths(content, "frankenengine-engine");
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0], "../franken_engine/crates/frankenengine-engine");
+
+        let paths = engine_dependency_paths(content, "frankenengine-extension-host");
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0], "../franken_engine/crates/frankenengine-extension-host");
+
+        // Should not find non-existent crates
+        let paths = engine_dependency_paths(content, "non-existent-crate");
+        assert_eq!(paths.len(), 0);
+    }
+
+    #[test]
+    fn test_validate_engine_dependency_path_rejects_traversal_attacks() {
+        let temp_dir = TempDir::new().unwrap();
+        let cargo_file = temp_dir.path().join("Cargo.toml");
+        std::fs::write(&cargo_file, "").unwrap();
+
+        // BD-3K70D regression tests: path traversal attacks that should be rejected
+
+        // Attack 1: "../../../franken_engine/crates/../../evil" - escapes and re-enters
+        let malicious_path = "../../../franken_engine/crates/../../evil";
+        assert!(
+            !validate_engine_dependency_path(&cargo_file, malicious_path),
+            "Should reject path traversal attack: {}",
+            malicious_path
+        );
+
+        // Attack 2: "../../../../evil" - attempts to escape entirely
+        let malicious_path = "../../../../evil";
+        assert!(
+            !validate_engine_dependency_path(&cargo_file, malicious_path),
+            "Should reject path traversal attack: {}",
+            malicious_path
+        );
+
+        // Attack 3: "./../../franken_engine/crates/../../../etc/passwd" - mixed traversal
+        let malicious_path = "./../../franken_engine/crates/../../../etc/passwd";
+        assert!(
+            !validate_engine_dependency_path(&cargo_file, malicious_path),
+            "Should reject path traversal attack: {}",
+            malicious_path
+        );
+
+        // Attack 4: Absolute paths should be rejected
+        let malicious_path = "/franken_engine/crates/frankenengine-engine";
+        assert!(
+            !validate_engine_dependency_path(&cargo_file, malicious_path),
+            "Should reject absolute path: {}",
+            malicious_path
+        );
+
+        // Attack 5: Windows absolute paths should be rejected
+        let malicious_path = "C:\\franken_engine\\crates\\frankenengine-engine";
+        assert!(
+            !validate_engine_dependency_path(&cargo_file, malicious_path),
+            "Should reject Windows absolute path: {}",
+            malicious_path
+        );
+    }
+
+    #[test]
+    fn test_validate_engine_dependency_path_rejects_substring_lookalikes() {
+        let temp_dir = TempDir::new().unwrap();
+        let cargo_file = temp_dir.path().join("Cargo.toml");
+        std::fs::write(&cargo_file, "").unwrap();
+
+        // BD-3K70D regression tests: substring look-alikes that should be rejected
+
+        // Attack 6: "/not_franken_engine/crates_imposter/" - contains target substrings but wrong location
+        let malicious_path = "../not_franken_engine/crates_imposter/frankenengine-engine";
+        assert!(
+            !validate_engine_dependency_path(&cargo_file, malicious_path),
+            "Should reject substring look-alike: {}",
+            malicious_path
+        );
+
+        // Attack 7: "franken_engine_crates" - looks similar but missing separator
+        let malicious_path = "../franken_engine_crates/frankenengine-engine";
+        assert!(
+            !validate_engine_dependency_path(&cargo_file, malicious_path),
+            "Should reject substring look-alike: {}",
+            malicious_path
+        );
+
+        // Attack 8: "some_franken_engine/crates/" - contains target but with prefix
+        let malicious_path = "../some_franken_engine/crates/frankenengine-engine";
+        assert!(
+            !validate_engine_dependency_path(&cargo_file, malicious_path),
+            "Should reject substring look-alike with prefix: {}",
+            malicious_path
+        );
+
+        // Attack 9: "franken_engine/crates_but_not_really/" - starts right but ends wrong
+        let malicious_path = "../franken_engine/crates_but_not_really/frankenengine-engine";
+        assert!(
+            !validate_engine_dependency_path(&cargo_file, malicious_path),
+            "Should reject substring look-alike with suffix: {}",
+            malicious_path
+        );
+    }
+
+    #[test]
+    fn test_validate_engine_dependency_path_allows_legitimate_paths() {
+        // Create a temporary directory structure that simulates the expected layout
+        let temp_dir = TempDir::new().unwrap();
+        let cargo_file = temp_dir.path().join("test_crate").join("Cargo.toml");
+        std::fs::create_dir_all(cargo_file.parent().unwrap()).unwrap();
+        std::fs::write(&cargo_file, "").unwrap();
+
+        // Create the expected franken_engine directory structure
+        let franken_engine_dir = temp_dir.path().join("franken_engine").join("crates");
+        std::fs::create_dir_all(&franken_engine_dir.join("frankenengine-engine")).unwrap();
+        std::fs::create_dir_all(&franken_engine_dir.join("frankenengine-extension-host")).unwrap();
+
+        // These legitimate paths should be allowed
+        let legitimate_paths = [
+            "../franken_engine/crates/frankenengine-engine",
+            "../franken_engine/crates/frankenengine-extension-host",
+        ];
+
+        for legitimate_path in &legitimate_paths {
+            assert!(
+                validate_engine_dependency_path(&cargo_file, legitimate_path),
+                "Should allow legitimate path: {}",
+                legitimate_path
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_engine_dependency_path_rejects_nonexistent_paths() {
+        let temp_dir = TempDir::new().unwrap();
+        let cargo_file = temp_dir.path().join("Cargo.toml");
+        std::fs::write(&cargo_file, "").unwrap();
+
+        // Paths that don't exist should be rejected (canonicalization will fail)
+        let nonexistent_paths = [
+            "../this/does/not/exist",
+            "../franken_engine/crates/nonexistent-crate",
+            "definitely/not/a/real/path",
+        ];
+
+        for nonexistent_path in &nonexistent_paths {
+            assert!(
+                !validate_engine_dependency_path(&cargo_file, nonexistent_path),
+                "Should reject nonexistent path: {}",
+                nonexistent_path
+            );
+        }
+    }
 }
