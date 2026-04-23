@@ -290,7 +290,9 @@ impl ViolationBundle {
         // Serialize causal_events array directly
         write!(writer, "\"causal_events\":[")?;
         for (i, event) in self.causal_event_sequence.iter().enumerate() {
-            if i > 0 { write!(writer, ",")?; }
+            if i > 0 {
+                write!(writer, ",")?;
+            }
             write!(writer, "{{")?;
             write!(writer, "\"type\":\"{}\",", event.event_type.label())?;
             write!(writer, "\"timestamp_ms\":{},", event.timestamp_ms)?;
@@ -305,7 +307,9 @@ impl ViolationBundle {
         // Serialize failed_artifacts array directly
         write!(writer, "\"failed_artifacts\":[")?;
         for (i, artifact) in self.failed_artifacts.iter().enumerate() {
-            if i > 0 { write!(writer, ",")?; }
+            if i > 0 {
+                write!(writer, ",")?;
+            }
             write!(writer, "{{")?;
             write!(writer, "\"path\":")?;
             serde_json::to_writer(&mut *writer, &artifact.artifact_path)?;
@@ -466,16 +470,34 @@ impl ViolationContext {
 
         // Truncate proof vectors if over capacity
         if self.proofs.failed_proofs.len() > MAX_PROOF_REFS {
-            let overflow = self.proofs.failed_proofs.len().saturating_sub(MAX_PROOF_REFS);
-            self.proofs.failed_proofs.drain(0..overflow.min(self.proofs.failed_proofs.len()));
+            let overflow = self
+                .proofs
+                .failed_proofs
+                .len()
+                .saturating_sub(MAX_PROOF_REFS);
+            self.proofs
+                .failed_proofs
+                .drain(0..overflow.min(self.proofs.failed_proofs.len()));
         }
         if self.proofs.missing_proofs.len() > MAX_PROOF_REFS {
-            let overflow = self.proofs.missing_proofs.len().saturating_sub(MAX_PROOF_REFS);
-            self.proofs.missing_proofs.drain(0..overflow.min(self.proofs.missing_proofs.len()));
+            let overflow = self
+                .proofs
+                .missing_proofs
+                .len()
+                .saturating_sub(MAX_PROOF_REFS);
+            self.proofs
+                .missing_proofs
+                .drain(0..overflow.min(self.proofs.missing_proofs.len()));
         }
         if self.proofs.passed_proofs.len() > MAX_PROOF_REFS {
-            let overflow = self.proofs.passed_proofs.len().saturating_sub(MAX_PROOF_REFS);
-            self.proofs.passed_proofs.drain(0..overflow.min(self.proofs.passed_proofs.len()));
+            let overflow = self
+                .proofs
+                .passed_proofs
+                .len()
+                .saturating_sub(MAX_PROOF_REFS);
+            self.proofs
+                .passed_proofs
+                .drain(0..overflow.min(self.proofs.passed_proofs.len()));
         }
     }
 }
@@ -651,6 +673,29 @@ fn update_hash_string_list(hasher: &mut Sha256, domain: &'static [u8], values: &
     }
 }
 
+fn bounded_proof_context(proofs: &ProofContext) -> ProofContext {
+    let mut bounded = proofs.clone();
+    if bounded.failed_proofs.len() > MAX_PROOF_REFS {
+        let overflow = bounded.failed_proofs.len().saturating_sub(MAX_PROOF_REFS);
+        bounded
+            .failed_proofs
+            .drain(0..overflow.min(bounded.failed_proofs.len()));
+    }
+    if bounded.missing_proofs.len() > MAX_PROOF_REFS {
+        let overflow = bounded.missing_proofs.len().saturating_sub(MAX_PROOF_REFS);
+        bounded
+            .missing_proofs
+            .drain(0..overflow.min(bounded.missing_proofs.len()));
+    }
+    if bounded.passed_proofs.len() > MAX_PROOF_REFS {
+        let overflow = bounded.passed_proofs.len().saturating_sub(MAX_PROOF_REFS);
+        bounded
+            .passed_proofs
+            .drain(0..overflow.min(bounded.passed_proofs.len()));
+    }
+    bounded
+}
+
 /// Generate a violation bundle deterministically from context.
 pub fn generate_bundle(context: &ViolationContext) -> ViolationBundle {
     // PERF: Use bounded slices instead of cloning entire context with large vectors
@@ -668,6 +713,7 @@ pub fn generate_bundle(context: &ViolationContext) -> ViolationBundle {
     } else {
         &context.artifacts[..]
     };
+    let bounded_proofs = bounded_proof_context(&context.proofs);
 
     // Derive bundle_id deterministically from content.
     // Length-prefix variable-length strings and domain-separate fields to
@@ -746,17 +792,17 @@ pub fn generate_bundle(context: &ViolationContext) -> ViolationBundle {
     update_hash_string_list(
         &mut hasher,
         b"durability_violation_bundle_v1:proofs_failed",
-        &context.proofs.failed_proofs,
+        &bounded_proofs.failed_proofs,
     );
     update_hash_string_list(
         &mut hasher,
         b"durability_violation_bundle_v1:proofs_missing",
-        &context.proofs.missing_proofs,
+        &bounded_proofs.missing_proofs,
     );
     update_hash_string_list(
         &mut hasher,
         b"durability_violation_bundle_v1:proofs_passed",
-        &context.proofs.passed_proofs,
+        &bounded_proofs.passed_proofs,
     );
     let digest = hasher.finalize();
     let hash = u64::from_le_bytes(digest[..8].try_into().unwrap_or([0u8; 8]));
@@ -766,7 +812,7 @@ pub fn generate_bundle(context: &ViolationContext) -> ViolationBundle {
         bundle_id,
         causal_event_sequence: bounded_events.to_vec(),
         failed_artifacts: bounded_artifacts.to_vec(),
-        proof_context: context.proofs.clone(),
+        proof_context: bounded_proofs,
         hardening_level: context.hardening_level.clone(),
         timestamp_ms: context.timestamp_ms,
         epoch_id: context.epoch_id,
@@ -1695,6 +1741,63 @@ mod tests {
         assert_eq!(ctx.proofs.failed_proofs.len(), MAX_PROOF_REFS);
         assert_eq!(ctx.proofs.failed_proofs[0], "proof_2"); // proof_0, proof_1 evicted
         assert_eq!(ctx.proofs.failed_proofs.last().unwrap(), "proof_257");
+    }
+
+    #[test]
+    fn generate_bundle_bounds_direct_proof_context_inputs() {
+        let mut ctx = make_context();
+        ctx.proofs.failed_proofs = (0..(MAX_PROOF_REFS + 2))
+            .map(|idx| format!("failed_{idx}"))
+            .collect();
+        ctx.proofs.missing_proofs = (0..(MAX_PROOF_REFS + 3))
+            .map(|idx| format!("missing_{idx}"))
+            .collect();
+        ctx.proofs.passed_proofs = (0..(MAX_PROOF_REFS + 4))
+            .map(|idx| format!("passed_{idx}"))
+            .collect();
+
+        let bundle = generate_bundle(&ctx);
+
+        assert_eq!(bundle.proof_context.failed_proofs.len(), MAX_PROOF_REFS);
+        assert_eq!(bundle.proof_context.failed_proofs[0], "failed_2");
+        assert_eq!(
+            bundle.proof_context.failed_proofs.last().unwrap(),
+            "failed_257"
+        );
+        assert_eq!(bundle.proof_context.missing_proofs.len(), MAX_PROOF_REFS);
+        assert_eq!(bundle.proof_context.missing_proofs[0], "missing_3");
+        assert_eq!(
+            bundle.proof_context.missing_proofs.last().unwrap(),
+            "missing_258"
+        );
+        assert_eq!(bundle.proof_context.passed_proofs.len(), MAX_PROOF_REFS);
+        assert_eq!(bundle.proof_context.passed_proofs[0], "passed_4");
+        assert_eq!(
+            bundle.proof_context.passed_proofs.last().unwrap(),
+            "passed_259"
+        );
+    }
+
+    #[test]
+    fn generate_bundle_ignores_evicted_direct_proof_prefixes_in_bundle_id() {
+        let mut oversized = make_context();
+        oversized.proofs.failed_proofs = (0..(MAX_PROOF_REFS + 2))
+            .map(|idx| format!("failed_{idx}"))
+            .collect();
+        oversized.proofs.missing_proofs = (0..(MAX_PROOF_REFS + 1))
+            .map(|idx| format!("missing_{idx}"))
+            .collect();
+        oversized.proofs.passed_proofs = (0..(MAX_PROOF_REFS + 3))
+            .map(|idx| format!("passed_{idx}"))
+            .collect();
+
+        let mut bounded = oversized.clone();
+        bounded.ensure_bounded();
+
+        assert_eq!(
+            generate_bundle(&oversized).bundle_id,
+            generate_bundle(&bounded).bundle_id
+        );
     }
 
     #[test]
