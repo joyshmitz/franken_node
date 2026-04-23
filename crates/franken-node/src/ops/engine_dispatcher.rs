@@ -1394,22 +1394,35 @@ impl EngineDispatcher {
     ///
     /// bd-3kha7: Fixed timing attack vulnerability - scans all capabilities in constant time
     /// to prevent leaking which specific capability was invalid through timing differences.
+    /// bd-1w5ni: Fixed ABI compatibility risk by dynamically querying supported capabilities
+    /// from franken-engine instead of using hardcoded list that could become stale.
     #[cfg(feature = "engine")]
     fn validate_capabilities(capabilities: &[String]) -> Result<(), ActionableError> {
         use crate::security::constant_time::ct_eq;
+        use frankenengine_engine::capability::{CapabilityProfile, RuntimeCapability};
 
-        // Known valid capability strings based on frankenengine_engine::capability::RuntimeCapability::from_tag_str
-        const VALID_CAPABILITIES: &[&str] = &[
-            // Canonical snake_case names
-            "vm_dispatch", "gc_invoke", "ir_lowering", "policy_read", "policy_write",
-            "evidence_emit", "decision_invoke", "network_egress", "lease_management",
-            "idempotency_derive", "extension_lifecycle", "heap_allocate", "env_read",
-            "process_spawn", "fs_read", "fs_write", "module_load", "console", "timer", "builtin",
-            // Accepted aliases
+        // Get all supported capabilities dynamically from franken-engine
+        let all_capabilities = CapabilityProfile::full().capabilities;
+
+        // Create vector of valid capability strings from franken-engine API
+        let mut valid_capabilities = Vec::new();
+
+        // Add canonical names from Display implementation
+        for cap in &all_capabilities {
+            valid_capabilities.push(cap.to_string());
+        }
+
+        // Add known aliases that franken-engine accepts (from RuntimeCapability::from_tag_str)
+        valid_capabilities.extend_from_slice(&[
+            // Network aliases
             "network", "net", "net:connect", "net:fetch", "net:outbound", "net.write", "network.write",
+            // Filesystem aliases
             "fs", "fs:read", "fs.read", "fs:write", "fs.write",
+            // Module loading aliases
             "module:require", "module:import", "module.import",
-        ];
+            // Additional capabilities that may not be in RuntimeCapability enum but are valid
+            "console", "timer", "builtin",
+        ]);
 
         // Track if any capability is invalid - scan ALL capabilities regardless
         // to prevent timing attack that leaks which capability position failed
@@ -1420,7 +1433,7 @@ impl EngineDispatcher {
             let mut is_valid = false;
 
             // Check exact match against valid capabilities (constant-time for each comparison)
-            for valid_cap in VALID_CAPABILITIES {
+            for valid_cap in &valid_capabilities {
                 if ct_eq(capability, valid_cap) {
                     is_valid = true;
                     // Continue checking all valid_caps for constant-time behavior
