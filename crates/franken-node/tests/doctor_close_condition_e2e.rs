@@ -1,4 +1,5 @@
 use assert_cmd::Command;
+use frankenengine_node::ops::close_condition::MAX_CLOSE_CONDITION_CARGO_FILES;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -258,6 +259,83 @@ fn doctor_close_condition_writes_dual_oracle_receipt() {
         )
         .is_err(),
         "trusted oracle signature must reject tampered receipt core"
+    );
+}
+
+#[test]
+fn doctor_close_condition_reports_red_when_cargo_scan_exceeds_cap() {
+    let root = fixture_root();
+    for index in 0..MAX_CLOSE_CONDITION_CARGO_FILES {
+        write_fixture(
+            &root
+                .path()
+                .join(format!("overflow/member-{index}/Cargo.toml")),
+            &format!(
+                "[package]\nname = \"overflow-member-{index}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n"
+            ),
+        );
+    }
+    let (signing_key_path, _) =
+        write_test_signing_key(root.path(), ".franken-node/keys/oracle-close.key", 61);
+    let signing_key_path = signing_key_path.display().to_string();
+    let mut command = Command::cargo_bin("franken-node").expect("franken-node binary");
+    let output = command
+        .current_dir(root.path())
+        .env(
+            "FRANKEN_NODE_CLOSE_CONDITION_TIMESTAMP_UTC",
+            "2026-02-21T00:00:00Z",
+        )
+        .args([
+            "doctor",
+            "close-condition",
+            "--json",
+            "--receipt-signing-key",
+            signing_key_path.as_str(),
+        ])
+        .output()
+        .expect("doctor close-condition should run");
+
+    assert!(
+        output.status.success(),
+        "doctor close-condition should emit a red receipt instead of aborting: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let receipt: Value =
+        serde_json::from_slice(&output.stdout).expect("stdout receipt must be JSON");
+    assert_eq!(receipt["composite_verdict"], "RED");
+    assert!(
+        receipt["failing_dimensions"]
+            .as_array()
+            .expect("failing dimensions")
+            .iter()
+            .any(|dimension| dimension.as_str() == Some("L2_engine_boundary_oracle"))
+    );
+    let checks = receipt["L2_engine_boundary_oracle"]["checks"]
+        .as_array()
+        .expect("split checks");
+    let scan_check = checks
+        .iter()
+        .find(|check| check["id"].as_str() == Some("SPLIT-PATH-DEPS"))
+        .expect("path dependency check");
+    assert_eq!(scan_check["status"], "RED");
+    assert_eq!(
+        scan_check["details"]["error"],
+        "close_condition_scan_limit_exceeded"
+    );
+    assert!(
+        scan_check["details"]["detail"]
+            .as_str()
+            .expect("scan-limit detail")
+            .contains("cargo-manifest scan exceeded limit")
+    );
+    assert!(
+        receipt["L2_engine_boundary_oracle"]["blocking_findings"]
+            .as_array()
+            .expect("blocking findings")
+            .iter()
+            .any(|finding| finding.as_str() == Some("SPLIT-PATH-DEPS failed"))
     );
 }
 

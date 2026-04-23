@@ -11,6 +11,8 @@ const COMPATIBILITY_CORPUS_RESULTS_PATH: &str = "artifacts/13/compatibility_corp
 const SECTION_10N_GATE_VERDICT_PATH: &str =
     "artifacts/section/10.N/gate_verdict/bd-1neb_section_gate.json";
 const CLOSE_CONDITION_TIMESTAMP_ENV: &str = "FRANKEN_NODE_CLOSE_CONDITION_TIMESTAMP_UTC";
+pub const MAX_CLOSE_CONDITION_CARGO_FILES: usize = 256;
+pub const MAX_CLOSE_CONDITION_SCAN_FILES: usize = 4_096;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -72,6 +74,18 @@ pub struct ReleasePolicyLinkage {
 pub enum ReleasePolicyLinkageError {
     #[error("release-policy CI output not accessible: {detail}")]
     CiOutputNotAccessible { detail: String },
+}
+
+#[derive(Debug, thiserror::Error)]
+enum CloseConditionScanError {
+    #[error("{scan_kind} scan exceeded limit {limit} while visiting {path}")]
+    LimitExceeded {
+        scan_kind: &'static str,
+        limit: usize,
+        path: String,
+    },
+    #[error(transparent)]
+    Walk(#[from] anyhow::Error),
 }
 
 pub struct CloseConditionSigningMaterial<'a> {
@@ -447,7 +461,13 @@ fn check_no_local_engine_crates(root: &Path) -> SplitContractCheck {
 }
 
 fn check_engine_path_dependencies(root: &Path) -> Result<SplitContractCheck> {
-    let cargo_files = collect_files_named(root, "Cargo.toml")?;
+    let cargo_files = match collect_files_named(root, "Cargo.toml") {
+        Ok(files) => files,
+        Err(err @ CloseConditionScanError::LimitExceeded { .. }) => {
+            return Ok(scan_limit_exceeded_check("SPLIT-PATH-DEPS", &err));
+        }
+        Err(err) => return Err(anyhow::Error::new(err)),
+    };
     let engine_crates = ["frankenengine-engine", "frankenengine-extension-host"];
     let mut cargo_file_reports = Vec::new();
     let mut violations = Vec::new();
@@ -498,7 +518,13 @@ fn check_engine_path_dependencies(root: &Path) -> Result<SplitContractCheck> {
 }
 
 fn check_no_engine_internal_imports(root: &Path) -> Result<SplitContractCheck> {
-    let rust_files = collect_rust_files(root)?;
+    let rust_files = match collect_rust_files(root) {
+        Ok(files) => files,
+        Err(err @ CloseConditionScanError::LimitExceeded { .. }) => {
+            return Ok(scan_limit_exceeded_check("SPLIT-NO-INTERNALS", &err));
+        }
+        Err(err) => return Err(anyhow::Error::new(err)),
+    };
     let internal_patterns = [
         "use frankenengine_engine::internal",
         "use frankenengine_extension_host::internal",
@@ -580,6 +606,17 @@ fn check_governance_docs(root: &Path) -> SplitContractCheck {
     }
 }
 
+fn scan_limit_exceeded_check(id: &str, err: &CloseConditionScanError) -> SplitContractCheck {
+    SplitContractCheck {
+        id: id.to_string(),
+        status: OracleColor::Red,
+        details: serde_json::json!({
+            "error": "close_condition_scan_limit_exceeded",
+            "detail": err.to_string(),
+        }),
+    }
+}
+
 fn read_json_value(path: &Path) -> std::result::Result<Value, String> {
     let raw = fs::read_to_string(path).map_err(|err| format!("{}: {err}", path.display()))?;
     serde_json::from_str(&raw).map_err(|err| format!("{}: {err}", path.display()))
@@ -605,32 +642,70 @@ fn get_str<'a>(value: &'a Value, path: &[&str]) -> Option<&'a str> {
     get_value(value, path).and_then(Value::as_str)
 }
 
-fn collect_files_named(root: &Path, name: &str) -> Result<Vec<PathBuf>> {
+fn collect_files_named(
+    root: &Path,
+    name: &str,
+) -> std::result::Result<Vec<PathBuf>, CloseConditionScanError> {
     let mut files = Vec::new();
     collect_files(root, root, &mut |path| {
         if path.file_name().and_then(|part| part.to_str()) == Some(name) {
-            files.push(path.to_path_buf());
+            push_scanned_file(
+                &mut files,
+                path,
+                MAX_CLOSE_CONDITION_CARGO_FILES,
+                "cargo-manifest",
+            )?;
         }
+        Ok(())
     })?;
     Ok(files)
 }
 
-fn collect_rust_files(root: &Path) -> Result<Vec<PathBuf>> {
+fn collect_rust_files(
+    root: &Path,
+) -> std::result::Result<Vec<PathBuf>, CloseConditionScanError> {
     let mut files = Vec::new();
     for rel in ["crates", "src"] {
         let base = root.join(rel);
         if base.exists() {
             collect_files(root, &base, &mut |path| {
                 if path.extension().and_then(|part| part.to_str()) == Some("rs") {
-                    files.push(path.to_path_buf());
+                    push_scanned_file(
+                        &mut files,
+                        path,
+                        MAX_CLOSE_CONDITION_SCAN_FILES,
+                        "rust-source",
+                    )?;
                 }
+                Ok(())
             })?;
         }
     }
     Ok(files)
 }
 
-fn collect_files(root: &Path, dir: &Path, visit: &mut impl FnMut(&Path)) -> Result<()> {
+fn push_scanned_file(
+    files: &mut Vec<PathBuf>,
+    path: &Path,
+    limit: usize,
+    scan_kind: &'static str,
+) -> std::result::Result<(), CloseConditionScanError> {
+    if files.len() >= limit {
+        return Err(CloseConditionScanError::LimitExceeded {
+            scan_kind,
+            limit,
+            path: path.display().to_string(),
+        });
+    }
+    files.push(path.to_path_buf());
+    Ok(())
+}
+
+fn collect_files(
+    root: &Path,
+    dir: &Path,
+    visit: &mut impl FnMut(&Path) -> std::result::Result<(), CloseConditionScanError>,
+) -> std::result::Result<(), CloseConditionScanError> {
     if should_skip_path(root, dir) {
         return Ok(());
     }
@@ -646,7 +721,7 @@ fn collect_files(root: &Path, dir: &Path, visit: &mut impl FnMut(&Path)) -> Resu
         if file_type.is_dir() {
             collect_files(root, &path, visit)?;
         } else if file_type.is_file() {
-            visit(&path);
+            visit(&path)?;
         }
     }
     Ok(())
