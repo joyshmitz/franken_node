@@ -1039,7 +1039,9 @@ mod tests {
             .artifacts
             .remove("artifacts/replay.json")
             .expect("fixture artifact must exist");
-        bundle.artifacts.insert("../escape.json".to_string(), artifact);
+        bundle
+            .artifacts
+            .insert("../escape.json".to_string(), artifact);
         bundle.chunks[0].artifact_path = "../escape.json".to_string();
         seal(&mut bundle).expect("test bundle should reseal");
         let bytes = serialize(&bundle).expect("test bundle should serialize");
@@ -1074,7 +1076,9 @@ mod tests {
             .artifacts
             .remove("artifacts/replay.json")
             .expect("fixture artifact must exist");
-        bundle.artifacts.insert("artifacts\\replay.json".to_string(), artifact);
+        bundle
+            .artifacts
+            .insert("artifacts\\replay.json".to_string(), artifact);
         bundle.chunks[0].artifact_path = "artifacts\\replay.json".to_string();
         seal(&mut bundle).expect("test bundle should reseal");
         let bytes = serialize(&bundle).expect("test bundle should serialize");
@@ -1105,8 +1109,11 @@ mod tests {
     #[test]
     fn verify_rejects_uppercase_artifact_bytes_hex() {
         let mut bundle = make_test_bundle("verifier://alpha");
-        bundle.artifacts.get_mut("artifacts/replay.json").expect("fixture artifact must exist").bytes_hex =
-            "62756E646C652D4152544946414354".to_string();
+        bundle
+            .artifacts
+            .get_mut("artifacts/replay.json")
+            .expect("fixture artifact must exist")
+            .bytes_hex = "62756E646C652D4152544946414354".to_string();
         seal(&mut bundle).expect("test bundle should reseal");
         let bytes = serialize(&bundle).expect("test bundle should serialize");
 

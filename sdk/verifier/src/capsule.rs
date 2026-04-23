@@ -790,7 +790,8 @@ mod tests {
         let mut capsule = build_reference_capsule();
         capsule.manifest.input_refs = vec![" artifact_a".to_string()];
         capsule.inputs = BTreeMap::from([(" artifact_a".to_string(), "content_of_a".to_string())]);
-        capsule.manifest.expected_output_hash = compute_replay_hash(&capsule.payload, &capsule.inputs);
+        capsule.manifest.expected_output_hash =
+            compute_replay_hash(&capsule.payload, &capsule.inputs);
         sign_capsule(&mut capsule);
         match replay(&capsule, "verifier://v1") {
             Err(CapsuleError::ManifestIncomplete(msg)) => {
@@ -805,11 +806,10 @@ mod tests {
     fn test_replay_rejects_control_byte_input_key_even_when_manifest_matches() {
         let mut capsule = build_reference_capsule();
         capsule.manifest.input_refs = vec!["artifact_a\0shadow".to_string()];
-        capsule.inputs = BTreeMap::from([(
-            "artifact_a\0shadow".to_string(),
-            "content_of_a".to_string(),
-        )]);
-        capsule.manifest.expected_output_hash = compute_replay_hash(&capsule.payload, &capsule.inputs);
+        capsule.inputs =
+            BTreeMap::from([("artifact_a\0shadow".to_string(), "content_of_a".to_string())]);
+        capsule.manifest.expected_output_hash =
+            compute_replay_hash(&capsule.payload, &capsule.inputs);
         sign_capsule(&mut capsule);
         match replay(&capsule, "verifier://v1") {
             Err(CapsuleError::ManifestIncomplete(msg)) => {

@@ -139,9 +139,11 @@ fn ensure_counterfactual_references_bundle(
                 }
             })?;
             if actual.trim().is_empty() {
-                return Err(CounterfactualReceiptError::CounterfactualBundleHashMalformed {
-                    actual: actual.to_string(),
-                });
+                return Err(
+                    CounterfactualReceiptError::CounterfactualBundleHashMalformed {
+                        actual: actual.to_string(),
+                    },
+                );
             }
             validate_bundle_hash(actual).map_err(|actual| {
                 CounterfactualReceiptError::CounterfactualBundleHashMalformed { actual }
@@ -294,8 +296,7 @@ mod tests {
     #[test]
     fn verify_counterfactual_receipt_rejects_conflicting_top_level_bundle_hash_for_sweep() {
         let baseline_bundle = json!({"integrity_hash": TEST_BUNDLE_HASH});
-        let conflicting_hash =
-            "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let conflicting_hash = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
         let counterfactual_output = json!({
             "results": [
                 {"metadata": {"bundle_hash": TEST_BUNDLE_HASH}},
