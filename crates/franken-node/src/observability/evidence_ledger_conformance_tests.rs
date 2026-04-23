@@ -92,6 +92,7 @@ fn test_size_estimation_edge_cases() {
         epoch_id: 1,
         payload: large_payload,
         size_bytes: 0,
+        signature: String::new(),
     };
 
     let large_size = large_entry.estimated_size();
@@ -255,6 +256,7 @@ fn test_entry_size_byte_limit_validation() {
         epoch_id: 1,
         payload: large_payload,
         size_bytes: 0,
+        signature: String::new(),
     };
 
     let result = ledger.append(oversized_entry);
@@ -470,6 +472,7 @@ fn test_byte_accounting_accuracy() {
         epoch_id: 3,
         payload: serde_json::json!({"data": "x".repeat(500)}),
         size_bytes: 0,
+        signature: String::new(),
     };
 
     ledger.append(large_entry.clone()).unwrap();
@@ -540,6 +543,7 @@ fn test_oversized_append_preserves_existing_snapshot() {
         epoch_id: 2,
         payload: serde_json::json!({"blob": "x".repeat(10_000)}),
         size_bytes: 0,
+        signature: String::new(),
     };
 
     let result = ledger.append(oversized);
@@ -570,6 +574,7 @@ fn test_rejected_append_does_not_advance_next_successful_id() {
         epoch_id: 2,
         payload: serde_json::json!({"blob": "y".repeat(8_000)}),
         size_bytes: 0,
+        signature: String::new(),
     };
 
     assert!(ledger.append(oversized).is_err());
@@ -633,6 +638,7 @@ fn test_lab_spill_oversized_entry_rejects_before_write() {
         epoch_id: 3,
         payload: serde_json::json!({"blob": "z".repeat(5_000)}),
         size_bytes: 0,
+        signature: String::new(),
     };
 
     let result = spill.append(oversized);
@@ -660,6 +666,7 @@ fn test_iter_recent_omits_rejected_entry_after_byte_limit_failure() {
         epoch_id: 4,
         payload: serde_json::json!({"blob": "q".repeat(8_000)}),
         size_bytes: 0,
+        signature: String::new(),
     };
 
     assert!(ledger.append(oversized).is_err());
@@ -699,6 +706,7 @@ fn negative_malformed_evidence_entry_injection_attacks() {
                 "control_chars": "\x01\x02\x03\x1B[H\x1B[2J"
             }),
             size_bytes: 0,
+            signature: String::new(),
         },
 
         // Control characters and null bytes
@@ -837,6 +845,7 @@ fn negative_extreme_timestamp_arithmetic_overflow_protection() {
                 "epoch_test": extreme_timestamp,
             }),
             size_bytes: 0,
+            signature: String::new(),
         };
 
         let append_result = ledger.append(extreme_entry);
@@ -919,6 +928,7 @@ fn negative_concurrent_memory_pressure_race_conditions() {
                     epoch_id: (thread_id + operation_id) as u64,
                     payload: large_payload,
                     size_bytes: 0,
+                    signature: String::new(),
                 };
 
                 let append_result = ledger_clone.append(stress_entry);
@@ -998,6 +1008,7 @@ fn negative_capacity_boundary_manipulation_edge_cases() {
             epoch_id: 1,
             payload: serde_json::json!({"test": "small"}),
             size_bytes: 0,
+            signature: String::new(),
         };
 
         let append_result = ledger.append(test_entry);
@@ -1122,6 +1133,7 @@ fn negative_serialization_robustness_malformed_json_payloads() {
             epoch_id: i as u64 + 1,
             payload: malformed_payload,
             size_bytes: 0,
+            signature: String::new(),
         };
 
         let append_result = ledger.append(malformed_entry);
@@ -1223,6 +1235,7 @@ fn negative_spill_mode_edge_cases_write_failure_scenarios() {
                 "data": "x".repeat(100),
             }),
             size_bytes: 0,
+            signature: String::new(),
         };
 
         let append_result = spill_mode.append(spill_entry);
@@ -1322,6 +1335,7 @@ fn negative_evidence_entry_size_calculation_overflow_protection() {
                 obj
             },
             size_bytes: 0,
+            signature: String::new(),
         },
 
         // Entry with very long string values
@@ -1444,6 +1458,7 @@ fn negative_decision_kind_edge_cases_serialization_robustness() {
                 "test_data": "x".repeat((i + 1) * 1000),
             }),
             size_bytes: 0,
+            signature: String::new(),
         };
 
         let append_result = ledger.append(edge_case_entry);

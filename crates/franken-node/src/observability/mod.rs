@@ -101,6 +101,7 @@ mod tests {
             epoch_id: 7,
             payload: serde_json::Value::Null,
             size_bytes: 0,
+            signature: String::new(),
         }
     }
 
@@ -625,7 +626,8 @@ mod tests {
                     "payload": "malicious\ndata",
                     "nested": {"deep": {"attack": "vector"}}
                 }),
-                size_bytes: i64::MAX,                              // Maximum size
+                size_bytes: usize::MAX,                            // Maximum size hint
+                signature: String::new(),
             },
 
             // Control character injection attack
@@ -639,7 +641,8 @@ mod tests {
                 trace_id: "trace\u{202E}bidi-override\u{202C}".to_string(),
                 epoch_id: 0,                                       // Zero epoch
                 payload: serde_json::json!("\x00\x01\x02\x03binary-payload"),
-                size_bytes: -1,                                    // Negative size
+                size_bytes: 0,                                     // Under-reported size hint
+                signature: String::new(),
             },
 
             // Unicode normalization attack
@@ -654,6 +657,7 @@ mod tests {
                 epoch_id: 42,
                 payload: serde_json::json!({"unicode": "mixed\u{0301}"}),
                 size_bytes: 1024,
+                signature: String::new(),
             },
         ];
 
@@ -973,6 +977,7 @@ mod tests {
                 epoch_id: 42,
                 payload: serde_json::Value::Null,
                 size_bytes: 0,
+                signature: String::new(),
             };
 
             let witnesses = obs_single_witness_set(
@@ -1025,6 +1030,7 @@ mod tests {
                 epoch_id: 42,
                 payload: serde_json::Value::Null,
                 size_bytes: 0,
+                signature: String::new(),
             };
 
             if let Some(ref prev) = previous_entry {
@@ -1123,6 +1129,7 @@ mod tests {
                 epoch_id: 42,
                 payload: malicious_payload.clone(),
                 size_bytes: 1024,
+                signature: String::new(),
             };
 
             let witnesses = obs_single_witness_set(
@@ -1176,6 +1183,7 @@ mod tests {
             epoch_id: 42,
             payload: massive_payload,
             size_bytes: 1_000_000,
+            signature: String::new(),
         };
 
         let size_witnesses = obs_single_witness_set(
