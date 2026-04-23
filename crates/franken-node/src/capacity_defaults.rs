@@ -117,6 +117,7 @@ pub mod audit {
     pub const LOG_ENTRIES: usize = base::MEDIUM;
     pub const TRAIL_ENTRIES: usize = base::STANDARD;
     pub const ACTION_LOG_ENTRIES: usize = base::STANDARD;
+    pub const CONTROL_EVENTS: usize = base::STANDARD;
     pub const RECORDS: usize = base::STANDARD;
     pub const RECEIPT_CHAIN: usize = base::LARGE;
 
@@ -133,6 +134,10 @@ pub mod audit {
     const _: () = assert!(
         ACTION_LOG_ENTRIES == base::STANDARD,
         "ACTION_LOG_ENTRIES must use STANDARD bucket"
+    );
+    const _: () = assert!(
+        CONTROL_EVENTS == base::STANDARD,
+        "CONTROL_EVENTS must use STANDARD bucket"
     );
     const _: () = assert!(
         RECORDS == base::STANDARD,
@@ -389,6 +394,7 @@ pub mod aliases {
     pub const MAX_AUDIT_LOG_ENTRIES: usize = audit::LOG_ENTRIES;
     pub const MAX_AUDIT_TRAIL_ENTRIES: usize = audit::TRAIL_ENTRIES;
     pub const MAX_ACTION_LOG_ENTRIES: usize = audit::ACTION_LOG_ENTRIES;
+    pub const MAX_CONTROL_EVENTS: usize = audit::CONTROL_EVENTS;
     pub const MAX_RECEIPT_CHAIN: usize = audit::RECEIPT_CHAIN;
 
     // Test: audit aliases must exactly match their source constants.
@@ -403,6 +409,10 @@ pub mod aliases {
     const _: () = assert!(
         MAX_ACTION_LOG_ENTRIES == audit::ACTION_LOG_ENTRIES,
         "action log alias mismatch"
+    );
+    const _: () = assert!(
+        MAX_CONTROL_EVENTS == audit::CONTROL_EVENTS,
+        "control events alias mismatch"
     );
     const _: () = assert!(
         MAX_RECEIPT_CHAIN == audit::RECEIPT_CHAIN,

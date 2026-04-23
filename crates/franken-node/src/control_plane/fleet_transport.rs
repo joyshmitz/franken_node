@@ -14,7 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::capacity_defaults::aliases::{MAX_ACTION_LOG_ENTRIES, MAX_NODES_CAP};
+use crate::capacity_defaults::aliases::{MAX_ACTION_LOG_ENTRIES, MAX_CONTROL_EVENTS, MAX_NODES_CAP};
 use chrono::{DateTime, Utc};
 use ed25519_dalek::Signer;
 use rand::Rng;
@@ -466,11 +466,12 @@ impl AsupersyncFleetTransport {
     }
 
     fn record_event(&self, state: &mut AsupersyncFleetNetworkState, operation: &'static str) {
-        state.control_events.push(AsupersyncFleetControlEvent {
+        let event = AsupersyncFleetControlEvent {
             operation: operation.to_string(),
             node_id: self.node_id.clone(),
             observed_at: Utc::now(),
-        });
+        };
+        push_bounded(&mut state.control_events, event, MAX_CONTROL_EVENTS);
     }
 
     fn ensure_initialized(
