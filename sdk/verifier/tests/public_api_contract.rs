@@ -1197,6 +1197,30 @@ fn test_execute_workflow_rejects_structural_bundle() -> Result<(), String> {
     }
 }
 
+fn test_execute_workflow_rejects_unsupported_sdk_version() -> Result<(), String> {
+    let mut sdk = create_verifier_sdk("verifier://alpha");
+    sdk.sdk_version = "vsdk-v0".to_string();
+    let bundle = make_structural_bundle_bytes("verifier://alpha")?;
+
+    match sdk.execute_workflow(ValidationWorkflow::ReleaseValidation, &bundle) {
+        Err(VerifierSdkError::UnsupportedSdk(message)) => {
+            assert_eq!(
+                message,
+                format!(
+                    "{}: requested=vsdk-v0, supported={}",
+                    ERR_SDK_VERSION_UNSUPPORTED, SDK_VERSION
+                )
+            );
+            Ok(())
+        }
+        Ok(result) => Err(format!(
+            "expected unsupported sdk rejection, got workflow verdict {:?}",
+            result.verdict
+        )),
+        Err(other) => Err(format!("expected UnsupportedSdk, got {other:?}")),
+    }
+}
+
 // =============================================================================
 // Test Matrix Definition
 // =============================================================================
@@ -1403,6 +1427,13 @@ const API_CONTRACT_TESTS: &[ApiContractTest] = &[
         level: RequirementLevel::Must,
         description: "VerifierSdk::execute_workflow must reject structural-only same-verifier bundles",
         test_fn: test_execute_workflow_rejects_structural_bundle,
+    },
+    ApiContractTest {
+        id: "API-FUNC-012",
+        category: TestCategory::Functions,
+        level: RequirementLevel::Must,
+        description: "VerifierSdk::execute_workflow must reject unsupported sdk versions before bundle guardrails",
+        test_fn: test_execute_workflow_rejects_unsupported_sdk_version,
     },
 ];
 

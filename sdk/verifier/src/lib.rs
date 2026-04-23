@@ -532,6 +532,7 @@ impl VerifierSdk {
         _workflow: ValidationWorkflow,
         bundle: &[u8],
     ) -> Result<VerificationResult, VerifierSdkError> {
+        check_sdk_version(&self.sdk_version).map_err(VerifierSdkError::UnsupportedSdk)?;
         self.validate_current_verifier_identity()?;
         let verified = bundle::verify(bundle)?;
         self.verify_bundle_belongs_to_current_verifier(&verified)?;
@@ -1941,6 +1942,25 @@ mod tests {
             .expect_err("whitespace-padded session id must be rejected");
 
         assert!(matches!(err, VerifierSdkError::InvalidSessionId { .. }));
+    }
+
+    #[test]
+    fn execute_workflow_rejects_unsupported_sdk_before_bundle_guardrails() {
+        let mut sdk = create_verifier_sdk("verifier://alpha");
+        sdk.sdk_version = "vsdk-v0".to_string();
+        let bundle = make_replay_bundle_bytes("verifier://alpha");
+
+        let err = sdk
+            .execute_workflow(ValidationWorkflow::ReleaseValidation, &bundle)
+            .expect_err("unsupported sdk version must be rejected before workflow bundle checks");
+
+        assert_eq!(
+            err,
+            VerifierSdkError::UnsupportedSdk(format!(
+                "{}: requested=vsdk-v0, supported={}",
+                ERR_SDK_VERSION_UNSUPPORTED, SDK_VERSION
+            ))
+        );
     }
 
     #[test]
