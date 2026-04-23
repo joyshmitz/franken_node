@@ -10,7 +10,7 @@ use crate::config::Config as RuntimeConfig;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use std::sync::atomic::AtomicU8;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 use std::sync::OnceLock;
 use std::sync::RwLock;
 #[cfg(test)]
@@ -25,7 +25,7 @@ use super::middleware::{
 };
 use super::trust_card_routes::ApiResponse;
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 #[derive(Debug, Clone)]
 struct ProcessStartState {
     monotonic: Instant,
@@ -46,7 +46,7 @@ static OPERATOR_CONFIG_VIEW: std::sync::LazyLock<RwLock<ConfigView>> =
         RwLock::new(ConfigView::from_runtime_config(&RuntimeConfig::default()))
     });
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 static PROCESS_START_OVERRIDE: Mutex<Option<ProcessStartState>> = Mutex::new(None);
 
 #[cfg(test)]
@@ -123,7 +123,7 @@ pub(crate) fn init_operator_config(config: &RuntimeConfig) {
 }
 
 fn process_uptime_seconds() -> u64 {
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     if let Some(override_state) = process_start_override_for_tests() {
         return override_state.monotonic.elapsed().as_secs();
     }
@@ -138,7 +138,7 @@ fn process_uptime_seconds() -> u64 {
 }
 
 fn process_started_at_rfc3339() -> String {
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     if let Some(override_state) = process_start_override_for_tests() {
         return override_state.wall_clock_rfc3339;
     }
@@ -164,7 +164,7 @@ fn operator_config_view() -> ConfigView {
         .clone()
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub(crate) fn process_start_test_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
@@ -172,7 +172,7 @@ pub(crate) fn process_start_test_lock() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(|poison| poison.into_inner())
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 fn process_start_override_for_tests() -> Option<ProcessStartState> {
     PROCESS_START_OVERRIDE
         .lock()
@@ -180,7 +180,7 @@ fn process_start_override_for_tests() -> Option<ProcessStartState> {
         .clone()
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub(crate) fn clear_process_start_override_for_tests() {
     let mut guard = PROCESS_START_OVERRIDE
         .lock()
@@ -243,7 +243,7 @@ pub(crate) fn seed_bootstrapped_process_start_for_tests(
     install_process_start(start_offset_nanos, wall_clock_rfc3339.to_string());
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 fn assert_process_start_cleanup_waits_for_init_lock() {
     let _lock = process_start_test_lock();
     clear_process_start_override_for_tests();
@@ -264,7 +264,7 @@ fn assert_process_start_cleanup_waits_for_init_lock() {
 
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn assert_process_start_cleanup_lock_order_for_tests() {
     assert_process_start_cleanup_waits_for_init_lock();
 }

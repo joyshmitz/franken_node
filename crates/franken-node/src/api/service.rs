@@ -104,7 +104,7 @@ pub fn all_route_metadata() -> Vec<RouteMetadata> {
     routes.extend(operator_routes::route_metadata());
     routes.extend(verifier_routes::route_metadata());
     routes.extend(fleet_control_routes::route_metadata());
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     routes.extend(super::fleet_quarantine::quarantine_route_metadata());
     routes
 }
@@ -2260,7 +2260,7 @@ mod contract_tests {
 
     #[test]
     fn runtime_includes_all_artifact_endpoints() {
-        // In test mode, extended-surfaces feature adds extra endpoints beyond
+        // In test mode, control-plane feature adds extra endpoints beyond
         // the base artifact. This test validates that all artifact endpoints
         // are present in runtime (runtime is a superset of artifact).
         let _lock = super::operator_routes::process_start_test_lock();
@@ -2285,7 +2285,7 @@ mod contract_tests {
     #[test]
     fn artifact_endpoints_present_in_runtime() {
         // Validates that all base endpoints in the artifact are present in runtime.
-        // Runtime may include additional endpoints from extended-surfaces feature.
+        // Runtime may include additional endpoints from control-plane feature.
         let _lock = super::operator_routes::process_start_test_lock();
         super::operator_routes::clear_process_start_override_for_tests();
 

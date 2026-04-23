@@ -8,7 +8,7 @@
 //! - idempotency_store: at-most-once execution semantics
 //! - remote_bulkhead: concurrency limiting with backpressure
 
-#[cfg(all(test, feature = "extended-surfaces"))]
+#[cfg(all(test, feature = "remote-ops"))]
 mod tests {
     use super::super::{
         computation_registry::*, eviction_saga::*, idempotency::*, idempotency_store::*,

@@ -18,10 +18,10 @@ use tree_sitter::{Language, Node, Parser as JsParser};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "admin-tools"))]
 #[allow(dead_code)]
 pub mod bpet_migration_gate;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "admin-tools"))]
 #[allow(dead_code)]
 pub mod dgis_migration_gate;
 

@@ -399,7 +399,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "extended-surfaces")]
+    #[cfg(feature = "control-plane")]
     fn representative_runtime_and_connector_versions_match_authoritative_sources() {
         assert_eq!(
             NVERSION_ORACLE,
@@ -425,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "extended-surfaces")]
+    #[cfg(feature = "admin-tools")]
     fn representative_tool_versions_match_authoritative_sources() {
         assert_eq!(
             BENCHMARK_SUITE_SCORING,

@@ -397,7 +397,7 @@ impl Config {
     }
 
     /// Build an idempotency dedupe store from the resolved remote settings.
-    #[cfg(feature = "extended-surfaces")]
+    #[cfg(feature = "remote-ops")]
     #[must_use]
     pub fn idempotency_dedupe_store(
         &self,
@@ -418,7 +418,7 @@ impl Config {
     }
 
     /// Build a compatibility gate evaluator from the resolved compatibility settings.
-    #[cfg(feature = "extended-surfaces")]
+    #[cfg(feature = "control-plane")]
     #[must_use]
     pub fn compat_gate_evaluator(
         &self,
@@ -431,7 +431,7 @@ impl Config {
     }
 
     /// Build a compatibility gate engine from the resolved compatibility settings.
-    #[cfg(feature = "extended-surfaces")]
+    #[cfg(feature = "control-plane")]
     #[must_use]
     pub fn compatibility_gate_engine(
         &self,
@@ -444,7 +444,7 @@ impl Config {
     }
 
     /// Build a verifier economy registry from the resolved replay settings.
-    #[cfg(feature = "extended-surfaces")]
+    #[cfg(feature = "verifier-tools")]
     #[must_use]
     pub fn verifier_economy_registry(&self) -> crate::verifier_economy::VerifierEconomyRegistry {
         crate::verifier_economy::VerifierEconomyRegistry::from_replay_config(&self.replay)
@@ -3587,7 +3587,7 @@ min_quality_score = "0.8"
         assert_eq!(policy.max_degraded_duration_secs, 91);
     }
 
-    #[cfg(feature = "extended-surfaces")]
+    #[cfg(any(feature = "remote-ops", feature = "control-plane", feature = "verifier-tools"))]
     #[test]
     fn config_component_factories_apply_remote_compatibility_and_replay_ttls() {
         let mut config = Config::for_profile(Profile::Balanced);

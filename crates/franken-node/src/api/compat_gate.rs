@@ -440,7 +440,7 @@ impl CompatGateService {
             Some(s) => self
                 .shims
                 .iter()
-                .filter(|shim| shim.scope == s || shim.scope == "*")
+                .filter(|shim| crate::security::constant_time::ct_eq(&shim.scope, s) || crate::security::constant_time::ct_eq(&shim.scope, "*"))
                 .collect(),
             None => self.shims.iter().collect(),
         }
@@ -2889,5 +2889,68 @@ mod compat_gate_malformed_payload_tests {
 
         let op_error = CompatGateOperationError::TraceIdSpaceExhausted;
         assert!(op_error.source().is_none()); // No underlying cause
+    }
+
+    #[test]
+    fn scope_comparison_timing_resistance() {
+        // Regression test for bd-2x0hs: ensure scope comparisons use constant-time
+        // to prevent timing side-channel attacks where attackers could learn scope values
+        // based on comparison timing differences
+
+        use crate::security::constant_time;
+
+        // Test common scope patterns used in compatibility shims
+        let scope_global = "*";
+        let scope_npm = "npm";
+        let scope_cargo = "cargo";
+        let scope_pypi = "pypi";
+
+        // Test identical scope comparisons
+        assert!(constant_time::ct_eq(scope_global, "*"));
+        assert!(constant_time::ct_eq(scope_npm, "npm"));
+        assert!(constant_time::ct_eq(scope_cargo, "cargo"));
+        assert!(constant_time::ct_eq(scope_pypi, "pypi"));
+
+        // Test first-character difference (timing must be constant regardless of difference position)
+        assert!(!constant_time::ct_eq(scope_global, "x"));        // * -> x
+        assert!(!constant_time::ct_eq(scope_npm, "xpm"));         // n -> x
+        assert!(!constant_time::ct_eq(scope_cargo, "xargo"));     // c -> x
+        assert!(!constant_time::ct_eq(scope_pypi, "xypi"));       // p -> x
+
+        // Test last-character difference (timing must be constant regardless of difference position)
+        assert!(!constant_time::ct_eq(scope_npm, "npx"));         // m -> x
+        assert!(!constant_time::ct_eq(scope_cargo, "carx"));      // o -> x (shorter test)
+        assert!(!constant_time::ct_eq(scope_pypi, "pypx"));       // i -> x
+
+        // Test middle-character difference
+        assert!(!constant_time::ct_eq(scope_cargo, "cxrgo"));     // a -> x
+        assert!(!constant_time::ct_eq(scope_pypi, "pxpi"));       // y -> x
+
+        // Test scope wildcard pattern matching (security-critical)
+        assert!(constant_time::ct_eq("*", "*"));                  // global wildcard
+        assert!(!constant_time::ct_eq("*", "npm"));               // wildcard vs specific scope
+        assert!(!constant_time::ct_eq("npm", "*"));               // specific scope vs wildcard
+
+        // Test scoped package patterns
+        let scope_scoped = "@company/package";
+        assert!(constant_time::ct_eq(scope_scoped, "@company/package"));
+        assert!(!constant_time::ct_eq(scope_scoped, "@compxny/package")); // middle diff
+        assert!(!constant_time::ct_eq(scope_scoped, "@company/packagx")); // end diff
+        assert!(!constant_time::ct_eq(scope_scoped, "xcompany/package")); // start diff
+
+        // Test length differences
+        assert!(!constant_time::ct_eq("npm", "npmx"));            // longer
+        assert!(!constant_time::ct_eq("cargo", "carg"));          // shorter
+        assert!(!constant_time::ct_eq("@scope/pkg", "@scope"));   // different lengths
+
+        // Test empty string edge cases
+        assert!(!constant_time::ct_eq("*", ""));
+        assert!(!constant_time::ct_eq("", "*"));
+        assert!(constant_time::ct_eq("", ""));
+
+        // Test completely different scopes of same length
+        assert!(!constant_time::ct_eq("npm", "xxx"));
+        assert!(!constant_time::ct_eq("cargo", "xxxxx"));
+        assert!(!constant_time::ct_eq("pypi", "xxxx"));
     }
 }

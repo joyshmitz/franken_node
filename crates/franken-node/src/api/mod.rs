@@ -1,18 +1,18 @@
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "control-plane")]
 pub mod compat_gate;
 pub mod error;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "control-plane")]
 pub mod fleet_control_routes;
 pub mod fleet_quarantine;
 pub mod middleware;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod operator_routes;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "control-plane")]
 pub mod service;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod session_auth;
 pub mod trust_card_routes;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "control-plane")]
 pub mod verifier_routes;
 
 /// Return at most `max_chars` Unicode scalar values from `input` without

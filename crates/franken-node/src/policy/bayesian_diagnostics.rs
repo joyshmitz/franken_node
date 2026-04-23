@@ -242,7 +242,7 @@ impl BayesianDiagnostics {
         }
     }
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "policy-engine"))]
     pub fn with_epoch(mut self, epoch_id: u64) -> Self {
         self.epoch_id = epoch_id;
         self
@@ -377,7 +377,7 @@ impl BayesianDiagnostics {
     }
 
     /// Number of unique candidates seen.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "policy-engine"))]
     pub fn candidates_seen(&self) -> usize {
         self.states.len()
     }
@@ -392,7 +392,7 @@ impl BayesianDiagnostics {
     }
 
     /// Serialize the full diagnostics state to JSON for persistence.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "policy-engine"))]
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }

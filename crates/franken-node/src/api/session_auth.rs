@@ -1558,7 +1558,7 @@ pub fn session_lifecycle_events(
 }
 
 /// Demonstrate session lifecycle with strict monotonicity.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn demo_session_lifecycle() -> Vec<SessionEvent> {
     let config = SessionConfig {
         replay_window: 0,
@@ -1598,7 +1598,7 @@ pub fn demo_session_lifecycle() -> Vec<SessionEvent> {
 }
 
 /// Demonstrate windowed replay detection.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn demo_windowed_replay() -> Vec<SessionEvent> {
     let config = SessionConfig {
         replay_window: 4,

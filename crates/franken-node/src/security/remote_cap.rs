@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+#[cfg(feature = "http-client")]
 use url::Url;
 
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
@@ -478,6 +479,7 @@ impl RemoteScope {
     }
 }
 
+#[cfg(feature = "http-client")]
 fn validate_endpoint_prefix(prefix: &str) -> Result<(), String> {
     if prefix.trim().is_empty() {
         return Err("endpoint prefix cannot be empty".to_string());
@@ -558,6 +560,18 @@ fn validate_endpoint_prefix(prefix: &str) -> Result<(), String> {
         ));
     }
 
+    Ok(())
+}
+
+#[cfg(not(feature = "http-client"))]
+fn validate_endpoint_prefix(prefix: &str) -> Result<(), String> {
+    if prefix.trim().is_empty() {
+        return Err("endpoint prefix cannot be empty".to_string());
+    }
+    if prefix != prefix.trim() {
+        return Err(format!("endpoint prefix '{}' must be normalized", prefix));
+    }
+    // Basic validation without URL parsing when http-client feature is disabled
     Ok(())
 }
 

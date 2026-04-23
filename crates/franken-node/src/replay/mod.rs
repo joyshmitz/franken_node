@@ -1,7 +1,7 @@
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "advanced-features")]
 pub mod time_travel_engine;
 
-#[cfg(not(feature = "extended-surfaces"))]
+#[cfg(not(feature = "advanced-features"))]
 mod time_travel_engine;
 
 #[cfg(test)]

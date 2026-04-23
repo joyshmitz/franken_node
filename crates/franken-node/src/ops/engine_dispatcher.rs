@@ -3,6 +3,12 @@ use crate::ops::telemetry_bridge::{
 };
 use crate::runtime::lockstep_harness::LockstepHarness;
 use crate::storage::frankensqlite_adapter::FrankensqliteAdapter;
+#[cfg(feature = "engine")]
+use frankenengine_engine::execution_orchestrator::{
+    ExecutionOrchestrator, ExtensionPackage, OrchestratorConfig, OrchestratorError, OrchestratorResult,
+};
+#[cfg(feature = "engine")]
+use frankenengine_engine::runtime_config::RuntimeConfig as EngineRuntimeConfig;
 use crate::{
     ActionableError,
     config::{Config, PreferredRuntime, Profile},
@@ -1061,6 +1067,83 @@ impl EngineDispatcher {
             telemetry: inputs.telemetry,
             captured_output: captured_output_from(inputs.output),
         }
+    }
+
+    /// Execute code using native franken_engine API instead of external process.
+    /// Returns the same interface as external execution for compatibility.
+    #[cfg(feature = "engine")]
+    fn run_engine_native(
+        app_path: &Path,
+        config: &Config,
+        policy_mode: &str,
+        telemetry_handle: TelemetryRuntimeHandle,
+    ) -> std::result::Result<(Output, TelemetryRuntimeReport), EngineProcessError> {
+        use std::fs;
+
+        // Read the application source code
+        let source_code = fs::read_to_string(app_path).map_err(|e| {
+            EngineProcessError::Spawn {
+                message: format!("Failed to read application source at {}: {}", app_path.display(), e),
+                telemetry_report: None,
+            }
+        })?;
+
+        // Create extension package from source
+        let package = ExtensionPackage {
+            extension_id: format!("franken_node_app_{}",
+                app_path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+            ),
+            source: source_code,
+            source_file: Some(app_path.to_string_lossy().to_string()),
+            capabilities: vec![], // TODO: Map from franken-node policy
+            version: "1.0.0".to_string(), // TODO: Extract from package metadata
+            metadata: std::collections::BTreeMap::new(),
+        };
+
+        // Configure orchestrator with policy settings
+        let orchestrator_config = OrchestratorConfig::default(); // TODO: Map from franken-node config
+        let runtime_config = EngineRuntimeConfig::default(); // TODO: Map from franken-node config
+
+        let mut orchestrator = ExecutionOrchestrator::new_with_runtime_config(
+            orchestrator_config,
+            runtime_config,
+        );
+
+        // Execute through native API
+        let execution_result = orchestrator.execute(&package).map_err(|e| {
+            EngineProcessError::Spawn {
+                message: format!("Native execution failed: {}", e),
+                telemetry_report: None,
+            }
+        })?;
+
+        // Convert native execution result to Output format for compatibility
+        let stdout = serde_json::to_string(&execution_result).unwrap_or_else(|_|
+            format!("Native execution completed: {:?}", execution_result)
+        );
+
+        // Create a synthetic success status - we'll use a helper command for this
+        let synthetic_output = std::process::Command::new("true").output().map_err(|e| {
+            EngineProcessError::Spawn {
+                message: format!("Failed to create synthetic exit status: {}", e),
+                telemetry_report: None,
+            }
+        })?;
+
+        let output = Output {
+            status: synthetic_output.status,
+            stdout: stdout.into_bytes(),
+            stderr: Vec::new(),
+        };
+
+        // Stop telemetry and return
+        let telemetry_report = telemetry_handle
+            .stop_and_join(ShutdownReason::EngineExit { exit_code: Some(0) })
+            .map_err(|err| EngineProcessError::TelemetryDrain(format!("{err}")))?;
+
+        Ok((output, telemetry_report))
     }
 
     fn run_engine_process(

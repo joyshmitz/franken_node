@@ -15,7 +15,7 @@ mod api {
     #[path = "trust_card_routes.rs"]
     pub mod trust_card_routes;
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub(crate) fn utf8_prefix(input: &str, max_chars: usize) -> &str {
         if max_chars == 0 {
             return "";
@@ -92,6 +92,7 @@ use frankenengine_node::{
     ActionableError,
     config::{self, CliOverrides, Profile},
     ops, runtime,
+    supply_chain::category_shift::validate_benchmark_thresholds,
     security::{
         decision_receipt::{
             Decision, Receipt, ReceiptQuery, append_signed_receipt, export_receipts_to_path,
@@ -7277,6 +7278,32 @@ fn build_doctor_report_with_cwd_and_policy_input(
             }
         }
     }
+
+    // Add benchmark validation check
+    checks.push(evaluate_doctor_check(
+        "DR-BENCH-006",
+        "DOC-006",
+        "benchmark.validation",
+        || {
+            match validate_benchmark_thresholds() {
+                Ok(result) if result.passed => (
+                    DoctorStatus::Pass,
+                    result.message,
+                    "Benchmark thresholds are met. No action required.".to_string(),
+                ),
+                Ok(result) => (
+                    DoctorStatus::Fail,
+                    result.message,
+                    format!("Fix benchmark performance issues: {}", result.details.join("; ")).to_string(),
+                ),
+                Err(e) => (
+                    DoctorStatus::Warn,
+                    format!("Benchmark validation failed to run: {}", e),
+                    "Run category shift validation to generate benchmark results first.".to_string(),
+                ),
+            }
+        },
+    ));
 
     let (status_counts, overall_status) = summarize_statuses(&checks);
     let structured_logs = checks

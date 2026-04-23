@@ -1,18 +1,18 @@
 //! Remote-control primitives for network-bound operations.
 
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "remote-ops")]
 pub mod computation_registry;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "remote-ops")]
 pub mod eviction_saga;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "remote-ops")]
 pub mod idempotency;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "remote-ops")]
 pub mod idempotency_store;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "remote-ops")]
 pub mod remote_bulkhead;
 pub mod virtual_transport_faults;
 
-#[cfg(all(test, feature = "extended-surfaces"))]
+#[cfg(all(test, feature = "remote-ops"))]
 mod remote_conformance_tests;
 
 #[cfg(test)]

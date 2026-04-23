@@ -7,6 +7,8 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+const REVOKED_STATUS: &str = "revoked";
+
 // ── Interop classes ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -221,6 +223,10 @@ pub fn check_revocation(case_id: &str, status_a: bool, status_b: bool) -> Intero
     }
 }
 
+fn revocation_status_matches(status: &str) -> bool {
+    crate::security::constant_time::ct_eq(status, REVOKED_STATUS)
+}
+
 /// Check source diversity threshold (INV-IOP-SOURCE-DIVERSITY).
 pub fn check_source_diversity(case_id: &str, sources: usize, required: usize) -> InteropResult {
     let passed = sources >= required;
@@ -262,13 +268,15 @@ pub fn run_suite(cases: &[InteropTestCase]) -> Vec<InteropResult> {
                 InteropClass::ObjectId => {
                     check_object_id(&tc.case_id, &tc.input, &tc.expected_output)
                 }
-                InteropClass::Signature => {
-                    check_signature(&tc.case_id, crate::security::constant_time::ct_eq(&tc.input, &tc.expected_output), "cross-check")
-                }
+                InteropClass::Signature => check_signature(
+                    &tc.case_id,
+                    crate::security::constant_time::ct_eq(&tc.input, &tc.expected_output),
+                    "cross-check",
+                ),
                 InteropClass::Revocation => check_revocation(
                     &tc.case_id,
-                    tc.input == "revoked",
-                    tc.expected_output == "revoked",
+                    revocation_status_matches(&tc.input),
+                    revocation_status_matches(&tc.expected_output),
                 ),
                 InteropClass::SourceDiversity => {
                     match (
@@ -579,12 +587,10 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert!(!results[0].passed);
         assert_eq!(results[0].details, "invalid sources count: 2 ");
-        assert!(
-            results[0]
-                .reproducer
-                .as_ref()
-                .is_some_and(|reproducer| reproducer.contains("\"field\":\"sources\""))
-        );
+        assert!(results[0]
+            .reproducer
+            .as_ref()
+            .is_some_and(|reproducer| reproducer.contains("\"field\":\"sources\"")));
     }
 
     #[test]
@@ -619,12 +625,10 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert!(!results[0].passed);
         assert_eq!(results[0].details, "invalid required count:  1");
-        assert!(
-            results[0]
-                .reproducer
-                .as_ref()
-                .is_some_and(|reproducer| reproducer.contains("\"field\":\"required\""))
-        );
+        assert!(results[0]
+            .reproducer
+            .as_ref()
+            .is_some_and(|reproducer| reproducer.contains("\"field\":\"required\"")));
     }
 
     #[test]
@@ -644,6 +648,55 @@ mod tests {
         assert_eq!(results[0].class, InteropClass::Revocation);
         assert!(results[0].details.contains("impl_a=true"));
         assert!(results[0].details.contains("impl_b=false"));
+    }
+
+    #[test]
+    fn run_suite_revocation_matching_marker_is_accepted() {
+        let cases = vec![InteropTestCase {
+            class: InteropClass::Revocation,
+            case_id: "rev-good-marker".into(),
+            input: REVOKED_STATUS.into(),
+            expected_output: REVOKED_STATUS.into(),
+            implementation: "impl_a".into(),
+        }];
+
+        let results = run_suite(&cases);
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].passed);
+        assert_eq!(results[0].details, "implementations agree");
+        assert!(results[0].reproducer.is_none());
+    }
+
+    #[test]
+    fn run_suite_revocation_non_matching_marker_is_rejected() {
+        let cases = vec![InteropTestCase {
+            class: InteropClass::Revocation,
+            case_id: "rev-bad-marker".into(),
+            input: REVOKED_STATUS.into(),
+            expected_output: "active".into(),
+            implementation: "impl_a".into(),
+        }];
+
+        let results = run_suite(&cases);
+
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].passed);
+        assert_eq!(results[0].class, InteropClass::Revocation);
+        assert_eq!(results[0].details, "impl_a=true, impl_b=false");
+    }
+
+    #[test]
+    fn revocation_marker_check_rejects_same_length_position_differences() {
+        assert!(revocation_status_matches(REVOKED_STATUS));
+
+        for candidate in ["aevoked", "revXked", "revokea"] {
+            assert_eq!(candidate.len(), REVOKED_STATUS.len());
+            assert!(
+                !revocation_status_matches(candidate),
+                "revocation marker must reject same-length mismatch at any byte position"
+            );
+        }
     }
 
     #[test]
@@ -722,12 +775,10 @@ mod tests {
         assert!(!result.passed);
         assert_eq!(result.class, InteropClass::Signature);
         assert_eq!(result.details, "");
-        assert!(
-            result
-                .reproducer
-                .as_ref()
-                .is_some_and(|reproducer| reproducer.contains("\"case\":\"sig-empty-detail\""))
-        );
+        assert!(result
+            .reproducer
+            .as_ref()
+            .is_some_and(|reproducer| reproducer.contains("\"case\":\"sig-empty-detail\"")));
     }
 
     #[test]
@@ -737,12 +788,10 @@ mod tests {
         assert!(!result.passed);
         assert_eq!(result.class, InteropClass::Revocation);
         assert_eq!(result.details, "impl_a=false, impl_b=true");
-        assert!(
-            result
-                .reproducer
-                .as_ref()
-                .is_some_and(|reproducer| reproducer.contains("\"impl_b\":true"))
-        );
+        assert!(result
+            .reproducer
+            .as_ref()
+            .is_some_and(|reproducer| reproducer.contains("\"impl_b\":true")));
     }
 
     #[test]

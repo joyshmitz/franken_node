@@ -31,16 +31,16 @@ use sha2::{Digest, Sha256};
 const MAX_FLEET_EVENTS: usize = 4096;
 
 /// Maximum incident handles retained before released entries are reclaimed.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 const MAX_INCIDENTS: usize = 2048;
 
 /// Maximum zone status entries before oldest are evicted.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 const MAX_ZONE_STATUS: usize = 2048;
 
 use super::error::ApiError;
 use super::middleware::{AuthIdentity, TraceContext};
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 use super::middleware::{AuthMethod, EndpointGroup, EndpointLifecycle, PolicyHook, RouteMetadata};
 use super::trust_card_routes::ApiResponse;
 
@@ -53,7 +53,7 @@ pub const FLEET_QUARANTINE_INITIATED: &str = "FLEET-001";
 pub const FLEET_REVOCATION_ISSUED: &str = "FLEET-002";
 
 /// FLEET-003: Convergence progress updated.
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "control-plane")]
 pub const FLEET_CONVERGENCE_PROGRESS: &str = "FLEET-003";
 
 /// FLEET-004: Fleet released (quarantine rolled back).
@@ -65,31 +65,31 @@ pub const FLEET_RECONCILE_COMPLETED: &str = "FLEET-005";
 // ── Error Codes ───────────────────────────────────────────────────────────
 
 pub const FLEET_SCOPE_INVALID: &str = "FLEET_SCOPE_INVALID";
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub const FLEET_ZONE_UNREACHABLE: &str = "FLEET_ZONE_UNREACHABLE";
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub const FLEET_CONVERGENCE_TIMEOUT: &str = "FLEET_CONVERGENCE_TIMEOUT";
 pub const FLEET_ROLLBACK_FAILED: &str = "FLEET_ROLLBACK_FAILED";
 pub const FLEET_ROLLBACK_UNVERIFIED: &str = "FLEET_ROLLBACK_UNVERIFIED";
 pub const FLEET_NOT_ACTIVATED: &str = "FLEET_NOT_ACTIVATED";
 pub const FLEET_OPERATION_ID_EXHAUSTED: &str = "FLEET_OPERATION_ID_EXHAUSTED";
 pub const FLEET_RECEIPT_SIGNING_MATERIAL_MISSING: &str = "FLEET_RECEIPT_SIGNING_MATERIAL_MISSING";
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub const FLEET_INCIDENT_CAPACITY_EXCEEDED: &str = "FLEET_INCIDENT_CAPACITY_EXCEEDED";
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub const FLEET_ZONE_STATUS_CAPACITY_EXCEEDED: &str = "FLEET_ZONE_STATUS_CAPACITY_EXCEEDED";
 
 // ── Invariant Tags ────────────────────────────────────────────────────────
 
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "control-plane")]
 pub const INV_FLEET_ZONE_SCOPE: &str = "INV-FLEET-ZONE-SCOPE";
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "control-plane")]
 pub const INV_FLEET_RECEIPT: &str = "INV-FLEET-RECEIPT";
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "control-plane")]
 pub const INV_FLEET_CONVERGENCE: &str = "INV-FLEET-CONVERGENCE";
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "control-plane")]
 pub const INV_FLEET_SAFE_START: &str = "INV-FLEET-SAFE-START";
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "control-plane")]
 pub const INV_FLEET_ROLLBACK: &str = "INV-FLEET-ROLLBACK";
 
 // ── Domain Types ──────────────────────────────────────────────────────────
@@ -993,10 +993,10 @@ pub enum FleetControlError {
     /// Scope validation failed.
     ScopeInvalid { code: String, detail: String },
     /// Target zone is unreachable.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     ZoneUnreachable { code: String, zone_id: String },
     /// Convergence timed out.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     ConvergenceTimeout { code: String, elapsed_seconds: u32 },
     /// Rollback failed during release.
     RollbackFailed {
@@ -1017,10 +1017,10 @@ pub enum FleetControlError {
     /// Required decision-receipt signing material is unavailable.
     ReceiptSigningMaterialMissing { code: String },
     /// Incident registry is full of unreleased entries.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     IncidentCapacityExceeded { code: String },
     /// Zone-status registry is full of live entries.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     ZoneStatusCapacityExceeded { code: String },
 }
 
@@ -1032,7 +1032,7 @@ impl FleetControlError {
         }
     }
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn zone_unreachable(zone_id: &str) -> Self {
         Self::ZoneUnreachable {
             code: FLEET_ZONE_UNREACHABLE.to_string(),
@@ -1040,7 +1040,7 @@ impl FleetControlError {
         }
     }
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn convergence_timeout(elapsed: u32) -> Self {
         Self::ConvergenceTimeout {
             code: FLEET_CONVERGENCE_TIMEOUT.to_string(),
@@ -1082,14 +1082,14 @@ impl FleetControlError {
         }
     }
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn incident_capacity_exceeded() -> Self {
         Self::IncidentCapacityExceeded {
             code: FLEET_INCIDENT_CAPACITY_EXCEEDED.to_string(),
         }
     }
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn zone_status_capacity_exceeded() -> Self {
         Self::ZoneStatusCapacityExceeded {
             code: FLEET_ZONE_STATUS_CAPACITY_EXCEEDED.to_string(),
@@ -1100,18 +1100,18 @@ impl FleetControlError {
     pub fn error_code(&self) -> &str {
         match self {
             Self::ScopeInvalid { code, .. } => code,
-            #[cfg(any(test, feature = "extended-surfaces"))]
+            #[cfg(any(test, feature = "control-plane"))]
             Self::ZoneUnreachable { code, .. } => code,
-            #[cfg(any(test, feature = "extended-surfaces"))]
+            #[cfg(any(test, feature = "control-plane"))]
             Self::ConvergenceTimeout { code, .. } => code,
             Self::RollbackFailed { code, .. } => code,
             Self::RollbackUnverified { code, .. } => code,
             Self::NotActivated { code } => code,
             Self::OperationIdExhausted { code } => code,
             Self::ReceiptSigningMaterialMissing { code } => code,
-            #[cfg(any(test, feature = "extended-surfaces"))]
+            #[cfg(any(test, feature = "control-plane"))]
             Self::IncidentCapacityExceeded { code } => code,
-            #[cfg(any(test, feature = "extended-surfaces"))]
+            #[cfg(any(test, feature = "control-plane"))]
             Self::ZoneStatusCapacityExceeded { code } => code,
         }
     }
@@ -1137,7 +1137,7 @@ pub struct FleetControlEvent {
 }
 
 impl FleetControlEvent {
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn quarantine_initiated(trace_id: &str, zone_id: &str, extension_id: &str) -> Self {
         Self {
             event_code: FLEET_QUARANTINE_INITIATED.to_string(),
@@ -1150,7 +1150,7 @@ impl FleetControlEvent {
         }
     }
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn revocation_issued(trace_id: &str, zone_id: &str, extension_id: &str) -> Self {
         Self {
             event_code: FLEET_REVOCATION_ISSUED.to_string(),
@@ -1163,7 +1163,7 @@ impl FleetControlEvent {
         }
     }
 
-    #[cfg(feature = "extended-surfaces")]
+    #[cfg(feature = "control-plane")]
     pub fn convergence_progress(trace_id: &str, zone_id: &str, progress_pct: u8) -> Self {
         let mut metadata = BTreeMap::new();
         metadata.insert("progress_pct".to_string(), progress_pct.to_string());
@@ -1347,7 +1347,7 @@ impl SharedFleetControlOwner {
         })
     }
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     fn quarantine(
         &self,
         identity: &AuthIdentity,
@@ -1359,7 +1359,7 @@ impl SharedFleetControlOwner {
             .map_err(|e| map_fleet_control_error("quarantine", trace, e))
     }
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     fn revoke(
         &self,
         identity: &AuthIdentity,
@@ -1398,7 +1398,7 @@ impl SharedFleetControlOwner {
             .map_err(|e| map_fleet_control_error("reconcile", trace, e))
     }
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     fn reset_for_tests(&self) {
         let mut guard = match self.inner.lock() {
             Ok(guard) => guard,
@@ -1414,12 +1414,12 @@ fn shared_fleet_control_manager() -> &'static SharedFleetControlOwner {
     SHARED_FLEET_CONTROL_MANAGER.get_or_init(SharedFleetControlOwner::new)
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn reset_shared_fleet_control_manager_for_tests() {
     shared_fleet_control_manager().reset_for_tests();
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn activate_shared_fleet_control_manager_for_tests() {
     let mut guard = match shared_fleet_control_manager().inner.lock() {
         Ok(guard) => guard,
@@ -1459,13 +1459,13 @@ impl FleetControlManager {
     }
 
     /// Create a manager without decision-receipt signing material for fail-closed tests.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn without_decision_signing_material_for_tests() -> Self {
         Self::with_optional_decision_signing_material(None)
     }
 
     /// Remove decision-receipt signing material from an initialized manager for fail-closed tests.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn clear_decision_signing_material_for_tests(&mut self) {
         self.decision_signing_material = None;
     }
@@ -1474,7 +1474,7 @@ impl FleetControlManager {
     ///
     /// This keeps integration/conformance harnesses on the production signing
     /// path instead of relying on `cfg(test)` demo material.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn with_decision_signing_key(
         signing_key: ed25519_dalek::SigningKey,
         key_source: &'static str,
@@ -1494,7 +1494,7 @@ impl FleetControlManager {
     }
 
     /// Check if the manager is activated.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn is_activated(&self) -> bool {
         self.activated
     }
@@ -1514,7 +1514,7 @@ impl FleetControlManager {
     /// Quarantine an extension within a scope.
     /// INV-FLEET-ZONE-SCOPE: scope must have a valid zone_id.
     /// INV-FLEET-RECEIPT: produces a signed decision receipt.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn quarantine(
         &mut self,
         extension_id: &str,
@@ -1619,7 +1619,7 @@ impl FleetControlManager {
 
     /// Revoke an extension.
     /// INV-FLEET-ZONE-SCOPE: scope must have a valid zone_id.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn revoke(
         &mut self,
         extension_id: &str,
@@ -1866,13 +1866,13 @@ impl FleetControlManager {
     }
 
     /// Return all events in the audit trail.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn events(&self) -> &[FleetControlEvent] {
         &self.events
     }
 
     /// Return all active incidents.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn active_incidents(&self) -> Vec<&IncidentHandle> {
         self.incidents
             .values()
@@ -1881,13 +1881,13 @@ impl FleetControlManager {
     }
 
     /// Return all zone IDs known to the manager.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn zones(&self) -> Vec<String> {
         self.zone_status.keys().cloned().collect()
     }
 
     /// Return the total number of incidents (all statuses).
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn incident_count(&self) -> usize {
         self.incidents.len()
     }
@@ -1928,7 +1928,7 @@ impl FleetControlManager {
         Ok(self.allocate_operation_slot()?.operation_id())
     }
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     fn reclaimable_incident_key(&self) -> Option<String> {
         self.incidents
             .iter()
@@ -1942,7 +1942,7 @@ impl FleetControlManager {
             .map(|(incident_id, _)| incident_id.clone())
     }
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     fn reclaimable_zone_status_key(&self) -> Option<String> {
         self.zone_status
             .iter()
@@ -1955,14 +1955,14 @@ impl FleetControlManager {
             .map(|(zone_id, _)| zone_id.clone())
     }
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     fn zone_has_live_incident(&self, zone_id: &str) -> bool {
         self.incidents.values().any(|incident| {
             incident.zone_id == zone_id && incident.status != IncidentStatus::Released
         })
     }
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     fn prepare_incident_slot(
         &self,
         incident_id: &str,
@@ -1976,7 +1976,7 @@ impl FleetControlManager {
             .ok_or_else(FleetControlError::incident_capacity_exceeded)
     }
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     fn prepare_zone_status_slot(&self, zone_id: &str) -> Result<Option<String>, FleetControlError> {
         if self.zone_status.len() < MAX_ZONE_STATUS || self.zone_status.contains_key(zone_id) {
             return Ok(None);
@@ -2086,7 +2086,7 @@ impl FleetControlManager {
         self.verify_convergence_rollback_receipt_at(incident_id, chrono::Utc::now())
     }
 
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn verify_convergence_rollback_receipt_at_for_tests(
         &self,
         incident_id: &str,
@@ -2159,14 +2159,14 @@ impl Default for FleetControlManager {
 
 // ── Request / Response types for API handlers ─────────────────────────────
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuarantineRequest {
     pub extension_id: String,
     pub scope: QuarantineScope,
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RevokeRequest {
     pub extension_id: String,
@@ -2178,13 +2178,13 @@ pub struct ReleaseRequest {
     pub incident_id: String,
 }
 
-#[cfg(any(feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(feature = "control-plane", feature = "test-support"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StatusRequest {
     pub zone_id: String,
 }
 
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "control-plane")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReconcileResult {
     pub zones_reconciled: usize,
@@ -2194,7 +2194,7 @@ pub struct ReconcileResult {
 
 // ── Route Metadata ────────────────────────────────────────────────────────
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn quarantine_route_metadata() -> Vec<RouteMetadata> {
     vec![
         RouteMetadata {
@@ -2262,7 +2262,7 @@ pub fn quarantine_route_metadata() -> Vec<RouteMetadata> {
 
 // ── API Handlers ──────────────────────────────────────────────────────────
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn handle_quarantine(
     identity: &AuthIdentity,
     trace: &TraceContext,
@@ -2276,7 +2276,7 @@ pub fn handle_quarantine(
     })
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn handle_revoke(
     identity: &AuthIdentity,
     trace: &TraceContext,

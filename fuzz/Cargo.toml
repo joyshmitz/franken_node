@@ -208,3 +208,9 @@ name = "fuzz_fleet_decision_receipt_parse"
 path = "fuzz_targets/fuzz_fleet_decision_receipt_parse.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_evidence_ledger_entry_parse"
+path = "fuzz_targets/fuzz_evidence_ledger_entry_parse.rs"
+test = false
+doc = false

@@ -9,7 +9,7 @@ pub mod canonical_serializer;
 pub mod capability_artifact;
 pub mod capability_guard;
 pub mod claim_compiler;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod conformance_profile;
 pub mod control_channel;
 pub mod control_evidence;
@@ -26,55 +26,55 @@ pub mod ecosystem_reputation;
 pub mod error_code_registry;
 pub mod error_surface;
 pub mod eviction_saga;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod execution_scorer;
 pub mod fencing;
 pub mod frame_parser;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod fuzz_corpus;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod golden_vectors;
 pub mod health_gate;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod high_assurance_promotion;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod incident_bundle_retention;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod interop_suite;
 pub mod lease_conflict;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod lease_coordinator;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod lease_service;
 pub mod lifecycle;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod manifest_negotiation;
 pub mod migration_artifact;
 pub mod migration_pipeline;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod n_version_oracle;
 pub mod obligation_tracker;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod offline_coverage;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod operator_intelligence;
 pub mod perf_budget_guard;
 pub mod policy_checkpoint;
 pub mod prestage_engine;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod quarantine_promotion;
 pub mod quarantine_store;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod region_ownership;
 pub mod repair_controller;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod retention_policy;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod rollback_bundle;
 pub mod rollout_state;
 pub mod saga;
 pub mod schema_migration;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod snapshot_policy;
 pub mod state_model;
 pub mod supervision;
@@ -85,14 +85,14 @@ pub mod transport_fault_gate;
 pub mod trust_fabric;
 pub mod trust_object_id;
 pub mod trust_zone;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod universal_verifier_sdk;
 pub mod vef_claim_integration;
 pub mod vef_execution_receipt;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod vef_perf_budget;
 pub mod vef_policy_constraints;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod verifier_sdk;
 
 #[cfg(test)]

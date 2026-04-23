@@ -14,7 +14,7 @@
 use std::fmt;
 
 /// Stable event codes for structured logging.
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "policy-engine")]
 pub mod event_codes {
     pub const HARDEN_ESCALATED: &str = "EVD-HARDEN-001";
     pub const HARDEN_REGRESSION_REJECTED: &str = "EVD-HARDEN-002";
@@ -22,10 +22,10 @@ pub mod event_codes {
     pub const HARDEN_STATE_REPLAYED: &str = "EVD-HARDEN-004";
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "policy-engine"))]
 const RESERVED_ARTIFACT_ID: &str = "<unknown>";
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "policy-engine"))]
 fn invalid_artifact_id_reason(artifact_id: &str) -> Option<String> {
     let trimmed = artifact_id.trim();
     if trimmed.is_empty() {
@@ -82,7 +82,7 @@ impl HardeningLevel {
     }
 
     /// All levels in ascending order.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "policy-engine"))]
     pub fn all() -> &'static [HardeningLevel] {
         &[
             Self::Baseline,
@@ -113,7 +113,7 @@ impl fmt::Display for HardeningLevel {
 }
 
 /// A governance rollback artifact authorizing a downward hardening transition.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "policy-engine"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GovernanceRollbackArtifact {
     pub artifact_id: String,
@@ -123,7 +123,7 @@ pub struct GovernanceRollbackArtifact {
     pub signature: String,
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "policy-engine"))]
 impl GovernanceRollbackArtifact {
     /// Validate the artifact has all required fields populated.
     pub fn validate(&self) -> Result<(), HardeningError> {
@@ -151,7 +151,7 @@ impl GovernanceRollbackArtifact {
 }
 
 /// A record of a single hardening transition.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "policy-engine"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransitionRecord {
     pub from_level: HardeningLevel,
@@ -162,7 +162,7 @@ pub struct TransitionRecord {
 }
 
 /// What triggered the hardening transition.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "policy-engine"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransitionTrigger {
     /// Normal upward escalation.
@@ -175,7 +175,7 @@ pub enum TransitionTrigger {
 }
 
 /// Errors from hardening state machine operations.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "policy-engine"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HardeningError {
     /// Attempted to escalate to the same or lower level.
@@ -194,7 +194,7 @@ pub enum HardeningError {
     AlreadyAtMaximumLevel,
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "policy-engine"))]
 impl HardeningError {
     pub fn code(&self) -> &'static str {
         match self {
@@ -206,7 +206,7 @@ impl HardeningError {
     }
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "policy-engine"))]
 impl fmt::Display for HardeningError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -236,10 +236,10 @@ impl fmt::Display for HardeningError {
     }
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "policy-engine"))]
 const MAX_TRANSITION_LOG_ENTRIES: usize = 4096;
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "policy-engine"))]
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
         items.clear();
@@ -258,14 +258,14 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
 /// INV-HARDEN-GOVERNANCE: rollback requires valid signed governance artifact.
 /// INV-HARDEN-AUDITABLE: all transitions are recorded.
 /// INV-HARDEN-DURABLE: state can be replayed from the transition log.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "policy-engine"))]
 #[derive(Debug)]
 pub struct HardeningStateMachine {
     current_level: HardeningLevel,
     transition_log: Vec<TransitionRecord>,
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "policy-engine"))]
 impl HardeningStateMachine {
     /// Create a new state machine at Baseline level.
     pub fn new() -> Self {
@@ -415,7 +415,7 @@ impl HardeningStateMachine {
     }
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "policy-engine"))]
 impl Default for HardeningStateMachine {
     fn default() -> Self {
         Self::new()

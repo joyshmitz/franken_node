@@ -15,23 +15,23 @@
 //! 5. Handler execution
 //! 6. Structured response + telemetry emission
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 use crate::security::constant_time;
 use serde::{Deserialize, Serialize};
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 use std::collections::BTreeMap;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 use std::time::Instant;
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 use super::error::ApiError;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 use super::utf8_prefix;
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 const MAX_SAMPLES: usize = 4096;
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
         items.clear();
@@ -62,7 +62,7 @@ impl TraceContext {
     /// Parse a W3C `traceparent` header value.
     ///
     /// Format: `{version}-{trace_id}-{span_id}-{trace_flags}`
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn from_traceparent(header: &str) -> Option<Self> {
         let parts: Vec<&str> = header.split('-').collect();
         if parts.len() != 4 {
@@ -90,7 +90,7 @@ impl TraceContext {
     }
 
     /// Generate a new trace context with a random trace ID.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn generate() -> Self {
         let trace_id = uuid::Uuid::now_v7().simple().to_string();
         let span_id = format!("{:016x}", rand_span_id());
@@ -102,7 +102,7 @@ impl TraceContext {
     }
 
     /// Serialize to a W3C `traceparent` header value.
-    #[cfg(any(test, feature = "extended-surfaces"))]
+    #[cfg(any(test, feature = "control-plane"))]
     pub fn to_traceparent(&self) -> String {
         format!(
             "00-{}-{}-{:02x}",
@@ -112,21 +112,21 @@ impl TraceContext {
 }
 
 /// Simple span ID generation using timestamp-based entropy.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 const SPAN_ID_MIX: u64 = 0x517c_c1b7_2722_0a95;
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 fn span_id_from_unix_nanos(unix_nanos: u128) -> u64 {
     let bounded_nanos = u64::try_from(unix_nanos).unwrap_or(u64::MAX);
     bounded_nanos ^ SPAN_ID_MIX
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn span_id_from_unix_nanos_for_tests(unix_nanos: u128) -> u64 {
     span_id_from_unix_nanos(unix_nanos)
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 fn rand_span_id() -> u64 {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -134,34 +134,34 @@ fn rand_span_id() -> u64 {
     span_id_from_unix_nanos(now.as_nanos())
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 fn is_lower_hex(value: &str) -> bool {
     value
         .bytes()
         .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 fn has_nonzero_hex_digit(value: &str) -> bool {
     value.bytes().any(|byte| byte != b'0')
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 fn is_valid_trace_id(value: &str) -> bool {
     value.len() == 32 && is_lower_hex(value) && has_nonzero_hex_digit(value)
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 fn is_valid_span_id(value: &str) -> bool {
     value.len() == 16 && is_lower_hex(value) && has_nonzero_hex_digit(value)
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 fn is_valid_trace_flags(value: &str) -> bool {
     value.len() == 2 && is_lower_hex(value)
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 fn contains_authorized_key_constant_time(
     authorized_keys: &std::collections::BTreeSet<String>,
     candidate: &str,
@@ -198,11 +198,11 @@ pub struct AuthIdentity {
 }
 
 /// Authentication middleware result.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub type AuthResult = Result<AuthIdentity, ApiError>;
 
 /// Authenticate a request based on provided credentials.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn authenticate(
     auth_header: Option<&str>,
     required_method: &AuthMethod,
@@ -309,7 +309,7 @@ pub fn authenticate(
 // ── Authorization (RBAC + Policy Hook) ─────────────────────────────────────
 
 /// Policy hook descriptor bound to a route.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolicyHook {
     /// Unique hook identifier (e.g., `operator.status.read`).
@@ -319,7 +319,7 @@ pub struct PolicyHook {
 }
 
 /// Authorization check result.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AuthzDecision {
     /// Access granted.
@@ -329,7 +329,7 @@ pub enum AuthzDecision {
 }
 
 /// Check authorization against the policy hook.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn authorize(
     identity: &AuthIdentity,
     hook: &PolicyHook,
@@ -357,7 +357,7 @@ pub fn authorize(
 }
 
 /// Enforce authorization, returning an error if denied.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn enforce_policy(
     identity: &AuthIdentity,
     hook: &PolicyHook,
@@ -390,7 +390,7 @@ pub fn enforce_policy(
 /// 3. Security-critical operations requiring cluster-wide rate limiting should
 ///    use request signing, nonce validation, or capability-based authorization
 ///    instead of pure time-based rate limiting
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RateLimitConfig {
     /// Maximum sustained requests per second.
@@ -402,7 +402,7 @@ pub struct RateLimitConfig {
 }
 
 /// In-memory rate limiter state using a token bucket.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 #[derive(Debug)]
 pub struct RateLimiter {
     config: RateLimitConfig,
@@ -410,7 +410,7 @@ pub struct RateLimiter {
     last_check: Instant,
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 impl RateLimiter {
     pub fn new(config: RateLimitConfig) -> Self {
         // Ensure sustained_rps >= 1 to prevent division-by-zero in check().
@@ -461,7 +461,7 @@ impl RateLimiter {
 }
 
 /// Check rate limit, returning an `ApiError` if exceeded.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn check_rate_limit(limiter: &mut RateLimiter, trace_id: &str) -> Result<(), ApiError> {
     match limiter.check() {
         Ok(()) => Ok(()),
@@ -480,7 +480,7 @@ pub fn check_rate_limit(limiter: &mut RateLimiter, trace_id: &str) -> Result<(),
 // ── Request/Response Telemetry ─────────────────────────────────────────────
 
 /// Structured request log entry emitted after handler execution.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestLog {
     pub method: String,
@@ -494,7 +494,7 @@ pub struct RequestLog {
 }
 
 /// Endpoint group classification for metric tagging.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EndpointGroup {
     Operator,
@@ -502,7 +502,7 @@ pub enum EndpointGroup {
     FleetControl,
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 impl EndpointGroup {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -513,7 +513,7 @@ impl EndpointGroup {
     }
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 impl std::fmt::Display for EndpointGroup {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
@@ -521,13 +521,13 @@ impl std::fmt::Display for EndpointGroup {
 }
 
 /// Event codes emitted by the middleware/service layer.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub mod event_codes {
-    #[cfg(feature = "extended-surfaces")]
+    #[cfg(feature = "control-plane")]
     pub const SERVICE_START: &str = "FASTAPI_SERVICE_START";
-    #[cfg(feature = "extended-surfaces")]
+    #[cfg(feature = "control-plane")]
     pub const REQUEST_RECEIVED: &str = "FASTAPI_REQUEST_RECEIVED";
-    #[cfg(feature = "extended-surfaces")]
+    #[cfg(feature = "control-plane")]
     pub const AUTH_SUCCESS: &str = "FASTAPI_AUTH_SUCCESS";
     pub const AUTH_FAIL: &str = "FASTAPI_AUTH_FAIL";
     pub const POLICY_DENY: &str = "FASTAPI_POLICY_DENY";
@@ -539,7 +539,7 @@ pub mod event_codes {
 // ── Middleware Chain ────────────────────────────────────────────────────────
 
 /// Route metadata describing middleware requirements for one endpoint.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteMetadata {
     /// HTTP method (GET, POST, PUT, DELETE).
@@ -559,7 +559,7 @@ pub struct RouteMetadata {
 }
 
 /// Endpoint lifecycle state.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EndpointLifecycle {
     Experimental,
@@ -567,9 +567,9 @@ pub enum EndpointLifecycle {
     Deprecated,
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 impl EndpointLifecycle {
-    #[cfg(feature = "extended-surfaces")]
+    #[cfg(feature = "control-plane")]
     pub fn as_str(&self) -> &'static str {
         match self {
             EndpointLifecycle::Experimental => "experimental",
@@ -580,13 +580,13 @@ impl EndpointLifecycle {
 }
 
 /// Middleware chain result: either a successful response or an error.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub type MiddlewareResult<T> = Result<T, ApiError>;
 
 /// Execute the full middleware chain for a request.
 ///
 /// Chain order: trace → auth → authz → rate limit → handler
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn execute_middleware_chain<F, T>(
     route: &RouteMetadata,
     auth_header: Option<&str>,
@@ -643,7 +643,7 @@ where
     (result, log)
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 fn build_request_log(
     route: &RouteMetadata,
     status: u16,
@@ -690,7 +690,7 @@ fn build_request_log(
 ///
 /// These are NOT security rate limits - they protect individual instance
 /// performance after successful authentication and authorization.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn default_rate_limit(group: EndpointGroup) -> RateLimitConfig {
     match group {
         EndpointGroup::Operator => RateLimitConfig {
@@ -712,13 +712,13 @@ pub fn default_rate_limit(group: EndpointGroup) -> RateLimitConfig {
 }
 
 /// Collect latency metrics per endpoint group.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct LatencyMetrics {
     pub samples: Vec<f64>,
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 impl LatencyMetrics {
     pub fn record(&mut self, latency_ms: f64) {
         if latency_ms.is_finite() {
@@ -759,7 +759,7 @@ impl LatencyMetrics {
 // ── Middleware Metrics Aggregator ───────────────────────────────────────────
 
 /// Aggregated metrics for the control-plane service.
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 #[derive(Debug, Default)]
 pub struct ServiceMetrics {
     pub latencies: BTreeMap<String, LatencyMetrics>,
@@ -767,7 +767,7 @@ pub struct ServiceMetrics {
     pub request_count: u64,
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 impl ServiceMetrics {
     pub fn record_request(&mut self, log: &RequestLog) {
         self.request_count = self.request_count.saturating_add(1);

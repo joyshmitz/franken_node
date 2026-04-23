@@ -926,44 +926,44 @@ mod tests {
     }
 }
 
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "control-plane")]
 pub mod api;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "advanced-features"))]
 pub mod atc;
 pub mod capacity_defaults;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "advanced-features")]
 pub mod claims;
 pub mod config;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "advanced-features")]
 pub mod conformance;
 pub mod connector;
 pub mod control_plane;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "advanced-features")]
 pub mod encoding;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "advanced-features")]
 pub mod extensions;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "advanced-features")]
 pub mod federation;
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "admin-tools"))]
 pub mod migration;
 pub mod observability;
 pub mod ops;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "advanced-features")]
 pub mod perf;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "policy-engine")]
 pub mod policy;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "admin-tools")]
 pub mod registry;
 pub mod remote;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "advanced-features")]
 pub mod repair;
 pub mod replay;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "control-plane")]
 #[path = "control_plane/root_pointer.rs"]
 pub mod root_pointer;
 pub mod runtime;
 pub mod schema_versions;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "verifier-tools")]
 pub mod sdk;
 pub mod security;
 pub mod storage;
@@ -972,5 +972,5 @@ pub mod supply_chain;
 pub mod testing;
 pub mod tools;
 pub mod vef;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(feature = "verifier-tools")]
 pub mod verifier_economy;

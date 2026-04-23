@@ -13,7 +13,7 @@ use crate::supply_chain::trust_card::{
     TrustCard, TrustCardComparison, TrustCardError, TrustCardListFilter, TrustCardRegistry,
     paginate,
 };
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 use crate::supply_chain::trust_card::{TrustCardInput, TrustCardMutation};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,7 +79,7 @@ fn paged_response<T: Clone>(
     })
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn create_trust_card(
     registry: &mut TrustCardRegistry,
     input: TrustCardInput,
@@ -94,7 +94,7 @@ pub fn create_trust_card(
     })
 }
 
-#[cfg(any(test, feature = "extended-surfaces"))]
+#[cfg(any(test, feature = "control-plane"))]
 pub fn update_trust_card(
     registry: &mut TrustCardRegistry,
     extension_id: &str,
