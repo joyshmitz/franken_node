@@ -105,6 +105,8 @@ franken-node remotecap issue \
 # Verify the token (without consuming single-use tokens)
 franken-node remotecap verify \
   --token-file capability.json \
+  --operation network_egress \
+  --endpoint https://api.example.com/v1/status \
   --json
 
 # Use the token for a network operation (consumes single-use tokens)
@@ -121,12 +123,13 @@ franken-node remotecap revoke \
 ```
 
 The CLI uses `CapabilityProvider::issue` and enforces explicit operator authorization.
-Token signing secret is read from `FRANKEN_NODE_REMOTECAP_SECRET` (falls back to
-a development default if unset).
+Token signing secret is read from `FRANKEN_NODE_REMOTECAP_KEY` (falls back to
+a development default only in test/dev-key builds).
 
 ### Security Considerations
 
 - Use `--single-use` for replay protection when tokens are used in untrusted environments
 - The `--issuer` field defaults to "operator-cli" but can be customized for audit trails
-- Verification with `remotecap verify` does not consume single-use tokens
+- Verification with `remotecap verify` rechecks the requested `--operation` and
+  `--endpoint` scope without consuming single-use tokens
 - Use `remotecap use` only when ready to perform the actual network operation
