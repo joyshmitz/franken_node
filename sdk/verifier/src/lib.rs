@@ -264,6 +264,7 @@ pub enum VerifierSdkError {
     Capsule(capsule::CapsuleError),
     Bundle(bundle::BundleError),
     EmptyTrustAnchor,
+    MalformedTrustAnchor { actual: String },
     SessionSealed(String),
     SessionVerifierMismatch { expected: String, actual: String },
     SessionStepSequenceMismatch { expected: usize, actual: usize },
@@ -283,6 +284,10 @@ impl fmt::Display for VerifierSdkError {
             Self::Capsule(source) => write!(formatter, "capsule verification failed: {source}"),
             Self::Bundle(source) => write!(formatter, "bundle verification failed: {source}"),
             Self::EmptyTrustAnchor => write!(formatter, "trust anchor is empty"),
+            Self::MalformedTrustAnchor { actual } => write!(
+                formatter,
+                "trust anchor must be a canonical lowercase 64-nybble sha256 digest: got {actual}"
+            ),
             Self::SessionSealed(session_id) => {
                 write!(formatter, "verification session {session_id} is sealed")
             }
@@ -419,6 +424,11 @@ impl VerifierSdk {
         check_sdk_version(&self.sdk_version).map_err(VerifierSdkError::UnsupportedSdk)?;
         if anchor_integrity_hash.trim().is_empty() {
             return Err(VerifierSdkError::EmptyTrustAnchor);
+        }
+        if !is_canonical_sha256_hex(anchor_integrity_hash) {
+            return Err(VerifierSdkError::MalformedTrustAnchor {
+                actual: anchor_integrity_hash.to_string(),
+            });
         }
 
         let verified = bundle::verify(state)?;
@@ -782,6 +792,13 @@ fn constant_time_eq(left: &str, right: &str) -> bool {
     bool::from(left.as_bytes().ct_eq(right.as_bytes()))
 }
 
+fn is_canonical_sha256_hex(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1097,6 +1114,43 @@ mod tests {
             err,
             VerifierSdkError::SessionVerifierMismatch { .. }
         ));
+    }
+
+    #[test]
+    fn verify_trust_state_rejects_uppercase_anchor_hash() {
+        let sdk = create_verifier_sdk("verifier://alpha");
+        let state = make_replay_bundle_bytes("verifier://alpha");
+        let verified = bundle::verify(&state).expect("test bundle should verify");
+
+        let err = sdk
+            .verify_trust_state(&state, &verified.integrity_hash.to_uppercase())
+            .expect_err("uppercase trust anchor hash must be rejected");
+
+        assert_eq!(
+            err,
+            VerifierSdkError::MalformedTrustAnchor {
+                actual: verified.integrity_hash.to_uppercase(),
+            }
+        );
+    }
+
+    #[test]
+    fn verify_trust_state_rejects_whitespace_padded_anchor_hash() {
+        let sdk = create_verifier_sdk("verifier://alpha");
+        let state = make_replay_bundle_bytes("verifier://alpha");
+        let verified = bundle::verify(&state).expect("test bundle should verify");
+        let padded_hash = format!(" {} ", verified.integrity_hash);
+
+        let err = sdk
+            .verify_trust_state(&state, &padded_hash)
+            .expect_err("whitespace-padded trust anchor hash must be rejected");
+
+        assert_eq!(
+            err,
+            VerifierSdkError::MalformedTrustAnchor {
+                actual: padded_hash,
+            }
+        );
     }
 
     #[test]
