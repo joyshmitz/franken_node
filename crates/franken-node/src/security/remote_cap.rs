@@ -1573,6 +1573,31 @@ fn token_id_hash(
 mod tests {
     use super::*;
 
+    static REMOTE_CAP_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set_path(key: &'static str, value: &Path) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = &self.previous {
+                std::env::set_var(self.key, previous);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
     fn scope() -> RemoteScope {
         RemoteScope::new(
             vec![
@@ -1880,6 +1905,49 @@ mod tests {
             .expect_err("replay after gate restart must fail");
 
         assert_eq!(err.code(), "REMOTECAP_REPLAY");
+    }
+
+    #[test]
+    fn env_replay_store_outage_denies_single_use_without_memory_fallback() {
+        let _env_lock = REMOTE_CAP_ENV_LOCK.lock().expect("env lock");
+        let provider = CapabilityProvider::new("secret-a").expect("valid provider");
+        let (cap, _) = provider
+            .issue(
+                "operator",
+                scope(),
+                1_700_000_000,
+                300,
+                true,
+                true,
+                "trace-env-replay-store-issue",
+            )
+            .expect("issue");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let unavailable_root = dir.path().join("not-a-directory");
+        std::fs::write(&unavailable_root, b"regular file").expect("regular file fixture");
+        let _env_guard = EnvVarGuard::set_path(REMOTE_CAP_REPLAY_STORE_ENV, &unavailable_root);
+
+        let mut gate = CapabilityGate::new("secret-a").expect("valid gate");
+        let err = gate
+            .authorize_network(
+                Some(&cap),
+                RemoteOperation::TelemetryExport,
+                "https://telemetry.example.com/v1",
+                1_700_000_010,
+                "trace-env-replay-store-deny",
+            )
+            .expect_err("unavailable env replay store must fail closed");
+
+        assert_eq!(err.code(), "REMOTECAP_CRYPTO_UNAVAILABLE");
+        assert!(gate.consumed_tokens.is_empty());
+        let event = gate.audit_log().last().expect("denial audit event");
+        assert_eq!(event.event_code, "REMOTECAP_DENIED");
+        assert_eq!(event.token_id.as_deref(), Some(cap.token_id()));
+        assert_eq!(event.trace_id, "trace-env-replay-store-deny");
+        assert_eq!(
+            event.denial_code.as_deref(),
+            Some("REMOTECAP_CRYPTO_UNAVAILABLE")
+        );
     }
 
     #[test]
