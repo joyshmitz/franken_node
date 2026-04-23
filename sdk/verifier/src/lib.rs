@@ -254,6 +254,9 @@ pub struct VerificationSession {
     steps: Vec<SessionStep>,
     pub sealed: bool,
     pub final_verdict: Option<VerificationVerdict>,
+    origin_session_id: String,
+    origin_verifier_identity: String,
+    origin_created_at: String,
     session_nonce: String,
 }
 
@@ -269,6 +272,11 @@ pub enum VerifierSdkError {
     MalformedTrustAnchor { actual: String },
     SessionSealed(String),
     SessionVerifierMismatch { expected: String, actual: String },
+    SessionProvenanceMismatch {
+        field: &'static str,
+        expected: String,
+        actual: String,
+    },
     SessionStepSequenceMismatch { expected: usize, actual: usize },
     SessionStepSignatureMismatch {
         step_index: usize,
@@ -304,6 +312,14 @@ impl fmt::Display for VerifierSdkError {
             Self::SessionVerifierMismatch { expected, actual } => write!(
                 formatter,
                 "verification session verifier mismatch: expected={expected}, actual={actual}"
+            ),
+            Self::SessionProvenanceMismatch {
+                field,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "verification session provenance mismatch for {field}: expected={expected}, actual={actual}"
             ),
             Self::SessionStepSequenceMismatch { expected, actual } => write!(
                 formatter,
@@ -551,6 +567,9 @@ impl VerifierSdk {
             steps: Vec::new(),
             sealed: false,
             final_verdict: None,
+            origin_session_id: session_id.clone(),
+            origin_verifier_identity: self.verifier_identity.clone(),
+            origin_created_at: created_at.clone(),
             session_nonce: derive_session_nonce(
                 &session_id,
                 &self.verifier_identity,
@@ -567,20 +586,20 @@ impl VerifierSdk {
         result: &VerificationResult,
     ) -> Result<SessionStep, VerifierSdkError> {
         self.validate_current_verifier_identity()?;
-        validate_session_id(&session.session_id)?;
+        validate_session_provenance(session)?;
         if session.sealed {
             return Err(VerifierSdkError::SessionSealed(session.session_id.clone()));
         }
         self.verify_result_belongs_to_current_verifier(result)?;
-        if session.verifier_identity != self.verifier_identity {
+        if session.origin_verifier_identity != self.verifier_identity {
             return Err(VerifierSdkError::SessionVerifierMismatch {
-                expected: session.verifier_identity.clone(),
+                expected: session.origin_verifier_identity.clone(),
                 actual: self.verifier_identity.clone(),
             });
         }
-        if result.verifier_identity != session.verifier_identity {
+        if result.verifier_identity != session.origin_verifier_identity {
             return Err(VerifierSdkError::SessionVerifierMismatch {
-                expected: session.verifier_identity.clone(),
+                expected: session.origin_verifier_identity.clone(),
                 actual: result.verifier_identity.clone(),
             });
         }
@@ -606,14 +625,14 @@ impl VerifierSdk {
         session: &mut VerificationSession,
     ) -> Result<VerificationVerdict, VerifierSdkError> {
         self.validate_current_verifier_identity()?;
-        validate_session_id(&session.session_id)?;
+        validate_session_provenance(session)?;
         if session.sealed {
             return Err(VerifierSdkError::SessionSealed(session.session_id.clone()));
         }
-        if session.verifier_identity != self.verifier_identity {
+        if session.origin_verifier_identity != self.verifier_identity {
             return Err(VerifierSdkError::SessionVerifierMismatch {
                 expected: self.verifier_identity.clone(),
-                actual: session.verifier_identity.clone(),
+                actual: session.origin_verifier_identity.clone(),
             });
         }
         for (expected_index, step) in session.steps.iter().enumerate() {
@@ -899,6 +918,33 @@ fn validate_session_id(session_id: &str) -> Result<(), VerifierSdkError> {
     Ok(())
 }
 
+fn validate_session_provenance(session: &VerificationSession) -> Result<(), VerifierSdkError> {
+    validate_session_id(&session.session_id)?;
+    validate_verifier_identity(&session.verifier_identity)?;
+    if session.session_id != session.origin_session_id {
+        return Err(VerifierSdkError::SessionProvenanceMismatch {
+            field: "session_id",
+            expected: session.origin_session_id.clone(),
+            actual: session.session_id.clone(),
+        });
+    }
+    if session.verifier_identity != session.origin_verifier_identity {
+        return Err(VerifierSdkError::SessionProvenanceMismatch {
+            field: "verifier_identity",
+            expected: session.origin_verifier_identity.clone(),
+            actual: session.verifier_identity.clone(),
+        });
+    }
+    if session.created_at != session.origin_created_at {
+        return Err(VerifierSdkError::SessionProvenanceMismatch {
+            field: "created_at",
+            expected: session.origin_created_at.clone(),
+            actual: session.created_at.clone(),
+        });
+    }
+    Ok(())
+}
+
 fn is_canonical_sha256_hex(value: &str) -> bool {
     value.len() == 64
         && value
@@ -1098,6 +1144,65 @@ mod tests {
         assert!(matches!(
             err,
             VerifierSdkError::SessionVerifierMismatch { .. }
+        ));
+        assert!(!foreign_session.sealed);
+        assert!(foreign_session.final_verdict.is_none());
+    }
+
+    #[test]
+    fn record_session_step_rejects_relabeled_foreign_session() {
+        let foreign_sdk = create_verifier_sdk("verifier://beta");
+        let mut foreign_session = foreign_sdk
+            .create_session("session-beta")
+            .expect("foreign verifier session should be created");
+        foreign_session.verifier_identity = "verifier://alpha".to_string();
+        let sdk = create_verifier_sdk("verifier://alpha");
+        let result = sdk
+            .build_result(
+                VerificationOperation::Claim,
+                VerificationVerdict::Pass,
+                vec![AssertionResult {
+                    assertion: "capsule_replay_verified".to_string(),
+                    passed: true,
+                    detail: "same verifier".to_string(),
+                }],
+                "artifact-hash-alpha".to_string(),
+            )
+            .expect("same-verifier result should build");
+
+        let err = sdk
+            .record_session_step(&mut foreign_session, &result)
+            .expect_err("relabeled foreign session must be rejected");
+
+        assert!(matches!(
+            err,
+            VerifierSdkError::SessionProvenanceMismatch {
+                field: "verifier_identity",
+                ..
+            }
+        ));
+        assert!(foreign_session.steps().is_empty());
+    }
+
+    #[test]
+    fn seal_session_rejects_relabeled_foreign_session() {
+        let foreign_sdk = create_verifier_sdk("verifier://beta");
+        let mut foreign_session = foreign_sdk
+            .create_session("session-beta")
+            .expect("foreign verifier session should be created");
+        foreign_session.verifier_identity = "verifier://alpha".to_string();
+        let sdk = create_verifier_sdk("verifier://alpha");
+
+        let err = sdk
+            .seal_session(&mut foreign_session)
+            .expect_err("relabeled foreign session must be rejected");
+
+        assert!(matches!(
+            err,
+            VerifierSdkError::SessionProvenanceMismatch {
+                field: "verifier_identity",
+                ..
+            }
         ));
         assert!(!foreign_session.sealed);
         assert!(foreign_session.final_verdict.is_none());
