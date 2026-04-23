@@ -2,6 +2,12 @@ use asupersync::obligation::ledger::{LedgerStats, ObligationLedger};
 use asupersync::record::{ObligationAbortReason, ObligationKind};
 use asupersync::runtime::RuntimeBuilder;
 use asupersync::{CancelKind, Cx, Time};
+use frankenengine_node::config::RuntimeConfig;
+use frankenengine_node::runtime::bounded_mask::CapabilityContext;
+use frankenengine_node::runtime::lane_router::{
+    LaneRouter, LaneRouterError, ProductLane, error_codes as router_error_codes,
+    event_codes as router_event_codes,
+};
 use frankenengine_node::runtime::lane_scheduler::{
     LaneScheduler, SchedulerLane, default_policy, event_codes, task_classes,
 };
@@ -190,5 +196,43 @@ fn asupersync_cancelled_control_lane_aborts_without_obligation_leak() {
                 event_codes::LANE_TASK_COMPLETED.to_string(),
             ],
         }
+    );
+}
+
+#[test]
+fn lane_router_rejects_multi_scope_priority_downgrade() {
+    let mut router =
+        LaneRouter::from_runtime_config(&RuntimeConfig::balanced_defaults()).expect("router");
+    let cx = CapabilityContext::with_scopes(
+        "cx-downshift",
+        "operator-downshift",
+        vec!["lane.cancel".to_string(), "lane.background".to_string()],
+    );
+
+    let err = router
+        .assign_operation(&cx, "op-downshift", Some("background"), 1)
+        .expect_err("multi-scope caller must not downshift cancel work to background");
+
+    assert_eq!(err.code(), router_error_codes::SCOPE_MISMATCH);
+    assert!(matches!(
+        err,
+        LaneRouterError::ScopeMismatch {
+            requested_lane: ProductLane::Background,
+            required_lane: ProductLane::Cancel
+        }
+    ));
+    assert_eq!(router.unknown_lane_default_count(), 0);
+    assert!(router.events().iter().any(|event| {
+        event.event_code == router_event_codes::LANE_SCOPE_MISMATCH
+            && event
+                .detail
+                .contains("lane_hint_priority_downgrade=background")
+    }));
+    assert!(
+        router
+            .metrics_snapshot()
+            .lanes
+            .iter()
+            .all(|lane| lane.in_flight == 0 && lane.queued == 0)
     );
 }

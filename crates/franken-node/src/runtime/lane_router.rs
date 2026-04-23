@@ -17,6 +17,7 @@ pub mod event_codes {
     pub const BULKHEAD_OVERLOAD: &str = "BULKHEAD_OVERLOAD";
     pub const LANE_CONFIG_RELOAD: &str = "LANE_CONFIG_RELOAD";
     pub const LANE_DEFAULTED_BACKGROUND: &str = "LANE_DEFAULTED_BACKGROUND";
+    pub const LANE_SCOPE_MISMATCH: &str = "LANE_SCOPE_MISMATCH";
 }
 
 pub mod error_codes {
@@ -24,6 +25,7 @@ pub mod error_codes {
     pub const BULKHEAD_OVERLOAD: &str = "BULKHEAD_OVERLOAD";
     pub const OPERATION_UNKNOWN: &str = "OPERATION_UNKNOWN";
     pub const OPERATION_DUPLICATE: &str = "OPERATION_DUPLICATE";
+    pub const SCOPE_MISMATCH: &str = "SCOPE_MISMATCH";
     pub const CONFIG_INVALID: &str = "CONFIG_INVALID";
 }
 
@@ -307,6 +309,10 @@ pub enum LaneRouterError {
     OperationDuplicate {
         operation_id: String,
     },
+    ScopeMismatch {
+        requested_lane: ProductLane,
+        required_lane: ProductLane,
+    },
     InvalidConfig {
         detail: String,
     },
@@ -320,6 +326,7 @@ impl LaneRouterError {
             Self::BulkheadOverload { .. } => error_codes::BULKHEAD_OVERLOAD,
             Self::OperationUnknown { .. } => error_codes::OPERATION_UNKNOWN,
             Self::OperationDuplicate { .. } => error_codes::OPERATION_DUPLICATE,
+            Self::ScopeMismatch { .. } => error_codes::SCOPE_MISMATCH,
             Self::InvalidConfig { .. } => error_codes::CONFIG_INVALID,
         }
     }
@@ -358,6 +365,16 @@ impl fmt::Display for LaneRouterError {
             Self::OperationDuplicate { operation_id } => {
                 write!(f, "{}: operation_id={operation_id}", self.code())
             }
+            Self::ScopeMismatch {
+                requested_lane,
+                required_lane,
+            } => write!(
+                f,
+                "{}: requested_lane={} required_lane={}",
+                self.code(),
+                requested_lane,
+                required_lane
+            ),
             Self::InvalidConfig { detail } => write!(f, "{}: {detail}", self.code()),
         }
     }
@@ -480,7 +497,7 @@ impl LaneRouter {
             });
         }
 
-        let lane = self.resolve_lane(cx, lane_hint, operation_id, now_ms);
+        let lane = self.resolve_lane(cx, lane_hint, operation_id, now_ms)?;
         let lane_cfg = self.lane_config(lane)?.clone();
         let mut saturated_detail: Option<String> = None;
         let mut saturated_in_flight = 0usize;
@@ -707,23 +724,40 @@ impl LaneRouter {
         lane_hint: Option<&str>,
         operation_id: &str,
         now_ms: u64,
-    ) -> ProductLane {
+    ) -> Result<ProductLane, LaneRouterError> {
         if let Some(raw) = lane_hint {
             if let Some(lane) = ProductLane::parse_label(raw) {
-                if Self::context_allows_lane(cx, lane) {
-                    return lane;
+                let required_lane = Self::highest_authorized_lane(cx);
+                if !Self::context_allows_lane(cx, lane) {
+                    self.unknown_lane_default_count =
+                        self.unknown_lane_default_count.saturating_add(1);
+                    let required_lane = required_lane.unwrap_or(ProductLane::Background);
+                    self.emit_scope_mismatch_event(
+                        operation_id,
+                        lane,
+                        now_ms,
+                        format!("lane_hint_scope_mismatch={raw} required={required_lane}"),
+                    );
+                    return Err(LaneRouterError::ScopeMismatch {
+                        requested_lane: lane,
+                        required_lane,
+                    });
                 }
-                self.unknown_lane_default_count = self.unknown_lane_default_count.saturating_add(1);
-                self.emit_event(LaneEvent {
-                    event_code: event_codes::LANE_DEFAULTED_BACKGROUND.to_string(),
-                    operation_id: operation_id.to_string(),
-                    lane_name: ProductLane::Background.as_str().to_string(),
-                    now_ms,
-                    lane_in_flight: self.background_in_flight(),
-                    total_in_flight: self.bulkhead.in_flight(),
-                    detail: format!("lane_hint_scope_mismatch={raw}"),
-                });
-                return ProductLane::Background;
+                if let Some(required_lane) = required_lane
+                    && lane.priority_rank() > required_lane.priority_rank()
+                {
+                    self.emit_scope_mismatch_event(
+                        operation_id,
+                        lane,
+                        now_ms,
+                        format!("lane_hint_priority_downgrade={raw} required={required_lane}"),
+                    );
+                    return Err(LaneRouterError::ScopeMismatch {
+                        requested_lane: lane,
+                        required_lane,
+                    });
+                }
+                return Ok(lane);
             }
             self.unknown_lane_default_count = self.unknown_lane_default_count.saturating_add(1);
             self.emit_event(LaneEvent {
@@ -735,20 +769,20 @@ impl LaneRouter {
                 total_in_flight: self.bulkhead.in_flight(),
                 detail: format!("unknown_lane_hint={raw}"),
             });
-            return ProductLane::Background;
+            return Ok(ProductLane::Background);
         }
 
         if cx.has_scope("lane.cancel") {
-            return ProductLane::Cancel;
+            return Ok(ProductLane::Cancel);
         }
         if cx.has_scope("lane.timed") {
-            return ProductLane::Timed;
+            return Ok(ProductLane::Timed);
         }
         if cx.has_scope("lane.realtime") || cx.has_scope("lane.ready") {
-            return ProductLane::Realtime;
+            return Ok(ProductLane::Realtime);
         }
         if cx.has_scope("lane.background") {
-            return ProductLane::Background;
+            return Ok(ProductLane::Background);
         }
 
         self.unknown_lane_default_count = self.unknown_lane_default_count.saturating_add(1);
@@ -761,7 +795,7 @@ impl LaneRouter {
             total_in_flight: self.bulkhead.in_flight(),
             detail: "missing_lane_annotation".to_string(),
         });
-        ProductLane::Background
+        Ok(ProductLane::Background)
     }
 
     fn context_allows_lane(cx: &CapabilityContext, lane: ProductLane) -> bool {
@@ -771,6 +805,40 @@ impl LaneRouter {
             ProductLane::Realtime => cx.has_scope("lane.realtime") || cx.has_scope("lane.ready"),
             ProductLane::Background => cx.has_scope("lane.background"),
         }
+    }
+
+    fn highest_authorized_lane(cx: &CapabilityContext) -> Option<ProductLane> {
+        if cx.has_scope("lane.cancel") {
+            return Some(ProductLane::Cancel);
+        }
+        if cx.has_scope("lane.timed") {
+            return Some(ProductLane::Timed);
+        }
+        if cx.has_scope("lane.realtime") || cx.has_scope("lane.ready") {
+            return Some(ProductLane::Realtime);
+        }
+        if cx.has_scope("lane.background") {
+            return Some(ProductLane::Background);
+        }
+        None
+    }
+
+    fn emit_scope_mismatch_event(
+        &mut self,
+        operation_id: &str,
+        lane: ProductLane,
+        now_ms: u64,
+        detail: String,
+    ) {
+        self.emit_event(LaneEvent {
+            event_code: event_codes::LANE_SCOPE_MISMATCH.to_string(),
+            operation_id: operation_id.to_string(),
+            lane_name: lane.as_str().to_string(),
+            now_ms,
+            lane_in_flight: self.background_in_flight(),
+            total_in_flight: self.bulkhead.in_flight(),
+            detail,
+        });
     }
 
     fn acquire_bulkhead(
@@ -1109,17 +1177,29 @@ mod tests {
         }
 
         #[test]
-        fn authorized_lane_hint_can_select_lower_priority_lane_from_multi_scope_context() {
+        fn authorized_lane_hint_cannot_downshift_multi_scope_context() {
             let mut router = LaneRouter::from_runtime_config(&runtime_config()).expect("router");
             let cx = cx_with_scopes(&["lane.cancel", "lane.background"]);
 
-            let assigned = router
+            let err = router
                 .assign_operation(&cx, "hinted-background-op", Some("background"), 1)
-                .expect("assignment should succeed");
+                .expect_err("multi-scope downgrade should fail closed");
 
-            assert_eq!(assigned.lane, ProductLane::Background);
-            assert!(!assigned.queued);
+            assert_eq!(err.code(), error_codes::SCOPE_MISMATCH);
+            assert!(matches!(
+                err,
+                LaneRouterError::ScopeMismatch {
+                    requested_lane: ProductLane::Background,
+                    required_lane: ProductLane::Cancel
+                }
+            ));
             assert_eq!(router.unknown_lane_default_count(), 0);
+            assert!(
+                router
+                    .events()
+                    .iter()
+                    .any(|e| e.detail.contains("lane_hint_priority_downgrade=background"))
+            );
         }
 
         #[test]
@@ -1329,14 +1409,21 @@ mod tests {
     }
 
     #[test]
-    fn lane_hint_scope_mismatch_defaults_to_background() {
+    fn lane_hint_scope_mismatch_rejects_without_downshift() {
         let mut router = LaneRouter::from_runtime_config(&runtime_config()).expect("router");
         let cx = cx_with_scope("lane.background");
 
-        let assigned = router
+        let err = router
             .assign_operation(&cx, "op-hint-mismatch", Some("cancel"), 1)
-            .expect("assigned");
-        assert_eq!(assigned.lane, ProductLane::Background);
+            .expect_err("scope mismatch should fail closed");
+        assert_eq!(err.code(), error_codes::SCOPE_MISMATCH);
+        assert!(matches!(
+            err,
+            LaneRouterError::ScopeMismatch {
+                requested_lane: ProductLane::Cancel,
+                required_lane: ProductLane::Background
+            }
+        ));
         assert_eq!(router.unknown_lane_default_count(), 1);
         assert!(
             router
