@@ -1434,6 +1434,88 @@ impl EngineDispatcher {
         }
     }
 
+    /// Map franken-node Config to franken-engine RuntimeConfig.
+    ///
+    /// Maps key configuration settings from franken-node's Config structure to the
+    /// corresponding RuntimeConfig expected by franken-engine's ExecutionOrchestrator:
+    /// - Profile-based execution budgets and sandbox policies
+    /// - Telemetry and observability settings
+    /// - Runtime feature flags and resource limits
+    /// - Security and governance thresholds
+    #[cfg(feature = "engine")]
+    fn map_config_to_runtime_config(config: &Config) -> EngineRuntimeConfig {
+        use frankenengine_engine::runtime_config::*;
+
+        // Map profile to execution budgets and limits
+        let execution = match config.profile {
+            Profile::Strict => ExecutionConfig {
+                deterministic_budget: 50_000,      // Conservative budget for strict mode
+                throughput_budget: 100_000,        // Lower throughput budget
+                deterministic_max_registers: 128,  // Reduced register count
+                throughput_max_registers: 256,     // Conservative register limit
+                max_call_depth: 32,                // Shallow call stack for safety
+                max_prototype_chain_depth: 8,      // Limited prototype depth
+            },
+            Profile::Balanced => ExecutionConfig::default(), // Use standard defaults
+            Profile::LegacyRisky => ExecutionConfig {
+                deterministic_budget: 1_000_000,   // Higher budget for legacy compatibility
+                throughput_budget: 10_000_000,     // Maximum throughput for legacy apps
+                deterministic_max_registers: 8192, // Generous register allocation
+                throughput_max_registers: 16384,   // High register limit
+                max_call_depth: 128,               // Deep call stacks allowed
+                max_prototype_chain_depth: 64,     // Extended prototype chains
+            },
+        };
+
+        // Map observability settings to governance config
+        let governance = GovernanceConfig {
+            coverage_threshold_millionths: if config.observability.emit_structured_audit_events {
+                850_000 // 85% coverage when structured events enabled
+            } else {
+                750_000 // 75% coverage for basic observability
+            },
+            ..GovernanceConfig::default()
+        };
+
+        // Map profile to guardplane (security policy) settings
+        let guardplane = match config.profile {
+            Profile::Strict => GuardplaneConfig {
+                bayesian_prior_millionths: 100_000,        // 10% prior - conservative
+                decision_threshold_millionths: 950_000,    // 95% threshold - strict
+                containment_timeout_ms: 1000,              // 1s containment timeout
+                ..GuardplaneConfig::default()
+            },
+            Profile::Balanced => GuardplaneConfig::default(), // Standard security settings
+            Profile::LegacyRisky => GuardplaneConfig {
+                bayesian_prior_millionths: 500_000,        // 50% prior - permissive
+                decision_threshold_millionths: 700_000,    // 70% threshold - relaxed
+                containment_timeout_ms: 5000,              // 5s containment timeout
+                ..GuardplaneConfig::default()
+            },
+        };
+
+        // Map security config to gates (verification thresholds)
+        let gates = GatesConfig {
+            workload_verification_threshold_millionths: match config.profile {
+                Profile::Strict => 950_000,      // 95% verification threshold
+                Profile::Balanced => 800_000,    // 80% verification threshold
+                Profile::LegacyRisky => 600_000, // 60% verification threshold
+            },
+            ..GatesConfig::default()
+        };
+
+        // Construct final runtime config
+        EngineRuntimeConfig {
+            execution,
+            orchestrator: OrchestratorConfig::default(), // Use defaults for orchestrator
+            guardplane,
+            governance,
+            gates,
+            optimization: OptimizationConfig::default(), // Use defaults for optimization
+            extension_host: ExtensionHostConfig::default(), // Use defaults for extension host
+        }
+    }
+
     /// Execute code using native franken_engine API instead of external process.
     /// Returns the same interface as external execution for compatibility.
     #[cfg(feature = "engine")]
@@ -1470,7 +1552,7 @@ impl EngineDispatcher {
             ),
             source: source_code,
             source_file: Some(app_path.to_string_lossy().to_string()),
-            capabilities: map_profile_to_capabilities(config.profile), // Profile-based capability mapping
+            capabilities: Self::map_profile_to_capabilities(config.profile), // Profile-based capability mapping
             version: env!("CARGO_PKG_VERSION").to_string(), // Extract from package metadata
             metadata: std::collections::BTreeMap::new(),
         };
