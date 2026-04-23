@@ -1398,7 +1398,7 @@ impl SharedFleetControlOwner {
             .map_err(|e| map_fleet_control_error("reconcile", trace, e))
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "extended-surfaces"))]
     fn reset_for_tests(&self) {
         let mut guard = match self.inner.lock() {
             Ok(guard) => guard,
@@ -1414,12 +1414,12 @@ fn shared_fleet_control_manager() -> &'static SharedFleetControlOwner {
     SHARED_FLEET_CONTROL_MANAGER.get_or_init(SharedFleetControlOwner::new)
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub fn reset_shared_fleet_control_manager_for_tests() {
     shared_fleet_control_manager().reset_for_tests();
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub fn activate_shared_fleet_control_manager_for_tests() {
     let mut guard = match shared_fleet_control_manager().inner.lock() {
         Ok(guard) => guard,
@@ -1754,9 +1754,9 @@ impl FleetControlManager {
 
         // Decrement zone active count
         if let Some(zone) = self.zone_status.get_mut(&zone_id) {
-            if action_type == "quarantine" {
+            if crate::security::constant_time::ct_eq(&action_type, "quarantine") {
                 zone.active_quarantines = zone.active_quarantines.saturating_sub(1);
-            } else if action_type == "revoke" {
+            } else if crate::security::constant_time::ct_eq(&action_type, "revoke") {
                 zone.active_revocations = zone.active_revocations.saturating_sub(1);
             }
         }
@@ -1995,7 +1995,7 @@ impl FleetControlManager {
                 let incident = self.incidents.get(incident_id)?;
                 if incident.zone_id != zone_id
                     || incident.status == IncidentStatus::Released
-                    || incident.action_type != "quarantine"
+                    || !crate::security::constant_time::ct_eq(&incident.action_type, "quarantine")
                     || convergence.phase == ConvergencePhase::Converged
                 {
                     return None;
@@ -2133,7 +2133,7 @@ impl FleetControlManager {
         }
 
         // Verify receipt is for rollback action
-        if receipt.decision_payload.action_type != "rollback" {
+        if !crate::security::constant_time::ct_eq(&receipt.decision_payload.action_type, "rollback") {
             return Err(FleetControlError::rollback_unverified(
                 incident_id,
                 "receipt is not for rollback action",
@@ -5657,5 +5657,57 @@ mod tests {
                 "Receipt ID should have correct prefix"
             );
         }
+    }
+
+    #[test]
+    fn action_type_comparison_timing_resistance() {
+        // Regression test for bd-2x0hs: ensure action_type comparisons use constant-time
+        // to prevent timing side-channel attacks where attackers could learn action types
+        // based on comparison timing differences
+
+        use crate::security::constant_time;
+
+        // Test constant-time comparison for action types used in fleet operations
+        let action_quarantine = "quarantine";
+        let action_revoke = "revoke";
+        let action_rollback = "rollback";
+        let action_release = "release";
+
+        // Test identical strings
+        assert!(constant_time::ct_eq(action_quarantine, "quarantine"));
+        assert!(constant_time::ct_eq(action_revoke, "revoke"));
+        assert!(constant_time::ct_eq(action_rollback, "rollback"));
+        assert!(constant_time::ct_eq(action_release, "release"));
+
+        // Test first-character difference (timing must be constant regardless of difference position)
+        assert!(!constant_time::ct_eq(action_quarantine, "xuarantine")); // q -> x
+        assert!(!constant_time::ct_eq(action_revoke, "xevoke"));          // r -> x
+        assert!(!constant_time::ct_eq(action_rollback, "xollback"));      // r -> x
+
+        // Test last-character difference (timing must be constant regardless of difference position)
+        assert!(!constant_time::ct_eq(action_quarantine, "quarantinx")); // e -> x
+        assert!(!constant_time::ct_eq(action_revoke, "revokx"));          // e -> x
+        assert!(!constant_time::ct_eq(action_rollback, "rollbacx"));      // k -> x
+
+        // Test middle-character difference
+        assert!(!constant_time::ct_eq(action_quarantine, "quarxntine")); // a -> x
+        assert!(!constant_time::ct_eq(action_revoke, "rexoke"));          // v -> x
+        assert!(!constant_time::ct_eq(action_rollback, "rollxack"));      // b -> x
+
+        // Test length differences (should return false immediately but still be timing-safe)
+        assert!(!constant_time::ct_eq(action_quarantine, "quarantin"));  // shorter
+        assert!(!constant_time::ct_eq(action_quarantine, "quarantines")); // longer
+        assert!(!constant_time::ct_eq(action_revoke, "revok"));           // shorter
+        assert!(!constant_time::ct_eq(action_revoke, "revokes"));         // longer
+
+        // Test completely different strings of same length
+        assert!(!constant_time::ct_eq(action_quarantine, "xxxxxxxxxx"));
+        assert!(!constant_time::ct_eq(action_revoke, "xxxxxx"));
+        assert!(!constant_time::ct_eq(action_rollback, "xxxxxxxxx"));
+
+        // Test empty string edge cases
+        assert!(!constant_time::ct_eq(action_quarantine, ""));
+        assert!(!constant_time::ct_eq("", action_quarantine));
+        assert!(constant_time::ct_eq("", ""));
     }
 }

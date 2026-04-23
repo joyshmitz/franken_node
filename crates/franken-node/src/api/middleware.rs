@@ -121,7 +121,7 @@ fn span_id_from_unix_nanos(unix_nanos: u128) -> u64 {
     bounded_nanos ^ SPAN_ID_MIX
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub fn span_id_from_unix_nanos_for_tests(unix_nanos: u128) -> u64 {
     span_id_from_unix_nanos(unix_nanos)
 }
