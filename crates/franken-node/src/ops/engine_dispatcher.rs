@@ -1359,7 +1359,7 @@ impl EngineDispatcher {
             source: source_code,
             source_file: Some(app_path.to_string_lossy().to_string()),
             capabilities: vec![], // TODO: Map from franken-node policy
-            version: "1.0.0".to_string(), // TODO: Extract from package metadata
+            version: env!("CARGO_PKG_VERSION").to_string(), // Extract from package metadata
             metadata: std::collections::BTreeMap::new(),
         };
 

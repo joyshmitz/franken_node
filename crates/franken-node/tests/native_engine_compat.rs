@@ -90,6 +90,68 @@ fn create_slow_mock_engine_binary(dir: &Path, delay_secs: u64) -> PathBuf {
     return batch_path;
 }
 
+/// Create a mock franken-engine binary that fails with non-zero exit code
+fn create_failing_mock_engine_binary(dir: &Path, exit_code: i32) -> PathBuf {
+    let engine_path = dir.join("failing-franken-engine");
+    #[cfg(unix)]
+    {
+        let script = format!(
+            "#!/bin/bash\necho 'Mock engine error output' >&2\nexit {}\n",
+            exit_code
+        );
+        std::fs::write(&engine_path, script).expect("Failed to write failing mock engine");
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&engine_path)
+            .expect("Failed to get metadata")
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&engine_path, perms).expect("Failed to set permissions");
+    }
+    #[cfg(windows)]
+    {
+        let batch_path = dir.join("failing-franken-engine.bat");
+        let script = format!(
+            "@echo off\necho Mock engine error output 1>&2\nexit /b {}\n",
+            exit_code
+        );
+        std::fs::write(&batch_path, script).expect("Failed to write failing mock engine batch");
+        batch_path
+    }
+    #[cfg(unix)]
+    return engine_path;
+    #[cfg(windows)]
+    return batch_path;
+}
+
+/// Create a mock franken-engine binary that crashes/panics
+fn create_crashing_mock_engine_binary(dir: &Path) -> PathBuf {
+    let engine_path = dir.join("crashing-franken-engine");
+    #[cfg(unix)]
+    {
+        // Use kill -9 to simulate a crash/panic
+        std::fs::write(&engine_path, "#!/bin/bash\necho 'About to crash'\nkill -9 $$\n")
+            .expect("Failed to write crashing mock engine");
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&engine_path)
+            .expect("Failed to get metadata")
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&engine_path, perms).expect("Failed to set permissions");
+    }
+    #[cfg(windows)]
+    {
+        let batch_path = dir.join("crashing-franken-engine.bat");
+        // Use taskkill to simulate crash on Windows
+        std::fs::write(&batch_path, "@echo off\necho About to crash\ntaskkill /f /pid %PID%\n")
+            .expect("Failed to write crashing mock engine batch");
+        batch_path
+    }
+    #[cfg(unix)]
+    return engine_path;
+    #[cfg(windows)]
+    return batch_path;
+}
+
 #[test]
 #[cfg(feature = "engine")]
 fn test_native_engine_execution_with_telemetry() {
@@ -367,6 +429,179 @@ fn test_engine_timeout_handling() {
     println!(
         "Timeout test completed in {:?} with error: {}",
         duration, error
+    );
+}
+
+#[test]
+#[cfg(feature = "engine")]
+fn test_native_engine_missing_binary_error_handling() {
+    // Test boundary condition: engine feature enabled but binary missing
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let app_path = create_test_app(
+        temp_dir.path(),
+        "missing_binary_test.js",
+        r#"console.log("This should fail - engine binary missing");"#,
+    );
+
+    // Point to a non-existent engine binary
+    let nonexistent_engine_path = temp_dir.path().join("nonexistent-franken-engine");
+
+    let mut config = Config::default();
+    config.profile = Profile::Balanced;
+
+    let dispatcher = EngineDispatcher::new(
+        Some(nonexistent_engine_path.clone()),
+        PreferredRuntime::FrankenEngine,
+    );
+    let telemetry_bridge = TelemetryBridge::null();
+
+    // Execute and expect failure due to missing binary
+    let result = dispatcher.dispatch_run(&app_path, &config, &telemetry_bridge);
+
+    assert!(
+        result.is_err(),
+        "Should fail when engine binary is missing"
+    );
+
+    let error = result.unwrap_err();
+    let error_str = error.to_string();
+
+    // Verify this is an ActionableError with proper context
+    assert!(
+        error_str.contains("engine") || error_str.contains("binary") ||
+        error_str.contains("not found") || error_str.contains("No such file"),
+        "Error should indicate engine binary issue, got: {}",
+        error_str
+    );
+
+    // Verify ActionableError provides actionable guidance
+    let actionable = error.actionable_error();
+    assert!(
+        actionable.title.contains("engine") || actionable.title.contains("binary") ||
+        actionable.title.contains("not found"),
+        "ActionableError title should reference engine/binary issue, got: {}",
+        actionable.title
+    );
+    assert!(
+        !actionable.guidance.is_empty(),
+        "ActionableError should provide guidance"
+    );
+}
+
+#[test]
+fn test_engine_non_zero_exit_code_error_handling() {
+    // Test boundary condition: engine feature enabled but engine returns non-zero exit
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let app_path = create_test_app(
+        temp_dir.path(),
+        "exit_code_test.js",
+        r#"console.log("This should fail due to engine exit code");"#,
+    );
+
+    // Create a mock engine that returns exit code 1
+    let failing_engine_path = create_failing_mock_engine_binary(temp_dir.path(), 1);
+
+    let mut config = Config::default();
+    config.profile = Profile::Balanced;
+
+    // Force external process execution to test exit code handling
+    let dispatcher = EngineDispatcher::new(
+        Some(failing_engine_path.clone()),
+        PreferredRuntime::FrankenEngine,
+    );
+    let telemetry_bridge = TelemetryBridge::null();
+
+    // Execute and expect failure due to non-zero exit
+    let result = dispatcher.dispatch_run(&app_path, &config, &telemetry_bridge);
+
+    assert!(
+        result.is_err(),
+        "Should fail when engine returns non-zero exit code"
+    );
+
+    let error = result.unwrap_err();
+    let error_str = error.to_string();
+
+    // Verify error indicates process failure
+    assert!(
+        error_str.contains("failed") || error_str.contains("exit") ||
+        error_str.contains("error") || error_str.contains("status"),
+        "Error should indicate process failure, got: {}",
+        error_str
+    );
+
+    // Verify ActionableError chain provides guidance
+    let actionable = error.actionable_error();
+    assert!(
+        !actionable.title.is_empty(),
+        "ActionableError should have a title"
+    );
+    assert!(
+        !actionable.guidance.is_empty(),
+        "ActionableError should provide guidance for engine failure"
+    );
+}
+
+#[test]
+fn test_engine_crash_signal_error_handling() {
+    // Test boundary condition: engine feature enabled but engine crashes/panics
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let app_path = create_test_app(
+        temp_dir.path(),
+        "crash_test.js",
+        r#"console.log("This should fail due to engine crash");"#,
+    );
+
+    // Create a mock engine that crashes with SIGKILL
+    let crashing_engine_path = create_crashing_mock_engine_binary(temp_dir.path());
+
+    let mut config = Config::default();
+    config.profile = Profile::Balanced;
+
+    // Force external process execution to test signal handling
+    let dispatcher = EngineDispatcher::new(
+        Some(crashing_engine_path.clone()),
+        PreferredRuntime::FrankenEngine,
+    );
+    let telemetry_bridge = TelemetryBridge::null();
+
+    // Set short timeout for faster test completion
+    std::env::set_var("FRANKEN_ENGINE_TIMEOUT_SECS", "10");
+
+    // Clean up env var when test completes
+    struct EnvCleanup(&'static str);
+    impl Drop for EnvCleanup {
+        fn drop(&mut self) {
+            std::env::remove_var(self.0);
+        }
+    }
+    let _cleanup = EnvCleanup("FRANKEN_ENGINE_TIMEOUT_SECS");
+
+    // Execute and expect failure due to signal/crash
+    let result = dispatcher.dispatch_run(&app_path, &config, &telemetry_bridge);
+
+    assert!(
+        result.is_err(),
+        "Should fail when engine crashes/receives signal"
+    );
+
+    let error = result.unwrap_err();
+    let error_str = error.to_string();
+
+    // Verify error indicates abnormal termination
+    assert!(
+        error_str.contains("signal") || error_str.contains("killed") ||
+        error_str.contains("terminated") || error_str.contains("crash") ||
+        error_str.contains("failed"),
+        "Error should indicate abnormal process termination, got: {}",
+        error_str
+    );
+
+    // Verify ActionableError provides meaningful context
+    let actionable = error.actionable_error();
+    assert!(
+        !actionable.title.is_empty() && !actionable.guidance.is_empty(),
+        "ActionableError should provide title and guidance for engine crash"
     );
 }
 
