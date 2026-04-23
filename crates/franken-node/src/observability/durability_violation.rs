@@ -629,7 +629,7 @@ pub fn generate_bundle(context: &ViolationContext) -> ViolationBundle {
     update_hash_string_list(
         &mut hasher,
         b"durability_violation_bundle_v1:proofs_passed",
-        &context.proofs.passed_proofs,
+        &bounded_context.proofs.passed_proofs,
     );
     let digest = hasher.finalize();
     let hash = u64::from_le_bytes(digest[..8].try_into().unwrap_or([0u8; 8]));
@@ -637,12 +637,12 @@ pub fn generate_bundle(context: &ViolationContext) -> ViolationBundle {
 
     ViolationBundle {
         bundle_id,
-        causal_event_sequence: context.events.clone(),
-        failed_artifacts: context.artifacts.clone(),
-        proof_context: context.proofs.clone(),
-        hardening_level: context.hardening_level.clone(),
-        timestamp_ms: context.timestamp_ms,
-        epoch_id: context.epoch_id,
+        causal_event_sequence: bounded_context.events,
+        failed_artifacts: bounded_context.artifacts,
+        proof_context: bounded_context.proofs,
+        hardening_level: bounded_context.hardening_level,
+        timestamp_ms: bounded_context.timestamp_ms,
+        epoch_id: bounded_context.epoch_id,
     }
 }
 

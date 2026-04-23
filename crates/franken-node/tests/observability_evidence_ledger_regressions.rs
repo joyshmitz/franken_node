@@ -4,9 +4,16 @@ use std::sync::{Arc, Mutex};
 use frankenengine_node::observability::evidence_ledger::{
     DecisionKind, EvidenceEntry, EvidenceLedger, LabSpillMode, LedgerCapacity,
 };
+use frankenengine_node::observability::durability_violation::{
+    generate_bundle, CausalEvent, CausalEventType, FailedArtifact, ProofContext, ViolationContext,
+};
 use frankenengine_node::observability::witness_ref::{
     WitnessKind, WitnessRef, WitnessSet, WitnessValidator,
 };
+
+const EXPECTED_MAX_CAUSAL_EVENTS: usize = 1024;
+const EXPECTED_MAX_FAILED_ARTIFACTS: usize = 512;
+const EXPECTED_MAX_PROOF_REFS: usize = 256;
 
 #[derive(Clone)]
 struct CaptureWriter {
@@ -75,6 +82,72 @@ fn witness_set_with_locator(locator: &str) -> WitnessSet {
         .with_locator(locator),
     );
     witnesses
+}
+
+#[test]
+fn durability_violation_bundle_bounds_payload_before_hashing_and_emit() {
+    let ctx = ViolationContext {
+        events: (0..EXPECTED_MAX_CAUSAL_EVENTS + 3)
+            .map(|idx| CausalEvent {
+                event_type: CausalEventType::IntegrityCheckFailed,
+                timestamp_ms: u64::try_from(idx).unwrap_or(u64::MAX),
+                description: format!("event-{idx}"),
+                evidence_ref: Some(format!("EVD-{idx}")),
+            })
+            .collect(),
+        artifacts: (0..EXPECTED_MAX_FAILED_ARTIFACTS + 3)
+            .map(|idx| FailedArtifact {
+                artifact_path: format!("artifact-{idx}"),
+                expected_hash: format!("expected-{idx}"),
+                actual_hash: format!("actual-{idx}"),
+                failure_reason: format!("reason-{idx}"),
+            })
+            .collect(),
+        proofs: ProofContext {
+            failed_proofs: (0..EXPECTED_MAX_PROOF_REFS + 3)
+                .map(|idx| format!("failed-{idx}"))
+                .collect(),
+            missing_proofs: (0..EXPECTED_MAX_PROOF_REFS + 3)
+                .map(|idx| format!("missing-{idx}"))
+                .collect(),
+            passed_proofs: (0..EXPECTED_MAX_PROOF_REFS + 3)
+                .map(|idx| format!("passed-{idx}"))
+                .collect(),
+        },
+        hardening_level: "critical".to_string(),
+        epoch_id: 77,
+        timestamp_ms: 5000,
+    };
+    let mut expected_bounded = ctx.clone();
+    expected_bounded.ensure_bounded();
+
+    let oversized_bundle = generate_bundle(&ctx);
+    let bounded_bundle = generate_bundle(&expected_bounded);
+
+    assert_eq!(oversized_bundle.bundle_id, bounded_bundle.bundle_id);
+    assert_eq!(oversized_bundle.event_count(), EXPECTED_MAX_CAUSAL_EVENTS);
+    assert_eq!(
+        oversized_bundle.artifact_count(),
+        EXPECTED_MAX_FAILED_ARTIFACTS
+    );
+    assert_eq!(
+        oversized_bundle.proof_context.failed_proofs.len(),
+        EXPECTED_MAX_PROOF_REFS
+    );
+    assert_eq!(
+        oversized_bundle.proof_context.missing_proofs.len(),
+        EXPECTED_MAX_PROOF_REFS
+    );
+    assert_eq!(
+        oversized_bundle.proof_context.passed_proofs.len(),
+        EXPECTED_MAX_PROOF_REFS
+    );
+    assert_eq!(
+        oversized_bundle.causal_event_sequence,
+        expected_bounded.events
+    );
+    assert_eq!(oversized_bundle.failed_artifacts, expected_bounded.artifacts);
+    assert_eq!(oversized_bundle.proof_context, expected_bounded.proofs);
 }
 
 #[test]
