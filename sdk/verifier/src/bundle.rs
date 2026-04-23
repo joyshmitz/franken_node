@@ -140,6 +140,9 @@ pub enum BundleError {
     ChunkArtifactMissing {
         path: String,
     },
+    InvalidArtifactPath {
+        path: String,
+    },
     ChunkPayloadLengthMismatch {
         artifact_path: String,
         expected: u64,
@@ -234,6 +237,9 @@ impl fmt::Display for BundleError {
                     formatter,
                     "replay bundle chunk references missing artifact {path}"
                 )
+            }
+            Self::InvalidArtifactPath { path } => {
+                write!(formatter, "replay bundle artifact path is invalid: {path}")
             }
             Self::ChunkPayloadLengthMismatch {
                 artifact_path,
@@ -556,10 +562,8 @@ fn validate_verifier_identity(verifier_identity: &str) -> Result<(), BundleError
 
 fn validate_artifacts(bundle: &ReplayBundle) -> Result<(), BundleError> {
     for (path, artifact) in &bundle.artifacts {
-        if path.trim().is_empty() {
-            return Err(BundleError::MissingField {
-                field: "artifacts.path",
-            });
+        if path.trim().is_empty() || path.trim() != path {
+            return Err(BundleError::InvalidArtifactPath { path: path.clone() });
         }
         validate_nonempty("artifacts.media_type", &artifact.media_type)?;
         validate_nonempty("artifacts.digest", &artifact.digest)?;
@@ -626,6 +630,13 @@ fn validate_chunks(bundle: &ReplayBundle) -> Result<(), BundleError> {
             return Err(BundleError::ChunkCountMismatch {
                 expected: total_chunks,
                 actual: chunk.total_chunks,
+            });
+        }
+        if chunk.artifact_path.trim().is_empty()
+            || chunk.artifact_path.trim() != chunk.artifact_path
+        {
+            return Err(BundleError::InvalidArtifactPath {
+                path: chunk.artifact_path.clone(),
             });
         }
 
@@ -921,6 +932,43 @@ mod tests {
         let err = verify(&bytes).expect_err("null-byte verifier names must fail closed");
 
         assert!(matches!(err, BundleError::InvalidVerifierIdentity { .. }));
+    }
+
+    #[test]
+    fn verify_rejects_whitespace_padded_artifact_map_key() {
+        let mut bundle = make_test_bundle("verifier://alpha");
+        let artifact = bundle
+            .artifacts
+            .remove("artifacts/replay.json")
+            .expect("fixture artifact must exist");
+        bundle
+            .artifacts
+            .insert(" artifacts/replay.json".to_string(), artifact);
+        bundle.chunks[0].artifact_path = " artifacts/replay.json".to_string();
+        seal(&mut bundle).expect("test bundle should reseal");
+        let bytes = serialize(&bundle).expect("test bundle should serialize");
+
+        let err = verify(&bytes).expect_err("padded artifact map key must fail closed");
+
+        assert!(matches!(
+            err,
+            BundleError::InvalidArtifactPath { path } if path == " artifacts/replay.json"
+        ));
+    }
+
+    #[test]
+    fn verify_rejects_whitespace_padded_chunk_artifact_path() {
+        let mut bundle = make_test_bundle("verifier://alpha");
+        bundle.chunks[0].artifact_path = "artifacts/replay.json ".to_string();
+        seal(&mut bundle).expect("test bundle should reseal");
+        let bytes = serialize(&bundle).expect("test bundle should serialize");
+
+        let err = verify(&bytes).expect_err("padded chunk artifact path must fail closed");
+
+        assert!(matches!(
+            err,
+            BundleError::InvalidArtifactPath { path } if path == "artifacts/replay.json "
+        ));
     }
 
     #[test]
