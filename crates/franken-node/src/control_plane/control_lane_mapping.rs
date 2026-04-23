@@ -270,10 +270,16 @@ impl ControlLanePolicy {
         }
 
         for lane in ControlLane::all() {
-            if !self.budgets.contains_key(lane.as_str()) {
+            let Some(budget) = self.budgets.get(lane.as_str()) else {
                 return Err(ControlLanePolicyError::InvalidBudget {
                     lane: *lane,
                     detail: "missing lane budget".to_string(),
+                });
+            };
+            if budget.starvation_threshold_ticks == 0 {
+                return Err(ControlLanePolicyError::InvalidBudget {
+                    lane: *lane,
+                    detail: "starvation_threshold_ticks must be at least 1".to_string(),
                 });
             }
         }

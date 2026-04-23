@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use frankenengine_node::control_plane::control_lane_mapping::{
-    ControlLane, ControlLanePolicyError, ControlLaneScheduler, default_control_lane_policy,
+    ControlLane, ControlLanePolicyError, ControlLaneScheduler, LaneBudget,
+    default_control_lane_policy,
     error_codes, task_classes,
 };
 
@@ -95,4 +96,32 @@ fn assignment_without_run_triggers_starvation_instead_of_masking_it() {
     assert_eq!(cancel_after_run.tasks_assigned, 1);
     assert_eq!(cancel_after_run.tasks_run, 1);
     assert_eq!(cancel_after_run.consecutive_empty_ticks, 0);
+}
+
+#[test]
+fn validate_rejects_zero_starvation_threshold_but_accepts_one_tick_boundary() {
+    let mut policy = default_control_lane_policy();
+
+    policy.set_budget(LaneBudget {
+        lane: ControlLane::Cancel,
+        min_percent: 20,
+        starvation_threshold_ticks: 0,
+    });
+    let error = policy
+        .validate()
+        .expect_err("zero starvation threshold must fail closed");
+    assert_eq!(error.code(), error_codes::ERR_CLM_INVALID_BUDGET);
+    assert!(
+        error.to_string().contains("starvation_threshold_ticks"),
+        "error should name invalid threshold: {error}"
+    );
+
+    policy.set_budget(LaneBudget {
+        lane: ControlLane::Cancel,
+        min_percent: 20,
+        starvation_threshold_ticks: 1,
+    });
+    policy
+        .validate()
+        .expect("one-tick starvation threshold is the valid lower boundary");
 }
