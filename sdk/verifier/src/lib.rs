@@ -1146,6 +1146,34 @@ mod tests {
     }
 
     #[test]
+    fn record_session_step_rejects_same_verifier_result_from_different_sdk_instance() {
+        let sdk = create_verifier_sdk("verifier://alpha");
+        let sibling_sdk = create_verifier_sdk("verifier://alpha");
+        let mut session = sdk
+            .create_session("session-alpha")
+            .expect("same verifier session should be created");
+        let sibling_result = sibling_sdk
+            .build_result(
+                VerificationOperation::Claim,
+                VerificationVerdict::Pass,
+                vec![AssertionResult {
+                    assertion: "capsule_replay_verified".to_string(),
+                    passed: true,
+                    detail: "same verifier sibling instance".to_string(),
+                }],
+                "artifact-hash-alpha".to_string(),
+            )
+            .expect("same verifier sibling result should be built");
+
+        let err = sdk
+            .record_session_step(&mut session, &sibling_result)
+            .expect_err("same-verifier result from a different sdk instance must be rejected");
+
+        assert!(matches!(err, VerifierSdkError::ResultOriginMismatch { .. }));
+        assert!(session.steps().is_empty());
+    }
+
+    #[test]
     fn transparency_log_accepts_signed_result_from_same_verifier() {
         let sdk = create_verifier_sdk("verifier://alpha");
         let result = sdk
@@ -1363,6 +1391,32 @@ mod tests {
         let err = sdk
             .append_transparency_log(&mut log, &detached)
             .expect_err("detached same-verifier result must be rejected");
+
+        assert!(matches!(err, VerifierSdkError::ResultOriginMismatch { .. }));
+        assert!(log.is_empty());
+    }
+
+    #[test]
+    fn transparency_log_rejects_same_verifier_result_from_different_sdk_instance() {
+        let sdk = create_verifier_sdk("verifier://alpha");
+        let sibling_sdk = create_verifier_sdk("verifier://alpha");
+        let sibling_result = sibling_sdk
+            .build_result(
+                VerificationOperation::Claim,
+                VerificationVerdict::Pass,
+                vec![AssertionResult {
+                    assertion: "capsule_replay_verified".to_string(),
+                    passed: true,
+                    detail: "same verifier sibling instance".to_string(),
+                }],
+                "artifact-hash-alpha".to_string(),
+            )
+            .expect("same verifier sibling result should be built");
+        let mut log = Vec::new();
+
+        let err = sdk
+            .append_transparency_log(&mut log, &sibling_result)
+            .expect_err("same-verifier result from a different sdk instance must be rejected");
 
         assert!(matches!(err, VerifierSdkError::ResultOriginMismatch { .. }));
         assert!(log.is_empty());
