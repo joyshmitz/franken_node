@@ -2703,7 +2703,7 @@ mod tests {
         let steps = vec![
             TraceStep::new(0, b"input\x00\x01".to_vec(), b"output\xff\xfe".to_vec(), side_effects.clone(), 1000),
             TraceStep::new(1, vec![], b"empty_input_step".to_vec(), vec![], 2000),
-            TraceStep::new(2, b"unicode_测试".to_vec(), vec![], vec![SideEffect::new("unicode", "测试".bytes().collect())], 3000),
+            TraceStep::new(2, b"unicode_\xE6\xB5\x8B\xE8\xAF\x95".to_vec(), vec![], vec![SideEffect::new("unicode", "测试".bytes().collect())], 3000),
         ];
 
         let original_trace = WorkflowTrace {
@@ -3818,9 +3818,9 @@ mod tests {
 
     /// Canonicalize EnvironmentSnapshot to deterministic bytes
     fn canonicalize_snapshot(snapshot: &EnvironmentSnapshot) -> Vec<u8> {
-        // Use bincode for deterministic binary serialization
+        // Use JSON for deterministic, canonical serialization
         // This ensures consistent byte representation across platforms
-        rmp_serde::to_vec(snapshot).expect("Snapshot serialization should not fail")
+        serde_json::to_vec(snapshot).expect("Snapshot serialization should not fail")
     }
 
     /// Canonicalize environment (normalize before snapshot)
@@ -3872,7 +3872,7 @@ mod tests {
                 clock_seed_ns: 42,
                 env_vars: BTreeMap::from([
                     ("测试".to_string(), "🦀 Rust".to_string()),
-                    ("NULL\0BYTE".to_string(), "value\0with\0nulls".to_string()),
+                    ("NULL\\0BYTE".to_string(), "value\\0with\\0nulls".to_string()),
                 ]),
                 platform: "linux-arm64".to_string(),
                 runtime_version: "1.0.0-alpha.1+build.123".to_string(),

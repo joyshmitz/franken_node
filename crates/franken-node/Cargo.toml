@@ -386,6 +386,10 @@ name = "replay_bundle_metamorphic"
 path = "tests/replay_bundle_metamorphic.rs"
 
 [[test]]
+name = "time_travel_metamorphic"
+path = "tests/time_travel_metamorphic.rs"
+
+[[test]]
 name = "bench_conformance_matrix"
 path = "tests/bench_conformance_matrix.rs"
 
