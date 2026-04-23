@@ -150,6 +150,7 @@ pub mod error_codes {
     pub const ERR_TTR_SEQ_GAP: &str = "ERR_TTR_SEQ_GAP";
     pub const ERR_TTR_DIGEST_MISMATCH: &str = "ERR_TTR_DIGEST_MISMATCH";
     pub const ERR_TTR_ENV_MISSING: &str = "ERR_TTR_ENV_MISSING";
+    pub const ERR_TTR_ENV_INVALID: &str = "ERR_TTR_ENV_INVALID";
     pub const ERR_TTR_REPLAY_FAILED: &str = "ERR_TTR_REPLAY_FAILED";
     pub const ERR_TTR_DUPLICATE_TRACE: &str = "ERR_TTR_DUPLICATE_TRACE";
     pub const ERR_TTR_STEP_ORDER_VIOLATION: &str = "ERR_TTR_STEP_ORDER_VIOLATION";
@@ -194,6 +195,12 @@ pub enum TimeTravelError {
     },
     /// Environment snapshot is missing required fields.
     EnvironmentMissing { trace_id: String, field: String },
+    /// Environment snapshot contains invalid bytes.
+    EnvironmentInvalid {
+        trace_id: String,
+        field: String,
+        reason: String,
+    },
     /// Replay execution failed.
     ReplayFailed { trace_id: String, reason: String },
     /// A trace with this ID already exists.
@@ -241,6 +248,17 @@ impl fmt::Display for TimeTravelError {
                     f,
                     "[{0}] trace {trace_id}: missing env field {field}",
                     error_codes::ERR_TTR_ENV_MISSING
+                )
+            }
+            Self::EnvironmentInvalid {
+                trace_id,
+                field,
+                reason,
+            } => {
+                write!(
+                    f,
+                    "[{0}] trace {trace_id}: invalid env field {field}: {reason}",
+                    error_codes::ERR_TTR_ENV_INVALID
                 )
             }
             Self::ReplayFailed { trace_id, reason } => {
@@ -371,8 +389,29 @@ impl EnvironmentSnapshot {
                 field: "runtime_version".to_string(),
             });
         }
+        validate_environment_field(trace_id, "platform", &self.platform)?;
+        validate_environment_field(trace_id, "runtime_version", &self.runtime_version)?;
+        for (key, value) in &self.env_vars {
+            validate_environment_field(trace_id, "env_vars.key", key)?;
+            validate_environment_field(trace_id, "env_vars.value", value)?;
+        }
         Ok(())
     }
+}
+
+fn validate_environment_field(
+    trace_id: &str,
+    field: &str,
+    value: &str,
+) -> Result<(), TimeTravelError> {
+    if value.bytes().any(|byte| byte.is_ascii_control()) {
+        return Err(TimeTravelError::EnvironmentInvalid {
+            trace_id: trace_id.to_string(),
+            field: field.to_string(),
+            reason: "contains ASCII control bytes".to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// A single step in a workflow trace.
@@ -1196,6 +1235,7 @@ mod tests {
         assert!(!error_codes::ERR_TTR_SEQ_GAP.is_empty());
         assert!(!error_codes::ERR_TTR_DIGEST_MISMATCH.is_empty());
         assert!(!error_codes::ERR_TTR_ENV_MISSING.is_empty());
+        assert!(!error_codes::ERR_TTR_ENV_INVALID.is_empty());
         assert!(!error_codes::ERR_TTR_REPLAY_FAILED.is_empty());
         assert!(!error_codes::ERR_TTR_DUPLICATE_TRACE.is_empty());
         assert!(!error_codes::ERR_TTR_STEP_ORDER_VIOLATION.is_empty());
@@ -1233,6 +1273,67 @@ mod tests {
         assert!(
             matches!(err, TimeTravelError::EnvironmentMissing { field, .. } if field == "runtime_version")
         );
+    }
+
+    #[test]
+    fn env_snapshot_rejects_actual_nul_bytes_in_environment_keys() {
+        let env = EnvironmentSnapshot::new(
+            0,
+            BTreeMap::from([("API\0KEY".to_string(), "value".to_string())]),
+            "linux",
+            "0.1.0",
+        );
+        let err = env.validate("test").unwrap_err();
+        assert!(matches!(
+            err,
+            TimeTravelError::EnvironmentInvalid { field, .. } if field == "env_vars.key"
+        ));
+    }
+
+    #[test]
+    fn env_snapshot_rejects_actual_control_bytes_in_environment_values() {
+        let env = EnvironmentSnapshot::new(
+            0,
+            BTreeMap::from([("API_KEY".to_string(), "value\u{001f}suffix".to_string())]),
+            "linux",
+            "0.1.0",
+        );
+        let err = env.validate("test").unwrap_err();
+        assert!(matches!(
+            err,
+            TimeTravelError::EnvironmentInvalid { field, .. } if field == "env_vars.value"
+        ));
+    }
+
+    #[test]
+    fn workflow_trace_validation_rejects_actual_nul_bytes_in_environment_snapshot() {
+        let env = EnvironmentSnapshot::new(
+            0,
+            BTreeMap::from([("SESSION".to_string(), "capture\0relabel".to_string())]),
+            "linux",
+            "0.1.0",
+        );
+        let trace = WorkflowTrace {
+            trace_id: "nul-env".to_string(),
+            workflow_name: "wf".to_string(),
+            steps: vec![TraceStep::new(0, vec![1], vec![2], vec![], 100)],
+            environment: env,
+            trace_digest: WorkflowTrace::compute_digest(&[TraceStep::new(
+                0,
+                vec![1],
+                vec![2],
+                vec![],
+                100,
+            )]),
+            schema_version: SCHEMA_VERSION.to_string(),
+        };
+        let err = trace
+            .validate()
+            .expect_err("workflow validation must reject embedded NUL bytes");
+        assert!(matches!(
+            err,
+            TimeTravelError::EnvironmentInvalid { field, .. } if field == "env_vars.value"
+        ));
     }
 
     // --- TraceStep digests ---
@@ -1958,6 +2059,18 @@ mod tests {
         };
         let msg = format!("{err}");
         assert!(msg.contains("ERR_TTR_DUPLICATE_TRACE"));
+    }
+
+    #[test]
+    fn error_display_environment_invalid() {
+        let err = TimeTravelError::EnvironmentInvalid {
+            trace_id: "t".to_string(),
+            field: "env_vars.value".to_string(),
+            reason: "contains ASCII control bytes".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("ERR_TTR_ENV_INVALID"));
+        assert!(msg.contains("env_vars.value"));
     }
 
     // --- ReplayVerdict display ---
