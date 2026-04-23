@@ -198,6 +198,7 @@ mod input_validation_edge_tests {
             epoch_id: 1,
             payload: serde_json::json!({}),
             size_bytes: 0,
+            signature: String::new(),
         };
 
         // Context with empty candidate IDs
@@ -248,6 +249,7 @@ mod input_validation_edge_tests {
             epoch_id: 1,
             payload: serde_json::json!({}),
             size_bytes: 0,
+            signature: String::new(),
         };
 
         let context = ReplayContext::new(
@@ -288,6 +290,7 @@ mod input_validation_edge_tests {
             epoch_id: 1,
             payload: serde_json::json!({}),
             size_bytes: 0,
+            signature: String::new(),
         };
 
         let context = ReplayContext::new(
@@ -328,6 +331,7 @@ mod input_validation_edge_tests {
             epoch_id: 1,
             payload: serde_json::json!({}),
             size_bytes: 0,
+            signature: String::new(),
         };
 
         let context = ReplayContext::new(
@@ -756,6 +760,7 @@ mod error_handling_edge_tests {
             epoch_id: u64::MAX,
             payload: serde_json::json!({}),
             size_bytes: usize::MAX,
+            signature: String::new(),
         };
 
         let context = ReplayContext::new(
