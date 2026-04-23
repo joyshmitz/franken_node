@@ -5,7 +5,7 @@ use crate::runtime::lockstep_harness::LockstepHarness;
 use crate::storage::frankensqlite_adapter::FrankensqliteAdapter;
 #[cfg(feature = "engine")]
 use frankenengine_engine::execution_orchestrator::{
-    ExecutionOrchestrator, ExtensionPackage, OrchestratorConfig, OrchestratorError, OrchestratorResult,
+    ExecutionOrchestrator, ExtensionPackage, OrchestratorConfig,
 };
 #[cfg(feature = "engine")]
 use frankenengine_engine::runtime_config::RuntimeConfig as EngineRuntimeConfig;
@@ -1030,7 +1030,14 @@ impl EngineDispatcher {
             }
             #[cfg(not(feature = "engine"))]
             {
+                // Check profile policy for engine feature requirement
+                if config.profile == Profile::Strict {
+                    return Err(anyhow::anyhow!(
+                        "Native engine required for strict profile. Please rebuild with --features engine or use a different profile."
+                    ));
+                }
                 // Fall back to external process when engine feature is disabled
+                tracing::warn!("Engine feature disabled; falling back to external process execution");
                 Self::run_engine_process(&mut cmd, telemetry_handle)
                     .map_err(|err| anyhow::anyhow!("{err}"))
             }
@@ -1093,6 +1100,14 @@ impl EngineDispatcher {
     ) -> std::result::Result<(Output, TelemetryRuntimeReport), EngineProcessError> {
         use std::fs;
 
+        let _span = tracing::info_span!(
+            "engine_execution",
+            execution_mode = "native",
+            phase = "setup"
+        ).entered();
+
+        let setup_start = Instant::now();
+
         // Read the application source code
         let source_code = fs::read_to_string(app_path).map_err(|e| {
             EngineProcessError::Spawn {
@@ -1124,18 +1139,41 @@ impl EngineDispatcher {
             runtime_config,
         );
 
+        let setup_duration = setup_start.elapsed();
+        tracing::info!(
+            execution_mode = "native",
+            phase = "setup",
+            duration_ms = setup_duration.as_millis() as u64,
+            "Native engine setup completed"
+        );
+
         // Execute through native API
-        let execution_result = orchestrator.execute(&package).map_err(|e| {
-            EngineProcessError::Spawn {
-                message: format!("Native execution failed: {}", e),
-                telemetry_report: None,
-            }
-        })?;
+        let exec_start = Instant::now();
+        let execution_result = {
+            let _exec_span = tracing::info_span!(
+                "engine_execution",
+                execution_mode = "native",
+                phase = "execution"
+            ).entered();
+
+            orchestrator.execute(&package).map_err(|e| {
+                EngineProcessError::Spawn {
+                    message: format!("Native execution failed: {}", e),
+                    telemetry_report: None,
+                }
+            })
+        }?;
+
+        let exec_duration = exec_start.elapsed();
+        tracing::info!(
+            execution_mode = "native",
+            phase = "execution",
+            duration_ms = exec_duration.as_millis() as u64,
+            "Native engine execution completed"
+        );
 
         // Convert native execution result to Output format for compatibility
-        let stdout = serde_json::to_string(&execution_result).unwrap_or_else(|_|
-            format!("Native execution completed: {:?}", execution_result)
-        );
+        let stdout = format!("Native execution completed: {:?}", execution_result);
 
         // Create a synthetic success status - we'll use a helper command for this
         let synthetic_output = std::process::Command::new("true").output().map_err(|e| {
@@ -1163,7 +1201,21 @@ impl EngineDispatcher {
         cmd: &mut Command,
         telemetry_handle: TelemetryRuntimeHandle,
     ) -> std::result::Result<(Output, TelemetryRuntimeReport), EngineProcessError> {
-        match run_command_capture_output(cmd) {
+        let _span = tracing::info_span!(
+            "engine_execution",
+            execution_mode = "external",
+            phase = "execution"
+        ).entered();
+
+        let exec_start = Instant::now();
+
+        tracing::info!(
+            execution_mode = "external",
+            phase = "execution",
+            "Starting external engine process"
+        );
+
+        let result = match run_command_capture_output(cmd) {
             Ok(output) => {
                 let report = telemetry_handle
                     .stop_and_join(ShutdownReason::EngineExit {
@@ -1526,6 +1578,39 @@ mod tests {
         );
         assert!(fallback_runtime_policy_error(Profile::Balanced, true, app).is_none());
         assert!(fallback_runtime_policy_error(Profile::LegacyRisky, true, app).is_none());
+    }
+
+    #[test]
+    #[cfg(not(feature = "engine"))]
+    fn strict_profile_rejects_external_process_fallback_when_engine_feature_disabled() {
+        let temp_dir = tempfile::TempDir::new().expect("tempdir");
+        let app = temp_dir.path().join("app.js");
+        std::fs::write(&app, "console.log('hello');").expect("write app");
+
+        let engine_bin = temp_dir.path().join("franken-engine");
+        write_fake_executable(&engine_bin);
+
+        let mut config = Config::default();
+        config.profile = Profile::Strict;
+
+        let dispatcher = EngineDispatcher::new(
+            Some(engine_bin.to_path_buf()),
+            PreferredRuntime::FrankenEngine,
+        );
+
+        let telemetry_bridge = TelemetryBridge::null();
+        let result = dispatcher.dispatch_run(&app, &config, &telemetry_bridge);
+
+        assert!(result.is_err(), "Strict profile should reject external process fallback when engine feature is disabled");
+        let error = result.unwrap_err().to_string();
+        assert!(
+            error.contains("Native engine required for strict profile"),
+            "Error should mention native engine requirement, got: {error}"
+        );
+        assert!(
+            error.contains("rebuild with --features engine"),
+            "Error should suggest rebuilding with engine feature, got: {error}"
+        );
     }
 
     #[test]
