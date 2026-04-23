@@ -952,6 +952,15 @@ impl EngineDispatcher {
         config: &Config,
         policy_mode: &str,
     ) -> Result<RunDispatchReport> {
+        // Validate policy_mode to prevent command injection via unsanitized input
+        const VALID_POLICY_MODES: &[&str] = &["strict", "balanced", "legacy-risky"];
+        if !VALID_POLICY_MODES.contains(&policy_mode) {
+            return Err(crate::ActionableError::new(
+                format!("Invalid policy mode '{}'. Must be one of: strict, balanced, legacy-risky", policy_mode),
+                "Use a valid policy mode: --policy strict, --policy balanced, or --policy legacy-risky"
+            ).into());
+        }
+
         // Precedence: explicit runtime selection > CLI --engine-bin > FRANKEN_ENGINE_BIN env > config [engine].binary_path > candidates.
         let env_override = std::env::var("FRANKEN_ENGINE_BIN").ok();
         let config_path = config.engine.binary_path.as_deref();
