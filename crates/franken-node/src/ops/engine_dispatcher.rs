@@ -1951,14 +1951,6 @@ impl EngineDispatcher {
         Ok(caps)
     }
 
-    /// Test helper: expose map_profile_to_capabilities for conformance testing
-    ///
-    /// WARNING: This bypasses validation! Use get_validated_capabilities_for_tests() instead
-    /// to maintain trust boundary consistency.
-    #[cfg(feature = "engine")]
-    pub fn map_profile_to_capabilities_for_tests(profile: Profile) -> Vec<String> {
-        Self::map_profile_to_capabilities(profile)
-    }
 
     /// Test helper: expose validate_capabilities for conformance testing
     #[cfg(feature = "engine")]
