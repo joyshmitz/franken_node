@@ -309,13 +309,17 @@ fn validate_declared_input_refs(capsule: &ReplayCapsule) -> Result<(), CapsuleEr
 }
 
 fn validate_verifier_identity(verifier_identity: &str) -> Result<(), CapsuleError> {
-    let normalized = verifier_identity.trim();
-    let Some(remainder) = normalized.strip_prefix("verifier://") else {
+    if verifier_identity != verifier_identity.trim() {
+        return Err(CapsuleError::AccessDenied(
+            "verifier_identity must not contain leading or trailing whitespace".into(),
+        ));
+    }
+    let Some(remainder) = verifier_identity.strip_prefix("verifier://") else {
         return Err(CapsuleError::AccessDenied(
             "verifier_identity must use the external verifier:// scheme".into(),
         ));
     };
-    if remainder.is_empty() {
+    if remainder.trim().is_empty() || remainder != remainder.trim() {
         return Err(CapsuleError::AccessDenied(
             "verifier_identity must include a non-empty verifier name".into(),
         ));
@@ -1109,6 +1113,34 @@ mod tests {
                     "Expected AccessDenied for empty verifier name '{identity}', got {other:?}"
                 ),
             }
+        }
+    }
+
+    #[test]
+    fn negative_replay_rejects_leading_whitespace_padded_verifier_identity() {
+        let capsule = build_reference_capsule();
+
+        match replay(&capsule, " verifier://offline-verifier") {
+            Err(CapsuleError::AccessDenied(msg)) => {
+                assert!(msg.contains("leading or trailing whitespace"));
+            }
+            other => panic!(
+                "Expected AccessDenied for leading-whitespace verifier identity, got {other:?}"
+            ),
+        }
+    }
+
+    #[test]
+    fn negative_replay_rejects_trailing_whitespace_padded_verifier_identity() {
+        let capsule = build_reference_capsule();
+
+        match replay(&capsule, "verifier://offline-verifier ") {
+            Err(CapsuleError::AccessDenied(msg)) => {
+                assert!(msg.contains("leading or trailing whitespace"));
+            }
+            other => panic!(
+                "Expected AccessDenied for trailing-whitespace verifier identity, got {other:?}"
+            ),
         }
     }
 
