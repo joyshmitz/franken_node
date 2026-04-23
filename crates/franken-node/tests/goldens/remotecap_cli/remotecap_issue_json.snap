@@ -1,0 +1,37 @@
+---
+source: crates/franken-node/tests/remotecap_cli_e2e.rs
+---
+{
+  "token": {
+    "token_id": "[token-id]",
+    "issuer_identity": "operator-cli",
+    "issued_at_epoch_secs": 0,
+    "expires_at_epoch_secs": 0,
+    "scope": {
+      "operations": [
+        "network_egress",
+        "telemetry_export"
+      ],
+      "endpoint_prefixes": [
+        "https://api.example.com",
+        "https://metrics.example.com"
+      ]
+    },
+    "signature": "[signature]",
+    "single_use": false
+  },
+  "audit_event": {
+    "event_code": "REMOTECAP_ISSUED",
+    "legacy_event_code": "RC_CAP_GRANTED",
+    "token_id": "[token-id]",
+    "issuer_identity": "operator-cli",
+    "operation": null,
+    "endpoint": null,
+    "trace_id": "trace-cli-remotecap",
+    "timestamp_epoch_secs": 0,
+    "allowed": true,
+    "denial_code": null
+  },
+  "ttl_secs": 3600,
+  "issued_at_epoch_secs": 0
+}

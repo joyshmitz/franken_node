@@ -4,8 +4,10 @@
 //! to verify capability token issuance, validation, and error handling.
 
 use assert_cmd::Command;
+use insta::{Settings, assert_json_snapshot};
 use serde_json::Value;
 use std::fs;
+use std::path::Path;
 use tempfile::TempDir;
 
 const BINARY_UNDER_TEST: &str = env!("CARGO_BIN_EXE_franken-node");
@@ -28,6 +30,44 @@ fn write_json(path: &std::path::Path, value: &Value) {
         serde_json::to_vec_pretty(value).expect("serialize json"),
     )
     .expect("write json");
+}
+
+fn with_json_snapshot_settings<R>(assertion: impl FnOnce() -> R) -> R {
+    let mut settings = Settings::clone_current();
+    settings.set_snapshot_path(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/goldens/remotecap_cli"),
+    );
+    settings.set_prepend_module_to_snapshot(false);
+    settings.set_omit_expression(true);
+    settings.bind(assertion)
+}
+
+fn canonicalize_remotecap_json(mut value: Value) -> Value {
+    fn scrub(value: &mut Value) {
+        match value {
+            Value::Array(items) => {
+                for item in items {
+                    scrub(item);
+                }
+            }
+            Value::Object(map) => {
+                for (key, nested) in map {
+                    match key.as_str() {
+                        "token_id" => *nested = Value::String("[token-id]".to_string()),
+                        "signature" => *nested = Value::String("[signature]".to_string()),
+                        "issued_at_epoch_secs"
+                        | "expires_at_epoch_secs"
+                        | "timestamp_epoch_secs" => *nested = Value::from(0),
+                        _ => scrub(nested),
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    scrub(&mut value);
+    value
 }
 
 fn issue_token(workspace: &TempDir) -> Value {
@@ -132,7 +172,8 @@ fn remotecap_issue_success() {
         .arg("1h")
         .arg("--operator-approved")
         .arg("--json")
-        .current_dir(workspace_path);
+        .current_dir(workspace_path)
+        .env("FRANKEN_NODE_REMOTECAP_KEY", "remotecap-cli-e2e-key");
 
     let result = cmd.assert().success();
     let output = result.get_output();
@@ -155,6 +196,10 @@ fn remotecap_issue_success() {
         .unwrap();
     assert!(endpoints.contains(&Value::String("https://api.example.com".to_string())));
     assert!(endpoints.contains(&Value::String("https://metrics.example.com".to_string())));
+
+    with_json_snapshot_settings(|| {
+        assert_json_snapshot!("remotecap_issue_json", canonicalize_remotecap_json(json));
+    });
 }
 
 #[test]
