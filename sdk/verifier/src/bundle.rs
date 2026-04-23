@@ -144,6 +144,10 @@ pub enum BundleError {
     InvalidArtifactPath {
         path: String,
     },
+    NonCanonicalField {
+        field: &'static str,
+        actual: String,
+    },
     ChunkPayloadLengthMismatch {
         artifact_path: String,
         expected: u64,
@@ -246,6 +250,10 @@ impl fmt::Display for BundleError {
             Self::InvalidArtifactPath { path } => {
                 write!(formatter, "replay bundle artifact path is invalid: {path}")
             }
+            Self::NonCanonicalField { field, actual } => write!(
+                formatter,
+                "replay bundle field {field} must not contain surrounding whitespace: got {actual}"
+            ),
             Self::ChunkPayloadLengthMismatch {
                 artifact_path,
                 expected,
@@ -477,11 +485,11 @@ fn validate_structure(bundle: &ReplayBundle) -> Result<(), BundleError> {
     }
     validate_hash_algorithm(&bundle.header.hash_algorithm)?;
     validate_hash_algorithm(&bundle.signature.algorithm)?;
-    validate_nonempty("bundle_id", &bundle.bundle_id)?;
-    validate_nonempty("incident_id", &bundle.incident_id)?;
+    validate_canonical_text("bundle_id", &bundle.bundle_id)?;
+    validate_canonical_text("incident_id", &bundle.incident_id)?;
     validate_nonempty("created_at", &bundle.created_at)?;
     parse_rfc3339_timestamp("created_at", &bundle.created_at)?;
-    validate_nonempty("policy_version", &bundle.policy_version)?;
+    validate_canonical_text("policy_version", &bundle.policy_version)?;
     validate_nonempty("verifier_identity", &bundle.verifier_identity)?;
     validate_verifier_identity(&bundle.verifier_identity)?;
     validate_nonempty("integrity_hash", &bundle.integrity_hash)?;
@@ -499,11 +507,11 @@ fn validate_structure(bundle: &ReplayBundle) -> Result<(), BundleError> {
     let mut previous_sequence = None;
     let mut previous_timestamp: Option<(DateTime<FixedOffset>, &str)> = None;
     for event in &bundle.timeline {
-        validate_nonempty("timeline.event_id", &event.event_id)?;
+        validate_canonical_text("timeline.event_id", &event.event_id)?;
         validate_nonempty("timeline.timestamp", &event.timestamp)?;
         let parsed_timestamp = parse_rfc3339_timestamp("timeline.timestamp", &event.timestamp)?;
-        validate_nonempty("timeline.event_type", &event.event_type)?;
-        validate_nonempty("timeline.policy_version", &event.policy_version)?;
+        validate_canonical_text("timeline.event_type", &event.event_type)?;
+        validate_canonical_text("timeline.policy_version", &event.policy_version)?;
         if event.policy_version != bundle.policy_version {
             return Err(BundleError::EventPolicyVersionMismatch {
                 bundle_policy_version: bundle.policy_version.clone(),
@@ -725,6 +733,17 @@ fn validate_nonempty(field: &'static str, value: &str) -> Result<(), BundleError
     } else {
         Ok(())
     }
+}
+
+fn validate_canonical_text(field: &'static str, value: &str) -> Result<(), BundleError> {
+    validate_nonempty(field, value)?;
+    if value.trim() != value {
+        return Err(BundleError::NonCanonicalField {
+            field,
+            actual: value.to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn parse_rfc3339_timestamp(
@@ -1037,6 +1056,55 @@ mod tests {
             err,
             BundleError::InvalidTimestamp { field, actual }
                 if field == "timeline.timestamp" && actual == "tomorrow-ish"
+        ));
+    }
+
+    #[test]
+    fn verify_rejects_whitespace_padded_bundle_id() {
+        let mut bundle = make_test_bundle("verifier://alpha");
+        bundle.bundle_id = " bundle-alpha ".to_string();
+        seal(&mut bundle).expect("test bundle should reseal");
+        let bytes = serialize(&bundle).expect("test bundle should serialize");
+
+        let err = verify(&bytes).expect_err("whitespace-padded bundle_id must fail closed");
+
+        assert!(matches!(
+            err,
+            BundleError::NonCanonicalField { field, actual }
+                if field == "bundle_id" && actual == " bundle-alpha "
+        ));
+    }
+
+    #[test]
+    fn verify_rejects_whitespace_padded_timeline_event_id() {
+        let mut bundle = make_test_bundle("verifier://alpha");
+        bundle.timeline[0].event_id = " evt-1 ".to_string();
+        seal(&mut bundle).expect("test bundle should reseal");
+        let bytes = serialize(&bundle).expect("test bundle should serialize");
+
+        let err = verify(&bytes).expect_err("whitespace-padded timeline.event_id must fail closed");
+
+        assert!(matches!(
+            err,
+            BundleError::NonCanonicalField { field, actual }
+                if field == "timeline.event_id" && actual == " evt-1 "
+        ));
+    }
+
+    #[test]
+    fn verify_rejects_whitespace_padded_timeline_event_type() {
+        let mut bundle = make_test_bundle("verifier://alpha");
+        bundle.timeline[0].event_type = " verification.started ".to_string();
+        seal(&mut bundle).expect("test bundle should reseal");
+        let bytes = serialize(&bundle).expect("test bundle should serialize");
+
+        let err =
+            verify(&bytes).expect_err("whitespace-padded timeline.event_type must fail closed");
+
+        assert!(matches!(
+            err,
+            BundleError::NonCanonicalField { field, actual }
+                if field == "timeline.event_type" && actual == " verification.started "
         ));
     }
 
