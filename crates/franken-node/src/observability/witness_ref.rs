@@ -58,28 +58,24 @@ fn strict_replay_bundle_locator_is_safe(locator: &str) -> bool {
         .all(|component| !component.is_empty() && component != "." && component != "..")
 }
 
+fn strict_witness_id_is_safe(witness_id: &str) -> bool {
+    if witness_id.trim() != witness_id || witness_id.is_empty() {
+        return false;
+    }
+    if witness_id.len() > 1024 {
+        return false;
+    }
+    witness_id.chars().all(|ch| {
+        ch.is_ascii() && matches!(ch, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | '.')
+    })
+}
+
 /// Validate basic witness structure to prevent garbage witnesses from evicting valid ones.
 ///
 /// This is a lightweight pre-filter for `WitnessSet::add` that rejects obviously
 /// malformed witnesses before they can consume bounded capacity (bd-2qre3 fix).
 fn is_valid_witness_structure(witness: &WitnessRef) -> bool {
-    // Reject empty witness IDs
-    if witness.witness_id.as_str().is_empty() {
-        return false;
-    }
-
-    // Reject non-canonical IDs that can mask duplicates via surrounding whitespace.
-    if witness.witness_id.as_str().trim() != witness.witness_id.as_str() {
-        return false;
-    }
-
-    // Reject witness IDs that are just whitespace
-    if witness.witness_id.as_str().trim().is_empty() {
-        return false;
-    }
-
-    // Reject excessively long witness IDs (potential DoS)
-    if witness.witness_id.as_str().len() > 1024 {
+    if !strict_witness_id_is_safe(witness.witness_id.as_str()) {
         return false;
     }
 
@@ -1626,31 +1622,37 @@ mod tests {
                 // Witness creation should work
                 assert_eq!(witness.witness_id.as_str(), *pattern);
 
-                // Should work in witness sets
+                // Unsafe IDs must be rejected before consuming witness-set capacity.
                 let mut set = WitnessSet::new();
                 set.add(witness);
-                assert_eq!(set.len(), 1);
+                assert_eq!(set.len(), 0);
                 assert!(!set.has_duplicates());
-                assert_eq!(set.refs()[0].witness_id.as_str(), *pattern);
 
-                // Should work with validation (depending on entry type)
+                // High-impact validation must fail closed when the malicious witness is dropped.
                 let high_impact_entry = make_entry(DecisionKind::Quarantine);
                 let mut validator = WitnessValidator::new();
                 let validation_result = validator.validate(&high_impact_entry, &set);
                 assert!(
-                    validation_result.is_ok(),
-                    "witness ID pattern should be accepted: {}",
+                    validation_result.is_err(),
+                    "witness ID pattern should be rejected: {}",
                     pattern.escape_unicode()
                 );
 
-                // Should work with strict validation too
+                // Strict validation must fail closed too.
                 let mut strict_validator = WitnessValidator::strict();
                 let strict_result = strict_validator.validate(&high_impact_entry, &set);
                 assert!(
-                    strict_result.is_ok(),
-                    "witness ID pattern should work with strict validator: {}",
+                    strict_result.is_err(),
+                    "witness ID pattern should be rejected by strict validator: {}",
                     pattern.escape_unicode()
                 );
+
+                let entries_with_witnesses = vec![(high_impact_entry, set)];
+                let audit = WitnessValidator::coverage_audit(&entries_with_witnesses);
+                assert_eq!(audit.total_entries, 1);
+                assert_eq!(audit.high_impact_entries, 1);
+                assert_eq!(audit.high_impact_with_witnesses, 0);
+                assert!(!audit.is_complete());
             }
         }
 
