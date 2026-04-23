@@ -137,6 +137,11 @@ path = "tests/fastapi_rust_control_plane_integration.rs"
 required-features = ["test-support"]
 
 [[test]]
+name = "extension_artifact_contract_conformance"
+path = "tests/extension_artifact_contract_conformance.rs"
+required-features = ["extended-surfaces"]
+
+[[test]]
 name = "audience_token_multi_delegation"
 path = "tests/test_multi_delegation.rs"
 
