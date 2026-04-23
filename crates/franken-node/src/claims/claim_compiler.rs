@@ -754,19 +754,28 @@ mod negative_tests {
         let digest2 = "b".repeat(64);
         let digest3 = "a".repeat(64);
 
-        // Vulnerable comparison (timing attack possible)
-        let vulnerable_equal = digest1 == digest3;
-        let vulnerable_not_equal = digest1 == digest2;
-
-        // Secure comparison (constant-time)
+        // Use secure constant-time comparison for all digest verification
         let secure_equal = constant_time::ct_eq(&digest1, &digest3);
         let secure_not_equal = constant_time::ct_eq(&digest1, &digest2);
 
-        // Results should match but timing characteristics differ
-        assert_eq!(vulnerable_equal, secure_equal);
-        assert_eq!(vulnerable_not_equal, secure_not_equal);
+        // Test both different and identical digest comparisons
         assert!(secure_equal, "Identical digests should be equal");
         assert!(!secure_not_equal, "Different digests should not be equal");
+
+        // Regression test: timing attack resistance for digest comparisons
+        // Test identical digests
+        let digest_a = "42".repeat(32);
+        let digest_b = "42".repeat(32);
+        assert!(constant_time::ct_eq(&digest_a, &digest_b), "Identical digests should be equal");
+
+        // Test first-char difference (timing must be constant regardless of difference position)
+        let digest_c = "43".repeat(32);
+        assert!(!constant_time::ct_eq(&digest_a, &digest_c), "Digests differing in first chars should not be equal");
+
+        // Test last-char difference (timing must be constant regardless of difference position)
+        let mut digest_d = "42".repeat(32);
+        digest_d.replace_range((digest_d.len()-2).., "43");
+        assert!(!constant_time::ct_eq(&digest_a, &digest_d), "Digests differing in last chars should not be equal");
     }
 }
 
