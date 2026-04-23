@@ -68,6 +68,11 @@ fn is_valid_witness_structure(witness: &WitnessRef) -> bool {
         return false;
     }
 
+    // Reject non-canonical IDs that can mask duplicates via surrounding whitespace.
+    if witness.witness_id.as_str().trim() != witness.witness_id.as_str() {
+        return false;
+    }
+
     // Reject witness IDs that are just whitespace
     if witness.witness_id.as_str().trim().is_empty() {
         return false;
@@ -1095,6 +1100,25 @@ mod tests {
         assert!((audit.coverage_pct - 0.0).abs() < f64::EPSILON);
     }
 
+    #[test]
+    fn witness_set_rejects_duplicate_evasion_with_surrounding_whitespace() {
+        let mut set = WitnessSet::new();
+        set.add(make_witness("WIT-001", WitnessKind::Telemetry));
+        set.add(make_witness(" WIT-001 ", WitnessKind::ProofArtifact));
+
+        assert_eq!(set.len(), 1);
+        assert_eq!(set.refs()[0].witness_id.as_str(), "WIT-001");
+
+        let entries = vec![(make_entry(DecisionKind::Escalate), set)];
+        let audit = WitnessValidator::coverage_audit(&entries);
+
+        assert_eq!(audit.high_impact_entries, 1);
+        assert_eq!(audit.high_impact_with_witnesses, 1);
+        assert_eq!(audit.total_witnesses, 1);
+        assert_eq!(audit.witness_kind_counts.get("telemetry"), Some(&1));
+        assert_eq!(audit.witness_kind_counts.get("proof_artifact"), None);
+    }
+
     // ── All three high-impact kinds require witnesses ──
 
     #[test]
@@ -1529,6 +1553,10 @@ mod tests {
             let whitespace_id =
                 WitnessRef::new("   \t\n   ", WitnessKind::StateSnapshot, make_hash(2));
             assert!(!is_valid_witness_structure(&whitespace_id));
+
+            // Invalid: surrounding whitespace enables duplicate-evasion attempts
+            let padded_id = WitnessRef::new(" WIT-GOOD ", WitnessKind::Telemetry, make_hash(7));
+            assert!(!is_valid_witness_structure(&padded_id));
 
             // Invalid: too long ID
             let long_id =
