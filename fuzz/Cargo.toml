@@ -34,7 +34,6 @@ features = [
     "http-client",
     "parsing",
     "external-commands",
-    "engine",
 ]
 
 [dependencies.frankenengine-verifier-sdk]

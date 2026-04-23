@@ -559,6 +559,7 @@ name = "frankenengine-verifier-sdk"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
+ "chrono",
  "ed25519-dalek",
  "hex",
  "serde",
