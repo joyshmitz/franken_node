@@ -1,0 +1,54 @@
+{
+  "schemas": {
+    "PolicyCheckpoint": {
+      "object_type": "PolicyCheckpoint",
+      "domain_tag": [16, 1],
+      "field_order": ["version", "policy_hash", "checkpoint_id", "timestamp", "signature"],
+      "version": 1
+    },
+    "DelegationToken": {
+      "object_type": "DelegationToken",
+      "domain_tag": [16, 2],
+      "field_order": ["issuer", "subject", "capabilities", "expires_at", "nonce"],
+      "version": 1
+    },
+    "RevocationAssertion": {
+      "object_type": "RevocationAssertion",
+      "domain_tag": [16, 3],
+      "field_order": ["revoked_id", "reason", "revoked_at", "authority", "evidence_hash"],
+      "version": 1
+    },
+    "SessionTicket": {
+      "object_type": "SessionTicket",
+      "domain_tag": [16, 4],
+      "field_order": ["session_id", "user_id", "issued_at", "expires_at", "scope"],
+      "version": 1
+    },
+    "ZoneBoundaryClaim": {
+      "object_type": "ZoneBoundaryClaim",
+      "domain_tag": [16, 5],
+      "field_order": ["zone_id", "boundary_hash", "claimed_at", "validator", "proof"],
+      "version": 1
+    },
+    "OperatorReceipt": {
+      "object_type": "OperatorReceipt",
+      "domain_tag": [16, 6],
+      "field_order": ["operation_id", "operator", "completed_at", "result_hash", "attestation"],
+      "version": 1
+    }
+  },
+  "invariants": {
+    "INV_CAN_DETERMINISTIC": "Same logical value produces identical bytes on every serialization call",
+    "INV_CAN_NO_FLOAT": "No IEEE 754 floating-point values in serialized trust artifacts",
+    "INV_CAN_DOMAIN_TAG": "Every signature preimage includes two-byte domain-separation tag",
+    "INV_CAN_NO_BYPASS": "All signing routes pass through CanonicalSerializer"
+  },
+  "test_requirements": {
+    "BD_JJM_SCHEMA_001": "6 trust object types registered with correct schemas",
+    "BD_JJM_ROUND_TRIP_001": "Round-trip canonical passes for all types",
+    "BD_JJM_DETERMINISM_001": "Identical inputs produce identical serialized outputs",
+    "BD_JJM_DOMAIN_TAG_001": "Domain tags are non-zero and unique per type",
+    "BD_JJM_NO_FLOAT_001": "Serializer rejects IEEE 754 floating-point payloads",
+    "BD_JJM_PREIMAGE_001": "Signature preimage construction includes domain separation"
+  }
+}

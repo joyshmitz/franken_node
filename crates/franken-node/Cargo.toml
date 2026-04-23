@@ -236,6 +236,10 @@ name = "canonical_serializer_real_inputs"
 path = "tests/canonical_serializer_real_inputs.rs"
 
 [[test]]
+name = "canonical_serializer_conformance"
+path = "tests/canonical_serializer_conformance.rs"
+
+[[test]]
 name = "category_shift_real_inputs"
 path = "tests/category_shift_real_inputs.rs"
 
@@ -387,6 +391,10 @@ required-features = ["test-support"]
 [[test]]
 name = "trust_cli_e2e_real_node_runtime"
 path = "tests/trust_cli_e2e_real_node_runtime.rs"
+
+[[test]]
+name = "artifact_signing_golden_tests"
+path = "tests/artifact_signing_golden_tests.rs"
 
 [[bench]]
 name = "cuckoo_revocation_bench"
