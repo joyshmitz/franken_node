@@ -587,11 +587,7 @@ fn validate_artifacts(bundle: &ReplayBundle) -> Result<(), BundleError> {
         validate_nonempty("artifacts.media_type", &artifact.media_type)?;
         validate_nonempty("artifacts.digest", &artifact.digest)?;
         validate_nonempty("artifacts.bytes_hex", &artifact.bytes_hex)?;
-        let bytes =
-            hex::decode(&artifact.bytes_hex).map_err(|source| BundleError::InvalidArtifactHex {
-                path: path.clone(),
-                source: source.to_string(),
-            })?;
+        let bytes = decode_canonical_artifact_hex(path, &artifact.bytes_hex)?;
         let actual = hash(&bytes);
         if !constant_time_eq(&artifact.digest, &actual) {
             return Err(BundleError::ArtifactDigestMismatch {
@@ -664,11 +660,7 @@ fn validate_chunks(bundle: &ReplayBundle) -> Result<(), BundleError> {
                 path: chunk.artifact_path.clone(),
             }
         })?;
-        let bytes =
-            hex::decode(&artifact.bytes_hex).map_err(|source| BundleError::InvalidArtifactHex {
-                path: chunk.artifact_path.clone(),
-                source: source.to_string(),
-            })?;
+        let bytes = decode_canonical_artifact_hex(&chunk.artifact_path, &artifact.bytes_hex)?;
         let actual_payload_length =
             u64::try_from(bytes.len()).map_err(|_| BundleError::ChunkPayloadLengthMismatch {
                 artifact_path: chunk.artifact_path.clone(),
@@ -696,11 +688,7 @@ fn validate_chunks(bundle: &ReplayBundle) -> Result<(), BundleError> {
 fn payload_length_bytes(artifacts: &BTreeMap<String, BundleArtifact>) -> Result<u64, BundleError> {
     let mut total = 0_u64;
     for (path, artifact) in artifacts {
-        let bytes =
-            hex::decode(&artifact.bytes_hex).map_err(|source| BundleError::InvalidArtifactHex {
-                path: path.clone(),
-                source: source.to_string(),
-            })?;
+        let bytes = decode_canonical_artifact_hex(path, &artifact.bytes_hex)?;
         let length =
             u64::try_from(bytes.len()).map_err(|_| BundleError::PayloadLengthMismatch {
                 expected: u64::MAX,
@@ -733,6 +721,26 @@ fn validate_nonempty(field: &'static str, value: &str) -> Result<(), BundleError
     } else {
         Ok(())
     }
+}
+
+fn decode_canonical_artifact_hex(path: &str, bytes_hex: &str) -> Result<Vec<u8>, BundleError> {
+    if !is_canonical_lower_hex(bytes_hex) {
+        return Err(BundleError::InvalidArtifactHex {
+            path: path.to_string(),
+            source: "artifact bytes_hex must use canonical lowercase hex".to_string(),
+        });
+    }
+    hex::decode(bytes_hex).map_err(|source| BundleError::InvalidArtifactHex {
+        path: path.to_string(),
+        source: source.to_string(),
+    })
+}
+
+fn is_canonical_lower_hex(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 fn validate_canonical_text(field: &'static str, value: &str) -> Result<(), BundleError> {
@@ -1008,6 +1016,24 @@ mod tests {
         assert!(matches!(
             err,
             BundleError::InvalidArtifactPath { path } if path == "artifacts/replay.json "
+        ));
+    }
+
+    #[test]
+    fn verify_rejects_uppercase_artifact_bytes_hex() {
+        let mut bundle = make_test_bundle("verifier://alpha");
+        bundle.artifacts.get_mut("artifacts/replay.json").expect("fixture artifact must exist").bytes_hex =
+            "62756E646C652D4152544946414354".to_string();
+        seal(&mut bundle).expect("test bundle should reseal");
+        let bytes = serialize(&bundle).expect("test bundle should serialize");
+
+        let err = verify(&bytes).expect_err("uppercase artifact bytes_hex must fail closed");
+
+        assert!(matches!(
+            err,
+            BundleError::InvalidArtifactHex { path, source }
+                if path == "artifacts/replay.json"
+                    && source.contains("canonical lowercase hex")
         ));
     }
 
