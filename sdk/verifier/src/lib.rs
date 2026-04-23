@@ -43,7 +43,11 @@
 //! - INV-CAPSULE-NO-PRIVILEGED-ACCESS: External replay requires no privileged internal access.
 //! - INV-CAPSULE-VERDICT-REPRODUCIBLE: Same capsule always produces the same verdict.
 
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::BTreeMap,
+    fmt,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
@@ -238,17 +242,19 @@ pub struct SessionStep {
     pub verdict: VerificationVerdict,
     pub artifact_binding_hash: String,
     pub timestamp: String,
+    pub step_signature: String,
 }
 
 /// Stateful multi-step verification workflow.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct VerificationSession {
     pub session_id: String,
     pub verifier_identity: String,
     pub created_at: String,
-    pub steps: Vec<SessionStep>,
+    steps: Vec<SessionStep>,
     pub sealed: bool,
     pub final_verdict: Option<VerificationVerdict>,
+    session_nonce: String,
 }
 
 /// Error returned by the stable verifier facade.
@@ -260,6 +266,12 @@ pub enum VerifierSdkError {
     EmptyTrustAnchor,
     SessionSealed(String),
     SessionVerifierMismatch { expected: String, actual: String },
+    SessionStepSequenceMismatch { expected: usize, actual: usize },
+    SessionStepSignatureMismatch {
+        step_index: usize,
+        expected: String,
+        actual: String,
+    },
     ResultSignatureMismatch { expected: String, actual: String },
     Json(String),
 }
@@ -277,6 +289,18 @@ impl fmt::Display for VerifierSdkError {
             Self::SessionVerifierMismatch { expected, actual } => write!(
                 formatter,
                 "verification session verifier mismatch: expected={expected}, actual={actual}"
+            ),
+            Self::SessionStepSequenceMismatch { expected, actual } => write!(
+                formatter,
+                "verification session step sequence mismatch: expected={expected}, actual={actual}"
+            ),
+            Self::SessionStepSignatureMismatch {
+                step_index,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "verification session step signature mismatch at index {step_index}: expected={expected}, actual={actual}"
             ),
             Self::ResultSignatureMismatch { expected, actual } => write!(
                 formatter,
@@ -302,6 +326,9 @@ impl From<bundle::BundleError> for VerifierSdkError {
 }
 
 const FACADE_TIMESTAMP: &str = "2026-02-21T00:00:00Z";
+const SESSION_STEP_SIGNATURE_DOMAIN: &[u8] = b"frankenengine-verifier-sdk:session-step:v1:";
+const SESSION_NONCE_DOMAIN: &[u8] = b"frankenengine-verifier-sdk:session-nonce:v1:";
+static SESSION_NONCE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// Top-level facade for external verifier integrations.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -481,13 +508,21 @@ impl VerifierSdk {
 
     /// Create a new unsealed verification session.
     pub fn create_session(&self, session_id: impl Into<String>) -> VerificationSession {
+        let session_id = session_id.into();
+        let created_at = FACADE_TIMESTAMP.to_string();
         VerificationSession {
-            session_id: session_id.into(),
+            session_id: session_id.clone(),
             verifier_identity: self.verifier_identity.clone(),
-            created_at: FACADE_TIMESTAMP.to_string(),
+            created_at: created_at.clone(),
             steps: Vec::new(),
             sealed: false,
             final_verdict: None,
+            session_nonce: derive_session_nonce(
+                &session_id,
+                &self.verifier_identity,
+                &created_at,
+                SESSION_NONCE_COUNTER.fetch_add(1, Ordering::Relaxed),
+            ),
         }
     }
 
@@ -519,6 +554,11 @@ impl VerifierSdk {
             verdict: result.verdict.clone(),
             artifact_binding_hash: result.artifact_binding_hash.clone(),
             timestamp: FACADE_TIMESTAMP.to_string(),
+            step_signature: String::new(),
+        };
+        let step = SessionStep {
+            step_signature: session_step_signature(session, &step)?,
+            ..step
         };
         session.steps.push(step.clone());
         Ok(step)
@@ -537,6 +577,22 @@ impl VerifierSdk {
                 expected: self.verifier_identity.clone(),
                 actual: session.verifier_identity.clone(),
             });
+        }
+        for (expected_index, step) in session.steps.iter().enumerate() {
+            if step.step_index != expected_index {
+                return Err(VerifierSdkError::SessionStepSequenceMismatch {
+                    expected: expected_index,
+                    actual: step.step_index,
+                });
+            }
+            let expected_signature = session_step_signature(session, step)?;
+            if !constant_time_eq(&step.step_signature, &expected_signature) {
+                return Err(VerifierSdkError::SessionStepSignatureMismatch {
+                    step_index: step.step_index,
+                    expected: expected_signature,
+                    actual: step.step_signature.clone(),
+                });
+            }
         }
         let verdict = if session.steps.is_empty() {
             VerificationVerdict::Inconclusive
@@ -627,6 +683,12 @@ impl VerifierSdk {
     }
 }
 
+impl VerificationSession {
+    pub fn steps(&self) -> &[SessionStep] {
+        &self.steps
+    }
+}
+
 /// Create a top-level SDK facade instance.
 pub fn create_verifier_sdk(verifier_identity: impl Into<String>) -> VerifierSdk {
     VerifierSdk::new(verifier_identity)
@@ -657,6 +719,66 @@ fn facade_result_signature(result: &VerificationResult) -> Result<String, Verifi
     })
     .map_err(|source| VerifierSdkError::Json(source.to_string()))?;
     Ok(bundle::hash(&payload))
+}
+
+fn derive_session_nonce(
+    session_id: &str,
+    verifier_identity: &str,
+    created_at: &str,
+    counter: u64,
+) -> String {
+    let mut payload = Vec::new();
+    push_length_prefixed(&mut payload, SESSION_NONCE_DOMAIN);
+    push_length_prefixed(&mut payload, session_id.as_bytes());
+    push_length_prefixed(&mut payload, verifier_identity.as_bytes());
+    push_length_prefixed(&mut payload, created_at.as_bytes());
+    payload.extend_from_slice(&counter.to_le_bytes());
+    bundle::hash(&payload)
+}
+
+fn session_step_signature(
+    session: &VerificationSession,
+    step: &SessionStep,
+) -> Result<String, VerifierSdkError> {
+    #[derive(Serialize)]
+    struct SessionStepSignatureView<'a> {
+        session_id: &'a str,
+        verifier_identity: &'a str,
+        created_at: &'a str,
+        session_nonce: &'a str,
+        step_index: usize,
+        operation: &'a VerificationOperation,
+        verdict: &'a VerificationVerdict,
+        artifact_binding_hash: &'a str,
+        timestamp: &'a str,
+    }
+
+    let payload = serde_json::to_vec(&SessionStepSignatureView {
+        session_id: &session.session_id,
+        verifier_identity: &session.verifier_identity,
+        created_at: &session.created_at,
+        session_nonce: &session.session_nonce,
+        step_index: step.step_index,
+        operation: &step.operation,
+        verdict: &step.verdict,
+        artifact_binding_hash: &step.artifact_binding_hash,
+        timestamp: &step.timestamp,
+    })
+    .map_err(|source| VerifierSdkError::Json(source.to_string()))?;
+
+    let mut envelope = Vec::new();
+    push_length_prefixed(&mut envelope, SESSION_STEP_SIGNATURE_DOMAIN);
+    envelope.extend_from_slice(&payload);
+    Ok(bundle::hash(&envelope))
+}
+
+fn push_length_prefixed(buffer: &mut Vec<u8>, bytes: &[u8]) {
+    buffer.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
+    buffer.extend_from_slice(bytes);
+}
+
+fn constant_time_eq(left: &str, right: &str) -> bool {
+    bool::from(left.as_bytes().ct_eq(right.as_bytes()))
 }
 
 #[cfg(test)]
@@ -756,8 +878,9 @@ mod tests {
 
         assert_eq!(step.step_index, 0);
         assert_eq!(step.verdict, VerificationVerdict::Pass);
-        assert_eq!(session.steps.len(), 1);
-        assert_eq!(session.steps[0].artifact_binding_hash, "artifact-hash-alpha");
+        assert_eq!(session.steps().len(), 1);
+        assert_eq!(session.steps()[0].artifact_binding_hash, "artifact-hash-alpha");
+        assert!(!session.steps()[0].step_signature.is_empty());
     }
 
     #[test]
@@ -786,7 +909,7 @@ mod tests {
             err,
             VerifierSdkError::SessionVerifierMismatch { .. }
         ));
-        assert!(session.steps.is_empty());
+        assert!(session.steps().is_empty());
     }
 
     #[test]
@@ -845,6 +968,45 @@ mod tests {
         ));
         assert!(!foreign_session.sealed);
         assert!(foreign_session.final_verdict.is_none());
+    }
+
+    #[test]
+    fn seal_session_rejects_tampered_or_forged_steps() {
+        let sdk = create_verifier_sdk("verifier-alpha");
+        let result = sdk
+            .build_result(
+                VerificationOperation::Claim,
+                VerificationVerdict::Pass,
+                vec![AssertionResult {
+                    assertion: "capsule_replay_verified".to_string(),
+                    passed: true,
+                    detail: "same verifier".to_string(),
+                }],
+                "artifact-hash-alpha".to_string(),
+            )
+            .expect("result should build");
+        let mut session = sdk.create_session("session-alpha");
+        sdk.record_session_step(&mut session, &result)
+            .expect("valid recorded step should succeed");
+        session.steps.push(SessionStep {
+            step_index: 1,
+            operation: VerificationOperation::Claim,
+            verdict: VerificationVerdict::Pass,
+            artifact_binding_hash: "artifact-hash-forged".to_string(),
+            timestamp: FACADE_TIMESTAMP.to_string(),
+            step_signature: "forged-step-signature".to_string(),
+        });
+
+        let err = sdk
+            .seal_session(&mut session)
+            .expect_err("forged step must be rejected during seal");
+
+        assert!(matches!(
+            err,
+            VerifierSdkError::SessionStepSignatureMismatch { step_index: 1, .. }
+        ));
+        assert!(!session.sealed);
+        assert!(session.final_verdict.is_none());
     }
 
     #[test]

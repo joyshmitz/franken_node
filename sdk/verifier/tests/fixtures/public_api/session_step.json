@@ -3,5 +3,6 @@
   "operation": "claim",
   "verdict": "pass",
   "artifact_binding_hash": "sha256:a1b2c3d4e5f6789012345678901234567890abcdef",
-  "timestamp": "2026-04-21T12:00:00Z"
+  "timestamp": "2026-04-21T12:00:00Z",
+  "step_signature": "sha256:session-step-signature-fixture"
 }

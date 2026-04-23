@@ -91,13 +91,14 @@
     },
     {
       "name": "SessionStep",
-      "required_fields": ["step_index", "operation", "verdict", "artifact_binding_hash", "timestamp"],
+      "required_fields": ["step_index", "operation", "verdict", "artifact_binding_hash", "timestamp", "step_signature"],
       "field_types": {
         "step_index": "u32",
         "operation": "VerificationOperation",
         "verdict": "VerificationVerdict",
         "artifact_binding_hash": "String",
-        "timestamp": "String"
+        "timestamp": "String",
+        "step_signature": "String"
       },
       "requirement_level": "must"
     },

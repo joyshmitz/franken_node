@@ -205,6 +205,7 @@ fn test_session_step_json_shape() -> Result<(), String> {
         verdict: VerificationVerdict::Pass,
         artifact_binding_hash: "abc123".to_string(),
         timestamp: "2026-04-21T12:00:00Z".to_string(),
+        step_signature: "sig123".to_string(),
     };
 
     let json_str = serde_json::to_string_pretty(&step).unwrap();
@@ -216,6 +217,7 @@ fn test_session_step_json_shape() -> Result<(), String> {
     assert!(parsed_value.get("verdict").unwrap().is_string());
     assert!(parsed_value.get("artifact_binding_hash").unwrap().is_string());
     assert!(parsed_value.get("timestamp").unwrap().is_string());
+    assert!(parsed_value.get("step_signature").unwrap().is_string());
 
     // Test round-trip
     let roundtrip: SessionStep = serde_json::from_str(&json_str).unwrap();
