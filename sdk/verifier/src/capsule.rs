@@ -153,7 +153,10 @@ fn ct_eq_bytes(a: &[u8], b: &[u8]) -> bool {
 }
 
 fn is_sha256_hex(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Compute a deterministic hash (SHA-256, hex-encoded) with domain separator.
@@ -579,6 +582,20 @@ mod tests {
     fn test_replay_rejects_malformed_expected_hash() {
         let mut capsule = build_reference_capsule();
         capsule.manifest.expected_output_hash = "wrong_hash".to_string();
+        sign_capsule(&mut capsule);
+        match replay(&capsule, "verifier://v1") {
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("expected_output_hash"));
+                assert!(msg.contains("sha256"));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_replay_rejects_uppercase_expected_hash() {
+        let mut capsule = build_reference_capsule();
+        capsule.manifest.expected_output_hash = capsule.manifest.expected_output_hash.to_uppercase();
         sign_capsule(&mut capsule);
         match replay(&capsule, "verifier://v1") {
             Err(CapsuleError::ManifestIncomplete(msg)) => {
@@ -1160,6 +1177,7 @@ mod tests {
         assert!(!is_sha256_hex("")); // Empty string
         assert!(!is_sha256_hex("f".repeat(63).as_str())); // Too short by 1
         assert!(!is_sha256_hex("f".repeat(65).as_str())); // Too long by 1
+        assert!(!is_sha256_hex("F".repeat(64).as_str())); // Uppercase hex
         assert!(!is_sha256_hex("G".repeat(64).as_str())); // Invalid hex char
         assert!(!is_sha256_hex("Z".repeat(64).as_str())); // Invalid hex char
         assert!(!is_sha256_hex(&format!(
