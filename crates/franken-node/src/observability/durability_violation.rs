@@ -280,10 +280,14 @@ impl ViolationBundle {
     /// Serialize bundle to writer using efficient direct JSON generation.
     fn serialize_to_writer<W: std::io::Write>(&self, writer: &mut W) -> Result<(), std::io::Error> {
         write!(writer, "{{")?;
-        write!(writer, "\"bundle_id\":\"{}\",", self.bundle_id.as_str())?;
+        write!(writer, "\"bundle_id\":")?;
+        serde_json::to_writer(&mut *writer, self.bundle_id.as_str())?;
+        write!(writer, ",")?;
         write!(writer, "\"event_count\":{},", self.event_count())?;
         write!(writer, "\"artifact_count\":{},", self.artifact_count())?;
-        write!(writer, "\"hardening_level\":\"{}\",", self.hardening_level)?;
+        write!(writer, "\"hardening_level\":")?;
+        serde_json::to_writer(&mut *writer, &self.hardening_level)?;
+        write!(writer, ",")?;
         write!(writer, "\"epoch_id\":{},", self.epoch_id)?;
         write!(writer, "\"timestamp_ms\":{},", self.timestamp_ms)?;
 
@@ -1132,6 +1136,25 @@ mod tests {
         assert_eq!(
             parsed["proof_context"]["missing_proofs"][1].as_str(),
             Some("proof-\"zzz\"")
+        );
+    }
+
+    #[test]
+    fn bundle_to_json_escapes_top_level_strings() {
+        let mut ctx = make_context();
+        ctx.hardening_level = "critical \"quoted\"\nlevel".into();
+
+        let bundle = generate_bundle(&ctx);
+        let json = bundle.to_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("should succeed");
+
+        assert_eq!(
+            parsed["bundle_id"].as_str(),
+            Some(bundle.bundle_id.as_str())
+        );
+        assert_eq!(
+            parsed["hardening_level"].as_str(),
+            Some("critical \"quoted\"\nlevel")
         );
     }
 
