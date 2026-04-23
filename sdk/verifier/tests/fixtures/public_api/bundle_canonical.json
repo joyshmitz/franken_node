@@ -25,7 +25,6 @@
         "epoch": 7,
         "trust_state": "anchored"
       },
-      "causal_parent": null,
       "policy_version": "strict@2026-04-21"
     }
   ],
@@ -53,9 +52,9 @@
     }
   ],
   "metadata": {},
-  "integrity_hash": "18094c23182386f8fe8f36836ccb6be5e0e2d5621d2b0e186343d53f08aab0f3",
+  "integrity_hash": "56850137b9bb37b5168aa8cea07ed06cbdb112955f299252d08ad554a409ed64",
   "signature": {
     "algorithm": "sha256",
-    "signature_hex": "6e80133645a284708945ad128e93661a1cadfaace2a35415b1db939ee73c9180"
+    "signature_hex": "d692c9f0f94c95ff9320960288ac88028f16b08a2ab290c18496bcec5f3711bb"
   }
 }

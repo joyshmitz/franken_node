@@ -12,9 +12,9 @@
 //! | Error Codes | 6 | 0 | 6 | 6 | 100% |
 //! | Invariants | 4 | 0 | 4 | 4 | 100% |
 //! | Capsule Format | 8 | 2 | 10 | 10 | 100% |
-//! | Bundle Format | 12 | 3 | 15 | 15 | 100% |
+//! | Bundle Format | 13 | 3 | 16 | 16 | 100% |
 //! | SDK Interface | 11 | 1 | 12 | 12 | 100% |
-//! | **TOTAL** | **51** | **6** | **57** | **57** | **100%** |
+//! | **TOTAL** | **52** | **6** | **58** | **58** | **100%** |
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -353,19 +353,26 @@ const CONFORMANCE_CASES: &[ConformanceCase] = &[
     ConformanceCase {
         id: "VSDK-BUNDLE-6.13",
         section: "bundle",
+        level: RequirementLevel::Must,
+        description: "Checked-in canonical bundle fixture must round-trip through live verification",
+        test_fn: test_bundle_canonical_fixture_roundtrip_verifies,
+    },
+    ConformanceCase {
+        id: "VSDK-BUNDLE-6.14",
+        section: "bundle",
         level: RequirementLevel::Should,
         description: "Bundle compression should be supported",
         test_fn: test_bundle_compression_metadata_supported,
     },
     ConformanceCase {
-        id: "VSDK-BUNDLE-6.14",
+        id: "VSDK-BUNDLE-6.15",
         section: "bundle",
         level: RequirementLevel::Should,
         description: "Bundle chunking should handle large artifacts",
         test_fn: test_bundle_chunking_handles_multiple_artifacts,
     },
     ConformanceCase {
-        id: "VSDK-BUNDLE-6.15",
+        id: "VSDK-BUNDLE-6.16",
         section: "bundle",
         level: RequirementLevel::Should,
         description: "Bundle timeline should maintain causal ordering",
@@ -1367,6 +1374,37 @@ fn test_bundle_tamper_detection() -> TestResult {
         Err(BundleError::ArtifactDigestMismatch { .. }) => TestResult::Pass,
         other => TestResult::Fail {
             reason: format!("artifact tampering was not rejected correctly: {other:?}"),
+        },
+    }
+}
+
+fn test_bundle_canonical_fixture_roundtrip_verifies() -> TestResult {
+    let fixture: ReplayBundle =
+        match serde_json::from_str(include_str!("fixtures/public_api/bundle_canonical.json")) {
+            Ok(bundle) => bundle,
+            Err(err) => {
+                return TestResult::Fail {
+                    reason: format!("bundle fixture parse failed: {err}"),
+                };
+            }
+        };
+
+    let canonical_bytes = match serialize(&fixture) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            return TestResult::Fail {
+                reason: format!("bundle fixture canonical serialization failed: {err}"),
+            };
+        }
+    };
+
+    match verify(&canonical_bytes) {
+        Ok(verified) if verified == fixture => TestResult::Pass,
+        Ok(verified) => TestResult::Fail {
+            reason: format!("bundle fixture round-trip drifted under verification: {verified:?}"),
+        },
+        Err(err) => TestResult::Fail {
+            reason: format!("bundle fixture did not verify against live schema: {err}"),
         },
     }
 }
