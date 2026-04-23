@@ -1,7 +1,7 @@
 # Verifier SDK Conformance Coverage Matrix
 
 > **Status**: ✅ **100% conformance** with vsdk-v1.0 specification  
-> **Last Updated**: 2026-04-20  
+> **Last Updated**: 2026-04-23  
 > **Test Suite**: `conformance_harness.rs`
 
 ## Coverage Summary
@@ -14,8 +14,8 @@
 | Invariants | 4 | 0 | 0 | 4 | 4 | 100% |
 | Capsule Format | 8 | 2 | 0 | 10 | 10 | 100% |
 | Bundle Format | 12 | 3 | 0 | 15 | 15 | 100% |
-| SDK Interface | 10 | 1 | 0 | 11 | 11 | 100% |
-| **TOTAL** | **50** | **6** | **0** | **56** | **56** | **100%** |
+| SDK Interface | 11 | 1 | 0 | 12 | 12 | 100% |
+| **TOTAL** | **51** | **6** | **0** | **57** | **57** | **100%** |
 
 ## Requirement Coverage Detail
 
@@ -100,15 +100,16 @@
 |---------|-------|-------------|--------|
 | VSDK-INTERFACE-7.1 | MUST | create_verifier_sdk must return configured VerifierSdk | ✅ PASS |
 | VSDK-INTERFACE-7.2 | MUST | verify_claim must validate capsules and return result | ✅ PASS |
-| VSDK-INTERFACE-7.3 | MUST | verify_migration_artifact must validate bundle bytes | ✅ PASS |
-| VSDK-INTERFACE-7.4 | MUST | verify_trust_state must check anchor hash match | ✅ PASS |
-| VSDK-INTERFACE-7.5 | MUST | ValidationWorkflow execution must append workflow assertions | ✅ PASS |
+| VSDK-INTERFACE-7.3 | MUST | verify_migration_artifact must fail closed on structural-only replay bundles | ✅ PASS |
+| VSDK-INTERFACE-7.4 | MUST | verify_trust_state must validate trust-anchor shape before failing closed on structural-only replay bundles | ✅ PASS |
+| VSDK-INTERFACE-7.5 | MUST | ValidationWorkflow execution must preserve structural-bundle authentication guardrails | ✅ PASS |
 | VSDK-INTERFACE-7.6 | MUST | VerificationSession must track steps and seal state | ✅ PASS |
-| VSDK-INTERFACE-7.7 | MUST | TransparencyLogEntry must provide merkle proof chain | ✅ PASS |
-| VSDK-INTERFACE-7.8 | MUST | VerificationResult must include confidence_score | ✅ PASS |
-| VSDK-INTERFACE-7.9 | MUST | Result signatures must be verifiable and deterministic | ✅ PASS |
-| VSDK-INTERFACE-7.10 | MUST | All interface methods must validate SDK version | ✅ PASS |
-| VSDK-INTERFACE-7.11 | SHOULD | Interface should provide structured error details | ✅ PASS |
+| VSDK-INTERFACE-7.7 | MUST | create_session must reject malformed session ids | ✅ PASS |
+| VSDK-INTERFACE-7.8 | MUST | TransparencyLogEntry must provide merkle proof chain | ✅ PASS |
+| VSDK-INTERFACE-7.9 | MUST | VerificationResult must include confidence_score | ✅ PASS |
+| VSDK-INTERFACE-7.10 | MUST | Result signatures must be verifiable and deterministic | ✅ PASS |
+| VSDK-INTERFACE-7.11 | MUST | All interface methods must validate SDK version | ✅ PASS |
+| VSDK-INTERFACE-7.12 | SHOULD | Interface should provide structured error details | ✅ PASS |
 
 ## Specification Source
 
@@ -131,9 +132,9 @@ This conformance harness implements **Pattern 4: Spec-Derived Test Matrix** from
 
 ### Test Coverage Accounting
 
-- **Total Requirements**: 56 (50 MUST + 6 SHOULD + 0 MAY)
-- **Tested Requirements**: 56 (100% coverage)
-- **Passing Tests**: 56 (100% conformance)
+- **Total Requirements**: 57 (51 MUST + 6 SHOULD + 0 MAY)
+- **Tested Requirements**: 57 (100% coverage)
+- **Passing Tests**: 57 (100% conformance)
 - **Expected Failures**: 0 (no known divergences)
 
 ### CI Integration

@@ -13,8 +13,8 @@
 //! | Invariants | 4 | 0 | 4 | 4 | 100% |
 //! | Capsule Format | 8 | 2 | 10 | 10 | 100% |
 //! | Bundle Format | 12 | 3 | 15 | 15 | 100% |
-//! | SDK Interface | 10 | 1 | 11 | 11 | 100% |
-//! | **TOTAL** | **50** | **6** | **56** | **56** | **100%** |
+//! | SDK Interface | 11 | 1 | 12 | 12 | 100% |
+//! | **TOTAL** | **51** | **6** | **57** | **57** | **100%** |
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -391,21 +391,21 @@ const CONFORMANCE_CASES: &[ConformanceCase] = &[
         id: "VSDK-INTERFACE-7.3",
         section: "interface",
         level: RequirementLevel::Must,
-        description: "verify_migration_artifact must validate bundle bytes",
+        description: "verify_migration_artifact must fail closed on structural-only replay bundles",
         test_fn: test_verify_migration_artifact_interface,
     },
     ConformanceCase {
         id: "VSDK-INTERFACE-7.4",
         section: "interface",
         level: RequirementLevel::Must,
-        description: "verify_trust_state must check anchor hash match",
+        description: "verify_trust_state must validate trust-anchor shape before failing closed on structural-only replay bundles",
         test_fn: test_verify_trust_state_interface,
     },
     ConformanceCase {
         id: "VSDK-INTERFACE-7.5",
         section: "interface",
         level: RequirementLevel::Must,
-        description: "ValidationWorkflow execution must append workflow assertions",
+        description: "ValidationWorkflow execution must preserve structural-bundle authentication guardrails",
         test_fn: test_workflow_execution_interface,
     },
     ConformanceCase {
@@ -419,32 +419,39 @@ const CONFORMANCE_CASES: &[ConformanceCase] = &[
         id: "VSDK-INTERFACE-7.7",
         section: "interface",
         level: RequirementLevel::Must,
+        description: "create_session must reject malformed session ids",
+        test_fn: test_session_id_validation_interface,
+    },
+    ConformanceCase {
+        id: "VSDK-INTERFACE-7.8",
+        section: "interface",
+        level: RequirementLevel::Must,
         description: "TransparencyLogEntry must provide merkle proof chain",
         test_fn: test_transparency_log_interface,
     },
     ConformanceCase {
-        id: "VSDK-INTERFACE-7.8",
+        id: "VSDK-INTERFACE-7.9",
         section: "interface",
         level: RequirementLevel::Must,
         description: "VerificationResult must include confidence_score",
         test_fn: test_verification_result_confidence,
     },
     ConformanceCase {
-        id: "VSDK-INTERFACE-7.9",
+        id: "VSDK-INTERFACE-7.10",
         section: "interface",
         level: RequirementLevel::Must,
         description: "Result signatures must be verifiable and deterministic",
         test_fn: test_result_signature_verification,
     },
     ConformanceCase {
-        id: "VSDK-INTERFACE-7.10",
+        id: "VSDK-INTERFACE-7.11",
         section: "interface",
         level: RequirementLevel::Must,
         description: "All interface methods must validate SDK version",
         test_fn: test_interface_version_validation,
     },
     ConformanceCase {
-        id: "VSDK-INTERFACE-7.11",
+        id: "VSDK-INTERFACE-7.12",
         section: "interface",
         level: RequirementLevel::Should,
         description: "Interface should provide structured error details",
@@ -1504,7 +1511,7 @@ fn test_verify_claim_interface() -> TestResult {
 
 fn test_verify_migration_artifact_interface() -> TestResult {
     let sdk = create_verifier_sdk("verifier://migration");
-    let bundle = canonical_replay_bundle();
+    let bundle = canonical_replay_bundle_with_verifier("verifier://migration");
     let bytes = match serialize(&bundle) {
         Ok(bytes) => bytes,
         Err(err) => {
@@ -1514,24 +1521,23 @@ fn test_verify_migration_artifact_interface() -> TestResult {
         }
     };
     match sdk.verify_migration_artifact(&bytes) {
-        Ok(result)
-            if result.operation == VerificationOperation::MigrationArtifact
-                && result.verdict == VerificationVerdict::Pass =>
-        {
+        Err(VerifierSdkError::UnauthenticatedStructuralBundle {
+            bundle_id,
+            verifier_identity,
+        }) if bundle_id == bundle.bundle_id && verifier_identity == bundle.verifier_identity => {
             TestResult::Pass
         }
-        Ok(result) => TestResult::Fail {
-            reason: format!("verify_migration_artifact returned unexpected result: {result:?}"),
-        },
-        Err(err) => TestResult::Fail {
-            reason: format!("verify_migration_artifact failed: {err}"),
+        other => TestResult::Fail {
+            reason: format!(
+                "verify_migration_artifact did not fail closed on structural-only bundle: {other:?}"
+            ),
         },
     }
 }
 
 fn test_verify_trust_state_interface() -> TestResult {
     let sdk = create_verifier_sdk("verifier://trust");
-    let bundle = canonical_replay_bundle();
+    let bundle = canonical_replay_bundle_with_verifier("verifier://trust");
     let bytes = match serialize(&bundle) {
         Ok(bytes) => bytes,
         Err(err) => {
@@ -1540,31 +1546,28 @@ fn test_verify_trust_state_interface() -> TestResult {
             };
         }
     };
-    let matching = match sdk.verify_trust_state(&bytes, &bundle.integrity_hash) {
-        Ok(result) => result,
-        Err(err) => {
+    match sdk.verify_trust_state(&bytes, "not-a-sha256-digest") {
+        Err(VerifierSdkError::MalformedTrustAnchor { actual })
+            if actual == "not-a-sha256-digest" => {}
+        other => {
             return TestResult::Fail {
-                reason: format!("verify_trust_state matching anchor failed: {err}"),
+                reason: format!(
+                    "verify_trust_state did not reject malformed trust anchor first: {other:?}"
+                ),
             };
         }
-    };
-    let mismatching = match sdk.verify_trust_state(&bytes, &"0".repeat(64)) {
-        Ok(result) => result,
-        Err(err) => {
-            return TestResult::Fail {
-                reason: format!("verify_trust_state mismatching anchor returned error: {err}"),
-            };
+    }
+
+    match sdk.verify_trust_state(&bytes, &bundle.integrity_hash) {
+        Err(VerifierSdkError::UnauthenticatedStructuralBundle {
+            bundle_id,
+            verifier_identity,
+        }) if bundle_id == bundle.bundle_id && verifier_identity == bundle.verifier_identity => {
+            TestResult::Pass
         }
-    };
-    if matching.verdict == VerificationVerdict::Pass
-        && mismatching.verdict == VerificationVerdict::Fail
-    {
-        TestResult::Pass
-    } else {
-        TestResult::Fail {
+        other => TestResult::Fail {
             reason: format!(
-                "trust-state anchor verdicts incorrect: matching={:?}, mismatching={:?}",
-                matching.verdict, mismatching.verdict
+                "verify_trust_state did not fail closed on structural-only bundle: {other:?}"
             ),
         }
     }
@@ -1572,7 +1575,7 @@ fn test_verify_trust_state_interface() -> TestResult {
 
 fn test_workflow_execution_interface() -> TestResult {
     let sdk = create_verifier_sdk("verifier://workflow");
-    let bundle = canonical_replay_bundle();
+    let bundle = canonical_replay_bundle_with_verifier("verifier://workflow");
     let bytes = match serialize(&bundle) {
         Ok(bytes) => bytes,
         Err(err) => {
@@ -1582,20 +1585,16 @@ fn test_workflow_execution_interface() -> TestResult {
         }
     };
     match sdk.execute_workflow(ValidationWorkflow::ReleaseValidation, &bytes) {
-        Ok(result)
-            if result.operation == VerificationOperation::Workflow
-                && result
-                    .checked_assertions
-                    .iter()
-                    .any(|assertion| assertion.assertion == "workflow_release_validation") =>
-        {
+        Err(VerifierSdkError::UnauthenticatedStructuralBundle {
+            bundle_id,
+            verifier_identity,
+        }) if bundle_id == bundle.bundle_id && verifier_identity == bundle.verifier_identity => {
             TestResult::Pass
         }
-        Ok(result) => TestResult::Fail {
-            reason: format!("execute_workflow returned unexpected result: {result:?}"),
-        },
-        Err(err) => TestResult::Fail {
-            reason: format!("execute_workflow failed: {err}"),
+        other => TestResult::Fail {
+            reason: format!(
+                "execute_workflow did not preserve structural-bundle guardrail: {other:?}"
+            ),
         },
     }
 }
@@ -1618,6 +1617,34 @@ fn test_session_interface() -> TestResult {
             reason: "create_session did not return properly initialized session".to_string(),
         }
     }
+}
+
+fn test_session_id_validation_interface() -> TestResult {
+    let sdk = create_verifier_sdk("verifier://test-session");
+    let invalid_cases = [
+        ("", "session id must be non-empty"),
+        (" session-alpha ", "session id must not contain leading or trailing whitespace"),
+        (
+            "session-\u{0000}-alpha",
+            "session id must include only ASCII letters, digits, '.', '-', and '_'",
+        ),
+    ];
+
+    for (session_id, expected_reason) in invalid_cases {
+        match sdk.create_session(session_id) {
+            Err(VerifierSdkError::InvalidSessionId { actual, reason })
+                if actual == session_id && reason == expected_reason => {}
+            other => {
+                return TestResult::Fail {
+                    reason: format!(
+                        "create_session malformed-id contract regressed for {session_id:?}: {other:?}"
+                    ),
+                };
+            }
+        }
+    }
+
+    TestResult::Pass
 }
 
 fn test_transparency_log_interface() -> TestResult {
@@ -1761,6 +1788,10 @@ fn test_interface_structured_error_details() -> TestResult {
 }
 
 fn canonical_replay_bundle() -> ReplayBundle {
+    canonical_replay_bundle_with_verifier("verifier://bundle")
+}
+
+fn canonical_replay_bundle_with_verifier(verifier_identity: &str) -> ReplayBundle {
     let mut artifacts = BTreeMap::new();
     artifacts.insert(
         "evidence/incident.json".to_string(),
@@ -1797,7 +1828,7 @@ fn canonical_replay_bundle() -> ReplayBundle {
         incident_id: "inc-conformance".to_string(),
         created_at: "2026-04-20T14:05:00.000000Z".to_string(),
         policy_version: "strict@2026-04-20".to_string(),
-        verifier_identity: "verifier://bundle".to_string(),
+        verifier_identity: verifier_identity.to_string(),
         timeline: vec![
             TimelineEvent {
                 sequence_number: 1,
