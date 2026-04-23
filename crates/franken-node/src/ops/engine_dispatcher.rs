@@ -1413,7 +1413,8 @@ impl EngineDispatcher {
         }
 
         // Add known aliases that franken-engine accepts (from RuntimeCapability::from_tag_str)
-        valid_capabilities.extend_from_slice(&[
+        valid_capabilities.extend(
+            [
             // Network aliases
             "network", "net", "net:connect", "net:fetch", "net:outbound", "net.write", "network.write",
             // Filesystem aliases
@@ -1422,7 +1423,10 @@ impl EngineDispatcher {
             "module:require", "module:import", "module.import",
             // Additional capabilities that may not be in RuntimeCapability enum but are valid
             "console", "timer", "builtin",
-        ]);
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
 
         // Track if any capability is invalid - scan ALL capabilities regardless
         // to prevent timing attack that leaks which capability position failed
@@ -1694,9 +1698,9 @@ impl EngineDispatcher {
                     Profile::LegacyRisky => ABSOLUTE_MAX_TOKEN_COUNT.min(262_144), // Capped at 128K absolute max
                 },
                 max_recursion_depth: match config.profile {
-                    Profile::Strict => 128u32,       // Shallow recursion for safety
-                    Profile::Balanced => 256u32,     // Standard recursion depth (default)
-                    Profile::LegacyRisky => ABSOLUTE_MAX_RECURSION_DEPTH, // Capped at 384 absolute max
+                    Profile::Strict => 128u64,       // Shallow recursion for safety
+                    Profile::Balanced => 256u64,     // Standard recursion depth (default)
+                    Profile::LegacyRisky => u64::from(ABSOLUTE_MAX_RECURSION_DEPTH), // Capped at 384 absolute max
                 },
             },
         };
