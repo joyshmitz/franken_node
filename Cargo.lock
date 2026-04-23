@@ -2924,7 +2924,7 @@ dependencies = [
 
 [[package]]
 name = "sqlmodel"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "asupersync",
  "serde",
@@ -2939,7 +2939,7 @@ dependencies = [
 
 [[package]]
 name = "sqlmodel-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "asupersync",
  "regex",
@@ -2950,7 +2950,7 @@ dependencies = [
 
 [[package]]
 name = "sqlmodel-macros"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2960,7 +2960,7 @@ dependencies = [
 
 [[package]]
 name = "sqlmodel-pool"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "asupersync",
  "sqlmodel-core",
@@ -2969,7 +2969,7 @@ dependencies = [
 
 [[package]]
 name = "sqlmodel-query"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "asupersync",
  "serde",
@@ -2979,7 +2979,7 @@ dependencies = [
 
 [[package]]
 name = "sqlmodel-schema"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "asupersync",
  "serde",
@@ -2990,7 +2990,7 @@ dependencies = [
 
 [[package]]
 name = "sqlmodel-session"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "asupersync",
  "serde",
