@@ -19,6 +19,7 @@ pub enum CounterfactualReceiptError {
     Json(String),
     BaselineIntegrityHashMissing,
     CounterfactualBundleHashMissing,
+    SweepResultBundleHashMissing { index: usize },
     CounterfactualBundleHashMismatch { expected: String, actual: String },
     Signature(BundleError),
 }
@@ -36,6 +37,12 @@ impl fmt::Display for CounterfactualReceiptError {
                 write!(
                     formatter,
                     "counterfactual receipt metadata.bundle_hash is missing"
+                )
+            }
+            Self::SweepResultBundleHashMissing { index } => {
+                write!(
+                    formatter,
+                    "counterfactual receipt results[{index}].metadata.bundle_hash is missing"
                 )
             }
             Self::CounterfactualBundleHashMismatch { expected, actual } => write!(
@@ -91,34 +98,98 @@ fn ensure_counterfactual_references_bundle(
     output: &Value,
     expected_bundle_hash: &str,
 ) -> Result<(), CounterfactualReceiptError> {
-    let mut observed_hashes = Vec::new();
-    collect_counterfactual_bundle_hashes(output, &mut observed_hashes);
-    if observed_hashes.is_empty() {
-        return Err(CounterfactualReceiptError::CounterfactualBundleHashMissing);
-    }
-    for actual in observed_hashes {
-        if actual != expected_bundle_hash {
-            return Err(
-                CounterfactualReceiptError::CounterfactualBundleHashMismatch {
-                    expected: expected_bundle_hash.to_string(),
-                    actual: actual.to_string(),
-                },
-            );
+    if let Some(results) = value_results(output) {
+        if results.is_empty() {
+            return Err(CounterfactualReceiptError::CounterfactualBundleHashMissing);
         }
+        for (index, result) in results.iter().enumerate() {
+            let actual = extract_string(result, &["metadata", "bundle_hash"])
+                .ok_or(CounterfactualReceiptError::SweepResultBundleHashMissing { index })?;
+            if actual != expected_bundle_hash {
+                return Err(
+                    CounterfactualReceiptError::CounterfactualBundleHashMismatch {
+                        expected: expected_bundle_hash.to_string(),
+                        actual: actual.to_string(),
+                    },
+                );
+            }
+        }
+        return Ok(());
+    }
+
+    let actual = extract_string(output, &["metadata", "bundle_hash"])
+        .ok_or(CounterfactualReceiptError::CounterfactualBundleHashMissing)?;
+    if actual != expected_bundle_hash {
+        return Err(
+            CounterfactualReceiptError::CounterfactualBundleHashMismatch {
+                expected: expected_bundle_hash.to_string(),
+                actual: actual.to_string(),
+            },
+        );
     }
     Ok(())
 }
 
-fn collect_counterfactual_bundle_hashes<'a>(value: &'a Value, out: &mut Vec<&'a str>) {
-    if let Some(bundle_hash) = extract_string(value, &["metadata", "bundle_hash"]) {
-        out.push(bundle_hash);
+fn value_results(value: &Value) -> Option<&[Value]> {
+    value.get("results").and_then(Value::as_array).map(Vec::as_slice)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+    use serde_json::json;
+
+    fn sign_counterfactual_value(value: &Value, signing_key: &SigningKey) -> Vec<u8> {
+        let canonical = canonical_json_bytes(value).expect("test canonical JSON should serialize");
+        signing_key.sign(&canonical).to_bytes().to_vec()
     }
-    if let Some(results) = value.get("results").and_then(Value::as_array) {
-        for result in results {
-            if let Some(bundle_hash) = extract_string(result, &["metadata", "bundle_hash"]) {
-                out.push(bundle_hash);
-            }
-        }
+
+    #[test]
+    fn verify_counterfactual_receipt_rejects_sweep_result_missing_bundle_hash() {
+        let baseline_bundle = json!({"integrity_hash": "sha256:test-bundle"});
+        let counterfactual_output = json!({
+            "results": [
+                {"metadata": {"bundle_hash": "sha256:test-bundle"}},
+                {"metadata": {}}
+            ]
+        });
+        let signing_key = SigningKey::from_bytes(&[7_u8; 32]);
+        let signature_bytes = sign_counterfactual_value(&counterfactual_output, &signing_key);
+
+        let err = verify_counterfactual_receipt(
+            &baseline_bundle,
+            &counterfactual_output,
+            &signing_key.verifying_key(),
+            &signature_bytes,
+        )
+        .expect_err("sweep result missing bundle_hash must fail closed");
+
+        assert_eq!(
+            err,
+            CounterfactualReceiptError::SweepResultBundleHashMissing { index: 1 }
+        );
+    }
+
+    #[test]
+    fn verify_counterfactual_receipt_accepts_sweep_when_all_results_match_bundle_hash() {
+        let baseline_bundle = json!({"integrity_hash": "sha256:test-bundle"});
+        let counterfactual_output = json!({
+            "results": [
+                {"metadata": {"bundle_hash": "sha256:test-bundle"}},
+                {"metadata": {"bundle_hash": "sha256:test-bundle"}}
+            ]
+        });
+        let signing_key = SigningKey::from_bytes(&[8_u8; 32]);
+        let signature_bytes = sign_counterfactual_value(&counterfactual_output, &signing_key);
+
+        verify_counterfactual_receipt(
+            &baseline_bundle,
+            &counterfactual_output,
+            &signing_key.verifying_key(),
+            &signature_bytes,
+        )
+        .expect("sweep with matching bundle_hash on every result should verify");
     }
 }
 
