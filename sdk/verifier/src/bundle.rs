@@ -543,6 +543,14 @@ fn validate_verifier_identity(verifier_identity: &str) -> Result<(), BundleError
             actual: verifier_identity.to_string(),
         });
     }
+    if !remainder
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+    {
+        return Err(BundleError::InvalidVerifierIdentity {
+            actual: verifier_identity.to_string(),
+        });
+    }
     Ok(())
 }
 
@@ -881,6 +889,36 @@ mod tests {
 
         let err = verify(&bytes)
             .expect_err("trailing-whitespace-padded verifier identity must fail closed");
+
+        assert!(matches!(err, BundleError::InvalidVerifierIdentity { .. }));
+    }
+
+    #[test]
+    fn verify_rejects_verifier_identity_with_embedded_spaces() {
+        let bundle = make_test_bundle("verifier://alpha beta");
+        let bytes = serialize(&bundle).expect("test bundle should serialize");
+
+        let err = verify(&bytes).expect_err("embedded spaces must fail closed");
+
+        assert!(matches!(err, BundleError::InvalidVerifierIdentity { .. }));
+    }
+
+    #[test]
+    fn verify_rejects_verifier_identity_with_path_like_suffix() {
+        let bundle = make_test_bundle("verifier://alpha/beta");
+        let bytes = serialize(&bundle).expect("test bundle should serialize");
+
+        let err = verify(&bytes).expect_err("path-like verifier names must fail closed");
+
+        assert!(matches!(err, BundleError::InvalidVerifierIdentity { .. }));
+    }
+
+    #[test]
+    fn verify_rejects_verifier_identity_with_null_byte() {
+        let bundle = make_test_bundle("verifier://alpha\u{0000}");
+        let bytes = serialize(&bundle).expect("test bundle should serialize");
+
+        let err = verify(&bytes).expect_err("null-byte verifier names must fail closed");
 
         assert!(matches!(err, BundleError::InvalidVerifierIdentity { .. }));
     }
