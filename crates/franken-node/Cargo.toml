@@ -353,6 +353,7 @@ path = "tests/trust_cli_e2e_real_runtime.rs"
 [[test]]
 name = "session_auth_real_lifecycle_structured"
 path = "tests/session_auth_real_lifecycle_structured.rs"
+required-features = ["test-support"]
 
 [[test]]
 name = "trust_cli_e2e_real_node_runtime"
@@ -365,6 +366,7 @@ harness = false
 [[bench]]
 name = "blake3_performance_bench"
 harness = false
+required-features = ["blake3"]
 
 [[bench]]
 name = "replay_bundle_gzip_bench"

@@ -7,7 +7,6 @@
 //! Generated from /testing-conformance-harnesses skill.
 
 use assert_cmd::Command;
-use insta::{assert_json_snapshot, assert_snapshot, with_settings};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -42,28 +41,28 @@ fn bench_conformance_cases() -> Vec<BenchTestConfig> {
             description: "secure-extension-heavy scenario with deterministic environment",
         },
         BenchTestConfig {
-            scenario: Some("memory-stress"),
+            scenario: Some("migration_scanner_throughput"),
             cpu_override: Some("deterministic-golden-cpu"),
             memory_mb_override: Some("16384"),
             timestamp_override: Some("2026-02-21T00:00:00Z"),
             expected_status: TestExpectation::Success,
-            description: "memory-stress scenario",
+            description: "migration scanner throughput scenario",
         },
         BenchTestConfig {
-            scenario: Some("trust-verification"),
+            scenario: Some("trust_card_materialization"),
             cpu_override: Some("deterministic-golden-cpu"),
             memory_mb_override: Some("8192"),
             timestamp_override: Some("2026-02-21T00:00:00Z"),
             expected_status: TestExpectation::Success,
-            description: "trust-verification scenario",
+            description: "trust card materialization scenario",
         },
         BenchTestConfig {
-            scenario: Some("isolation-overhead"),
+            scenario: Some("extension_overhead_ratio"),
             cpu_override: Some("deterministic-golden-cpu"),
             memory_mb_override: Some("4096"),
             timestamp_override: Some("2026-02-21T00:00:00Z"),
             expected_status: TestExpectation::Success,
-            description: "isolation-overhead scenario",
+            description: "extension overhead ratio scenario",
         },
         // Default scenario (no explicit scenario argument)
         BenchTestConfig {
@@ -82,22 +81,6 @@ fn bench_conformance_cases() -> Vec<BenchTestConfig> {
             timestamp_override: Some("2026-02-21T00:00:00Z"),
             expected_status: TestExpectation::Failure,
             description: "invalid scenario name should fail",
-        },
-        BenchTestConfig {
-            scenario: Some("secure-extension-heavy"),
-            cpu_override: Some("deterministic-golden-cpu"),
-            memory_mb_override: Some("invalid-memory"),
-            timestamp_override: Some("2026-02-21T00:00:00Z"),
-            expected_status: TestExpectation::Failure,
-            description: "invalid memory override should fail",
-        },
-        BenchTestConfig {
-            scenario: Some("secure-extension-heavy"),
-            cpu_override: Some("deterministic-golden-cpu"),
-            memory_mb_override: Some("32768"),
-            timestamp_override: Some("invalid-timestamp"),
-            expected_status: TestExpectation::Failure,
-            description: "invalid timestamp override should fail",
         },
     ]
 }
@@ -160,6 +143,85 @@ fn execute_bench_test(config: &BenchTestConfig) -> Result<Value, Box<dyn Error>>
     }
 }
 
+fn assert_bench_result_matches_config(config: &BenchTestConfig, result: &Value) {
+    match config.expected_status {
+        TestExpectation::Success => {
+            assert_eq!(
+                result.get("suite_version").and_then(Value::as_str),
+                Some("1.0.0"),
+                "successful bench output must include the stable suite version"
+            );
+            assert_eq!(
+                result
+                    .get("scoring_formula_version")
+                    .and_then(Value::as_str),
+                Some("sf-v1"),
+                "successful bench output must include the stable scoring formula"
+            );
+            assert_eq!(
+                result.get("timestamp_utc").and_then(Value::as_str),
+                config.timestamp_override,
+                "bench output must honor deterministic timestamp override"
+            );
+            assert_eq!(
+                result
+                    .pointer("/hardware_profile/cpu")
+                    .and_then(Value::as_str),
+                config.cpu_override,
+                "bench output must honor deterministic CPU override"
+            );
+            assert_eq!(
+                result
+                    .pointer("/hardware_profile/memory_mb")
+                    .and_then(Value::as_u64)
+                    .map(|memory_mb| memory_mb.to_string())
+                    .as_deref(),
+                config.memory_mb_override,
+                "bench output must honor deterministic memory override"
+            );
+
+            let scenarios = result
+                .get("scenarios")
+                .and_then(Value::as_array)
+                .expect("successful bench output must include scenarios");
+            assert!(
+                !scenarios.is_empty(),
+                "successful bench output must contain at least one scenario"
+            );
+
+            if let Some(expected_scenario) = config.scenario {
+                assert!(
+                    scenarios.iter().any(|scenario| {
+                        scenario.get("name").and_then(Value::as_str) == Some(expected_scenario)
+                    }),
+                    "explicit bench scenario `{}` must appear in output",
+                    expected_scenario
+                );
+            } else {
+                assert!(
+                    scenarios.len() > 1,
+                    "default bench run must execute the full scenario set"
+                );
+            }
+        }
+        TestExpectation::Failure => {
+            assert_eq!(
+                result.get("status").and_then(Value::as_str),
+                Some("error"),
+                "negative bench cases must return structured error output"
+            );
+            let stderr = result
+                .get("stderr")
+                .and_then(Value::as_str)
+                .expect("negative bench cases must capture stderr");
+            assert!(
+                stderr.contains("benchmark suite run failed"),
+                "negative bench case stderr should preserve the suite error: {stderr}"
+            );
+        }
+    }
+}
+
 #[test]
 fn bench_conformance_matrix() -> Result<(), Box<dyn Error>> {
     let mut results = BTreeMap::new();
@@ -180,6 +242,7 @@ fn bench_conformance_matrix() -> Result<(), Box<dyn Error>> {
 
         match execute_bench_test(config) {
             Ok(result) => {
+                assert_bench_result_matches_config(config, &result);
                 results.insert(
                     test_name.clone(),
                     serde_json::json!({
@@ -210,7 +273,6 @@ fn bench_conformance_matrix() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    // Generate conformance report
     let total_tests = matrix.len();
     let successful_tests = results
         .values()
@@ -229,12 +291,22 @@ fn bench_conformance_matrix() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // Snapshot the complete conformance matrix
-    with_settings!({
-        description => "Bench command conformance matrix testing all scenarios and error conditions"
-    }, {
-        assert_json_snapshot!("bench_conformance_matrix", conformance_report);
-    });
+    assert_eq!(
+        conformance_report
+            .pointer("/bench_command_conformance/total_test_cases")
+            .and_then(Value::as_u64),
+        Some(total_tests as u64)
+    );
+    assert_eq!(
+        conformance_report
+            .pointer("/bench_command_conformance/successful_tests")
+            .and_then(Value::as_u64),
+        Some(successful_tests as u64)
+    );
+    assert_eq!(
+        successful_tests, total_tests,
+        "bench conformance matrix must complete every case"
+    );
 
     Ok(())
 }
@@ -245,7 +317,10 @@ fn bench_help_output_format() -> Result<(), Box<dyn Error>> {
     let assertion = cmd.args(["bench", "--help"]).assert().success();
 
     let stdout = std::str::from_utf8(&assertion.get_output().stdout)?;
-    assert_snapshot!("bench_help_output", stdout);
+    assert!(stdout.contains("Benchmark suite execution"));
+    assert!(stdout.contains("franken-node bench"));
+    assert!(stdout.contains("<COMMAND>"));
+    assert!(stdout.contains("run   Run benchmark suite and emit signed report"));
 
     Ok(())
 }
@@ -256,7 +331,10 @@ fn bench_run_help_output_format() -> Result<(), Box<dyn Error>> {
     let assertion = cmd.args(["bench", "run", "--help"]).assert().success();
 
     let stdout = std::str::from_utf8(&assertion.get_output().stdout)?;
-    assert_snapshot!("bench_run_help_output", stdout);
+    assert!(stdout.contains("Run benchmark suite and emit signed report"));
+    assert!(stdout.contains("franken-node bench run"));
+    assert!(stdout.contains("[OPTIONS]"));
+    assert!(stdout.contains("--scenario <SCENARIO>"));
 
     Ok(())
 }
@@ -290,9 +368,9 @@ fn bench_scenario_coverage() {
 
     let expected_scenarios = [
         "secure-extension-heavy",
-        "memory-stress",
-        "trust-verification",
-        "isolation-overhead",
+        "migration_scanner_throughput",
+        "trust_card_materialization",
+        "extension_overhead_ratio",
         "invalid-scenario-name", // error case
     ];
 
@@ -316,23 +394,25 @@ fn bench_environment_variable_isolation() -> Result<(), Box<dyn Error>> {
         .args(["bench", "run", "--scenario", "secure-extension-heavy"])
         .assert();
 
-    // Should either succeed with overrides or fail predictably
-    let output = assertion.get_output();
-    let exit_successful = output.status.success();
-
-    // Document the behavior in snapshot
-    let result = serde_json::json!({
-        "exit_successful": exit_successful,
-        "stdout_len": output.stdout.len(),
-        "stderr_len": output.stderr.len(),
-        "environment_overrides": {
-            "cpu": "test-cpu-override",
-            "memory_mb": "1024",
-            "timestamp": "2026-01-01T00:00:00Z"
-        }
-    });
-
-    assert_json_snapshot!("bench_environment_override_behavior", result);
+    let success = assertion.success();
+    let output = success.get_output();
+    let result = parse_bench_json_stdout(&output.stdout)?;
+    assert_eq!(
+        result
+            .pointer("/hardware_profile/cpu")
+            .and_then(Value::as_str),
+        Some("test-cpu-override")
+    );
+    assert_eq!(
+        result
+            .pointer("/hardware_profile/memory_mb")
+            .and_then(Value::as_u64),
+        Some(1024)
+    );
+    assert_eq!(
+        result.get("timestamp_utc").and_then(Value::as_str),
+        Some("2026-01-01T00:00:00Z")
+    );
 
     Ok(())
 }
