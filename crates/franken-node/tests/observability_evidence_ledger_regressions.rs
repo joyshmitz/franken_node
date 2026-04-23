@@ -1,11 +1,11 @@
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 
+use frankenengine_node::observability::durability_violation::{
+    CausalEvent, CausalEventType, FailedArtifact, ProofContext, ViolationContext, generate_bundle,
+};
 use frankenengine_node::observability::evidence_ledger::{
     DecisionKind, EvidenceEntry, EvidenceLedger, LabSpillMode, LedgerCapacity,
-};
-use frankenengine_node::observability::durability_violation::{
-    generate_bundle, CausalEvent, CausalEventType, FailedArtifact, ProofContext, ViolationContext,
 };
 use frankenengine_node::observability::witness_ref::{
     WitnessKind, WitnessRef, WitnessSet, WitnessValidator,
@@ -146,7 +146,10 @@ fn durability_violation_bundle_bounds_payload_before_hashing_and_emit() {
         oversized_bundle.causal_event_sequence,
         expected_bounded.events
     );
-    assert_eq!(oversized_bundle.failed_artifacts, expected_bounded.artifacts);
+    assert_eq!(
+        oversized_bundle.failed_artifacts,
+        expected_bounded.artifacts
+    );
     assert_eq!(oversized_bundle.proof_context, expected_bounded.proofs);
 }
 
