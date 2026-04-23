@@ -2,11 +2,25 @@ use frankenengine_node::control_plane::audience_token::{
     ActionScope, AudienceBoundToken, TokenChain, TokenId, TokenValidator,
 };
 
+use ed25519_dalek::{Signer, SigningKey};
+
+fn signing_key() -> SigningKey {
+    SigningKey::from_bytes(&[14_u8; 32])
+}
+
+fn sign_token(token: &mut AudienceBoundToken) {
+    token.signature = hex::encode(signing_key().sign(&token.signature_preimage()).to_bytes());
+}
+
+fn token_validator(epoch_id: u64) -> TokenValidator {
+    TokenValidator::new(epoch_id).with_trusted_issuer_key("issuer", signing_key().verifying_key())
+}
+
 #[test]
 fn test_multi_delegation() {
     let now_ms = 1000;
 
-    let root = AudienceBoundToken {
+    let mut root = AudienceBoundToken {
         token_id: TokenId("root".into()),
         issuer: "issuer".into(),
         audience: vec!["ServiceX".into(), "ServiceY".into()],
@@ -15,11 +29,12 @@ fn test_multi_delegation() {
         expires_at: now_ms + 10000,
         nonce: "nonce-A".into(),
         parent_token_hash: None,
-        signature: "sig-A".into(),
+        signature: String::new(),
         max_delegation_depth: 5,
     };
+    sign_token(&mut root);
 
-    let token_b = AudienceBoundToken {
+    let mut token_b = AudienceBoundToken {
         token_id: TokenId("B".into()),
         issuer: "issuer".into(),
         audience: vec!["ServiceX".into()],
@@ -28,11 +43,12 @@ fn test_multi_delegation() {
         expires_at: now_ms + 10000,
         nonce: "nonce-B".into(),
         parent_token_hash: Some(root.hash()),
-        signature: "sig-B".into(),
+        signature: String::new(),
         max_delegation_depth: 4,
     };
+    sign_token(&mut token_b);
 
-    let token_d = AudienceBoundToken {
+    let mut token_d = AudienceBoundToken {
         token_id: TokenId("D".into()),
         issuer: "issuer".into(),
         audience: vec!["ServiceY".into()],
@@ -41,9 +57,10 @@ fn test_multi_delegation() {
         expires_at: now_ms + 10000,
         nonce: "nonce-D".into(),
         parent_token_hash: Some(root.hash()),
-        signature: "sig-D".into(),
+        signature: String::new(),
         max_delegation_depth: 4,
     };
+    sign_token(&mut token_d);
 
     let mut chain_ab = TokenChain::new(root.clone()).unwrap();
     chain_ab.append(token_b.clone()).unwrap();
@@ -51,7 +68,7 @@ fn test_multi_delegation() {
     let mut chain_ad = TokenChain::new(root.clone()).unwrap();
     chain_ad.append(token_d.clone()).unwrap();
 
-    let mut validator = TokenValidator::new(1);
+    let mut validator = token_validator(1);
 
     // X uses A -> B
     let res = validator.verify_chain(&chain_ab, "ServiceX", now_ms, "trace-1");

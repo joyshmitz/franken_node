@@ -137,6 +137,14 @@ path = "tests/fastapi_rust_control_plane_integration.rs"
 required-features = ["test-support"]
 
 [[test]]
+name = "audience_token_multi_delegation"
+path = "tests/test_multi_delegation.rs"
+
+[[test]]
+name = "audience_token_security"
+path = "tests/exploit_audience_token.rs"
+
+[[test]]
 name = "engine_dispatcher_pipe_drain"
 path = "tests/engine_dispatcher_pipe_drain.rs"
 

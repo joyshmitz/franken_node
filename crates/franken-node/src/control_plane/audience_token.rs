@@ -15,7 +15,9 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
+use ed25519_dalek::{Signature, Verifier};
 
 use crate::security::constant_time;
 
@@ -44,6 +46,8 @@ pub const ERR_ABT_AUDIENCE_MISMATCH: &str = "ERR_ABT_AUDIENCE_MISMATCH";
 pub const ERR_ABT_TOKEN_EXPIRED: &str = "ERR_ABT_TOKEN_EXPIRED";
 /// Nonce was already used within the current epoch.
 pub const ERR_ABT_REPLAY_DETECTED: &str = "ERR_ABT_REPLAY_DETECTED";
+/// Token signature is missing, malformed, signed by an untrusted issuer, or invalid.
+pub const ERR_ABT_SIGNATURE_INVALID: &str = "ERR_ABT_SIGNATURE_INVALID";
 
 // ---------------------------------------------------------------------------
 // Invariant tags
@@ -156,6 +160,37 @@ pub struct AudienceBoundToken {
 }
 
 impl AudienceBoundToken {
+    /// Build the canonical detached-signature preimage for this token.
+    ///
+    /// The signature intentionally excludes the `signature` field and binds
+    /// every other field with domain-separated, length-prefixed framing.
+    pub fn signature_preimage(&self) -> Vec<u8> {
+        let mut preimage = Vec::new();
+        preimage.extend_from_slice(b"audience_bound_token_signature_v1:");
+        append_len_prefixed_str(&mut preimage, self.token_id.as_str());
+        append_len_prefixed_str(&mut preimage, &self.issuer);
+        append_len_to_vec(&mut preimage, self.audience.len());
+        for audience in &self.audience {
+            append_len_prefixed_str(&mut preimage, audience);
+        }
+        append_len_to_vec(&mut preimage, self.capabilities.len());
+        for capability in &self.capabilities {
+            append_len_prefixed_str(&mut preimage, capability.label());
+        }
+        preimage.extend_from_slice(&self.issued_at.to_le_bytes());
+        preimage.extend_from_slice(&self.expires_at.to_le_bytes());
+        append_len_prefixed_str(&mut preimage, &self.nonce);
+        match &self.parent_token_hash {
+            Some(parent_hash) => {
+                preimage.push(1);
+                append_len_prefixed_str(&mut preimage, parent_hash);
+            }
+            None => preimage.push(0),
+        }
+        preimage.push(self.max_delegation_depth);
+        preimage
+    }
+
     /// Compute the SHA-256 hash of this token for chain integrity.
     pub fn hash(&self) -> String {
         let mut hasher = Sha256::new();
@@ -206,9 +241,9 @@ impl AudienceBoundToken {
 
     /// Check if audience contains a specific service identity.
     pub fn audience_contains(&self, service_id: &str) -> bool {
-        self.audience.iter().fold(false, |acc, a| {
-            acc | constant_time::ct_eq(a, service_id)
-        })
+        self.audience
+            .iter()
+            .fold(false, |acc, a| acc | constant_time::ct_eq(a, service_id))
     }
 }
 
@@ -219,6 +254,15 @@ fn len_to_u64(len: usize) -> u64 {
 fn update_len_prefixed(hasher: &mut Sha256, value: &str) {
     hasher.update(len_to_u64(value.len()).to_le_bytes());
     hasher.update(value.as_bytes());
+}
+
+fn append_len_to_vec(output: &mut Vec<u8>, len: usize) {
+    output.extend_from_slice(&len_to_u64(len).to_le_bytes());
+}
+
+fn append_len_prefixed_str(output: &mut Vec<u8>, value: &str) {
+    append_len_to_vec(output, value.len());
+    output.extend_from_slice(value.as_bytes());
 }
 
 /// Error type for audience-bound token operations.
@@ -261,6 +305,13 @@ impl TokenError {
         Self::new(
             ERR_ABT_REPLAY_DETECTED,
             format!("Nonce '{}' already used in current epoch", nonce),
+        )
+    }
+
+    pub fn signature_invalid(token_id: &TokenId, detail: impl Into<String>) -> Self {
+        Self::new(
+            ERR_ABT_SIGNATURE_INVALID,
+            format!("Token '{}' signature invalid: {}", token_id, detail.into()),
         )
     }
 }
@@ -533,6 +584,8 @@ fn insert_nonce_bounded(
 /// Validates audience-bound token chains, enforcing expiry, replay detection,
 /// and audience matching.
 pub struct TokenValidator {
+    /// Trusted Ed25519 issuer keys keyed by exact issuer identity.
+    trusted_issuer_keys: BTreeMap<String, ed25519_dalek::VerifyingKey>,
     /// Nonces seen in the current epoch.
     seen_nonces: BTreeSet<String>,
     /// Insertion order of nonces for bounded eviction.
@@ -551,6 +604,7 @@ pub struct TokenValidator {
 impl TokenValidator {
     pub fn new(epoch_id: u64) -> Self {
         Self {
+            trusted_issuer_keys: BTreeMap::new(),
             seen_nonces: BTreeSet::new(),
             seen_nonces_queue: VecDeque::new(),
             epoch_id,
@@ -560,6 +614,58 @@ impl TokenValidator {
             tokens_verified: 0,
             tokens_rejected: 0,
         }
+    }
+
+    /// Trust `verifying_key` for tokens whose `issuer` exactly matches `issuer`.
+    pub fn trust_issuer_key(
+        &mut self,
+        issuer: impl Into<String>,
+        verifying_key: ed25519_dalek::VerifyingKey,
+    ) {
+        self.trusted_issuer_keys
+            .insert(issuer.into(), verifying_key);
+    }
+
+    /// Builder-style variant of [`Self::trust_issuer_key`].
+    #[must_use]
+    pub fn with_trusted_issuer_key(
+        mut self,
+        issuer: impl Into<String>,
+        verifying_key: ed25519_dalek::VerifyingKey,
+    ) -> Self {
+        self.trust_issuer_key(issuer, verifying_key);
+        self
+    }
+
+    fn verify_token_signature(&self, token: &AudienceBoundToken) -> Result<(), TokenError> {
+        let verifying_key = self.trusted_issuer_keys.get(&token.issuer).ok_or_else(|| {
+            TokenError::signature_invalid(
+                &token.token_id,
+                format!("issuer '{}' is not trusted", token.issuer),
+            )
+        })?;
+        let signature_hex = token
+            .signature
+            .strip_prefix("ed25519:")
+            .unwrap_or(&token.signature);
+        let signature_bytes = hex::decode(signature_hex).map_err(|_| {
+            TokenError::signature_invalid(&token.token_id, "signature is not valid hex")
+        })?;
+
+        let signature = Signature::from_slice(&signature_bytes).map_err(|error| {
+            TokenError::signature_invalid(
+                &token.token_id,
+                format!("signature length invalid: {error}"),
+            )
+        })?;
+        verifying_key
+            .verify(&token.signature_preimage(), &signature)
+            .map_err(|error| {
+                TokenError::signature_invalid(
+                    &token.token_id,
+                    format!("ed25519 verify failed: {error}"),
+                )
+            })
     }
 
     /// Record a root token issuance.
@@ -757,6 +863,28 @@ impl TokenValidator {
             }
         }
 
+        // Verify every token's issuer-bound detached signature before
+        // accepting the chain or recording replay state.
+        for token in tokens.iter() {
+            if let Err(err) = self.verify_token_signature(token) {
+                self.tokens_rejected = self.tokens_rejected.saturating_add(1);
+                push_bounded(
+                    &mut self.events,
+                    TokenEvent {
+                        event_code: ABT_004.to_string(),
+                        token_id: token.token_id.as_str().to_string(),
+                        trace_id: trace_id.to_string(),
+                        epoch_id: self.epoch_id,
+                        action_id: format!("verify-signature-{}", token.token_id),
+                        detail: err.message.clone(),
+                        timestamp_ms: now_ms,
+                    },
+                    MAX_EVENTS,
+                );
+                return Err(err);
+            }
+        }
+
         // INV-ABT-AUDIENCE: Check audience match on leaf token.
         let Some(leaf) = chain.leaf() else {
             self.tokens_rejected = self.tokens_rejected.saturating_add(1);
@@ -898,12 +1026,33 @@ fn _assert_send_sync() {
 mod tests {
     use crate::security::constant_time;
 
+    use ed25519_dalek::{Signer, SigningKey};
+
     use super::*;
 
     // -- Helpers --
 
+    fn fixture_signing_key() -> SigningKey {
+        SigningKey::from_bytes(&[14_u8; 32])
+    }
+
+    fn sign_token(token: &mut AudienceBoundToken) {
+        token.signature.clear();
+        token.signature = hex::encode(
+            fixture_signing_key()
+                .sign(&token.signature_preimage())
+                .to_bytes(),
+        );
+    }
+
+    fn trusted_validator(epoch_id: u64) -> TokenValidator {
+        TokenValidator::new(epoch_id)
+            .with_trusted_issuer_key("issuer-1", fixture_signing_key().verifying_key())
+            .with_trusted_issuer_key("delegator-1", fixture_signing_key().verifying_key())
+    }
+
     fn root_token(id: &str, depth: u8) -> AudienceBoundToken {
-        AudienceBoundToken {
+        let mut token = AudienceBoundToken {
             token_id: TokenId::new(id),
             issuer: "issuer-1".to_string(),
             audience: vec!["kernel-A".to_string(), "kernel-B".to_string()],
@@ -912,9 +1061,11 @@ mod tests {
             expires_at: 100_000,
             nonce: format!("nonce-{}", id),
             parent_token_hash: None,
-            signature: format!("sig-{}", id),
+            signature: String::new(),
             max_delegation_depth: depth,
-        }
+        };
+        sign_token(&mut token);
+        token
     }
 
     fn delegate_token(
@@ -923,7 +1074,7 @@ mod tests {
         audience: Vec<String>,
         capabilities: BTreeSet<ActionScope>,
     ) -> AudienceBoundToken {
-        AudienceBoundToken {
+        let mut token = AudienceBoundToken {
             token_id: TokenId::new(id),
             issuer: "delegator-1".to_string(),
             audience,
@@ -932,9 +1083,11 @@ mod tests {
             expires_at: parent.expires_at,
             nonce: format!("nonce-{}", id),
             parent_token_hash: Some(parent.hash()),
-            signature: format!("sig-{}", id),
+            signature: String::new(),
             max_delegation_depth: parent.max_delegation_depth.saturating_sub(1),
-        }
+        };
+        sign_token(&mut token);
+        token
     }
 
     fn narrow_caps() -> BTreeSet<ActionScope> {
@@ -1013,14 +1166,20 @@ mod tests {
     fn test_token_hash_deterministic() {
         let t1 = root_token("root-1", 3);
         let t2 = root_token("root-1", 3);
-        assert!(constant_time::ct_eq_bytes(t1.hash().as_bytes(), t2.hash().as_bytes()));
+        assert!(constant_time::ct_eq_bytes(
+            t1.hash().as_bytes(),
+            t2.hash().as_bytes()
+        ));
     }
 
     #[test]
     fn test_token_hash_changes_with_id() {
         let t1 = root_token("root-1", 3);
         let t2 = root_token("root-2", 3);
-        assert!(!constant_time::ct_eq_bytes(t1.hash().as_bytes(), t2.hash().as_bytes()));
+        assert!(!constant_time::ct_eq_bytes(
+            t1.hash().as_bytes(),
+            t2.hash().as_bytes()
+        ));
     }
 
     #[test]
@@ -1061,6 +1220,16 @@ mod tests {
             single.hash().as_bytes(),
             split.hash().as_bytes()
         ));
+    }
+
+    #[test]
+    fn signature_preimage_excludes_signature_field() {
+        let mut left = root_token("root-signature-preimage", 3);
+        let mut right = left.clone();
+        left.signature = "ed25519:aa".to_string();
+        right.signature = "ed25519:bb".to_string();
+
+        assert_eq!(left.signature_preimage(), right.signature_preimage());
     }
 
     #[test]
@@ -1140,6 +1309,14 @@ mod tests {
         let err = TokenError::replay_detected("nonce-abc");
         assert_eq!(err.code, ERR_ABT_REPLAY_DETECTED);
         assert!(err.message.contains("nonce-abc"));
+    }
+
+    #[test]
+    fn test_error_signature_invalid() {
+        let err = TokenError::signature_invalid(&TokenId::new("tok-1"), "forged");
+        assert_eq!(err.code, ERR_ABT_SIGNATURE_INVALID);
+        assert!(err.message.contains("tok-1"));
+        assert!(err.message.contains("forged"));
     }
 
     #[test]
@@ -1383,7 +1560,7 @@ mod tests {
 
     #[test]
     fn test_validator_record_issuance() {
-        let mut v = TokenValidator::new(1);
+        let mut v = trusted_validator(1);
         let token = root_token("root-1", 0);
         v.record_issuance(&token, "trace-1", 1000);
         assert_eq!(v.tokens_issued(), 1);
@@ -1393,7 +1570,7 @@ mod tests {
 
     #[test]
     fn test_validator_record_delegation() {
-        let mut v = TokenValidator::new(1);
+        let mut v = trusted_validator(1);
         let root = root_token("root-1", 3);
         let child = delegate_token(
             &root,
@@ -1408,7 +1585,7 @@ mod tests {
 
     #[test]
     fn test_validator_verify_chain_success() {
-        let mut v = TokenValidator::new(1);
+        let mut v = trusted_validator(1);
         let root = root_token("root-1", 3);
         let child = delegate_token(
             &root,
@@ -1425,8 +1602,55 @@ mod tests {
     }
 
     #[test]
-    fn test_validator_audience_mismatch() {
+    fn test_validator_rejects_untrusted_issuer_signature() {
         let mut v = TokenValidator::new(1);
+        let root = root_token("root-untrusted", 0);
+        let chain = TokenChain::new(root).unwrap();
+
+        let err = v
+            .verify_chain(&chain, "kernel-A", 50_000, "trace-untrusted")
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_ABT_SIGNATURE_INVALID);
+        assert_eq!(v.tokens_rejected(), 1);
+        assert_eq!(v.tokens_verified(), 0);
+    }
+
+    #[test]
+    fn test_validator_rejects_forged_non_empty_signature() {
+        let mut v = trusted_validator(1);
+        let mut root = root_token("root-forged-signature", 0);
+        root.signature = "not-a-valid-ed25519-signature".to_string();
+        let chain = TokenChain::new(root).unwrap();
+
+        let err = v
+            .verify_chain(&chain, "kernel-A", 50_000, "trace-forged")
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_ABT_SIGNATURE_INVALID);
+        assert_eq!(v.tokens_rejected(), 1);
+        assert_eq!(v.tokens_verified(), 0);
+    }
+
+    #[test]
+    fn test_validator_rejects_signed_field_tampering() {
+        let mut v = trusted_validator(1);
+        let mut root = root_token("root-tampered", 0);
+        root.audience = vec!["kernel-A".to_string(), "kernel-C".to_string()];
+        let chain = TokenChain::new(root).unwrap();
+
+        let err = v
+            .verify_chain(&chain, "kernel-C", 50_000, "trace-tampered")
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_ABT_SIGNATURE_INVALID);
+        assert_eq!(v.tokens_rejected(), 1);
+        assert_eq!(v.tokens_verified(), 0);
+    }
+
+    #[test]
+    fn test_validator_audience_mismatch() {
+        let mut v = trusted_validator(1);
         let root = root_token("root-1", 0);
         let chain = TokenChain::new(root).unwrap();
 
@@ -1439,7 +1663,7 @@ mod tests {
 
     #[test]
     fn test_validator_expired_token_rejected() {
-        let mut v = TokenValidator::new(1);
+        let mut v = trusted_validator(1);
         let root = root_token("root-1", 0);
         let chain = TokenChain::new(root).unwrap();
 
@@ -1452,7 +1676,7 @@ mod tests {
 
     #[test]
     fn test_validator_expired_intermediate_rejected() {
-        let mut v = TokenValidator::new(1);
+        let mut v = trusted_validator(1);
         let root = root_token("root-1", 3);
         let mut child = delegate_token(
             &root,
@@ -1473,7 +1697,7 @@ mod tests {
 
     #[test]
     fn test_validator_nonce_replay_detected() {
-        let mut v = TokenValidator::new(1);
+        let mut v = trusted_validator(1);
         let root = root_token("root-1", 0);
         let chain = TokenChain::new(root).unwrap();
 
@@ -1491,7 +1715,7 @@ mod tests {
 
     #[test]
     fn test_validator_advance_epoch_clears_nonces() {
-        let mut v = TokenValidator::new(1);
+        let mut v = trusted_validator(1);
         let root = root_token("root-1", 0);
         let chain = TokenChain::new(root).unwrap();
         v.verify_chain(&chain, "kernel-A", 50_000, "trace-1")
@@ -1510,14 +1734,14 @@ mod tests {
 
     #[test]
     fn test_validator_check_audience_pass() {
-        let v = TokenValidator::new(1);
+        let v = trusted_validator(1);
         let token = root_token("root-1", 0);
         v.check_audience(&token, "kernel-A").unwrap();
     }
 
     #[test]
     fn test_validator_check_audience_fail() {
-        let v = TokenValidator::new(1);
+        let v = trusted_validator(1);
         let token = root_token("root-1", 0);
         let err = v.check_audience(&token, "kernel-C").unwrap_err();
         assert_eq!(err.code, ERR_ABT_AUDIENCE_MISMATCH);
@@ -1525,7 +1749,7 @@ mod tests {
 
     #[test]
     fn test_validator_take_events_drains() {
-        let mut v = TokenValidator::new(1);
+        let mut v = trusted_validator(1);
         let token = root_token("root-1", 0);
         v.record_issuance(&token, "trace-1", 1000);
         assert_eq!(v.events().len(), 1);
@@ -1536,7 +1760,7 @@ mod tests {
 
     #[test]
     fn test_validator_chain_integrity_violation() {
-        let mut v = TokenValidator::new(1);
+        let mut v = trusted_validator(1);
         let root = root_token("root-1", 3);
         let mut child = delegate_token(
             &root,
@@ -1560,7 +1784,7 @@ mod tests {
 
     #[test]
     fn test_validator_verify_deep_chain() {
-        let mut v = TokenValidator::new(1);
+        let mut v = trusted_validator(1);
         let root = root_token("root-1", 25);
         let mut chain = TokenChain::new(root.clone()).unwrap();
         let mut prev = root;
@@ -1597,6 +1821,7 @@ mod tests {
         assert!(!ERR_ABT_AUDIENCE_MISMATCH.is_empty());
         assert!(!ERR_ABT_TOKEN_EXPIRED.is_empty());
         assert!(!ERR_ABT_REPLAY_DETECTED.is_empty());
+        assert!(!ERR_ABT_SIGNATURE_INVALID.is_empty());
     }
 
     // -- Invariant tags defined --
@@ -1658,7 +1883,7 @@ mod tests {
 
     #[test]
     fn test_validator_metrics_accumulate() {
-        let mut v = TokenValidator::new(1);
+        let mut v = trusted_validator(1);
 
         let t1 = root_token("root-1", 0);
         v.record_issuance(&t1, "tr", 1000);
@@ -1677,7 +1902,7 @@ mod tests {
 
     #[test]
     fn test_verify_rejects_after_leaf_audience_narrowed() {
-        let mut v = TokenValidator::new(1);
+        let mut v = trusted_validator(1);
         let root = root_token("root-1", 3);
         let child = delegate_token(
             &root,
@@ -1697,7 +1922,7 @@ mod tests {
 
     #[test]
     fn test_cross_audience_replay_rejected() {
-        let mut v = TokenValidator::new(1);
+        let mut v = trusted_validator(1);
 
         // First: verify for kernel-A
         let root = root_token("root-1", 0);
@@ -1808,7 +2033,7 @@ mod tests {
 
     #[test]
     fn test_verify_empty_manual_chain_rejected() {
-        let mut v = TokenValidator::new(1);
+        let mut v = trusted_validator(1);
         let chain = TokenChain { tokens: Vec::new() };
 
         let err = v
@@ -1822,7 +2047,7 @@ mod tests {
 
     #[test]
     fn test_verify_invalid_window_manual_chain_rejected() {
-        let mut v = TokenValidator::new(1);
+        let mut v = trusted_validator(1);
         let mut root = root_token("root-invalid-window", 0);
         root.expires_at = root.issued_at;
         let chain = TokenChain { tokens: vec![root] };
@@ -1838,7 +2063,7 @@ mod tests {
 
     #[test]
     fn test_check_audience_empty_audience_rejected() {
-        let v = TokenValidator::new(1);
+        let v = trusted_validator(1);
         let mut token = root_token("root-empty-audience", 0);
         token.audience.clear();
 
@@ -1895,7 +2120,7 @@ mod tests {
 
     #[test]
     fn negative_verify_expiry_boundary_precedes_nonce_replay_check() {
-        let mut validator = TokenValidator::new(7);
+        let mut validator = trusted_validator(7);
         let root = root_token("root-expiry-precedence", 0);
         validator.record_issuance(&root, "trace-issued", root.issued_at);
         let chain = TokenChain::new(root.clone()).unwrap();
@@ -1930,7 +2155,7 @@ mod tests {
 
     #[test]
     fn negative_manual_child_without_parent_link_fails_chain_integrity() {
-        let mut validator = TokenValidator::new(7);
+        let mut validator = trusted_validator(7);
         let root = root_token("root-manual-missing-parent", 3);
         let mut child = delegate_token(
             &root,
@@ -1954,7 +2179,7 @@ mod tests {
 
     #[test]
     fn negative_check_audience_is_case_sensitive() {
-        let validator = TokenValidator::new(7);
+        let validator = trusted_validator(7);
         let token = root_token("root-audience-case", 0);
 
         let err = validator.check_audience(&token, "KERNEL-A").unwrap_err();
@@ -2028,7 +2253,7 @@ mod tests {
 
     #[test]
     fn verify_chain_rejects_duplicate_nonce_inside_single_chain() {
-        let mut validator = TokenValidator::new(8);
+        let mut validator = trusted_validator(8);
         let root = root_token("root-duplicate-nonce", 3);
         let mut child = delegate_token(
             &root,
@@ -2059,7 +2284,7 @@ mod tests {
 
     #[test]
     fn verify_chain_empty_leaf_audience_rejected_without_nonce_recording() {
-        let mut validator = TokenValidator::new(8);
+        let mut validator = trusted_validator(8);
         let root = root_token("root-empty-leaf-audience", 3);
         let child = delegate_token(&root, "child-empty-audience", Vec::new(), narrow_caps());
         let mut chain = TokenChain::new(root).unwrap();
