@@ -1,0 +1,173 @@
+use ed25519_dalek::SigningKey;
+use frankenengine_node::ops::close_condition::{
+    CloseConditionReceipt, CloseConditionSigningMaterial, OracleColor,
+    generate_close_condition_receipt,
+};
+use std::fs;
+use std::path::Path;
+use tempfile::TempDir;
+
+fn write_fixture(path: &Path, contents: &str) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).expect("fixture parent directory");
+    }
+    fs::write(path, contents).expect("fixture file");
+}
+
+fn fixture_root_with_engine_paths(engine_path: &str, extension_host_path: &str) -> TempDir {
+    let root = TempDir::new().expect("fixture root");
+    write_fixture(
+        &root.path().join("Cargo.toml"),
+        r#"
+[workspace]
+members = ["crates/franken-node"]
+"#,
+    );
+    write_fixture(
+        &root.path().join("crates/franken-node/Cargo.toml"),
+        &format!(
+            r#"
+[package]
+name = "fixture-franken-node"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+frankenengine-engine = {{ path = "{engine_path}" }}
+frankenengine-extension-host = {{ path = "{extension_host_path}" }}
+"#
+        ),
+    );
+    write_fixture(
+        &root.path().join("crates/franken-node/src/lib.rs"),
+        "pub fn fixture() -> bool { true }\n",
+    );
+    write_fixture(
+        &root.path().join("docs/ENGINE_SPLIT_CONTRACT.md"),
+        "franken_engine path dependencies MUST NOT be replaced by local engine crates.\n",
+    );
+    write_fixture(
+        &root.path().join("docs/PRODUCT_CHARTER.md"),
+        "Dual-oracle close condition requires all dimensions to be green.\n",
+    );
+    write_fixture(
+        &root
+            .path()
+            .join("artifacts/13/compatibility_corpus_results.json"),
+        r#"{
+  "corpus": {
+    "corpus_version": "compat-corpus-test"
+  },
+  "thresholds": {
+    "overall_pass_rate_min_pct": 95.0
+  },
+  "totals": {
+    "total_test_cases": 100,
+    "passed_test_cases": 98,
+    "failed_test_cases": 2,
+    "errored_test_cases": 0,
+    "skipped_test_cases": 0,
+    "overall_pass_rate_pct": 98.0
+  }
+}"#,
+    );
+    write_fixture(
+        &root
+            .path()
+            .join("artifacts/section/10.N/gate_verdict/bd-1neb_section_gate.json"),
+        r#"{
+  "gate": "section_10n_verification",
+  "checks": [
+    {
+      "check_id": "10N-ORACLE",
+      "name": "Dual-Oracle Close Condition Gate",
+      "status": "PASS"
+    }
+  ]
+}"#,
+    );
+    root
+}
+
+fn generate_fixture_receipt(root: &Path) -> CloseConditionReceipt {
+    let seed = [73_u8; 32];
+    let signing_key = SigningKey::from_bytes(&seed);
+    let signing_material = CloseConditionSigningMaterial {
+        signing_key: &signing_key,
+        key_source: "test-seed",
+        signing_identity: "close-condition-path-gate-regression",
+    };
+
+    generate_close_condition_receipt(root, &signing_material).expect("close-condition receipt")
+}
+
+fn split_path_dependency_check_status(receipt: &CloseConditionReceipt) -> OracleColor {
+    receipt
+        .core
+        .l2_engine_boundary_oracle
+        .checks
+        .iter()
+        .find(|check| check.id == "SPLIT-PATH-DEPS")
+        .expect("path dependency check")
+        .status
+        .clone()
+}
+
+mod ops {
+    pub mod close_condition {
+        use super::super::*;
+
+        #[test]
+        fn valid_engine_path_dependencies_are_accepted_lexically() {
+            let root = fixture_root_with_engine_paths(
+                "../../../franken_engine/crates/franken-engine",
+                "../../../franken_engine/crates/franken-extension-host",
+            );
+            let receipt = generate_fixture_receipt(root.path());
+
+            assert_eq!(receipt.core.composite_verdict, OracleColor::Green);
+            assert_eq!(
+                split_path_dependency_check_status(&receipt),
+                OracleColor::Green
+            );
+        }
+
+        #[test]
+        fn traversal_shaped_engine_path_dependencies_are_rejected() {
+            let root = fixture_root_with_engine_paths(
+                "../../../franken_engine/crates/../../evil",
+                "../../../franken_engine/crates/franken-extension-host",
+            );
+            let receipt = generate_fixture_receipt(root.path());
+
+            assert_eq!(receipt.core.composite_verdict, OracleColor::Red);
+            assert_eq!(
+                split_path_dependency_check_status(&receipt),
+                OracleColor::Red
+            );
+            assert!(
+                receipt
+                    .core
+                    .l2_engine_boundary_oracle
+                    .blocking_findings
+                    .iter()
+                    .any(|finding| finding == "SPLIT-PATH-DEPS failed")
+            );
+        }
+
+        #[test]
+        fn substring_lookalike_engine_path_dependencies_are_rejected() {
+            let root = fixture_root_with_engine_paths(
+                "../../../not_franken_engine/crates/franken-engine",
+                "../../../franken_engine/crates_but_not_really/franken-extension-host",
+            );
+            let receipt = generate_fixture_receipt(root.path());
+
+            assert_eq!(receipt.core.composite_verdict, OracleColor::Red);
+            assert_eq!(
+                split_path_dependency_check_status(&receipt),
+                OracleColor::Red
+            );
+        }
+    }
+}

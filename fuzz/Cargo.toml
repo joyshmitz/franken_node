@@ -184,3 +184,15 @@ name = "fuzz_migration_rollback"
 path = "fuzz_targets/fuzz_migration_rollback.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_extension_registration_manifest_parse"
+path = "fuzz_targets/fuzz_extension_registration_manifest_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_parse_signed_registration_manifest"
+path = "fuzz_targets/fuzz_parse_signed_registration_manifest.rs"
+test = false
+doc = false

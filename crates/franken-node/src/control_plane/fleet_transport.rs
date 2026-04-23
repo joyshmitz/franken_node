@@ -9,7 +9,7 @@ use std::{
     fs::{self, File, OpenOptions, TryLockError},
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    sync::{Mutex, MutexGuard, OnceLock},
+    sync::atomic::{AtomicU8, Ordering},
     thread,
     time::{Duration, Instant},
 };
@@ -621,15 +621,38 @@ impl Drop for TempFileGuard {
     }
 }
 
-fn fleet_action_compaction_process_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+// Atomic state machine for fleet action compaction process coordination
+// UNINIT=0, PROCESSING=1, AVAILABLE=2
+static FLEET_ACTION_COMPACTION_STATE: AtomicU8 = AtomicU8::new(2); // Start as AVAILABLE
+
+/// RAII guard for fleet action compaction process coordination
+struct FleetActionCompactionGuard;
+
+impl Drop for FleetActionCompactionGuard {
+    fn drop(&mut self) {
+        // Release: transition from PROCESSING (1) back to AVAILABLE (2)
+        FLEET_ACTION_COMPACTION_STATE.store(2, Ordering::Release);
+    }
 }
 
-fn lock_fleet_action_compaction_process() -> Result<MutexGuard<'static, ()>, FleetTransportError> {
-    fleet_action_compaction_process_lock()
-        .lock()
-        .map_err(|_| FleetTransportError::lock_contention("fleet action compaction lock poisoned"))
+fn lock_fleet_action_compaction_process() -> Result<FleetActionCompactionGuard, FleetTransportError> {
+    // Attempt to atomically transition from AVAILABLE (2) to PROCESSING (1)
+    match FLEET_ACTION_COMPACTION_STATE.compare_exchange(
+        2, 1,
+        Ordering::AcqRel,
+        Ordering::Acquire
+    ) {
+        Ok(_) => {
+            // Successfully acquired coordination
+            Ok(FleetActionCompactionGuard)
+        }
+        Err(_) => {
+            // Another process is already handling compaction
+            Err(FleetTransportError::lock_contention(
+                "fleet action compaction already in progress by another agent"
+            ))
+        }
+    }
 }
 
 impl FileFleetTransport {

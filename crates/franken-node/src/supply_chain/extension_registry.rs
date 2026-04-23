@@ -305,6 +305,22 @@ pub fn canonical_registration_manifest_bytes(
     })
 }
 
+#[cfg(feature = "test-support")]
+pub fn parse_signed_registration_manifest(
+    manifest_bytes: &[u8],
+) -> Result<ExtensionRegistrationManifest, String> {
+    let manifest = serde_json::from_slice::<ExtensionRegistrationManifest>(manifest_bytes)
+        .map_err(|err| format!("invalid signed extension registration manifest: {err}"))?;
+    if manifest.schema_version != EXTENSION_REGISTRATION_MANIFEST_SCHEMA {
+        return Err(format!(
+            "unsupported signed extension registration manifest schema `{}`",
+            manifest.schema_version
+        ));
+    }
+    Ok(manifest)
+}
+
+#[cfg(not(feature = "test-support"))]
 fn parse_signed_registration_manifest(
     manifest_bytes: &[u8],
 ) -> Result<ExtensionRegistrationManifest, String> {

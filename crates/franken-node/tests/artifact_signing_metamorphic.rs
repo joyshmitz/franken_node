@@ -1,0 +1,172 @@
+use std::collections::BTreeMap;
+
+use frankenengine_node::supply_chain::artifact_signing::{
+    ChecksumManifest, KeyRing, ManifestEntry, build_and_sign_manifest, sign_artifact,
+    verify_release,
+};
+
+const CASES: usize = 100;
+
+#[test]
+fn manifest_canonicalization_is_permutation_idempotent_and_detects_bit_flips() {
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[0x42; 32]);
+    let mut key_ring = KeyRing::new();
+    key_ring.add_key(signing_key.verifying_key());
+
+    for case_index in 0..CASES {
+        let artifacts = generated_artifacts(case_index);
+        let forward_refs = artifact_refs(&artifacts);
+        let mut reversed = artifacts.clone();
+        reversed.reverse();
+        let reversed_refs = artifact_refs(&reversed);
+
+        let forward_manifest = build_and_sign_manifest(&forward_refs, &signing_key);
+        let reversed_manifest = build_and_sign_manifest(&reversed_refs, &signing_key);
+
+        assert_eq!(
+            forward_manifest.canonical_bytes(),
+            reversed_manifest.canonical_bytes(),
+            "case {case_index}: manifest canonical bytes changed after input permutation"
+        );
+        assert_eq!(
+            forward_manifest.signature, reversed_manifest.signature,
+            "case {case_index}: manifest signature changed after input permutation"
+        );
+
+        let canonical_text =
+            String::from_utf8_lossy(&forward_manifest.canonical_bytes()).into_owned();
+        let reparsed_result = ChecksumManifest::parse_canonical(&canonical_text);
+        assert!(
+            reparsed_result.is_ok(),
+            "case {case_index}: parse canonical manifest: {:?}",
+            reparsed_result.err()
+        );
+        let reparsed_entries = reparsed_result.unwrap_or_default();
+        let reparsed_manifest = manifest_from_entries(&forward_manifest, reparsed_entries);
+        assert_eq!(
+            forward_manifest.canonical_bytes(),
+            reparsed_manifest.canonical_bytes(),
+            "case {case_index}: parse/render canonicalization was not idempotent"
+        );
+
+        let artifacts_by_name = artifacts_map(&artifacts);
+        let signatures_by_name = signatures_map(&artifacts, &signing_key);
+        let report = verify_release(
+            &forward_manifest,
+            &artifacts_by_name,
+            &signatures_by_name,
+            &key_ring,
+        );
+        assert!(
+            report.overall_pass,
+            "case {case_index}: generated manifest failed verification: {:?}",
+            report.results
+        );
+
+        let mut tampered_artifacts = artifacts_by_name.clone();
+        let tampered_name = artifacts[0].0.clone();
+        if let Some(content) = tampered_artifacts.get_mut(&tampered_name) {
+            content[0] ^= 0x01;
+        }
+        let tampered_report = verify_release(
+            &forward_manifest,
+            &tampered_artifacts,
+            &signatures_by_name,
+            &key_ring,
+        );
+        assert!(
+            !tampered_report.overall_pass,
+            "case {case_index}: bit-flipped artifact unexpectedly verified"
+        );
+        assert!(
+            tampered_report
+                .results
+                .iter()
+                .any(|result| result.artifact_name == tampered_name && !result.passed),
+            "case {case_index}: bit-flipped artifact was not reported as failed"
+        );
+    }
+}
+
+fn generated_artifacts(case_index: usize) -> Vec<(String, Vec<u8>)> {
+    let mut rng = DeterministicRng::new(0x6d657461_6d6f7270 ^ case_index as u64);
+    let artifact_count = 1 + rng.next_usize(8);
+    let mut artifacts = Vec::with_capacity(artifact_count);
+
+    for artifact_index in 0..artifact_count {
+        let content_len = 1 + rng.next_usize(96);
+        let mut content = Vec::with_capacity(content_len);
+        for _ in 0..content_len {
+            content.push(rng.next_u8());
+        }
+        artifacts.push((
+            format!("release/{case_index:03}/artifact-{artifact_index:02}.bin"),
+            content,
+        ));
+    }
+
+    artifacts
+}
+
+fn artifact_refs(artifacts: &[(String, Vec<u8>)]) -> Vec<(&str, &[u8])> {
+    artifacts
+        .iter()
+        .map(|(name, content)| (name.as_str(), content.as_slice()))
+        .collect()
+}
+
+fn artifacts_map(artifacts: &[(String, Vec<u8>)]) -> BTreeMap<String, Vec<u8>> {
+    artifacts.iter().cloned().collect()
+}
+
+fn signatures_map(
+    artifacts: &[(String, Vec<u8>)],
+    signing_key: &ed25519_dalek::SigningKey,
+) -> BTreeMap<String, Vec<u8>> {
+    artifacts
+        .iter()
+        .map(|(name, content)| (name.clone(), sign_artifact(signing_key, content)))
+        .collect()
+}
+
+fn manifest_from_entries(
+    original: &ChecksumManifest,
+    entries: Vec<ManifestEntry>,
+) -> ChecksumManifest {
+    ChecksumManifest {
+        entries: entries
+            .into_iter()
+            .map(|entry| (entry.name.clone(), entry))
+            .collect(),
+        key_id: original.key_id.clone(),
+        signature: original.signature.clone(),
+    }
+}
+
+struct DeterministicRng {
+    state: u64,
+}
+
+impl DeterministicRng {
+    fn new(seed: u64) -> Self {
+        Self { state: seed }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        let mut value = self.state;
+        value ^= value << 13;
+        value ^= value >> 7;
+        value ^= value << 17;
+        self.state = value;
+        value
+    }
+
+    fn next_u8(&mut self) -> u8 {
+        self.next_u64() as u8
+    }
+
+    fn next_usize(&mut self, upper_exclusive: usize) -> usize {
+        debug_assert!(upper_exclusive > 0);
+        (self.next_u64() as usize) % upper_exclusive
+    }
+}
