@@ -842,7 +842,8 @@ fn validate_engine_dependency_path(cargo_file: &Path, path_str: &str) -> bool {
         // Check if the normalized canonical path ends with exactly the allowed path
         // with proper path separator boundaries to prevent suffix bypass
         if let Some(prefix_len) = normalized.len().checked_sub(allowed.len()) {
-            if &normalized[prefix_len..] == *allowed
+            let suffix = &normalized[prefix_len..];
+            if suffix == *allowed
                 && (prefix_len == 0 || normalized.chars().nth(prefix_len - 1) == Some('/'))
             {
                 return true;
