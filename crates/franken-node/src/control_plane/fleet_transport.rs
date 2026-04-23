@@ -1021,7 +1021,7 @@ impl FleetTransport for FileFleetTransport {
         let compaction_lock_file = self.lock_file(&compaction_lock_path)?;
         lock_file_with_backoff(&compaction_lock_file, &compaction_lock_path, false)?;
 
-        self.with_shared_state_lock(false, || {
+        let shared_state_result = self.with_shared_state_lock(false, || {
             let file = self.action_log_file(true)?;
             lock_file_with_backoff(&file, self.layout.actions_path(), false)?;
 
@@ -1065,7 +1065,13 @@ impl FleetTransport for FileFleetTransport {
             write_result?;
             unlock_result?;
             Ok(())
-        })
+        });
+
+        // RESOURCE LEAK FIX: Always unlock compaction lock, even on error paths
+        let unlock_result = unlock_file(&compaction_lock_file, &compaction_lock_path);
+        shared_state_result?;
+        unlock_result?;
+        Ok(())
     }
 
     fn list_actions(&self) -> Result<Vec<FleetActionRecord>, FleetTransportError> {
