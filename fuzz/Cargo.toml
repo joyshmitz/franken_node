@@ -34,6 +34,7 @@ features = [
     "http-client",
     "parsing",
     "external-commands",
+    "engine",
 ]
 
 [dependencies.frankenengine-verifier-sdk]
@@ -212,5 +213,11 @@ doc = false
 [[bin]]
 name = "fuzz_evidence_ledger_entry_parse"
 path = "fuzz_targets/fuzz_evidence_ledger_entry_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_engine_dispatcher_capability_validation"
+path = "fuzz_targets/fuzz_engine_dispatcher_capability_validation.rs"
 test = false
 doc = false
