@@ -18,6 +18,7 @@ use crate::control_plane::control_epoch::{
 use super::cancellation_protocol::CancellationPhase;
 use super::health_gate::HealthGateResult;
 use super::lifecycle::ConnectorState;
+use super::obligation_tracker::{ObligationFlow, ObligationTracker};
 
 /// Stable event codes for epoch-scoped validity checks.
 pub mod epoch_event_codes {
@@ -28,6 +29,7 @@ pub mod epoch_event_codes {
 }
 
 const RESERVED_CONNECTOR_ID: &str = "<unknown>";
+const ROLLOUT_PERSIST_TRACE_ID: &str = "rollout-state-persist";
 
 fn invalid_connector_id_reason(connector_id: &str) -> Option<String> {
     let trimmed = connector_id.trim();
@@ -338,6 +340,12 @@ fn persist_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+/// Shared obligation tracker for the legacy `persist()` entrypoint.
+fn rollout_obligation_tracker() -> &'static Mutex<ObligationTracker> {
+    static TRACKER: OnceLock<Mutex<ObligationTracker>> = OnceLock::new();
+    TRACKER.get_or_init(|| Mutex::new(ObligationTracker::new()))
+}
+
 /// RAII guard that orphans a temp file on drop (unless defused after rename).
 #[must_use]
 struct TempFileGuard(Option<PathBuf>);
@@ -375,6 +383,32 @@ impl Drop for TempFileGuard {
 /// If a file already exists at `path`, the version in it must be less than
 /// the version in `state`, otherwise `StaleVersion` is returned.
 pub fn persist(state: &RolloutState, path: &Path) -> Result<(), PersistError> {
+    let mut tracker = rollout_obligation_tracker()
+        .lock()
+        .map_err(|_| PersistError::IoError {
+            message: "rollout obligation tracker lock poisoned".to_string(),
+        })?;
+    persist_with_obligation_tracker(state, path, &mut tracker, ROLLOUT_PERSIST_TRACE_ID)
+}
+
+fn persist_with_obligation_tracker(
+    state: &RolloutState,
+    path: &Path,
+    tracker: &mut ObligationTracker,
+    trace_id: &str,
+) -> Result<(), PersistError> {
+    persist_with_obligation_tracker_and_rename(state, path, tracker, trace_id, |from, to| {
+        std::fs::rename(from, to)
+    })
+}
+
+fn persist_with_obligation_tracker_and_rename(
+    state: &RolloutState,
+    path: &Path,
+    tracker: &mut ObligationTracker,
+    trace_id: &str,
+    rename: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
+) -> Result<(), PersistError> {
     let _guard = persist_lock().lock().map_err(|_| PersistError::IoError {
         message: "persist lock poisoned".to_string(),
     })?;
@@ -393,6 +427,16 @@ pub fn persist(state: &RolloutState, path: &Path) -> Result<(), PersistError> {
     let json = serde_json::to_string_pretty(state).map_err(|e| PersistError::IoError {
         message: e.to_string(),
     })?;
+    let now_ms = now_unix_ms();
+    let obligation_payload = rollout_obligation_payload(state, path)?;
+    let obligation_guard = tracker
+        .reserve_guard(
+            ObligationFlow::Migration,
+            obligation_payload,
+            now_ms,
+            trace_id,
+        )
+        .map_err(|message| PersistError::IoError { message })?;
 
     // Write to temp file then rename for atomicity (UUID suffix avoids collisions).
     // TempFileGuard ensures cleanup on rename failure.
@@ -401,12 +445,48 @@ pub fn persist(state: &RolloutState, path: &Path) -> Result<(), PersistError> {
     std::fs::write(&tmp_path, &json).map_err(|e| PersistError::IoError {
         message: e.to_string(),
     })?;
-    std::fs::rename(&tmp_path, path).map_err(|e| PersistError::IoError {
+    rename(&tmp_path, path).map_err(|e| PersistError::IoError {
         message: e.to_string(),
     })?;
     tmp_guard.defuse();
+    obligation_guard
+        .commit(now_unix_ms())
+        .map_err(|message| PersistError::IoError { message })?;
 
     Ok(())
+}
+
+#[cfg(feature = "test-support")]
+pub fn persist_with_obligation_tracker_for_test(
+    state: &RolloutState,
+    path: &Path,
+    tracker: &mut ObligationTracker,
+    trace_id: &str,
+) -> Result<(), PersistError> {
+    persist_with_obligation_tracker(state, path, tracker, trace_id)
+}
+
+#[cfg(feature = "test-support")]
+pub fn persist_with_obligation_tracker_and_rename_for_test(
+    state: &RolloutState,
+    path: &Path,
+    tracker: &mut ObligationTracker,
+    trace_id: &str,
+    rename: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
+) -> Result<(), PersistError> {
+    persist_with_obligation_tracker_and_rename(state, path, tracker, trace_id, rename)
+}
+
+fn rollout_obligation_payload(state: &RolloutState, path: &Path) -> Result<Vec<u8>, PersistError> {
+    serde_json::to_vec(&serde_json::json!({
+        "operation": "rollout_state_persist",
+        "connector_id": state.connector_id,
+        "version": state.version,
+        "path": path.to_string_lossy(),
+    }))
+    .map_err(|e| PersistError::IoError {
+        message: e.to_string(),
+    })
 }
 
 /// Load rollout state from a JSON file.
@@ -509,6 +589,10 @@ pub fn verify_replay(expected: &RolloutState, actual: &RolloutState) -> Result<(
 
 fn now_iso8601() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+fn now_unix_ms() -> u64 {
+    u64::try_from(chrono::Utc::now().timestamp_millis()).unwrap_or(0)
 }
 
 #[cfg(test)]

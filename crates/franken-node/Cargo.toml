@@ -246,6 +246,11 @@ name = "observability_evidence_ledger_regressions"
 path = "tests/observability_evidence_ledger_regressions.rs"
 
 [[test]]
+name = "rollout_state_obligation"
+path = "tests/rollout_state_obligation.rs"
+required-features = ["test-support"]
+
+[[test]]
 name = "observability_adversarial_regressions"
 path = "tests/observability_adversarial_regressions.rs"
 required-features = ["test-support"]
