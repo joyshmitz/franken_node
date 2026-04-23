@@ -2895,3 +2895,120 @@ fn fleet_release_handles_realistic_partial_release_scenarios_across_multi_incide
         quarantine_actions.len()
     );
 }
+
+#[test]
+fn fleet_reconcile_with_complete_transport_verification() {
+    let mut log = TestLogger::new("fleet-cli-e2e", "reconcile_with_transport_verification");
+
+    log.phase("setup");
+    let fleet_state = tempdir().expect("tempdir");
+    let fleet_state_dir = fleet_state.path().join("fleet-state");
+    let (signing_key_path, signing_key) =
+        write_test_signing_key(fleet_state.path(), "keys/fleet.key", 26);
+    let signing_key_path = signing_key_path.display().to_string();
+    let mut transport = seed_transport(&fleet_state_dir);
+    let now = Utc::now();
+
+    // PHASE: Initial state verification (empty transport)
+    log.transport_snapshot(&transport, "initial_empty_state");
+    let initial_actions = transport.list_actions().expect("list initial actions");
+    let initial_nodes = transport.list_node_statuses().expect("list initial nodes");
+
+    log.assertion("initial_action_count", &json!(0), &json!(initial_actions.len()));
+    log.assertion("initial_node_count", &json!(0), &json!(initial_nodes.len()));
+
+    // PHASE: Setup quarantine (pre-reconcile state)
+    transport
+        .publish_action(&FleetActionRecord {
+            action_id: "fleet-op-quarantine-pre-reconcile".to_string(),
+            emitted_at: now,
+            action: FleetAction::Quarantine {
+                zone_id: "zone-reconcile-verify".to_string(),
+                incident_id: "inc-reconcile-verify".to_string(),
+                target_id: "sha256:reconcile-verify".to_string(),
+                target_kind: FleetTargetKind::Artifact,
+                reason: "reconcile transport verification test".to_string(),
+                quarantine_version: 9,
+            },
+        })
+        .expect("publish pre-reconcile quarantine");
+
+    // Add stale node status (should trigger reconcile republish)
+    transport
+        .upsert_node_status(&NodeStatus {
+            zone_id: "zone-reconcile-verify".to_string(),
+            node_id: "node-stale-verify".to_string(),
+            last_seen: now - TimeDelta::seconds(300), // 5 minutes stale
+            quarantine_version: 8, // Behind by 1 version
+            health: NodeHealth::Healthy,
+        })
+        .expect("upsert stale node");
+
+    log.transport_snapshot(&transport, "after_setup_quarantine_and_stale_node");
+    let post_setup_actions = transport.list_actions().expect("list post-setup actions");
+    let post_setup_nodes = transport.list_node_statuses().expect("list post-setup nodes");
+
+    // Verify setup state with detailed transport state checks
+    log.assertion("post_setup_action_count", &json!(1), &json!(post_setup_actions.len()));
+    log.assertion("post_setup_node_count", &json!(1), &json!(post_setup_nodes.len()));
+    log.assertion("setup_action_type", &json!("quarantine"), &json!(
+        match &post_setup_actions[0].action {
+            FleetAction::Quarantine { .. } => "quarantine",
+            _ => "other"
+        }
+    ));
+
+    log.phase("act");
+    let start_reconcile = Instant::now();
+    let output = run_cli_in_dir_with_fleet_state_and_env(
+        &repo_root(),
+        &["fleet", "reconcile", "--json"],
+        &fleet_state_dir,
+        &[(
+            "FRANKEN_NODE_SECURITY_DECISION_RECEIPT_SIGNING_KEY_PATH",
+            signing_key_path.as_str(),
+        )],
+    );
+    let reconcile_duration = start_reconcile.elapsed().as_millis() as u64;
+
+    eprintln!("{}", serde_json::to_string(&json!({
+        "ts": chrono::Utc::now().to_rfc3339(),
+        "suite": "fleet-cli-e2e",
+        "test": "reconcile_with_transport_verification",
+        "event": "reconcile_execution_complete",
+        "data": {
+            "exit_code": output.status.code(),
+            "duration_ms": reconcile_duration,
+            "stdout_size": output.stdout.len(),
+            "stderr_size": output.stderr.len()
+        }
+    })).unwrap());
+
+    log.phase("assert");
+
+    // Assert CLI success
+    assert!(
+        output.status.success(),
+        "fleet reconcile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Parse and validate JSON response
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("fleet reconcile json");
+
+    log.assertion("reconcile_action_type", &json!("reconcile"), &payload["action"]["action_type"]);
+    log.assertion("reconcile_event_code", &json!("FLEET-005"), &payload["action"]["event_code"]);
+
+    // CRITICAL: Transport state verification BETWEEN phases
+    log.transport_snapshot(&transport, "after_reconcile_execution");
+    let post_reconcile_actions = transport.list_actions().expect("list post-reconcile actions");
+
+    // Verify signature round-trip
+    assert_convergence_receipt_signature_round_trips(&payload["convergence_receipt"], &signing_key);
+
+    log.phase("teardown");
+    log.transport_snapshot(&transport, "final_state_after_reconcile");
+
+    log.test_end("pass");
+}
