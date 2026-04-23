@@ -247,6 +247,10 @@ path = "tests/observability_adversarial_regressions.rs"
 required-features = ["test-support"]
 
 [[test]]
+name = "observability_witness_metamorphic"
+path = "tests/observability_witness_metamorphic.rs"
+
+[[test]]
 name = "fleet_quarantine_metamorphic"
 path = "tests/fleet_quarantine_metamorphic.rs"
 
