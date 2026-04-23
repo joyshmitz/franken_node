@@ -1796,7 +1796,7 @@ impl EngineDispatcher {
         tracing::info!(
             execution_mode = "native",
             phase = "setup",
-            duration_ms = setup_duration.as_millis() as u64,
+            duration_ms = u64::try_from(setup_duration.as_millis()).unwrap_or(u64::MAX),
             "Native engine setup completed"
         );
 
@@ -1821,7 +1821,7 @@ impl EngineDispatcher {
         tracing::info!(
             execution_mode = "native",
             phase = "execution",
-            duration_ms = exec_duration.as_millis() as u64,
+            duration_ms = u64::try_from(exec_duration.as_millis()).unwrap_or(u64::MAX),
             "Native engine execution completed"
         );
 
@@ -1874,7 +1874,7 @@ impl EngineDispatcher {
                 tracing::info!(
                     execution_mode = "external",
                     phase = "execution",
-                    duration_ms = exec_duration.as_millis() as u64,
+                    duration_ms = u64::try_from(exec_duration.as_millis()).unwrap_or(u64::MAX),
                     exit_code = ?output.status.code(),
                     "External engine process completed"
                 );
@@ -1895,7 +1895,7 @@ impl EngineDispatcher {
                 tracing::info!(
                     execution_mode = "external",
                     phase = "execution",
-                    duration_ms = exec_duration.as_millis() as u64,
+                    duration_ms = u64::try_from(exec_duration.as_millis()).unwrap_or(u64::MAX),
                     error = %spawn_err,
                     "External engine process failed to start"
                 );
@@ -2303,8 +2303,8 @@ mod tests {
             PreferredRuntime::FrankenEngine,
         );
 
-        let telemetry_bridge = TelemetryBridge::null();
-        let result = dispatcher.dispatch_run(&app, &config, &telemetry_bridge);
+        let _telemetry_bridge = TelemetryBridge::null();
+        let result = dispatcher.dispatch_run(&app, &config, "strict");
 
         assert!(result.is_err(), "Strict profile should reject external process fallback when engine feature is disabled");
         let error = result.unwrap_err().to_string();
@@ -3615,7 +3615,7 @@ mod tests {
                     finished_at_utc: (report_inputs.started_at
                         + chrono::Duration::from_std(report_inputs.duration).unwrap())
                     .to_rfc3339(),
-                    duration_ms: report_inputs.duration.as_millis() as u64,
+                    duration_ms: u64::try_from(report_inputs.duration.as_millis()).unwrap_or(u64::MAX),
                     exit_code: report_inputs.output.status.code(),
                     terminated_by_signal: !report_inputs.output.status.success(),
                     telemetry: report_inputs.telemetry.clone(),
