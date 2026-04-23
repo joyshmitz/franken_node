@@ -267,7 +267,7 @@ impl AdmissionBudgetTracker {
     pub fn record_failed_auth(&mut self, peer_id: &str) -> Result<(), AdmissionError> {
         let usage = self.peers.entry(peer_id.to_string()).or_default();
         usage.failed_auth_count = usage.failed_auth_count.saturating_add(1);
-        if usage.failed_auth_count > self.budget.max_failed_auth {
+        if usage.failed_auth_count >= self.budget.max_failed_auth {
             return Err(AdmissionError::AuthExceeded {
                 peer_id: peer_id.to_string(),
                 count: usage.failed_auth_count,
@@ -281,7 +281,7 @@ impl AdmissionBudgetTracker {
     pub fn record_decode_start(&mut self, peer_id: &str) -> Result<(), AdmissionError> {
         let usage = self.peers.entry(peer_id.to_string()).or_default();
         let attempted_count = usage.inflight_decode_count.saturating_add(1);
-        if attempted_count > self.budget.max_inflight_decode {
+        if attempted_count >= self.budget.max_inflight_decode {
             return Err(AdmissionError::InflightExceeded {
                 peer_id: peer_id.to_string(),
                 count: attempted_count,
