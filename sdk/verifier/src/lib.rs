@@ -190,16 +190,6 @@ pub enum ValidationWorkflow {
     ComplianceAudit,
 }
 
-impl ValidationWorkflow {
-    fn assertion_name(self) -> &'static str {
-        match self {
-            Self::ReleaseValidation => "workflow_release_validation",
-            Self::IncidentValidation => "workflow_incident_validation",
-            Self::ComplianceAudit => "workflow_compliance_audit",
-        }
-    }
-}
-
 /// Append-only transparency log entry for facade verification results.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransparencyLogEntry {
@@ -554,23 +544,16 @@ impl VerifierSdk {
     /// Execute a documented validation workflow against canonical replay bundle bytes.
     pub fn execute_workflow(
         &self,
-        workflow: ValidationWorkflow,
+        _workflow: ValidationWorkflow,
         bundle: &[u8],
     ) -> Result<VerificationResult, VerifierSdkError> {
         self.validate_current_verifier_identity()?;
-        let verified = self.verify_migration_artifact(bundle)?;
-        let mut assertions = verified.checked_assertions;
-        assertions.push(AssertionResult {
-            assertion: workflow.assertion_name().to_string(),
-            passed: true,
-            detail: "workflow completed using verified replay bundle".to_string(),
-        });
-        self.build_result(
-            VerificationOperation::Workflow,
-            verified.verdict,
-            assertions,
-            verified.artifact_binding_hash,
-        )
+        let verified = bundle::verify(bundle)?;
+        self.verify_bundle_belongs_to_current_verifier(&verified)?;
+        Err(VerifierSdkError::UnauthenticatedStructuralBundle {
+            bundle_id: verified.bundle_id,
+            verifier_identity: verified.verifier_identity,
+        })
     }
 
     /// Create a new unsealed verification session.
@@ -753,10 +736,7 @@ impl VerifierSdk {
         artifact_binding_hash: String,
     ) -> Result<VerificationResult, VerifierSdkError> {
         self.validate_current_verifier_identity()?;
-        let confidence_score = match verdict {
-            VerificationVerdict::Pass => 1.0,
-            VerificationVerdict::Fail | VerificationVerdict::Inconclusive => 0.0,
-        };
+        let confidence_score = confidence_score_for_result(&verdict, &checked_assertions);
         let mut result = VerificationResult {
             operation,
             verdict,
@@ -832,6 +812,31 @@ fn default_result_origin_nonce() -> String {
 
 fn current_utc_timestamp() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
+}
+
+fn confidence_score_for_result(
+    verdict: &VerificationVerdict,
+    checked_assertions: &[AssertionResult],
+) -> f64 {
+    let assertion_ratio = if checked_assertions.is_empty() {
+        match verdict {
+            VerificationVerdict::Pass => 1.0,
+            VerificationVerdict::Fail => 0.0,
+            VerificationVerdict::Inconclusive => 0.5,
+        }
+    } else {
+        checked_assertions
+            .iter()
+            .filter(|assertion| assertion.passed)
+            .count() as f64
+            / checked_assertions.len() as f64
+    };
+
+    match verdict {
+        VerificationVerdict::Pass => assertion_ratio,
+        VerificationVerdict::Fail => assertion_ratio * 0.5,
+        VerificationVerdict::Inconclusive => 0.25 + (assertion_ratio * 0.5),
+    }
 }
 
 fn derive_session_nonce(
@@ -1609,6 +1614,58 @@ mod tests {
     }
 
     #[test]
+    fn confidence_score_reflects_partial_failed_assertions() {
+        let sdk = create_verifier_sdk("verifier://alpha");
+        let result = sdk
+            .build_result(
+                VerificationOperation::Claim,
+                VerificationVerdict::Fail,
+                vec![
+                    AssertionResult {
+                        assertion: "capsule_replay_verified".to_string(),
+                        passed: true,
+                        detail: "replay matched".to_string(),
+                    },
+                    AssertionResult {
+                        assertion: "capsule_output_hash_matches".to_string(),
+                        passed: false,
+                        detail: "hash diverged".to_string(),
+                    },
+                ],
+                "artifact-hash-alpha".to_string(),
+            )
+            .expect("failed result should build");
+
+        assert_eq!(result.confidence_score, 0.25);
+    }
+
+    #[test]
+    fn confidence_score_preserves_midrange_inconclusive_signal() {
+        let sdk = create_verifier_sdk("verifier://alpha");
+        let result = sdk
+            .build_result(
+                VerificationOperation::Workflow,
+                VerificationVerdict::Inconclusive,
+                vec![
+                    AssertionResult {
+                        assertion: "workflow_preconditions_met".to_string(),
+                        passed: true,
+                        detail: "preconditions satisfied".to_string(),
+                    },
+                    AssertionResult {
+                        assertion: "workflow_attestation_verified".to_string(),
+                        passed: false,
+                        detail: "attestation unavailable".to_string(),
+                    },
+                ],
+                "artifact-hash-alpha".to_string(),
+            )
+            .expect("inconclusive result should build");
+
+        assert_eq!(result.confidence_score, 0.5);
+    }
+
+    #[test]
     fn transparency_log_rejects_same_verifier_result_from_different_sdk_instance() {
         let sdk = create_verifier_sdk("verifier://alpha");
         let sibling_sdk = create_verifier_sdk("verifier://alpha");
@@ -1773,9 +1830,15 @@ mod tests {
             .expect("mismatched trust anchor should still return a result");
 
         assert_eq!(result.verdict, VerificationVerdict::Fail);
-        assert!(result.checked_assertions.iter().any(|assertion| assertion.assertion
-            == "trust_anchor_matches_integrity_hash"
-            && !assertion.passed));
+        assert!(
+            result
+                .checked_assertions
+                .iter()
+                .any(
+                    |assertion| assertion.assertion == "trust_anchor_matches_integrity_hash"
+                        && !assertion.passed
+                )
+        );
     }
 
     #[test]
