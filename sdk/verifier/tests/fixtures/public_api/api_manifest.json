@@ -123,8 +123,8 @@
     },
     {
       "name": "VerifierSdk::new",
-      "signature": "fn new(trust_anchor: &str) -> Result<Self, VerifierSdkError>",
-      "behavior": "Creates new SDK instance with trust anchor validation",
+      "signature": "fn new(verifier_identity: impl Into<String>) -> Self",
+      "behavior": "Creates new SDK instance, seeds stable config keys, and defers verifier-identity validation to operational methods",
       "requirement_level": "must"
     }
   ],
