@@ -1020,8 +1020,21 @@ impl EngineDispatcher {
             cmd.env("FRANKEN_ENGINE_NETWORK_ALLOWLIST", allowlist_json);
         }
 
-        let (output, report) = Self::run_engine_process(&mut cmd, telemetry_handle)
-            .map_err(|err| anyhow::anyhow!("{err}"))?;
+        let (output, report) = {
+            #[cfg(feature = "engine")]
+            {
+                // Use native execution when engine feature is enabled
+                tracing::info!("Using native franken_engine execution instead of external process");
+                Self::run_engine_native(app_path, config, policy_mode, telemetry_handle)
+                    .map_err(|err| anyhow::anyhow!("{err}"))
+            }
+            #[cfg(not(feature = "engine"))]
+            {
+                // Fall back to external process when engine feature is disabled
+                Self::run_engine_process(&mut cmd, telemetry_handle)
+                    .map_err(|err| anyhow::anyhow!("{err}"))
+            }
+        }?;
         if !report.drain_completed {
             eprintln!(
                 "Warning: telemetry drain did not complete within {}ms ({} events persisted, {} shed, {} dropped)",
