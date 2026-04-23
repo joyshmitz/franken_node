@@ -5032,7 +5032,7 @@ mod tests {
 
         // Verify entry IDs are generated correctly
         for (expected_index, entry) in report.entries.iter().enumerate() {
-            let expected_id = format!("mig-rewrite-{:03}", expected_index + 1);
+            let expected_id = format!("mig-rewrite-{:03}", expected_index.saturating_add(1));
             assert_eq!(
                 entry.id, expected_id,
                 "Entry ID should match expected format"
