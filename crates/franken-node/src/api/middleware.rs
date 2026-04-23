@@ -376,6 +376,20 @@ pub fn enforce_policy(
 // ── Rate Limiting ──────────────────────────────────────────────────────────
 
 /// Rate limiter configuration for an endpoint group.
+///
+/// SECURITY NOTE: This rate limiter provides PER-INSTANCE performance protection,
+/// not cluster-wide security rate limiting. In distributed deployments, each
+/// franken-node instance maintains independent token bucket state, allowing
+/// attackers to achieve N×rate_limit throughput by distributing requests across
+/// multiple instances. This is intentional for the current threat model:
+///
+/// 1. Authentication failures occur BEFORE rate limiting (lines 597-603), so
+///    brute force attacks against credentials are not subject to this bypass
+/// 2. Rate limits apply to POST-AUTHENTICATION operations for performance
+///    protection (prevent individual instance overload)
+/// 3. Security-critical operations requiring cluster-wide rate limiting should
+///    use request signing, nonce validation, or capability-based authorization
+///    instead of pure time-based rate limiting
 #[cfg(any(test, feature = "extended-surfaces"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RateLimitConfig {
@@ -608,7 +622,9 @@ where
         return (Err(err), log);
     }
 
-    // Step 4: Rate limiting
+    // Step 4: Rate limiting (PERFORMANCE PROTECTION)
+    // Applied after auth/authz - protects handler from overload on this instance.
+    // NOT security rate limiting - authentication failures occur before this step.
     if let Err(err) = check_rate_limit(rate_limiter, &trace_id) {
         let log = build_request_log(route, 429, start, &trace_id, &identity.principal);
         return (Err(err), log);
@@ -666,21 +682,29 @@ fn build_request_log(
 }
 
 /// Default rate limiter configurations by endpoint group.
+///
+/// All configurations provide PERFORMANCE PROTECTION per-instance:
+/// - Operator: Read operations, status checks (high throughput allowed)
+/// - Verifier: Cryptographic verification operations (moderate throughput)
+/// - FleetControl: State-changing operations (conservative limits)
+///
+/// These are NOT security rate limits - they protect individual instance
+/// performance after successful authentication and authorization.
 #[cfg(any(test, feature = "extended-surfaces"))]
 pub fn default_rate_limit(group: EndpointGroup) -> RateLimitConfig {
     match group {
         EndpointGroup::Operator => RateLimitConfig {
-            sustained_rps: 100,
+            sustained_rps: 100,   // PERFORMANCE: protect instance from read overload
             burst_size: 200,
             fail_closed: true, // SECURITY: fail-closed to prevent DoS on rate limiter failure
         },
         EndpointGroup::Verifier => RateLimitConfig {
-            sustained_rps: 50,
+            sustained_rps: 50,    // PERFORMANCE: protect crypto operations from overload
             burst_size: 100,
             fail_closed: true, // SECURITY: fail-closed to prevent DoS on rate limiter failure
         },
         EndpointGroup::FleetControl => RateLimitConfig {
-            sustained_rps: 20,
+            sustained_rps: 20,    // PERFORMANCE: protect dangerous mutations from overload
             burst_size: 40,
             fail_closed: true, // fail-closed for dangerous mutations
         },
