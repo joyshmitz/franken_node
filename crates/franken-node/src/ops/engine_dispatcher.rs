@@ -1358,14 +1358,14 @@ impl EngineDispatcher {
             ),
             source: source_code,
             source_file: Some(app_path.to_string_lossy().to_string()),
-            capabilities: vec![], // TODO: Map from franken-node policy
+            capabilities: vec![], // bd-19c98: Map from franken-node policy
             version: env!("CARGO_PKG_VERSION").to_string(), // Extract from package metadata
             metadata: std::collections::BTreeMap::new(),
         };
 
         // Configure orchestrator with policy settings
-        let orchestrator_config = OrchestratorConfig::default(); // TODO: Map from franken-node config
-        let runtime_config = EngineRuntimeConfig::default(); // TODO: Map from franken-node config
+        let orchestrator_config = OrchestratorConfig::default(); // bd-wlkks: Map from franken-node config
+        let runtime_config = EngineRuntimeConfig::default(); // bd-1nkf8: Map from franken-node config
 
         let mut orchestrator = ExecutionOrchestrator::new_with_runtime_config(
             orchestrator_config,
