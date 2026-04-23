@@ -499,7 +499,21 @@ impl VerifierSdk {
 
         let verified = bundle::verify(state)?;
         self.verify_bundle_belongs_to_current_verifier(&verified)?;
-        let _ = anchor_integrity_hash;
+        if !constant_time_eq(anchor_integrity_hash, &verified.integrity_hash) {
+            return self.build_result(
+                VerificationOperation::TrustState,
+                VerificationVerdict::Fail,
+                vec![AssertionResult {
+                    assertion: "trust_anchor_matches_integrity_hash".to_string(),
+                    passed: false,
+                    detail: format!(
+                        "expected trust anchor {} but verified bundle integrity hash was {}",
+                        anchor_integrity_hash, verified.integrity_hash
+                    ),
+                }],
+                verified.integrity_hash,
+            );
+        }
         Err(VerifierSdkError::UnauthenticatedStructuralBundle {
             bundle_id: verified.bundle_id,
             verifier_identity: verified.verifier_identity,
@@ -1765,7 +1779,7 @@ mod tests {
             .expect("mismatched trust anchor should still return a result");
 
         assert_eq!(result.verdict, VerificationVerdict::Fail);
-        assert!(result.assertions.iter().any(|assertion| assertion.assertion
+        assert!(result.checked_assertions.iter().any(|assertion| assertion.assertion
             == "trust_anchor_matches_integrity_hash"
             && !assertion.passed));
     }
