@@ -97,15 +97,15 @@ fn test_canonical_serializer_conformance() {
         .expect("Failed to load invalid fixtures");
 
     // Track test results for conformance reporting
-    let mut test_results = Vec::new();
+    let mut test_results: Vec<(String, String, bool, String)> = Vec::new();
 
     // BD_JJM_SCHEMA_001: 6 trust object types registered with correct schemas
     let all_types = TrustObjectType::all();
     let expected_count = 6;
     let schema_count_pass = all_types.len() == expected_count;
     test_results.push((
-        "BD_JJM_SCHEMA_001",
-        "6 trust object types registered",
+        "BD_JJM_SCHEMA_001".to_string(),
+        "6 trust object types registered".to_string(),
         schema_count_pass,
         format!("expected: {}, actual: {}", expected_count, all_types.len())
     ));
@@ -257,8 +257,8 @@ fn test_canonical_serializer_conformance() {
     let float_rejection_pass = float_fixture.is_some();
 
     test_results.push((
-        "BD_JJM_NO_FLOAT_001",
-        "Floating-point payload rejection test exists",
+        "BD_JJM_NO_FLOAT_001".to_string(),
+        "Floating-point payload rejection test exists".to_string(),
         float_rejection_pass,
         if float_rejection_pass { "test fixture present" } else { "test fixture missing" }.to_string()
     ));
@@ -268,8 +268,8 @@ fn test_canonical_serializer_conformance() {
     let non_canonical_rejection_pass = non_canonical_fixture.is_some();
 
     test_results.push((
-        "BD_JJM_NON_CANONICAL_001",
-        "Non-canonical input rejection test exists",
+        "BD_JJM_NON_CANONICAL_001".to_string(),
+        "Non-canonical input rejection test exists".to_string(),
         non_canonical_rejection_pass,
         if non_canonical_rejection_pass { "test fixture present" } else { "test fixture missing" }.to_string()
     ));

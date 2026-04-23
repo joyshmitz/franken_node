@@ -91,6 +91,7 @@ pub fn to_ledger_entry(entry: &ControlEvidenceEntry) -> EvidenceEntry {
             "chosen_action": entry.chosen_action,
         }),
         size_bytes: 0,
+        signature: String::new(),
     }
 }
 

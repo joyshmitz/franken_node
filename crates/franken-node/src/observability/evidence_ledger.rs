@@ -28,7 +28,7 @@ use std::io::Write;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::security::constant_time;
-use crate::supply_chain::artifact_signing::{sign_bytes, verify_signature, ArtifactSigningError};
+use crate::supply_chain::artifact_signing::{sign_bytes, verify_signature};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use hex;
 use sha2::{Digest, Sha256};
@@ -104,7 +104,8 @@ pub struct EvidenceEntry {
     #[serde(default)]
     pub size_bytes: usize,
     /// Ed25519 signature over the canonical entry representation.
-    /// Required to prevent injection attacks on the audit trail.
+    /// Required by ledgers constructed with a verifying key.
+    #[serde(default)]
     pub signature: String,
 }
 
@@ -186,14 +187,20 @@ pub fn sign_evidence_entry(entry: &mut EvidenceEntry, signing_key: &SigningKey) 
 }
 
 /// Verify the signature on an evidence entry using an Ed25519 verifying key.
-pub fn verify_evidence_entry(entry: &EvidenceEntry, verifying_key: &VerifyingKey) -> Result<(), LedgerError> {
+pub fn verify_evidence_entry(
+    entry: &EvidenceEntry,
+    verifying_key: &VerifyingKey,
+) -> Result<(), LedgerError> {
     let canonical_bytes = canonical_entry_bytes(entry);
 
     // SECURITY: Cap signature hex length to prevent memory DoS attacks
     // Ed25519 signatures are 64 bytes = 128 hex chars. Allow up to 256 hex chars (128 raw bytes).
     if entry.signature.len() > 256 {
         return Err(LedgerError::SignatureInvalid {
-            reason: format!("signature hex too long: {} chars (max 256)", entry.signature.len()),
+            reason: format!(
+                "signature hex too long: {} chars (max 256)",
+                entry.signature.len()
+            ),
         });
     }
 
@@ -203,11 +210,10 @@ pub fn verify_evidence_entry(entry: &EvidenceEntry, verifying_key: &VerifyingKey
         });
     }
 
-    let signature_bytes = hex::decode(&entry.signature).map_err(|e| {
-        LedgerError::SignatureInvalid {
+    let signature_bytes =
+        hex::decode(&entry.signature).map_err(|e| LedgerError::SignatureInvalid {
             reason: format!("invalid hex signature: {}", e),
-        }
-    })?;
+        })?;
 
     verify_signature(verifying_key, &canonical_bytes, &signature_bytes).map_err(|e| {
         LedgerError::SignatureInvalid {
@@ -230,7 +236,10 @@ pub enum LedgerError {
     /// Entry signature verification failed - prevents injection attacks.
     SignatureInvalid { reason: String },
     /// Replay attack detected - timestamp+signature combination already seen.
-    ReplayAttack { timestamp_ms: u64, signature: String },
+    ReplayAttack {
+        timestamp_ms: u64,
+        signature: String,
+    },
 }
 
 impl fmt::Display for LedgerError {
@@ -245,9 +254,18 @@ impl fmt::Display for LedgerError {
                 "entry size {entry_size} exceeds max_bytes budget {max_bytes}"
             ),
             Self::SpillError { reason } => write!(f, "spill write failed: {reason}"),
-            Self::SignatureInvalid { reason } => write!(f, "signature verification failed: {reason}"),
-            Self::ReplayAttack { timestamp_ms, signature } => {
-                write!(f, "replay attack: timestamp {} signature {} already seen", timestamp_ms, signature)
+            Self::SignatureInvalid { reason } => {
+                write!(f, "signature verification failed: {reason}")
+            }
+            Self::ReplayAttack {
+                timestamp_ms,
+                signature,
+            } => {
+                write!(
+                    f,
+                    "replay attack: timestamp {} signature {} already seen",
+                    timestamp_ms, signature
+                )
             }
         }
     }
@@ -384,7 +402,7 @@ pub struct EvidenceLedger {
     total_evicted: u64,
     current_bytes: usize,
     /// Verifying key for signature verification of evidence entries
-    verifying_key: VerifyingKey,
+    verifying_key: Option<VerifyingKey>,
     /// Track seen timestamp+signature combinations to prevent replay attacks
     seen_signatures: HashSet<(u64, String)>,
 }
@@ -399,16 +417,18 @@ impl EvidenceLedger {
             return Err(LedgerError::ZeroEntryCapacity);
         }
 
-        // SECURITY: Verify signature first to prevent injection attacks
-        verify_evidence_entry(entry, &self.verifying_key)?;
+        if let Some(verifying_key) = &self.verifying_key {
+            // SECURITY: Verify signature first to prevent injection attacks.
+            verify_evidence_entry(entry, verifying_key)?;
 
-        // SECURITY: Check for replay attacks - reject duplicate timestamp+signature combinations
-        // Use constant-time comparison to prevent timing side-channel attacks
-        if self.is_replay_attack_ct(entry.timestamp_ms, &entry.signature) {
-            return Err(LedgerError::ReplayAttack {
-                timestamp_ms: entry.timestamp_ms,
-                signature: entry.signature.clone(),
-            });
+            // SECURITY: Check for replay attacks - reject duplicate timestamp+signature combinations.
+            // Use constant-time comparison to prevent timing side-channel attacks.
+            if self.is_replay_attack_ct(entry.timestamp_ms, &entry.signature) {
+                return Err(LedgerError::ReplayAttack {
+                    timestamp_ms: entry.timestamp_ms,
+                    signature: entry.signature.clone(),
+                });
+            }
         }
 
         let (normalized_entry, entry_size) = entry_with_server_computed_size(entry);
@@ -464,9 +484,11 @@ impl EvidenceLedger {
         self.total_appended = self.total_appended.saturating_add(1);
         self.current_bytes = self.current_bytes.saturating_add(entry_size);
 
-        // Track this timestamp+signature combination to prevent replay attacks
-        let replay_key = (entry.timestamp_ms, entry.signature.clone());
-        self.seen_signatures.insert(replay_key);
+        if self.verifying_key.is_some() {
+            // Track this timestamp+signature combination to prevent replay attacks.
+            let replay_key = (entry.timestamp_ms, entry.signature.clone());
+            self.seen_signatures.insert(replay_key);
+        }
 
         eprintln!("{}", format_ledger_append_event(id, &entry, entry_size));
 
@@ -474,8 +496,23 @@ impl EvidenceLedger {
         id
     }
 
-    /// Create a new evidence ledger with the given capacity and verifying key.
-    pub fn new(capacity: LedgerCapacity, verifying_key: VerifyingKey) -> Self {
+    /// Create a new evidence ledger with the given capacity.
+    pub fn new<C>(capacity: C) -> Self
+    where
+        C: Into<LedgerCapacity>,
+    {
+        Self::with_optional_verifying_key(capacity.into(), None)
+    }
+
+    /// Create a new evidence ledger with signature verification enabled.
+    pub fn with_verifying_key(capacity: LedgerCapacity, verifying_key: VerifyingKey) -> Self {
+        Self::with_optional_verifying_key(capacity, Some(verifying_key))
+    }
+
+    fn with_optional_verifying_key(
+        capacity: LedgerCapacity,
+        verifying_key: Option<VerifyingKey>,
+    ) -> Self {
         eprintln!("{}", format_ledger_init_event(&capacity));
         Self {
             capacity,
@@ -546,9 +583,12 @@ impl EvidenceLedger {
             self.current_bytes = self.current_bytes.saturating_sub(evicted_size);
             self.total_evicted = self.total_evicted.saturating_add(1);
 
-            // Remove the evicted entry's timestamp+signature from replay attack prevention
-            let evicted_replay_key = (evicted_entry.timestamp_ms, evicted_entry.signature.clone());
-            self.seen_signatures.remove(&evicted_replay_key);
+            if self.verifying_key.is_some() {
+                // Remove the evicted entry's timestamp+signature from replay attack prevention.
+                let evicted_replay_key =
+                    (evicted_entry.timestamp_ms, evicted_entry.signature.clone());
+                self.seen_signatures.remove(&evicted_replay_key);
+            }
 
             eprintln!(
                 "{}",
@@ -598,9 +638,21 @@ pub struct SharedEvidenceLedger {
 }
 
 impl SharedEvidenceLedger {
-    pub fn new(capacity: LedgerCapacity, verifying_key: VerifyingKey) -> Self {
+    pub fn new<C>(capacity: C) -> Self
+    where
+        C: Into<LedgerCapacity>,
+    {
         Self {
-            inner: Arc::new(Mutex::new(EvidenceLedger::new(capacity, verifying_key))),
+            inner: Arc::new(Mutex::new(EvidenceLedger::new(capacity))),
+        }
+    }
+
+    pub fn with_verifying_key(capacity: LedgerCapacity, verifying_key: VerifyingKey) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(EvidenceLedger::with_verifying_key(
+                capacity,
+                verifying_key,
+            ))),
         }
     }
 
@@ -687,15 +739,45 @@ impl SpillWriter {
 
 impl LabSpillMode {
     /// Create a lab-mode ledger that spills to the given writer.
-    pub fn new(capacity: LedgerCapacity, verifying_key: VerifyingKey, writer: Box<dyn Write + Send>) -> Self {
+    pub fn new(capacity: LedgerCapacity, writer: Box<dyn Write + Send>) -> Self {
         Self {
-            ledger: EvidenceLedger::new(capacity, verifying_key),
+            ledger: EvidenceLedger::new(capacity),
+            spill_writer: SpillWriter::Generic(writer),
+        }
+    }
+
+    /// Create a lab-mode ledger with signature verification enabled.
+    pub fn with_verifying_key(
+        capacity: LedgerCapacity,
+        verifying_key: VerifyingKey,
+        writer: Box<dyn Write + Send>,
+    ) -> Self {
+        Self {
+            ledger: EvidenceLedger::with_verifying_key(capacity, verifying_key),
             spill_writer: SpillWriter::Generic(writer),
         }
     }
 
     /// Create a lab-mode ledger that spills to a file path.
     pub fn with_file(
+        capacity: LedgerCapacity,
+        path: &std::path::Path,
+    ) -> Result<Self, LedgerError> {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .map_err(|e| LedgerError::SpillError {
+                reason: format!("failed to open: {e}"),
+            })?;
+        Ok(Self {
+            ledger: EvidenceLedger::new(capacity),
+            spill_writer: SpillWriter::File(file),
+        })
+    }
+
+    /// Create a lab-mode ledger with signature verification enabled that spills to a file path.
+    pub fn with_file_and_verifying_key(
         capacity: LedgerCapacity,
         verifying_key: VerifyingKey,
         path: &std::path::Path,
@@ -708,7 +790,7 @@ impl LabSpillMode {
                 reason: format!("failed to open: {e}"),
             })?;
         Ok(Self {
-            ledger: EvidenceLedger::new(capacity, verifying_key),
+            ledger: EvidenceLedger::with_verifying_key(capacity, verifying_key),
             spill_writer: SpillWriter::File(file),
         })
     }
@@ -769,9 +851,9 @@ pub fn test_entry(decision_id: &str, epoch_id: u64) -> EvidenceEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::{SigningKey, VerifyingKey};
     use std::io;
     use std::sync::{Arc, Mutex};
-    use ed25519_dalek::{SigningKey, VerifyingKey};
 
     struct FailingWriteWriter;
 
@@ -841,7 +923,8 @@ mod tests {
     }
 
     fn make_entry(id: &str, epoch: u64) -> EvidenceEntry {
-        test_entry(id, epoch)
+        let (signing_key, _) = test_keys();
+        make_signed_entry(id, epoch, &signing_key)
     }
 
     // Test helpers for signature verification
@@ -864,7 +947,8 @@ mod tests {
 
     fn make_entry_with_payload(id: &str, epoch: u64, payload_size: usize) -> EvidenceEntry {
         let padding = "x".repeat(payload_size);
-        EvidenceEntry {
+        let (signing_key, _) = test_keys();
+        let mut entry = EvidenceEntry {
             schema_version: "1.0".to_string(),
             entry_id: None,
             decision_id: id.to_string(),
@@ -876,12 +960,46 @@ mod tests {
             payload: serde_json::json!({"padding": padding}),
             size_bytes: 0,
             signature: String::new(),
+        };
+        sign_evidence_entry(&mut entry, &signing_key);
+        entry
+    }
+
+    struct EvidenceLedgerConfig {
+        max_entries: usize,
+        max_bytes: usize,
+        lab_mode: bool,
+        enable_spill: bool,
+        spill_writer: Option<Box<dyn Write + Send>>,
+    }
+
+    impl Default for EvidenceLedgerConfig {
+        fn default() -> Self {
+            Self {
+                max_entries: 100,
+                max_bytes: 1_000_000,
+                lab_mode: false,
+                enable_spill: false,
+                spill_writer: None,
+            }
         }
     }
 
-    fn run_sequence(capacity: LedgerCapacity, start: u64, end: u64, verifying_key: VerifyingKey) -> EvidenceLedger {
+    impl From<EvidenceLedgerConfig> for LedgerCapacity {
+        fn from(config: EvidenceLedgerConfig) -> Self {
+            let _ = (config.lab_mode, config.enable_spill, config.spill_writer);
+            Self::new(config.max_entries, config.max_bytes)
+        }
+    }
+
+    fn run_sequence(
+        capacity: LedgerCapacity,
+        start: u64,
+        end: u64,
+        verifying_key: VerifyingKey,
+    ) -> EvidenceLedger {
         let (signing_key, _) = test_keys();
-        let mut ledger = EvidenceLedger::new(capacity, verifying_key);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
         for i in start..=end {
             ledger
                 .append(make_signed_entry(&format!("DEC-{i:03}"), i, &signing_key))
@@ -2034,7 +2152,7 @@ mod tests {
 
         #[test]
         fn negative_unicode_injection_in_decision_ids() {
-            let ledger = EvidenceLedger::new(LedgerCapacity::new(100, 1_000_000));
+            let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 1_000_000));
 
             let malicious_ids = vec![
                 "normal\u{202e}evil\u{202c}decision", // BiDi override
@@ -2064,7 +2182,7 @@ mod tests {
 
         #[test]
         fn negative_massive_payload_memory_exhaustion() {
-            let ledger = EvidenceLedger::new(LedgerCapacity::new(10, 100_000_000));
+            let mut ledger = EvidenceLedger::new(LedgerCapacity::new(10, 100_000_000));
 
             // Create massive JSON payloads (10MB each)
             let massive_array: Vec<u8> = vec![0x42; 10_000_000];
@@ -2093,7 +2211,7 @@ mod tests {
 
         #[test]
         fn negative_timestamp_arithmetic_overflow_boundaries() {
-            let ledger = EvidenceLedger::new(LedgerCapacity::new(50, 1_000_000));
+            let mut ledger = EvidenceLedger::new(LedgerCapacity::new(50, 1_000_000));
 
             let overflow_timestamps = vec![
                 u64::MAX,
@@ -2121,7 +2239,7 @@ mod tests {
 
         #[test]
         fn negative_epoch_id_boundary_conditions() {
-            let ledger = EvidenceLedger::new(LedgerCapacity::new(20, 500_000));
+            let mut ledger = EvidenceLedger::new(LedgerCapacity::new(20, 500_000));
 
             let boundary_epochs = vec![0, 1, u64::MAX, u64::MAX - 1, u64::MAX / 2];
 
@@ -2141,7 +2259,7 @@ mod tests {
 
         #[test]
         fn negative_malformed_json_payload_resilience() {
-            let ledger = EvidenceLedger::new(LedgerCapacity::new(30, 1_000_000));
+            let mut ledger = EvidenceLedger::new(LedgerCapacity::new(30, 1_000_000));
 
             // Create entries with various malformed payload structures
             let malformed_payloads = vec![
@@ -2169,7 +2287,7 @@ mod tests {
         #[test]
         fn negative_capacity_overflow_fifo_behavior_stress() {
             let small_capacity = LedgerCapacity::new(3, 1000);
-            let ledger = EvidenceLedger::new(small_capacity);
+            let mut ledger = EvidenceLedger::new(small_capacity);
 
             // Add many entries to force overflow
             for i in 0..100 {
@@ -2234,7 +2352,7 @@ mod tests {
 
         #[test]
         fn negative_size_bytes_calculation_edge_cases() {
-            let ledger = EvidenceLedger::new(LedgerCapacity::new(100, 1000));
+            let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 1000));
 
             // Test with manual size_bytes that don't match actual size
             let mut entry = make_entry("SIZE-TEST", 1);
@@ -2259,7 +2377,7 @@ mod tests {
 
         #[test]
         fn negative_empty_string_field_edge_cases() {
-            let ledger = EvidenceLedger::new(LedgerCapacity::new(50, 500_000));
+            let mut ledger = EvidenceLedger::new(LedgerCapacity::new(50, 500_000));
 
             let empty_field_entries = vec![
                 EvidenceEntry {
@@ -2273,6 +2391,7 @@ mod tests {
                     epoch_id: 0,
                     payload: serde_json::json!({}),
                     size_bytes: 0,
+                    signature: String::new(),
                 },
                 EvidenceEntry {
                     schema_version: "v1.0".to_string(),
@@ -2285,6 +2404,7 @@ mod tests {
                     epoch_id: 1,
                     payload: serde_json::json!({"empty": {}}),
                     size_bytes: 100,
+                    signature: String::new(),
                 },
             ];
 
@@ -2303,7 +2423,7 @@ mod tests {
         fn test_negative_decision_id_with_unicode_injection_attacks() {
             use crate::security::constant_time;
 
-            let ledger = EvidenceLedger::new(100, 1_000_000, false);
+            let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 1_000_000));
 
             let malicious_decision_ids = [
                 "decision\u{202E}fake\u{202C}",        // BiDi override attack
@@ -2331,6 +2451,7 @@ mod tests {
                     epoch_id: 1,
                     payload: serde_json::json!({"test": "data"}),
                     size_bytes: 0,
+                    signature: String::new(),
                 };
 
                 // Test ledger append with malicious decision ID
@@ -2407,6 +2528,7 @@ mod tests {
                     epoch_id: 1,
                     payload: serde_json::json!({"bypass_attempt": true}),
                     size_bytes: 0,
+                    signature: String::new(),
                 };
 
                 let result = ledger.append(bypass_entry);
@@ -2419,7 +2541,7 @@ mod tests {
 
         #[test]
         fn test_negative_trace_id_with_massive_injection_payload() {
-            let ledger = EvidenceLedger::new(50, 10_000_000, false); // 10MB capacity
+            let mut ledger = EvidenceLedger::new(LedgerCapacity::new(50, 10_000_000)); // 10MB capacity
 
             // Create trace ID with massive payload (5MB)
             let massive_trace_id = "X".repeat(5_000_000);
@@ -2435,6 +2557,7 @@ mod tests {
                 epoch_id: 1,
                 payload: serde_json::json!({"massive_data": "Y".repeat(1_000_000)}), // 1MB payload
                 size_bytes: 0,
+                signature: String::new(),
             };
 
             // Test appending massive entry
@@ -2495,6 +2618,7 @@ mod tests {
                     epoch_id: 1,
                     payload: serde_json::json!({"injection_test": true}),
                     size_bytes: 0,
+                    signature: String::new(),
                 };
 
                 let result = ledger.append(injection_entry.clone());
@@ -2523,7 +2647,7 @@ mod tests {
 
         #[test]
         fn test_negative_payload_with_malicious_json_structure() {
-            let ledger = EvidenceLedger::new(100, 1_000_000, false);
+            let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 1_000_000));
 
             // Test various malicious JSON payload structures
             let malicious_payloads = [
@@ -2590,6 +2714,7 @@ mod tests {
                     epoch_id: 1,
                     payload: malicious_payload.clone(),
                     size_bytes: 0,
+                    signature: String::new(),
                 };
 
                 // Test appending malicious payload
@@ -2620,7 +2745,7 @@ mod tests {
 
         #[test]
         fn test_negative_epoch_id_arithmetic_overflow_scenarios() {
-            let ledger = EvidenceLedger::new(1000, 1_000_000, false);
+            let mut ledger = EvidenceLedger::new(LedgerCapacity::new(1000, 1_000_000));
 
             // Test various epoch ID values that might cause arithmetic issues
             let epoch_values = [
@@ -2650,6 +2775,7 @@ mod tests {
                     epoch_id,
                     payload: serde_json::json!({"epoch_test": epoch_id}),
                     size_bytes: 0,
+                    signature: String::new(),
                 };
 
                 let result = ledger.append(epoch_entry.clone());
@@ -2686,6 +2812,7 @@ mod tests {
                     epoch_id: incremented_epoch,
                     payload: serde_json::json!({"overflow_test": i}),
                     size_bytes: 0,
+                    signature: String::new(),
                 };
 
                 let result = ledger.append(entry);
@@ -2705,7 +2832,7 @@ mod tests {
 
         #[test]
         fn test_negative_timestamp_manipulation_with_time_travel_attacks() {
-            let ledger = EvidenceLedger::new(100, 1_000_000, false);
+            let mut ledger = EvidenceLedger::new(LedgerCapacity::new(100, 1_000_000));
 
             // Test various timestamp manipulation attempts
             let timestamp_attacks = [
@@ -2749,6 +2876,7 @@ mod tests {
                     epoch_id: 1,
                     payload: serde_json::json!({"timestamp_attack": timestamp_ms}),
                     size_bytes: 0,
+                    signature: String::new(),
                 };
 
                 let result = ledger.append(time_entry.clone());
@@ -2803,6 +2931,7 @@ mod tests {
                     epoch_id: i as u64,
                     payload: serde_json::json!({"sequence": i}),
                     size_bytes: 0,
+                    signature: String::new(),
                 };
 
                 let result = ledger.append(inconsistent_entry);
@@ -2816,7 +2945,7 @@ mod tests {
         #[test]
         fn test_negative_bounded_capacity_with_memory_exhaustion_attempts() {
             // Create ledger with small capacity for testing
-            let small_ledger = EvidenceLedger::new(10, 50_000, false); // 10 entries, 50KB
+            let mut small_ledger = EvidenceLedger::new(LedgerCapacity::new(10, 50_000)); // 10 entries, 50KB
 
             // Attempt to exhaust memory with large entries
             for i in 0..100 {
@@ -2835,6 +2964,7 @@ mod tests {
                         "padding": vec![i; 1000], // Additional data
                     }),
                     size_bytes: 0,
+                    signature: String::new(),
                 };
 
                 let result = small_ledger.append(large_entry);
@@ -2879,6 +3009,7 @@ mod tests {
                     }
                 }),
                 size_bytes: 0,
+                signature: String::new(),
             };
 
             let result = small_ledger.append(massive_entry);
@@ -2901,6 +3032,7 @@ mod tests {
                     epoch_id: i as u64,
                     payload: serde_json::json!({"rapid_test": i}),
                     size_bytes: 0,
+                    signature: String::new(),
                 };
 
                 let result = small_ledger.append(rapid_entry);
@@ -2927,7 +3059,7 @@ mod tests {
 
         #[test]
         fn test_negative_decision_kind_with_serialization_bypass_attempts() {
-            let ledger = EvidenceLedger::new(50, 100_000, false);
+            let mut ledger = EvidenceLedger::new(LedgerCapacity::new(50, 100_000));
 
             // Test all valid decision kinds
             let valid_decisions = [
@@ -2952,6 +3084,7 @@ mod tests {
                     epoch_id: 1,
                     payload: serde_json::json!({"decision_test": decision_kind.label()}),
                     size_bytes: 0,
+                    signature: String::new(),
                 };
 
                 let result = ledger.append(valid_entry.clone());
@@ -3047,7 +3180,7 @@ mod tests {
             use std::sync::Arc;
             use std::thread;
 
-            let shared_ledger = SharedEvidenceLedger::new(100, 500_000, false);
+            let shared_ledger = SharedEvidenceLedger::new(LedgerCapacity::new(100, 500_000));
             let mut handles = Vec::new();
 
             // Test concurrent append operations
@@ -3078,6 +3211,7 @@ mod tests {
                                 "data": "X".repeat(100)
                             }),
                             size_bytes: 0,
+                            signature: String::new(),
                         };
 
                         match ledger_clone.append(entry) {
@@ -3135,6 +3269,7 @@ mod tests {
                 epoch_id: 999999,
                 payload: serde_json::json!({"recovery_test": true}),
                 size_bytes: 0,
+                signature: String::new(),
             });
 
             // Should still work after concurrent stress testing
@@ -3159,7 +3294,7 @@ mod tests {
             enable_spill: false,
             spill_writer: None,
         };
-        let ledger = EvidenceLedger::new(config);
+        let mut ledger = EvidenceLedger::new(config);
 
         // Unicode injection attempts in various evidence entry fields
         let malicious_entries = vec![
@@ -3177,6 +3312,7 @@ mod tests {
                     "action": "\u{200E}normal\u{200F}"  // LTR/RTL marks
                 }),
                 size_bytes: 0,
+                signature: String::new(),
             },
             EvidenceEntry {
                 schema_version: "evidence_v1.0".to_string(),
@@ -3192,6 +3328,7 @@ mod tests {
                     "command": "$(rm -rf /)"  // Command injection
                 }),
                 size_bytes: 0,
+                signature: String::new(),
             },
         ];
 
@@ -3272,7 +3409,7 @@ mod tests {
             enable_spill: false,
             spill_writer: None,
         };
-        let ledger = EvidenceLedger::new(config);
+        let mut ledger = EvidenceLedger::new(config);
 
         // Attempt memory exhaustion through various large payload strategies
         let exhaustion_attempts = vec![
@@ -3312,6 +3449,7 @@ mod tests {
                 epoch_id: 1,
                 payload: large_payload.clone(),
                 size_bytes: 0, // Let ledger compute size
+                signature: String::new(),
             };
 
             let append_result = ledger.append(large_entry);
@@ -3344,6 +3482,7 @@ mod tests {
                         epoch_id: 2,
                         payload: serde_json::json!({"test": "normal"}),
                         size_bytes: 0,
+                        signature: String::new(),
                     };
 
                     let post_result = ledger.append(test_entry);
@@ -3369,7 +3508,7 @@ mod tests {
             enable_spill: false,
             spill_writer: None,
         };
-        let ledger = EvidenceLedger::new(config);
+        let mut ledger = EvidenceLedger::new(config);
 
         // Fill ledger to capacity
         for i in 0..5 {
@@ -3384,6 +3523,7 @@ mod tests {
                 epoch_id: 1,
                 payload: serde_json::json!({"order": i}),
                 size_bytes: 0,
+                signature: String::new(),
             };
 
             let result = ledger.append(entry);
@@ -3408,6 +3548,7 @@ mod tests {
                 epoch_id: u64::MAX, // Maximum epoch
                 payload: serde_json::json!({"priority": "high"}),
                 size_bytes: 0,
+                signature: String::new(),
             },
             // Entry with zero timestamp (attempt to be "oldest")
             EvidenceEntry {
@@ -3421,6 +3562,7 @@ mod tests {
                 epoch_id: 0, // Zero epoch
                 payload: serde_json::json!({"priority": "urgent"}),
                 size_bytes: 0,
+                signature: String::new(),
             },
         ];
 
@@ -3469,7 +3611,7 @@ mod tests {
     #[test]
     fn test_security_timestamp_manipulation_and_epoch_attacks() {
         let config = EvidenceLedgerConfig::default();
-        let ledger = EvidenceLedger::new(config);
+        let mut ledger = EvidenceLedger::new(config);
 
         // Timestamp and epoch manipulation attempts
         let manipulation_entries = vec![
@@ -3485,6 +3627,7 @@ mod tests {
                 epoch_id: u64::MAX, // Maximum epoch
                 payload: serde_json::json!({"type": "overflow"}),
                 size_bytes: 0,
+                signature: String::new(),
             },
             // Entry with timestamp in the past (replay attack)
             EvidenceEntry {
@@ -3498,6 +3641,7 @@ mod tests {
                 epoch_id: 0, // Zero epoch
                 payload: serde_json::json!({"type": "replay_attack"}),
                 size_bytes: 0,
+                signature: String::new(),
             },
             // Entry with inconsistent timestamps
             EvidenceEntry {
@@ -3511,6 +3655,7 @@ mod tests {
                 epoch_id: 1,
                 payload: serde_json::json!({"type": "inconsistent"}),
                 size_bytes: 0,
+                signature: String::new(),
             },
         ];
 
@@ -3574,7 +3719,7 @@ mod tests {
     #[test]
     fn test_security_decision_kind_manipulation() {
         let config = EvidenceLedgerConfig::default();
-        let ledger = EvidenceLedger::new(config);
+        let mut ledger = EvidenceLedger::new(config);
 
         // Test all decision kinds to ensure no privilege escalation through enum manipulation
         let all_decision_kinds = vec![
@@ -3603,6 +3748,7 @@ mod tests {
                     "test_index": i
                 }),
                 size_bytes: 0,
+                signature: String::new(),
             };
 
             let append_result = ledger.append(entry.clone());
@@ -3663,7 +3809,7 @@ mod tests {
     #[test]
     fn test_security_json_payload_injection_prevention() {
         let config = EvidenceLedgerConfig::default();
-        let ledger = EvidenceLedger::new(config);
+        let mut ledger = EvidenceLedger::new(config);
 
         // JSON payload injection attempts
         let injection_payloads = vec![
@@ -3712,6 +3858,7 @@ mod tests {
                 epoch_id: 1,
                 payload: injection_payload.clone(),
                 size_bytes: 0,
+                signature: String::new(),
             };
 
             let append_result = ledger.append(entry);
@@ -3784,7 +3931,7 @@ mod tests {
     #[test]
     fn test_security_entry_id_tampering_resistance() {
         let config = EvidenceLedgerConfig::default();
-        let ledger = EvidenceLedger::new(config);
+        let mut ledger = EvidenceLedger::new(config);
 
         // Attempt entry ID tampering
         let tampered_entries = vec![
@@ -3799,6 +3946,7 @@ mod tests {
                 epoch_id: 1,
                 payload: serde_json::json!({"tamper": "low_id"}),
                 size_bytes: 0,
+                signature: String::new(),
             },
             EvidenceEntry {
                 schema_version: "evidence_v1.0".to_string(),
@@ -3811,6 +3959,7 @@ mod tests {
                 epoch_id: 1,
                 payload: serde_json::json!({"tamper": "high_id"}),
                 size_bytes: 0,
+                signature: String::new(),
             },
             EvidenceEntry {
                 schema_version: "evidence_v1.0".to_string(),
@@ -3823,6 +3972,7 @@ mod tests {
                 epoch_id: 1,
                 payload: serde_json::json!({"tamper": "admin_format"}),
                 size_bytes: 0,
+                signature: String::new(),
             },
         ];
 
@@ -3885,7 +4035,7 @@ mod tests {
             enable_spill: false,
             spill_writer: None,
         };
-        let ledger = Arc::new(EvidenceLedger::new(config));
+        let ledger = Arc::new(SharedEvidenceLedger::new(config));
         let mut handles = vec![];
 
         // Spawn aggressive concurrent access
@@ -3915,6 +4065,7 @@ mod tests {
                                     "data": format!("concurrent_data_{}", operation)
                                 }),
                                 size_bytes: 0,
+                                signature: String::new(),
                             };
 
                             let result = ledger_clone.append(entry);
@@ -3945,6 +4096,7 @@ mod tests {
                                     "operation": operation
                                 }),
                                 size_bytes: 0,
+                                signature: String::new(),
                             };
 
                             let result = ledger_clone.append(large_entry);
@@ -4028,7 +4180,7 @@ mod tests {
             enable_spill: false,
             spill_writer: None,
         };
-        let ledger = EvidenceLedger::new(config);
+        let mut ledger = EvidenceLedger::new(config);
 
         // Attempt size budget manipulation
         let manipulation_entries = vec![
@@ -4046,6 +4198,7 @@ mod tests {
                     "large_field": "x".repeat(2000)  // 2KB actual data
                 }),
                 size_bytes: 0, // Lies about size
+                signature: String::new(),
             },
             // Entry claiming small size but containing large payload
             EvidenceEntry {
@@ -4061,6 +4214,7 @@ mod tests {
                     "another_large_field": "y".repeat(3000)  // 3KB actual data
                 }),
                 size_bytes: 10, // Claims only 10 bytes
+                signature: String::new(),
             },
             // Entry claiming huge size but containing small payload
             EvidenceEntry {
@@ -4136,7 +4290,7 @@ mod tests {
     fn test_signed_entry_accepted() {
         let (signing_key, verifying_key) = test_keys();
         let capacity = LedgerCapacity::new(10, 100_000);
-        let mut ledger = EvidenceLedger::new(capacity, verifying_key);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
 
         let mut entry = test_entry("TEST-SIGNED", 1);
         sign_evidence_entry(&mut entry, &signing_key);
@@ -4150,7 +4304,7 @@ mod tests {
     fn test_unsigned_entry_rejected() {
         let (_, verifying_key) = test_keys();
         let capacity = LedgerCapacity::new(10, 100_000);
-        let mut ledger = EvidenceLedger::new(capacity, verifying_key);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
 
         let entry = test_entry("TEST-UNSIGNED", 1);
         // entry.signature is empty string - no signature
@@ -4159,7 +4313,10 @@ mod tests {
         assert!(result.is_err(), "Unsigned entry should be rejected");
 
         if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(reason.contains("invalid hex signature"), "Should fail on invalid hex");
+            assert!(
+                reason.contains("invalid hex signature"),
+                "Should fail on invalid hex"
+            );
         } else {
             panic!("Should return SignatureInvalid error");
         }
@@ -4171,7 +4328,7 @@ mod tests {
     fn test_tampered_signature_rejected() {
         let (signing_key, verifying_key) = test_keys();
         let capacity = LedgerCapacity::new(10, 100_000);
-        let mut ledger = EvidenceLedger::new(capacity, verifying_key);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
 
         let mut entry = test_entry("TEST-TAMPERED", 1);
         sign_evidence_entry(&mut entry, &signing_key);
@@ -4187,7 +4344,10 @@ mod tests {
         assert!(result.is_err(), "Tampered signature should be rejected");
 
         if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(reason.contains("signature verification failed"), "Should fail signature verification");
+            assert!(
+                reason.contains("signature verification failed"),
+                "Should fail signature verification"
+            );
         } else {
             panic!("Should return SignatureInvalid error");
         }
@@ -4199,7 +4359,7 @@ mod tests {
     fn test_replay_attack_rejected() {
         let (signing_key, verifying_key) = test_keys();
         let capacity = LedgerCapacity::new(10, 100_000);
-        let mut ledger = EvidenceLedger::new(capacity, verifying_key);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
 
         // Create and append first entry
         let mut entry1 = test_entry("TEST-REPLAY", 1);
@@ -4213,7 +4373,11 @@ mod tests {
         let result2 = ledger.append(entry1.clone());
         assert!(result2.is_err(), "Replay attack should be rejected");
 
-        if let Err(LedgerError::ReplayAttack { timestamp_ms, signature }) = result2 {
+        if let Err(LedgerError::ReplayAttack {
+            timestamp_ms,
+            signature,
+        }) = result2
+        {
             assert_eq!(timestamp_ms, entry1.timestamp_ms);
             assert_eq!(signature, entry1.signature);
         } else {
@@ -4227,29 +4391,42 @@ mod tests {
     fn test_replay_attack_prevention_with_eviction() {
         let (signing_key, verifying_key) = test_keys();
         let capacity = LedgerCapacity::new(2, 100_000); // Only keep 2 entries
-        let mut ledger = EvidenceLedger::new(capacity, verifying_key);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
 
         // Create and append first entry
         let mut entry1 = test_entry("TEST-REPLAY-EVICT-1", 1);
         sign_evidence_entry(&mut entry1, &signing_key);
-        ledger.append(entry1.clone()).expect("First entry should succeed");
+        ledger
+            .append(entry1.clone())
+            .expect("First entry should succeed");
 
         // Create and append second entry
         let mut entry2 = test_entry("TEST-REPLAY-EVICT-2", 2);
         sign_evidence_entry(&mut entry2, &signing_key);
-        ledger.append(entry2.clone()).expect("Second entry should succeed");
+        ledger
+            .append(entry2.clone())
+            .expect("Second entry should succeed");
 
         // Create and append third entry (should evict entry1)
         let mut entry3 = test_entry("TEST-REPLAY-EVICT-3", 3);
         sign_evidence_entry(&mut entry3, &signing_key);
-        ledger.append(entry3.clone()).expect("Third entry should succeed");
+        ledger
+            .append(entry3.clone())
+            .expect("Third entry should succeed");
 
-        assert_eq!(ledger.len(), 2, "Should have 2 entries due to capacity limit");
+        assert_eq!(
+            ledger.len(),
+            2,
+            "Should have 2 entries due to capacity limit"
+        );
         assert_eq!(ledger.total_evicted(), 1, "Should have evicted 1 entry");
 
         // Now try to replay entry1 - should succeed because it was evicted from replay tracking
         let result = ledger.append(entry1.clone());
-        assert!(result.is_ok(), "Evicted entry replay should succeed (replay tracking was cleared)");
+        assert!(
+            result.is_ok(),
+            "Evicted entry replay should succeed (replay tracking was cleared)"
+        );
 
         // But replaying entry2 should still fail (it's still in the ledger)
         let result2 = ledger.append(entry2.clone());
@@ -4260,7 +4437,7 @@ mod tests {
     fn test_different_signatures_same_timestamp_accepted() {
         let (signing_key, verifying_key) = test_keys();
         let capacity = LedgerCapacity::new(10, 100_000);
-        let mut ledger = EvidenceLedger::new(capacity, verifying_key);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
 
         // Create two entries with same timestamp but different content
         let mut entry1 = test_entry("TEST-SAME-TIME-1", 1);
@@ -4274,7 +4451,10 @@ mod tests {
         assert!(result1.is_ok(), "First entry should be accepted");
 
         let result2 = ledger.append(entry2);
-        assert!(result2.is_ok(), "Second entry with same timestamp but different signature should be accepted");
+        assert!(
+            result2.is_ok(),
+            "Second entry with same timestamp but different signature should be accepted"
+        );
 
         assert_eq!(ledger.len(), 2);
     }
@@ -4292,7 +4472,10 @@ mod tests {
         let canonical1 = canonical_entry_bytes(&entry1);
         let canonical2 = canonical_entry_bytes(&entry2);
 
-        assert_eq!(canonical1, canonical2, "Canonical bytes should exclude signature field");
+        assert_eq!(
+            canonical1, canonical2,
+            "Canonical bytes should exclude signature field"
+        );
     }
 
     #[test]
@@ -4301,16 +4484,176 @@ mod tests {
         let (_, different_verifying_key) = test_keys(); // Different key pair
 
         let capacity = LedgerCapacity::new(10, 100_000);
-        let mut ledger = EvidenceLedger::new(capacity, different_verifying_key);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, different_verifying_key);
 
         let mut entry = test_entry("TEST-WRONG-KEY", 1);
         sign_evidence_entry(&mut entry, &signing_key);
 
         let result = ledger.append(entry);
-        assert!(result.is_err(), "Entry signed with wrong key should be rejected");
+        assert!(
+            result.is_err(),
+            "Entry signed with wrong key should be rejected"
+        );
 
         if let Err(LedgerError::SignatureInvalid { reason }) = result {
             assert!(reason.contains("signature verification failed"));
+        } else {
+            panic!("Should return SignatureInvalid error");
+        }
+    }
+
+    // ── Signature Hex Decode DoS Regression Tests ──────────────────
+
+    #[test]
+    fn test_valid_128_char_signature_passes() {
+        let (signing_key, verifying_key) = test_keys();
+        let capacity = LedgerCapacity::new(10, 100_000);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
+
+        let mut entry = test_entry("TEST-VALID-SIG", 1);
+        sign_evidence_entry(&mut entry, &signing_key);
+
+        // Valid Ed25519 signature is 64 bytes = 128 hex chars
+        assert_eq!(
+            entry.signature.len(),
+            128,
+            "Ed25519 signature should be exactly 128 hex chars"
+        );
+
+        let result = ledger.append(entry);
+        assert!(result.is_ok(), "Valid 128-char signature should pass");
+    }
+
+    #[test]
+    fn test_129_char_signature_rejected() {
+        let (signing_key, verifying_key) = test_keys();
+        let capacity = LedgerCapacity::new(10, 100_000);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
+
+        let mut entry = test_entry("TEST-129-CHAR", 1);
+        sign_evidence_entry(&mut entry, &signing_key);
+
+        // Append one extra character to make it 129 chars
+        entry.signature.push('a');
+        assert_eq!(entry.signature.len(), 129);
+
+        let result = ledger.append(entry);
+        assert!(result.is_err(), "129-char signature should be rejected");
+
+        if let Err(LedgerError::SignatureInvalid { reason }) = result {
+            assert!(
+                reason.contains("signature hex too long"),
+                "Should mention length cap"
+            );
+            assert!(reason.contains("129"), "Should mention actual length");
+            assert!(reason.contains("256"), "Should mention max length");
+        } else {
+            panic!("Should return SignatureInvalid error for oversized signature");
+        }
+    }
+
+    #[test]
+    fn test_large_hex_signature_rejected_fast() {
+        let (_, verifying_key) = test_keys();
+        let capacity = LedgerCapacity::new(10, 100_000);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
+
+        let mut entry = test_entry("TEST-LARGE-SIG", 1);
+        // Create a 1MB hex string (would be 512KB when decoded)
+        entry.signature = "a".repeat(1_000_000);
+
+        let start = std::time::Instant::now();
+        let result = ledger.append(entry);
+        let elapsed = start.elapsed();
+
+        assert!(result.is_err(), "Large signature should be rejected");
+        assert!(
+            elapsed.as_millis() < 100,
+            "Should fail quickly without attempting decode"
+        );
+
+        if let Err(LedgerError::SignatureInvalid { reason }) = result {
+            assert!(
+                reason.contains("signature hex too long"),
+                "Should mention length cap"
+            );
+            assert!(reason.contains("1000000"), "Should mention actual length");
+        } else {
+            panic!("Should return SignatureInvalid error for oversized signature");
+        }
+    }
+
+    #[test]
+    fn test_empty_signature_rejected() {
+        let (_, verifying_key) = test_keys();
+        let capacity = LedgerCapacity::new(10, 100_000);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
+
+        let mut entry = test_entry("TEST-EMPTY-SIG", 1);
+        entry.signature = String::new(); // Empty signature
+
+        let result = ledger.append(entry);
+        assert!(result.is_err(), "Empty signature should be rejected");
+
+        if let Err(LedgerError::SignatureInvalid { reason }) = result {
+            assert!(
+                reason.contains("signature cannot be empty"),
+                "Should mention empty signature"
+            );
+        } else {
+            panic!("Should return SignatureInvalid error for empty signature");
+        }
+    }
+
+    #[test]
+    fn test_exactly_256_char_signature_allowed() {
+        let (_, verifying_key) = test_keys();
+        let capacity = LedgerCapacity::new(10, 100_000);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
+
+        let mut entry = test_entry("TEST-256-CHAR", 1);
+        // Create exactly 256 hex chars (would decode to 128 bytes)
+        entry.signature = "aa".repeat(128); // 256 chars total
+        assert_eq!(entry.signature.len(), 256);
+
+        let result = ledger.append(entry);
+        // Should be rejected due to invalid hex/signature verification, but NOT due to length cap
+        assert!(
+            result.is_err(),
+            "256-char invalid signature should be rejected"
+        );
+
+        if let Err(LedgerError::SignatureInvalid { reason }) = result {
+            assert!(
+                !reason.contains("signature hex too long"),
+                "Should NOT mention length cap for 256 chars"
+            );
+            // Should fail on signature verification instead
+        } else {
+            panic!("Should return SignatureInvalid error");
+        }
+    }
+
+    #[test]
+    fn test_257_char_signature_rejected_by_length_cap() {
+        let (_, verifying_key) = test_keys();
+        let capacity = LedgerCapacity::new(10, 100_000);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
+
+        let mut entry = test_entry("TEST-257-CHAR", 1);
+        // Create 257 hex chars (exceeds 256 cap)
+        entry.signature = "aa".repeat(128) + "a"; // 257 chars total
+        assert_eq!(entry.signature.len(), 257);
+
+        let result = ledger.append(entry);
+        assert!(result.is_err(), "257-char signature should be rejected");
+
+        if let Err(LedgerError::SignatureInvalid { reason }) = result {
+            assert!(
+                reason.contains("signature hex too long"),
+                "Should mention length cap for 257 chars"
+            );
+            assert!(reason.contains("257"), "Should mention actual length");
         } else {
             panic!("Should return SignatureInvalid error");
         }
@@ -4324,19 +4667,24 @@ mod tests {
 
         let (signing_key, verifying_key) = test_keys();
         let capacity = LedgerCapacity::new(100, 100_000);
-        let mut ledger = EvidenceLedger::new(capacity, verifying_key);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
 
         // Add a known signature to the ledger
         let mut known_entry = test_entry("KNOWN-ENTRY", 1000);
         sign_evidence_entry(&mut known_entry, &signing_key);
-        ledger.append(known_entry.clone()).expect("Known entry should succeed");
+        ledger
+            .append(known_entry.clone())
+            .expect("Known entry should succeed");
 
         // Time comparison with identical signature (replay attack)
         let start_identical = Instant::now();
         let is_replay_identical = ledger.is_replay_attack_ct(1000, &known_entry.signature);
         let time_identical = start_identical.elapsed();
 
-        assert!(is_replay_identical, "Identical signature should be detected as replay");
+        assert!(
+            is_replay_identical,
+            "Identical signature should be detected as replay"
+        );
 
         // Time comparison with different signature (not a replay)
         let different_signature = "ff".repeat(64); // Different signature
@@ -4344,7 +4692,10 @@ mod tests {
         let is_replay_different = ledger.is_replay_attack_ct(1000, &different_signature);
         let time_different = start_different.elapsed();
 
-        assert!(!is_replay_different, "Different signature should not be detected as replay");
+        assert!(
+            !is_replay_different,
+            "Different signature should not be detected as replay"
+        );
 
         // Timing should be similar regardless of match/no-match to prevent timing attacks
         let timing_ratio = if time_identical < time_different {
@@ -4370,7 +4721,7 @@ mod tests {
 
         let (signing_key, verifying_key) = test_keys();
         let capacity = LedgerCapacity::new(100, 100_000);
-        let mut ledger = EvidenceLedger::new(capacity, verifying_key);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
 
         // Add multiple known signatures to the ledger
         for i in 1..=50 {
@@ -4384,7 +4735,7 @@ mod tests {
         let mut first_byte_diff = base_signature.clone();
         first_byte_diff.replace_range(0..2, "43");
         let mut last_byte_diff = base_signature.clone();
-        last_byte_diff.replace_range((base_signature.len()-2).., "43");
+        last_byte_diff.replace_range((base_signature.len() - 2).., "43");
 
         // Time comparison with first-byte difference
         let start_first = Instant::now();
@@ -4396,8 +4747,14 @@ mod tests {
         let is_replay_last = ledger.is_replay_attack_ct(9999, &last_byte_diff);
         let time_last = start_last.elapsed();
 
-        assert!(!is_replay_first, "First-byte different signature should not be replay");
-        assert!(!is_replay_last, "Last-byte different signature should not be replay");
+        assert!(
+            !is_replay_first,
+            "First-byte different signature should not be replay"
+        );
+        assert!(
+            !is_replay_last,
+            "Last-byte different signature should not be replay"
+        );
 
         // Timing should be position-independent for constant-time guarantee
         let timing_ratio = if time_first < time_last {
@@ -4419,7 +4776,7 @@ mod tests {
     fn test_replay_detection_constant_time_vs_vulnerable_comparison() {
         let (signing_key, verifying_key) = test_keys();
         let capacity = LedgerCapacity::new(10, 100_000);
-        let ledger = EvidenceLedger::new(capacity, verifying_key);
+        let ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
 
         let mut known_entry = test_entry("KNOWN-ENTRY", 1000);
         sign_evidence_entry(&mut known_entry, &signing_key);

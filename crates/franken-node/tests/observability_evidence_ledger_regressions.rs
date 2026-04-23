@@ -46,6 +46,7 @@ fn misleading_size_entry(decision_id: &str, size_bytes: usize) -> EvidenceEntry 
         epoch_id: 42,
         payload: serde_json::json!({"actual": "small"}),
         size_bytes,
+        signature: String::new(),
     }
 }
 
@@ -61,6 +62,7 @@ fn witness_entry(decision_id: &str) -> EvidenceEntry {
         epoch_id: 43,
         payload: serde_json::Value::Null,
         size_bytes: 0,
+        signature: String::new(),
     }
 }
 

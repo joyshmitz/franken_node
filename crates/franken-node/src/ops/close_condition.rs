@@ -667,9 +667,7 @@ fn collect_files_named(
     Ok(files)
 }
 
-fn collect_rust_files(
-    root: &Path,
-) -> std::result::Result<Vec<PathBuf>, CloseConditionScanError> {
+fn collect_rust_files(root: &Path) -> std::result::Result<Vec<PathBuf>, CloseConditionScanError> {
     let mut files = Vec::new();
     for rel in ["crates", "src"] {
         let base = root.join(rel);
@@ -761,9 +759,7 @@ fn engine_dependency_paths(content: &str, crate_name: &str) -> Vec<String> {
                 let path_value = match dep {
                     // Handle both string and table forms:
                     // crate_name = { path = "...", ... }
-                    toml::Value::Table(table) => {
-                        table.get("path").and_then(|v| v.as_str())
-                    }
+                    toml::Value::Table(table) => table.get("path").and_then(|v| v.as_str()),
                     // Simple string paths are not valid for engine dependencies
                     _ => None,
                 };
@@ -846,8 +842,9 @@ fn validate_engine_dependency_path(cargo_file: &Path, path_str: &str) -> bool {
         // Check if the normalized canonical path ends with exactly the allowed path
         // with proper path separator boundaries to prevent suffix bypass
         if let Some(prefix_len) = normalized.len().checked_sub(allowed.len()) {
-            if normalized[prefix_len..] == *allowed &&
-               (prefix_len == 0 || normalized.chars().nth(prefix_len - 1) == Some('/')) {
+            if &normalized[prefix_len..] == allowed
+                && (prefix_len == 0 || normalized.chars().nth(prefix_len - 1) == Some('/'))
+            {
                 return true;
             }
         }
@@ -935,7 +932,10 @@ frankenengine-extension-host = { path = "../franken_engine/crates/frankenengine-
 
         let paths = engine_dependency_paths(content, "frankenengine-extension-host");
         assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0], "../franken_engine/crates/frankenengine-extension-host");
+        assert_eq!(
+            paths[0],
+            "../franken_engine/crates/frankenengine-extension-host"
+        );
 
         // Should not find non-existent crates
         let paths = engine_dependency_paths(content, "non-existent-crate");
@@ -1080,5 +1080,87 @@ frankenengine-extension-host = { path = "../franken_engine/crates/frankenengine-
                 nonexistent_path
             );
         }
+    }
+
+    #[test]
+    fn test_suffix_bypass_attack_bd_3iey5_regression() {
+        // BD-3IEY5: Suffix bypass attack regression tests
+        // Ensure paths with malicious suffixes are rejected even if they contain the allowed path as a suffix
+
+        let temp_dir = TempDir::new().unwrap();
+        let cargo_file = temp_dir.path().join("test_crate").join("Cargo.toml");
+        std::fs::create_dir_all(cargo_file.parent().unwrap()).unwrap();
+        std::fs::write(&cargo_file, "").unwrap();
+
+        // Create legitimate engine directories
+        let franken_engine_dir = temp_dir.path().join("franken_engine").join("crates");
+        std::fs::create_dir_all(&franken_engine_dir.join("frankenengine-engine")).unwrap();
+        std::fs::create_dir_all(&franken_engine_dir.join("frankenengine-extension-host")).unwrap();
+
+        // Create malicious directories that contain the allowed path as a suffix
+        std::fs::create_dir_all(&franken_engine_dir.join("frankenengine-engine_evil")).unwrap();
+        std::fs::create_dir_all(&franken_engine_dir.join("prefix_frankenengine-engine")).unwrap();
+
+        // Test 1: Legitimate path should pass
+        assert!(
+            validate_engine_dependency_path(
+                &cargo_file,
+                "../franken_engine/crates/frankenengine-engine"
+            ),
+            "Legitimate path should be allowed"
+        );
+
+        // Test 2: frankenengine-engine_evil should be rejected (suffix bypass attack)
+        assert!(
+            !validate_engine_dependency_path(
+                &cargo_file,
+                "../franken_engine/crates/frankenengine-engine_evil"
+            ),
+            "Should reject suffix bypass attack: frankenengine-engine_evil"
+        );
+
+        // Test 3: prefix_frankenengine-engine should be rejected (suffix bypass attack)
+        assert!(
+            !validate_engine_dependency_path(
+                &cargo_file,
+                "../franken_engine/crates/prefix_frankenengine-engine"
+            ),
+            "Should reject suffix bypass attack: prefix_frankenengine-engine"
+        );
+
+        // Test 4: Create traversal path that canonicalizes to legitimate location but has traversal
+        // This tests that even after canonicalization, we still reject paths with traversal components
+        let traversal_dir = temp_dir
+            .path()
+            .join("franken_engine")
+            .join("crates")
+            .join("dummy");
+        std::fs::create_dir_all(&traversal_dir).unwrap();
+
+        // This path: "../franken_engine/crates/dummy/../frankenengine-engine"
+        // Would canonicalize to the legitimate path but should be rejected due to traversal
+        assert!(
+            !validate_engine_dependency_path(
+                &cargo_file,
+                "../franken_engine/crates/dummy/../frankenengine-engine"
+            ),
+            "Should reject path with traversal components even if it canonicalizes correctly"
+        );
+
+        // Test 5: Path that looks like "franken_engine/../../../etc" - should be rejected due to traversal
+        // We don't need to create this path since the traversal check will reject it before canonicalization
+        assert!(
+            !validate_engine_dependency_path(&cargo_file, "../franken_engine/../../../etc"),
+            "Should reject traversal attack attempting to escape to /etc"
+        );
+
+        // Test 6: Legitimate extension host should still work
+        assert!(
+            validate_engine_dependency_path(
+                &cargo_file,
+                "../franken_engine/crates/frankenengine-extension-host"
+            ),
+            "Legitimate extension host path should be allowed"
+        );
     }
 }

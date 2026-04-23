@@ -23,7 +23,7 @@ use std::collections::BTreeMap;
 #[cfg(any(test, feature = "extended-surfaces"))]
 use std::time::Instant;
 
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 use super::error::ApiError;
 #[cfg(any(test, feature = "extended-surfaces"))]
 use super::utf8_prefix;
@@ -112,10 +112,10 @@ impl TraceContext {
 }
 
 /// Simple span ID generation using timestamp-based entropy.
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 const SPAN_ID_MIX: u64 = 0x517c_c1b7_2722_0a95;
 
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 fn span_id_from_unix_nanos(unix_nanos: u128) -> u64 {
     let bounded_nanos = u64::try_from(unix_nanos).unwrap_or(u64::MAX);
     bounded_nanos ^ SPAN_ID_MIX
@@ -309,7 +309,7 @@ pub fn authenticate(
 // ── Authorization (RBAC + Policy Hook) ─────────────────────────────────────
 
 /// Policy hook descriptor bound to a route.
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolicyHook {
     /// Unique hook identifier (e.g., `operator.status.read`).
@@ -319,7 +319,7 @@ pub struct PolicyHook {
 }
 
 /// Authorization check result.
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AuthzDecision {
     /// Access granted.
@@ -329,7 +329,7 @@ pub enum AuthzDecision {
 }
 
 /// Check authorization against the policy hook.
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub fn authorize(
     identity: &AuthIdentity,
     hook: &PolicyHook,
@@ -466,7 +466,7 @@ pub fn check_rate_limit(limiter: &mut RateLimiter, trace_id: &str) -> Result<(),
 // ── Request/Response Telemetry ─────────────────────────────────────────────
 
 /// Structured request log entry emitted after handler execution.
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestLog {
     pub method: String,
@@ -480,7 +480,7 @@ pub struct RequestLog {
 }
 
 /// Endpoint group classification for metric tagging.
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EndpointGroup {
     Operator,
@@ -488,7 +488,7 @@ pub enum EndpointGroup {
     FleetControl,
 }
 
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 impl EndpointGroup {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -499,7 +499,7 @@ impl EndpointGroup {
     }
 }
 
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 impl std::fmt::Display for EndpointGroup {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
@@ -507,7 +507,7 @@ impl std::fmt::Display for EndpointGroup {
 }
 
 /// Event codes emitted by the middleware/service layer.
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod event_codes {
     #[cfg(feature = "extended-surfaces")]
     pub const SERVICE_START: &str = "FASTAPI_SERVICE_START";
@@ -525,7 +525,7 @@ pub mod event_codes {
 // ── Middleware Chain ────────────────────────────────────────────────────────
 
 /// Route metadata describing middleware requirements for one endpoint.
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteMetadata {
     /// HTTP method (GET, POST, PUT, DELETE).
@@ -545,7 +545,7 @@ pub struct RouteMetadata {
 }
 
 /// Endpoint lifecycle state.
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EndpointLifecycle {
     Experimental,
@@ -553,7 +553,7 @@ pub enum EndpointLifecycle {
     Deprecated,
 }
 
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 impl EndpointLifecycle {
     #[cfg(feature = "extended-surfaces")]
     pub fn as_str(&self) -> &'static str {

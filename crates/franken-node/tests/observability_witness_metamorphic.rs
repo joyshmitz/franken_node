@@ -23,6 +23,7 @@ fn evidence(decision_id: &str, decision_kind: DecisionKind) -> EvidenceEntry {
         epoch_id: 42,
         payload: serde_json::json!({"surface": "witness-log-metamorphic"}),
         size_bytes: 0,
+        signature: String::new(),
     }
 }
 

@@ -509,6 +509,7 @@ pub fn build_evidence_entry(
         epoch_id,
         payload,
         size_bytes: 0,
+        signature: String::new(),
     }
 }
 

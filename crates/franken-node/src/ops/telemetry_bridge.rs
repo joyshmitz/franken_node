@@ -1,4 +1,6 @@
-use crate::storage::frankensqlite_adapter::{FrankensqliteAdapter, PersistenceClass};
+use crate::storage::frankensqlite_adapter::{
+    CallerContext, FrankensqliteAdapter, PersistenceClass,
+};
 use anyhow::Result;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -1314,7 +1316,10 @@ impl TelemetryBridge {
 
             let key = format!("telemetry_{:020}", envelope.bridge_seq);
             let write_result = match adapter.lock() {
-                Ok(mut db) => db.write(PersistenceClass::AuditLog, &key, &envelope.payload),
+                Ok(mut db) => {
+                    let caller = CallerContext::service("observability::telemetry_bridge", &key);
+                    db.write(&caller, PersistenceClass::AuditLog, &key, &envelope.payload)
+                }
                 Err(_) => {
                     Self::with_state(&state, |metrics| {
                         metrics.dropped_total = metrics.dropped_total.saturating_add(1);

@@ -1459,13 +1459,13 @@ impl FleetControlManager {
     }
 
     /// Create a manager without decision-receipt signing material for fail-closed tests.
-    #[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+    #[cfg(any(test, feature = "extended-surfaces"))]
     pub fn without_decision_signing_material_for_tests() -> Self {
         Self::with_optional_decision_signing_material(None)
     }
 
     /// Remove decision-receipt signing material from an initialized manager for fail-closed tests.
-    #[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+    #[cfg(any(test, feature = "extended-surfaces"))]
     pub fn clear_decision_signing_material_for_tests(&mut self) {
         self.decision_signing_material = None;
     }
@@ -2086,7 +2086,7 @@ impl FleetControlManager {
         self.verify_convergence_rollback_receipt_at(incident_id, chrono::Utc::now())
     }
 
-    #[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+    #[cfg(any(test, feature = "extended-surfaces"))]
     pub fn verify_convergence_rollback_receipt_at_for_tests(
         &self,
         incident_id: &str,
@@ -2159,14 +2159,14 @@ impl Default for FleetControlManager {
 
 // ── Request / Response types for API handlers ─────────────────────────────
 
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuarantineRequest {
     pub extension_id: String,
     pub scope: QuarantineScope,
 }
 
-#[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+#[cfg(any(test, feature = "extended-surfaces"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RevokeRequest {
     pub extension_id: String,

@@ -395,10 +395,8 @@ impl EvidenceReplayValidator {
                 };
 
                 // Compute constant-time decision ID comparison once
-                let decision_id_match = constant_time::ct_eq(
-                    &expected_ref.decision_id,
-                    &got_ref.decision_id,
-                );
+                let decision_id_match =
+                    constant_time::ct_eq(&expected_ref.decision_id, &got_ref.decision_id);
 
                 if expected_ref.decision_kind == got_ref.decision_kind && decision_id_match {
                     eprintln!(
@@ -563,6 +561,7 @@ pub fn test_replay_entry(decision_id: &str, kind: DecisionKind, epoch_id: u64) -
         epoch_id,
         payload: serde_json::json!({}),
         size_bytes: 0,
+        signature: String::new(),
     }
 }
 
