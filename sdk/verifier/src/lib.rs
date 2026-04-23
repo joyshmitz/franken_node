@@ -264,6 +264,7 @@ pub enum VerifierSdkError {
     Capsule(capsule::CapsuleError),
     Bundle(bundle::BundleError),
     InvalidVerifierIdentity { actual: String, reason: String },
+    InvalidSessionId { actual: String, reason: String },
     EmptyTrustAnchor,
     MalformedTrustAnchor { actual: String },
     SessionSealed(String),
@@ -287,6 +288,10 @@ impl fmt::Display for VerifierSdkError {
             Self::InvalidVerifierIdentity { actual, reason } => write!(
                 formatter,
                 "verifier identity is invalid: {reason}: got {actual}"
+            ),
+            Self::InvalidSessionId { actual, reason } => write!(
+                formatter,
+                "verification session id is invalid: {reason}: got {actual}"
             ),
             Self::EmptyTrustAnchor => write!(formatter, "trust anchor is empty"),
             Self::MalformedTrustAnchor { actual } => write!(
@@ -339,6 +344,7 @@ const FACADE_TIMESTAMP: &str = "2026-02-21T00:00:00Z";
 const SESSION_STEP_SIGNATURE_DOMAIN: &[u8] = b"frankenengine-verifier-sdk:session-step:v1:";
 const SESSION_NONCE_DOMAIN: &[u8] = b"frankenengine-verifier-sdk:session-nonce:v1:";
 const MAX_VERIFIER_IDENTITY_NAME_LEN: usize = 255;
+const MAX_SESSION_ID_LEN: usize = 255;
 static SESSION_NONCE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// Top-level facade for external verifier integrations.
@@ -536,6 +542,7 @@ impl VerifierSdk {
     ) -> Result<VerificationSession, VerifierSdkError> {
         self.validate_current_verifier_identity()?;
         let session_id = session_id.into();
+        validate_session_id(&session_id)?;
         let created_at = FACADE_TIMESTAMP.to_string();
         Ok(VerificationSession {
             session_id: session_id.clone(),
@@ -560,6 +567,7 @@ impl VerifierSdk {
         result: &VerificationResult,
     ) -> Result<SessionStep, VerifierSdkError> {
         self.validate_current_verifier_identity()?;
+        validate_session_id(&session.session_id)?;
         if session.sealed {
             return Err(VerifierSdkError::SessionSealed(session.session_id.clone()));
         }
@@ -598,6 +606,7 @@ impl VerifierSdk {
         session: &mut VerificationSession,
     ) -> Result<VerificationVerdict, VerifierSdkError> {
         self.validate_current_verifier_identity()?;
+        validate_session_id(&session.session_id)?;
         if session.sealed {
             return Err(VerifierSdkError::SessionSealed(session.session_id.clone()));
         }
@@ -852,6 +861,39 @@ fn validate_verifier_identity(verifier_identity: &str) -> Result<(), VerifierSdk
             actual: verifier_identity.to_string(),
             reason:
                 "identity must include only ASCII letters, digits, '.', '-', and '_'".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_session_id(session_id: &str) -> Result<(), VerifierSdkError> {
+    if session_id.trim().is_empty() {
+        return Err(VerifierSdkError::InvalidSessionId {
+            actual: session_id.to_string(),
+            reason: "session id must be non-empty".to_string(),
+        });
+    }
+    if session_id != session_id.trim() {
+        return Err(VerifierSdkError::InvalidSessionId {
+            actual: session_id.to_string(),
+            reason: "session id must not contain leading or trailing whitespace".to_string(),
+        });
+    }
+    if session_id.len() > MAX_SESSION_ID_LEN {
+        return Err(VerifierSdkError::InvalidSessionId {
+            actual: session_id.to_string(),
+            reason: format!("session id must be at most {MAX_SESSION_ID_LEN} ASCII bytes"),
+        });
+    }
+    if !session_id
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+    {
+        return Err(VerifierSdkError::InvalidSessionId {
+            actual: session_id.to_string(),
+            reason:
+                "session id must include only ASCII letters, digits, '.', '-', and '_'"
+                    .to_string(),
         });
     }
     Ok(())
@@ -1297,6 +1339,66 @@ mod tests {
             err,
             VerifierSdkError::InvalidVerifierIdentity { .. }
         ));
+    }
+
+    #[test]
+    fn create_session_rejects_empty_session_id() {
+        let sdk = create_verifier_sdk("verifier://alpha");
+
+        let err = sdk
+            .create_session("")
+            .expect_err("empty session id must be rejected");
+
+        assert!(matches!(err, VerifierSdkError::InvalidSessionId { .. }));
+    }
+
+    #[test]
+    fn create_session_rejects_whitespace_padded_session_id() {
+        let sdk = create_verifier_sdk("verifier://alpha");
+
+        let err = sdk
+            .create_session(" session-alpha ")
+            .expect_err("whitespace-padded session id must be rejected");
+
+        assert!(matches!(err, VerifierSdkError::InvalidSessionId { .. }));
+    }
+
+    #[test]
+    fn create_session_rejects_control_character_session_id() {
+        let sdk = create_verifier_sdk("verifier://alpha");
+
+        let err = sdk
+            .create_session("session-\u{0000}-alpha")
+            .expect_err("control-character session id must be rejected");
+
+        assert!(matches!(err, VerifierSdkError::InvalidSessionId { .. }));
+    }
+
+    #[test]
+    fn record_session_step_rejects_mutated_invalid_session_id() {
+        let sdk = create_verifier_sdk("verifier://alpha");
+        let mut session = sdk
+            .create_session("session-alpha")
+            .expect("valid session should be created");
+        session.session_id = "session-\nalpha".to_string();
+        let result = sdk
+            .build_result(
+                VerificationOperation::Claim,
+                VerificationVerdict::Pass,
+                vec![AssertionResult {
+                    assertion: "capsule_replay_verified".to_string(),
+                    passed: true,
+                    detail: "same verifier".to_string(),
+                }],
+                "artifact-hash-alpha".to_string(),
+            )
+            .expect("result should build");
+
+        let err = sdk
+            .record_session_step(&mut session, &result)
+            .expect_err("mutated invalid session id must be rejected");
+
+        assert!(matches!(err, VerifierSdkError::InvalidSessionId { .. }));
     }
 
     #[test]
