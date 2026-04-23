@@ -254,12 +254,12 @@ pub fn validate_manifest(manifest: &CapsuleManifest) -> Result<(), CapsuleError>
             manifest.schema_version, SDK_VERSION
         )));
     }
-    if manifest.capsule_id.is_empty() {
+    if manifest.capsule_id.trim().is_empty() || manifest.capsule_id != manifest.capsule_id.trim() {
         return Err(CapsuleError::ManifestIncomplete(
             "capsule_id is empty".into(),
         ));
     }
-    if manifest.claim_type.is_empty() {
+    if manifest.claim_type.trim().is_empty() || manifest.claim_type != manifest.claim_type.trim() {
         return Err(CapsuleError::ManifestIncomplete(
             "claim_type is empty".into(),
         ));
@@ -1064,27 +1064,75 @@ mod tests {
     fn negative_validate_manifest_with_whitespace_only_fields_rejects() {
         let mut capsule = build_reference_capsule();
 
-        // Test various whitespace-only scenarios
         capsule.manifest.capsule_id = "   \t\n\r   ".to_string();
         match validate_manifest(&capsule.manifest) {
             Err(CapsuleError::ManifestIncomplete(msg)) => {
                 assert!(msg.contains("capsule_id"));
             }
-            Ok(_) => {
-                // If it passes, the field isn't empty after trim, which is fine
-                assert!(!capsule.manifest.capsule_id.trim().is_empty());
-            }
-            Err(_) => {
-                // Other errors are not expected for this test case but should not panic
-            }
+            other => panic!("expected ManifestIncomplete for whitespace-only capsule_id, got {other:?}"),
         }
 
         let mut capsule2 = build_reference_capsule();
-        capsule2.manifest.claim_type = "\u{00A0}\u{2000}\u{2001}".to_string(); // Non-breaking spaces
+        capsule2.manifest.claim_type = "\u{00A0}\u{2000}\u{2001}".to_string();
         match validate_manifest(&capsule2.manifest) {
-            Err(CapsuleError::ManifestIncomplete(_)) => {} // Expected if considered empty
-            Ok(_) => {}  // Fine if non-breaking spaces aren't considered empty
-            Err(_) => {} // Other errors are not expected for this test case
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("claim_type"));
+            }
+            other => panic!("expected ManifestIncomplete for whitespace-only claim_type, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_validate_manifest_rejects_whitespace_padded_capsule_id() {
+        let mut capsule = build_reference_capsule();
+        capsule.manifest.capsule_id = " capsule-ref-001 ".to_string();
+
+        match validate_manifest(&capsule.manifest) {
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("capsule_id"));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_validate_manifest_rejects_whitespace_padded_claim_type() {
+        let mut capsule = build_reference_capsule();
+        capsule.manifest.claim_type = " compatibility_check ".to_string();
+
+        match validate_manifest(&capsule.manifest) {
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("claim_type"));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_replay_rejects_whitespace_padded_capsule_id() {
+        let mut capsule = build_reference_capsule();
+        capsule.manifest.capsule_id = " capsule-ref-001 ".to_string();
+        sign_capsule(&mut capsule);
+
+        match replay(&capsule, "verifier://v1") {
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("capsule_id"));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_replay_rejects_whitespace_padded_claim_type() {
+        let mut capsule = build_reference_capsule();
+        capsule.manifest.claim_type = " compatibility_check ".to_string();
+        sign_capsule(&mut capsule);
+
+        match replay(&capsule, "verifier://v1") {
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("claim_type"));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
         }
     }
 
