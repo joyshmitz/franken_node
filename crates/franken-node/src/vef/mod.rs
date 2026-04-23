@@ -93,7 +93,7 @@ mod negative_path_tests {
     }
 
     #[test]
-    fn proof_service_rejects_unknown_simulated_failure_mode() {
+    fn proof_service_ignores_simulated_failure_metadata_in_production() {
         let mut input = valid_input();
         input
             .metadata
@@ -101,13 +101,13 @@ mod negative_path_tests {
         let mut service =
             VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
 
-        let err = service
+        let proof = service
             .generate_proof(&input, None, 1_705_400_000_000)
-            .expect_err("unknown simulated backend failure mode must fail closed");
+            .expect("production service must treat simulate_failure as ordinary metadata");
 
-        assert_eq!(err.code, error_codes::ERR_VEF_PROOF_INPUT);
-        assert!(err.message.contains("unknown simulate_failure mode"));
-        assert!(!err.retriable);
+        service
+            .verify_proof(&input, &proof)
+            .expect("metadata-bearing proof should verify");
     }
 
     #[test]

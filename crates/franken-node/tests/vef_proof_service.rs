@@ -20,7 +20,7 @@ mod proof_service;
 mod tests {
     use super::proof_scheduler::{SchedulerPolicy, VefProofScheduler};
     use super::proof_service::{
-        ProofBackendId, ProofInputEnvelope, ProofServiceConfig, VefProofService, error_codes,
+        ProofBackendId, ProofInputEnvelope, ProofServiceConfig, VefProofService,
     };
     use super::receipt_chain::{ReceiptChain, ReceiptChainConfig};
     use super::vef_execution_receipt::{
@@ -142,16 +142,16 @@ mod tests {
     }
 
     #[test]
-    fn proof_service_classifies_timeout_failure() {
+    fn proof_service_ignores_simulate_failure_metadata() {
         let mut input = build_input();
         input
             .metadata
             .insert("simulate_failure".to_string(), "timeout".to_string());
         let mut service =
             VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
-        let err = service
+        let proof = service
             .generate_proof(&input, None, 1_706_000_300_300)
-            .expect_err("timeout should fail closed");
-        assert_eq!(err.code, error_codes::ERR_VEF_PROOF_TIMEOUT);
+            .expect("simulate_failure metadata must not bypass the backend");
+        service.verify_proof(&input, &proof).expect("verify proof");
     }
 }

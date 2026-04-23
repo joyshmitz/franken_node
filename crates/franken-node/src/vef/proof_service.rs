@@ -103,24 +103,6 @@ pub struct ProofServiceError {
 }
 
 impl ProofServiceError {
-    fn timeout(message: impl Into<String>) -> Self {
-        Self {
-            code: error_codes::ERR_VEF_PROOF_TIMEOUT.to_string(),
-            event_code: event_codes::VEF_PROOF_ERR_001_TIMEOUT.to_string(),
-            message: message.into(),
-            retriable: true,
-        }
-    }
-
-    fn backend_crash(message: impl Into<String>) -> Self {
-        Self {
-            code: error_codes::ERR_VEF_PROOF_BACKEND_CRASH.to_string(),
-            event_code: event_codes::VEF_PROOF_ERR_002_BACKEND_CRASH.to_string(),
-            message: message.into(),
-            retriable: true,
-        }
-    }
-
     fn malformed_output(message: impl Into<String>) -> Self {
         Self {
             code: error_codes::ERR_VEF_PROOF_MALFORMED_OUTPUT.to_string(),
@@ -680,30 +662,6 @@ impl VefProofService {
             detail: format!("backend={}", backend_id.as_str()),
         });
 
-        if let Some(simulate_failure) = input.metadata.get("simulate_failure") {
-            return match simulate_failure.as_str() {
-                "timeout" => Err(ProofServiceError::timeout(format!(
-                    "backend={} exceeded timeout while proving job={}",
-                    backend_id.as_str(),
-                    input.job_id
-                ))),
-                "crash" => Err(ProofServiceError::backend_crash(format!(
-                    "backend={} crashed while proving job={}",
-                    backend_id.as_str(),
-                    input.job_id
-                ))),
-                "malformed_output" => Err(ProofServiceError::malformed_output(format!(
-                    "backend={} returned malformed output for job={}",
-                    backend_id.as_str(),
-                    input.job_id
-                ))),
-                _ => Err(ProofServiceError::input_error(format!(
-                    "unknown simulate_failure mode '{}': expected timeout|crash|malformed_output",
-                    simulate_failure
-                ))),
-            };
-        }
-
         let params = self.parameters_for(backend_id)?;
         let proof = self.run_backend_generate(backend_id, input, now_millis, &params)?;
         proof.validate_against(input)?;
@@ -1012,7 +970,7 @@ mod tests {
     }
 
     #[test]
-    fn timeout_failure_is_classified_and_retriable() {
+    fn simulate_failure_metadata_does_not_bypass_backend_generation() {
         let (mut input, _, _) = sample_request();
         input
             .metadata
@@ -1020,16 +978,16 @@ mod tests {
         let mut service =
             VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
 
-        let err = service
+        let proof = service
             .generate_proof(&input, None, 1_705_300_000_400)
-            .expect_err("simulated timeout must fail");
-        assert_eq!(err.code, error_codes::ERR_VEF_PROOF_TIMEOUT);
-        assert_eq!(err.event_code, event_codes::VEF_PROOF_ERR_001_TIMEOUT);
-        assert!(err.retriable);
+            .expect("metadata must not trigger production failure injection");
+        service
+            .verify_proof(&input, &proof)
+            .expect("metadata-bearing proof should verify");
     }
 
     #[test]
-    fn crash_failure_is_classified_and_retriable() {
+    fn crash_simulation_metadata_does_not_bypass_backend_generation() {
         let (mut input, _, _) = sample_request();
         input
             .metadata
@@ -1037,16 +995,14 @@ mod tests {
         let mut service =
             VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
 
-        let err = service
+        let proof = service
             .generate_proof(&input, None, 1_705_300_000_500)
-            .expect_err("simulated crash must fail");
-        assert_eq!(err.code, error_codes::ERR_VEF_PROOF_BACKEND_CRASH);
-        assert_eq!(err.event_code, event_codes::VEF_PROOF_ERR_002_BACKEND_CRASH);
-        assert!(err.retriable);
+            .expect("metadata must not trigger production failure injection");
+        assert_eq!(proof.backend_id, ProofBackendId::HashAttestationV1);
     }
 
     #[test]
-    fn malformed_output_failure_is_classified() {
+    fn malformed_output_simulation_metadata_does_not_bypass_backend_generation() {
         let (mut input, _, _) = sample_request();
         input.metadata.insert(
             "simulate_failure".to_string(),
@@ -1055,15 +1011,12 @@ mod tests {
         let mut service =
             VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
 
-        let err = service
+        let proof = service
             .generate_proof(&input, None, 1_705_300_000_600)
-            .expect_err("simulated malformed output must fail");
-        assert_eq!(err.code, error_codes::ERR_VEF_PROOF_MALFORMED_OUTPUT);
-        assert_eq!(
-            err.event_code,
-            event_codes::VEF_PROOF_ERR_003_MALFORMED_OUTPUT
-        );
-        assert!(!err.retriable);
+            .expect("metadata must not trigger production failure injection");
+        service
+            .verify_proof(&input, &proof)
+            .expect("metadata-bearing proof should verify");
     }
 
     #[test]
@@ -1212,7 +1165,7 @@ mod tests {
     }
 
     #[test]
-    fn generate_proof_rejects_unknown_failure_simulation() {
+    fn unknown_failure_simulation_metadata_does_not_bypass_backend_generation() {
         let (mut input, _, _) = sample_request();
         input
             .metadata
@@ -1220,14 +1173,15 @@ mod tests {
         let mut service =
             VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
 
-        let err = service
+        let proof = service
             .generate_proof(&input, None, 1_705_300_001_000)
-            .expect_err("unknown simulated failure must fail closed");
-        assert_eq!(err.code, error_codes::ERR_VEF_PROOF_INPUT);
-        assert!(err.message.contains("unknown simulate_failure mode"));
-        assert!(!service.events().iter().any(|event| {
+            .expect("metadata must not trigger production failure injection");
+        assert!(service.events().iter().any(|event| {
             event.event_code.as_str() == event_codes::VEF_PROOF_003_PROOF_GENERATED
         }));
+        service
+            .verify_proof(&input, &proof)
+            .expect("metadata-bearing proof should verify");
     }
 
     #[test]

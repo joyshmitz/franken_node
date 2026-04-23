@@ -91,3 +91,20 @@ fn default_config_rejects_generate_until_backend_is_explicitly_enabled() {
     assert!(err.message.contains("not enabled"));
     assert!(!err.retriable);
 }
+
+#[test]
+fn simulate_failure_metadata_does_not_trigger_production_fault_injection() {
+    let mut input = sample_input();
+    input
+        .metadata
+        .insert("simulate_failure".to_string(), "timeout".to_string());
+    let mut service = VefProofService::new(ProofServiceConfig::reference_attestation_defaults());
+
+    let proof = service
+        .generate_proof(&input, None, 1_706_100_000_300)
+        .expect("simulate_failure metadata must not bypass backend generation");
+
+    service
+        .verify_proof(&input, &proof)
+        .expect("proof generated with ordinary metadata should verify");
+}
