@@ -202,3 +202,9 @@ name = "fuzz_vef_proof_input_envelope"
 path = "fuzz_targets/fuzz_vef_proof_input_envelope.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_fleet_decision_receipt_parse"
+path = "fuzz_targets/fuzz_fleet_decision_receipt_parse.rs"
+test = false
+doc = false

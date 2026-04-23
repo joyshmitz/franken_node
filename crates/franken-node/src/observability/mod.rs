@@ -26,6 +26,7 @@ pub mod test_support {
             epoch_id: 7,
             payload: serde_json::Value::Null,
             size_bytes: 0,
+            signature: String::new(),
         }
     }
 
