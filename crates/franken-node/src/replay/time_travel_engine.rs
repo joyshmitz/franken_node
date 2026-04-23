@@ -1092,6 +1092,8 @@ pub fn build_demo_trace(trace_id: &str, workflow_name: &str, step_count: usize) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+    use proptest::test_runner::TestRunner;
 
     fn demo_env() -> EnvironmentSnapshot {
         EnvironmentSnapshot::new(
@@ -2701,9 +2703,21 @@ mod tests {
         ];
 
         let steps = vec![
-            TraceStep::new(0, b"input\x00\x01".to_vec(), b"output\xff\xfe".to_vec(), side_effects.clone(), 1000),
+            TraceStep::new(
+                0,
+                b"input\x00\x01".to_vec(),
+                b"output\xff\xfe".to_vec(),
+                side_effects.clone(),
+                1000,
+            ),
             TraceStep::new(1, vec![], b"empty_input_step".to_vec(), vec![], 2000),
-            TraceStep::new(2, b"unicode_\xE6\xB5\x8B\xE8\xAF\x95".to_vec(), vec![], vec![SideEffect::new("unicode", "测试".bytes().collect())], 3000),
+            TraceStep::new(
+                2,
+                b"unicode_\xE6\xB5\x8B\xE8\xAF\x95".to_vec(),
+                vec![],
+                vec![SideEffect::new("unicode", "测试".bytes().collect())],
+                3000,
+            ),
         ];
 
         let original_trace = WorkflowTrace {
@@ -2717,14 +2731,17 @@ mod tests {
 
         // MR: serialize → deserialize should be identity
         let serialized = serde_json::to_string(&original_trace).expect("serialize should succeed");
-        let deserialized: WorkflowTrace = serde_json::from_str(&serialized).expect("deserialize should succeed");
+        let deserialized: WorkflowTrace =
+            serde_json::from_str(&serialized).expect("deserialize should succeed");
 
         // Verify identity for all fields
         assert_eq!(original_trace.trace_id, deserialized.trace_id);
         assert_eq!(original_trace.workflow_name, deserialized.workflow_name);
         assert_eq!(original_trace.schema_version, deserialized.schema_version);
-        assert!(ct_eq(&original_trace.trace_digest, &deserialized.trace_digest),
-                "trace_digest should be identical after round-trip");
+        assert!(
+            ct_eq(&original_trace.trace_digest, &deserialized.trace_digest),
+            "trace_digest should be identical after round-trip"
+        );
 
         // Verify steps preserved exactly
         assert_eq!(original_trace.steps.len(), deserialized.steps.len());
@@ -2732,24 +2749,54 @@ mod tests {
             assert_eq!(orig.seq, deser.seq);
             assert_eq!(orig.timestamp_ns, deser.timestamp_ns);
             assert_eq!(orig.input, deser.input, "input bytes should be identical");
-            assert_eq!(orig.output, deser.output, "output bytes should be identical");
+            assert_eq!(
+                orig.output, deser.output,
+                "output bytes should be identical"
+            );
             assert_eq!(orig.side_effects.len(), deser.side_effects.len());
-            for (orig_effect, deser_effect) in orig.side_effects.iter().zip(deser.side_effects.iter()) {
+            for (orig_effect, deser_effect) in
+                orig.side_effects.iter().zip(deser.side_effects.iter())
+            {
                 assert_eq!(orig_effect.kind, deser_effect.kind);
-                assert_eq!(orig_effect.payload, deser_effect.payload, "side effect payload should be identical");
+                assert_eq!(
+                    orig_effect.payload, deser_effect.payload,
+                    "side effect payload should be identical"
+                );
             }
         }
 
         // Verify environment preserved exactly
-        assert_eq!(original_trace.environment.schema_version, deserialized.environment.schema_version);
-        assert_eq!(original_trace.environment.clock_seed_ns, deserialized.environment.clock_seed_ns);
-        assert_eq!(original_trace.environment.platform, deserialized.environment.platform);
-        assert_eq!(original_trace.environment.runtime_version, deserialized.environment.runtime_version);
-        assert_eq!(original_trace.environment.env_vars.len(), deserialized.environment.env_vars.len());
+        assert_eq!(
+            original_trace.environment.schema_version,
+            deserialized.environment.schema_version
+        );
+        assert_eq!(
+            original_trace.environment.clock_seed_ns,
+            deserialized.environment.clock_seed_ns
+        );
+        assert_eq!(
+            original_trace.environment.platform,
+            deserialized.environment.platform
+        );
+        assert_eq!(
+            original_trace.environment.runtime_version,
+            deserialized.environment.runtime_version
+        );
+        assert_eq!(
+            original_trace.environment.env_vars.len(),
+            deserialized.environment.env_vars.len()
+        );
         for (key, orig_val) in &original_trace.environment.env_vars {
-            let deser_val = deserialized.environment.env_vars.get(key)
+            let deser_val = deserialized
+                .environment
+                .env_vars
+                .get(key)
                 .expect("environment variable should exist after round-trip");
-            assert_eq!(orig_val, deser_val, "environment variable '{}' should be identical", key);
+            assert_eq!(
+                orig_val, deser_val,
+                "environment variable '{}' should be identical",
+                key
+            );
         }
     }
 
@@ -2770,14 +2817,19 @@ mod tests {
 
         // MR: serialize → deserialize should be identity for TraceStep
         let serialized = serde_json::to_string(&step).expect("serialize step should succeed");
-        let deserialized: TraceStep = serde_json::from_str(&serialized).expect("deserialize step should succeed");
+        let deserialized: TraceStep =
+            serde_json::from_str(&serialized).expect("deserialize step should succeed");
 
         assert_eq!(step.seq, deserialized.seq);
         assert_eq!(step.timestamp_ns, deserialized.timestamp_ns);
         assert_eq!(step.input, deserialized.input);
         assert_eq!(step.output, deserialized.output);
         assert_eq!(step.side_effects.len(), deserialized.side_effects.len());
-        for (orig, deser) in step.side_effects.iter().zip(deserialized.side_effects.iter()) {
+        for (orig, deser) in step
+            .side_effects
+            .iter()
+            .zip(deserialized.side_effects.iter())
+        {
             assert_eq!(orig.kind, deser.kind);
             assert_eq!(orig.payload, deser.payload);
         }
@@ -2792,7 +2844,10 @@ mod tests {
             env_vars: {
                 let mut vars = BTreeMap::new();
                 vars.insert("EMPTY".to_string(), "".to_string());
-                vars.insert("SPECIAL_CHARS".to_string(), "!@#$%^&*()_+-={}[]|\\:;\"'<>?,./ \t\n\r".to_string());
+                vars.insert(
+                    "SPECIAL_CHARS".to_string(),
+                    "!@#$%^&*()_+-={}[]|\\:;\"'<>?,./ \t\n\r".to_string(),
+                );
                 vars.insert("UNICODE".to_string(), "🦀 Rust ∀x∈ℝ: x² ≥ 0".to_string());
                 vars.insert("LONG_VALUE".to_string(), "a".repeat(10000));
                 vars
@@ -2803,7 +2858,8 @@ mod tests {
 
         // MR: serialize → deserialize should be identity for EnvironmentSnapshot
         let serialized = serde_json::to_string(&env).expect("serialize env should succeed");
-        let deserialized: EnvironmentSnapshot = serde_json::from_str(&serialized).expect("deserialize env should succeed");
+        let deserialized: EnvironmentSnapshot =
+            serde_json::from_str(&serialized).expect("deserialize env should succeed");
 
         assert_eq!(env.schema_version, deserialized.schema_version);
         assert_eq!(env.clock_seed_ns, deserialized.clock_seed_ns);
@@ -2811,8 +2867,12 @@ mod tests {
         assert_eq!(env.runtime_version, deserialized.runtime_version);
         assert_eq!(env.env_vars.len(), deserialized.env_vars.len());
         for (key, value) in &env.env_vars {
-            assert_eq!(deserialized.env_vars.get(key), Some(value),
-                       "env var '{}' should have identical value after round-trip", key);
+            assert_eq!(
+                deserialized.env_vars.get(key),
+                Some(value),
+                "env var '{}' should have identical value after round-trip",
+                key
+            );
         }
     }
 
@@ -2832,7 +2892,11 @@ mod tests {
             0,
             b"input".to_vec(),
             b"output".to_vec(),
-            vec![side_effect_a.clone(), side_effect_b.clone(), side_effect_c.clone()], // A, B, C
+            vec![
+                side_effect_a.clone(),
+                side_effect_b.clone(),
+                side_effect_c.clone(),
+            ], // A, B, C
             1000,
         );
 
@@ -2840,7 +2904,11 @@ mod tests {
             0,
             b"input".to_vec(),
             b"output".to_vec(),
-            vec![side_effect_c.clone(), side_effect_a.clone(), side_effect_b.clone()], // C, A, B
+            vec![
+                side_effect_c.clone(),
+                side_effect_a.clone(),
+                side_effect_b.clone(),
+            ], // C, A, B
             1000,
         );
 
@@ -2848,7 +2916,11 @@ mod tests {
             0,
             b"input".to_vec(),
             b"output".to_vec(),
-            vec![side_effect_b.clone(), side_effect_c.clone(), side_effect_a.clone()], // B, C, A
+            vec![
+                side_effect_b.clone(),
+                side_effect_c.clone(),
+                side_effect_a.clone(),
+            ], // B, C, A
             1000,
         );
 
@@ -2876,12 +2948,66 @@ mod tests {
 
         // For this test, we'll document the current behavior (order-dependent)
         // This serves as a regression test to catch unintended changes
-        assert_ne!(digest1, digest2,
-            "DOCUMENTED BEHAVIOR: Side effects digest is currently order-dependent");
-        assert_ne!(digest2, digest3,
-            "DOCUMENTED BEHAVIOR: Side effects digest varies across all permutations");
-        assert_ne!(digest1, digest3,
-            "DOCUMENTED BEHAVIOR: Side effects digest depends on exact ordering");
+        assert_ne!(
+            digest1, digest2,
+            "DOCUMENTED BEHAVIOR: Side effects digest is currently order-dependent"
+        );
+        assert_ne!(
+            digest2, digest3,
+            "DOCUMENTED BEHAVIOR: Side effects digest varies across all permutations"
+        );
+        assert_ne!(
+            digest1, digest3,
+            "DOCUMENTED BEHAVIOR: Side effects digest depends on exact ordering"
+        );
+    }
+
+    #[test]
+    fn metamorphic_digest_side_effects_order_dependence_generated_cases() {
+        let mut runner = TestRunner::default();
+        let strategy = prop::collection::vec(
+            (
+                prop::collection::vec(any::<u8>(), 0..=6),
+                prop::collection::vec(any::<u8>(), 0..=32),
+            ),
+            3..=8,
+        );
+
+        runner
+            .run(&strategy, |pairs| {
+                let side_effects: Vec<SideEffect> = pairs
+                    .into_iter()
+                    .enumerate()
+                    .map(|(idx, (kind_bytes, mut payload))| {
+                        let kind_suffix = if kind_bytes.is_empty() {
+                            "empty".to_string()
+                        } else {
+                            hex::encode(kind_bytes)
+                        };
+                        payload.extend_from_slice(&(idx as u64).to_le_bytes());
+                        SideEffect::new(&format!("effect-{idx}-{kind_suffix}"), payload)
+                    })
+                    .collect();
+
+                let mut rotated = side_effects.clone();
+                rotated.rotate_left(1);
+                prop_assert_ne!(side_effects, rotated);
+
+                let base_step =
+                    TraceStep::new(0, b"input".to_vec(), b"output".to_vec(), side_effects, 1000);
+                let rotated_step =
+                    TraceStep::new(0, b"input".to_vec(), b"output".to_vec(), rotated, 1000);
+
+                prop_assert_ne!(
+                    base_step.side_effects_digest(),
+                    rotated_step.side_effects_digest(),
+                    "side-effects digest must remain order-dependent across generated permutations"
+                );
+                Ok(())
+            })
+            .expect(
+                "generated side-effect permutations should preserve documented ordering semantics",
+            );
     }
 
     #[test]
@@ -2901,8 +3027,10 @@ mod tests {
         let digest_cba = WorkflowTrace::compute_digest(&trace_order_cba);
 
         // MR: Step order SHOULD matter for trace digest (steps represent temporal sequence)
-        assert_ne!(digest_abc, digest_cba,
-            "Trace digest should be order-dependent for steps (temporal ordering matters)");
+        assert_ne!(
+            digest_abc, digest_cba,
+            "Trace digest should be order-dependent for steps (temporal ordering matters)"
+        );
 
         eprintln!("✅ Trace steps digest correctly order-dependent (temporal semantics preserved)");
     }
@@ -2921,7 +3049,7 @@ mod tests {
         env_vars_order1.insert("HOME".to_string(), "/home/testuser".to_string());
 
         let mut env_vars_order2 = BTreeMap::new();
-        env_vars_order2.insert("USER".to_string(), "testuser".to_string());  // Different insertion order
+        env_vars_order2.insert("USER".to_string(), "testuser".to_string()); // Different insertion order
         env_vars_order2.insert("HOME".to_string(), "/home/testuser".to_string());
         env_vars_order2.insert("PATH".to_string(), "/usr/bin:/bin".to_string());
 
@@ -2933,10 +3061,64 @@ mod tests {
         let json2 = serde_json::to_string(&env2).expect("serialize env2");
 
         // MR: BTreeMap insertion order should not affect serialization (canonical ordering)
-        assert_eq!(json1, json2,
-            "Environment serialization should be order-independent due to BTreeMap canonical ordering");
+        assert_eq!(
+            json1, json2,
+            "Environment serialization should be order-independent due to BTreeMap canonical ordering"
+        );
 
-        eprintln!("✅ Environment variables correctly order-independent (BTreeMap canonical ordering)");
+        eprintln!(
+            "✅ Environment variables correctly order-independent (BTreeMap canonical ordering)"
+        );
+    }
+
+    #[test]
+    fn metamorphic_digest_environment_vars_insertion_order_independence_generated_cases() {
+        let mut runner = TestRunner::default();
+        let strategy = prop::collection::vec(
+            (
+                prop::collection::vec(any::<u8>(), 0..=6),
+                prop::collection::vec(any::<char>(), 0..=24),
+            ),
+            1..=12,
+        );
+
+        runner
+            .run(&strategy, |pairs| {
+                let entries: Vec<(String, String)> = pairs
+                    .into_iter()
+                    .enumerate()
+                    .map(|(idx, (key_bytes, value_chars))| {
+                        let key_suffix = if key_bytes.is_empty() {
+                            "EMPTY".to_string()
+                        } else {
+                            hex::encode(key_bytes)
+                        };
+                        let value: String = value_chars.into_iter().collect();
+                        (format!("KEY_{idx}_{key_suffix}"), value)
+                    })
+                    .collect();
+
+                let mut env_vars_order1 = BTreeMap::new();
+                for (key, value) in &entries {
+                    env_vars_order1.insert(key.clone(), value.clone());
+                }
+
+                let mut env_vars_order2 = BTreeMap::new();
+                for (key, value) in entries.iter().rev() {
+                    env_vars_order2.insert(key.clone(), value.clone());
+                }
+
+                let env1 = EnvironmentSnapshot::new(1000, env_vars_order1, "linux", "v1.0");
+                let env2 = EnvironmentSnapshot::new(1000, env_vars_order2, "linux", "v1.0");
+
+                prop_assert_eq!(
+                    serde_json::to_string(&env1).expect("serialize generated env1"),
+                    serde_json::to_string(&env2).expect("serialize generated env2"),
+                    "BTreeMap-backed environment snapshots must ignore insertion order for generated env vars"
+                );
+                Ok(())
+            })
+            .expect("generated environment permutations should preserve canonical ordering");
     }
 
     #[test]
@@ -2952,7 +3134,13 @@ mod tests {
         ];
 
         // Method 1: Direct construction via ::new()
-        let step1 = TraceStep::new(42, input.clone(), output.clone(), side_effects.clone(), 5000);
+        let step1 = TraceStep::new(
+            42,
+            input.clone(),
+            output.clone(),
+            side_effects.clone(),
+            5000,
+        );
 
         // Method 2: Construct with different field access pattern (but same logical content)
         let step2 = TraceStep {
@@ -2980,19 +3168,27 @@ mod tests {
         let digest2 = step2.output_digest();
         let digest3 = step3.output_digest();
 
-        assert_eq!(digest1, digest2,
-            "Direct construction vs struct literal should produce identical output digest");
-        assert_eq!(digest2, digest3,
-            "Different construction methods should produce identical output digest");
+        assert_eq!(
+            digest1, digest2,
+            "Direct construction vs struct literal should produce identical output digest"
+        );
+        assert_eq!(
+            digest2, digest3,
+            "Different construction methods should produce identical output digest"
+        );
 
         let effects_digest1 = step1.side_effects_digest();
         let effects_digest2 = step2.side_effects_digest();
         let effects_digest3 = step3.side_effects_digest();
 
-        assert_eq!(effects_digest1, effects_digest2,
-            "Direct construction vs struct literal should produce identical effects digest");
-        assert_eq!(effects_digest2, effects_digest3,
-            "Different construction methods should produce identical effects digest");
+        assert_eq!(
+            effects_digest1, effects_digest2,
+            "Direct construction vs struct literal should produce identical effects digest"
+        );
+        assert_eq!(
+            effects_digest2, effects_digest3,
+            "Different construction methods should produce identical effects digest"
+        );
 
         eprintln!("✅ TraceStep construction method independence confirmed");
     }
@@ -3663,15 +3859,24 @@ mod tests {
             .expect("replay in engine_b should succeed");
 
         // METAMORPHIC ASSERTION 1: Replay results must be identical
-        assert_eq!(result_a.verdict, result_b.verdict, "replay verdicts must match");
-        assert_eq!(result_a.steps_replayed, result_b.steps_replayed, "steps replayed count must match");
-        assert_eq!(result_a.divergences, result_b.divergences, "divergences must be identical");
+        assert_eq!(
+            result_a.verdict, result_b.verdict,
+            "replay verdicts must match"
+        );
+        assert_eq!(
+            result_a.steps_replayed, result_b.steps_replayed,
+            "steps replayed count must match"
+        );
+        assert_eq!(
+            result_a.divergences, result_b.divergences,
+            "divergences must be identical"
+        );
 
         // METAMORPHIC ASSERTION 2: Engine states must be byte-identical (canonical serialization)
-        let engine_a_bytes = serde_json::to_vec(&engine_a.audit_log())
-            .expect("engine_a audit log should serialize");
-        let engine_b_bytes = serde_json::to_vec(&engine_b.audit_log())
-            .expect("engine_b audit log should serialize");
+        let engine_a_bytes =
+            serde_json::to_vec(&engine_a.audit_log()).expect("engine_a audit log should serialize");
+        let engine_b_bytes =
+            serde_json::to_vec(&engine_b.audit_log()).expect("engine_b audit log should serialize");
 
         assert_eq!(
             engine_a_bytes, engine_b_bytes,
@@ -3679,18 +3884,28 @@ mod tests {
         );
 
         // METAMORPHIC ASSERTION 3: Trace storage state must be identical
-        assert_eq!(engine_a.trace_count(), engine_b.trace_count(), "trace counts must match");
-        assert_eq!(engine_a.trace_ids(), engine_b.trace_ids(), "trace IDs must be identical");
+        assert_eq!(
+            engine_a.trace_count(),
+            engine_b.trace_count(),
+            "trace counts must match"
+        );
+        assert_eq!(
+            engine_a.trace_ids(),
+            engine_b.trace_ids(),
+            "trace IDs must be identical"
+        );
 
-        let trace_a = engine_a.get_trace("idempotency-test").expect("trace should exist in engine_a");
-        let trace_b = engine_b.get_trace("idempotency-test").expect("trace should exist in engine_b");
+        let trace_a = engine_a
+            .get_trace("idempotency-test")
+            .expect("trace should exist in engine_a");
+        let trace_b = engine_b
+            .get_trace("idempotency-test")
+            .expect("trace should exist in engine_b");
         assert_eq!(trace_a, trace_b, "retrieved traces must be identical");
 
         // METAMORPHIC ASSERTION 4: Replay results must be serialization-identical
-        let result_a_bytes = serde_json::to_vec(&result_a)
-            .expect("result_a should serialize");
-        let result_b_bytes = serde_json::to_vec(&result_b)
-            .expect("result_b should serialize");
+        let result_a_bytes = serde_json::to_vec(&result_a).expect("result_a should serialize");
+        let result_b_bytes = serde_json::to_vec(&result_b).expect("result_b should serialize");
 
         assert_eq!(
             result_a_bytes, result_b_bytes,
@@ -3714,9 +3929,7 @@ mod tests {
 
         let trace = build_demo_trace("same-engine-multi", "stateful-test", 3);
         let mut engine = ReplayEngine::new();
-        engine
-            .register_trace(trace)
-            .expect("register trace");
+        engine.register_trace(trace).expect("register trace");
 
         // First replay
         let result_1 = engine
@@ -3734,14 +3947,32 @@ mod tests {
             .expect("third replay should succeed");
 
         // METAMORPHIC ASSERTIONS: All replay results must be identical
-        assert_eq!(result_1.verdict, result_2.verdict, "first and second replay verdicts must match");
-        assert_eq!(result_2.verdict, result_3.verdict, "second and third replay verdicts must match");
+        assert_eq!(
+            result_1.verdict, result_2.verdict,
+            "first and second replay verdicts must match"
+        );
+        assert_eq!(
+            result_2.verdict, result_3.verdict,
+            "second and third replay verdicts must match"
+        );
 
-        assert_eq!(result_1.steps_replayed, result_2.steps_replayed, "steps replayed must be consistent");
-        assert_eq!(result_2.steps_replayed, result_3.steps_replayed, "steps replayed must be consistent");
+        assert_eq!(
+            result_1.steps_replayed, result_2.steps_replayed,
+            "steps replayed must be consistent"
+        );
+        assert_eq!(
+            result_2.steps_replayed, result_3.steps_replayed,
+            "steps replayed must be consistent"
+        );
 
-        assert_eq!(result_1.divergences, result_2.divergences, "divergences must be identical across runs");
-        assert_eq!(result_2.divergences, result_3.divergences, "divergences must be identical across runs");
+        assert_eq!(
+            result_1.divergences, result_2.divergences,
+            "divergences must be identical across runs"
+        );
+        assert_eq!(
+            result_2.divergences, result_3.divergences,
+            "divergences must be identical across runs"
+        );
 
         // METAMORPHIC INVARIANT VERIFIED:
         // replay(trace) on same engine multiple times always produces identical results
@@ -3841,7 +4072,8 @@ mod tests {
         canonical_env.runtime_version = canonical_env.runtime_version.trim().to_string();
 
         // Normalize environment variables
-        canonical_env.env_vars = canonical_env.env_vars
+        canonical_env.env_vars = canonical_env
+            .env_vars
             .into_iter()
             .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
             .filter(|(k, _)| !k.is_empty()) // Remove empty keys
@@ -3876,7 +4108,10 @@ mod tests {
                 clock_seed_ns: 42,
                 env_vars: BTreeMap::from([
                     ("测试".to_string(), "🦀 Rust".to_string()),
-                    ("NULL\\0BYTE".to_string(), "value\\0with\\0nulls".to_string()),
+                    (
+                        "NULL\\0BYTE".to_string(),
+                        "value\\0with\\0nulls".to_string(),
+                    ),
                 ]),
                 platform: "linux-arm64".to_string(),
                 runtime_version: "1.0.0-alpha.1+build.123".to_string(),
@@ -3899,5 +4134,65 @@ mod tests {
                 i
             );
         }
+    }
+
+    #[test]
+    fn environment_snapshot_canonicalization_commutes_for_generated_canonical_inputs() {
+        let mut runner = TestRunner::default();
+        let strategy = (
+            any::<u64>(),
+            prop::collection::vec(
+                (
+                    prop::collection::vec(any::<u8>(), 0..=6),
+                    prop::collection::vec(any::<u8>(), 0..=16),
+                ),
+                0..=12,
+            ),
+            prop::collection::vec(any::<u8>(), 1..=6),
+            (0_u8..=9, 0_u8..=9, 0_u8..=9),
+        );
+
+        runner
+            .run(
+                &strategy,
+                |(clock_seed_ns, env_pairs, platform_bytes, version_parts)| {
+                    let env_vars = env_pairs
+                        .into_iter()
+                        .enumerate()
+                        .map(|(idx, (key_bytes, value_bytes))| {
+                            let key_suffix = if key_bytes.is_empty() {
+                                "EMPTY".to_string()
+                            } else {
+                                hex::encode(key_bytes)
+                            };
+                            (format!("KEY_{idx}_{key_suffix}"), hex::encode(value_bytes))
+                        })
+                        .collect();
+
+                    let test_env = TestEnvironment {
+                        clock_seed_ns,
+                        env_vars,
+                        platform: format!("linux-{}", hex::encode(platform_bytes)),
+                        runtime_version: format!(
+                            "{}.{}.{}",
+                            version_parts.0, version_parts.1, version_parts.2
+                        ),
+                    };
+
+                    let snapshot_first = snapshot_environment(&test_env);
+                    let canonical_bytes_path1 = canonicalize_snapshot(&snapshot_first);
+
+                    let canonical_env = canonicalize_environment(&test_env);
+                    let snapshot_second = snapshot_environment(&canonical_env);
+                    let canonical_bytes_path2 = canonicalize_snapshot(&snapshot_second);
+
+                    prop_assert_eq!(canonical_bytes_path1, canonical_bytes_path2);
+                    prop_assert_eq!(snapshot_first, snapshot_second);
+                    Ok(())
+                },
+            )
+            .expect(
+                "generated canonical environments should commute through snapshot canonicalization",
+            );
     }
 }
