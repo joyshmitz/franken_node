@@ -863,19 +863,37 @@ mod tests {
         // Test timing-resistant comparison patterns
         // In production code, these should use crate::security::constant_time::ct_eq_bytes
 
-        // Demonstrate vulnerable comparison (what NOT to do)
-        let vulnerable_equal = hash1_bytes.as_slice() == hash2_bytes.as_slice();  // Timing attack vulnerable
+        // Use secure constant-time comparison for all hash comparisons
+        use crate::security::constant_time;
+        let secure_equal = constant_time::ct_eq_bytes(&hash1_bytes, &hash2_bytes);
 
-        // Demonstrate safe comparison pattern (what SHOULD be done)
-        // Note: This is a simulation - real code should use ct_eq_bytes
-        let safe_equal = hash1_bytes.len() == hash2_bytes.len()
-            && hash1_bytes.iter()
-                .zip(hash2_bytes.iter())
-                .all(|(a, b)| a == b);  // Still not constant-time, but conceptually correct
+        // Verify that identical hashes from same evidence would be equal
+        let mut hasher3 = Sha256::new();
+        hasher3.update(b"evidence_v1:");
+        hasher3.update(evidence1_json.as_bytes()); // Same as evidence1
+        let hash3_bytes = hasher3.finalize();
+        let identical_secure_equal = constant_time::ct_eq_bytes(&hash1_bytes, &hash3_bytes);
 
-        // Both should produce same result, but safe version resists timing attacks
-        assert_eq!(vulnerable_equal, safe_equal, "Results should match");
+        // Test both different and identical hash comparisons
+        assert!(!secure_equal, "Different evidence should have different hashes");
+        assert!(identical_secure_equal, "Identical evidence should have matching hashes");
         assert_ne!(hash1_bytes.as_slice(), hash2_bytes.as_slice(), "Different evidence should have different hashes");
+
+        // Regression test: timing attack resistance for hash comparisons
+        // Test identical hashes
+        let hash_a = [0x42u8; 32];
+        let hash_b = [0x42u8; 32];
+        assert!(constant_time::ct_eq_bytes(&hash_a, &hash_b), "Identical hashes should be equal");
+
+        // Test first-byte difference (timing must be constant regardless of difference position)
+        let mut hash_c = [0x42u8; 32];
+        hash_c[0] = 0x43; // Different first byte
+        assert!(!constant_time::ct_eq_bytes(&hash_a, &hash_c), "Hashes differing in first byte should not be equal");
+
+        // Test last-byte difference (timing must be constant regardless of difference position)
+        let mut hash_d = [0x42u8; 32];
+        hash_d[31] = 0x43; // Different last byte
+        assert!(!constant_time::ct_eq_bytes(&hash_a, &hash_d), "Hashes differing in last byte should not be equal");
 
         // Test with very similar hashes (high timing attack potential)
         let mut similar_evidence = evidence1.clone();
