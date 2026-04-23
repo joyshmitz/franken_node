@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use url::Url;
 
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
 use crate::security::cuckoo_filter::CuckooFilter;
@@ -423,14 +424,6 @@ impl RemoteScope {
         };
         scope.normalize();
 
-        // Validation is applied only on normalized data - this ensures
-        // constructor and deserializer have consistent behavior
-        if let Err(_) = scope.validate_endpoint_prefixes() {
-            // For now, allow invalid scopes in constructor for backward compatibility
-            // but log the validation failure for future hardening
-            // TODO: Make this a hard error in next major version
-        }
-
         scope
     }
 
@@ -469,56 +462,80 @@ impl RemoteScope {
         self.endpoint_prefixes = endpoint_set.into_iter().collect();
     }
 
-    /// Validate endpoint prefixes at construction/deserialization time.
+    /// Validate endpoint prefixes at deserialization, issuance, and enforcement time.
     fn validate_endpoint_prefixes(&self) -> Result<(), String> {
         for prefix in &self.endpoint_prefixes {
-            if prefix.trim().is_empty() {
-                return Err("endpoint prefix cannot be empty".to_string());
-            }
-
-            // Check for valid URL scheme - must be network-accessible protocols
-            let allowed_schemes = ["https", "http", "federation", "ws", "wss"];
-            let has_valid_scheme = allowed_schemes.iter().any(|&scheme| {
-                prefix.starts_with(&format!("{scheme}://"))
-            });
-
-            if !has_valid_scheme {
-                return Err(format!(
-                    "endpoint prefix '{}' must use network scheme (https://, http://, federation://, ws://, wss://)",
-                    prefix
-                ));
-            }
-
-            // Reject non-network schemes that could bypass network controls
-            let forbidden_schemes = ["file", "data", "javascript", "vbscript", "ftp"];
-            for &forbidden in &forbidden_schemes {
-                if prefix.starts_with(&format!("{forbidden}://")) {
-                    return Err(format!(
-                        "endpoint prefix '{}' uses forbidden non-network scheme '{}'",
-                        prefix, forbidden
-                    ));
-                }
-            }
-
-            // Basic URL format validation - must have domain after scheme
-            if let Some(after_scheme) = prefix.strip_prefix("https://")
-                .or_else(|| prefix.strip_prefix("http://"))
-                .or_else(|| prefix.strip_prefix("federation://"))
-                .or_else(|| prefix.strip_prefix("ws://"))
-                .or_else(|| prefix.strip_prefix("wss://"))
-            {
-                if after_scheme.is_empty() {
-                    return Err(format!("endpoint prefix '{}' has no domain after scheme", prefix));
-                }
-
-                // Reject malformed domains with path traversal attempts
-                if after_scheme.contains("..") || after_scheme.contains("\\") {
-                    return Err(format!("endpoint prefix '{}' contains invalid characters", prefix));
-                }
-            }
+            validate_endpoint_prefix(prefix)?;
         }
         Ok(())
     }
+}
+
+fn validate_endpoint_prefix(prefix: &str) -> Result<(), String> {
+    if prefix.trim().is_empty() {
+        return Err("endpoint prefix cannot be empty".to_string());
+    }
+    if prefix != prefix.trim() {
+        return Err(format!("endpoint prefix '{}' must be normalized", prefix));
+    }
+    if prefix
+        .chars()
+        .any(|ch| ch.is_control() || ch.is_whitespace() || matches!(ch, '\u{202a}'..='\u{202e}'))
+    {
+        return Err(format!("endpoint prefix '{}' contains invalid characters", prefix));
+    }
+    if prefix.contains("..") || prefix.contains('\\') {
+        return Err(format!("endpoint prefix '{}' contains invalid characters", prefix));
+    }
+
+    let scheme = prefix
+        .split_once("://")
+        .map(|(scheme, _)| scheme)
+        .ok_or_else(|| {
+            format!(
+                "endpoint prefix '{}' must use network scheme (https://, http://, federation://, ws://, wss://)",
+                prefix
+            )
+        })?;
+
+    let forbidden_schemes = ["file", "data", "javascript", "vbscript", "ftp"];
+    if forbidden_schemes
+        .iter()
+        .any(|forbidden| scheme.eq_ignore_ascii_case(forbidden))
+    {
+        return Err(format!(
+            "endpoint prefix '{}' uses forbidden non-network scheme '{}'",
+            prefix, scheme
+        ));
+    }
+
+    let allowed_schemes = ["https", "http", "federation", "ws", "wss"];
+    if !allowed_schemes
+        .iter()
+        .any(|allowed| scheme.eq_ignore_ascii_case(allowed))
+    {
+        return Err(format!(
+            "endpoint prefix '{}' must use network scheme (https://, http://, federation://, ws://, wss://)",
+            prefix
+        ));
+    }
+
+    let parsed = Url::parse(prefix)
+        .map_err(|source| format!("endpoint prefix '{}' is not a valid URL: {source}", prefix))?;
+    if parsed.host_str().is_none_or(str::is_empty) {
+        return Err(format!("endpoint prefix '{}' has no domain after scheme", prefix));
+    }
+    if parsed.username() != "" || parsed.password().is_some() {
+        return Err(format!("endpoint prefix '{}' must not include userinfo", prefix));
+    }
+    if parsed.port() == Some(0) {
+        return Err(format!("endpoint prefix '{}' has invalid port 0", prefix));
+    }
+    if parsed.fragment().is_some() {
+        return Err(format!("endpoint prefix '{}' must not include a fragment", prefix));
+    }
+
+    Ok(())
 }
 
 // Custom deserialization for RemoteScope with validation
@@ -641,6 +658,9 @@ pub enum RemoteCapError {
         operation: RemoteOperation,
         endpoint: String,
     },
+    InvalidScope {
+        detail: String,
+    },
     Revoked {
         token_id: String,
     },
@@ -668,6 +688,7 @@ impl RemoteCapError {
             Self::Expired { .. } => "REMOTECAP_EXPIRED",
             Self::InvalidSignature => "REMOTECAP_INVALID",
             Self::ScopeDenied { .. } => "REMOTECAP_SCOPE_DENIED",
+            Self::InvalidScope { .. } => "REMOTECAP_SCOPE_INVALID",
             Self::Revoked { .. } => "REMOTECAP_REVOKED",
             Self::ReplayDetected { .. } => "REMOTECAP_REPLAY",
             Self::ConnectivityModeDenied { .. } => "REMOTECAP_CONNECTIVITY_MODE_DENIED",
@@ -722,6 +743,7 @@ impl fmt::Display for RemoteCapError {
                 "{}: operation={operation} endpoint={endpoint}",
                 self.code()
             ),
+            Self::InvalidScope { detail } => write!(f, "{}: {detail}", self.code()),
             Self::Revoked { token_id } => {
                 write!(f, "{}: token revoked ({token_id})", self.code())
             }
