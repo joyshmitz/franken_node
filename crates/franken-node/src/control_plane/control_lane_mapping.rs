@@ -285,6 +285,24 @@ impl ControlLanePolicy {
             });
         }
 
+        for &(task_class, expected_lane) in canonical_task_lane_table() {
+            match self.assignments.get(task_class) {
+                Some(actual_lane) if *actual_lane == expected_lane => {}
+                Some(actual_lane) => {
+                    return Err(ControlLanePolicyError::IncompleteMap {
+                        detail: format!(
+                            "canonical task {task_class} must map to {expected_lane}, got {actual_lane}"
+                        ),
+                    });
+                }
+                None => {
+                    return Err(ControlLanePolicyError::IncompleteMap {
+                        detail: format!("missing canonical task assignment: {task_class}"),
+                    });
+                }
+            }
+        }
+
         Ok(())
     }
 }
@@ -295,29 +313,32 @@ impl Default for ControlLanePolicy {
     }
 }
 
+fn canonical_task_lane_table() -> &'static [(&'static str, ControlLane)] {
+    &[
+        ("cancellation_handler", ControlLane::Cancel),
+        ("drain_operation", ControlLane::Cancel),
+        ("region_close", ControlLane::Cancel),
+        ("shutdown_handler", ControlLane::Cancel),
+        ("health_check", ControlLane::Timed),
+        ("lease_renewal", ControlLane::Timed),
+        ("epoch_transition", ControlLane::Timed),
+        ("barrier_coordination", ControlLane::Timed),
+        ("marker_append", ControlLane::Timed),
+        ("telemetry_flush", ControlLane::Ready),
+        ("evidence_archival", ControlLane::Ready),
+        ("compaction", ControlLane::Ready),
+        ("garbage_collection", ControlLane::Ready),
+        ("log_rotation", ControlLane::Ready),
+    ]
+}
+
 /// Build the standard control-plane lane policy.
 pub fn default_control_lane_policy() -> ControlLanePolicy {
     let mut policy = ControlLanePolicy::new();
 
-    // Cancel lane tasks
-    policy.assign(&task_classes::cancellation_handler(), ControlLane::Cancel);
-    policy.assign(&task_classes::drain_operation(), ControlLane::Cancel);
-    policy.assign(&task_classes::region_close(), ControlLane::Cancel);
-    policy.assign(&task_classes::shutdown_handler(), ControlLane::Cancel);
-
-    // Timed lane tasks
-    policy.assign(&task_classes::health_check(), ControlLane::Timed);
-    policy.assign(&task_classes::lease_renewal(), ControlLane::Timed);
-    policy.assign(&task_classes::epoch_transition(), ControlLane::Timed);
-    policy.assign(&task_classes::barrier_coordination(), ControlLane::Timed);
-    policy.assign(&task_classes::marker_append(), ControlLane::Timed);
-
-    // Ready lane tasks
-    policy.assign(&task_classes::telemetry_flush(), ControlLane::Ready);
-    policy.assign(&task_classes::evidence_archival(), ControlLane::Ready);
-    policy.assign(&task_classes::compaction(), ControlLane::Ready);
-    policy.assign(&task_classes::garbage_collection(), ControlLane::Ready);
-    policy.assign(&task_classes::log_rotation(), ControlLane::Ready);
+    for (task_class, lane) in canonical_task_lane_table() {
+        policy.assign(&ControlTaskClass::new(task_class), *lane);
+    }
 
     // Budget allocations
     policy.set_budget(LaneBudget {
@@ -458,6 +479,7 @@ pub struct ControlLaneAuditRecord {
 }
 
 /// The control-plane lane scheduler.
+#[derive(Debug)]
 pub struct ControlLaneScheduler {
     policy: ControlLanePolicy,
     counters: BTreeMap<String, LaneTickCounters>,
@@ -1102,10 +1124,8 @@ mod tests {
 
     #[test]
     fn scheduler_constructor_rejects_empty_policy() {
-        let err = match ControlLaneScheduler::new(ControlLanePolicy::new()) {
-            Ok(_) => panic!("empty policy must not construct a scheduler"),
-            Err(err) => err,
-        };
+        let err = ControlLaneScheduler::new(ControlLanePolicy::new())
+            .expect_err("empty policy must not construct a scheduler");
 
         match err {
             ControlLanePolicyError::IncompleteMap { detail } => {
@@ -1135,10 +1155,8 @@ mod tests {
             starvation_threshold_ticks: 3,
         });
 
-        let err = match ControlLaneScheduler::new(policy) {
-            Ok(_) => panic!("scheduler must reject policies above 100 percent"),
-            Err(err) => err,
-        };
+        let err = ControlLaneScheduler::new(policy)
+            .expect_err("scheduler must reject policies above 100 percent");
         match err {
             ControlLanePolicyError::BudgetOverflow { total_percent } => {
                 assert_eq!(total_percent, 110);
@@ -1162,10 +1180,8 @@ mod tests {
             starvation_threshold_ticks: 2,
         });
 
-        let err = match ControlLaneScheduler::new(policy) {
-            Ok(_) => panic!("cancel lane budget below minimum must fail closed"),
-            Err(err) => err,
-        };
+        let err = ControlLaneScheduler::new(policy)
+            .expect_err("cancel lane budget below minimum must fail closed");
         match err {
             ControlLanePolicyError::InvalidBudget { lane, detail } => {
                 assert_eq!(lane, ControlLane::Cancel);

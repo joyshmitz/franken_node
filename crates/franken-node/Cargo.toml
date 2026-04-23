@@ -189,6 +189,10 @@ name = "runtime_lane_scheduler_queue_identity"
 path = "tests/runtime_lane_scheduler_queue_identity.rs"
 
 [[test]]
+name = "control_lane_mapping_policy"
+path = "tests/control_lane_mapping_policy.rs"
+
+[[test]]
 name = "registry_cli_e2e"
 path = "tests/registry_cli_e2e.rs"
 
