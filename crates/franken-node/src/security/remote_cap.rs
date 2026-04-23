@@ -61,7 +61,7 @@ impl ReplayTokenSet {
                 self.ids.remove(&evicted);
             }
         }
-        push_bounded(&mut self.insertion_order, token_id, MAX_REPLAY_ENTRIES);
+        self.insertion_order.push(token_id);
         true
     }
 
