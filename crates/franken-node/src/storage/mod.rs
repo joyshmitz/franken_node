@@ -25,8 +25,9 @@ mod storage_conformance_tests;
 #[cfg(test)]
 mod negative_path_tests {
     use super::frankensqlite_adapter::{
-        AdapterConfig, AdapterError, DurabilityTier, FrankensqliteAdapter, PersistenceClass,
-        ReadResult, SchemaVersion, WriteResult, event_codes,
+        AdapterConfig, AdapterError, DurabilityTier, FrankensqliteAdapter,
+        FrankensqliteTestCallerExt, PersistenceClass, ReadResult, SchemaVersion, WriteResult,
+        event_codes,
     };
     use super::retrievability_gate::{
         ArtifactId, ERR_HASH_MISMATCH, ERR_INVALID_ARTIFACT_ID, ERR_INVALID_SEGMENT_ID,

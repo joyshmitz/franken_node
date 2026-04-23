@@ -650,6 +650,11 @@ impl FrankensqliteAdapter {
             })
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    fn test_caller(trace_id: &str) -> CallerContext {
+        CallerContext::system("storage::tests", trace_id)
+    }
+
     /// Replay audit log entries and verify determinism.
     pub fn replay(&mut self) -> Vec<(String, bool)> {
         self.emit_event(
@@ -785,6 +790,43 @@ impl FrankensqliteAdapter {
             },
             MAX_EVENTS,
         );
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub trait FrankensqliteTestCallerExt {
+    fn write(
+        &mut self,
+        class: PersistenceClass,
+        key: &str,
+        value: &[u8],
+    ) -> Result<WriteResult, AdapterError>;
+
+    fn read(&mut self, class: PersistenceClass, key: &str) -> ReadResult;
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl FrankensqliteTestCallerExt for FrankensqliteAdapter {
+    fn write(
+        &mut self,
+        class: PersistenceClass,
+        key: &str,
+        value: &[u8],
+    ) -> Result<WriteResult, AdapterError> {
+        let caller = Self::test_caller(key);
+        FrankensqliteAdapter::write(self, &caller, class, key, value)
+    }
+
+    fn read(&mut self, class: PersistenceClass, key: &str) -> ReadResult {
+        let caller = Self::test_caller(key);
+        FrankensqliteAdapter::read(self, &caller, class, key).unwrap_or_else(|_| ReadResult {
+            found: false,
+            key: key.to_string(),
+            value: None,
+            persistence_class: class,
+            tier: class.tier(),
+            cache_hit: false,
+        })
     }
 }
 
