@@ -1915,7 +1915,7 @@ struct ThresholdsOverrides {
 
 // -- Profile --
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Profile {
     Strict,
@@ -1937,11 +1937,22 @@ impl std::str::FromStr for Profile {
     type Err = ConfigError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match normalize_profile_key(s).as_str() {
+        // bd-83lv0: Explicit allowlist to prevent profile manipulation attacks
+        const VALID_PROFILES: &[&str] = &["strict", "balanced", "legacy-risky"];
+
+        let normalized = normalize_profile_key(s);
+        match normalized.as_str() {
             "strict" => Ok(Self::Strict),
             "balanced" => Ok(Self::Balanced),
             "legacy-risky" => Ok(Self::LegacyRisky),
-            _ => Err(ConfigError::InvalidProfile(s.to_string())),
+            _ => {
+                // bd-83lv0: Hard error with explicit allowlist - no silent fallback
+                Err(ConfigError::InvalidProfile(format!(
+                    "Invalid profile '{}'. Must be one of: {}. No fallback will be applied.",
+                    s,
+                    VALID_PROFILES.join(", ")
+                )))
+            }
         }
     }
 }
@@ -2631,6 +2642,53 @@ require_lockstep_validation = true
         assert!(resolved.config.migration.autofix);
         assert!(resolved.config.migration.require_lockstep_validation);
         assert_eq!(resolved.config.registry.minimum_assurance_level, 5);
+    }
+
+    #[test]
+    fn profile_parsing_rejects_invalid_values_with_no_fallback() {
+        // bd-83lv0: Test that invalid profile values are hard-rejected with no silent fallback
+        let invalid_profiles = [
+            "invalid", "INVALID", "garbage", "", " ", "strictt", "balancced",
+            "legacy", "risky", "strict ", " balanced", "strict-risky",
+            "null", "undefined", "default", "auto", "999", "true", "false",
+            "../../../etc/passwd", "<script>alert(1)</script>", "\0", "\n\r"
+        ];
+
+        for invalid in invalid_profiles {
+            let result = invalid.parse::<Profile>();
+            assert!(
+                result.is_err(),
+                "Profile '{}' should be rejected but was accepted: {:?}",
+                invalid, result
+            );
+
+            if let Err(err) = result {
+                let err_msg = err.to_string();
+                assert!(
+                    err_msg.contains("Invalid profile") && err_msg.contains("No fallback"),
+                    "Error message for '{}' should mention 'Invalid profile' and 'No fallback': {}",
+                    invalid, err_msg
+                );
+            }
+        }
+
+        // Verify valid profiles still work
+        let valid_profiles = [
+            ("strict", Profile::Strict),
+            ("balanced", Profile::Balanced),
+            ("legacy-risky", Profile::LegacyRisky),
+            ("STRICT", Profile::Strict),  // Case normalization
+            ("Balanced", Profile::Balanced),
+            ("Legacy_Risky", Profile::LegacyRisky),  // Underscore normalization
+        ];
+
+        for (input, expected) in valid_profiles {
+            let result = input.parse::<Profile>();
+            assert_eq!(
+                result.unwrap(), expected,
+                "Valid profile '{}' should parse to {:?}", input, expected
+            );
+        }
     }
 
     #[test]

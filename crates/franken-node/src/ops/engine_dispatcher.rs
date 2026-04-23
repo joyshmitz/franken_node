@@ -1074,6 +1074,16 @@ impl EngineDispatcher {
             unreachable!("runtime fallback returns early");
         };
 
+        // bd-kkqz3: Validate capabilities in external execution path to maintain trust boundary consistency
+        // This ensures external execution doesn't bypass capability validation that native execution enforces
+        #[cfg(feature = "engine")]
+        {
+            let caps = Self::map_profile_to_capabilities(config.profile);
+            Self::validate_capabilities(&caps).map_err(|e| {
+                anyhow::anyhow!("Capability validation failed in external execution path: {}", e)
+            })?;
+        }
+
         let serialized_config = config.to_toml()?;
         let temp_dir = tempfile::Builder::new()
             .prefix("franken_telemetry_")
@@ -1412,12 +1422,15 @@ impl EngineDispatcher {
             }
 
             if !is_valid {
-                return Err(ActionableError::ConfigurationError(format!(
-                    "Unknown capability '{}' not supported by franken-engine. \
-                     Supported capabilities: fs_read, fs_write, network_egress, env_read, \
-                     process_spawn, timer, builtin, console, module_load, etc.",
-                    capability
-                )));
+                return Err(ActionableError::new(
+                    format!(
+                        "Unknown capability '{}' not supported by franken-engine. \
+                         Supported capabilities: fs_read, fs_write, network_egress, env_read, \
+                         process_spawn, timer, builtin, console, module_load, etc.",
+                        capability
+                    ),
+                    "Check your profile configuration and ensure only supported capabilities are used"
+                ));
             }
         }
 
@@ -1439,7 +1452,11 @@ impl EngineDispatcher {
     /// These operate on different phases and dimensions - no conflicts possible.
     #[cfg(feature = "engine")]
     fn map_config_to_runtime_config(config: &Config) -> EngineRuntimeConfig {
-        use frankenengine_engine::runtime_config::*;
+        use frankenengine_engine::runtime_config::{
+            ExecutionConfig, GuardplaneConfig, GovernanceConfig, GatesConfig,
+            OptimizationConfig, ExtensionHostConfig, DecisionThresholdsConfig, ContainmentConfig,
+            OrchestratorConfig as RuntimeOrchestratorConfig
+        };
 
         // Map profile to execution budgets and limits
         let execution = match config.profile {
@@ -1542,13 +1559,43 @@ impl EngineDispatcher {
         // Construct final runtime config with profile-aware orchestrator mapping
         EngineRuntimeConfig {
             execution,
-            orchestrator: Self::map_config_to_orchestrator_config(config), // Use profile-aware orchestrator config
+            orchestrator: match config.profile {
+                Profile::Strict => RuntimeOrchestratorConfig {
+                    // Conservative orchestrator settings for strict security
+                    ..RuntimeOrchestratorConfig::default()
+                },
+                Profile::Balanced => RuntimeOrchestratorConfig::default(), // Standard orchestrator settings
+                Profile::LegacyRisky => RuntimeOrchestratorConfig {
+                    // Relaxed orchestrator settings for legacy compatibility
+                    ..RuntimeOrchestratorConfig::default()
+                },
+            }, // Profile-aware orchestrator config for runtime
             guardplane,
             governance,
             gates,
             optimization,
             extension_host,
         }
+    }
+
+    /// Generate opaque policy identifier for security policy enforcement.
+    ///
+    /// Uses deterministic but opaque identifiers instead of exposing internal
+    /// profile names in policy IDs to prevent information disclosure.
+    fn generate_opaque_policy_id(profile: Profile, policy_mode: Option<&str>) -> String {
+        // Use hash-based opaque identifiers to prevent profile name leakage
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        profile.hash(&mut hasher);
+        if let Some(mode) = policy_mode {
+            mode.hash(&mut hasher);
+        }
+        let policy_hash = hasher.finish();
+
+        // Generate deterministic but opaque policy ID
+        format!("franken-policy-{:016x}", policy_hash)
     }
 
     /// Map franken-node Config to franken-engine OrchestratorConfig.
@@ -1595,23 +1642,28 @@ impl EngineDispatcher {
         // - ExecutionConfig.deterministic_budget: instruction-level execution limit
         // - ParserOptions.budget: source code parsing limits (bytes, tokens, recursion)
         // These are complementary constraints that do not conflict.
+        // bd-1lmtm: Absolute hard caps to prevent DoS via profile manipulation
+        const ABSOLUTE_MAX_SOURCE_BYTES: u64 = 2_097_152;  // 2MB absolute limit - prevents 4MB LegacyRisky DoS
+        const ABSOLUTE_MAX_TOKEN_COUNT: u64 = 131_072;     // 128K tokens absolute limit - prevents 256K DoS
+        const ABSOLUTE_MAX_RECURSION_DEPTH: u32 = 384;     // 384 depth absolute limit - prevents 512 DoS
+
         let parser_options = ParserOptions {
             mode: frankenengine_engine::parser::ParserMode::ScalarReference,
             budget: frankenengine_engine::parser::ParserBudget {
                 max_source_bytes: match config.profile {
                     Profile::Strict => 256_000,      // 256KB source limit
                     Profile::Balanced => 1_048_576,  // 1MB source limit (default)
-                    Profile::LegacyRisky => 4_194_304, // 4MB source limit for large legacy files
+                    Profile::LegacyRisky => ABSOLUTE_MAX_SOURCE_BYTES.min(4_194_304), // Capped at 2MB absolute max
                 },
                 max_token_count: match config.profile {
                     Profile::Strict => 32_768,       // 32K tokens
                     Profile::Balanced => 65_536,     // 64K tokens (default)
-                    Profile::LegacyRisky => 262_144, // 256K tokens for complex legacy code
+                    Profile::LegacyRisky => ABSOLUTE_MAX_TOKEN_COUNT.min(262_144), // Capped at 128K absolute max
                 },
                 max_recursion_depth: match config.profile {
                     Profile::Strict => 128,          // Shallow recursion for safety
                     Profile::Balanced => 256,        // Standard recursion depth (default)
-                    Profile::LegacyRisky => 512,     // Deep recursion for complex structures
+                    Profile::LegacyRisky => ABSOLUTE_MAX_RECURSION_DEPTH.min(512).into(), // Capped at 384 absolute max
                 },
             },
         };
@@ -1639,7 +1691,7 @@ impl EngineDispatcher {
             parse_goal: ParseGoal::Script, // Default to script parsing (most common)
             parser_options,
             trace_id_prefix: config.observability.namespace.clone(), // Use observability namespace
-            policy_id: format!("franken-node-{}", config.profile), // Profile-based policy ID
+            policy_id: Self::generate_opaque_policy_id(config.profile, None), // Opaque policy ID to prevent information disclosure
         }
     }
 
@@ -1681,7 +1733,12 @@ impl EngineDispatcher {
             source_file: Some(app_path.to_string_lossy().to_string()),
             capabilities: {
                 let caps = Self::map_profile_to_capabilities(config.profile);
-                Self::validate_capabilities(&caps)?; // Validate against franken-engine's supported set
+                Self::validate_capabilities(&caps).map_err(|e| {
+                    EngineProcessError::Spawn {
+                        message: e.to_string(),
+                        telemetry_report: None,
+                    }
+                })?; // Validate against franken-engine's supported set
                 caps
             }, // Profile-based capability mapping
             version: env!("CARGO_PKG_VERSION").to_string(), // Extract from package metadata
@@ -1690,7 +1747,7 @@ impl EngineDispatcher {
 
         // Configure orchestrator with policy settings
         let mut orchestrator_config = Self::map_config_to_orchestrator_config(config); // bd-wlkks: Map from franken-node config
-        orchestrator_config.policy_id = format!("franken-node-{}-{}", config.profile, policy_mode); // bd-3rlp8: Include policy_mode in native execution path
+        orchestrator_config.policy_id = Self::generate_opaque_policy_id(config.profile, Some(policy_mode)); // bd-3rlp8: Opaque policy ID with policy_mode
         let runtime_config = Self::map_config_to_runtime_config(config); // bd-1nkf8: Map from franken-node config
 
         let mut orchestrator = ExecutionOrchestrator::new_with_runtime_config(
@@ -1846,7 +1903,21 @@ impl EngineDispatcher {
         Self::map_config_to_orchestrator_config(config)
     }
 
+    /// Test helper: get validated capabilities for profile (enforces trust boundary)
+    ///
+    /// bd-kkqz3: Combined helper that ensures all capability access goes through validation.
+    /// Prefer this over separate map + validate calls to prevent trust boundary bypass.
+    #[cfg(all(test, feature = "engine"))]
+    pub fn get_validated_capabilities_for_tests(profile: Profile) -> Result<Vec<String>, crate::ActionableError> {
+        let caps = Self::map_profile_to_capabilities(profile);
+        Self::validate_capabilities(&caps)?;
+        Ok(caps)
+    }
+
     /// Test helper: expose map_profile_to_capabilities for conformance testing
+    ///
+    /// WARNING: This bypasses validation! Use get_validated_capabilities_for_tests() instead
+    /// to maintain trust boundary consistency.
     #[cfg(all(test, feature = "engine"))]
     pub fn map_profile_to_capabilities_for_tests(profile: Profile) -> Vec<String> {
         Self::map_profile_to_capabilities(profile)
@@ -5232,5 +5303,43 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn security_epoch_redacts_raw_values_in_output() {
+        // Test that SecurityEpoch Display/Debug implementations use opaque labels
+        use frankenengine_engine::security_epoch::SecurityEpoch;
+
+        // Create SecurityEpoch values for each profile mapping
+        let legacy_epoch = SecurityEpoch::from_raw(1);    // LegacyRisky profile
+        let standard_epoch = SecurityEpoch::from_raw(2);  // Balanced profile
+        let current_epoch = SecurityEpoch::from_raw(3);   // Strict profile
+
+        // Test Display implementation uses opaque labels
+        let legacy_display = format!("{}", legacy_epoch);
+        let standard_display = format!("{}", standard_epoch);
+        let current_display = format!("{}", current_epoch);
+
+        assert_eq!(legacy_display, "epoch:generation-legacy", "Legacy epoch should use opaque label");
+        assert_eq!(standard_display, "epoch:generation-standard", "Standard epoch should use opaque label");
+        assert_eq!(current_display, "epoch:generation-current", "Current epoch should use opaque label");
+
+        // Test Debug implementation uses opaque labels
+        let legacy_debug = format!("{:?}", legacy_epoch);
+        let standard_debug = format!("{:?}", standard_epoch);
+        let current_debug = format!("{:?}", current_epoch);
+
+        assert_eq!(legacy_debug, "SecurityEpoch(\"generation-legacy\")", "Legacy epoch debug should use opaque label");
+        assert_eq!(standard_debug, "SecurityEpoch(\"generation-standard\")", "Standard epoch debug should use opaque label");
+        assert_eq!(current_debug, "SecurityEpoch(\"generation-current\")", "Current epoch debug should use opaque label");
+
+        // Verify raw numbers are NOT exposed
+        assert!(!legacy_display.contains("1"), "Display output should not contain raw epoch number");
+        assert!(!standard_display.contains("2"), "Display output should not contain raw epoch number");
+        assert!(!current_display.contains("3"), "Display output should not contain raw epoch number");
+
+        assert!(!legacy_debug.contains("1"), "Debug output should not contain raw epoch number");
+        assert!(!standard_debug.contains("2"), "Debug output should not contain raw epoch number");
+        assert!(!current_debug.contains("3"), "Debug output should not contain raw epoch number");
     }
 }

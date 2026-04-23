@@ -5,6 +5,7 @@
 //! error boundary testing.
 
 use assert_cmd::Command;
+use ed25519_dalek::SigningKey;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -75,11 +76,18 @@ decision_receipt_signing_key_path = "keys/receipt-signing.key"
 "#;
     fs::write(workspace.join("franken_node.toml"), config).expect("Write config");
 
-    // Create dummy signing key
+    // Create real ed25519 signing key for decision receipts
     fs::create_dir_all(workspace.join("keys")).expect("Create keys dir");
+
+    // Generate a deterministic signing key for consistent test behavior
+    // Note: Using fixed seed for test determinism, not cryptographically random
+    let test_seed = [0x42_u8; 32]; // Deterministic test seed
+    let signing_key = SigningKey::from_bytes(&test_seed);
+
+    // Write hex-encoded seed bytes as expected by the signing key loader
     fs::write(
         workspace.join("keys/receipt-signing.key"),
-        hex::encode([42_u8; 32])
+        hex::encode(signing_key.to_bytes())
     ).expect("Write signing key");
 }
 

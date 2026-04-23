@@ -204,57 +204,14 @@ impl SessionAuthTestHarness {
     async fn authentication_failure_scenarios(&mut self) -> Vec<(String, bool)> {
         let mut results = Vec::new();
 
+        // Test scenarios with different attack types
         let failure_scenarios = vec![
-            // Invalid handshake MAC
-            (
-                "invalid_handshake_mac",
-                |_session_id: &str,
-                 _client: &str,
-                 _server: &str,
-                 _enc_key: &str,
-                 _sign_key: &str,
-                 _timestamp: u64|
-                 -> [u8; SIGNATURE_LEN] {
-                    [0u8; SIGNATURE_LEN] // Wrong MAC
-                },
-            ),
-            // Tampered session ID
-            (
-                "tampered_session_id",
-                |session_id: &str,
-                 client: &str,
-                 server: &str,
-                 enc_key: &str,
-                 sign_key: &str,
-                 timestamp: u64|
-                 -> [u8; SIGNATURE_LEN] {
-                    let tampered_id = format!("tampered-{}", session_id);
-                    // This will create a MAC for wrong session ID
-                    [1u8; SIGNATURE_LEN] // Placeholder - would use real signing
-                },
-            ),
-            // Future timestamp (potential clock skew attack)
-            (
-                "future_timestamp",
-                |session_id: &str,
-                 client: &str,
-                 server: &str,
-                 enc_key: &str,
-                 sign_key: &str,
-                 _timestamp: u64|
-                 -> [u8; SIGNATURE_LEN] {
-                    let future_timestamp = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as u64
-                        + 86400000; // 24 hours in future
-                    // This would create MAC with future timestamp
-                    [2u8; SIGNATURE_LEN] // Placeholder
-                },
-            ),
+            "invalid_handshake_mac",
+            "tampered_session_id",
+            "future_timestamp",
         ];
 
-        for (test_name, mac_generator) in failure_scenarios {
+        for test_name in failure_scenarios {
             let session_id = format!("failure-test-{}", test_name);
             let client_identity = format!("client-{}", test_name);
             let server_identity = "test-server".to_string();
@@ -265,14 +222,48 @@ impl SessionAuthTestHarness {
                 .unwrap_or_default()
                 .as_millis() as u64;
 
-            let bad_mac = mac_generator(
-                &session_id,
-                &client_identity,
-                &server_identity,
-                &encryption_key_id,
-                &signing_key_id,
-                timestamp,
-            );
+            // Generate different types of invalid MACs using real signing
+            let bad_mac = match test_name {
+                "invalid_handshake_mac" => {
+                    // Use all zeros as wrong MAC
+                    [0u8; SIGNATURE_LEN]
+                },
+                "tampered_session_id" => {
+                    // Generate real MAC with tampered session ID to test validation
+                    let tampered_id = format!("tampered-{}", session_id);
+                    use frankenengine_node::api::session_auth::sign_handshake;
+                    sign_handshake(
+                        &tampered_id,  // Use tampered ID instead of real session_id
+                        &client_identity,
+                        &server_identity,
+                        &encryption_key_id,
+                        &signing_key_id,
+                        self.epoch,
+                        timestamp,
+                        &self.root_secret,
+                    )
+                },
+                "future_timestamp" => {
+                    // Generate real MAC with future timestamp to test validation
+                    let future_timestamp = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64
+                        + 86400000; // 24 hours in future
+                    use frankenengine_node::api::session_auth::sign_handshake;
+                    sign_handshake(
+                        &session_id,
+                        &client_identity,
+                        &server_identity,
+                        &encryption_key_id,
+                        &signing_key_id,
+                        self.epoch,
+                        future_timestamp,  // Use future timestamp instead of current
+                        &self.root_secret,
+                    )
+                },
+                _ => [0u8; SIGNATURE_LEN],
+            };
 
             let mut manager = self.session_manager.write().await;
             let result = manager.establish_session(

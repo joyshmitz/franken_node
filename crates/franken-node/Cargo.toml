@@ -447,6 +447,11 @@ path = "tests/activation_pipeline_metamorphic.rs"
 name = "native_engine_compat"
 path = "tests/native_engine_compat.rs"
 
+[[test]]
+name = "engine_dispatcher_profile_conformance"
+path = "tests/engine_dispatcher_profile_conformance.rs"
+required-features = ["engine"]
+
 [[bench]]
 name = "cuckoo_revocation_bench"
 harness = false

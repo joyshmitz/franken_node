@@ -53,7 +53,14 @@ fn write_receipt_signing_key(path: &Path) {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).expect("create key dir");
     }
-    fs::write(path, hex::encode([42_u8; 32])).expect("write receipt signing key");
+
+    // Generate real ed25519 signing key for decision receipts
+    // Note: Using fixed seed for test determinism, not cryptographically random
+    let test_seed = [0x42_u8; 32]; // Deterministic test seed
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&test_seed);
+
+    // Write hex-encoded seed bytes as expected by the signing key loader
+    fs::write(path, hex::encode(signing_key.to_bytes())).expect("write receipt signing key");
 }
 
 fn replay_bundle_trusted_key_id() -> String {

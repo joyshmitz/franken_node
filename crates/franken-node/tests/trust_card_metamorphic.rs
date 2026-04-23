@@ -1,18 +1,51 @@
 //! Metamorphic tests for real trust-card canonicalization surfaces.
+//!
+//! DE-MOCKED: Now includes ed25519-dalek signature verification alongside existing HMAC verification
+//! to catch signature/canonicalization bugs that HMAC alone might miss.
 
 use frankenengine_node::supply_chain::{
     certification::{EvidenceType, VerifiedEvidenceRef},
     trust_card::{
         BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
         DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary, PublisherIdentity,
-        ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCardInput,
-        TrustCardRegistry, render_trust_card_human, to_canonical_json,
+        ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard, TrustCardInput,
+        TrustCardRegistry, render_trust_card_human, to_canonical_json, compute_card_hash,
     },
 };
+
+// DE-MOCKED: Add ed25519-dalek for real cryptographic signature verification
+use ed25519_dalek::{SigningKey, Signer, Verifier, VerifyingKey, Signature};
+use rand::rngs::OsRng;
+use sha2::{Digest, Sha256};
 
 const REGISTRY_KEY: &[u8] = b"trust-card-metamorphic-real-key";
 const NOW_SECS: u64 = 1_777_000_000;
 const TRACE_ID: &str = "trace-trust-card-metamorphic";
+
+/// Generate a test ed25519 signing key for cryptographic verification
+fn generate_test_ed25519_key() -> SigningKey {
+    SigningKey::generate(&mut OsRng)
+}
+
+/// Sign canonical trust card bytes using ed25519-dalek
+fn sign_trust_card_ed25519(trust_card: &TrustCard, signing_key: &SigningKey) -> Signature {
+    let canonical_bytes = to_canonical_json(trust_card)
+        .expect("canonical JSON serialization")
+        .into_bytes();
+    signing_key.sign(&canonical_bytes)
+}
+
+/// Verify ed25519 signature on canonical trust card bytes
+fn verify_trust_card_ed25519(
+    trust_card: &TrustCard,
+    signature: &Signature,
+    verifying_key: &VerifyingKey,
+) -> bool {
+    let canonical_bytes = to_canonical_json(trust_card)
+        .expect("canonical JSON serialization")
+        .into_bytes();
+    verifying_key.verify(&canonical_bytes, signature).is_ok()
+}
 
 fn evidence_refs() -> Vec<VerifiedEvidenceRef> {
     vec![
@@ -117,6 +150,10 @@ fn capability_and_dependency_order_permutations_preserve_canonical_and_textual_c
     let mut baseline_registry = TrustCardRegistry::new(60, REGISTRY_KEY);
     let mut permuted_registry = TrustCardRegistry::new(60, REGISTRY_KEY);
 
+    // DE-MOCKED: Generate real ed25519 keys for cryptographic signature verification
+    let ed25519_signing_key = generate_test_ed25519_key();
+    let ed25519_verifying_key = ed25519_signing_key.verifying_key();
+
     let baseline = baseline_registry
         .create(input_with_order(capabilities(), dependencies()), NOW_SECS, TRACE_ID)
         .expect("baseline trust card");
@@ -132,6 +169,26 @@ fn capability_and_dependency_order_permutations_preserve_canonical_and_textual_c
             TRACE_ID,
         )
         .expect("permuted trust card");
+
+    // DE-MOCKED: Add ed25519 signature verification alongside HMAC verification
+    let baseline_ed25519_sig = sign_trust_card_ed25519(&baseline, &ed25519_signing_key);
+    let permuted_ed25519_sig = sign_trust_card_ed25519(&permuted, &ed25519_signing_key);
+
+    // Verify both signatures are valid
+    assert!(
+        verify_trust_card_ed25519(&baseline, &baseline_ed25519_sig, &ed25519_verifying_key),
+        "baseline trust card ed25519 signature verification failed"
+    );
+    assert!(
+        verify_trust_card_ed25519(&permuted, &permuted_ed25519_sig, &ed25519_verifying_key),
+        "permuted trust card ed25519 signature verification failed"
+    );
+
+    // DE-MOCKED: ed25519 signatures should be identical for canonically equivalent cards
+    assert_eq!(
+        baseline_ed25519_sig, permuted_ed25519_sig,
+        "ed25519 signatures differ for canonically equivalent trust cards"
+    );
 
     assert_eq!(
         baseline

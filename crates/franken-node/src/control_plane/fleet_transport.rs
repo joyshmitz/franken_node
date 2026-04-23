@@ -711,12 +711,15 @@ impl FileFleetTransport {
             ));
         }
 
-        self.with_shared_state_lock(false, || {
-            let _process_guard = lock_fleet_action_compaction_process()?;
-            let compaction_lock_path = self.action_compaction_lock_path();
-            let compaction_lock_file = self.lock_file(&compaction_lock_path)?;
-            lock_file_with_backoff(&compaction_lock_file, &compaction_lock_path, false)?;
-            let compaction_result = (|| {
+        // DEADLOCK FIX: Acquire compaction lock BEFORE shared_state_lock to establish consistent lock ordering.
+        // This prevents AB-BA deadlock where other code paths might acquire shared_state_lock first.
+        let _process_guard = lock_fleet_action_compaction_process()?;
+        let compaction_lock_path = self.action_compaction_lock_path();
+        let compaction_lock_file = self.lock_file(&compaction_lock_path)?;
+        lock_file_with_backoff(&compaction_lock_file, &compaction_lock_path, false)?;
+
+        let compaction_result = self.with_shared_state_lock(false, || {
+            let compaction_inner_result = (|| {
                 let metadata = fs::metadata(self.layout.actions_path()).map_err(|err| {
                     FleetTransportError::io(format!(
                         "failed reading fleet action log metadata {}: {err}",
@@ -801,11 +804,15 @@ impl FileFleetTransport {
                 Ok(())
             })();
 
-            let unlock_result = unlock_file(&compaction_lock_file, &compaction_lock_path);
-            compaction_result?;
-            unlock_result?;
-            Ok(())
-        })
+            // Return result of compaction operation
+            compaction_inner_result
+        })?;
+
+        // DEADLOCK FIX: Unlock compaction lock AFTER shared_state_lock is released
+        let unlock_result = unlock_file(&compaction_lock_file, &compaction_lock_path);
+        // compaction_result is already unwrapped by the ? on line 809
+        unlock_result?;
+        Ok(())
     }
 
     fn action_log_file(&self, write: bool) -> Result<File, FleetTransportError> {
@@ -1006,6 +1013,14 @@ impl FleetTransport for FileFleetTransport {
     fn publish_action(&mut self, action: &FleetActionRecord) -> Result<(), FleetTransportError> {
         self.ensure_initialized()?;
         validate_action_record(action)?;
+
+        // DEADLOCK FIX: Acquire compaction lock BEFORE shared_state_lock to establish consistent lock ordering.
+        // This prevents AB-BA deadlock with compact_action_log_if_needed() which takes compaction → shared_state.
+        let _process_guard = lock_fleet_action_compaction_process()?;
+        let compaction_lock_path = self.action_compaction_lock_path();
+        let compaction_lock_file = self.lock_file(&compaction_lock_path)?;
+        lock_file_with_backoff(&compaction_lock_file, &compaction_lock_path, false)?;
+
         self.with_shared_state_lock(false, || {
             let file = self.action_log_file(true)?;
             lock_file_with_backoff(&file, self.layout.actions_path(), false)?;
