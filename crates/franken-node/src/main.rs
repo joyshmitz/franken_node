@@ -5336,7 +5336,7 @@ fn remotecap_cli_capability_gate(signing_key: &str, cap: &RemoteCap) -> Result<C
         CapabilityGate::with_durable_replay_store(signing_key, remotecap_cli_replay_store_path())
             .map_err(|err| anyhow::anyhow!(err.to_string()))
     } else {
-        CapabilityGate::new(signing_key)
+        CapabilityGate::try_new(signing_key)
             .map_err(|err| anyhow::anyhow!(err.to_string()))
     }
 }
@@ -10435,7 +10435,7 @@ fn handle_remotecap_issue(args: &RemoteCapIssueArgs) -> Result<()> {
     let ttl_secs = parse_ttl_secs(&args.ttl)?;
     let now_epoch_secs = now_unix_secs();
     let signing_key = resolve_remotecap_signing_key()?;
-    let provider = CapabilityProvider::new(&signing_key)?;
+    let provider = CapabilityProvider::try_new(&signing_key)?;
     let scope = RemoteScope::new(operations, endpoint_prefixes);
 
     let (cap, audit_event) = provider
@@ -10591,7 +10591,7 @@ fn handle_remotecap_revoke(args: &RemoteCapRevokeArgs) -> Result<()> {
     let cap = read_remotecap_token(&args.token_file)?;
     let now_epoch_secs = now_unix_secs();
     let signing_key = resolve_remotecap_signing_key()?;
-    let mut gate = CapabilityGate::new(&signing_key)?;
+    let mut gate = CapabilityGate::try_new(&signing_key)?;
     let audit_event = gate.revoke(&cap, now_epoch_secs, &args.trace_id);
 
     let mut state = load_remotecap_cli_state()?;

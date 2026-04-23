@@ -494,7 +494,7 @@ fn validate_endpoint_prefix(prefix: &str) -> Result<(), String> {
         .map(|(scheme, _)| scheme)
         .ok_or_else(|| {
             format!(
-                "endpoint prefix '{}' must use network scheme (https://, http://, federation://, ws://, wss://)",
+                "endpoint prefix '{}' must use network scheme (https://, http://, federation://, revocation://, ws://, wss://)",
                 prefix
             )
         })?;
@@ -510,13 +510,13 @@ fn validate_endpoint_prefix(prefix: &str) -> Result<(), String> {
         ));
     }
 
-    let allowed_schemes = ["https", "http", "federation", "ws", "wss"];
+    let allowed_schemes = ["https", "http", "federation", "revocation", "ws", "wss"];
     if !allowed_schemes
         .iter()
         .any(|allowed| scheme.eq_ignore_ascii_case(allowed))
     {
         return Err(format!(
-            "endpoint prefix '{}' must use network scheme (https://, http://, federation://, ws://, wss://)",
+            "endpoint prefix '{}' must use network scheme (https://, http://, federation://, revocation://, ws://, wss://)",
             prefix
         ));
     }
@@ -785,9 +785,17 @@ pub struct RemoteCapAuditEvent {
 }
 
 /// Controlled capability issuer.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CapabilityProvider {
     signing_secret: String,
+}
+
+impl fmt::Debug for CapabilityProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CapabilityProvider")
+            .field("signing_secret", &"<redacted>")
+            .finish()
+    }
 }
 
 impl CapabilityProvider {
@@ -798,6 +806,10 @@ impl CapabilityProvider {
         Ok(Self {
             signing_secret: signing_secret.to_string(),
         })
+    }
+
+    pub fn try_new(signing_secret: &str) -> Result<Self, RemoteCapError> {
+        Self::new(signing_secret)
     }
 
     /// Issue a capability token after explicit operator authorization.
@@ -873,7 +885,7 @@ impl CapabilityProvider {
 }
 
 /// Single enforcement point for all network-bound capability checks.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CapabilityGate {
     verification_secret: String,
     connectivity_mode: ConnectivityMode,
@@ -881,6 +893,19 @@ pub struct CapabilityGate {
     revoked_tokens: HybridRevocationChecker,
     replay_store: ReplayStoreBackend,
     audit_log: Vec<RemoteCapAuditEvent>,
+}
+
+impl fmt::Debug for CapabilityGate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CapabilityGate")
+            .field("verification_secret", &"<redacted>")
+            .field("connectivity_mode", &self.connectivity_mode)
+            .field("consumed_token_count", &self.consumed_tokens.ids.len())
+            .field("revoked_token_count", &self.revoked_tokens.len())
+            .field("replay_store", &self.replay_store)
+            .field("audit_log_len", &self.audit_log.len())
+            .finish()
+    }
 }
 
 impl CapabilityGate {
@@ -896,6 +921,10 @@ impl CapabilityGate {
             replay_store: ReplayStoreBackend::from_env(),
             audit_log: Vec::new(),
         })
+    }
+
+    pub fn try_new(verification_secret: &str) -> Result<Self, RemoteCapError> {
+        Self::new(verification_secret)
     }
 
     pub fn with_mode(

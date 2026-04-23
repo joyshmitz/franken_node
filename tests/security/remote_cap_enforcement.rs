@@ -19,6 +19,32 @@ use frankenengine_node::security::remote_cap::{
 
 fn provider() -> CapabilityProvider {
     CapabilityProvider::new("remote-cap-test-secret")
+        .expect("remote cap test signing secret should be valid")
+}
+
+#[test]
+fn capability_provider_debug_redacts_signing_secret() {
+    let secret = "debug-provider-secret-do-not-leak";
+    let provider = CapabilityProvider::new(secret).expect("provider secret should be valid");
+
+    let rendered = format!("{provider:?}");
+
+    assert!(rendered.contains("CapabilityProvider"));
+    assert!(rendered.contains("<redacted>"));
+    assert!(!rendered.contains(secret));
+}
+
+#[test]
+fn capability_gate_debug_redacts_verification_secret() {
+    let secret = "debug-gate-secret-do-not-leak";
+    let gate = CapabilityGate::new(secret).expect("gate secret should be valid");
+
+    let rendered = format!("{gate:?}");
+
+    assert!(rendered.contains("CapabilityGate"));
+    assert!(rendered.contains("<redacted>"));
+    assert!(rendered.contains("Connected"));
+    assert!(!rendered.contains(secret));
 }
 
 fn full_scope() -> RemoteScope {
@@ -31,10 +57,14 @@ fn full_scope() -> RemoteScope {
             RemoteOperation::TelemetryExport,
         ],
         vec![
-            "http://".to_string(),
-            "https://".to_string(),
-            "revocation://".to_string(),
-            "federation://".to_string(),
+            "http://api.example.com".to_string(),
+            "http://egress.example.com".to_string(),
+            "https://egress.example.com".to_string(),
+            "https://api.example.com".to_string(),
+            "https://attestation.example.com".to_string(),
+            "https://telemetry.example.com".to_string(),
+            "revocation://global-feed".to_string(),
+            "federation://cluster-a".to_string(),
         ],
     )
 }
@@ -81,7 +111,8 @@ fn impossible_default_token_for(
 
 #[test]
 fn all_network_operations_require_token() {
-    let mut gate = CapabilityGate::new("remote-cap-test-secret");
+    let mut gate =
+        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
 
     let ops = [
         (RemoteOperation::NetworkEgress, "https://egress.example.com"),
@@ -151,7 +182,8 @@ fn remote_cap_signed_subject_mismatch_is_rejected() {
 #[test]
 fn valid_token_allows_scoped_operations() {
     let cap = issue_cap(false);
-    let mut gate = CapabilityGate::new("remote-cap-test-secret");
+    let mut gate =
+        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
     gate.authorize_network(
         Some(&cap),
         RemoteOperation::FederationSync,
@@ -170,7 +202,8 @@ fn forged_signature_is_rejected() {
     let forged: frankenengine_node::security::remote_cap::RemoteCap =
         serde_json::from_value(tampered).expect("from value");
 
-    let mut gate = CapabilityGate::new("remote-cap-test-secret");
+    let mut gate =
+        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
     let err = gate
         .authorize_network(
             Some(&forged),
@@ -197,7 +230,8 @@ fn expired_token_is_rejected() {
         )
         .expect("issue")
         .0;
-    let mut gate = CapabilityGate::new("remote-cap-test-secret");
+    let mut gate =
+        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
     let err = gate
         .authorize_network(
             Some(&cap),
@@ -229,7 +263,8 @@ fn scope_escalation_is_rejected() {
         .expect("issue")
         .0;
 
-    let mut gate = CapabilityGate::new("remote-cap-test-secret");
+    let mut gate =
+        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
     let err = gate
         .authorize_network(
             Some(&cap),
@@ -245,7 +280,8 @@ fn scope_escalation_is_rejected() {
 #[test]
 fn replay_of_consumed_single_use_token_is_rejected() {
     let cap = issue_cap(true);
-    let mut gate = CapabilityGate::new("remote-cap-test-secret");
+    let mut gate =
+        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
     gate.authorize_network(
         Some(&cap),
         RemoteOperation::TelemetryExport,
@@ -270,7 +306,8 @@ fn replay_of_consumed_single_use_token_is_rejected() {
 #[test]
 fn revocation_blocks_previously_valid_token() {
     let cap = issue_cap(false);
-    let mut gate = CapabilityGate::new("remote-cap-test-secret");
+    let mut gate =
+        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
     gate.revoke(&cap, 1_700_000_020, "trace-revoke");
 
     let err = gate
@@ -287,7 +324,9 @@ fn revocation_blocks_previously_valid_token() {
 
 #[test]
 fn local_only_mode_keeps_local_ops_functional() {
-    let mut gate = CapabilityGate::with_mode("remote-cap-test-secret", ConnectivityMode::LocalOnly);
+    let mut gate =
+        CapabilityGate::with_mode("remote-cap-test-secret", ConnectivityMode::LocalOnly)
+            .expect("remote cap test gate should be valid");
     gate.authorize_local_operation("evidence_ledger_append", 1_700_000_030, "trace-local-op");
     let event = gate.audit_log().last().expect("local event");
     assert_eq!(event.event_code, "REMOTECAP_LOCAL_MODE_ACTIVE");
@@ -306,7 +345,8 @@ fn network_guard_is_enforced_by_capability_gate() {
         })
         .expect("add rule");
     let mut guard = NetworkGuard::new(policy);
-    let mut gate = CapabilityGate::new("remote-cap-test-secret");
+    let mut gate =
+        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
 
     let err = guard
         .process_egress(
