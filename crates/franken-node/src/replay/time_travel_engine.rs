@@ -3290,7 +3290,7 @@ mod tests {
             ("huge_key".to_string(), huge_env_value.clone()),
             (
                 "null_byte_key".to_string(),
-                "value\0with\0nulls".to_string(),
+                "value\\0with\\0nulls".to_string(),
             ),
             (
                 "unicode_key".to_string(),
@@ -3328,6 +3328,10 @@ mod tests {
                         assert!(
                             !key.contains('\0'),
                             "Environment key should not contain null bytes"
+                        );
+                        assert!(
+                            !value.contains('\0'),
+                            "Environment value should not contain null bytes"
                         );
                     }
                 }
@@ -3762,7 +3766,7 @@ mod tests {
                 // Include edge cases for canonicalization
                 ("EMPTY".to_string(), "".to_string()),
                 ("UNICODE".to_string(), "测试🦀".to_string()),
-                ("SPECIAL_CHARS".to_string(), "\n\t\r\0\x1f".to_string()),
+                ("SPECIAL_CHARS".to_string(), "\n\t\r\\0\x1f".to_string()),
             ]),
             platform: "linux-x86_64".to_string(),
             runtime_version: "1.75.0".to_string(),
