@@ -1,5 +1,6 @@
 use frankenengine_node::replay::time_travel_engine::{
-    EnvironmentSnapshot, SCHEMA_VERSION, SideEffect, TraceStep, WorkflowTrace,
+    EnvironmentSnapshot, SCHEMA_VERSION, SideEffect, TraceBuilder, TraceStep, WorkflowTrace,
+    event_codes,
 };
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -313,6 +314,81 @@ fn replay_trace_canonical_digest_vectors_match_exact_bytes() -> TestResult {
             .validate()
             .map_err(|err| format!("{} exact vector must validate: {err}", vector.name))?;
     }
+    Ok(())
+}
+
+#[test]
+fn replay_trace_builder_build_preserves_canonical_digest_validation() -> TestResult {
+    let mut builder = TraceBuilder::new(
+        "trace-builder-conformance",
+        "replay-trace-canonical-conformance",
+        environment(),
+    );
+    for step_vector in &vectors()[0].steps {
+        builder.record_step(
+            step_vector.step.input.clone(),
+            step_vector.step.output.clone(),
+            step_vector.step.side_effects.clone(),
+            step_vector.step.timestamp_ns,
+        );
+    }
+
+    let (trace, audit) = builder
+        .build()
+        .map_err(|err| format!("trace builder should build canonical vector: {err}"))?;
+
+    assert_eq!(
+        trace.trace_digest,
+        WorkflowTrace::compute_digest(&trace.steps),
+        "builder must store the canonical digest it validated"
+    );
+    assert!(
+        audit
+            .iter()
+            .any(|entry| entry.event_code == event_codes::TTR_009),
+        "builder audit must record integrity validation success"
+    );
+    trace
+        .validate()
+        .map_err(|err| format!("builder trace should remain publicly valid: {err}"))
+}
+
+#[test]
+fn replay_trace_builder_build_reuses_precomputed_digest_but_output_still_validates() -> TestResult {
+    let mut builder = TraceBuilder::new(
+        "trace-builder-precomputed-digest",
+        "replay-trace-canonical-conformance",
+        environment(),
+    );
+    let step_vector = &vectors()[0].steps[0];
+    builder.record_step(
+        step_vector.step.input.clone(),
+        step_vector.step.output.clone(),
+        step_vector.step.side_effects.clone(),
+        step_vector.step.timestamp_ns,
+    );
+
+    let (mut trace, audit) = builder
+        .build()
+        .map_err(|err| format!("trace builder should validate with precomputed digest: {err}"))?;
+
+    assert_eq!(
+        trace.trace_digest,
+        WorkflowTrace::compute_digest(&trace.steps),
+        "builder must persist the same digest it validated during build"
+    );
+    assert!(
+        audit
+            .iter()
+            .any(|entry| entry.event_code == event_codes::TTR_009),
+        "builder audit must still record integrity validation success"
+    );
+
+    trace.steps[0].output.push(0xff);
+    assert!(
+        trace.validate().is_err(),
+        "public validation must still catch post-build payload mutation"
+    );
     Ok(())
 }
 

@@ -482,6 +482,15 @@ impl WorkflowTrace {
 
     /// Validate trace invariants (non-empty, ordered, digest match, env complete).
     pub fn validate(&self) -> Result<(), TimeTravelError> {
+        self.validate_structure()?;
+        let recomputed = Self::compute_digest(&self.steps);
+        self.validate_digest(&recomputed)?;
+        self.environment.validate(&self.trace_id)?;
+
+        Ok(())
+    }
+
+    fn validate_structure(&self) -> Result<(), TimeTravelError> {
         // INV-TTR-TRACE-COMPLETE: must have at least one step
         if self.steps.is_empty() {
             return Err(TimeTravelError::EmptyTrace {
@@ -501,15 +510,25 @@ impl WorkflowTrace {
             }
         }
 
+        Ok(())
+    }
+
+    fn validate_digest(&self, recomputed_digest: &str) -> Result<(), TimeTravelError> {
         // INV-TTR-TRACE-COMPLETE: verify digest integrity
-        let recomputed = Self::compute_digest(&self.steps);
-        if !constant_time::ct_eq(&recomputed, &self.trace_digest) {
+        if !constant_time::ct_eq(recomputed_digest, &self.trace_digest) {
             return Err(TimeTravelError::DigestMismatch {
                 trace_id: self.trace_id.clone(),
                 expected: self.trace_digest.clone(),
-                found: recomputed,
+                found: recomputed_digest.to_string(),
             });
         }
+
+        Ok(())
+    }
+
+    fn validate_with_digest(&self, recomputed_digest: &str) -> Result<(), TimeTravelError> {
+        self.validate_structure()?;
+        self.validate_digest(recomputed_digest)?;
 
         // INV-TTR-ENV-SEALED: validate environment snapshot
         self.environment.validate(&self.trace_id)?;
@@ -632,7 +651,7 @@ impl TraceBuilder {
         };
 
         // Validate immediately after construction
-        match trace.validate() {
+        match trace.validate_with_digest(&trace_digest) {
             Ok(()) => {
                 push_bounded(
                     &mut self.audit_log,
