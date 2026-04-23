@@ -24,6 +24,8 @@ pub const SCHEMA_VERSION: &str = "ls-v1.0";
 pub const DEFAULT_STARVATION_WINDOW_MS: u64 = 5_000;
 /// Default maximum number of audit log records retained in-memory.
 pub const DEFAULT_MAX_AUDIT_LOG_ENTRIES: usize = 4_096;
+/// Default maximum number of pending task identities retained per lane.
+pub const DEFAULT_MAX_QUEUED_TASKS_PER_LANE: usize = 4_096;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
@@ -44,6 +46,9 @@ pub mod event_codes {
     pub const LANE_STARVED: &str = "LANE_STARVED";
     pub const LANE_MISCLASS: &str = "LANE_MISCLASS";
     pub const LANE_METRICS: &str = "LANE_METRICS";
+    pub const LANE_TASK_QUEUED: &str = "LANE_TASK_QUEUED";
+    pub const LANE_TASK_PROMOTED: &str = "LANE_TASK_PROMOTED";
+    pub const LANE_TASK_ABORTED: &str = "LANE_TASK_ABORTED";
     pub const LANE_TASK_STARTED: &str = "LANE_TASK_STARTED";
     pub const LANE_TASK_COMPLETED: &str = "LANE_TASK_COMPLETED";
     pub const LANE_CAP_REACHED: &str = "LANE_CAP_REACHED";
@@ -356,6 +361,7 @@ pub enum LaneSchedulerError {
         lane: SchedulerLane,
         cap: usize,
         current: usize,
+        queued_task_id: Option<String>,
     },
     /// Unknown lane ID.
     UnknownLane { lane: String },
@@ -396,7 +402,12 @@ impl fmt::Display for LaneSchedulerError {
             Self::UnknownClass { task_class } => {
                 write!(f, "{}: unknown task class {}", self.code(), task_class)
             }
-            Self::CapExceeded { lane, cap, current } => {
+            Self::CapExceeded {
+                lane,
+                cap,
+                current,
+                queued_task_id,
+            } => {
                 write!(
                     f,
                     "{}: lane {} cap {} exceeded (current {})",
@@ -404,7 +415,11 @@ impl fmt::Display for LaneSchedulerError {
                     lane,
                     cap,
                     current
-                )
+                )?;
+                if let Some(task_id) = queued_task_id {
+                    write!(f, ", queued task {task_id}")?;
+                }
+                Ok(())
             }
             Self::UnknownLane { lane } => {
                 write!(f, "{}: unknown lane {}", self.code(), lane)
@@ -455,6 +470,16 @@ pub struct TaskAssignment {
     pub trace_id: String,
 }
 
+/// Queued task identity retained when a lane is at capacity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueuedTaskAssignment {
+    pub task_id: String,
+    pub task_class: TaskClass,
+    pub lane: SchedulerLane,
+    pub queued_at_ms: u64,
+    pub trace_id: String,
+}
+
 /// Audit record for JSONL export.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LaneAuditRecord {
@@ -482,8 +507,10 @@ pub struct LaneScheduler {
     policy: LaneMappingPolicy,
     counters: BTreeMap<String, LaneCounters>,
     active_tasks: BTreeMap<String, TaskAssignment>,
+    queued_tasks: BTreeMap<String, Vec<QueuedTaskAssignment>>,
     audit_log: Vec<LaneAuditRecord>,
     max_audit_log_entries: usize,
+    max_queued_tasks_per_lane: usize,
     task_counter: u64,
 }
 
@@ -503,19 +530,23 @@ impl LaneScheduler {
         }
 
         let mut counters = BTreeMap::new();
+        let mut queued_tasks = BTreeMap::new();
         for config in policy.lane_configs.values() {
             counters.insert(
                 config.lane.as_str().to_string(),
                 LaneCounters::new(config.lane),
             );
+            queued_tasks.insert(config.lane.as_str().to_string(), Vec::new());
         }
 
         Ok(Self {
             policy,
             counters,
             active_tasks: BTreeMap::new(),
+            queued_tasks,
             audit_log: Vec::new(),
             max_audit_log_entries: max_audit_log_entries.max(1),
+            max_queued_tasks_per_lane: DEFAULT_MAX_QUEUED_TASKS_PER_LANE,
             task_counter: 0,
         })
     }
@@ -523,6 +554,149 @@ impl LaneScheduler {
     fn push_audit_record(&mut self, record: LaneAuditRecord) {
         let cap = self.max_audit_log_entries;
         push_bounded(&mut self.audit_log, record, cap);
+    }
+
+    fn next_task_id(&mut self) -> String {
+        self.task_counter = self.task_counter.saturating_add(1);
+        format!("task-{:08}", self.task_counter)
+    }
+
+    fn refresh_lane_queue_counters(
+        &mut self,
+        lane: SchedulerLane,
+    ) -> Result<(), LaneSchedulerError> {
+        let (queue_depth, first_queued_at_ms) = {
+            let queue = self.queued_tasks.get(lane.as_str()).ok_or_else(|| {
+                LaneSchedulerError::UnknownLane {
+                    lane: lane.to_string(),
+                }
+            })?;
+            (
+                queue.len(),
+                queue.first().map(|queued_task| queued_task.queued_at_ms),
+            )
+        };
+        let counters = self.counters.get_mut(lane.as_str()).ok_or_else(|| {
+            LaneSchedulerError::UnknownLane {
+                lane: lane.to_string(),
+            }
+        })?;
+        counters.queued_count = queue_depth;
+        counters.first_queued_at_ms = first_queued_at_ms;
+        Ok(())
+    }
+
+    fn enqueue_task(
+        &mut self,
+        task_class: &TaskClass,
+        lane: SchedulerLane,
+        timestamp_ms: u64,
+        trace_id: &str,
+    ) -> Result<Option<String>, LaneSchedulerError> {
+        let queue_len = self
+            .queued_tasks
+            .get(lane.as_str())
+            .ok_or_else(|| LaneSchedulerError::UnknownLane {
+                lane: lane.to_string(),
+            })?
+            .len();
+        if queue_len >= self.max_queued_tasks_per_lane {
+            return Ok(None);
+        }
+
+        let task_id = self.next_task_id();
+        let queued = QueuedTaskAssignment {
+            task_id: task_id.clone(),
+            task_class: task_class.clone(),
+            lane,
+            queued_at_ms: timestamp_ms,
+            trace_id: trace_id.to_string(),
+        };
+        self.queued_tasks
+            .get_mut(lane.as_str())
+            .ok_or_else(|| LaneSchedulerError::UnknownLane {
+                lane: lane.to_string(),
+            })?
+            .push(queued);
+        self.refresh_lane_queue_counters(lane)?;
+        self.push_audit_record(LaneAuditRecord {
+            event_code: event_codes::LANE_TASK_QUEUED.to_string(),
+            task_id: task_id.clone(),
+            task_class: task_class.to_string(),
+            lane: lane.to_string(),
+            timestamp_ms,
+            detail: format!("queued for {}", lane),
+            trace_id: trace_id.to_string(),
+            schema_version: SCHEMA_VERSION.to_string(),
+        });
+        Ok(Some(task_id))
+    }
+
+    fn promote_queued_tasks_for_lane(
+        &mut self,
+        lane: SchedulerLane,
+        timestamp_ms: u64,
+        trace_id: &str,
+    ) -> Result<(), LaneSchedulerError> {
+        loop {
+            let cap = self
+                .policy
+                .lane_configs
+                .get(lane.as_str())
+                .ok_or_else(|| LaneSchedulerError::UnknownLane {
+                    lane: lane.to_string(),
+                })?
+                .concurrency_cap;
+            let active_count = self
+                .counters
+                .get(lane.as_str())
+                .ok_or_else(|| LaneSchedulerError::UnknownLane {
+                    lane: lane.to_string(),
+                })?
+                .active_count;
+            if active_count >= cap {
+                return Ok(());
+            }
+
+            let queued = {
+                let queue = self.queued_tasks.get_mut(lane.as_str()).ok_or_else(|| {
+                    LaneSchedulerError::UnknownLane {
+                        lane: lane.to_string(),
+                    }
+                })?;
+                if queue.is_empty() {
+                    return Ok(());
+                }
+                queue.remove(0)
+            };
+            self.refresh_lane_queue_counters(lane)?;
+
+            let assignment = TaskAssignment {
+                task_id: queued.task_id.clone(),
+                task_class: queued.task_class.clone(),
+                lane,
+                assigned_at_ms: timestamp_ms,
+                trace_id: queued.trace_id.clone(),
+            };
+            let counters = self
+                .counters
+                .get_mut(lane.as_str())
+                .ok_or_else(|| LaneSchedulerError::UnknownLane {
+                    lane: lane.to_string(),
+                })?;
+            counters.active_count = counters.active_count.saturating_add(1);
+            self.active_tasks.insert(queued.task_id.clone(), assignment);
+            self.push_audit_record(LaneAuditRecord {
+                event_code: event_codes::LANE_TASK_PROMOTED.to_string(),
+                task_id: queued.task_id,
+                task_class: queued.task_class.to_string(),
+                lane: lane.to_string(),
+                timestamp_ms,
+                detail: format!("promoted from queue to {}", lane),
+                trace_id: trace_id.to_string(),
+                schema_version: SCHEMA_VERSION.to_string(),
+            });
+        }
     }
 
     /// Assign a task to a lane based on its class.
@@ -541,41 +715,48 @@ impl LaneScheduler {
                     task_class: task_class.to_string(),
                 })?;
 
-        let config = &self.policy.lane_configs[lane.as_str()];
+        self.promote_queued_tasks_for_lane(lane, timestamp_ms, trace_id)?;
+
+        let concurrency_cap = self
+            .policy
+            .lane_configs
+            .get(lane.as_str())
+            .ok_or_else(|| LaneSchedulerError::UnknownLane {
+                lane: lane.to_string(),
+            })?
+            .concurrency_cap;
+        let active_count = self
+            .counters
+            .get(lane.as_str())
+            .ok_or_else(|| LaneSchedulerError::UnknownLane {
+                lane: lane.to_string(),
+            })?
+            .active_count;
+
+        // INV-LANE-CAP-ENFORCE
+        if active_count >= concurrency_cap {
+            let queued_task_id = self.enqueue_task(task_class, lane, timestamp_ms, trace_id)?;
+            let counters = self.counters.get_mut(lane.as_str()).ok_or_else(|| {
+                LaneSchedulerError::UnknownLane {
+                    lane: lane.to_string(),
+                }
+            })?;
+            counters.rejected_total = counters.rejected_total.saturating_add(1);
+            return Err(LaneSchedulerError::CapExceeded {
+                lane,
+                cap: concurrency_cap,
+                current: active_count,
+                queued_task_id,
+            });
+        }
+
+        let task_id = self.next_task_id();
+
         let counters = self.counters.get_mut(lane.as_str()).ok_or_else(|| {
             LaneSchedulerError::UnknownLane {
                 lane: lane.to_string(),
             }
         })?;
-
-        // INV-LANE-CAP-ENFORCE
-        if counters.active_count >= config.concurrency_cap {
-            if counters.queued_count == 0 {
-                counters.first_queued_at_ms = Some(timestamp_ms);
-            }
-            counters.queued_count = counters.queued_count.saturating_add(1);
-            counters.rejected_total = counters.rejected_total.saturating_add(1);
-            return Err(LaneSchedulerError::CapExceeded {
-                lane,
-                cap: config.concurrency_cap,
-                current: counters.active_count,
-            });
-        }
-
-        // A newly admitted task consumes one pending queue slot, if any.
-        if counters.queued_count > 0 {
-            counters.queued_count = counters.queued_count.saturating_sub(1);
-            if counters.queued_count == 0 {
-                counters.first_queued_at_ms = None;
-            } else {
-                // We only track aggregate queue depth, so once one queued task is
-                // admitted the remaining blocked work is rebased on that progress.
-                counters.first_queued_at_ms = Some(timestamp_ms);
-            }
-        }
-        self.task_counter = self.task_counter.saturating_add(1);
-        let task_id = format!("task-{:08}", self.task_counter);
-
         counters.active_count = counters.active_count.saturating_add(1);
 
         let assignment = TaskAssignment {
@@ -626,9 +807,6 @@ impl LaneScheduler {
         counters.active_count = counters.active_count.saturating_sub(1);
         counters.completed_total = counters.completed_total.saturating_add(1);
         counters.last_completion_ms = Some(timestamp_ms);
-        if counters.queued_count == 0 {
-            counters.first_queued_at_ms = None;
-        }
 
         self.push_audit_record(LaneAuditRecord {
             event_code: event_codes::LANE_TASK_COMPLETED.to_string(),
@@ -644,6 +822,8 @@ impl LaneScheduler {
             schema_version: SCHEMA_VERSION.to_string(),
         });
 
+        self.promote_queued_tasks_for_lane(assignment.lane, timestamp_ms, trace_id)?;
+
         Ok(assignment.lane)
     }
 
@@ -656,19 +836,51 @@ impl LaneScheduler {
                     task_class: task_class.to_string(),
                 })?;
 
-        let counters = self.counters.get_mut(lane.as_str()).ok_or_else(|| {
-            LaneSchedulerError::UnknownLane {
-                lane: lane.to_string(),
-            }
-        })?;
-
-        if counters.queued_count > 0 {
-            counters.queued_count = counters.queued_count.saturating_sub(1);
-            if counters.queued_count == 0 {
-                counters.first_queued_at_ms = None;
+        if let Some(queue) = self.queued_tasks.get_mut(lane.as_str()) {
+            if let Some(position) = queue
+                .iter()
+                .position(|queued| queued.task_class == *task_class)
+            {
+                queue.remove(position);
+                self.refresh_lane_queue_counters(lane)?;
             }
         }
         Ok(())
+    }
+
+    /// Abort one specific queued task identity.
+    pub fn abort_queued_task_id(
+        &mut self,
+        task_id: &str,
+        timestamp_ms: u64,
+        trace_id: &str,
+    ) -> Result<QueuedTaskAssignment, LaneSchedulerError> {
+        let mut removed: Option<QueuedTaskAssignment> = None;
+
+        for queue in self.queued_tasks.values_mut() {
+            if let Some(position) = queue.iter().position(|queued| queued.task_id == task_id) {
+                let queued = queue.remove(position);
+                removed = Some(queued);
+                break;
+            }
+        }
+
+        let queued = removed.ok_or_else(|| LaneSchedulerError::TaskNotFound {
+            task_id: task_id.to_string(),
+        })?;
+        let lane = queued.lane;
+        self.refresh_lane_queue_counters(lane)?;
+        self.push_audit_record(LaneAuditRecord {
+            event_code: event_codes::LANE_TASK_ABORTED.to_string(),
+            task_id: queued.task_id.clone(),
+            task_class: queued.task_class.to_string(),
+            lane: lane.to_string(),
+            timestamp_ms,
+            detail: format!("aborted queued task in {}", lane),
+            trace_id: trace_id.to_string(),
+            schema_version: SCHEMA_VERSION.to_string(),
+        });
+        Ok(queued)
     }
 
     /// Check for lane starvation.
@@ -789,6 +1001,9 @@ impl LaneScheduler {
             self.counters
                 .entry(config.lane.as_str().to_string())
                 .or_insert_with(|| LaneCounters::new(config.lane));
+            self.queued_tasks
+                .entry(config.lane.as_str().to_string())
+                .or_default();
         }
 
         self.policy = new_policy;
@@ -804,6 +1019,28 @@ impl LaneScheduler {
     /// Get counters for a specific lane.
     pub fn lane_counter(&self, lane: SchedulerLane) -> Option<&LaneCounters> {
         self.counters.get(lane.as_str())
+    }
+
+    /// Queued task IDs for a lane in FIFO order.
+    pub fn queued_task_ids(&self, lane: SchedulerLane) -> Vec<String> {
+        self.queued_tasks
+            .get(lane.as_str())
+            .map(|queue| {
+                queue
+                    .iter()
+                    .map(|queued_task| queued_task.task_id.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Active task IDs for a lane in deterministic ID order.
+    pub fn active_task_ids(&self, lane: SchedulerLane) -> Vec<String> {
+        self.active_tasks
+            .values()
+            .filter(|assignment| assignment.lane == lane)
+            .map(|assignment| assignment.task_id.clone())
+            .collect()
     }
 
     /// Take a telemetry snapshot.
@@ -1639,6 +1876,7 @@ mod tests {
                 lane: SchedulerLane::Background,
                 cap: 2,
                 current: 2,
+                queued_task_id: Some("task-queued".to_string()),
             },
             LaneSchedulerError::UnknownLane { lane: "x".into() },
             LaneSchedulerError::DuplicateLane {

@@ -181,6 +181,10 @@ name = "runtime_lane_router_security"
 path = "tests/runtime_lane_router_security.rs"
 
 [[test]]
+name = "runtime_lane_scheduler_queue_identity"
+path = "tests/runtime_lane_scheduler_queue_identity.rs"
+
+[[test]]
 name = "registry_cli_e2e"
 path = "tests/registry_cli_e2e.rs"
 
