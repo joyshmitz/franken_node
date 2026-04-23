@@ -261,6 +261,18 @@ fn test_native_engine_error_handling_propagation() {
 
 #[test]
 fn test_engine_timeout_handling() {
+    // Set a short timeout for testing (5 seconds instead of default 5 minutes)
+    std::env::set_var("FRANKEN_ENGINE_TIMEOUT_SECS", "5");
+
+    // Clean up the env var when test completes
+    struct EnvCleanup(&'static str);
+    impl Drop for EnvCleanup {
+        fn drop(&mut self) {
+            std::env::remove_var(self.0);
+        }
+    }
+    let _cleanup = EnvCleanup("FRANKEN_ENGINE_TIMEOUT_SECS");
+
     // Test that engine execution properly handles timeouts by using a slow external engine binary
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let app_path = create_test_app(
@@ -269,7 +281,7 @@ fn test_engine_timeout_handling() {
         r#"console.log("This should timeout before completion");"#,
     );
 
-    // Create a slow mock engine that takes 10 seconds to complete
+    // Create a slow mock engine that takes 10 seconds to complete (longer than our 5s timeout)
     let slow_engine_path = create_slow_mock_engine_binary(temp_dir.path(), 10);
 
     let mut config = Config::default();
@@ -305,10 +317,10 @@ fn test_engine_timeout_handling() {
     // If it's not a timeout error, it might be because the process was killed
     // or failed for another reason, which is also acceptable timeout behavior
     if !is_timeout_error {
-        // At minimum, verify the execution was interrupted quickly, not after 10 seconds
+        // At minimum, verify the execution was interrupted around our timeout (5s), not after full 10s delay
         assert!(
-            duration < Duration::from_secs(8),
-            "Execution should be interrupted quickly (~1-5s), not wait for full 10s completion. Got: {:?}",
+            duration < Duration::from_secs(7),
+            "Execution should be interrupted around timeout limit (~5s), not wait for full 10s completion. Got: {:?}",
             duration
         );
 
@@ -323,10 +335,10 @@ fn test_engine_timeout_handling() {
             error
         );
     } else {
-        // For explicit timeout errors, verify timing was reasonable (~1-5s for timeout detection)
+        // For explicit timeout errors, verify timing was around our 5-second timeout
         assert!(
-            duration < Duration::from_secs(8),
-            "Timeout should be detected quickly, not after full delay. Took: {:?}",
+            duration >= Duration::from_secs(4) && duration <= Duration::from_secs(7),
+            "Timeout should occur around 5s mark. Took: {:?}",
             duration
         );
     }

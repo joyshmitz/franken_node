@@ -1232,7 +1232,12 @@ impl EngineDispatcher {
         use std::thread;
         use std::time::{Duration, Instant};
 
-        let timeout = Duration::from_secs(300); // 5 minute timeout for engine execution
+        // Default to 5 minute timeout, but allow override via env var for testing
+        let timeout_secs = std::env::var("FRANKEN_ENGINE_TIMEOUT_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(300); // 5 minute default
+        let timeout = Duration::from_secs(timeout_secs);
         let app_path_buf = app_path.to_path_buf();
 
         // Set up panic hook to capture panic information
