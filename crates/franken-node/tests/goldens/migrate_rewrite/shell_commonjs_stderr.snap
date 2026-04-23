@@ -1,0 +1,4 @@
+---
+source: crates/franken-node/tests/migrate_rewrite_goldens.rs
+---
+migration rollback artifact written: [ROLLBACK_PLAN]

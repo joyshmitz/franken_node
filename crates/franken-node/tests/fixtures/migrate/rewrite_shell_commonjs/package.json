@@ -1,0 +1,7 @@
+{
+  "name": "migrate-rewrite-shell-commonjs-fixture",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "NODE_OPTIONS=--trace-warnings node index.js && bun scripts/build.mjs"
+  }
+}

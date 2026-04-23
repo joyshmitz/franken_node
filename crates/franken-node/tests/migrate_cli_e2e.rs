@@ -12,6 +12,9 @@ use tempfile::TempDir;
 #[path = "golden/mod.rs"]
 mod golden;
 
+#[path = "migrate_rewrite_goldens.rs"]
+mod migrate_rewrite_goldens;
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
