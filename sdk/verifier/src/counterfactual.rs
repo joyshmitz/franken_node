@@ -19,6 +19,7 @@ pub enum CounterfactualReceiptError {
     Json(String),
     BaselineIntegrityHashMissing,
     BaselineIntegrityHashMalformed { actual: String },
+    ResultsEnvelopeMalformed { actual: String },
     CounterfactualBundleHashMissing,
     CounterfactualBundleHashMalformed { actual: String },
     SweepResultBundleHashMissing { index: usize },
@@ -39,6 +40,10 @@ impl fmt::Display for CounterfactualReceiptError {
             Self::BaselineIntegrityHashMalformed { actual } => write!(
                 formatter,
                 "baseline bundle integrity_hash must be a 64-nybble hex digest: got {actual}"
+            ),
+            Self::ResultsEnvelopeMalformed { actual } => write!(
+                formatter,
+                "counterfactual receipt results must be a non-empty array when present: got {actual}"
             ),
             Self::CounterfactualBundleHashMissing => {
                 write!(
@@ -97,9 +102,8 @@ where
     let baseline_value = to_value(baseline_bundle)?;
     let expected_bundle_hash = extract_nonempty_string(&baseline_value, &["integrity_hash"])
         .ok_or(CounterfactualReceiptError::BaselineIntegrityHashMissing)?;
-    validate_bundle_hash(expected_bundle_hash).map_err(|actual| {
-        CounterfactualReceiptError::BaselineIntegrityHashMalformed { actual }
-    })?;
+    validate_bundle_hash(expected_bundle_hash)
+        .map_err(|actual| CounterfactualReceiptError::BaselineIntegrityHashMalformed { actual })?;
     let counterfactual_value = to_value(counterfactual_output)?;
     ensure_counterfactual_references_bundle(&counterfactual_value, expected_bundle_hash)?;
     let canonical = canonical_json_bytes(&counterfactual_value)?;
@@ -116,9 +120,16 @@ fn ensure_counterfactual_references_bundle(
     output: &Value,
     expected_bundle_hash: &str,
 ) -> Result<(), CounterfactualReceiptError> {
-    if let Some(results) = value_results(output) {
+    if let Some(results_value) = output.get("results") {
+        let results = results_value.as_array().ok_or_else(|| {
+            CounterfactualReceiptError::ResultsEnvelopeMalformed {
+                actual: describe_value_kind(results_value),
+            }
+        })?;
         if results.is_empty() {
-            return Err(CounterfactualReceiptError::CounterfactualBundleHashMissing);
+            return Err(CounterfactualReceiptError::ResultsEnvelopeMalformed {
+                actual: "array(len=0)".to_string(),
+            });
         }
         for (index, result) in results.iter().enumerate() {
             let actual = extract_nonempty_string(result, &["metadata", "bundle_hash"])
@@ -140,10 +151,9 @@ fn ensure_counterfactual_references_bundle(
 
     let actual = extract_nonempty_string(output, &["metadata", "bundle_hash"])
         .ok_or(CounterfactualReceiptError::CounterfactualBundleHashMissing)?;
-    validate_bundle_hash(actual)
-        .map_err(|actual| CounterfactualReceiptError::CounterfactualBundleHashMalformed {
-            actual,
-        })?;
+    validate_bundle_hash(actual).map_err(|actual| {
+        CounterfactualReceiptError::CounterfactualBundleHashMalformed { actual }
+    })?;
     if actual != expected_bundle_hash {
         return Err(
             CounterfactualReceiptError::CounterfactualBundleHashMismatch {
@@ -155,8 +165,15 @@ fn ensure_counterfactual_references_bundle(
     Ok(())
 }
 
-fn value_results(value: &Value) -> Option<&[Value]> {
-    value.get("results").and_then(Value::as_array).map(Vec::as_slice)
+fn describe_value_kind(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(boolean) => format!("bool({boolean})"),
+        Value::Number(number) => format!("number({number})"),
+        Value::String(string) => format!("string({string})"),
+        Value::Array(items) => format!("array(len={})", items.len()),
+        Value::Object(object) => format!("object(len={})", object.len()),
+    }
 }
 
 #[cfg(test)]
@@ -221,6 +238,110 @@ mod tests {
     }
 
     #[test]
+    fn verify_counterfactual_receipt_rejects_object_results_envelope() {
+        let baseline_bundle = json!({"integrity_hash": TEST_BUNDLE_HASH});
+        let counterfactual_output = json!({
+            "results": {"metadata": {"bundle_hash": TEST_BUNDLE_HASH}},
+            "metadata": {"bundle_hash": TEST_BUNDLE_HASH}
+        });
+        let signing_key = SigningKey::from_bytes(&[21_u8; 32]);
+        let signature_bytes = sign_counterfactual_value(&counterfactual_output, &signing_key);
+
+        let err = verify_counterfactual_receipt(
+            &baseline_bundle,
+            &counterfactual_output,
+            &signing_key.verifying_key(),
+            &signature_bytes,
+        )
+        .expect_err("object results envelope must fail closed");
+
+        assert_eq!(
+            err,
+            CounterfactualReceiptError::ResultsEnvelopeMalformed {
+                actual: "object(len=1)".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn verify_counterfactual_receipt_rejects_string_results_envelope() {
+        let baseline_bundle = json!({"integrity_hash": TEST_BUNDLE_HASH});
+        let counterfactual_output = json!({
+            "results": "not-an-array",
+            "metadata": {"bundle_hash": TEST_BUNDLE_HASH}
+        });
+        let signing_key = SigningKey::from_bytes(&[22_u8; 32]);
+        let signature_bytes = sign_counterfactual_value(&counterfactual_output, &signing_key);
+
+        let err = verify_counterfactual_receipt(
+            &baseline_bundle,
+            &counterfactual_output,
+            &signing_key.verifying_key(),
+            &signature_bytes,
+        )
+        .expect_err("string results envelope must fail closed");
+
+        assert_eq!(
+            err,
+            CounterfactualReceiptError::ResultsEnvelopeMalformed {
+                actual: "string(not-an-array)".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn verify_counterfactual_receipt_rejects_null_results_envelope() {
+        let baseline_bundle = json!({"integrity_hash": TEST_BUNDLE_HASH});
+        let counterfactual_output = json!({
+            "results": Value::Null,
+            "metadata": {"bundle_hash": TEST_BUNDLE_HASH}
+        });
+        let signing_key = SigningKey::from_bytes(&[23_u8; 32]);
+        let signature_bytes = sign_counterfactual_value(&counterfactual_output, &signing_key);
+
+        let err = verify_counterfactual_receipt(
+            &baseline_bundle,
+            &counterfactual_output,
+            &signing_key.verifying_key(),
+            &signature_bytes,
+        )
+        .expect_err("null results envelope must fail closed");
+
+        assert_eq!(
+            err,
+            CounterfactualReceiptError::ResultsEnvelopeMalformed {
+                actual: "null".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn verify_counterfactual_receipt_rejects_empty_results_envelope() {
+        let baseline_bundle = json!({"integrity_hash": TEST_BUNDLE_HASH});
+        let counterfactual_output = json!({
+            "results": [],
+            "metadata": {"bundle_hash": TEST_BUNDLE_HASH}
+        });
+        let signing_key = SigningKey::from_bytes(&[24_u8; 32]);
+        let signature_bytes = sign_counterfactual_value(&counterfactual_output, &signing_key);
+
+        let err = verify_counterfactual_receipt(
+            &baseline_bundle,
+            &counterfactual_output,
+            &signing_key.verifying_key(),
+            &signature_bytes,
+        )
+        .expect_err("empty results envelope must fail closed");
+
+        assert_eq!(
+            err,
+            CounterfactualReceiptError::ResultsEnvelopeMalformed {
+                actual: "array(len=0)".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn verify_counterfactual_receipt_rejects_empty_baseline_integrity_hash() {
         let baseline_bundle = json!({"integrity_hash": "   "});
         let counterfactual_output = json!({
@@ -237,7 +358,10 @@ mod tests {
         )
         .expect_err("empty baseline integrity_hash must fail closed");
 
-        assert_eq!(err, CounterfactualReceiptError::BaselineIntegrityHashMissing);
+        assert_eq!(
+            err,
+            CounterfactualReceiptError::BaselineIntegrityHashMissing
+        );
     }
 
     #[test]
@@ -257,7 +381,10 @@ mod tests {
         )
         .expect_err("empty signed counterfactual bundle_hash must fail closed");
 
-        assert_eq!(err, CounterfactualReceiptError::CounterfactualBundleHashMissing);
+        assert_eq!(
+            err,
+            CounterfactualReceiptError::CounterfactualBundleHashMissing
+        );
     }
 
     #[test]
