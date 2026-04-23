@@ -12,7 +12,6 @@ use frankenengine_engine::runtime_config::RuntimeConfig as EngineRuntimeConfig;
 use crate::{
     ActionableError,
     config::{Config, PreferredRuntime, Profile},
-    extensions::artifact_contract::CapabilityEntry,
 };
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -1348,88 +1347,28 @@ impl EngineDispatcher {
     /// - `runtime.spawn`: Process spawning (50 ops/epoch) - subprocess execution
     /// - `runtime.timeout`: Extended timeout control (500 ops/epoch) - long-running ops
     #[cfg(feature = "engine")]
-    fn map_profile_to_capabilities(profile: Profile) -> Vec<CapabilityEntry> {
+    fn map_profile_to_capabilities(profile: Profile) -> Vec<String> {
         match profile {
             Profile::Strict => vec![
-                CapabilityEntry {
-                    capability_id: "fs.read".to_string(),
-                    scope: "filesystem:read".to_string(),
-                    max_calls_per_epoch: 100,
-                },
-                CapabilityEntry {
-                    capability_id: "runtime.timeout".to_string(),
-                    scope: "runtime:timeout".to_string(),
-                    max_calls_per_epoch: 50,
-                },
+                "fs.read".to_string(),
+                "runtime.timeout".to_string(),
             ],
             Profile::Balanced => vec![
-                CapabilityEntry {
-                    capability_id: "fs.read".to_string(),
-                    scope: "filesystem:read".to_string(),
-                    max_calls_per_epoch: 500,
-                },
-                CapabilityEntry {
-                    capability_id: "net.egress".to_string(),
-                    scope: "network:egress".to_string(),
-                    max_calls_per_epoch: 100,
-                },
-                CapabilityEntry {
-                    capability_id: "crypto.random".to_string(),
-                    scope: "crypto:random".to_string(),
-                    max_calls_per_epoch: 200,
-                },
-                CapabilityEntry {
-                    capability_id: "runtime.timeout".to_string(),
-                    scope: "runtime:timeout".to_string(),
-                    max_calls_per_epoch: 100,
-                },
+                "fs.read".to_string(),
+                "net.egress".to_string(),
+                "crypto.random".to_string(),
+                "runtime.timeout".to_string(),
             ],
             Profile::LegacyRisky => vec![
-                CapabilityEntry {
-                    capability_id: "fs.read".to_string(),
-                    scope: "filesystem:read".to_string(),
-                    max_calls_per_epoch: 2000,
-                },
-                CapabilityEntry {
-                    capability_id: "fs.write".to_string(),
-                    scope: "filesystem:write".to_string(),
-                    max_calls_per_epoch: 1000,
-                },
-                CapabilityEntry {
-                    capability_id: "net.egress".to_string(),
-                    scope: "network:egress".to_string(),
-                    max_calls_per_epoch: 500,
-                },
-                CapabilityEntry {
-                    capability_id: "net.ingress".to_string(),
-                    scope: "network:ingress".to_string(),
-                    max_calls_per_epoch: 100,
-                },
-                CapabilityEntry {
-                    capability_id: "crypto.random".to_string(),
-                    scope: "crypto:random".to_string(),
-                    max_calls_per_epoch: 1000,
-                },
-                CapabilityEntry {
-                    capability_id: "crypto.sign".to_string(),
-                    scope: "crypto:sign".to_string(),
-                    max_calls_per_epoch: 50,
-                },
-                CapabilityEntry {
-                    capability_id: "system.env".to_string(),
-                    scope: "system:env".to_string(),
-                    max_calls_per_epoch: 200,
-                },
-                CapabilityEntry {
-                    capability_id: "runtime.spawn".to_string(),
-                    scope: "runtime:spawn".to_string(),
-                    max_calls_per_epoch: 50,
-                },
-                CapabilityEntry {
-                    capability_id: "runtime.timeout".to_string(),
-                    scope: "runtime:timeout".to_string(),
-                    max_calls_per_epoch: 500,
-                },
+                "fs.read".to_string(),
+                "fs.write".to_string(),
+                "net.egress".to_string(),
+                "net.ingress".to_string(),
+                "crypto.random".to_string(),
+                "crypto.sign".to_string(),
+                "system.env".to_string(),
+                "runtime.spawn".to_string(),
+                "runtime.timeout".to_string(),
             ],
         }
     }
