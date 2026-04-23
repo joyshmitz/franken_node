@@ -1634,6 +1634,12 @@ impl EngineDispatcher {
         use frankenengine_engine::security_epoch::SecurityEpoch;
         use frankenengine_engine::ast::ParseGoal;
 
+        // Security epoch constants to prevent hardcoded value drift
+        // These values must stay synchronized with franken-engine SecurityEpoch evolution
+        const LEGACY_SECURITY_EPOCH: u64 = 1;    // Legacy security epoch for compatibility
+        const STANDARD_SECURITY_EPOCH: u64 = 2;  // Standard security epoch
+        const CURRENT_SECURITY_EPOCH: u64 = 3;   // Latest security epoch
+
         // Map profile to loss matrix preset (risk management strategy)
         let loss_matrix_preset = match config.profile {
             Profile::Strict => LossMatrixPreset::Conservative,   // Prioritize safety over performance
@@ -1644,9 +1650,9 @@ impl EngineDispatcher {
         // Map profile to security epoch (versioning for security policies)
         // NOTE: Higher epoch numbers = newer/more secure policies (monotonic counter)
         let epoch = match config.profile {
-            Profile::Strict => SecurityEpoch::from_raw(3),      // Latest security epoch
-            Profile::Balanced => SecurityEpoch::from_raw(2),    // Standard security epoch
-            Profile::LegacyRisky => SecurityEpoch::from_raw(1), // Legacy security epoch for compatibility
+            Profile::Strict => SecurityEpoch::from_raw(CURRENT_SECURITY_EPOCH),   // Latest security epoch
+            Profile::Balanced => SecurityEpoch::from_raw(STANDARD_SECURITY_EPOCH), // Standard security epoch
+            Profile::LegacyRisky => SecurityEpoch::from_raw(LEGACY_SECURITY_EPOCH), // Legacy security epoch for compatibility
         };
 
         // Profile-based timeouts and limits (independent of runtime config for orchestrator)
@@ -1677,7 +1683,7 @@ impl EngineDispatcher {
                 max_recursion_depth: match config.profile {
                     Profile::Strict => 128u32,       // Shallow recursion for safety
                     Profile::Balanced => 256u32,     // Standard recursion depth (default)
-                    Profile::LegacyRisky => ABSOLUTE_MAX_RECURSION_DEPTH.min(512), // Capped at 384 absolute max
+                    Profile::LegacyRisky => ABSOLUTE_MAX_RECURSION_DEPTH, // Capped at 384 absolute max
                 },
             },
         };
