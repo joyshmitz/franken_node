@@ -13,8 +13,8 @@
 
 use frankenengine_node::ops::close_condition::{
     CloseConditionReceipt, CloseConditionReceiptCore, CloseConditionReceiptSignature,
-    L1ProductOracle, L2EngineBoundaryOracle, OracleColor, ReleasePolicyLinkage,
-    SplitContractCheck, SplitContractSummary, TamperEvidence,
+    L1ProductOracle, L2EngineBoundaryOracle, OracleColor, ReleasePolicyLinkage, SplitContractCheck,
+    SplitContractSummary, TamperEvidence,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -147,13 +147,19 @@ impl From<RawCloseConditionReceipt> for CloseConditionReceipt {
         let l2_verdict = match raw.l2_engine_boundary_oracle.verdict.as_str() {
             "Green" => OracleColor::Green,
             "Red" => OracleColor::Red,
-            _ => panic!("Unknown L2 verdict: {}", raw.l2_engine_boundary_oracle.verdict),
+            _ => panic!(
+                "Unknown L2 verdict: {}",
+                raw.l2_engine_boundary_oracle.verdict
+            ),
         };
 
         let release_verdict = match raw.release_policy_linkage.verdict.as_str() {
             "Green" => OracleColor::Green,
             "Red" => OracleColor::Red,
-            _ => panic!("Unknown release verdict: {}", raw.release_policy_linkage.verdict),
+            _ => panic!(
+                "Unknown release verdict: {}",
+                raw.release_policy_linkage.verdict
+            ),
         };
 
         let l1_product_oracle = L1ProductOracle {
@@ -167,6 +173,7 @@ impl From<RawCloseConditionReceipt> for CloseConditionReceipt {
             skipped_test_cases: raw.l1_product_oracle.skipped_test_cases,
             pass_rate_pct: raw.l1_product_oracle.pass_rate_pct,
             required_pass_rate_pct: raw.l1_product_oracle.required_pass_rate_pct,
+            blocking_findings: Vec::new(),
         };
 
         let l2_checks: Vec<SplitContractCheck> = raw
@@ -185,14 +192,12 @@ impl From<RawCloseConditionReceipt> for CloseConditionReceipt {
             .collect();
 
         let l2_summary = SplitContractSummary {
-            total_checks: raw.l2_engine_boundary_oracle.summary.total_checks,
-            passed_checks: raw.l2_engine_boundary_oracle.summary.passed_checks,
-            failing_checks: raw.l2_engine_boundary_oracle.summary.failing_checks,
-            overall_verdict: match raw.l2_engine_boundary_oracle.summary.overall_verdict.as_str() {
-                "Green" => OracleColor::Green,
-                "Red" => OracleColor::Red,
-                _ => panic!("Unknown summary verdict: {}", raw.l2_engine_boundary_oracle.summary.overall_verdict),
-            },
+            total_checks: usize::try_from(raw.l2_engine_boundary_oracle.summary.total_checks)
+                .expect("total_checks should fit usize"),
+            passing_checks: usize::try_from(raw.l2_engine_boundary_oracle.summary.passed_checks)
+                .expect("passed_checks should fit usize"),
+            failing_checks: usize::try_from(raw.l2_engine_boundary_oracle.summary.failing_checks)
+                .expect("failing_checks should fit usize"),
         };
 
         let l2_engine_boundary_oracle = L2EngineBoundaryOracle {
@@ -253,8 +258,8 @@ impl From<RawCloseConditionReceipt> for CloseConditionReceipt {
 /// Compute canonical hash for CloseConditionReceipt using domain-separated SHA256.
 fn compute_canonical_hash(receipt: &CloseConditionReceipt) -> String {
     // For this test, we'll use the core receipt (excluding signature) for hashing
-    let core_json = serde_json::to_string(&receipt.core)
-        .expect("receipt core should serialize to JSON");
+    let core_json =
+        serde_json::to_string(&receipt.core).expect("receipt core should serialize to JSON");
 
     let mut hasher = Sha256::new();
     hasher.update(b"close_condition_receipt_v1:");
@@ -274,8 +279,7 @@ fn load_conformance_vectors() -> DoctorCloseConditionConformanceVectors {
 fn doctor_close_condition_schema_version_matches_vectors() {
     let vectors = load_conformance_vectors();
     assert_eq!(
-        vectors.receipt_schema_version,
-        "oracle-close-condition-receipt/v1",
+        vectors.receipt_schema_version, "oracle-close-condition-receipt/v1",
         "Receipt schema version in vectors should match expected constant"
     );
 }
@@ -290,33 +294,34 @@ fn doctor_close_condition_round_trip_conformance() {
 
         // Serialize to JSON
         let receipt_json = serde_json::to_string(&receipt)
-            .unwrap_or_else(|e| panic!(
-                "Vector '{}' should serialize to JSON: {}", vector.name, e
-            ));
+            .unwrap_or_else(|e| panic!("Vector '{}' should serialize to JSON: {}", vector.name, e));
 
         // Deserialize back
         let roundtrip_receipt: CloseConditionReceipt = serde_json::from_str(&receipt_json)
-            .unwrap_or_else(|e| panic!(
-                "Vector '{}' JSON should deserialize back to CloseConditionReceipt: {}", vector.name, e
-            ));
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Vector '{}' JSON should deserialize back to CloseConditionReceipt: {}",
+                    vector.name, e
+                )
+            });
 
         // Core fields should be preserved
         assert_eq!(
-            receipt.core.schema_version,
-            roundtrip_receipt.core.schema_version,
-            "Vector '{}': schema_version lost in round-trip", vector.name
+            receipt.core.schema_version, roundtrip_receipt.core.schema_version,
+            "Vector '{}': schema_version lost in round-trip",
+            vector.name
         );
 
         assert_eq!(
-            receipt.core.composite_verdict,
-            roundtrip_receipt.core.composite_verdict,
-            "Vector '{}': composite_verdict lost in round-trip", vector.name
+            receipt.core.composite_verdict, roundtrip_receipt.core.composite_verdict,
+            "Vector '{}': composite_verdict lost in round-trip",
+            vector.name
         );
 
         assert_eq!(
-            receipt.core.failing_dimensions,
-            roundtrip_receipt.core.failing_dimensions,
-            "Vector '{}': failing_dimensions lost in round-trip", vector.name
+            receipt.core.failing_dimensions, roundtrip_receipt.core.failing_dimensions,
+            "Vector '{}': failing_dimensions lost in round-trip",
+            vector.name
         );
     }
 }
@@ -332,20 +337,23 @@ fn doctor_close_condition_composite_verdict_conformance() {
         let expected_verdict = match vector.expected_composite_verdict.as_str() {
             "Green" => OracleColor::Green,
             "Red" => OracleColor::Red,
-            _ => panic!("Unknown expected verdict: {}", vector.expected_composite_verdict),
+            _ => panic!(
+                "Unknown expected verdict: {}",
+                vector.expected_composite_verdict
+            ),
         };
 
         assert_eq!(
-            receipt.core.composite_verdict,
-            expected_verdict,
-            "Vector '{}': composite verdict mismatch", vector.name
+            receipt.core.composite_verdict, expected_verdict,
+            "Vector '{}': composite verdict mismatch",
+            vector.name
         );
 
         // Failing dimensions should match expected
         assert_eq!(
-            receipt.core.failing_dimensions,
-            vector.expected_failing_dimensions,
-            "Vector '{}': failing dimensions mismatch", vector.name
+            receipt.core.failing_dimensions, vector.expected_failing_dimensions,
+            "Vector '{}': failing dimensions mismatch",
+            vector.name
         );
     }
 }
@@ -359,8 +367,7 @@ fn doctor_close_condition_canonical_hash_conformance() {
         let computed_hash = compute_canonical_hash(&receipt);
 
         assert_eq!(
-            computed_hash,
-            vector.expected_hash,
+            computed_hash, vector.expected_hash,
             "Vector '{}': canonical hash mismatch\n  computed: {}\n  expected: {}",
             vector.name, computed_hash, vector.expected_hash
         );
@@ -380,14 +387,17 @@ fn doctor_close_condition_deterministic_serialization_conformance() {
 
         assert_eq!(
             json1, json2,
-            "Vector '{}': deterministic serialization failed", vector.name
+            "Vector '{}': deterministic serialization failed",
+            vector.name
         );
 
         // JSON should be parseable as generic Value
-        let _: Value = serde_json::from_str(&json1)
-            .unwrap_or_else(|e| panic!(
-                "Vector '{}': serialized JSON is not valid: {}", vector.name, e
-            ));
+        let _: Value = serde_json::from_str(&json1).unwrap_or_else(|e| {
+            panic!(
+                "Vector '{}': serialized JSON is not valid: {}",
+                vector.name, e
+            )
+        });
     }
 }
 
@@ -400,9 +410,9 @@ fn doctor_close_condition_schema_version_validation() {
 
         // Schema version should match expected constant
         assert_eq!(
-            receipt.core.schema_version,
-            "oracle-close-condition-receipt/v1",
-            "Vector '{}': schema version should match constant", vector.name
+            receipt.core.schema_version, "oracle-close-condition-receipt/v1",
+            "Vector '{}': schema version should match constant",
+            vector.name
         );
     }
 }
@@ -415,23 +425,35 @@ fn doctor_close_condition_signature_structure_conformance() {
         let receipt: CloseConditionReceipt = vector.input_receipt.clone().into();
 
         // Signature should have required fields
-        assert!(!receipt.tamper_evidence.signature.algorithm.is_empty(),
-            "Vector '{}': signature algorithm should not be empty", vector.name);
+        assert!(
+            !receipt.tamper_evidence.signature.algorithm.is_empty(),
+            "Vector '{}': signature algorithm should not be empty",
+            vector.name
+        );
 
-        assert!(!receipt.tamper_evidence.signature.public_key_hex.is_empty(),
-            "Vector '{}': public key hex should not be empty", vector.name);
+        assert!(
+            !receipt.tamper_evidence.signature.public_key_hex.is_empty(),
+            "Vector '{}': public key hex should not be empty",
+            vector.name
+        );
 
-        assert!(!receipt.tamper_evidence.signature.key_id.is_empty(),
-            "Vector '{}': key ID should not be empty", vector.name);
+        assert!(
+            !receipt.tamper_evidence.signature.key_id.is_empty(),
+            "Vector '{}': key ID should not be empty",
+            vector.name
+        );
 
-        assert!(!receipt.tamper_evidence.signature.signature_hex.is_empty(),
-            "Vector '{}': signature hex should not be empty", vector.name);
+        assert!(
+            !receipt.tamper_evidence.signature.signature_hex.is_empty(),
+            "Vector '{}': signature hex should not be empty",
+            vector.name
+        );
 
         // Algorithm should be Ed25519
         assert_eq!(
-            receipt.tamper_evidence.signature.algorithm,
-            "Ed25519",
-            "Vector '{}': signature algorithm should be Ed25519", vector.name
+            receipt.tamper_evidence.signature.algorithm, "Ed25519",
+            "Vector '{}': signature algorithm should be Ed25519",
+            vector.name
         );
     }
 }
@@ -448,27 +470,37 @@ fn doctor_close_condition_failing_dimensions_logic_conformance() {
             OracleColor::Green => {
                 assert!(
                     receipt.core.failing_dimensions.is_empty(),
-                    "Vector '{}': GREEN verdict should have no failing dimensions", vector.name
+                    "Vector '{}': GREEN verdict should have no failing dimensions",
+                    vector.name
                 );
             }
             OracleColor::Red => {
                 assert!(
                     !receipt.core.failing_dimensions.is_empty(),
-                    "Vector '{}': RED verdict should have at least one failing dimension", vector.name
+                    "Vector '{}': RED verdict should have at least one failing dimension",
+                    vector.name
                 );
 
                 // Validate failing dimensions correspond to actual oracle failures
                 if receipt.core.l1_product_oracle.verdict == OracleColor::Red {
                     assert!(
-                        receipt.core.failing_dimensions.contains(&"L1_product_oracle".to_string()),
-                        "Vector '{}': L1 failure should be in failing dimensions", vector.name
+                        receipt
+                            .core
+                            .failing_dimensions
+                            .contains(&"L1_product_oracle".to_string()),
+                        "Vector '{}': L1 failure should be in failing dimensions",
+                        vector.name
                     );
                 }
 
                 if receipt.core.l2_engine_boundary_oracle.verdict == OracleColor::Red {
                     assert!(
-                        receipt.core.failing_dimensions.contains(&"L2_engine_boundary_oracle".to_string()),
-                        "Vector '{}': L2 failure should be in failing dimensions", vector.name
+                        receipt
+                            .core
+                            .failing_dimensions
+                            .contains(&"L2_engine_boundary_oracle".to_string()),
+                        "Vector '{}': L2 failure should be in failing dimensions",
+                        vector.name
                     );
                 }
             }

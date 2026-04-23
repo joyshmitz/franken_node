@@ -3,9 +3,9 @@
 //! Tests conformance with bd-jjm specification for CanonicalSerializer.
 //! Validates all INV-CAN-* invariants against golden fixtures and spec requirements.
 
-use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 // Import the canonical serializer module
 use frankenengine_node::connector::canonical_serializer::TrustObjectType;
@@ -40,7 +40,8 @@ struct InvalidFixture {
 
 /// Load golden schemas from the fixture file
 fn load_golden_schemas() -> Result<BTreeMap<String, GoldenSchema>, Box<dyn std::error::Error>> {
-    let schemas_json = include_str!("../../../tests/golden/canonical_serializer/trust_object_schemas.json");
+    let schemas_json =
+        include_str!("../../../tests/golden/canonical_serializer/trust_object_schemas.json");
     let parsed: Value = serde_json::from_str(schemas_json)?;
 
     let schemas_value = &parsed["schemas"];
@@ -56,7 +57,8 @@ fn load_golden_schemas() -> Result<BTreeMap<String, GoldenSchema>, Box<dyn std::
 
 /// Load test fixtures from the fixture file
 fn load_test_fixtures() -> Result<BTreeMap<String, TestFixture>, Box<dyn std::error::Error>> {
-    let fixtures_json = include_str!("../../../tests/golden/canonical_serializer/test_fixtures.json");
+    let fixtures_json =
+        include_str!("../../../tests/golden/canonical_serializer/test_fixtures.json");
     let parsed: Value = serde_json::from_str(fixtures_json)?;
 
     let fixtures_value = &parsed["test_fixtures"];
@@ -72,7 +74,8 @@ fn load_test_fixtures() -> Result<BTreeMap<String, TestFixture>, Box<dyn std::er
 
 /// Load invalid test fixtures
 fn load_invalid_fixtures() -> Result<BTreeMap<String, InvalidFixture>, Box<dyn std::error::Error>> {
-    let fixtures_json = include_str!("../../../tests/golden/canonical_serializer/test_fixtures.json");
+    let fixtures_json =
+        include_str!("../../../tests/golden/canonical_serializer/test_fixtures.json");
     let parsed: Value = serde_json::from_str(fixtures_json)?;
 
     let fixtures_value = &parsed["invalid_fixtures"];
@@ -89,12 +92,9 @@ fn load_invalid_fixtures() -> Result<BTreeMap<String, InvalidFixture>, Box<dyn s
 /// Main conformance test function
 #[test]
 fn test_canonical_serializer_conformance() {
-    let golden_schemas = load_golden_schemas()
-        .expect("Failed to load golden schemas");
-    let test_fixtures = load_test_fixtures()
-        .expect("Failed to load test fixtures");
-    let invalid_fixtures = load_invalid_fixtures()
-        .expect("Failed to load invalid fixtures");
+    let golden_schemas = load_golden_schemas().expect("Failed to load golden schemas");
+    let test_fixtures = load_test_fixtures().expect("Failed to load test fixtures");
+    let invalid_fixtures = load_invalid_fixtures().expect("Failed to load invalid fixtures");
 
     // Track test results for conformance reporting
     let mut test_results: Vec<(String, String, bool, String)> = Vec::new();
@@ -107,7 +107,7 @@ fn test_canonical_serializer_conformance() {
         "BD_JJM_SCHEMA_001".to_string(),
         "6 trust object types registered".to_string(),
         schema_count_pass,
-        format!("expected: {}, actual: {}", expected_count, all_types.len())
+        format!("expected: {}, actual: {}", expected_count, all_types.len()),
     ));
 
     // Validate each trust object type has correct schema
@@ -128,7 +128,7 @@ fn test_canonical_serializer_conformance() {
             format!("BD_JJM_SCHEMA_{}_EXISTS", type_name.to_uppercase()),
             format!("{} schema exists in golden fixtures", type_name),
             schema_exists,
-            if schema_exists { "found" } else { "missing" }.to_string()
+            if schema_exists { "found" } else { "missing" }.to_string(),
         ));
 
         if let Some(schema) = golden_schema {
@@ -142,7 +142,7 @@ fn test_canonical_serializer_conformance() {
                 format!("BD_JJM_DOMAIN_TAG_{}", type_name.to_uppercase()),
                 format!("{} domain tag is correct", type_name),
                 tag_non_zero && tag_matches,
-                format!("expected: {:?}, actual: {:?}", expected_tag, domain_tag)
+                format!("expected: {:?}, actual: {:?}", expected_tag, domain_tag),
             ));
         }
     }
@@ -165,7 +165,11 @@ fn test_canonical_serializer_conformance() {
             format!("BD_JJM_DETERMINISM_{}", type_name.to_uppercase()),
             format!("{} canonical bytes are valid JSON", type_name),
             bytes_non_empty && bytes_valid_json,
-            format!("bytes_len: {}, valid_json: {}", canonical_bytes.len(), bytes_valid_json)
+            format!(
+                "bytes_len: {}, valid_json: {}",
+                canonical_bytes.len(),
+                bytes_valid_json
+            ),
         ));
     }
 
@@ -185,7 +189,11 @@ fn test_canonical_serializer_conformance() {
                             format!("BD_JJM_ROUND_TRIP_{}", type_name.to_uppercase()),
                             format!("{} round-trip serialization is identical", type_name),
                             round_trip_identical,
-                            format!("original_len: {}, re_serialized_len: {}", canonical_bytes.len(), re_serialized.len())
+                            format!(
+                                "original_len: {}, re_serialized_len: {}",
+                                canonical_bytes.len(),
+                                re_serialized.len()
+                            ),
                         ));
 
                         if !round_trip_identical {
@@ -198,7 +206,7 @@ fn test_canonical_serializer_conformance() {
                             format!("BD_JJM_ROUND_TRIP_{}", type_name.to_uppercase()),
                             format!("{} re-serialization failed", type_name),
                             false,
-                            "serialization error".to_string()
+                            "serialization error".to_string(),
                         ));
                     }
                 }
@@ -209,7 +217,7 @@ fn test_canonical_serializer_conformance() {
                     format!("BD_JJM_ROUND_TRIP_{}", type_name.to_uppercase()),
                     format!("{} canonical bytes parsing failed", type_name),
                     false,
-                    "parse error".to_string()
+                    "parse error".to_string(),
                 ));
             }
         }
@@ -237,14 +245,20 @@ fn test_canonical_serializer_conformance() {
             payload_matches = payload_portion == &fixture.canonical_bytes;
         }
 
-        let preimage_valid = has_minimum_length && version_valid && domain_tag_valid && payload_matches;
+        let preimage_valid =
+            has_minimum_length && version_valid && domain_tag_valid && payload_matches;
 
         test_results.push((
             format!("BD_JJM_PREIMAGE_{}", type_name.to_uppercase()),
             format!("{} signature preimage format is correct", type_name),
             preimage_valid,
-            format!("len: {}, version: {}, domain_tag_valid: {}, payload_matches: {}",
-                preimage_bytes.len(), version_valid, domain_tag_valid, payload_matches)
+            format!(
+                "len: {}, version: {}, domain_tag_valid: {}, payload_matches: {}",
+                preimage_bytes.len(),
+                version_valid,
+                domain_tag_valid,
+                payload_matches
+            ),
         ));
 
         if !preimage_valid {
@@ -260,7 +274,12 @@ fn test_canonical_serializer_conformance() {
         "BD_JJM_NO_FLOAT_001".to_string(),
         "Floating-point payload rejection test exists".to_string(),
         float_rejection_pass,
-        if float_rejection_pass { "test fixture present" } else { "test fixture missing" }.to_string()
+        if float_rejection_pass {
+            "test fixture present"
+        } else {
+            "test fixture missing"
+        }
+        .to_string(),
     ));
 
     // Validate non-canonical input rejection
@@ -271,24 +290,37 @@ fn test_canonical_serializer_conformance() {
         "BD_JJM_NON_CANONICAL_001".to_string(),
         "Non-canonical input rejection test exists".to_string(),
         non_canonical_rejection_pass,
-        if non_canonical_rejection_pass { "test fixture present" } else { "test fixture missing" }.to_string()
+        if non_canonical_rejection_pass {
+            "test fixture present"
+        } else {
+            "test fixture missing"
+        }
+        .to_string(),
     ));
 
     // Generate structured JSON output for CI integration
     for (id, description, passed, details) in &test_results {
         let status = if *passed { "PASS" } else { "FAIL" };
-        eprintln!("{{\"id\":\"{}\",\"status\":\"{}\",\"level\":\"Must\",\"details\":\"{}\"}}",
-            id, status, details);
+        eprintln!(
+            "{{\"id\":\"{}\",\"status\":\"{}\",\"level\":\"Must\",\"details\":\"{}\"}}",
+            id, status, details
+        );
     }
 
     // Generate summary report
     let total_tests = test_results.len();
-    let passed_tests = test_results.iter().filter(|(_, _, passed, _)| *passed).count();
+    let passed_tests = test_results
+        .iter()
+        .filter(|(_, _, passed, _)| *passed)
+        .count();
     let failed_tests = total_tests - passed_tests;
     let compliance_score = (passed_tests as f64 / total_tests as f64) * 100.0;
 
     eprintln!("\n# BD-JJM Canonical Serializer Conformance Report");
-    eprintln!("**Overall**: {}/{} pass ({:.1}% compliance)", passed_tests, total_tests, compliance_score);
+    eprintln!(
+        "**Overall**: {}/{} pass ({:.1}% compliance)",
+        passed_tests, total_tests, compliance_score
+    );
 
     if failed_tests > 0 {
         eprintln!("\n## Failed Requirements:");
@@ -301,13 +333,31 @@ fn test_canonical_serializer_conformance() {
 
     // Additional invariant validation summary
     eprintln!("\n## Invariant Validation Summary:");
-    eprintln!("- **INV-CAN-DETERMINISTIC**: {}", if determinism_pass { "PASS" } else { "FAIL" });
-    eprintln!("- **INV-CAN-NO-FLOAT**: {}", if float_rejection_pass { "PASS (test present)" } else { "FAIL" });
-    eprintln!("- **INV-CAN-DOMAIN-TAG**: {}", if preimage_pass { "PASS" } else { "FAIL" });
-    eprintln!("- **INV-CAN-NO-BYPASS**: {} (static analysis required)", "MANUAL_CHECK");
+    eprintln!(
+        "- **INV-CAN-DETERMINISTIC**: {}",
+        if determinism_pass { "PASS" } else { "FAIL" }
+    );
+    eprintln!(
+        "- **INV-CAN-NO-FLOAT**: {}",
+        if float_rejection_pass {
+            "PASS (test present)"
+        } else {
+            "FAIL"
+        }
+    );
+    eprintln!(
+        "- **INV-CAN-DOMAIN-TAG**: {}",
+        if preimage_pass { "PASS" } else { "FAIL" }
+    );
+    eprintln!(
+        "- **INV-CAN-NO-BYPASS**: {} (static analysis required)",
+        "MANUAL_CHECK"
+    );
 
     // Fail test if any conformance requirements fail
-    assert_eq!(failed_tests, 0,
+    assert_eq!(
+        failed_tests, 0,
         "{} out of {} BD-JJM conformance requirements failed (compliance: {:.1}%)",
-        failed_tests, total_tests, compliance_score);
+        failed_tests, total_tests, compliance_score
+    );
 }
