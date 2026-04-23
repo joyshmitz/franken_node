@@ -21,6 +21,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use chrono::DateTime;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
@@ -279,6 +280,14 @@ pub fn validate_manifest(manifest: &CapsuleManifest) -> Result<(), CapsuleError>
             "created_at is empty".into(),
         ));
     }
+    if manifest.created_at != manifest.created_at.trim() {
+        return Err(CapsuleError::ManifestIncomplete(
+            "created_at must not contain leading or trailing whitespace".into(),
+        ));
+    }
+    DateTime::parse_from_rfc3339(&manifest.created_at).map_err(|_| {
+        CapsuleError::ManifestIncomplete("created_at must be a valid RFC3339 timestamp".into())
+    })?;
     if manifest.creator_identity.is_empty() {
         return Err(CapsuleError::ManifestIncomplete(
             "creator_identity is empty".into(),
@@ -565,6 +574,19 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_manifest_rejects_malformed_created_at() {
+        let mut capsule = build_reference_capsule();
+        capsule.manifest.created_at = "2026-02-30T00:00:00Z".to_string();
+        match validate_manifest(&capsule.manifest) {
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("created_at"));
+                assert!(msg.contains("RFC3339"));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_verify_signature_pass() {
         let capsule = build_reference_capsule();
         assert!(verify_signature(&capsule).is_ok());
@@ -643,6 +665,20 @@ mod tests {
         match replay(&capsule, "verifier://v1") {
             Err(CapsuleError::ManifestIncomplete(msg)) => {
                 assert!(msg.contains("created_at"));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_replay_rejects_malformed_created_at() {
+        let mut capsule = build_reference_capsule();
+        capsule.manifest.created_at = "2026-13-01T00:00:00Z".to_string();
+        sign_capsule(&mut capsule);
+        match replay(&capsule, "verifier://v1") {
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("created_at"));
+                assert!(msg.contains("RFC3339"));
             }
             other => panic!("expected ManifestIncomplete, got {other:?}"),
         }
@@ -1080,6 +1116,15 @@ mod tests {
             }
             other => panic!("expected ManifestIncomplete for whitespace-only claim_type, got {other:?}"),
         }
+
+        let mut capsule3 = build_reference_capsule();
+        capsule3.manifest.created_at = "\n\t  ".to_string();
+        match validate_manifest(&capsule3.manifest) {
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("created_at"));
+            }
+            other => panic!("expected ManifestIncomplete for whitespace-only created_at, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1109,6 +1154,19 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_manifest_rejects_whitespace_padded_created_at() {
+        let mut capsule = build_reference_capsule();
+        capsule.manifest.created_at = " 2026-04-01T00:00:00Z ".to_string();
+
+        match validate_manifest(&capsule.manifest) {
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("created_at"));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_replay_rejects_whitespace_padded_capsule_id() {
         let mut capsule = build_reference_capsule();
         capsule.manifest.capsule_id = " capsule-ref-001 ".to_string();
@@ -1131,6 +1189,20 @@ mod tests {
         match replay(&capsule, "verifier://v1") {
             Err(CapsuleError::ManifestIncomplete(msg)) => {
                 assert!(msg.contains("claim_type"));
+            }
+            other => panic!("expected ManifestIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_replay_rejects_whitespace_padded_created_at() {
+        let mut capsule = build_reference_capsule();
+        capsule.manifest.created_at = " 2026-04-01T00:00:00Z ".to_string();
+        sign_capsule(&mut capsule);
+
+        match replay(&capsule, "verifier://v1") {
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("created_at"));
             }
             other => panic!("expected ManifestIncomplete, got {other:?}"),
         }
