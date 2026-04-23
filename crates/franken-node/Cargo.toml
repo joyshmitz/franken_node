@@ -205,6 +205,11 @@ name = "registry_cli_wire_conformance"
 path = "tests/registry_cli_wire_conformance.rs"
 
 [[test]]
+name = "registry_staking_governance_conformance"
+path = "tests/registry_staking_governance_conformance.rs"
+required-features = ["extended-surfaces"]
+
+[[test]]
 name = "trust_object_id_real_inputs"
 path = "tests/trust_object_id_real_inputs.rs"
 
