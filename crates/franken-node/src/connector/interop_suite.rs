@@ -144,7 +144,7 @@ pub fn check_serialization(
     output: &str,
     expected: &str,
 ) -> InteropResult {
-    if output == expected {
+    if crate::security::constant_time::ct_eq(output, expected) {
         InteropResult {
             class: InteropClass::Serialization,
             case_id: case_id.to_string(),
@@ -167,7 +167,7 @@ pub fn check_serialization(
 
 /// Check object-ID determinism (INV-IOP-OBJECT-ID).
 pub fn check_object_id(case_id: &str, id_a: &str, id_b: &str) -> InteropResult {
-    if id_a == id_b {
+    if crate::security::constant_time::ct_eq(id_a, id_b) {
         InteropResult {
             class: InteropClass::ObjectId,
             case_id: case_id.to_string(),
@@ -913,5 +913,64 @@ mod tests {
         assert!(codes.contains(&"IOP_SIGNATURE_INVALID"));
         assert!(codes.contains(&"IOP_REVOCATION_DISAGREEMENT"));
         assert!(codes.contains(&"IOP_SOURCE_DIVERSITY_INSUFFICIENT"));
+    }
+
+    #[test]
+    fn object_id_comparison_timing_equivalent_across_positions() {
+        // Regression test: constant-time comparison prevents timing attacks on object IDs
+        // that may be used for revocation tokens or security-critical identifiers
+        let base_id = "revocation-token-abc123def456789xyz";
+
+        // Test differences at various positions (beginning, middle, end)
+        let test_cases = [
+            "Xevocation-token-abc123def456789xyz", // difference at position 0
+            "revocation-Xoken-abc123def456789xyz", // difference at position 11
+            "revocation-token-Xbc123def456789xyz", // difference at position 17
+            "revocation-token-abc123def456789xyX", // difference at position 34 (last)
+        ];
+
+        for (i, wrong_id) in test_cases.iter().enumerate() {
+            let result = check_object_id(&format!("timing-test-{}", i), base_id, wrong_id);
+
+            // All mismatches should be rejected regardless of position
+            assert!(
+                !result.passed,
+                "Object ID mismatch at position {} should be rejected: base={}, wrong={}",
+                i, base_id, wrong_id
+            );
+            assert_eq!(result.class, InteropClass::ObjectId);
+            assert!(result.reproducer.is_some());
+        }
+
+        // Verify that exact match still works
+        let exact_match = check_object_id("exact-match", base_id, base_id);
+        assert!(exact_match.passed);
+        assert!(exact_match.reproducer.is_none());
+    }
+
+    #[test]
+    fn object_id_revocation_token_timing_resistance() {
+        // Test that revocation token comparison is timing-resistant
+        let valid_token = "revoke:cert:sha256:abc123def456789xyz012345678901234567890abcdef";
+
+        // These should all fail with timing equivalence (same string length, different positions)
+        let invalid_tokens = [
+            "Xevoke:cert:sha256:abc123def456789xyz012345678901234567890abcdef", // byte 0
+            "revoke:Xert:sha256:abc123def456789xyz012345678901234567890abcdef", // byte 7
+            "revoke:cert:sha256:Xbc123def456789xyz012345678901234567890abcdef", // byte 20
+            "revoke:cert:sha256:abc123def456789xyz012345678901234567890abcdeX", // last byte
+        ];
+
+        for invalid_token in &invalid_tokens {
+            assert_eq!(valid_token.len(), invalid_token.len(), "Test tokens must be same length for timing test");
+
+            let result = check_object_id("revocation-timing", valid_token, invalid_token);
+            assert!(
+                !result.passed,
+                "Invalid revocation token should be rejected: {}",
+                invalid_token
+            );
+            assert_eq!(result.class, InteropClass::ObjectId);
+        }
     }
 }

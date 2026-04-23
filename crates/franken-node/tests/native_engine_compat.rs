@@ -53,6 +53,39 @@ fn create_mock_engine_binary(dir: &Path) -> PathBuf {
     batch_path
 }
 
+/// Create a slow mock franken-engine binary for timeout testing
+fn create_slow_mock_engine_binary(dir: &Path, delay_secs: u64) -> PathBuf {
+    let engine_path = dir.join("slow-franken-engine");
+    #[cfg(unix)]
+    {
+        let script = format!(
+            "#!/bin/bash\necho 'Starting slow mock engine'\nsleep {}\necho 'Mock engine output'\nexit 0\n",
+            delay_secs
+        );
+        std::fs::write(&engine_path, script).expect("Failed to write slow mock engine");
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&engine_path)
+            .expect("Failed to get metadata")
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&engine_path, perms).expect("Failed to set permissions");
+    }
+    #[cfg(windows)]
+    {
+        let batch_path = dir.join("slow-franken-engine.bat");
+        let script = format!(
+            "@echo off\necho Starting slow mock engine\ntimeout /t {} /nobreak >nul\necho Mock engine output\nexit /b 0\n",
+            delay_secs
+        );
+        std::fs::write(&batch_path, script).expect("Failed to write slow mock engine batch");
+        batch_path
+    }
+    #[cfg(unix)]
+    engine_path
+    #[cfg(windows)]
+    batch_path
+}
+
 #[test]
 #[cfg(feature = "engine")]
 fn test_native_engine_execution_with_telemetry() {
