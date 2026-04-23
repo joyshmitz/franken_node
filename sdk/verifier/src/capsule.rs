@@ -324,6 +324,14 @@ fn validate_verifier_identity(verifier_identity: &str) -> Result<(), CapsuleErro
             "verifier_identity must include a non-empty verifier name".into(),
         ));
     }
+    if !remainder
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+    {
+        return Err(CapsuleError::AccessDenied(
+            "verifier_identity must include only ASCII letters, digits, '.', '-', and '_'".into(),
+        ));
+    }
     Ok(())
 }
 
