@@ -235,6 +235,11 @@ name = "category_shift_real_inputs"
 path = "tests/category_shift_real_inputs.rs"
 
 [[test]]
+name = "claims_compiler_metamorphic"
+path = "tests/claims_compiler_metamorphic.rs"
+required-features = ["extended-surfaces"]
+
+[[test]]
 name = "capability_artifact_real_inputs"
 path = "tests/capability_artifact_real_inputs.rs"
 
