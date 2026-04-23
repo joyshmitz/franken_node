@@ -784,7 +784,7 @@ impl DporScheduleGate {
             let result = self.explore_scenario(name, &no_violation_checker)?;
             total_schedules = total_schedules.saturating_add(result.explored_count);
             total_violations = total_violations.saturating_add(result.violations.len());
-            per_scenario.push(result);
+            push_bounded(&mut per_scenario, result, MAX_REGISTERED_SCENARIOS);
         }
 
         let verdict = if total_violations == 0 {
@@ -838,7 +838,7 @@ impl DporScheduleGate {
             let result = self.explore_scenario(name, check_fn)?;
             total_schedules = total_schedules.saturating_add(result.explored_count);
             total_violations = total_violations.saturating_add(result.violations.len());
-            per_scenario.push(result);
+            push_bounded(&mut per_scenario, result, MAX_REGISTERED_SCENARIOS);
         }
 
         let verdict = if total_violations == 0 {
