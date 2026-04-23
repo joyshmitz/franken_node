@@ -12,6 +12,7 @@ use frankenengine_engine::runtime_config::RuntimeConfig as EngineRuntimeConfig;
 use crate::{
     ActionableError,
     config::{Config, PreferredRuntime, Profile},
+    extensions::artifact_contract::CapabilityEntry,
 };
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -1322,6 +1323,117 @@ impl EngineDispatcher {
         result
     }
 
+    /// Map franken-node Profile to franken-engine capability set.
+    ///
+    /// # Security Policy Mapping:
+    ///
+    /// ## Profile::Strict - Minimal Attack Surface
+    /// - `fs.read`: Read-only file access (100 ops/epoch) - minimal for app loading
+    /// - `runtime.timeout`: Basic timeout operations (50 ops/epoch) - execution control
+    ///
+    /// ## Profile::Balanced - Standard Production Use
+    /// - `fs.read`: Standard file reading (500 ops/epoch) - normal app operations
+    /// - `net.egress`: Outbound network calls (100 ops/epoch) - API integrations
+    /// - `crypto.random`: Secure random generation (200 ops/epoch) - security operations
+    /// - `runtime.timeout`: Timeout management (100 ops/epoch) - robust execution
+    ///
+    /// ## Profile::LegacyRisky - Maximum Compatibility
+    /// - `fs.read`: Unrestricted file reading (2000 ops/epoch) - legacy app support
+    /// - `fs.write`: File writing capabilities (1000 ops/epoch) - data persistence
+    /// - `net.egress`: Broad network access (500 ops/epoch) - external integrations
+    /// - `net.ingress`: Inbound connections (100 ops/epoch) - server capabilities
+    /// - `crypto.random`: Cryptographic operations (1000 ops/epoch) - security features
+    /// - `crypto.sign`: Digital signing (50 ops/epoch) - authentication workflows
+    /// - `system.env`: Environment access (200 ops/epoch) - configuration reading
+    /// - `runtime.spawn`: Process spawning (50 ops/epoch) - subprocess execution
+    /// - `runtime.timeout`: Extended timeout control (500 ops/epoch) - long-running ops
+    #[cfg(feature = "engine")]
+    fn map_profile_to_capabilities(profile: Profile) -> Vec<CapabilityEntry> {
+        match profile {
+            Profile::Strict => vec![
+                CapabilityEntry {
+                    capability_id: "fs.read".to_string(),
+                    scope: "filesystem:read".to_string(),
+                    max_calls_per_epoch: 100,
+                },
+                CapabilityEntry {
+                    capability_id: "runtime.timeout".to_string(),
+                    scope: "runtime:timeout".to_string(),
+                    max_calls_per_epoch: 50,
+                },
+            ],
+            Profile::Balanced => vec![
+                CapabilityEntry {
+                    capability_id: "fs.read".to_string(),
+                    scope: "filesystem:read".to_string(),
+                    max_calls_per_epoch: 500,
+                },
+                CapabilityEntry {
+                    capability_id: "net.egress".to_string(),
+                    scope: "network:egress".to_string(),
+                    max_calls_per_epoch: 100,
+                },
+                CapabilityEntry {
+                    capability_id: "crypto.random".to_string(),
+                    scope: "crypto:random".to_string(),
+                    max_calls_per_epoch: 200,
+                },
+                CapabilityEntry {
+                    capability_id: "runtime.timeout".to_string(),
+                    scope: "runtime:timeout".to_string(),
+                    max_calls_per_epoch: 100,
+                },
+            ],
+            Profile::LegacyRisky => vec![
+                CapabilityEntry {
+                    capability_id: "fs.read".to_string(),
+                    scope: "filesystem:read".to_string(),
+                    max_calls_per_epoch: 2000,
+                },
+                CapabilityEntry {
+                    capability_id: "fs.write".to_string(),
+                    scope: "filesystem:write".to_string(),
+                    max_calls_per_epoch: 1000,
+                },
+                CapabilityEntry {
+                    capability_id: "net.egress".to_string(),
+                    scope: "network:egress".to_string(),
+                    max_calls_per_epoch: 500,
+                },
+                CapabilityEntry {
+                    capability_id: "net.ingress".to_string(),
+                    scope: "network:ingress".to_string(),
+                    max_calls_per_epoch: 100,
+                },
+                CapabilityEntry {
+                    capability_id: "crypto.random".to_string(),
+                    scope: "crypto:random".to_string(),
+                    max_calls_per_epoch: 1000,
+                },
+                CapabilityEntry {
+                    capability_id: "crypto.sign".to_string(),
+                    scope: "crypto:sign".to_string(),
+                    max_calls_per_epoch: 50,
+                },
+                CapabilityEntry {
+                    capability_id: "system.env".to_string(),
+                    scope: "system:env".to_string(),
+                    max_calls_per_epoch: 200,
+                },
+                CapabilityEntry {
+                    capability_id: "runtime.spawn".to_string(),
+                    scope: "runtime:spawn".to_string(),
+                    max_calls_per_epoch: 50,
+                },
+                CapabilityEntry {
+                    capability_id: "runtime.timeout".to_string(),
+                    scope: "runtime:timeout".to_string(),
+                    max_calls_per_epoch: 500,
+                },
+            ],
+        }
+    }
+
     /// Execute code using native franken_engine API instead of external process.
     /// Returns the same interface as external execution for compatibility.
     #[cfg(feature = "engine")]
@@ -1358,7 +1470,7 @@ impl EngineDispatcher {
             ),
             source: source_code,
             source_file: Some(app_path.to_string_lossy().to_string()),
-            capabilities: vec![], // bd-19c98: Map from franken-node policy
+            capabilities: map_profile_to_capabilities(config.profile), // Profile-based capability mapping
             version: env!("CARGO_PKG_VERSION").to_string(), // Extract from package metadata
             metadata: std::collections::BTreeMap::new(),
         };
