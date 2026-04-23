@@ -23,14 +23,14 @@
 
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::connector::control_channel::Direction;
 use crate::control_plane::control_epoch::ControlEpoch;
-use crate::control_plane::key_role_separation::KeyRole;
+use crate::control_plane::key_role_separation::{KeyRole, KeyRoleRegistry, KeyRoleSeparationError};
 use crate::security::constant_time;
-use crate::security::epoch_scoped_keys::{RootSecret, SIGNATURE_LEN, derive_epoch_key};
+use crate::security::epoch_scoped_keys::{derive_epoch_key, RootSecret, SIGNATURE_LEN};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -747,6 +747,11 @@ pub struct SessionManager {
     root_secret: RootSecret,
     /// Current epoch for key scoping.
     epoch: ControlEpoch,
+    /// Authoritative registry for key-role bindings used during session establishment.
+    key_role_registry: KeyRoleRegistry,
+    /// Unit-test compatibility only; production and integration builds fail closed
+    /// when no authoritative registry has been configured.
+    allow_unregistered_key_roles: bool,
     sessions: BTreeMap<String, AuthenticatedSession>,
     /// Per-session, per-direction replay windows (for replay_window > 0).
     replay_windows: BTreeMap<(String, MessageDirection), BTreeSet<u64>>,
@@ -760,10 +765,36 @@ impl SessionManager {
             config,
             root_secret,
             epoch,
+            key_role_registry: KeyRoleRegistry::new(),
+            allow_unregistered_key_roles: cfg!(test),
             sessions: BTreeMap::new(),
             replay_windows: BTreeMap::new(),
             events: Vec::new(),
         }
+    }
+
+    /// Create a new SessionManager with an authoritative key-role registry.
+    pub fn with_key_role_registry(
+        config: SessionConfig,
+        root_secret: RootSecret,
+        epoch: ControlEpoch,
+        key_role_registry: KeyRoleRegistry,
+    ) -> Self {
+        Self {
+            config,
+            root_secret,
+            epoch,
+            key_role_registry,
+            allow_unregistered_key_roles: false,
+            sessions: BTreeMap::new(),
+            replay_windows: BTreeMap::new(),
+            events: Vec::new(),
+        }
+    }
+
+    /// Mutably access the authoritative key-role registry before accepting sessions.
+    pub fn key_role_registry_mut(&mut self) -> &mut KeyRoleRegistry {
+        &mut self.key_role_registry
     }
 
     fn push_event(&mut self, event: SessionEvent) {
@@ -838,12 +869,84 @@ impl SessionManager {
         }
     }
 
+    fn map_key_role_error(
+        session_id: &str,
+        expected_role: KeyRole,
+        key_id: &str,
+        error: KeyRoleSeparationError,
+    ) -> SessionError {
+        match error {
+            KeyRoleSeparationError::KeyRoleMismatch { actual_role, .. } => {
+                SessionError::RoleMismatch {
+                    session_id: session_id.to_string(),
+                    expected_role: expected_role.to_string(),
+                    actual_role: actual_role.to_string(),
+                }
+            }
+            KeyRoleSeparationError::KeyExpired { role, .. } => SessionError::RoleMismatch {
+                session_id: session_id.to_string(),
+                expected_role: expected_role.to_string(),
+                actual_role: format!("expired {role} key {key_id}"),
+            },
+            KeyRoleSeparationError::KeyNotFound { .. } => SessionError::RoleMismatch {
+                session_id: session_id.to_string(),
+                expected_role: expected_role.to_string(),
+                actual_role: format!("missing key {key_id}"),
+            },
+            KeyRoleSeparationError::RoleSeparationViolation { existing_role, .. } => {
+                SessionError::RoleMismatch {
+                    session_id: session_id.to_string(),
+                    expected_role: expected_role.to_string(),
+                    actual_role: existing_role.to_string(),
+                }
+            }
+            other => SessionError::RoleMismatch {
+                session_id: session_id.to_string(),
+                expected_role: expected_role.to_string(),
+                actual_role: other.code().to_string(),
+            },
+        }
+    }
+
+    fn validate_session_key_ids(
+        &mut self,
+        session_id: &str,
+        encryption_key_id: &str,
+        signing_key_id: &str,
+        timestamp: u64,
+        trace_id: &str,
+    ) -> Result<(), SessionError> {
+        if self.key_role_registry.active_count() == 0 {
+            if self.allow_unregistered_key_roles {
+                return Self::validate_key_roles(KeyRole::Encryption, KeyRole::Signing);
+            }
+            return Err(SessionError::RoleMismatch {
+                session_id: session_id.to_string(),
+                expected_role: "configured KeyRoleRegistry".to_string(),
+                actual_role: "unconfigured".to_string(),
+            });
+        }
+
+        self.key_role_registry
+            .verify_role(encryption_key_id, KeyRole::Encryption, timestamp, trace_id)
+            .map_err(|err| {
+                Self::map_key_role_error(session_id, KeyRole::Encryption, encryption_key_id, err)
+            })?;
+        self.key_role_registry
+            .verify_role(signing_key_id, KeyRole::Signing, timestamp, trace_id)
+            .map_err(|err| {
+                Self::map_key_role_error(session_id, KeyRole::Signing, signing_key_id, err)
+            })?;
+
+        Ok(())
+    }
+
     /// Establish a new authenticated session.
     ///
     /// # INV-SCC-ROLE-KEYS
-    /// Caller must supply the correct role-bound key IDs. The manager
-    /// records them but the actual key-role verification is done at a
-    /// higher layer (KeyRoleRegistry).
+    /// The manager verifies caller-supplied key IDs against its authoritative
+    /// KeyRoleRegistry before activating the session. Missing, swapped, expired,
+    /// or cross-role keys fail closed with `SessionError::RoleMismatch`.
     ///
     /// # INV-SCC-HANDSHAKE-BIND
     /// The caller must provide a `handshake_mac` computed over the
@@ -898,11 +1001,28 @@ impl SessionManager {
             self.push_event(SessionEvent {
                 event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
                 session_id: session_id.clone(),
-                trace_id,
+                trace_id: trace_id.clone(),
                 detail: "duplicate live session id".to_string(),
                 timestamp,
             });
             return Err(SessionError::DuplicateLiveSession { session_id });
+        }
+
+        if let Err(err) = self.validate_session_key_ids(
+            &session_id,
+            &encryption_key_id,
+            &signing_key_id,
+            timestamp,
+            &trace_id,
+        ) {
+            self.push_event(SessionEvent {
+                event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
+                session_id: session_id.clone(),
+                trace_id,
+                detail: format!("key role validation failed: {err}"),
+                timestamp,
+            });
+            return Err(err);
         }
 
         let active_sessions = self.active_session_count();
@@ -1315,6 +1435,63 @@ pub struct SessionLifecycleScenario {
     pub terminate_at: Option<u64>,
 }
 
+fn session_key_material(key_id: &str, role: KeyRole) -> Vec<u8> {
+    let mut hasher = Sha256::new();
+    hasher.update(b"session_auth_key_role_binding_v1:");
+    hasher.update(role.tag());
+    let len = u64::try_from(key_id.len()).unwrap_or(u64::MAX);
+    hasher.update(len.to_le_bytes());
+    hasher.update(key_id.as_bytes());
+    hasher.finalize().to_vec()
+}
+
+fn session_key_role_registry(
+    scenario: &SessionLifecycleScenario,
+) -> Result<KeyRoleRegistry, SessionError> {
+    let mut registry = KeyRoleRegistry::new();
+    let bound_at = scenario.established_at.saturating_sub(1);
+    let max_validity_seconds = u64::MAX.saturating_sub(bound_at);
+
+    registry
+        .bind(
+            &scenario.encryption_key_id,
+            KeyRole::Encryption,
+            session_key_material(&scenario.encryption_key_id, KeyRole::Encryption),
+            &scenario.server_identity,
+            bound_at,
+            max_validity_seconds,
+            &scenario.trace_id,
+        )
+        .map_err(|err| {
+            SessionManager::map_key_role_error(
+                &scenario.session_id,
+                KeyRole::Encryption,
+                &scenario.encryption_key_id,
+                err,
+            )
+        })?;
+    registry
+        .bind(
+            &scenario.signing_key_id,
+            KeyRole::Signing,
+            session_key_material(&scenario.signing_key_id, KeyRole::Signing),
+            &scenario.server_identity,
+            bound_at,
+            max_validity_seconds,
+            &scenario.trace_id,
+        )
+        .map_err(|err| {
+            SessionManager::map_key_role_error(
+                &scenario.session_id,
+                KeyRole::Signing,
+                &scenario.signing_key_id,
+                err,
+            )
+        })?;
+
+    Ok(registry)
+}
+
 /// Execute a real session lifecycle from caller-supplied inputs.
 ///
 /// Unlike the deterministic fixture helpers, this public API does not synthesize
@@ -1323,10 +1500,12 @@ pub struct SessionLifecycleScenario {
 pub fn session_lifecycle_events(
     scenario: SessionLifecycleScenario,
 ) -> Result<Vec<SessionEvent>, SessionError> {
-    let mut manager = SessionManager::new(
+    let key_role_registry = session_key_role_registry(&scenario)?;
+    let mut manager = SessionManager::with_key_role_registry(
         scenario.config,
         scenario.root_secret.clone(),
         scenario.epoch,
+        key_role_registry,
     );
     let handshake_mac = sign_handshake(
         &scenario.session_id,
@@ -1428,7 +1607,35 @@ pub fn demo_windowed_replay() -> Vec<SessionEvent> {
     };
     let root_secret = RootSecret::from_bytes([0xBB; 32]);
     let epoch = ControlEpoch::from(1u64);
-    let mut mgr = SessionManager::new(config, root_secret.clone(), epoch);
+    let mut key_role_registry = KeyRoleRegistry::new();
+    key_role_registry
+        .bind(
+            "enc-key-002",
+            KeyRole::Encryption,
+            session_key_material("enc-key-002", KeyRole::Encryption),
+            "server-2",
+            1_999_999,
+            u64::MAX.saturating_sub(1_999_999),
+            "trace-002",
+        )
+        .expect("fixture encryption key role binding should be valid");
+    key_role_registry
+        .bind(
+            "sign-key-002",
+            KeyRole::Signing,
+            session_key_material("sign-key-002", KeyRole::Signing),
+            "server-2",
+            1_999_999,
+            u64::MAX.saturating_sub(1_999_999),
+            "trace-002",
+        )
+        .expect("fixture signing key role binding should be valid");
+    let mut mgr = SessionManager::with_key_role_registry(
+        config,
+        root_secret.clone(),
+        epoch,
+        key_role_registry,
+    );
 
     let handshake_mac = sign_handshake(
         "sess-win",
@@ -2040,10 +2247,9 @@ mod tests {
         establish_test_session(&mut mgr, "s1");
 
         let mac0 = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h0");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 0, "h0", &mac0, 2_000, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Send, 0, "h0", &mac0, 2_000, "t")
+            .is_ok());
 
         let rs = test_root_secret();
         let epoch = test_epoch();
@@ -2068,14 +2274,13 @@ mod tests {
         assert_eq!(mgr.get_session("s1").unwrap().send_seq, 1);
 
         let mac1 = sign_msg(&mgr, "s1", MessageDirection::Send, 1, "h1");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 1, "h1", &mac1, 4_000, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Send, 1, "h1", &mac1, 4_000, "t")
+            .is_ok());
 
         let stale_mac0 = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h0");
-        assert!(
-            mgr.process_message(
+        assert!(mgr
+            .process_message(
                 "s1",
                 MessageDirection::Send,
                 0,
@@ -2084,8 +2289,7 @@ mod tests {
                 5_000,
                 "t"
             )
-            .is_err()
-        );
+            .is_err());
     }
 
     #[test]
@@ -2381,23 +2585,20 @@ mod tests {
         establish_test_session(&mut mgr, "s1");
 
         let mac0 = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h0");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 0, "h0", &mac0, 2000, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Send, 0, "h0", &mac0, 2000, "t")
+            .is_ok());
 
         let mac1 = sign_msg(&mgr, "s1", MessageDirection::Send, 1, "h1");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 1, "h1", &mac1, 3000, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Send, 1, "h1", &mac1, 3000, "t")
+            .is_ok());
 
         // seq 1 again should fail (expected 2) — even with valid MAC for seq 1
         let mac1_dup = sign_msg(&mgr, "s1", MessageDirection::Send, 1, "h1");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 1, "h1", &mac1_dup, 4000, "t")
-                .is_err()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Send, 1, "h1", &mac1_dup, 4000, "t")
+            .is_err());
     }
 
     #[test]
@@ -2406,17 +2607,15 @@ mod tests {
         establish_test_session(&mut mgr, "s1");
 
         let mac0 = sign_msg(&mgr, "s1", MessageDirection::Receive, 0, "h0");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Receive, 0, "h0", &mac0, 2000, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Receive, 0, "h0", &mac0, 2000, "t")
+            .is_ok());
 
         // Skip seq 1 — should fail
         let mac2 = sign_msg(&mgr, "s1", MessageDirection::Receive, 2, "h2");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Receive, 2, "h2", &mac2, 3000, "t")
-                .is_err()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Receive, 2, "h2", &mac2, 3000, "t")
+            .is_err());
     }
 
     #[test]
@@ -2425,28 +2624,24 @@ mod tests {
         establish_test_session(&mut mgr, "s1");
 
         let mac_s0 = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 0, "h", &mac_s0, 1, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Send, 0, "h", &mac_s0, 1, "t")
+            .is_ok());
 
         let mac_r0 = sign_msg(&mgr, "s1", MessageDirection::Receive, 0, "h");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Receive, 0, "h", &mac_r0, 2, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Receive, 0, "h", &mac_r0, 2, "t")
+            .is_ok());
 
         let mac_s1 = sign_msg(&mgr, "s1", MessageDirection::Send, 1, "h");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 1, "h", &mac_s1, 3, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Send, 1, "h", &mac_s1, 3, "t")
+            .is_ok());
 
         let mac_r1 = sign_msg(&mgr, "s1", MessageDirection::Receive, 1, "h");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Receive, 1, "h", &mac_r1, 4, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Receive, 1, "h", &mac_r1, 4, "t")
+            .is_ok());
     }
 
     #[test]
@@ -2456,8 +2651,8 @@ mod tests {
         mgr.sessions.get_mut("s1").unwrap().send_seq = u64::MAX - 1;
 
         let final_mac = sign_msg(&mgr, "s1", MessageDirection::Send, u64::MAX - 1, "h-final");
-        assert!(
-            mgr.process_message(
+        assert!(mgr
+            .process_message(
                 "s1",
                 MessageDirection::Send,
                 u64::MAX - 1,
@@ -2466,14 +2661,13 @@ mod tests {
                 2_000,
                 "t"
             )
-            .is_ok()
-        );
+            .is_ok());
         assert_eq!(mgr.get_session("s1").unwrap().send_seq, u64::MAX);
         assert!(!mgr.get_session("s1").unwrap().send_seq_exhausted);
 
         let terminal_mac = sign_msg(&mgr, "s1", MessageDirection::Send, u64::MAX, "h-terminal");
-        assert!(
-            mgr.process_message(
+        assert!(mgr
+            .process_message(
                 "s1",
                 MessageDirection::Send,
                 u64::MAX,
@@ -2482,8 +2676,7 @@ mod tests {
                 3_000,
                 "t",
             )
-            .is_ok()
-        );
+            .is_ok());
         assert_eq!(mgr.get_session("s1").unwrap().send_seq, u64::MAX);
         assert!(mgr.get_session("s1").unwrap().send_seq_exhausted);
 
@@ -2530,8 +2723,8 @@ mod tests {
             u64::MAX - 1,
             "h-final",
         );
-        assert!(
-            mgr.process_message(
+        assert!(mgr
+            .process_message(
                 "s1",
                 MessageDirection::Receive,
                 u64::MAX - 1,
@@ -2540,8 +2733,7 @@ mod tests {
                 2_000,
                 "t"
             )
-            .is_ok()
-        );
+            .is_ok());
         assert_eq!(mgr.get_session("s1").unwrap().recv_seq, u64::MAX);
         assert!(!mgr.get_session("s1").unwrap().recv_seq_exhausted);
 
@@ -2552,8 +2744,8 @@ mod tests {
             u64::MAX,
             "h-terminal",
         );
-        assert!(
-            mgr.process_message(
+        assert!(mgr
+            .process_message(
                 "s1",
                 MessageDirection::Receive,
                 u64::MAX,
@@ -2562,8 +2754,7 @@ mod tests {
                 3_000,
                 "t",
             )
-            .is_ok()
-        );
+            .is_ok());
         assert_eq!(mgr.get_session("s1").unwrap().recv_seq, u64::MAX);
         assert!(mgr.get_session("s1").unwrap().recv_seq_exhausted);
 
@@ -2725,22 +2916,19 @@ mod tests {
         establish_test_session(&mut mgr, "s1");
 
         let mac0 = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 0, "h", &mac0, 1, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Send, 0, "h", &mac0, 1, "t")
+            .is_ok());
 
         let mac2 = sign_msg(&mgr, "s1", MessageDirection::Send, 2, "h");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 2, "h", &mac2, 2, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Send, 2, "h", &mac2, 2, "t")
+            .is_ok());
 
         let mac1 = sign_msg(&mgr, "s1", MessageDirection::Send, 1, "h");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 1, "h", &mac1, 3, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Send, 1, "h", &mac1, 3, "t")
+            .is_ok());
     }
 
     #[test]
@@ -2756,10 +2944,9 @@ mod tests {
         establish_test_session(&mut mgr, "s1");
 
         let mac0 = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 0, "h", &mac0, 1, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Send, 0, "h", &mac0, 1, "t")
+            .is_ok());
 
         // Replay seq 0
         let mac0_dup = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
@@ -2786,18 +2973,16 @@ mod tests {
         for seq in 0..6 {
             let ph = format!("h{seq}");
             let mac = sign_msg(&mgr, "s1", MessageDirection::Send, seq, &ph);
-            assert!(
-                mgr.process_message("s1", MessageDirection::Send, seq, &ph, &mac, 100 + seq, "t")
-                    .is_ok()
-            );
+            assert!(mgr
+                .process_message("s1", MessageDirection::Send, seq, &ph, &mac, 100 + seq, "t")
+                .is_ok());
         }
 
         // Seq 2 should be rejected (below floor)
         let mac_old = sign_msg(&mgr, "s1", MessageDirection::Send, 2, "h2");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 2, "h2", &mac_old, 200, "t")
-                .is_err()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Send, 2, "h2", &mac_old, 200, "t")
+            .is_err());
     }
 
     #[test]
@@ -2822,8 +3007,8 @@ mod tests {
         mgr.sessions.get_mut("s1").expect("session exists").send_seq = sequence;
 
         let mac = sign_msg(&mgr, "s1", MessageDirection::Send, sequence, "h-cap");
-        assert!(
-            mgr.process_message(
+        assert!(mgr
+            .process_message(
                 "s1",
                 MessageDirection::Send,
                 sequence,
@@ -2832,8 +3017,7 @@ mod tests {
                 300,
                 "trace-cap"
             )
-            .is_ok()
-        );
+            .is_ok());
 
         let window_size = mgr
             .replay_windows
@@ -2945,24 +3129,21 @@ mod tests {
         establish_test_session(&mut mgr, "s2");
 
         let mac_s1 = sign_msg(&mgr, "s1", MessageDirection::Send, 0, "h");
-        assert!(
-            mgr.process_message("s1", MessageDirection::Send, 0, "h", &mac_s1, 1, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s1", MessageDirection::Send, 0, "h", &mac_s1, 1, "t")
+            .is_ok());
 
         let mac_s2 = sign_msg(&mgr, "s2", MessageDirection::Send, 0, "h");
-        assert!(
-            mgr.process_message("s2", MessageDirection::Send, 0, "h", &mac_s2, 2, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s2", MessageDirection::Send, 0, "h", &mac_s2, 2, "t")
+            .is_ok());
 
         mgr.terminate_session("s1", 100, "t").unwrap();
 
         let mac_s2b = sign_msg(&mgr, "s2", MessageDirection::Send, 1, "h");
-        assert!(
-            mgr.process_message("s2", MessageDirection::Send, 1, "h", &mac_s2b, 3, "t")
-                .is_ok()
-        );
+        assert!(mgr
+            .process_message("s2", MessageDirection::Send, 1, "h", &mac_s2b, 3, "t")
+            .is_ok());
     }
 
     // ── AuthenticatedMessage fields ─────────────────────────────────
@@ -3954,10 +4135,7 @@ mod tests {
             "trace-expired",
         );
 
-        assert!(matches!(
-            result,
-            Err(SessionError::SessionExpired { .. })
-        ));
+        assert!(matches!(result, Err(SessionError::SessionExpired { .. })));
         let session = mgr.get_session("s1").expect("session");
         assert_eq!(session.state, SessionState::Expired);
         assert_eq!(session.send_seq, 0);
@@ -4070,7 +4248,8 @@ mod tests {
         assert_eq!(current_seq, u64::MAX.saturating_sub(2));
 
         // Attempt to send a message - should increment safely
-        let mac = sign_message_for_session(&mgr, "seq-test", "test message", Direction::SendToServer);
+        let mac =
+            sign_message_for_session(&mgr, "seq-test", "test message", Direction::SendToServer);
         let result = mgr.handle_authenticated_message(
             "seq-test",
             current_seq.saturating_add(1),
@@ -4099,7 +4278,8 @@ mod tests {
         establish_test_session(&mut mgr, "corrupt-sig");
 
         // Get a valid signature and then corrupt it
-        let mut valid_mac = sign_message_for_session(&mgr, "corrupt-sig", "test message", Direction::SendToServer);
+        let mut valid_mac =
+            sign_message_for_session(&mgr, "corrupt-sig", "test message", Direction::SendToServer);
 
         // Corrupt the signature by flipping bits
         if valid_mac.len() > 5 {
@@ -4117,7 +4297,10 @@ mod tests {
             valid_mac,
         );
 
-        assert!(matches!(result, Err(SessionError::AuthenticationFailed { .. })));
+        assert!(matches!(
+            result,
+            Err(SessionError::AuthenticationFailed { .. })
+        ));
     }
 
     #[test]
@@ -4141,7 +4324,16 @@ mod tests {
         // Try to establish one more session - should be rejected
         let rs = test_root_secret();
         let epoch = test_epoch();
-        let mac = sign_handshake("session-3", "client", "server", "enc", "sign", epoch, 1_000_000, &rs);
+        let mac = sign_handshake(
+            "session-3",
+            "client",
+            "server",
+            "enc",
+            "sign",
+            epoch,
+            1_000_000,
+            &rs,
+        );
         let result = mgr.establish_session(
             "session-3".to_string(),
             "client".into(),
@@ -4153,7 +4345,10 @@ mod tests {
             mac,
         );
 
-        assert!(matches!(result, Err(SessionError::MaxSessionsExceeded { .. })));
+        assert!(matches!(
+            result,
+            Err(SessionError::MaxSessionsExceeded { .. })
+        ));
         assert!(mgr.get_session("session-3").is_none());
         assert_eq!(mgr.active_session_count(), 2);
     }
@@ -4165,10 +4360,18 @@ mod tests {
 
         // Manually terminate the session
         mgr.terminate_session("terminated-test");
-        assert_eq!(mgr.get_session("terminated-test").unwrap().state, SessionState::Terminated);
+        assert_eq!(
+            mgr.get_session("terminated-test").unwrap().state,
+            SessionState::Terminated
+        );
 
         // Try to send a message to the terminated session
-        let mac = sign_message_for_session(&mgr, "terminated-test", "posthumous message", Direction::SendToServer);
+        let mac = sign_message_for_session(
+            &mgr,
+            "terminated-test",
+            "posthumous message",
+            Direction::SendToServer,
+        );
         let result = mgr.handle_authenticated_message(
             "terminated-test",
             1,
@@ -4178,7 +4381,10 @@ mod tests {
             mac,
         );
 
-        assert!(matches!(result, Err(SessionError::SessionTerminated { .. })));
+        assert!(matches!(
+            result,
+            Err(SessionError::SessionTerminated { .. })
+        ));
     }
 
     #[test]
@@ -4195,7 +4401,12 @@ mod tests {
         establish_test_session(&mut mgr, "replay-test");
 
         // Send a valid message
-        let mac1 = sign_message_for_session(&mgr, "replay-test", "first message", Direction::SendToServer);
+        let mac1 = sign_message_for_session(
+            &mgr,
+            "replay-test",
+            "first message",
+            Direction::SendToServer,
+        );
         let result1 = mgr.handle_authenticated_message(
             "replay-test",
             1,
@@ -4207,7 +4418,12 @@ mod tests {
         assert!(result1.is_ok());
 
         // Try to replay the same sequence number with different content
-        let mac2 = sign_message_for_session(&mgr, "replay-test", "different message", Direction::SendToServer);
+        let mac2 = sign_message_for_session(
+            &mgr,
+            "replay-test",
+            "different message",
+            Direction::SendToServer,
+        );
         let result2 = mgr.handle_authenticated_message(
             "replay-test",
             1, // Same sequence number as above
@@ -4217,7 +4433,10 @@ mod tests {
             mac2,
         );
 
-        assert!(matches!(result2, Err(SessionError::SequenceViolation { .. })));
+        assert!(matches!(
+            result2,
+            Err(SessionError::SequenceViolation { .. })
+        ));
     }
 
     #[test]
@@ -4231,7 +4450,16 @@ mod tests {
         // Try to establish another session with the same ID
         let rs = test_root_secret();
         let epoch = test_epoch();
-        let mac = sign_handshake("duplicate-id", "different-client", "different-server", "enc", "sign", epoch, 2_000_000, &rs);
+        let mac = sign_handshake(
+            "duplicate-id",
+            "different-client",
+            "different-server",
+            "enc",
+            "sign",
+            epoch,
+            2_000_000,
+            &rs,
+        );
         let result = mgr.establish_session(
             "duplicate-id".to_string(),
             "different-client".into(),
@@ -4257,10 +4485,7 @@ mod session_auth_boundary_negative_tests {
     use super::*;
 
     fn malicious_manager() -> SessionManager {
-        SessionManager::new(
-            test_root_secret(),
-            ControlEpoch::new(1),
-        )
+        SessionManager::new(test_root_secret(), ControlEpoch::new(1))
     }
 
     fn test_root_secret() -> RootSecret {
@@ -4325,7 +4550,10 @@ mod session_auth_boundary_negative_tests {
             "trace-duplicate",
         );
 
-        assert!(matches!(result, Err(SessionError::SessionAlreadyExists { .. })));
+        assert!(matches!(
+            result,
+            Err(SessionError::SessionAlreadyExists { .. })
+        ));
     }
 
     #[test]
@@ -4397,7 +4625,10 @@ mod session_auth_boundary_negative_tests {
             "trace-terminated",
         );
 
-        assert!(matches!(result, Err(SessionError::SessionTerminated { .. })));
+        assert!(matches!(
+            result,
+            Err(SessionError::SessionTerminated { .. })
+        ));
     }
 
     #[test]
@@ -4442,9 +4673,8 @@ mod session_auth_boundary_negative_tests {
     fn negative_session_manager_rejects_invalid_root_secret() {
         let invalid_secret = RootSecret::new(vec![]); // Empty secret
 
-        let result = std::panic::catch_unwind(|| {
-            SessionManager::new(invalid_secret, ControlEpoch::new(1))
-        });
+        let result =
+            std::panic::catch_unwind(|| SessionManager::new(invalid_secret, ControlEpoch::new(1)));
 
         // Should either panic or handle gracefully
         match result {
@@ -4625,12 +4855,12 @@ mod session_auth_boundary_negative_tests {
 
         // Test malicious Unicode in session IDs
         let malicious_session_ids = vec![
-            "session\u{202e}evil\u{200b}",      // Right-to-Left Override + Zero Width Space
-            "session\u{0000}injection",         // Null byte injection
-            "session\u{feff}bom",               // Byte Order Mark
-            "session\u{2028}line\u{2029}para",  // Line/Paragraph separators
-            "session\u{200c}\u{200d}joiners",   // Zero-width joiners
-            "session\x00\x01\x02\x03\x1f",      // Control characters
+            "session\u{202e}evil\u{200b}", // Right-to-Left Override + Zero Width Space
+            "session\u{0000}injection",    // Null byte injection
+            "session\u{feff}bom",          // Byte Order Mark
+            "session\u{2028}line\u{2029}para", // Line/Paragraph separators
+            "session\u{200c}\u{200d}joiners", // Zero-width joiners
+            "session\x00\x01\x02\x03\x1f", // Control characters
         ];
 
         for (i, malicious_session_id) in malicious_session_ids.iter().enumerate() {
@@ -4645,7 +4875,10 @@ mod session_auth_boundary_negative_tests {
                 Ok(()) => {
                     // Unicode was accepted, verify it doesn't corrupt session management
                     let session = mgr.get_session(malicious_session_id);
-                    assert!(session.is_ok(), "Session with Unicode ID should be retrievable");
+                    assert!(
+                        session.is_ok(),
+                        "Session with Unicode ID should be retrievable"
+                    );
 
                     // Test message authentication with Unicode session ID
                     let auth_result = mgr.authenticate_message_valid_hmac(
@@ -4655,8 +4888,11 @@ mod session_auth_boundary_negative_tests {
                         1100 + i as u64,
                         &format!("unicode-msg-trace-{}", i),
                     );
-                    assert!(auth_result.is_ok(), "Message authentication should work with Unicode session IDs");
-                },
+                    assert!(
+                        auth_result.is_ok(),
+                        "Message authentication should work with Unicode session IDs"
+                    );
+                }
                 Err(_) => {
                     // Unicode rejection in session IDs is also acceptable for security
                 }
@@ -4665,7 +4901,8 @@ mod session_auth_boundary_negative_tests {
 
         // Test Unicode in trace IDs
         let clean_session = "clean-session";
-        mgr.create_session(clean_session, b"clean-handshake", 2000, "clean-trace").unwrap();
+        mgr.create_session(clean_session, b"clean-handshake", 2000, "clean-trace")
+            .unwrap();
 
         let malicious_trace_ids = vec![
             "trace\u{202e}reverse\u{200b}",
@@ -4687,10 +4924,10 @@ mod session_auth_boundary_negative_tests {
             match result {
                 Ok(_) => {
                     // Unicode trace accepted
-                },
+                }
                 Err(SessionError::InvalidTraceId) => {
                     // Unicode trace rejection is acceptable
-                },
+                }
                 Err(other) => {
                     panic!("Unexpected error for Unicode trace ID: {:?}", other);
                 }
@@ -4702,7 +4939,8 @@ mod session_auth_boundary_negative_tests {
     #[test]
     fn negative_hmac_timing_attacks_constant_time() {
         let mut mgr = malicious_manager();
-        mgr.create_session("timing-session", b"timing-handshake", 1000, "timing-setup").unwrap();
+        mgr.create_session("timing-session", b"timing-handshake", 1000, "timing-setup")
+            .unwrap();
 
         // Generate a legitimate HMAC for comparison timing
         let payload = b"timing-test-payload";
@@ -4759,11 +4997,23 @@ mod session_auth_boundary_negative_tests {
 
         // Timing difference should be minimal (constant-time verification)
         if valid_timings.len() > 1 && invalid_timings.len() > 1 {
-            let avg_valid: f64 = valid_timings.iter().map(|d| d.as_nanos() as f64).sum::<f64>() / valid_timings.len() as f64;
-            let avg_invalid: f64 = invalid_timings.iter().map(|d| d.as_nanos() as f64).sum::<f64>() / invalid_timings.len() as f64;
+            let avg_valid: f64 = valid_timings
+                .iter()
+                .map(|d| d.as_nanos() as f64)
+                .sum::<f64>()
+                / valid_timings.len() as f64;
+            let avg_invalid: f64 = invalid_timings
+                .iter()
+                .map(|d| d.as_nanos() as f64)
+                .sum::<f64>()
+                / invalid_timings.len() as f64;
 
             let timing_ratio = avg_valid.max(avg_invalid) / avg_valid.min(avg_invalid).max(1.0);
-            assert!(timing_ratio < 5.0, "HMAC verification timing variance too high: {}", timing_ratio);
+            assert!(
+                timing_ratio < 5.0,
+                "HMAC verification timing variance too high: {}",
+                timing_ratio
+            );
         }
     }
 
@@ -4775,22 +5025,31 @@ mod session_auth_boundary_negative_tests {
 
         // Test session exhaustion attack
         let mut established_sessions = Vec::new();
-        for i in 0..300 {  // Try to exceed reasonable limits
+        for i in 0..300 {
+            // Try to exceed reasonable limits
             let session_id = format!("exhaust-session-{}", i);
             let handshake = format!("handshake-{}", i).into_bytes();
 
-            let result = mgr.create_session(&session_id, &handshake, 1000 + i, &format!("exhaust-trace-{}", i));
+            let result = mgr.create_session(
+                &session_id,
+                &handshake,
+                1000 + i,
+                &format!("exhaust-trace-{}", i),
+            );
 
             match result {
                 Ok(()) => {
                     established_sessions.push(session_id);
-                },
+                }
                 Err(SessionError::MaxSessions) => {
                     // Hit session limit, which is expected behavior
                     break;
-                },
+                }
                 Err(other) => {
-                    panic!("Unexpected error during session exhaustion test: {:?}", other);
+                    panic!(
+                        "Unexpected error during session exhaustion test: {:?}",
+                        other
+                    );
                 }
             }
         }
@@ -4800,17 +5059,26 @@ mod session_auth_boundary_negative_tests {
             let rapid_session_id = format!("rapid-{}", rapid_cycle);
             let rapid_handshake = format!("rapid-handshake-{}", rapid_cycle).into_bytes();
 
-            let rapid_result = mgr.create_session(&rapid_session_id, &rapid_handshake, 2000 + rapid_cycle, &format!("rapid-trace-{}", rapid_cycle));
+            let rapid_result = mgr.create_session(
+                &rapid_session_id,
+                &rapid_handshake,
+                2000 + rapid_cycle,
+                &format!("rapid-trace-{}", rapid_cycle),
+            );
 
             match rapid_result {
                 Ok(()) => {
                     // Immediately terminate to free up capacity
-                    let _ = mgr.terminate_session(&rapid_session_id, 2100 + rapid_cycle, &format!("rapid-terminate-{}", rapid_cycle));
-                },
+                    let _ = mgr.terminate_session(
+                        &rapid_session_id,
+                        2100 + rapid_cycle,
+                        &format!("rapid-terminate-{}", rapid_cycle),
+                    );
+                }
                 Err(SessionError::MaxSessions) => {
                     // Resource exhaustion is expected under rapid cycling
                     break;
-                },
+                }
                 Err(other) => {
                     // Other errors during rapid cycling are acceptable
                     break;
@@ -4834,7 +5102,7 @@ mod session_auth_boundary_negative_tests {
             match massive_result {
                 Ok(_) => {
                     // Large payload accepted - verify system remains responsive
-                },
+                }
                 Err(_) => {
                     // Size-based rejection is acceptable
                 }
@@ -4843,7 +5111,8 @@ mod session_auth_boundary_negative_tests {
 
         // Verify manager remains functional after resource attacks
         let recovery_session_id = "recovery-test";
-        let recovery_result = mgr.create_session(recovery_session_id, b"recovery", 4000, "recovery-trace");
+        let recovery_result =
+            mgr.create_session(recovery_session_id, b"recovery", 4000, "recovery-trace");
 
         // Should either succeed (if capacity available) or fail cleanly
         match recovery_result {
@@ -4856,11 +5125,14 @@ mod session_auth_boundary_negative_tests {
                     4001,
                     "recovery-message-trace",
                 );
-                assert!(auth_result.is_ok(), "System should remain functional after resource attacks");
-            },
+                assert!(
+                    auth_result.is_ok(),
+                    "System should remain functional after resource attacks"
+                );
+            }
             Err(SessionError::MaxSessions) => {
                 // Resource exhaustion is acceptable
-            },
+            }
             Err(other) => {
                 panic!("Unexpected error during recovery test: {:?}", other);
             }
@@ -4871,7 +5143,13 @@ mod session_auth_boundary_negative_tests {
     #[test]
     fn negative_arithmetic_overflow_sequences_timestamps() {
         let mut mgr = malicious_manager();
-        mgr.create_session("overflow-session", b"overflow-handshake", 1000, "overflow-setup").unwrap();
+        mgr.create_session(
+            "overflow-session",
+            b"overflow-handshake",
+            1000,
+            "overflow-setup",
+        )
+        .unwrap();
 
         // Test near-maximum sequence numbers
         let near_max_sequence = u64::MAX - 100;
@@ -4889,7 +5167,10 @@ mod session_auth_boundary_negative_tests {
             2000,
             "near-max-trace",
         );
-        assert!(near_max_result.is_ok(), "Should handle near-maximum sequence numbers");
+        assert!(
+            near_max_result.is_ok(),
+            "Should handle near-maximum sequence numbers"
+        );
 
         // Test sequence exhaustion handling
         let session_after = mgr.get_session_mut("overflow-session").unwrap();
@@ -4907,13 +5188,16 @@ mod session_auth_boundary_negative_tests {
             match result {
                 Ok(_) => {
                     // Sequence incremented successfully
-                },
+                }
                 Err(SessionError::SequenceExhausted) => {
                     // Hit sequence limit, which is expected
                     break;
-                },
+                }
                 Err(other) => {
-                    panic!("Unexpected error during sequence exhaustion test: {:?}", other);
+                    panic!(
+                        "Unexpected error during sequence exhaustion test: {:?}",
+                        other
+                    );
                 }
             }
         }
@@ -4946,7 +5230,7 @@ mod session_auth_boundary_negative_tests {
                         &format!("timestamp-auth-{}", i),
                     );
                     // Message authentication may succeed or fail based on timestamp validation
-                },
+                }
                 Err(_) => {
                     // Timestamp rejection is acceptable for edge cases
                 }
@@ -4969,7 +5253,7 @@ mod session_auth_boundary_negative_tests {
                     "max-epoch-trace",
                 );
                 // Should handle max epoch gracefully
-            },
+            }
             Err(_) => {
                 // Panic with max epoch is acceptable
             }
@@ -4980,7 +5264,8 @@ mod session_auth_boundary_negative_tests {
     #[test]
     fn negative_replay_attacks_sequence_manipulation() {
         let mut mgr = malicious_manager();
-        mgr.create_session("replay-session", b"replay-handshake", 1000, "replay-setup").unwrap();
+        mgr.create_session("replay-session", b"replay-handshake", 1000, "replay-setup")
+            .unwrap();
 
         let payload = b"replay-test-message";
 
@@ -5009,10 +5294,10 @@ mod session_auth_boundary_negative_tests {
                 // If accepted, verify sequence advanced properly
                 let session = mgr.get_session("replay-session").unwrap();
                 assert!(session.recv_seq > 1, "Sequence should have advanced");
-            },
+            }
             Err(SessionError::SequenceViolation { .. }) => {
                 // Expected rejection
-            },
+            }
             Err(other) => {
                 panic!("Unexpected error for replay attack: {:?}", other);
             }
@@ -5053,15 +5338,15 @@ mod session_auth_boundary_negative_tests {
             match wraparound_result {
                 Ok(_) => {
                     // Wraparound handled
-                },
+                }
                 Err(SessionError::SequenceExhausted) => {
                     // Hit sequence limit before wraparound
                     break;
-                },
+                }
                 Err(SessionError::SequenceViolation { .. }) => {
                     // Sequence violation detected
                     break;
-                },
+                }
                 Err(other) => {
                     panic!("Unexpected error during wraparound test: {:?}", other);
                 }
@@ -5078,7 +5363,15 @@ mod session_auth_boundary_negative_tests {
         let mgr = Arc::new(Mutex::new(malicious_manager()));
 
         // Create initial session for concurrent testing
-        mgr.lock().unwrap().create_session("concurrent-session", b"concurrent-handshake", 1000, "concurrent-setup").unwrap();
+        mgr.lock()
+            .unwrap()
+            .create_session(
+                "concurrent-session",
+                b"concurrent-handshake",
+                1000,
+                "concurrent-setup",
+            )
+            .unwrap();
 
         let mut handles = Vec::new();
 
@@ -5138,13 +5431,21 @@ mod session_auth_boundary_negative_tests {
         let final_mgr = mgr.lock().unwrap();
         let session_result = final_mgr.get_session("concurrent-session");
 
-        assert!(session_result.is_ok(), "Session should remain accessible after concurrent operations");
+        assert!(
+            session_result.is_ok(),
+            "Session should remain accessible after concurrent operations"
+        );
 
         if let Ok(session) = session_result {
             // Verify session state is consistent
             assert!(session.recv_seq >= 0, "Sequence number should be valid");
-            assert!(matches!(session.state, SessionState::Active | SessionState::Terminated | SessionState::Expired),
-                   "Session should be in valid state");
+            assert!(
+                matches!(
+                    session.state,
+                    SessionState::Active | SessionState::Terminated | SessionState::Expired
+                ),
+                "Session should be in valid state"
+            );
         }
     }
 
@@ -5155,10 +5456,11 @@ mod session_auth_boundary_negative_tests {
 
         // Test extremely large handshake transcripts
         let massive_handshake = vec![0xCC; 100_000]; // 100KB handshake
-        let huge_session_id = "s".repeat(50_000);    // 50KB session ID
-        let huge_trace_id = "t".repeat(50_000);      // 50KB trace ID
+        let huge_session_id = "s".repeat(50_000); // 50KB session ID
+        let huge_trace_id = "t".repeat(50_000); // 50KB trace ID
 
-        let massive_result = mgr.create_session(&huge_session_id, &massive_handshake, 1000, &huge_trace_id);
+        let massive_result =
+            mgr.create_session(&huge_session_id, &massive_handshake, 1000, &huge_trace_id);
 
         match massive_result {
             Ok(()) => {
@@ -5171,7 +5473,7 @@ mod session_auth_boundary_negative_tests {
                     "massive-auth-trace",
                 );
                 // Should work or fail gracefully
-            },
+            }
             Err(_) => {
                 // Size-based rejection is acceptable
             }
@@ -5180,10 +5482,16 @@ mod session_auth_boundary_negative_tests {
         // Test rapid session creation with large metadata
         for metadata_cycle in 0..100 {
             let large_session_id = format!("large-{}-{}", metadata_cycle, "x".repeat(1000));
-            let large_handshake = format!("handshake-{}-{}", metadata_cycle, "y".repeat(2000)).into_bytes();
+            let large_handshake =
+                format!("handshake-{}-{}", metadata_cycle, "y".repeat(2000)).into_bytes();
             let large_trace = format!("trace-{}-{}", metadata_cycle, "z".repeat(500));
 
-            let result = mgr.create_session(&large_session_id, &large_handshake, 2000 + metadata_cycle, &large_trace);
+            let result = mgr.create_session(
+                &large_session_id,
+                &large_handshake,
+                2000 + metadata_cycle,
+                &large_trace,
+            );
 
             match result {
                 Ok(()) => {
@@ -5195,11 +5503,11 @@ mod session_auth_boundary_negative_tests {
                         2100 + metadata_cycle,
                         "metadata-msg",
                     );
-                },
+                }
                 Err(SessionError::MaxSessions) => {
                     // Hit capacity limit
                     break;
-                },
+                }
                 Err(_) => {
                     // Other rejection is acceptable
                     break;
@@ -5208,9 +5516,12 @@ mod session_auth_boundary_negative_tests {
         }
 
         // Verify manager remains functional after metadata stress test
-        let recovery_result = mgr.create_session("metadata-recovery", b"recovery", 3000, "recovery");
+        let recovery_result =
+            mgr.create_session("metadata-recovery", b"recovery", 3000, "recovery");
         // Should either succeed or fail cleanly
-        assert!(recovery_result.is_ok() || matches!(recovery_result, Err(SessionError::MaxSessions)));
+        assert!(
+            recovery_result.is_ok() || matches!(recovery_result, Err(SessionError::MaxSessions))
+        );
     }
 
     /// Negative test: Key derivation manipulation and cryptographic attacks
@@ -5218,10 +5529,10 @@ mod session_auth_boundary_negative_tests {
     fn negative_key_derivation_cryptographic_attacks() {
         // Test with weak/edge-case root secrets
         let weak_secrets = vec![
-            vec![0x00; 32],           // All zeros
-            vec![0xFF; 32],           // All ones
-            vec![0xAA; 32],           // Repeating pattern
-            (0..32).collect(),        // Sequential bytes
+            vec![0x00; 32],    // All zeros
+            vec![0xFF; 32],    // All ones
+            vec![0xAA; 32],    // Repeating pattern
+            (0..32).collect(), // Sequential bytes
         ];
 
         for (i, weak_secret) in weak_secrets.iter().enumerate() {
@@ -5229,7 +5540,12 @@ mod session_auth_boundary_negative_tests {
             let mut weak_mgr = SessionManager::new(weak_root, ControlEpoch::new(1));
 
             let session_id = format!("weak-secret-{}", i);
-            let result = weak_mgr.create_session(&session_id, b"weak-test", 1000 + i as u64, &format!("weak-trace-{}", i));
+            let result = weak_mgr.create_session(
+                &session_id,
+                b"weak-test",
+                1000 + i as u64,
+                &format!("weak-trace-{}", i),
+            );
 
             match result {
                 Ok(()) => {
@@ -5242,7 +5558,7 @@ mod session_auth_boundary_negative_tests {
                         &format!("weak-auth-{}", i),
                     );
                     // Should produce deterministic but secure results
-                },
+                }
                 Err(_) => {
                     // Rejection of weak secrets is acceptable
                 }
@@ -5258,11 +5574,16 @@ mod session_auth_boundary_negative_tests {
         let mut mgr_2 = SessionManager::new(root_secret, epoch_2);
 
         // Create session in epoch 1
-        mgr_1.create_session("epoch-test", b"epoch-handshake", 1000, "epoch-1").unwrap();
+        mgr_1
+            .create_session("epoch-test", b"epoch-handshake", 1000, "epoch-1")
+            .unwrap();
 
         // Try to access with epoch 2 manager (should fail)
         let cross_epoch_result = mgr_2.get_session("epoch-test");
-        assert!(cross_epoch_result.is_err(), "Cross-epoch session access should fail");
+        assert!(
+            cross_epoch_result.is_err(),
+            "Cross-epoch session access should fail"
+        );
 
         // Test with extremely high epoch numbers
         let max_epoch = ControlEpoch::new(u32::MAX);
@@ -5273,9 +5594,10 @@ mod session_auth_boundary_negative_tests {
         // Should either work or panic cleanly
         match max_epoch_mgr_result {
             Ok(mut max_mgr) => {
-                let max_result = max_mgr.create_session("max-epoch", b"max-handshake", 2000, "max-trace");
+                let max_result =
+                    max_mgr.create_session("max-epoch", b"max-handshake", 2000, "max-trace");
                 // Should handle maximum epoch values
-            },
+            }
             Err(_) => {
                 // Panic with extreme epoch values is acceptable
             }
@@ -5286,7 +5608,9 @@ mod session_auth_boundary_negative_tests {
         let normal_mgr = SessionManager::new(domain_root.clone(), ControlEpoch::new(1));
 
         // Different domain should produce different keys (cannot test directly, but verify sessions work independently)
-        normal_mgr.create_session("domain-test", b"domain-handshake", 3000, "domain-trace").unwrap();
+        normal_mgr
+            .create_session("domain-test", b"domain-handshake", 3000, "domain-trace")
+            .unwrap();
 
         let auth_result = normal_mgr.authenticate_message_valid_hmac(
             "domain-test",
@@ -5295,7 +5619,10 @@ mod session_auth_boundary_negative_tests {
             3100,
             "domain-msg",
         );
-        assert!(auth_result.is_ok(), "Domain separation should not break normal operation");
+        assert!(
+            auth_result.is_ok(),
+            "Domain separation should not break normal operation"
+        );
     }
 
     // Negative-path hardening tests targeting specific vulnerability patterns
@@ -5307,7 +5634,16 @@ mod session_auth_boundary_negative_tests {
         let epoch = test_epoch();
 
         // Create valid handshake MAC
-        let valid_mac = sign_handshake("sess-timing", "client", "server", "enc-key", "sign-key", epoch, 1000, &rs);
+        let valid_mac = sign_handshake(
+            "sess-timing",
+            "client",
+            "server",
+            "enc-key",
+            "sign-key",
+            epoch,
+            1000,
+            &rs,
+        );
 
         // Create invalid MAC that differs only in last byte (worst case for timing attacks)
         let mut invalid_mac = valid_mac;
@@ -5345,7 +5681,11 @@ mod session_auth_boundary_negative_tests {
 
         // Timing ratio should be reasonable (not 100x different like with ==)
         let ratio = duration1.as_nanos() as f64 / duration2.as_nanos().max(1) as f64;
-        assert!(ratio < 10.0 && ratio > 0.1, "Potential timing leak detected: ratio={}", ratio);
+        assert!(
+            ratio < 10.0 && ratio > 0.1,
+            "Potential timing leak detected: ratio={}",
+            ratio
+        );
     }
 
     #[test]
@@ -5354,7 +5694,13 @@ mod session_auth_boundary_negative_tests {
         let mut mgr = default_manager();
         establish_test_session(&mut mgr, "sess-msg-timing");
 
-        let valid_mac = sign_msg(&mgr, "sess-msg-timing", MessageDirection::Send, 0, "payload-hash");
+        let valid_mac = sign_msg(
+            &mgr,
+            "sess-msg-timing",
+            MessageDirection::Send,
+            0,
+            "payload-hash",
+        );
 
         // Create MAC that differs only in first byte (early termination vulnerability)
         let mut invalid_mac = valid_mac;
@@ -5377,7 +5723,7 @@ mod session_auth_boundary_negative_tests {
         let result2 = mgr.process_message(
             "sess-msg-timing",
             MessageDirection::Send,
-            0,  // Same sequence (will fail for other reasons after MAC check)
+            0, // Same sequence (will fail for other reasons after MAC check)
             "payload-hash-different",
             &invalid_mac,
             2001,
@@ -5390,7 +5736,11 @@ mod session_auth_boundary_negative_tests {
 
         // Verify no massive timing difference due to early MAC comparison termination
         let ratio = duration1.as_nanos() as f64 / duration2.as_nanos().max(1) as f64;
-        assert!(ratio < 5.0 && ratio > 0.2, "MAC timing leak detected: ratio={}", ratio);
+        assert!(
+            ratio < 5.0 && ratio > 0.2,
+            "MAC timing leak detected: ratio={}",
+            ratio
+        );
     }
 
     #[test]
@@ -5405,7 +5755,10 @@ mod session_auth_boundary_negative_tests {
         establish_test_session(&mut mgr, "sess-overflow");
 
         // Set session last_activity_at to maximum timestamp
-        mgr.sessions.get_mut("sess-overflow").unwrap().last_activity_at = u64::MAX;
+        mgr.sessions
+            .get_mut("sess-overflow")
+            .unwrap()
+            .last_activity_at = u64::MAX;
 
         // Current timestamp smaller than last_activity_at (could cause underflow)
         let current_timestamp = 1000u64;
@@ -5416,14 +5769,21 @@ mod session_auth_boundary_negative_tests {
 
         // Session should not be incorrectly expired due to timestamp underflow
         let session = mgr.get_session("sess-overflow").unwrap();
-        assert_eq!(session.state, SessionState::Active, "Timestamp underflow should not cause incorrect expiration");
+        assert_eq!(
+            session.state,
+            SessionState::Active,
+            "Timestamp underflow should not cause incorrect expiration"
+        );
 
         // Verify saturating subtraction behavior at boundary
         let underflow_test = 1000u64.saturating_sub(u64::MAX);
         assert_eq!(underflow_test, 0, "saturating_sub should prevent underflow");
 
         let raw_subtraction_would_wrap = 1000u64.wrapping_sub(u64::MAX);
-        assert_ne!(raw_subtraction_would_wrap, 0, "Demonstrates why saturating_sub is needed");
+        assert_ne!(
+            raw_subtraction_would_wrap, 0,
+            "Demonstrates why saturating_sub is needed"
+        );
     }
 
     #[test]
@@ -5440,7 +5800,13 @@ mod session_auth_boundary_negative_tests {
         // Flood replay window with many out-of-order sequences
         for i in 0..1000 {
             let sequence = i * 2; // Create gaps to maximize window size
-            let mac = sign_msg(&mgr, "sess-replay-dos", MessageDirection::Send, sequence, &format!("payload-{}", i));
+            let mac = sign_msg(
+                &mgr,
+                "sess-replay-dos",
+                MessageDirection::Send,
+                sequence,
+                &format!("payload-{}", i),
+            );
 
             // This should insert into replay window BTreeSet without bounds checking
             let result = mgr.process_message(
@@ -5463,8 +5829,15 @@ mod session_auth_boundary_negative_tests {
         // Should use: bounded_window_insert(&mut window, sequence, MAX_WINDOW_SIZE)
 
         let replay_key = ("sess-replay-dos".to_string(), MessageDirection::Send);
-        let window_size = mgr.replay_windows.get(&replay_key).map(|w| w.len()).unwrap_or(0);
-        assert!(window_size > 100, "Replay window should have grown significantly");
+        let window_size = mgr
+            .replay_windows
+            .get(&replay_key)
+            .map(|w| w.len())
+            .unwrap_or(0);
+        assert!(
+            window_size > 100,
+            "Replay window should have grown significantly"
+        );
 
         // In production, this could exhaust available memory
         // Memory usage = window_size * size_of::<u64>() * number_of_sessions
@@ -5483,7 +5856,13 @@ mod session_auth_boundary_negative_tests {
         }
 
         // Process message at near-max sequence
-        let mac1 = sign_msg(&mgr, "sess-seq-overflow", MessageDirection::Send, u64::MAX - 1, "hash-max-1");
+        let mac1 = sign_msg(
+            &mgr,
+            "sess-seq-overflow",
+            MessageDirection::Send,
+            u64::MAX - 1,
+            "hash-max-1",
+        );
         let result1 = mgr.process_message(
             "sess-seq-overflow",
             MessageDirection::Send,
@@ -5494,10 +5873,19 @@ mod session_auth_boundary_negative_tests {
             "trace-max-1",
         );
         assert!(result1.is_ok());
-        assert_eq!(mgr.get_session("sess-seq-overflow").unwrap().send_seq, u64::MAX);
+        assert_eq!(
+            mgr.get_session("sess-seq-overflow").unwrap().send_seq,
+            u64::MAX
+        );
 
         // Process message at maximum sequence
-        let mac2 = sign_msg(&mgr, "sess-seq-overflow", MessageDirection::Send, u64::MAX, "hash-max");
+        let mac2 = sign_msg(
+            &mgr,
+            "sess-seq-overflow",
+            MessageDirection::Send,
+            u64::MAX,
+            "hash-max",
+        );
         let result2 = mgr.process_message(
             "sess-seq-overflow",
             MessageDirection::Send,
@@ -5510,10 +5898,20 @@ mod session_auth_boundary_negative_tests {
         assert!(result2.is_ok());
 
         // Verify sequence exhausted flag is set (checked_add overflow detection)
-        assert!(mgr.get_session("sess-seq-overflow").unwrap().send_seq_exhausted);
+        assert!(
+            mgr.get_session("sess-seq-overflow")
+                .unwrap()
+                .send_seq_exhausted
+        );
 
         // Next message should fail due to sequence exhaustion, not overflow wrap
-        let mac3 = sign_msg(&mgr, "sess-seq-overflow", MessageDirection::Send, 0, "hash-wrap"); // Would be next if wrapping
+        let mac3 = sign_msg(
+            &mgr,
+            "sess-seq-overflow",
+            MessageDirection::Send,
+            0,
+            "hash-wrap",
+        ); // Would be next if wrapping
         let result3 = mgr.process_message(
             "sess-seq-overflow",
             MessageDirection::Send,
@@ -5527,13 +5925,16 @@ mod session_auth_boundary_negative_tests {
         // Should fail with SequenceExhausted, not accept wrapped sequence
         assert!(result3.is_err());
         match result3.unwrap_err() {
-            SessionError::SequenceExhausted { .. } => {}, // Expected
+            SessionError::SequenceExhausted { .. } => {} // Expected
             other => panic!("Expected SequenceExhausted, got: {:?}", other),
         }
 
         // Demonstrates why checked_add is critical: raw + 1 would wrap to 0
         let would_wrap = u64::MAX.wrapping_add(1);
-        assert_eq!(would_wrap, 0, "Raw addition would wrap and allow replay attacks");
+        assert_eq!(
+            would_wrap, 0,
+            "Raw addition would wrap and allow replay attacks"
+        );
     }
 
     #[test]
@@ -5548,7 +5949,16 @@ mod session_auth_boundary_negative_tests {
             let session_id = format!("sess-flood-{:04}", i);
             let rs = test_root_secret();
             let epoch = test_epoch();
-            let mac = sign_handshake(&session_id, "client", "server", "enc-key", "sign-key", epoch, i as u64, &rs);
+            let mac = sign_handshake(
+                &session_id,
+                "client",
+                "server",
+                "enc-key",
+                "sign-key",
+                epoch,
+                i as u64,
+                &rs,
+            );
 
             // Each session establishment generates at least one event
             let result = mgr.establish_session(
@@ -5572,12 +5982,18 @@ mod session_auth_boundary_negative_tests {
 
         // With push_bounded, events should be capped at MAX_SESSION_EVENTS
         // Old events should be evicted to make room for new ones
-        assert!(events_count <= max_events_estimate,
-                "Events vector should be bounded by push_bounded, got {} events", events_count);
+        assert!(
+            events_count <= max_events_estimate,
+            "Events vector should be bounded by push_bounded, got {} events",
+            events_count
+        );
 
         // Verify push_bounded is working: later events should be present, earlier should be evicted
         let last_event = mgr.events().last().expect("Should have events");
-        assert!(last_event.trace_id.contains("trace-"), "Recent events should be preserved");
+        assert!(
+            last_event.trace_id.contains("trace-"),
+            "Recent events should be preserved"
+        );
 
         // The positive aspect: file correctly uses push_bounded at line 766
         // self.push_event() -> push_bounded(&mut self.events, event, MAX_SESSION_EVENTS)
@@ -5600,12 +6016,21 @@ mod session_auth_boundary_negative_tests {
 
         // Handshake MAC uses HANDSHAKE_HMAC_PREFIX domain separator
         let handshake_mac = sign_handshake(
-            session_id, client_identity, server_identity, enc_key, sign_key, epoch, timestamp, &rs
+            session_id,
+            client_identity,
+            server_identity,
+            enc_key,
+            sign_key,
+            epoch,
+            timestamp,
+            &rs,
         );
 
         // Create a fake "message" with similar input data that could collide without domain separation
-        let fake_payload_hash = format!("{}{}{}{}{}{}{}",
-            session_id, client_identity, server_identity, enc_key, sign_key, timestamp, timestamp);
+        let fake_payload_hash = format!(
+            "{}{}{}{}{}{}{}",
+            session_id, client_identity, server_identity, enc_key, sign_key, timestamp, timestamp
+        );
 
         let message_mac = sign_session_message(
             session_id,
@@ -5618,12 +6043,16 @@ mod session_auth_boundary_negative_tests {
         );
 
         // Domain separators should prevent collision even with overlapping input data
-        assert_ne!(handshake_mac, message_mac,
-                  "Domain separators must prevent HMAC collisions between operation types");
+        assert_ne!(
+            handshake_mac, message_mac,
+            "Domain separators must prevent HMAC collisions between operation types"
+        );
 
         // Verify domain separators are different
-        assert_ne!(HANDSHAKE_HMAC_PREFIX, MESSAGE_HMAC_PREFIX,
-                  "Domain separators must be distinct");
+        assert_ne!(
+            HANDSHAKE_HMAC_PREFIX, MESSAGE_HMAC_PREFIX,
+            "Domain separators must be distinct"
+        );
 
         // Test length-prefixed encoding prevents field boundary ambiguity
         let input1 = ("abc", "def");
@@ -5648,7 +6077,10 @@ mod session_auth_boundary_negative_tests {
         hmac2.update(input2.1.as_bytes());
         let mac2 = hmac2.finalize().into_bytes();
 
-        assert_ne!(mac1, mac2, "Length prefixing should prevent field boundary attacks");
+        assert_ne!(
+            mac1, mac2,
+            "Length prefixing should prevent field boundary attacks"
+        );
 
         // Positive verification: this file correctly uses domain separators ✓
         // HANDSHAKE_HMAC_PREFIX = b"session_auth_handshake_v1:"
@@ -5686,32 +6118,64 @@ mod session_auth_boundary_negative_tests {
 
             // Check memory growth periodically
             if i % 500 == 0 {
-                assert!(simulated_valid_timings.len() <= 3500,
-                       "Valid timings should be bounded: {}", simulated_valid_timings.len());
-                assert!(simulated_invalid_timings.len() <= 3500,
-                       "Invalid timings should be bounded: {}", simulated_invalid_timings.len());
+                assert!(
+                    simulated_valid_timings.len() <= 3500,
+                    "Valid timings should be bounded: {}",
+                    simulated_valid_timings.len()
+                );
+                assert!(
+                    simulated_invalid_timings.len() <= 3500,
+                    "Invalid timings should be bounded: {}",
+                    simulated_invalid_timings.len()
+                );
             }
         }
 
         // Test the f64 calculations that would occur on the accumulated timings
         if simulated_valid_timings.len() > 1 && simulated_invalid_timings.len() > 1 {
             // This mimics the problematic code on lines 4655-4656
-            let sum_valid: f64 = simulated_valid_timings.iter().map(|d| d.as_nanos() as f64).sum();
-            let sum_invalid: f64 = simulated_invalid_timings.iter().map(|d| d.as_nanos() as f64).sum();
+            let sum_valid: f64 = simulated_valid_timings
+                .iter()
+                .map(|d| d.as_nanos() as f64)
+                .sum();
+            let sum_invalid: f64 = simulated_invalid_timings
+                .iter()
+                .map(|d| d.as_nanos() as f64)
+                .sum();
 
             let avg_valid = sum_valid / simulated_valid_timings.len() as f64;
             let avg_invalid = sum_invalid / simulated_invalid_timings.len() as f64;
 
             // SECURITY FIX: Add is_finite guards that are missing in original code
-            assert!(avg_valid.is_finite(), "Valid timing average should be finite: {}", avg_valid);
-            assert!(avg_invalid.is_finite(), "Invalid timing average should be finite: {}", avg_invalid);
-            assert!(avg_valid > 0.0, "Valid timing average should be positive: {}", avg_valid);
-            assert!(avg_invalid > 0.0, "Invalid timing average should be positive: {}", avg_invalid);
+            assert!(
+                avg_valid.is_finite(),
+                "Valid timing average should be finite: {}",
+                avg_valid
+            );
+            assert!(
+                avg_invalid.is_finite(),
+                "Invalid timing average should be finite: {}",
+                avg_invalid
+            );
+            assert!(
+                avg_valid > 0.0,
+                "Valid timing average should be positive: {}",
+                avg_valid
+            );
+            assert!(
+                avg_invalid > 0.0,
+                "Invalid timing average should be positive: {}",
+                avg_invalid
+            );
         }
 
         // Memory usage should be reasonable
         let total_timing_memory = simulated_valid_timings.len() + simulated_invalid_timings.len();
-        assert!(total_timing_memory <= 6500, "Total timing memory should be bounded: {}", total_timing_memory);
+        assert!(
+            total_timing_memory <= 6500,
+            "Total timing memory should be bounded: {}",
+            total_timing_memory
+        );
     }
 
     #[test]
@@ -5723,12 +6187,17 @@ mod session_auth_boundary_negative_tests {
 
         if !empty_timings.is_empty() {
             // This would be the problematic code path
-            let avg: f64 = empty_timings.iter().map(|d| d.as_nanos() as f64).sum::<f64>()
-                         / empty_timings.len() as f64;
+            let avg: f64 = empty_timings
+                .iter()
+                .map(|d| d.as_nanos() as f64)
+                .sum::<f64>()
+                / empty_timings.len() as f64;
             assert!(avg.is_finite(), "Should handle empty case");
         } else {
             // Document that empty timing vectors should be handled
-            println!("SECURITY NOTE: Empty timing vectors would cause division by zero in original code");
+            println!(
+                "SECURITY NOTE: Empty timing vectors would cause division by zero in original code"
+            );
         }
 
         // Attack vector 2: Extreme timing values causing overflow
@@ -5744,7 +6213,11 @@ mod session_auth_boundary_negative_tests {
         if !avg.is_finite() {
             println!("SECURITY NOTE: Extreme timing values produce non-finite averages without is_finite guards");
         } else {
-            assert!(avg > 0.0, "Extreme timing average should be positive if finite: {}", avg);
+            assert!(
+                avg > 0.0,
+                "Extreme timing average should be positive if finite: {}",
+                avg
+            );
         }
 
         // Attack vector 3: Ratio calculation from line 4658 with dangerous values
@@ -5757,9 +6230,16 @@ mod session_auth_boundary_negative_tests {
 
         // Should verify result is finite
         if !timing_ratio.is_finite() {
-            panic!("Timing ratio should be finite with max(1.0) protection: {}", timing_ratio);
+            panic!(
+                "Timing ratio should be finite with max(1.0) protection: {}",
+                timing_ratio
+            );
         } else {
-            assert!(timing_ratio >= 1.0, "Timing ratio should be >= 1.0: {}", timing_ratio);
+            assert!(
+                timing_ratio >= 1.0,
+                "Timing ratio should be >= 1.0: {}",
+                timing_ratio
+            );
         }
 
         // Attack vector 4: NaN/Infinity injection
@@ -5773,7 +6253,9 @@ mod session_auth_boundary_negative_tests {
         assert!(!inf_avg.is_finite(), "Infinity should not be finite");
 
         // These should be caught with is_finite() guards
-        println!("SECURITY NOTE: NaN/Infinity values require is_finite() guards in timing calculations");
+        println!(
+            "SECURITY NOTE: NaN/Infinity values require is_finite() guards in timing calculations"
+        );
     }
 
     #[test]
@@ -5787,14 +6269,19 @@ mod session_auth_boundary_negative_tests {
 
         // Simulate the vectors that would grow without bounds
         let mut simulated_established_sessions = Vec::new(); // Line 4679 pattern
-        let mut simulated_thread_results = Vec::new();       // Line 4997 pattern
-        let mut simulated_handles = Vec::new();              // Line 5021 pattern
+        let mut simulated_thread_results = Vec::new(); // Line 4997 pattern
+        let mut simulated_handles = Vec::new(); // Line 5021 pattern
 
         // Attack: Create many sessions and track them
         for i in 0..100 {
             let session_id = format!("resource_exhaust_{}", i);
 
-            match mgr.create_session(&session_id, b"exhaust_handshake", 3000 + i as u64, "exhaust_trace") {
+            match mgr.create_session(
+                &session_id,
+                b"exhaust_handshake",
+                3000 + i as u64,
+                "exhaust_trace",
+            ) {
                 Ok(_) => {
                     // Simulate tracking without bounds (line 4679 pattern)
                     simulated_established_sessions.push(session_id.clone());
@@ -5804,7 +6291,7 @@ mod session_auth_boundary_negative_tests {
 
                     // Simulate handle tracking (line 5021 pattern)
                     simulated_handles.push(format!("handle_{}", i));
-                },
+                }
                 Err(_) => {
                     // Expected when hitting session limits
                     break;
@@ -5813,27 +6300,53 @@ mod session_auth_boundary_negative_tests {
 
             // Check memory growth - should be bounded
             if i % 10 == 0 {
-                assert!(simulated_established_sessions.len() <= 60,
-                       "Established sessions should be bounded: {}", simulated_established_sessions.len());
-                assert!(simulated_thread_results.len() <= 60,
-                       "Thread results should be bounded: {}", simulated_thread_results.len());
-                assert!(simulated_handles.len() <= 60,
-                       "Handles should be bounded: {}", simulated_handles.len());
+                assert!(
+                    simulated_established_sessions.len() <= 60,
+                    "Established sessions should be bounded: {}",
+                    simulated_established_sessions.len()
+                );
+                assert!(
+                    simulated_thread_results.len() <= 60,
+                    "Thread results should be bounded: {}",
+                    simulated_thread_results.len()
+                );
+                assert!(
+                    simulated_handles.len() <= 60,
+                    "Handles should be bounded: {}",
+                    simulated_handles.len()
+                );
             }
         }
 
         // Verify final state respects limits
-        assert!(simulated_established_sessions.len() <= config.max_sessions + 10,
-               "Session tracking should respect limits");
+        assert!(
+            simulated_established_sessions.len() <= config.max_sessions + 10,
+            "Session tracking should respect limits"
+        );
 
         // Memory usage estimation
         let session_memory: usize = simulated_established_sessions.iter().map(|s| s.len()).sum();
-        let result_memory: usize = simulated_thread_results.iter().map(|(op, _)| op.len()).sum();
+        let result_memory: usize = simulated_thread_results
+            .iter()
+            .map(|(op, _)| op.len())
+            .sum();
         let handle_memory: usize = simulated_handles.iter().map(|h| h.len()).sum();
 
-        assert!(session_memory < 5000, "Session memory should be bounded: {} bytes", session_memory);
-        assert!(result_memory < 8000, "Result memory should be bounded: {} bytes", result_memory);
-        assert!(handle_memory < 3000, "Handle memory should be bounded: {} bytes", handle_memory);
+        assert!(
+            session_memory < 5000,
+            "Session memory should be bounded: {} bytes",
+            session_memory
+        );
+        assert!(
+            result_memory < 8000,
+            "Result memory should be bounded: {} bytes",
+            result_memory
+        );
+        assert!(
+            handle_memory < 3000,
+            "Handle memory should be bounded: {} bytes",
+            handle_memory
+        );
     }
 
     #[test]
@@ -5859,10 +6372,20 @@ mod session_auth_boundary_negative_tests {
 
             if test_seq == u64::MAX {
                 // At maximum, should saturate
-                assert_eq!(incremented, u64::MAX, "Should saturate at u64::MAX ({})", description);
+                assert_eq!(
+                    incremented,
+                    u64::MAX,
+                    "Should saturate at u64::MAX ({})",
+                    description
+                );
             } else {
                 // Below maximum, should increment normally
-                assert_eq!(incremented, test_seq + 1, "Should increment normally ({})", description);
+                assert_eq!(
+                    incremented,
+                    test_seq + 1,
+                    "Should increment normally ({})",
+                    description
+                );
             }
 
             // Test that sequence numbers don't wrap around unsafely
@@ -5882,8 +6405,14 @@ mod session_auth_boundary_negative_tests {
                 session.receive_seq = u64::MAX - 2;
 
                 // Verify sequences are handled safely
-                assert!(session.send_seq < u64::MAX, "Send sequence should be below max");
-                assert!(session.receive_seq < u64::MAX, "Receive sequence should be below max");
+                assert!(
+                    session.send_seq < u64::MAX,
+                    "Send sequence should be below max"
+                );
+                assert!(
+                    session.receive_seq < u64::MAX,
+                    "Receive sequence should be below max"
+                );
             }
         }
 
