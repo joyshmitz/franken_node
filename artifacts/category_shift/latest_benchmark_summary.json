@@ -1,0 +1,1 @@
+{"timestamp":1714723200,"aggregate_score":85,"scenarios":[{"name":"cold_start_latency","dimension":"PerformanceUnderHardening","raw_value":150.0,"score":80,"unit":"ms"}],"provenance_hash":"test123"}
