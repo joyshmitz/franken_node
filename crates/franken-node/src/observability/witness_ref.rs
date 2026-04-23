@@ -518,12 +518,19 @@ impl WitnessValidator {
 
         for (entry, witnesses) in entries_with_witnesses {
             total_entries = total_entries.saturating_add(1);
+            let witness_set_is_valid = !witnesses.has_duplicates();
+
             if is_high_impact(entry) {
                 high_impact_entries = high_impact_entries.saturating_add(1);
-                if !witnesses.is_empty() {
+                if witness_set_is_valid && !witnesses.is_empty() {
                     high_impact_with_witnesses = high_impact_with_witnesses.saturating_add(1);
                 }
             }
+
+            if !witness_set_is_valid {
+                continue;
+            }
+
             for w in witnesses.refs() {
                 total_witnesses = total_witnesses.saturating_add(1);
                 let count = witness_kind_counts
@@ -540,7 +547,11 @@ impl WitnessValidator {
             total_witnesses,
             coverage_pct: if high_impact_entries > 0 {
                 let pct = (high_impact_with_witnesses as f64 / high_impact_entries as f64) * 100.0;
-                if pct.is_finite() { pct } else { 0.0 }
+                if pct.is_finite() {
+                    pct
+                } else {
+                    0.0
+                }
             } else {
                 100.0
             },
@@ -1067,6 +1078,23 @@ mod tests {
         );
     }
 
+    #[test]
+    fn coverage_audit_excludes_duplicate_witness_sets() {
+        let mut set = WitnessSet::new();
+        set.add(make_witness("WIT-001", WitnessKind::Telemetry));
+        set.add(make_witness("WIT-001", WitnessKind::ProofArtifact));
+        set.add(make_witness("WIT-002", WitnessKind::StateSnapshot));
+
+        let entries = vec![(make_entry(DecisionKind::Escalate), set)];
+
+        let audit = WitnessValidator::coverage_audit(&entries);
+        assert_eq!(audit.high_impact_entries, 1);
+        assert_eq!(audit.high_impact_with_witnesses, 0);
+        assert_eq!(audit.total_witnesses, 0);
+        assert!(audit.witness_kind_counts.is_empty());
+        assert!((audit.coverage_pct - 0.0).abs() < f64::EPSILON);
+    }
+
     // ── All three high-impact kinds require witnesses ──
 
     #[test]
@@ -1278,27 +1306,18 @@ mod tests {
         fn strict_mode_is_monotonic_over_lenient_locator_policy() {
             let entry = make_entry(DecisionKind::Quarantine);
             let witnesses_without_locator = set_with(&[("WIT-A", WitnessKind::Telemetry)]);
-            let witnesses_with_locator = locator_set(&[(
-                "WIT-A",
-                WitnessKind::Telemetry,
-                "bundles/replay-001.jsonl",
-            )]);
+            let witnesses_with_locator =
+                locator_set(&[("WIT-A", WitnessKind::Telemetry, "bundles/replay-001.jsonl")]);
 
-            assert!(
-                WitnessValidator::new()
-                    .validate(&entry, &witnesses_without_locator)
-                    .is_ok()
-            );
-            assert!(
-                WitnessValidator::strict()
-                    .validate(&entry, &witnesses_without_locator)
-                    .is_err()
-            );
-            assert!(
-                WitnessValidator::strict()
-                    .validate(&entry, &witnesses_with_locator)
-                    .is_ok()
-            );
+            assert!(WitnessValidator::new()
+                .validate(&entry, &witnesses_without_locator)
+                .is_ok());
+            assert!(WitnessValidator::strict()
+                .validate(&entry, &witnesses_without_locator)
+                .is_err());
+            assert!(WitnessValidator::strict()
+                .validate(&entry, &witnesses_with_locator)
+                .is_ok());
         }
 
         #[test]
@@ -1366,18 +1385,14 @@ mod tests {
             let mut mutated_hash = witness.integrity_hash;
             mutated_hash[7] ^= 0b0000_0001;
 
-            assert!(
-                WitnessValidator::new()
-                    .verify_integrity("DEC-001", &witness, &mutated_hash)
-                    .is_err()
-            );
+            assert!(WitnessValidator::new()
+                .verify_integrity("DEC-001", &witness, &mutated_hash)
+                .is_err());
 
             mutated_hash[7] ^= 0b0000_0001;
-            assert!(
-                WitnessValidator::new()
-                    .verify_integrity("DEC-001", &witness, &mutated_hash)
-                    .is_ok()
-            );
+            assert!(WitnessValidator::new()
+                .verify_integrity("DEC-001", &witness, &mutated_hash)
+                .is_ok());
         }
 
         #[test]
@@ -1447,8 +1462,9 @@ mod tests {
             let mut set = WitnessSet::new();
 
             // Add one valid witness first
-            let valid_witness = WitnessRef::new("WIT-VALID-PROOF", WitnessKind::ProofArtifact, make_hash(42))
-                .with_locator("proofs/bundle-001.jsonl");
+            let valid_witness =
+                WitnessRef::new("WIT-VALID-PROOF", WitnessKind::ProofArtifact, make_hash(42))
+                    .with_locator("proofs/bundle-001.jsonl");
             set.add(valid_witness.clone());
             assert_eq!(set.len(), 1);
             assert_eq!(set.refs()[0].witness_id.as_str(), "WIT-VALID-PROOF");
@@ -1457,23 +1473,17 @@ mod tests {
             let garbage_witnesses = vec![
                 // Empty witness ID
                 WitnessRef::new("", WitnessKind::Telemetry, make_hash(1)),
-
                 // Whitespace-only witness ID
                 WitnessRef::new("   \t\n   ", WitnessKind::StateSnapshot, make_hash(2)),
-
                 // Excessively long witness ID
                 WitnessRef::new("X".repeat(2000), WitnessKind::ExternalSignal, make_hash(3)),
-
                 // All-zero integrity hash
                 WitnessRef::new("WIT-GARBAGE-1", WitnessKind::Telemetry, [0u8; 32]),
-
                 // All-same-byte integrity hash
                 WitnessRef::new("WIT-GARBAGE-2", WitnessKind::StateSnapshot, [0xFF; 32]),
-
                 // Invalid locator (path traversal)
                 WitnessRef::new("WIT-GARBAGE-3", WitnessKind::ProofArtifact, make_hash(4))
                     .with_locator("../../../etc/passwd"),
-
                 // Invalid locator (URL scheme)
                 WitnessRef::new("WIT-GARBAGE-4", WitnessKind::ExternalSignal, make_hash(5))
                     .with_locator("http://evil.com/steal"),
@@ -1485,13 +1495,18 @@ mod tests {
             }
 
             // The valid witness should still be there and be the only one
-            assert_eq!(set.len(), 1, "garbage witnesses should not consume capacity");
+            assert_eq!(
+                set.len(),
+                1,
+                "garbage witnesses should not consume capacity"
+            );
             assert_eq!(set.refs()[0].witness_id.as_str(), "WIT-VALID-PROOF");
             assert_eq!(set.refs()[0].witness_kind, WitnessKind::ProofArtifact);
 
             // Add another valid witness to ensure normal operation still works
-            let valid_witness_2 = WitnessRef::new("WIT-VALID-TELEMETRY", WitnessKind::Telemetry, make_hash(99))
-                .with_locator("telemetry/metrics-001.jsonl");
+            let valid_witness_2 =
+                WitnessRef::new("WIT-VALID-TELEMETRY", WitnessKind::Telemetry, make_hash(99))
+                    .with_locator("telemetry/metrics-001.jsonl");
             set.add(valid_witness_2);
             assert_eq!(set.len(), 2);
             assert_eq!(set.refs()[1].witness_id.as_str(), "WIT-VALID-TELEMETRY");
@@ -1511,11 +1526,13 @@ mod tests {
             assert!(!is_valid_witness_structure(&empty_id));
 
             // Invalid: whitespace-only ID
-            let whitespace_id = WitnessRef::new("   \t\n   ", WitnessKind::StateSnapshot, make_hash(2));
+            let whitespace_id =
+                WitnessRef::new("   \t\n   ", WitnessKind::StateSnapshot, make_hash(2));
             assert!(!is_valid_witness_structure(&whitespace_id));
 
             // Invalid: too long ID
-            let long_id = WitnessRef::new("A".repeat(2000), WitnessKind::ExternalSignal, make_hash(3));
+            let long_id =
+                WitnessRef::new("A".repeat(2000), WitnessKind::ExternalSignal, make_hash(3));
             assert!(!is_valid_witness_structure(&long_id));
 
             // Invalid: all-zero hash
@@ -1523,20 +1540,24 @@ mod tests {
             assert!(!is_valid_witness_structure(&zero_hash));
 
             // Invalid: all-same-byte hash
-            let same_byte_hash = WitnessRef::new("WIT-TEST", WitnessKind::StateSnapshot, [0x42; 32]);
+            let same_byte_hash =
+                WitnessRef::new("WIT-TEST", WitnessKind::StateSnapshot, [0x42; 32]);
             assert!(!is_valid_witness_structure(&same_byte_hash));
 
             // Invalid: unsafe locator
-            let unsafe_locator = WitnessRef::new("WIT-TEST", WitnessKind::ProofArtifact, make_hash(4))
-                .with_locator("../../../secret");
+            let unsafe_locator =
+                WitnessRef::new("WIT-TEST", WitnessKind::ProofArtifact, make_hash(4))
+                    .with_locator("../../../secret");
             assert!(!is_valid_witness_structure(&unsafe_locator));
 
             // Valid: no locator (should pass)
-            let no_locator = WitnessRef::new("WIT-GOOD-NO-LOC", WitnessKind::ExternalSignal, make_hash(5));
+            let no_locator =
+                WitnessRef::new("WIT-GOOD-NO-LOC", WitnessKind::ExternalSignal, make_hash(5));
             assert!(is_valid_witness_structure(&no_locator));
 
             // Valid: acceptable length ID at boundary
-            let boundary_id = WitnessRef::new("A".repeat(1024), WitnessKind::Telemetry, make_hash(6));
+            let boundary_id =
+                WitnessRef::new("A".repeat(1024), WitnessKind::Telemetry, make_hash(6));
             assert!(is_valid_witness_structure(&boundary_id));
         }
     }
@@ -1550,18 +1571,18 @@ mod tests {
         fn negative_witness_id_with_extreme_unicode_and_control_patterns() {
             // Test witness IDs with problematic Unicode and control character patterns
             let malicious_witness_patterns = [
-                "WIT\u{202E}spoofed", // Right-to-left override
-                "WIT\u{200B}\u{FEFF}\u{034F}", // Zero-width/invisible chars
-                "WIT\x00null\r\n\t\x1b[31mred\x1b[0m", // Null + control + ANSI
-                "WIT\u{1F4A9}\u{1F525}\u{1F4AF}", // Emoji sequence
-                "WIT\u{FFFF}\u{10FFFF}", // Max Unicode codepoints
-                "\u{0301}\u{0300}WIT\u{0302}", // Combining diacritical marks
-                "WIT\u{1D11E}\u{1D122}", // Musical symbols (outside BMP)
-                "WIT".repeat(10000), // Extremely long identifier
-                "", // Empty witness ID
-                "WIT\"/><script>alert('xss')</script>", // XSS injection attempt
-                "WIT\":{\"injected\":true,\"evil\":\"", // JSON injection attempt
-                "WIT../../../etc/passwd", // Path traversal attempt
+                "WIT\u{202E}spoofed",                         // Right-to-left override
+                "WIT\u{200B}\u{FEFF}\u{034F}",                // Zero-width/invisible chars
+                "WIT\x00null\r\n\t\x1b[31mred\x1b[0m",        // Null + control + ANSI
+                "WIT\u{1F4A9}\u{1F525}\u{1F4AF}",             // Emoji sequence
+                "WIT\u{FFFF}\u{10FFFF}",                      // Max Unicode codepoints
+                "\u{0301}\u{0300}WIT\u{0302}",                // Combining diacritical marks
+                "WIT\u{1D11E}\u{1D122}",                      // Musical symbols (outside BMP)
+                "WIT".repeat(10000),                          // Extremely long identifier
+                "",                                           // Empty witness ID
+                "WIT\"/><script>alert('xss')</script>",       // XSS injection attempt
+                "WIT\":{\"injected\":true,\"evil\":\"",       // JSON injection attempt
+                "WIT../../../etc/passwd",                     // Path traversal attempt
                 "WIT\r\n\r\n{\"http_header\":\"injection\"}", // HTTP header injection
             ];
 
@@ -1588,12 +1609,20 @@ mod tests {
                 let high_impact_entry = make_entry(DecisionKind::Quarantine);
                 let mut validator = WitnessValidator::new();
                 let validation_result = validator.validate(&high_impact_entry, &set);
-                assert!(validation_result.is_ok(), "witness ID pattern should be accepted: {}", pattern.escape_unicode());
+                assert!(
+                    validation_result.is_ok(),
+                    "witness ID pattern should be accepted: {}",
+                    pattern.escape_unicode()
+                );
 
                 // Should work with strict validation too
                 let mut strict_validator = WitnessValidator::strict();
                 let strict_result = strict_validator.validate(&high_impact_entry, &set);
-                assert!(strict_result.is_ok(), "witness ID pattern should work with strict validator: {}", pattern.escape_unicode());
+                assert!(
+                    strict_result.is_ok(),
+                    "witness ID pattern should work with strict validator: {}",
+                    pattern.escape_unicode()
+                );
             }
         }
 
@@ -1601,22 +1630,22 @@ mod tests {
         fn negative_replay_bundle_locator_injection_and_traversal_attacks() {
             // Test replay bundle locators with various injection and traversal attacks
             let malicious_locators = [
-                "file:///../../../etc/passwd", // Path traversal
-                "file:///C:\\Windows\\System32\\config\\sam", // Windows system files
-                "file:///dev/null", // Device files
-                "file:///proc/self/mem", // Process memory
-                "http://evil.com/steal.php?data=", // HTTP exfiltration attempt
-                "javascript:alert('xss')", // JavaScript injection
+                "file:///../../../etc/passwd",                  // Path traversal
+                "file:///C:\\Windows\\System32\\config\\sam",   // Windows system files
+                "file:///dev/null",                             // Device files
+                "file:///proc/self/mem",                        // Process memory
+                "http://evil.com/steal.php?data=",              // HTTP exfiltration attempt
+                "javascript:alert('xss')",                      // JavaScript injection
                 "data:text/html,<script>alert('xss')</script>", // Data URL injection
-                "ftp://attacker.com/upload/", // FTP upload attempt
-                "file:///var/log/auth.log", // Log files
-                "smb://evil.com/share/malware.exe", // SMB injection
-                "\x00/etc/passwd", // Null byte injection
-                "file:///replay.jsonl\r\nHost: evil.com", // HTTP header injection
-                "file:///replay.jsonl#fragment<script>", // Fragment injection
+                "ftp://attacker.com/upload/",                   // FTP upload attempt
+                "file:///var/log/auth.log",                     // Log files
+                "smb://evil.com/share/malware.exe",             // SMB injection
+                "\x00/etc/passwd",                              // Null byte injection
+                "file:///replay.jsonl\r\nHost: evil.com",       // HTTP header injection
+                "file:///replay.jsonl#fragment<script>",        // Fragment injection
                 "file:///replay.jsonl?param=<script>alert(1)</script>", // Query injection
-                "file://" + &"A".repeat(100000), // Extremely long path
-                "file://\u{202E}normal.jsonl\u{202D}evil.exe", // Bidirectional text attack
+                "file://" + &"A".repeat(100000),                // Extremely long path
+                "file://\u{202E}normal.jsonl\u{202D}evil.exe",  // Bidirectional text attack
             ];
 
             for malicious_locator in &malicious_locators {
@@ -1624,7 +1653,10 @@ mod tests {
                     .with_locator(malicious_locator);
 
                 // Basic locator access should work
-                assert_eq!(witness.replay_bundle_locator.as_deref(), Some(*malicious_locator));
+                assert_eq!(
+                    witness.replay_bundle_locator.as_deref(),
+                    Some(*malicious_locator)
+                );
 
                 // Unsafe locators should be rejected before consuming witness-set capacity.
                 let mut set = WitnessSet::new();
@@ -1646,31 +1678,45 @@ mod tests {
         fn negative_integrity_hash_manipulation_and_collision_simulation() {
             // Test integrity hash handling with various attack patterns
             let collision_simulation_hashes = [
-                [0u8; 32], // All zeros
+                [0u8; 32],  // All zeros
                 [0xFF; 32], // All ones
                 // Alternating pattern
                 {
                     let mut hash = [0u8; 32];
-                    for i in 0..32 { hash[i] = if i % 2 == 0 { 0x55 } else { 0xAA }; }
+                    for i in 0..32 {
+                        hash[i] = if i % 2 == 0 { 0x55 } else { 0xAA };
+                    }
                     hash
                 },
                 // Sequential pattern
                 {
                     let mut hash = [0u8; 32];
-                    for i in 0..32 { hash[i] = i as u8; }
+                    for i in 0..32 {
+                        hash[i] = i as u8;
+                    }
                     hash
                 },
                 // Pathological bit patterns that might confuse hex encoding
                 {
                     let mut hash = [0u8; 32];
-                    hash[0] = 0xDE; hash[1] = 0xAD; hash[2] = 0xBE; hash[3] = 0xEF;
-                    hash[28] = 0xCA; hash[29] = 0xFE; hash[30] = 0xBA; hash[31] = 0xBE;
+                    hash[0] = 0xDE;
+                    hash[1] = 0xAD;
+                    hash[2] = 0xBE;
+                    hash[3] = 0xEF;
+                    hash[28] = 0xCA;
+                    hash[29] = 0xFE;
+                    hash[30] = 0xBA;
+                    hash[31] = 0xBE;
                     hash
                 },
             ];
 
             for (i, test_hash) in collision_simulation_hashes.iter().enumerate() {
-                let witness = WitnessRef::new(format!("WIT-HASH-{}", i), WitnessKind::StateSnapshot, *test_hash);
+                let witness = WitnessRef::new(
+                    format!("WIT-HASH-{}", i),
+                    WitnessKind::StateSnapshot,
+                    *test_hash,
+                );
 
                 // Hash hex encoding should work correctly
                 let hex = witness.hash_hex();
@@ -1679,14 +1725,22 @@ mod tests {
 
                 // Should be able to verify integrity with correct hash
                 let mut validator = WitnessValidator::new();
-                let verify_result = validator.verify_integrity("DEC-HASH-TEST", &witness, test_hash);
-                assert!(verify_result.is_ok(), "integrity verification should pass with matching hash");
+                let verify_result =
+                    validator.verify_integrity("DEC-HASH-TEST", &witness, test_hash);
+                assert!(
+                    verify_result.is_ok(),
+                    "integrity verification should pass with matching hash"
+                );
 
                 // Should fail with different hash
                 let mut different_hash = *test_hash;
                 different_hash[15] ^= 0x01; // Flip one bit
-                let verify_mismatch = validator.verify_integrity("DEC-HASH-TEST", &witness, &different_hash);
-                assert!(verify_mismatch.is_err(), "integrity verification should fail with mismatched hash");
+                let verify_mismatch =
+                    validator.verify_integrity("DEC-HASH-TEST", &witness, &different_hash);
+                assert!(
+                    verify_mismatch.is_err(),
+                    "integrity verification should fail with mismatched hash"
+                );
 
                 if let Err(err) = verify_mismatch {
                     assert_eq!(err.code(), "ERR_INTEGRITY_HASH_MISMATCH");
@@ -1700,7 +1754,10 @@ mod tests {
                 set.add(witness);
                 let entry = make_entry(DecisionKind::Release);
                 let validation_result = WitnessValidator::new().validate(&entry, &set);
-                assert!(validation_result.is_ok(), "validation should work with any hash pattern");
+                assert!(
+                    validation_result.is_ok(),
+                    "validation should work with any hash pattern"
+                );
             }
         }
 
@@ -1747,7 +1804,10 @@ mod tests {
             let entry = make_entry(DecisionKind::Quarantine);
             let mut validator = WitnessValidator::new();
             let validation_result = validator.validate(&entry, &set);
-            assert!(validation_result.is_ok(), "validation should work with max capacity witness set");
+            assert!(
+                validation_result.is_ok(),
+                "validation should work with max capacity witness set"
+            );
 
             // Coverage audit should handle large witness sets
             let entries_with_witnesses = vec![(entry, set)];
@@ -1779,7 +1839,10 @@ mod tests {
             // Test successful validation with counter near overflow
             for _ in 0..5 {
                 let result = validator.validate(&high_impact_entry, &good_witnesses);
-                assert!(result.is_ok(), "validation should succeed even near counter overflow");
+                assert!(
+                    result.is_ok(),
+                    "validation should succeed even near counter overflow"
+                );
             }
 
             // Should saturate at u64::MAX, not wrap around
@@ -1788,7 +1851,10 @@ mod tests {
             // Test rejection with counter near overflow
             for _ in 0..3 {
                 let result = validator.validate(&high_impact_entry, &bad_witnesses);
-                assert!(result.is_err(), "validation should fail for missing witnesses");
+                assert!(
+                    result.is_err(),
+                    "validation should fail for missing witnesses"
+                );
             }
 
             // Should saturate at u64::MAX, not wrap around
@@ -1797,8 +1863,12 @@ mod tests {
             // Test integrity verification with saturated counters
             let witness = make_witness("WIT-INTEGRITY", WitnessKind::ProofArtifact);
             let wrong_hash = make_hash(99);
-            let integrity_result = validator.verify_integrity("DEC-INTEGRITY", &witness, &wrong_hash);
-            assert!(integrity_result.is_err(), "integrity verification should still work with saturated counters");
+            let integrity_result =
+                validator.verify_integrity("DEC-INTEGRITY", &witness, &wrong_hash);
+            assert!(
+                integrity_result.is_err(),
+                "integrity verification should still work with saturated counters"
+            );
             assert_eq!(validator.rejected_count(), u64::MAX); // Should remain saturated
         }
 
@@ -1816,7 +1886,8 @@ mod tests {
                     make_hash((i % 256) as u8),
                 ));
             }
-            entries_with_witnesses.push((make_entry(DecisionKind::Quarantine), massive_telemetry_set));
+            entries_with_witnesses
+                .push((make_entry(DecisionKind::Quarantine), massive_telemetry_set));
 
             // Pattern 2: Many entries with single witnesses of different kinds
             for (i, &kind) in WitnessKind::all().iter().enumerate() {
@@ -1827,7 +1898,8 @@ mod tests {
                         kind,
                         make_hash(((i * 100 + j) % 256) as u8),
                     ));
-                    entries_with_witnesses.push((make_entry(DecisionKind::Release), single_witness_set));
+                    entries_with_witnesses
+                        .push((make_entry(DecisionKind::Release), single_witness_set));
                 }
             }
 
@@ -1851,15 +1923,23 @@ mod tests {
             // Verify arithmetic correctness
             assert_eq!(audit.total_entries, entries_with_witnesses.len() as u64);
 
-            let expected_high_impact = entries_with_witnesses.iter().filter(|(entry, _)| is_high_impact(entry)).count() as u64;
+            let expected_high_impact = entries_with_witnesses
+                .iter()
+                .filter(|(entry, _)| is_high_impact(entry))
+                .count() as u64;
             assert_eq!(audit.high_impact_entries, expected_high_impact);
 
-            let expected_high_impact_with_witnesses = entries_with_witnesses.iter()
+            let expected_high_impact_with_witnesses = entries_with_witnesses
+                .iter()
                 .filter(|(entry, witnesses)| is_high_impact(entry) && !witnesses.is_empty())
                 .count() as u64;
-            assert_eq!(audit.high_impact_with_witnesses, expected_high_impact_with_witnesses);
+            assert_eq!(
+                audit.high_impact_with_witnesses,
+                expected_high_impact_with_witnesses
+            );
 
-            let expected_total_witnesses: u64 = entries_with_witnesses.iter()
+            let expected_total_witnesses: u64 = entries_with_witnesses
+                .iter()
                 .map(|(_, witnesses)| witnesses.len() as u64)
                 .sum();
             assert_eq!(audit.total_witnesses, expected_total_witnesses);
@@ -1878,13 +1958,17 @@ mod tests {
 
             // Should have counts for all witness kinds that were used
             for kind in WitnessKind::all() {
-                let expected_count = entries_with_witnesses.iter()
+                let expected_count = entries_with_witnesses
+                    .iter()
                     .flat_map(|(_, witnesses)| witnesses.refs())
                     .filter(|w| w.witness_kind == *kind)
                     .count() as u64;
 
                 if expected_count > 0 {
-                    assert_eq!(audit.witness_kind_counts.get(kind.label()), Some(&expected_count));
+                    assert_eq!(
+                        audit.witness_kind_counts.get(kind.label()),
+                        Some(&expected_count)
+                    );
                 }
             }
         }
@@ -1893,8 +1977,8 @@ mod tests {
         fn negative_witness_validation_error_display_injection_resistance() {
             // Test validation error display with injection attempts in error fields
             let injection_patterns = [
-                "DEC\x00null\r\ninjection", // Null + CRLF injection
-                "DEC\u{202E}spoofed", // Right-to-left override
+                "DEC\x00null\r\ninjection",         // Null + CRLF injection
+                "DEC\u{202E}spoofed",               // Right-to-left override
                 "DEC<script>alert('xss')</script>", // XSS attempt
                 "DEC\r\n\r\nHTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html>", // HTTP response injection
                 "DEC\t\x08\x7F\x1b[31mred\x1b[0m", // Control chars + ANSI escape
@@ -1972,11 +2056,11 @@ mod tests {
 
             // Simulate rapid operations that mix successes and failures
             let operations = [
-                (&high_impact_entry, &good_witnesses, true),   // Should succeed
-                (&low_impact_entry, &bad_witnesses, true),     // Should succeed (low impact can have no witnesses)
-                (&high_impact_entry, &bad_witnesses, false),   // Should fail (missing witnesses)
+                (&high_impact_entry, &good_witnesses, true), // Should succeed
+                (&low_impact_entry, &bad_witnesses, true), // Should succeed (low impact can have no witnesses)
+                (&high_impact_entry, &bad_witnesses, false), // Should fail (missing witnesses)
                 (&high_impact_entry, &duplicate_witnesses, false), // Should fail (duplicate IDs)
-                (&low_impact_entry, &good_witnesses, true),    // Should succeed
+                (&low_impact_entry, &good_witnesses, true), // Should succeed
             ];
 
             let mut expected_validated = 0u64;
@@ -2005,10 +2089,22 @@ mod tests {
 
             for i in 0..10 {
                 if i % 2 == 0 {
-                    let result = validator.verify_integrity("DEC-INTEGRITY-GOOD", &witness_with_hash, &correct_hash);
-                    assert!(result.is_ok(), "integrity verification {} should succeed", i);
+                    let result = validator.verify_integrity(
+                        "DEC-INTEGRITY-GOOD",
+                        &witness_with_hash,
+                        &correct_hash,
+                    );
+                    assert!(
+                        result.is_ok(),
+                        "integrity verification {} should succeed",
+                        i
+                    );
                 } else {
-                    let result = validator.verify_integrity("DEC-INTEGRITY-BAD", &witness_with_hash, &wrong_hash);
+                    let result = validator.verify_integrity(
+                        "DEC-INTEGRITY-BAD",
+                        &witness_with_hash,
+                        &wrong_hash,
+                    );
                     assert!(result.is_err(), "integrity verification {} should fail", i);
                     expected_rejected = expected_rejected.saturating_add(1);
                 }
@@ -2036,10 +2132,10 @@ mod tests {
 
                 // Test with extreme witness IDs
                 let extreme_ids = [
-                    "".to_string(), // Empty
-                    "X".repeat(100000), // Very long
+                    "".to_string(),             // Empty
+                    "X".repeat(100000),         // Very long
                     "\x00\x01\x02".to_string(), // Binary data
-                    "\u{1F4A9}".repeat(1000), // Unicode spam
+                    "\u{1F4A9}".repeat(1000),   // Unicode spam
                 ];
 
                 for extreme_id in &extreme_ids {
@@ -2065,10 +2161,18 @@ mod tests {
             let mut unique_labels = labels.clone();
             unique_labels.sort();
             unique_labels.dedup();
-            assert_eq!(labels.len(), unique_labels.len(), "all witness kind labels should be unique");
+            assert_eq!(
+                labels.len(),
+                unique_labels.len(),
+                "all witness kind labels should be unique"
+            );
 
             // Verify total count is stable
-            assert_eq!(WitnessKind::all().len(), 4, "total witness kind count should remain stable");
+            assert_eq!(
+                WitnessKind::all().len(),
+                4,
+                "total witness kind count should remain stable"
+            );
         }
     }
 }
