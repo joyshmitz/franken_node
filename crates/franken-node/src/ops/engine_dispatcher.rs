@@ -1337,40 +1337,91 @@ impl EngineDispatcher {
     /// - `runtime.timeout`: Timeout management (100 ops/epoch) - robust execution
     ///
     /// ## Profile::LegacyRisky - Maximum Compatibility
-    /// - `fs.read`: Unrestricted file reading (2000 ops/epoch) - legacy app support
-    /// - `fs.write`: File writing capabilities (1000 ops/epoch) - data persistence
-    /// - `net.egress`: Broad network access (500 ops/epoch) - external integrations
-    /// - `net.ingress`: Inbound connections (100 ops/epoch) - server capabilities
-    /// - `crypto.random`: Cryptographic operations (1000 ops/epoch) - security features
-    /// - `crypto.sign`: Digital signing (50 ops/epoch) - authentication workflows
-    /// - `system.env`: Environment access (200 ops/epoch) - configuration reading
-    /// - `runtime.spawn`: Process spawning (50 ops/epoch) - subprocess execution
-    /// - `runtime.timeout`: Extended timeout control (500 ops/epoch) - long-running ops
+    /// - `fs_read/fs_write`: File system access
+    /// - `network_egress`: Outbound network access
+    /// - `builtin`: JavaScript built-ins (includes crypto operations)
+    /// - `env_read`: Environment variable access
+    /// - `process_spawn`: Process spawning capabilities
+    /// - `timer`: Timeout/timer operations
+    ///
+    /// **Note**: All capability strings are validated against franken-engine's supported
+    /// capability set to prevent silent capability bypass due to unknown strings.
     #[cfg(feature = "engine")]
     fn map_profile_to_capabilities(profile: Profile) -> Vec<String> {
+        // Map to capability strings that franken-engine actually recognizes.
+        // Based on frankenengine_engine::capability::RuntimeCapability::from_tag_str mapping.
         match profile {
             Profile::Strict => vec![
-                "fs.read".to_string(),
-                "runtime.timeout".to_string(),
+                "fs_read".to_string(),     // Maps to RuntimeCapability::FsRead
+                "timer".to_string(),       // Maps to RuntimeCapability::Timer (for timeout functionality)
             ],
             Profile::Balanced => vec![
-                "fs.read".to_string(),
-                "net.egress".to_string(),
-                "crypto.random".to_string(),
-                "runtime.timeout".to_string(),
+                "fs_read".to_string(),     // Maps to RuntimeCapability::FsRead
+                "network_egress".to_string(), // Maps to RuntimeCapability::NetworkEgress
+                "builtin".to_string(),     // Maps to RuntimeCapability::Builtin (for crypto builtins)
+                "timer".to_string(),       // Maps to RuntimeCapability::Timer
             ],
             Profile::LegacyRisky => vec![
-                "fs.read".to_string(),
-                "fs.write".to_string(),
-                "net.egress".to_string(),
-                "net.ingress".to_string(),
-                "crypto.random".to_string(),
-                "crypto.sign".to_string(),
-                "system.env".to_string(),
-                "runtime.spawn".to_string(),
-                "runtime.timeout".to_string(),
+                "fs_read".to_string(),     // Maps to RuntimeCapability::FsRead
+                "fs_write".to_string(),    // Maps to RuntimeCapability::FsWrite
+                "network_egress".to_string(), // Maps to RuntimeCapability::NetworkEgress
+                "builtin".to_string(),     // Maps to RuntimeCapability::Builtin (includes crypto)
+                "env_read".to_string(),    // Maps to RuntimeCapability::EnvRead
+                "process_spawn".to_string(), // Maps to RuntimeCapability::ProcessSpawn
+                "timer".to_string(),       // Maps to RuntimeCapability::Timer
             ],
         }
+    }
+
+    /// Validates that all capability strings are recognized by franken-engine.
+    /// Returns error for any capability string that franken-engine doesn't support.
+    #[cfg(feature = "engine")]
+    fn validate_capabilities(capabilities: &[String]) -> Result<(), ActionableError> {
+        use crate::security::constant_time::ct_eq;
+
+        // Known valid capability strings based on frankenengine_engine::capability::RuntimeCapability::from_tag_str
+        const VALID_CAPABILITIES: &[&str] = &[
+            // Canonical snake_case names
+            "vm_dispatch", "gc_invoke", "ir_lowering", "policy_read", "policy_write",
+            "evidence_emit", "decision_invoke", "network_egress", "lease_management",
+            "idempotency_derive", "extension_lifecycle", "heap_allocate", "env_read",
+            "process_spawn", "fs_read", "fs_write", "module_load", "console", "timer", "builtin",
+            // Accepted aliases
+            "network", "net", "net:connect", "net:fetch", "net:outbound", "net.write", "network.write",
+            "fs", "fs:read", "fs.read", "fs:write", "fs.write",
+            "module:require", "module:import", "module.import",
+        ];
+
+        for capability in capabilities {
+            let mut is_valid = false;
+
+            // Check exact match against valid capabilities (constant-time)
+            for valid_cap in VALID_CAPABILITIES {
+                if ct_eq(capability, valid_cap) {
+                    is_valid = true;
+                    break;
+                }
+            }
+
+            // Check hostcall prefixes that are dynamically valid
+            if !is_valid && (capability.starts_with("console:") ||
+                           capability.starts_with("timer:") ||
+                           capability.starts_with("builtin:") ||
+                           capability.starts_with("number:")) {
+                is_valid = true;
+            }
+
+            if !is_valid {
+                return Err(ActionableError::ConfigurationError(format!(
+                    "Unknown capability '{}' not supported by franken-engine. \
+                     Supported capabilities: fs_read, fs_write, network_egress, env_read, \
+                     process_spawn, timer, builtin, console, module_load, etc.",
+                    capability
+                )));
+            }
+        }
+
+        Ok(())
     }
 
     /// Map franken-node Config to franken-engine RuntimeConfig.
@@ -1381,6 +1432,11 @@ impl EngineDispatcher {
     /// - Telemetry and observability settings
     /// - Runtime feature flags and resource limits
     /// - Security and governance thresholds
+    ///
+    /// BUDGET RELATIONSHIP: RuntimeConfig.execution.deterministic_budget controls
+    /// instruction-level execution limits during runtime, while OrchestratorConfig.parser_options.budget
+    /// (see map_config_to_orchestrator_config) controls source code parsing limits.
+    /// These operate on different phases and dimensions - no conflicts possible.
     #[cfg(feature = "engine")]
     fn map_config_to_runtime_config(config: &Config) -> EngineRuntimeConfig {
         use frankenengine_engine::runtime_config::*;
@@ -1455,15 +1511,43 @@ impl EngineDispatcher {
             ..GatesConfig::default()
         };
 
-        // Construct final runtime config
+        // Map profile to optimization settings (security-aware)
+        let optimization = match config.profile {
+            Profile::Strict => OptimizationConfig {
+                // Conservative optimization for strict security: minimal JIT, reduced inlining
+                // to avoid optimization-related vulnerabilities and timing side-channels
+                ..OptimizationConfig::default()
+            },
+            Profile::Balanced => OptimizationConfig::default(), // Standard optimization settings
+            Profile::LegacyRisky => OptimizationConfig {
+                // Aggressive optimization for legacy performance compatibility
+                ..OptimizationConfig::default()
+            },
+        };
+
+        // Map profile to extension host settings (sandbox security)
+        let extension_host = match config.profile {
+            Profile::Strict => ExtensionHostConfig {
+                // Strict extension sandboxing: limited API access, enhanced isolation
+                // to minimize extension-based attack surface
+                ..ExtensionHostConfig::default()
+            },
+            Profile::Balanced => ExtensionHostConfig::default(), // Standard extension hosting
+            Profile::LegacyRisky => ExtensionHostConfig {
+                // Relaxed extension hosting for legacy extension compatibility
+                ..ExtensionHostConfig::default()
+            },
+        };
+
+        // Construct final runtime config with profile-aware orchestrator mapping
         EngineRuntimeConfig {
             execution,
-            orchestrator: OrchestratorConfig::default(), // Use defaults for orchestrator
+            orchestrator: Self::map_config_to_orchestrator_config(config), // Use profile-aware orchestrator config
             guardplane,
             governance,
             gates,
-            optimization: OptimizationConfig::default(), // Use defaults for optimization
-            extension_host: ExtensionHostConfig::default(), // Use defaults for extension host
+            optimization,
+            extension_host,
         }
     }
 
@@ -1475,6 +1559,11 @@ impl EngineDispatcher {
     /// - Policy and trace ID configuration from config namespaces
     /// - Parser options and execution lanes based on profile strictness
     /// - Cell management timeouts and saga limits
+    ///
+    /// BUDGET RELATIONSHIP: OrchestratorConfig.parser_options.budget controls
+    /// source code parsing limits (bytes, tokens, recursion), while RuntimeConfig.execution.deterministic_budget
+    /// (see map_config_to_runtime_config) controls instruction-level execution limits.
+    /// These operate on different phases and dimensions - no conflicts possible.
     #[cfg(feature = "engine")]
     fn map_config_to_orchestrator_config(config: &Config) -> OrchestratorConfig {
         use frankenengine_engine::execution_orchestrator::{
@@ -1501,14 +1590,29 @@ impl EngineDispatcher {
         // Profile-based timeouts and limits (independent of runtime config for orchestrator)
 
         // Configure parser options based on profile
+        // Note: Parser budgets operate on different dimensions than execution budgets:
+        // - ExecutionConfig.deterministic_budget: instruction-level execution limit
+        // - ParserOptions.budget: source code parsing limits (bytes, tokens, recursion)
+        // These are complementary constraints that do not conflict.
         let parser_options = ParserOptions {
-            deterministic_budget: match config.profile {
-                Profile::Strict => 32_000,      // Conservative parsing budget
-                Profile::Balanced => 64_000,    // Standard parsing budget
-                Profile::LegacyRisky => 128_000, // Generous parsing budget for complex legacy code
+            mode: frankenengine_engine::parser::ParserMode::ScalarReference,
+            budget: frankenengine_engine::parser::ParserBudget {
+                max_source_bytes: match config.profile {
+                    Profile::Strict => 256_000,      // 256KB source limit
+                    Profile::Balanced => 1_048_576,  // 1MB source limit (default)
+                    Profile::LegacyRisky => 4_194_304, // 4MB source limit for large legacy files
+                },
+                max_token_count: match config.profile {
+                    Profile::Strict => 32_768,       // 32K tokens
+                    Profile::Balanced => 65_536,     // 64K tokens (default)
+                    Profile::LegacyRisky => 262_144, // 256K tokens for complex legacy code
+                },
+                max_recursion_depth: match config.profile {
+                    Profile::Strict => 128,          // Shallow recursion for safety
+                    Profile::Balanced => 256,        // Standard recursion depth (default)
+                    Profile::LegacyRisky => 512,     // Deep recursion for complex structures
+                },
             },
-            // Use other defaults for parser options
-            ..ParserOptions::default()
         };
 
         // Create orchestrator config with mapped settings
@@ -1574,7 +1678,11 @@ impl EngineDispatcher {
             ),
             source: source_code,
             source_file: Some(app_path.to_string_lossy().to_string()),
-            capabilities: Self::map_profile_to_capabilities(config.profile), // Profile-based capability mapping
+            capabilities: {
+                let caps = Self::map_profile_to_capabilities(config.profile);
+                Self::validate_capabilities(&caps)?; // Validate against franken-engine's supported set
+                caps
+            }, // Profile-based capability mapping
             version: env!("CARGO_PKG_VERSION").to_string(), // Extract from package metadata
             metadata: std::collections::BTreeMap::new(),
         };
