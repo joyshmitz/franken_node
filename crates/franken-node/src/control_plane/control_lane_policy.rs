@@ -528,20 +528,37 @@ impl ControlLanePolicy {
             .saturating_sub(cancel_slots)
             .saturating_sub(timed_slots);
 
-        // Schedule: Cancel first (priority), bounded by total_slots
-        let cancel_run = cancel_pending.min(cancel_slots.max(1).min(total_slots)); // at least 1 if pending, bounded by total_slots
+        // Schedule by strict priority. Budget math floors small totals to zero,
+        // so each pending higher-priority lane gets a one-slot floor before
+        // lower-priority lanes consume scarce capacity.
+        let cancel_capacity = if cancel_pending > 0 && total_slots > 0 {
+            cancel_slots.max(1).min(total_slots)
+        } else {
+            cancel_slots.min(total_slots)
+        };
+        let cancel_run = cancel_pending.min(cancel_capacity);
 
         let cancel_leftover = cancel_slots.saturating_sub(cancel_run);
         let remaining_total = total_slots.saturating_sub(cancel_run);
 
         // Timed gets its budget plus any unused Cancel budget, bounded by remaining slots
-        let timed_run = timed_pending.min((timed_slots + cancel_leftover).min(remaining_total));
+        let timed_capacity = timed_slots.saturating_add(cancel_leftover);
+        let timed_capacity = if timed_pending > 0 && remaining_total > 0 {
+            timed_capacity.max(1).min(remaining_total)
+        } else {
+            timed_capacity.min(remaining_total)
+        };
+        let timed_run = timed_pending.min(timed_capacity);
 
-        let timed_leftover = (timed_slots + cancel_leftover).saturating_sub(timed_run);
+        let timed_leftover = timed_capacity.saturating_sub(timed_run);
         let remaining_total = remaining_total.saturating_sub(timed_run);
 
         // Ready gets its budget plus any unused Timed budget, bounded by remaining slots
-        let ready_run = ready_pending.min((ready_slots + timed_leftover).min(remaining_total));
+        let ready_run = ready_pending.min(
+            ready_slots
+                .saturating_add(timed_leftover)
+                .min(remaining_total),
+        );
 
         // Starvation detection
         let cancel_starved = cancel_pending > 0 && cancel_run == 0;
