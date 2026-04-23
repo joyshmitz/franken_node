@@ -103,6 +103,44 @@ enum EngineProcessError {
     TelemetryDrain(String),
 }
 
+/// Specific error types for native engine execution with detailed context
+#[derive(Debug)]
+pub enum EngineDispatchError {
+    /// Engine feature not compiled in (rebuild required)
+    EngineNotBuilt {
+        app_path: PathBuf,
+        profile: Profile,
+    },
+    /// Engine returned an error during execution
+    EngineExecutionError {
+        app_path: PathBuf,
+        error_message: String,
+        phase: String,
+    },
+    /// Panic occurred in engine execution
+    EnginePanic {
+        app_path: PathBuf,
+        panic_message: String,
+        cleanup_successful: bool,
+    },
+    /// Engine execution timed out
+    EngineTimeout {
+        app_path: PathBuf,
+        timeout_duration: std::time::Duration,
+        phase: String,
+    },
+    /// Failed to read application source code
+    SourceReadError {
+        app_path: PathBuf,
+        io_error: std::io::Error,
+    },
+    /// Telemetry bridge failed to drain properly
+    TelemetryError {
+        app_path: PathBuf,
+        telemetry_error: String,
+    },
+}
+
 impl std::fmt::Display for EngineProcessError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -112,6 +150,96 @@ impl std::fmt::Display for EngineProcessError {
 }
 
 impl std::error::Error for EngineProcessError {}
+
+impl std::fmt::Display for EngineDispatchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EngineNotBuilt { profile, .. } => write!(
+                f,
+                "Native engine required for {:?} profile but engine feature not compiled",
+                profile
+            ),
+            Self::EngineExecutionError { error_message, phase, .. } => write!(
+                f,
+                "Engine execution failed during {}: {}",
+                phase, error_message
+            ),
+            Self::EnginePanic { panic_message, cleanup_successful, .. } => write!(
+                f,
+                "Engine panicked: {} (cleanup: {})",
+                panic_message,
+                if *cleanup_successful { "successful" } else { "failed" }
+            ),
+            Self::EngineTimeout { timeout_duration, phase, .. } => write!(
+                f,
+                "Engine execution timed out after {:?} during {}",
+                timeout_duration, phase
+            ),
+            Self::SourceReadError { io_error, .. } => write!(
+                f,
+                "Failed to read application source: {}",
+                io_error
+            ),
+            Self::TelemetryError { telemetry_error, .. } => write!(
+                f,
+                "Telemetry bridge error: {}",
+                telemetry_error
+            ),
+        }
+    }
+}
+
+impl std::error::Error for EngineDispatchError {}
+
+impl EngineDispatchError {
+    /// Convert to ActionableError with helpful guidance
+    pub fn to_actionable(&self) -> ActionableError {
+        match self {
+            Self::EngineNotBuilt { app_path, .. } => ActionableError::new(
+                "Native engine required but not available. Please rebuild with engine feature enabled.",
+                format!(
+                    "cargo build --features engine && franken-node run {}",
+                    app_path.display()
+                ),
+            ),
+            Self::EngineExecutionError { app_path, error_message, phase } => ActionableError::new(
+                format!("Engine execution failed during {}: {}", phase, error_message),
+                format!(
+                    "Check application code and runtime configuration for {}",
+                    app_path.display()
+                ),
+            ),
+            Self::EnginePanic { app_path, panic_message, .. } => ActionableError::new(
+                format!("Engine crashed with panic: {}", panic_message),
+                format!(
+                    "This indicates a bug in the engine. Please report this issue with the code: {}",
+                    app_path.display()
+                ),
+            ),
+            Self::EngineTimeout { app_path, timeout_duration, phase } => ActionableError::new(
+                format!("Engine execution timed out after {:?} during {}", timeout_duration, phase),
+                format!(
+                    "Consider optimizing the application or increasing timeout limits for {}",
+                    app_path.display()
+                ),
+            ),
+            Self::SourceReadError { app_path, io_error } => ActionableError::new(
+                format!("Cannot read application source: {}", io_error),
+                format!(
+                    "Ensure the file exists and is readable: {}",
+                    app_path.display()
+                ),
+            ),
+            Self::TelemetryError { app_path, telemetry_error } => ActionableError::new(
+                format!("Telemetry bridge failed: {}", telemetry_error),
+                format!(
+                    "Check system resources and retry: franken-node run {}",
+                    app_path.display()
+                ),
+            ),
+        }
+    }
+}
 
 #[derive(Debug)]
 enum DispatchResolutionError {
@@ -1025,16 +1153,17 @@ impl EngineDispatcher {
             {
                 // Use native execution when engine feature is enabled
                 tracing::info!("Using native franken_engine execution instead of external process");
-                Self::run_engine_native(app_path, config, policy_mode, telemetry_handle)
-                    .map_err(|err| anyhow::anyhow!("{err}"))
+                Self::run_engine_native_with_error_handling(app_path, config, policy_mode, telemetry_handle)
             }
             #[cfg(not(feature = "engine"))]
             {
                 // Check profile policy for engine feature requirement
                 if config.profile == Profile::Strict {
-                    return Err(anyhow::anyhow!(
-                        "Native engine required for strict profile. Please rebuild with --features engine or use a different profile."
-                    ));
+                    let dispatch_error = EngineDispatchError::EngineNotBuilt {
+                        app_path: app_path.to_path_buf(),
+                        profile: config.profile,
+                    };
+                    return Err(dispatch_error.to_actionable().into());
                 }
                 // Fall back to external process when engine feature is disabled
                 tracing::warn!("Engine feature disabled; falling back to external process execution");
@@ -1087,6 +1216,103 @@ impl EngineDispatcher {
             telemetry: inputs.telemetry,
             captured_output: captured_output_from(inputs.output),
         }
+    }
+
+    /// Execute code using native franken_engine API with enhanced error handling.
+    /// Wraps run_engine_native with timeout, panic detection, and detailed error context.
+    #[cfg(feature = "engine")]
+    fn run_engine_native_with_error_handling(
+        app_path: &Path,
+        config: &Config,
+        policy_mode: &str,
+        telemetry_handle: TelemetryRuntimeHandle,
+    ) -> Result<(Output, TelemetryRuntimeReport)> {
+        use std::panic;
+        use std::sync::mpsc;
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let timeout = Duration::from_secs(300); // 5 minute timeout for engine execution
+        let app_path_buf = app_path.to_path_buf();
+
+        // Set up panic hook to capture panic information
+        let (panic_tx, panic_rx) = mpsc::channel();
+        let original_hook = panic::take_hook();
+        let app_path_for_panic = app_path_buf.clone();
+
+        panic::set_hook(Box::new(move |panic_info| {
+            let panic_message = format!("{}", panic_info);
+            let _ = panic_tx.send(panic_message);
+        }));
+
+        // Execute with timeout in separate thread to detect hangs
+        let (result_tx, result_rx) = mpsc::channel();
+        let app_path_for_thread = app_path_buf.clone();
+
+        let execution_thread = thread::spawn(move || {
+            let result = Self::run_engine_native(
+                &app_path_for_thread,
+                config,
+                policy_mode,
+                telemetry_handle,
+            );
+            let _ = result_tx.send(result);
+        });
+
+        let start_time = Instant::now();
+        let result = loop {
+            // Check for panic first
+            if let Ok(panic_message) = panic_rx.try_recv() {
+                let cleanup_successful = execution_thread.join().is_ok();
+                let dispatch_error = EngineDispatchError::EnginePanic {
+                    app_path: app_path_buf,
+                    panic_message,
+                    cleanup_successful,
+                };
+                break Err(dispatch_error.to_actionable().into());
+            }
+
+            // Check for completion
+            if let Ok(result) = result_rx.try_recv() {
+                break result.map_err(|err| {
+                    match err {
+                        EngineProcessError::Spawn { message, .. } => {
+                            let dispatch_error = EngineDispatchError::EngineExecutionError {
+                                app_path: app_path_buf.clone(),
+                                error_message: message,
+                                phase: "execution".to_string(),
+                            };
+                            dispatch_error.to_actionable().into()
+                        },
+                        EngineProcessError::TelemetryDrain(message) => {
+                            let dispatch_error = EngineDispatchError::TelemetryError {
+                                app_path: app_path_buf.clone(),
+                                telemetry_error: message,
+                            };
+                            dispatch_error.to_actionable().into()
+                        },
+                    }
+                });
+            }
+
+            // Check for timeout
+            if start_time.elapsed() > timeout {
+                // Thread may still be running, but we'll return timeout error
+                let dispatch_error = EngineDispatchError::EngineTimeout {
+                    app_path: app_path_buf,
+                    timeout_duration: timeout,
+                    phase: "execution".to_string(),
+                };
+                break Err(dispatch_error.to_actionable().into());
+            }
+
+            thread::sleep(Duration::from_millis(10));
+        };
+
+        // Restore original panic hook
+        panic::set_hook(original_hook);
+
+        result
     }
 
     /// Execute code using native franken_engine API instead of external process.
@@ -1217,6 +1443,15 @@ impl EngineDispatcher {
 
         let result = match run_command_capture_output(cmd) {
             Ok(output) => {
+                let exec_duration = exec_start.elapsed();
+                tracing::info!(
+                    execution_mode = "external",
+                    phase = "execution",
+                    duration_ms = exec_duration.as_millis() as u64,
+                    exit_code = ?output.status.code(),
+                    "External engine process completed"
+                );
+
                 let report = telemetry_handle
                     .stop_and_join(ShutdownReason::EngineExit {
                         exit_code: output.status.code(),
@@ -1228,29 +1463,42 @@ impl EngineDispatcher {
                     })?;
                 Ok((output, report))
             }
-            Err(spawn_err) => match telemetry_handle.stop_and_join(ShutdownReason::Requested) {
-                Ok(report) if report.drain_completed => Err(EngineProcessError::Spawn {
-                    message: format!(
-                        "Failed to spawn franken_engine process: {spawn_err}. telemetry bridge stopped after launch failure in {}ms",
-                        report.drain_duration_ms
-                    ),
-                    telemetry_report: Some(Box::new(report)),
-                }),
-                Ok(report) => Err(EngineProcessError::Spawn {
-                    message: format!(
-                        "Failed to spawn franken_engine process: {spawn_err}. telemetry bridge drain timed out after launch failure in {}ms",
-                        report.drain_duration_ms
-                    ),
-                    telemetry_report: Some(Box::new(report)),
-                }),
-                Err(cleanup_err) => Err(EngineProcessError::Spawn {
-                    message: format!(
-                        "Failed to spawn franken_engine process: {spawn_err}. additionally failed to stop telemetry bridge: {cleanup_err}"
-                    ),
-                    telemetry_report: None,
-                }),
-            },
-        }
+            Err(spawn_err) => {
+                let exec_duration = exec_start.elapsed();
+                tracing::info!(
+                    execution_mode = "external",
+                    phase = "execution",
+                    duration_ms = exec_duration.as_millis() as u64,
+                    error = %spawn_err,
+                    "External engine process failed to start"
+                );
+
+                match telemetry_handle.stop_and_join(ShutdownReason::Requested) {
+                    Ok(report) if report.drain_completed => Err(EngineProcessError::Spawn {
+                        message: format!(
+                            "Failed to spawn franken_engine process: {spawn_err}. telemetry bridge stopped after launch failure in {}ms",
+                            report.drain_duration_ms
+                        ),
+                        telemetry_report: Some(Box::new(report)),
+                    }),
+                    Ok(report) => Err(EngineProcessError::Spawn {
+                        message: format!(
+                            "Failed to spawn franken_engine process: {spawn_err}. telemetry bridge drain timed out after launch failure in {}ms",
+                            report.drain_duration_ms
+                        ),
+                        telemetry_report: Some(Box::new(report)),
+                    }),
+                    Err(cleanup_err) => Err(EngineProcessError::Spawn {
+                        message: format!(
+                            "Failed to spawn franken_engine process: {spawn_err}. additionally failed to stop telemetry bridge: {cleanup_err}"
+                        ),
+                        telemetry_report: None,
+                    }),
+                }
+            }
+        };
+
+        result
     }
 }
 
@@ -4460,6 +4708,133 @@ mod tests {
             // Should have reasonable length bounds
             assert!(result.len() < 100000, "Result should be reasonably bounded");
         }
+    }
+
+    #[test]
+    fn performance_telemetry_emitted_for_external_execution() {
+        // Test that external engine execution emits structured performance telemetry
+        use std::sync::mpsc;
+        use tracing::{subscriber::with_default, Level};
+        use tracing_subscriber::{fmt::TestWriter, layer::SubscriberExt, util::SubscriberInitExt};
+
+        // Set up tracing capture
+        let (tx, rx) = mpsc::channel();
+        let test_writer = TestWriter::new();
+        let subscriber = tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_writer(test_writer.clone())
+                    .with_level(true)
+                    .with_target(false)
+                    .with_ansi(false)
+                    .compact()
+            );
+
+        with_default(subscriber, || {
+            // Create a mock telemetry handle
+            let temp_dir = tempfile::tempdir().expect("create temp dir");
+            let socket_path = temp_dir.path().join("test.sock");
+            let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+            let bridge = TelemetryBridge::new(socket_path.to_str().unwrap(), adapter);
+            let handle = bridge.start().expect("start telemetry bridge");
+
+            // Create a simple echo command for testing
+            let mut cmd = Command::new("echo");
+            cmd.arg("test");
+
+            // Execute the external path
+            let result = EngineDispatcher::run_engine_process(&mut cmd, handle);
+
+            // Verify the result is successful
+            assert!(result.is_ok(), "External execution should succeed");
+        });
+
+        // Check captured logs for performance telemetry
+        let logs = test_writer.to_string();
+
+        // Should contain telemetry events with correct structure
+        assert!(
+            logs.contains("execution_mode=\"external\""),
+            "Logs should contain external execution mode: {}", logs
+        );
+        assert!(
+            logs.contains("phase=\"execution\""),
+            "Logs should contain execution phase: {}", logs
+        );
+        assert!(
+            logs.contains("duration_ms="),
+            "Logs should contain duration measurement: {}", logs
+        );
+        assert!(
+            logs.contains("External engine process completed") ||
+            logs.contains("Starting external engine process"),
+            "Logs should contain process lifecycle events: {}", logs
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "engine")]
+    fn performance_telemetry_emitted_for_native_execution() {
+        // Test that native engine execution emits structured performance telemetry
+        use std::sync::mpsc;
+        use tracing::{subscriber::with_default, Level};
+        use tracing_subscriber::{fmt::TestWriter, layer::SubscriberExt, util::SubscriberInitExt};
+
+        // Set up tracing capture
+        let (tx, rx) = mpsc::channel();
+        let test_writer = TestWriter::new();
+        let subscriber = tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_writer(test_writer.clone())
+                    .with_level(true)
+                    .with_target(false)
+                    .with_ansi(false)
+                    .compact()
+            );
+
+        with_default(subscriber, || {
+            // Create a test JS file
+            let temp_dir = tempfile::tempdir().expect("create temp dir");
+            let test_file = temp_dir.path().join("test.js");
+            std::fs::write(&test_file, "console.log('test');").expect("write test file");
+
+            // Create minimal config
+            let config = Config::default();
+
+            // Create mock telemetry handle
+            let socket_path = temp_dir.path().join("test.sock");
+            let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+            let bridge = TelemetryBridge::new(socket_path.to_str().unwrap(), adapter);
+            let handle = bridge.start().expect("start telemetry bridge");
+
+            // Execute the native path
+            let result = EngineDispatcher::run_engine_native(&test_file, &config, "strict", handle);
+
+            // Note: This may fail due to missing engine setup, but telemetry should still be emitted
+            // We're testing the telemetry emission, not the full execution success
+        });
+
+        // Check captured logs for performance telemetry
+        let logs = test_writer.to_string();
+
+        // Should contain telemetry events with correct structure
+        assert!(
+            logs.contains("execution_mode=\"native\""),
+            "Logs should contain native execution mode: {}", logs
+        );
+        assert!(
+            logs.contains("phase=\"setup\"") || logs.contains("phase=\"execution\""),
+            "Logs should contain setup or execution phase: {}", logs
+        );
+        assert!(
+            logs.contains("duration_ms="),
+            "Logs should contain duration measurement: {}", logs
+        );
+        assert!(
+            logs.contains("Native engine") || logs.contains("setup completed") || logs.contains("execution"),
+            "Logs should contain native engine lifecycle events: {}", logs
+        );
     }
 
     #[test]
