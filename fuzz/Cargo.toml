@@ -31,6 +31,7 @@ features = [
     "test-support",
     "cbor-serialization",
     "extended-surfaces",
+    "http-client",
     "parsing",
     "external-commands",
 ]
@@ -163,6 +164,12 @@ doc = false
 [[bin]]
 name = "fuzz_receipt_trust_card_roundtrip"
 path = "fuzz_targets/fuzz_receipt_trust_card_roundtrip.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_release_manifest_parse"
+path = "fuzz_targets/fuzz_release_manifest_parse.rs"
 test = false
 doc = false
 
