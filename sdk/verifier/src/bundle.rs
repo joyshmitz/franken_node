@@ -172,6 +172,9 @@ pub enum BundleError {
         expected: String,
         actual: String,
     },
+    InvalidVerifierIdentity {
+        actual: String,
+    },
     Ed25519SignatureMalformed {
         length: usize,
     },
@@ -272,6 +275,10 @@ impl fmt::Display for BundleError {
             Self::SignatureMismatch { expected, actual } => write!(
                 formatter,
                 "replay bundle signature mismatch: expected {expected}, got {actual}"
+            ),
+            Self::InvalidVerifierIdentity { actual } => write!(
+                formatter,
+                "replay bundle verifier identity must use external verifier:// scheme with non-empty name: got {actual}"
             ),
             Self::Ed25519SignatureMalformed { length } => write!(
                 formatter,
@@ -447,6 +454,7 @@ fn validate_structure(bundle: &ReplayBundle) -> Result<(), BundleError> {
     validate_nonempty("created_at", &bundle.created_at)?;
     validate_nonempty("policy_version", &bundle.policy_version)?;
     validate_nonempty("verifier_identity", &bundle.verifier_identity)?;
+    validate_verifier_identity(&bundle.verifier_identity)?;
     validate_nonempty("integrity_hash", &bundle.integrity_hash)?;
     validate_nonempty("signature.signature_hex", &bundle.signature.signature_hex)?;
     if bundle.timeline.is_empty() {
@@ -497,6 +505,21 @@ fn validate_hash_algorithm(actual: &str) -> Result<(), BundleError> {
     } else {
         Ok(())
     }
+}
+
+fn validate_verifier_identity(verifier_identity: &str) -> Result<(), BundleError> {
+    let normalized = verifier_identity.trim();
+    let Some(remainder) = normalized.strip_prefix("verifier://") else {
+        return Err(BundleError::InvalidVerifierIdentity {
+            actual: verifier_identity.to_string(),
+        });
+    };
+    if remainder.is_empty() {
+        return Err(BundleError::InvalidVerifierIdentity {
+            actual: verifier_identity.to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn validate_artifacts(bundle: &ReplayBundle) -> Result<(), BundleError> {
@@ -711,4 +734,98 @@ fn canonicalize_value(value: Value, path: &str) -> Result<Value, BundleError> {
 
 fn constant_time_eq(left: &str, right: &str) -> bool {
     bool::from(left.as_bytes().ct_eq(right.as_bytes()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn make_test_bundle(verifier_identity: &str) -> ReplayBundle {
+        let artifact_bytes = b"bundle-artifact";
+        let artifact_path = "artifacts/replay.json".to_string();
+        let mut artifacts = BTreeMap::new();
+        artifacts.insert(
+            artifact_path.clone(),
+            BundleArtifact {
+                media_type: "application/json".to_string(),
+                digest: hash(artifact_bytes),
+                bytes_hex: hex::encode(artifact_bytes),
+            },
+        );
+        let mut bundle = ReplayBundle {
+            header: BundleHeader {
+                hash_algorithm: REPLAY_BUNDLE_HASH_ALGORITHM.to_string(),
+                payload_length_bytes: u64::try_from(artifact_bytes.len())
+                    .expect("artifact length should fit in u64"),
+                chunk_count: 1,
+            },
+            schema_version: REPLAY_BUNDLE_SCHEMA_VERSION.to_string(),
+            sdk_version: SDK_VERSION.to_string(),
+            bundle_id: "bundle-alpha".to_string(),
+            incident_id: "incident-alpha".to_string(),
+            created_at: "2026-02-21T00:00:00Z".to_string(),
+            policy_version: "policy.v1".to_string(),
+            verifier_identity: verifier_identity.to_string(),
+            timeline: vec![TimelineEvent {
+                sequence_number: 1,
+                event_id: "evt-1".to_string(),
+                timestamp: "2026-02-21T00:00:01Z".to_string(),
+                event_type: "verification.started".to_string(),
+                payload: json!({"phase": "replay"}),
+                state_snapshot: json!({"step": 1}),
+                causal_parent: None,
+                policy_version: "policy.v1".to_string(),
+            }],
+            initial_state_snapshot: json!({"baseline": true}),
+            evidence_refs: vec!["evidence://capsule/alpha".to_string()],
+            artifacts,
+            chunks: vec![BundleChunk {
+                chunk_index: 0,
+                total_chunks: 1,
+                artifact_path,
+                payload_length_bytes: u64::try_from(artifact_bytes.len())
+                    .expect("artifact length should fit in u64"),
+                payload_digest: hash(artifact_bytes),
+            }],
+            metadata: BTreeMap::new(),
+            integrity_hash: String::new(),
+            signature: BundleSignature {
+                algorithm: REPLAY_BUNDLE_HASH_ALGORITHM.to_string(),
+                signature_hex: String::new(),
+            },
+        };
+        seal(&mut bundle).expect("test bundle should seal");
+        bundle
+    }
+
+    #[test]
+    fn verify_accepts_external_verifier_identity() {
+        let bundle = make_test_bundle("verifier://alpha");
+        let bytes = serialize(&bundle).expect("test bundle should serialize");
+
+        let verified = verify(&bytes).expect("external verifier identity should verify");
+
+        assert_eq!(verified.verifier_identity, "verifier://alpha");
+    }
+
+    #[test]
+    fn verify_rejects_non_verifier_identity_scheme() {
+        let bundle = make_test_bundle("operator://alpha");
+        let bytes = serialize(&bundle).expect("test bundle should serialize");
+
+        let err = verify(&bytes).expect_err("non-verifier identity must fail closed");
+
+        assert!(matches!(err, BundleError::InvalidVerifierIdentity { .. }));
+    }
+
+    #[test]
+    fn verify_rejects_empty_verifier_identity_after_scheme() {
+        let bundle = make_test_bundle("verifier://");
+        let bytes = serialize(&bundle).expect("test bundle should serialize");
+
+        let err = verify(&bytes).expect_err("empty verifier name must fail closed");
+
+        assert!(matches!(err, BundleError::InvalidVerifierIdentity { .. }));
+    }
 }
