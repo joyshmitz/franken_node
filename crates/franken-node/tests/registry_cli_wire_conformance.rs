@@ -31,7 +31,7 @@ const WIRE_CLAUSES: &[WireClause] = &[
         test_case: "publish command is executable",
     },
     WireClause {
-        spec_marker: "franken-node registry search",
+        spec_marker: "registry search",
         level: "MUST",
         test_case: "search command reports published extension rows",
     },
@@ -119,7 +119,10 @@ fn registry_publish_search_verify_gc_wire_conforms_to_contract() -> Result<(), S
     );
 
     let first_publish = publish_plugin(&workspace, &signing_key_arg, b"first registry payload")?;
-    assert_eq!(first_publish.fields.get("status"), Some(&"active".to_string()));
+    assert_eq!(
+        first_publish.fields.get("status"),
+        Some(&"active".to_string())
+    );
     assert_eq!(
         first_publish.fields.get("publisher_key_id"),
         Some(&expected_key_id)
@@ -157,12 +160,16 @@ fn registry_publish_search_verify_gc_wire_conforms_to_contract() -> Result<(), S
     .get_output()
     .stdout
     .clone();
-    let verify = parse_prefixed_fields(&String::from_utf8_lossy(&verify_stdout), "registry verify:")?;
+    let verify =
+        parse_prefixed_fields(&String::from_utf8_lossy(&verify_stdout), "registry verify:")?;
     assert_eq!(
         verify.fields.get("extension_id"),
         first_publish.fields.get("extension_id")
     );
-    assert_eq!(verify.fields.get("integrity"), Some(&"verified".to_string()));
+    assert_eq!(
+        verify.fields.get("integrity"),
+        Some(&"verified".to_string())
+    );
     assert_eq!(verify.fields.get("archived"), Some(&"false".to_string()));
 
     let search_stdout = registry_cmd(&workspace, &["search", "plugin", "--min-assurance", "1"])?
@@ -241,8 +248,14 @@ fn registry_workspace() -> Result<TempDir, String> {
     fs::write(dir.path().join("plugin.fnext"), b"initial registry payload")
         .map_err(|err| format!("write package: {err}"))?;
     run_git(dir.path(), &["init", "-b", "main"])?;
-    run_git(dir.path(), &["config", "user.email", "registry@example.com"])?;
-    run_git(dir.path(), &["config", "user.name", "Registry Wire Conformance"])?;
+    run_git(
+        dir.path(),
+        &["config", "user.email", "registry@example.com"],
+    )?;
+    run_git(
+        dir.path(),
+        &["config", "user.name", "Registry Wire Conformance"],
+    )?;
     run_git(
         dir.path(),
         &[
@@ -329,7 +342,9 @@ fn assert_registry_relative_path(path: &str, expected_prefix: &str) -> Result<()
         ));
     }
     if path.contains("..") || path.starts_with('/') || path.contains('\\') || path.contains('\0') {
-        return Err(format!("registry path `{path}` must be relative and traversal-safe"));
+        return Err(format!(
+            "registry path `{path}` must be relative and traversal-safe"
+        ));
     }
     Ok(())
 }
@@ -350,7 +365,9 @@ fn assert_manifest_wire_contract(manifest: &Value, expected_key_id: &str) -> Res
     );
     expect_prefixed_string(manifest, "artifact_sha256", "sha256:")?;
     assert!(
-        manifest["artifact_size_bytes"].as_u64().is_some_and(|size| size > 0),
+        manifest["artifact_size_bytes"]
+            .as_u64()
+            .is_some_and(|size| size > 0),
         "manifest artifact_size_bytes must be a positive integer"
     );
     expect_non_empty_string(manifest, "manifest_bytes_b64")?;
@@ -360,7 +377,10 @@ fn assert_manifest_wire_contract(manifest: &Value, expected_key_id: &str) -> Res
         .get("extension")
         .and_then(Value::as_object)
         .ok_or_else(|| "manifest.extension must be an object".to_string())?;
-    assert_eq!(extension.get("status").and_then(Value::as_str), Some("active"));
+    assert_eq!(
+        extension.get("status").and_then(Value::as_str),
+        Some("active")
+    );
     assert_eq!(
         extension
             .get("signature")
@@ -368,17 +388,37 @@ fn assert_manifest_wire_contract(manifest: &Value, expected_key_id: &str) -> Res
             .and_then(Value::as_str),
         Some(expected_key_id)
     );
-    expect_nested_non_empty_string(extension, &["signature", "signature"])?;
     expect_nested_non_empty_string(extension, &["signature", "algorithm"])?;
+    let signature_bytes = extension
+        .get("signature")
+        .and_then(|signature| signature.get("signature_bytes"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| "signature.signature_bytes must be an array".to_string())?;
+    assert_eq!(
+        signature_bytes.len(),
+        64,
+        "signature.signature_bytes must carry an Ed25519 signature"
+    );
+    expect_non_empty_map_string(extension, "publisher_id")?;
     for field in [
-        "publisher_id",
-        "build_system",
-        "source_repository",
-        "vcs_commit",
-        "attestation_hash",
+        "source_repository_url",
+        "build_system_identifier",
+        "builder_identity",
+        "vcs_commit_sha",
+        "reproducibility_hash",
+        "input_hash",
+        "output_hash",
     ] {
         expect_nested_non_empty_string(extension, &["provenance", field])?;
     }
+    assert!(
+        extension
+            .get("provenance")
+            .and_then(|provenance| provenance.get("links"))
+            .and_then(Value::as_array)
+            .is_some_and(|links| !links.is_empty()),
+        "manifest.extension.provenance.links must contain the attestation chain"
+    );
     assert!(
         extension
             .get("versions")
@@ -393,13 +433,26 @@ fn assert_manifest_wire_contract(manifest: &Value, expected_key_id: &str) -> Res
 fn expect_prefixed_string(value: &Value, field: &str, prefix: &str) -> Result<(), String> {
     let actual = expect_non_empty_string(value, field)?;
     if !actual.starts_with(prefix) {
-        return Err(format!("{field} value `{actual}` must start with `{prefix}`"));
+        return Err(format!(
+            "{field} value `{actual}` must start with `{prefix}`"
+        ));
     }
     Ok(())
 }
 
 fn expect_non_empty_string<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {
     value
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(|| format!("{field} must be a non-empty string"))
+}
+
+fn expect_non_empty_map_string<'a>(
+    object: &'a serde_json::Map<String, Value>,
+    field: &str,
+) -> Result<&'a str, String> {
+    object
         .get(field)
         .and_then(Value::as_str)
         .filter(|text| !text.trim().is_empty())
