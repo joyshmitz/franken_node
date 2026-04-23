@@ -1248,12 +1248,14 @@ impl EngineDispatcher {
         // Execute with timeout in separate thread to detect hangs
         let (result_tx, result_rx) = mpsc::channel();
         let app_path_for_thread = app_path_buf.clone();
+        let config_for_thread = config.clone();
+        let policy_mode_for_thread = policy_mode.to_string();
 
         let execution_thread = thread::spawn(move || {
             let result = Self::run_engine_native(
                 &app_path_for_thread,
-                config,
-                policy_mode,
+                &config_for_thread,
+                &policy_mode_for_thread,
                 telemetry_handle,
             );
             let _ = result_tx.send(result);
