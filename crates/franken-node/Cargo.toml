@@ -172,6 +172,10 @@ name = "registry_cli_e2e"
 path = "tests/registry_cli_e2e.rs"
 
 [[test]]
+name = "registry_cli_wire_conformance"
+path = "tests/registry_cli_wire_conformance.rs"
+
+[[test]]
 name = "trust_object_id_real_inputs"
 path = "tests/trust_object_id_real_inputs.rs"
 
