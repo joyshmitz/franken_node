@@ -14,7 +14,9 @@ use frankenengine_node::{
         engine_dispatcher::EngineDispatcher,
         telemetry_bridge::TelemetryBridge,
     },
+    storage::frankensqlite_adapter::FrankensqliteAdapter,
 };
+use std::sync::{Arc, Mutex};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tempfile::TempDir;
@@ -47,10 +49,11 @@ fn create_mock_engine_binary(dir: &Path) -> PathBuf {
             .expect("Failed to write mock engine batch");
         batch_path
     }
+
     #[cfg(unix)]
-    engine_path
+    return engine_path;
     #[cfg(windows)]
-    batch_path
+    return batch_path;
 }
 
 /// Create a slow mock franken-engine binary for timeout testing
@@ -80,10 +83,11 @@ fn create_slow_mock_engine_binary(dir: &Path, delay_secs: u64) -> PathBuf {
         std::fs::write(&batch_path, script).expect("Failed to write slow mock engine batch");
         batch_path
     }
+
     #[cfg(unix)]
-    engine_path
+    return engine_path;
     #[cfg(windows)]
-    batch_path
+    return batch_path;
 }
 
 #[test]
@@ -100,7 +104,10 @@ fn test_native_engine_execution_with_telemetry() {
     config.profile = Profile::Balanced; // Use balanced to allow native execution
 
     let dispatcher = EngineDispatcher::new(None, PreferredRuntime::FrankenEngine);
-    let telemetry_bridge = TelemetryBridge::null(); // Use null bridge for testing
+    // Create test telemetry bridge
+    let socket_path = temp_dir.path().join("test-telemetry.sock");
+    let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+    let telemetry_bridge = TelemetryBridge::new(&socket_path.to_string_lossy(), adapter);
 
     // Execute through native engine
     let result = dispatcher.dispatch_run(&app_path, &config, &telemetry_bridge);
@@ -148,7 +155,10 @@ fn test_strict_profile_rejects_fallback_without_native_engine() {
         Some(engine_path.clone()),
         PreferredRuntime::FrankenEngine,
     );
-    let telemetry_bridge = TelemetryBridge::null();
+    // Create test telemetry bridge
+    let socket_path = temp_dir.path().join("test-telemetry.sock");
+    let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+    let telemetry_bridge = TelemetryBridge::new(&socket_path.to_string_lossy(), adapter);
 
     // Execute and expect failure
     let result = dispatcher.dispatch_run(&app_path, &config, &telemetry_bridge);
@@ -189,7 +199,10 @@ fn test_balanced_profile_allows_external_process_fallback() {
         Some(engine_path.clone()),
         PreferredRuntime::FrankenEngine,
     );
-    let telemetry_bridge = TelemetryBridge::null();
+    // Create test telemetry bridge
+    let socket_path = temp_dir.path().join("test-telemetry.sock");
+    let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+    let telemetry_bridge = TelemetryBridge::new(&socket_path.to_string_lossy(), adapter);
 
     // This should succeed by falling back to external process
     let result = dispatcher.dispatch_run(&app_path, &config, &telemetry_bridge);
@@ -219,7 +232,10 @@ fn test_native_engine_error_handling_propagation() {
     config.profile = Profile::Balanced;
 
     let dispatcher = EngineDispatcher::new(None, PreferredRuntime::FrankenEngine);
-    let telemetry_bridge = TelemetryBridge::null();
+    // Create test telemetry bridge
+    let socket_path = temp_dir.path().join("test-telemetry.sock");
+    let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+    let telemetry_bridge = TelemetryBridge::new(&socket_path.to_string_lossy(), adapter);
 
     let result = dispatcher.dispatch_run(&nonexistent_path, &config, &telemetry_bridge);
 
@@ -268,7 +284,9 @@ fn test_engine_timeout_handling() {
     struct EnvCleanup(&'static str);
     impl Drop for EnvCleanup {
         fn drop(&mut self) {
-            std::env::remove_var(self.0);
+            unsafe {
+                std::env::remove_var(self.0);
+            }
         }
     }
     let _cleanup = EnvCleanup("FRANKEN_ENGINE_TIMEOUT_SECS");
@@ -293,7 +311,10 @@ fn test_engine_timeout_handling() {
         Some(slow_engine_path.clone()),
         PreferredRuntime::FrankenEngine,
     );
-    let telemetry_bridge = TelemetryBridge::null();
+    // Create test telemetry bridge
+    let socket_path = temp_dir.path().join("test-telemetry.sock");
+    let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
+    let telemetry_bridge = TelemetryBridge::new(&socket_path.to_string_lossy(), adapter);
 
     // Execute and measure timing
     let start = std::time::Instant::now();
