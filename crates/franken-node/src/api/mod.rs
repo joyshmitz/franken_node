@@ -5,11 +5,11 @@ pub mod error;
 pub mod fleet_control_routes;
 pub mod fleet_quarantine;
 pub mod middleware;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod operator_routes;
 #[cfg(feature = "extended-surfaces")]
 pub mod service;
-#[cfg(feature = "extended-surfaces")]
+#[cfg(any(test, feature = "extended-surfaces"))]
 pub mod session_auth;
 pub mod trust_card_routes;
 #[cfg(feature = "extended-surfaces")]
