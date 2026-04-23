@@ -1458,6 +1458,18 @@ impl FleetControlManager {
         }
     }
 
+    /// Create a manager without decision-receipt signing material for fail-closed tests.
+    #[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+    pub fn without_decision_signing_material_for_tests() -> Self {
+        Self::with_optional_decision_signing_material(None)
+    }
+
+    /// Remove decision-receipt signing material from an initialized manager for fail-closed tests.
+    #[cfg(any(test, feature = "extended-surfaces", feature = "test-support"))]
+    pub fn clear_decision_signing_material_for_tests(&mut self) {
+        self.decision_signing_material = None;
+    }
+
     /// Create a manager with explicit decision-receipt signing material.
     ///
     /// This keeps integration/conformance harnesses on the production signing
@@ -2067,7 +2079,10 @@ impl FleetControlManager {
     /// Verify convergence rollback receipt exists and is valid for incident release.
     /// Enforces INV-FLEET-ROLLBACK gate: release must NOT succeed if rollback receipt
     /// is absent, stale, or fails verification.
-    fn verify_convergence_rollback_receipt(&self, incident_id: &str) -> Result<(), FleetControlError> {
+    fn verify_convergence_rollback_receipt(
+        &self,
+        incident_id: &str,
+    ) -> Result<(), FleetControlError> {
         self.verify_convergence_rollback_receipt_at(incident_id, chrono::Utc::now())
     }
 
@@ -2088,7 +2103,7 @@ impl FleetControlManager {
         let receipt = self.rollback_receipts.get(incident_id).ok_or_else(|| {
             FleetControlError::rollback_unverified(
                 incident_id,
-                "convergence rollback receipt not found"
+                "convergence rollback receipt not found",
             )
         })?;
 
@@ -2096,22 +2111,24 @@ impl FleetControlManager {
         if !self.verify_decision_receipt_signature(receipt) {
             return Err(FleetControlError::rollback_unverified(
                 incident_id,
-                "convergence rollback receipt signature verification failed"
+                "convergence rollback receipt signature verification failed",
             ));
         }
 
         // Check receipt is not stale (issued within last 24 hours)
-        let receipt_time = chrono::DateTime::parse_from_rfc3339(&receipt.issued_at)
-            .map_err(|_| FleetControlError::rollback_unverified(
-                incident_id,
-                "convergence rollback receipt has invalid timestamp"
-            ))?;
+        let receipt_time =
+            chrono::DateTime::parse_from_rfc3339(&receipt.issued_at).map_err(|_| {
+                FleetControlError::rollback_unverified(
+                    incident_id,
+                    "convergence rollback receipt has invalid timestamp",
+                )
+            })?;
 
         let age = now.signed_duration_since(receipt_time.with_timezone(&chrono::Utc));
         if age >= chrono::Duration::hours(24) {
             return Err(FleetControlError::rollback_unverified(
                 incident_id,
-                "convergence rollback receipt is stale (at least 24 hours old)"
+                "convergence rollback receipt is stale (at least 24 hours old)",
             ));
         }
 
@@ -2119,7 +2136,7 @@ impl FleetControlManager {
         if receipt.decision_payload.action_type != "rollback" {
             return Err(FleetControlError::rollback_unverified(
                 incident_id,
-                "receipt is not for rollback action"
+                "receipt is not for rollback action",
             ));
         }
 
@@ -2128,12 +2145,9 @@ impl FleetControlManager {
 
     /// Register convergence rollback receipt for an incident.
     /// Used by convergence rollback operations to enable subsequent release.
-    pub fn register_rollback_receipt(
-        &mut self,
-        incident_id: &str,
-        receipt: DecisionReceipt,
-    ) {
-        self.rollback_receipts.insert(incident_id.to_string(), receipt);
+    pub fn register_rollback_receipt(&mut self, incident_id: &str, receipt: DecisionReceipt) {
+        self.rollback_receipts
+            .insert(incident_id.to_string(), receipt);
     }
 }
 
@@ -2630,6 +2644,26 @@ mod tests {
         assert_eq!(mgr.events().len(), 1);
         assert_eq!(mgr.events()[0].event_code, FLEET_QUARANTINE_INITIATED);
         assert_eq!(mgr.events()[0].zone_id, "zone-us-east-1");
+    }
+
+    #[test]
+    fn quarantine_missing_decision_signing_material_fails_before_state_mutation() {
+        let mut mgr = FleetControlManager::with_optional_decision_signing_material(None);
+        mgr.activate();
+        let scope = test_quarantine_scope();
+        let next_op_id = mgr.next_op_id;
+
+        let err = mgr
+            .quarantine("ext-unsigned", &scope, &admin_identity(), &test_trace())
+            .expect_err("quarantine must fail without decision signing material");
+
+        assert_eq!(err.error_code(), FLEET_RECEIPT_SIGNING_MATERIAL_MISSING);
+        assert_eq!(mgr.next_op_id, next_op_id);
+        assert_eq!(mgr.incident_count(), 0);
+        assert!(mgr.active_incidents().is_empty());
+        assert!(mgr.zones().is_empty());
+        assert!(mgr.events().is_empty());
+        assert!(mgr.incident_convergences.is_empty());
     }
 
     #[test]
@@ -3228,14 +3262,23 @@ mod tests {
 
         // Try to release without a convergence rollback receipt
         let err = mgr
-            .release(&incidents[0], &admin_identity(), &test_trace())
+            .release(
+                &format!("inc-{}", incidents.operation_id),
+                &admin_identity(),
+                &test_trace(),
+            )
             .expect_err("release should fail without rollback receipt");
 
         assert_eq!(err.error_code(), FLEET_ROLLBACK_UNVERIFIED);
 
         // Verify error details
-        if let FleetControlError::RollbackUnverified { incident_id, detail, .. } = err {
-            assert_eq!(incident_id, incidents[0]);
+        if let FleetControlError::RollbackUnverified {
+            incident_id,
+            detail,
+            ..
+        } = err
+        {
+            assert_eq!(incident_id, format!("inc-{}", incidents.operation_id));
             assert!(detail.contains("convergence rollback receipt not found"));
         } else {
             panic!("Expected RollbackUnverified error, got: {:?}", err);
@@ -3252,6 +3295,7 @@ mod tests {
         let incidents = mgr
             .quarantine("ext-test", &scope, &admin_identity(), &test_trace())
             .expect("quarantine should succeed");
+        let incident_id = format!("inc-{}", incidents.operation_id);
 
         // Create and register a valid rollback receipt
         let rollback_receipt = mgr
@@ -3260,19 +3304,60 @@ mod tests {
                 "admin",
                 &scope.zone_id,
                 &chrono::Utc::now().to_rfc3339(),
-                DecisionReceiptPayload::rollback(&incidents[0], &scope.zone_id, "test rollback")
+                DecisionReceiptPayload::rollback(&incident_id, &scope.zone_id, "test rollback"),
             )
             .expect("should build receipt");
 
-        mgr.register_rollback_receipt(&incidents[0], rollback_receipt);
+        mgr.register_rollback_receipt(&incident_id, rollback_receipt);
 
         // Release should now succeed
         let result = mgr
-            .release(&incidents[0], &admin_identity(), &test_trace())
+            .release(&incident_id, &admin_identity(), &test_trace())
             .expect("release should succeed with rollback receipt");
 
         assert_eq!(result.action_type, "release");
         assert!(result.success);
+    }
+
+    #[test]
+    fn release_missing_decision_signing_material_fails_before_state_mutation() {
+        let mut mgr = FleetControlManager::new();
+        mgr.activate();
+        let scope = test_quarantine_scope();
+        let quarantine = mgr
+            .quarantine("ext-test", &scope, &admin_identity(), &test_trace())
+            .expect("quarantine should succeed");
+        let incident_id = format!("inc-{}", quarantine.operation_id);
+        let rollback_receipt = mgr
+            .build_receipt(
+                "rollback-op-missing-signing-material",
+                "admin",
+                &scope.zone_id,
+                &chrono::Utc::now().to_rfc3339(),
+                DecisionReceiptPayload::rollback(&incident_id, &scope.zone_id, "test rollback"),
+            )
+            .expect("should build rollback receipt");
+        mgr.register_rollback_receipt(&incident_id, rollback_receipt);
+
+        let incidents = mgr.incidents.clone();
+        let incident_convergences = mgr.incident_convergences.clone();
+        let zone_status = mgr.zone_status.clone();
+        let events = mgr.events.clone();
+        let rollback_receipts = mgr.rollback_receipts.clone();
+        let next_op_id = mgr.next_op_id;
+        mgr.decision_signing_material = None;
+
+        let err = mgr
+            .release(&incident_id, &admin_identity(), &test_trace())
+            .expect_err("release must fail without decision signing material");
+
+        assert_eq!(err.error_code(), FLEET_RECEIPT_SIGNING_MATERIAL_MISSING);
+        assert_eq!(mgr.next_op_id, next_op_id);
+        assert_eq!(mgr.incidents, incidents);
+        assert_eq!(mgr.incident_convergences, incident_convergences);
+        assert_eq!(mgr.zone_status, zone_status);
+        assert_eq!(mgr.events, events);
+        assert_eq!(mgr.rollback_receipts, rollback_receipts);
     }
 
     // ── Status tests ──────────────────────────────────────────────────────

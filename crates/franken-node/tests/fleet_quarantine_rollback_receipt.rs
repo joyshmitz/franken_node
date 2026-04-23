@@ -1,8 +1,8 @@
 use chrono::{Duration, TimeZone, Utc};
 use frankenengine_node::api::fleet_quarantine::{
-    DecisionReceipt, DecisionReceiptPayload, FLEET_ROLLBACK_UNVERIFIED, FleetControlError,
-    FleetControlManager, QuarantineScope, canonical_decision_receipt_payload_hash,
-    sign_decision_receipt,
+    DecisionReceipt, DecisionReceiptPayload, FLEET_RECEIPT_SIGNING_MATERIAL_MISSING,
+    FLEET_ROLLBACK_UNVERIFIED, FleetControlError, FleetControlManager, QuarantineScope,
+    canonical_decision_receipt_payload_hash, sign_decision_receipt,
 };
 use frankenengine_node::api::middleware::{AuthIdentity, AuthMethod, TraceContext};
 
@@ -86,6 +86,87 @@ fn quarantined_incident(manager: &mut FleetControlManager) -> (String, Quarantin
         )
         .expect("quarantine should create incident");
     (format!("inc-{}", result.operation_id), scope)
+}
+
+#[test]
+fn quarantine_missing_decision_signing_material_fails_before_state_mutation() {
+    let mut manager = FleetControlManager::without_decision_signing_material_for_tests();
+    manager.activate();
+    let scope = QuarantineScope {
+        zone_id: "zone-missing-signing-quarantine".to_string(),
+        tenant_id: Some("tenant-missing-signing".to_string()),
+        affected_nodes: 3,
+        reason: "missing signing material regression".to_string(),
+    };
+
+    let err = manager
+        .quarantine(
+            "ext-missing-signing",
+            &scope,
+            &admin_identity(),
+            &trace_context("missing-signing-quarantine"),
+        )
+        .expect_err("quarantine must fail without decision signing material");
+
+    assert_eq!(err.error_code(), FLEET_RECEIPT_SIGNING_MATERIAL_MISSING);
+    assert_eq!(manager.incident_count(), 0);
+    assert!(manager.active_incidents().is_empty());
+    assert!(manager.events().is_empty());
+    assert!(manager.zones().is_empty());
+
+    let status = manager
+        .status(&scope.zone_id)
+        .expect("status remains readable after fail-closed quarantine");
+    assert_eq!(status.active_quarantines, 0);
+    assert!(status.pending_convergences.is_empty());
+}
+
+#[test]
+fn release_missing_decision_signing_material_fails_before_state_mutation() {
+    let mut manager = activated_manager();
+    let (incident_id, scope) = quarantined_incident(&mut manager);
+    manager.register_rollback_receipt(
+        &incident_id,
+        rollback_receipt(&incident_id, &scope.zone_id, Utc::now()),
+    );
+
+    let incidents_before = manager
+        .active_incidents()
+        .iter()
+        .map(|incident| incident.incident_id.clone())
+        .collect::<Vec<_>>();
+    let status_before = manager
+        .status(&scope.zone_id)
+        .expect("status before missing-signing release");
+    let events_before = manager.events().to_vec();
+    let incident_count_before = manager.incident_count();
+
+    manager.clear_decision_signing_material_for_tests();
+    let err = manager
+        .release(
+            &incident_id,
+            &admin_identity(),
+            &trace_context("missing-signing-release"),
+        )
+        .expect_err("release must fail without decision signing material");
+
+    assert_eq!(err.error_code(), FLEET_RECEIPT_SIGNING_MATERIAL_MISSING);
+    assert_eq!(manager.incident_count(), incident_count_before);
+    assert_eq!(
+        manager
+            .active_incidents()
+            .iter()
+            .map(|incident| incident.incident_id.clone())
+            .collect::<Vec<_>>(),
+        incidents_before
+    );
+    assert_eq!(
+        manager
+            .status(&scope.zone_id)
+            .expect("status after missing-signing release"),
+        status_before
+    );
+    assert_eq!(manager.events(), events_before.as_slice());
 }
 
 #[test]
