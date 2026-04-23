@@ -6,6 +6,8 @@ use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
 
+const CLOSE_CONDITION_RECEIPT_PREIMAGE_DOMAIN: &[u8] = b"close_condition_receipt_v1:";
+
 fn write_fixture(path: &Path, contents: &str) {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).expect("fixture parent directory");
@@ -138,6 +140,20 @@ fn canonical_json_value(value: &Value) -> String {
     }
 }
 
+fn close_condition_receipt_signed_preimage(canonical_json: &str) -> Vec<u8> {
+    let canonical_len = u64::try_from(canonical_json.len()).unwrap_or(u64::MAX);
+    let mut preimage = Vec::with_capacity(
+        CLOSE_CONDITION_RECEIPT_PREIMAGE_DOMAIN
+            .len()
+            .saturating_add(std::mem::size_of::<u64>())
+            .saturating_add(canonical_json.len()),
+    );
+    preimage.extend_from_slice(CLOSE_CONDITION_RECEIPT_PREIMAGE_DOMAIN);
+    preimage.extend_from_slice(&canonical_len.to_le_bytes());
+    preimage.extend_from_slice(canonical_json.as_bytes());
+    preimage
+}
+
 #[test]
 fn doctor_close_condition_writes_dual_oracle_receipt() {
     let root = fixture_root();
@@ -199,11 +215,12 @@ fn doctor_close_condition_writes_dual_oracle_receipt() {
         .as_object_mut()
         .expect("receipt must be object")
         .remove("tamper_evidence");
-    let expected_hash = format!(
-        "sha256:{}",
-        hex::encode(Sha256::digest(
-            canonical_json_value(&unsigned_receipt).as_bytes()
-        ))
+    let unsigned_canonical = canonical_json_value(&unsigned_receipt);
+    let signed_preimage = close_condition_receipt_signed_preimage(&unsigned_canonical);
+    let expected_hash = format!("sha256:{}", hex::encode(Sha256::digest(&signed_preimage)));
+    assert_eq!(
+        stdout_receipt["tamper_evidence"]["hash_scope"],
+        "close_condition_receipt_v1_len_prefixed_core"
     );
     assert_eq!(stdout_receipt["tamper_evidence"]["sha256"], expected_hash);
 
@@ -244,17 +261,26 @@ fn doctor_close_condition_writes_dual_oracle_receipt() {
         .expect("decode signature");
     frankenengine_verifier_sdk::bundle::verify_ed25519_signature(
         &verifying_key,
-        canonical_json_value(&unsigned_receipt).as_bytes(),
+        &signed_preimage,
         &signature_bytes,
     )
     .expect("trusted oracle close-condition signature should verify");
+    let typed_receipt: frankenengine_node::ops::close_condition::CloseConditionReceipt =
+        serde_json::from_value(stdout_receipt.clone()).expect("typed close-condition receipt");
+    frankenengine_node::ops::close_condition::verify_close_condition_receipt_signature(
+        &typed_receipt,
+        signature["key_id"].as_str().expect("key id"),
+    )
+    .expect("typed close-condition receipt verifier should accept trusted receipt");
 
     let mut tampered_receipt = unsigned_receipt;
     tampered_receipt["composite_verdict"] = Value::String("RED".to_string());
+    let tampered_canonical = canonical_json_value(&tampered_receipt);
+    let tampered_preimage = close_condition_receipt_signed_preimage(&tampered_canonical);
     assert!(
         frankenengine_verifier_sdk::bundle::verify_ed25519_signature(
             &verifying_key,
-            canonical_json_value(&tampered_receipt).as_bytes(),
+            &tampered_preimage,
             &signature_bytes,
         )
         .is_err(),

@@ -13,6 +13,7 @@ const SECTION_10N_GATE_VERDICT_PATH: &str =
 const CLOSE_CONDITION_TIMESTAMP_ENV: &str = "FRANKEN_NODE_CLOSE_CONDITION_TIMESTAMP_UTC";
 pub const MAX_CLOSE_CONDITION_CARGO_FILES: usize = 256;
 pub const MAX_CLOSE_CONDITION_SCAN_FILES: usize = 4_096;
+const CLOSE_CONDITION_RECEIPT_PREIMAGE_DOMAIN: &[u8] = b"close_condition_receipt_v1:";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -174,13 +175,14 @@ pub fn generate_close_condition_receipt(
     };
 
     let canonical = canonical_json_value(&serde_json::to_value(&core)?);
-    let payload_sha256 = hex::encode(Sha256::digest(canonical.as_bytes()));
-    let signature = signing_material.signing_key.sign(canonical.as_bytes());
+    let signed_preimage = close_condition_receipt_signed_preimage(&canonical);
+    let payload_sha256 = hex::encode(Sha256::digest(&signed_preimage));
+    let signature = signing_material.signing_key.sign(&signed_preimage);
     let verifying_key = signing_material.signing_key.verifying_key();
     let tamper_evidence = TamperEvidence {
         algorithm: "SHA-256".to_string(),
         canonicalization: "lexicographically-sorted-json-keys/no-whitespace".to_string(),
-        hash_scope: "receipt_without_tamper_evidence".to_string(),
+        hash_scope: "close_condition_receipt_v1_len_prefixed_core".to_string(),
         sha256: format!("sha256:{payload_sha256}"),
         signature: CloseConditionReceiptSignature {
             algorithm: "ed25519".to_string(),
@@ -214,7 +216,7 @@ pub fn verify_close_condition_receipt_signature(
             signature.algorithm
         );
     }
-    if signature.key_id != trusted_key_id {
+    if !crate::security::constant_time::ct_eq(&signature.key_id, trusted_key_id) {
         anyhow::bail!(
             "close-condition receipt key id {} is not trusted key id {}",
             signature.key_id,
@@ -232,7 +234,7 @@ pub fn verify_close_condition_receipt_signature(
     let derived_key_id =
         crate::supply_chain::artifact_signing::KeyId::from_verifying_key(&verifying_key)
             .to_string();
-    if signature.key_id != derived_key_id {
+    if !crate::security::constant_time::ct_eq(&signature.key_id, &derived_key_id) {
         anyhow::bail!(
             "close-condition receipt key id {} does not match public key {}",
             signature.key_id,
@@ -241,11 +243,16 @@ pub fn verify_close_condition_receipt_signature(
     }
 
     let canonical = canonical_json_value(&serde_json::to_value(&receipt.core)?);
-    let payload_sha256 = hex::encode(Sha256::digest(canonical.as_bytes()));
-    if receipt.tamper_evidence.sha256 != format!("sha256:{payload_sha256}") {
+    let signed_preimage = close_condition_receipt_signed_preimage(&canonical);
+    let payload_sha256 = hex::encode(Sha256::digest(&signed_preimage));
+    let expected_tamper_hash = format!("sha256:{payload_sha256}");
+    if !crate::security::constant_time::ct_eq(
+        &receipt.tamper_evidence.sha256,
+        &expected_tamper_hash,
+    ) {
         anyhow::bail!("close-condition receipt tamper hash does not match canonical payload");
     }
-    if signature.signed_payload_sha256 != payload_sha256 {
+    if !crate::security::constant_time::ct_eq(&signature.signed_payload_sha256, &payload_sha256) {
         anyhow::bail!(
             "close-condition receipt signed payload hash does not match canonical payload"
         );
@@ -258,7 +265,7 @@ pub fn verify_close_condition_receipt_signature(
     })?;
     let signature = ed25519_dalek::Signature::from_bytes(&signature_bytes);
     verifying_key
-        .verify(canonical.as_bytes(), &signature)
+        .verify(&signed_preimage, &signature)
         .context("close-condition receipt signature verification failed")
 }
 
@@ -796,4 +803,18 @@ pub fn canonical_json_value(value: &Value) -> String {
             format!("{{{rendered}}}")
         }
     }
+}
+
+fn close_condition_receipt_signed_preimage(canonical_json: &str) -> Vec<u8> {
+    let canonical_len = u64::try_from(canonical_json.len()).unwrap_or(u64::MAX);
+    let mut preimage = Vec::with_capacity(
+        CLOSE_CONDITION_RECEIPT_PREIMAGE_DOMAIN
+            .len()
+            .saturating_add(std::mem::size_of::<u64>())
+            .saturating_add(canonical_json.len()),
+    );
+    preimage.extend_from_slice(CLOSE_CONDITION_RECEIPT_PREIMAGE_DOMAIN);
+    preimage.extend_from_slice(&canonical_len.to_le_bytes());
+    preimage.extend_from_slice(canonical_json.as_bytes());
+    preimage
 }
