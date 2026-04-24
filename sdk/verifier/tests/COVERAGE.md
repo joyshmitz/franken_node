@@ -150,7 +150,10 @@ The conformance harness produces structured JSON output for automated reporting:
 **Harness Status**: No known divergences in the spec-derived `conformance_harness.rs` matrix.
 
 **Auxiliary Fixture Drift**:
-- `sdk/verifier/tests/fixtures/public_api/api_manifest.json` still documents an obsolete `VerifierSdk::new(...) -> Result<...>` constructor shape instead of the live facade constructor contract. This is tracked separately in `bd-3habd`.
+- `sdk/verifier/tests/fixtures/public_api/{facade_result,transparency_entry}.json` still admit non-live digest semantics in the public API contract checks. Tracked in `bd-cjo9z`.
+- `sdk/verifier/tests/fixtures/public_api/session_step.json` still freezes impossible digest and signature formats. Tracked in `bd-idgvw`.
+- `sdk/verifier/tests/fixtures/public_api/bundle_canonical.json` and adjacent verifier contract checks still hardcode stale bundle digest/signature formats. Tracked in `bd-ebnvk`.
+- `sdk/verifier/tests/fixtures/public_api/PROVENANCE.md` still documents obsolete fake fixture formats and regeneration values. Tracked in `bd-2w7jg` and `bd-3toal`.
 
 This report summarizes the frozen clauses exercised by `conformance_harness.rs`. It does not claim that every auxiliary verifier fixture or contract artifact in `sdk/verifier/tests/` is already aligned. Intentional or discovered drift outside the harness should be called out here until the corresponding fixtures are updated.
 
@@ -162,4 +165,4 @@ This report summarizes the frozen clauses exercised by `conformance_harness.rs`.
 
 ---
 
-**Conformance Score**: 🎯 **100%** (57/57 requirements validated)
+**Conformance Score**: 🎯 **100%** (57/57 harness requirements validated)
