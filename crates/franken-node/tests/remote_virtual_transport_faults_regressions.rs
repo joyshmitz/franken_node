@@ -1,5 +1,5 @@
 use frankenengine_node::remote::virtual_transport_faults::{
-    FaultClass, FaultSchedule, ScheduledFault, VirtualTransportFaultHarness,
+    FaultClass, FaultConfig, FaultSchedule, ScheduledFault, VirtualTransportFaultHarness,
 };
 
 #[test]
@@ -27,4 +27,21 @@ fn process_message_applies_unsorted_manual_schedule() {
     assert_eq!(result, Some(vec![1]));
     assert_eq!(harness.fault_count(), 1);
     assert_eq!(harness.fault_log()[0].fault_class, "Corrupt");
+}
+
+#[test]
+fn fault_config_rejects_cumulative_probability_above_one() {
+    let invalid = FaultConfig {
+        drop_probability: 0.6,
+        reorder_probability: 0.3,
+        reorder_max_depth: 1,
+        corrupt_probability: 0.2,
+        corrupt_bit_count: 1,
+        max_faults: 10,
+    };
+
+    assert_eq!(
+        invalid.validate(),
+        Err("fault probabilities must sum to <= 1".to_string())
+    );
 }

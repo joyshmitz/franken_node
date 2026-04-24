@@ -114,6 +114,11 @@ impl FaultConfig {
         {
             return Err("corrupt_probability must be in [0, 1]".to_string());
         }
+        let total_probability =
+            self.drop_probability + self.reorder_probability + self.corrupt_probability;
+        if total_probability > 1.0 {
+            return Err("fault probabilities must sum to <= 1".to_string());
+        }
         if self.reorder_probability > 0.0 && self.reorder_max_depth == 0 {
             return Err("reorder_max_depth must be > 0 when reorder_probability > 0".to_string());
         }
@@ -722,6 +727,23 @@ mod tests {
         let config = no_faults();
         let schedule = FaultSchedule::from_seed(42, &config, 100);
         assert_eq!(schedule.faults.len(), 0);
+    }
+
+    #[test]
+    fn test_config_rejects_cumulative_probability_above_one() {
+        let invalid = FaultConfig {
+            drop_probability: 0.6,
+            reorder_probability: 0.3,
+            reorder_max_depth: 1,
+            corrupt_probability: 0.2,
+            corrupt_bit_count: 1,
+            max_faults: 10,
+        };
+
+        assert_eq!(
+            invalid.validate(),
+            Err("fault probabilities must sum to <= 1".to_string())
+        );
     }
 
     #[test]
