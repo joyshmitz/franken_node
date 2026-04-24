@@ -239,6 +239,8 @@ pub enum MigrationRollbackValidationError {
     EmptyPath { index: usize },
     #[error("migration rollback entry {index} uses an absolute path: {path}")]
     AbsolutePath { index: usize, path: String },
+    #[error("migration rollback entry {index} contains unsafe path separator: {path}")]
+    UnsafePathSeparator { index: usize, path: String },
     #[error("migration rollback entry {index} contains parent traversal: {path}")]
     ParentTraversal { index: usize, path: String },
     #[error(
@@ -298,6 +300,13 @@ fn validate_rollback_entry(
 
     if !policy.allow_absolute_paths && rollback_path_is_absolute(&entry.path) {
         return Err(MigrationRollbackValidationError::AbsolutePath {
+            index,
+            path: entry.path.clone(),
+        });
+    }
+
+    if entry.path.contains('\\') {
+        return Err(MigrationRollbackValidationError::UnsafePathSeparator {
             index,
             path: entry.path.clone(),
         });
@@ -1354,7 +1363,12 @@ fn run_command_with_timeout(command: &mut Command, timeout: Duration) -> anyhow:
             ) {
                 Ok(output) => output,
                 Err(err) => {
-                    terminate_runtime_smoke_process_tree(&mut child);
+                    if let Err(term_err) = terminate_runtime_smoke_process_tree(&mut child) {
+                        return Err(anyhow::anyhow!(
+                            "runtime smoke command exited but output pipes remained open: {err}; \
+                            additionally, process termination failed: {term_err}"
+                        ));
+                    }
                     return Err(anyhow::anyhow!(
                         "runtime smoke command exited but output pipes remained open: {err}"
                     ));
@@ -1368,9 +1382,16 @@ fn run_command_with_timeout(command: &mut Command, timeout: Duration) -> anyhow:
         }
 
         if started.elapsed() >= timeout {
-            terminate_runtime_smoke_process_tree(&mut child);
             drop(stdout_reader);
             drop(stderr_reader);
+
+            if let Err(term_err) = terminate_runtime_smoke_process_tree(&mut child) {
+                anyhow::bail!(
+                    "runtime smoke command timed out after {}ms; additionally, process termination failed: {term_err}",
+                    timeout.as_millis()
+                );
+            }
+
             anyhow::bail!(
                 "runtime smoke command timed out after {}ms",
                 timeout.as_millis()
@@ -1430,31 +1451,43 @@ fn collect_pipe_reader(
     }
 }
 
-fn terminate_runtime_smoke_process_tree(child: &mut Child) {
+fn terminate_runtime_smoke_process_tree(child: &mut Child) -> Result<(), anyhow::Error> {
     #[cfg(unix)]
-    terminate_runtime_smoke_process_group(child.id());
-    let _ = child.kill();
-    let _ = child.wait();
+    terminate_runtime_smoke_process_group(child.id())?;
+
+    child.kill().map_err(|err| anyhow::anyhow!("failed to kill runtime smoke process: {err}"))?;
+    child.wait().map_err(|err| anyhow::anyhow!("failed to wait for runtime smoke process: {err}"))?;
+    Ok(())
 }
 
 #[cfg(unix)]
-fn terminate_runtime_smoke_process_group(pid: u32) {
-    signal_runtime_smoke_process_group(pid, "-TERM");
+fn terminate_runtime_smoke_process_group(pid: u32) -> Result<(), std::io::Error> {
+    signal_runtime_smoke_process_group(pid, "-TERM")?;
     thread::sleep(MIGRATION_RUNTIME_PROCESS_KILL_GRACE);
-    signal_runtime_smoke_process_group(pid, "-KILL");
+    signal_runtime_smoke_process_group(pid, "-KILL")?;
+    Ok(())
 }
 
 #[cfg(unix)]
-fn signal_runtime_smoke_process_group(pid: u32, signal: &str) {
+fn signal_runtime_smoke_process_group(pid: u32, signal: &str) -> Result<(), std::io::Error> {
     let process_group = format!("-{pid}");
-    let _ = Command::new("kill")
+    let status = Command::new("kill")
         .arg(signal)
         .arg("--")
         .arg(process_group)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status();
+        .status()?;
+
+    if !status.success() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("kill command failed with signal {signal} for process group {pid}: exit code {}",
+                status.code().unwrap_or(-1))
+        ));
+    }
+    Ok(())
 }
 
 fn verify_franken_node_smoke_receipt_round_trip(output: &Output) -> anyhow::Result<()> {
@@ -4160,6 +4193,60 @@ mod tests {
     }
 
     #[test]
+    fn validate_rollback_plan_rejects_backslash_path_separator() {
+        let plan = MigrationRollbackPlan {
+            schema_version: "1.0.0".to_string(),
+            project_path: "/tmp/project".to_string(),
+            generated_at_utc: "2026-04-24T00:00:00Z".to_string(),
+            apply_mode: false,
+            entry_count: 1,
+            entries: vec![MigrationRollbackEntry {
+                path: "src\\index.js".to_string(),
+                original_content: "old".to_string(),
+                rewritten_content: "new".to_string(),
+            }],
+        };
+
+        let err = validate_rollback_plan(&plan, &default_rollback_validation_policy())
+            .expect_err("backslash path separator must be rejected");
+
+        assert_eq!(
+            err,
+            MigrationRollbackValidationError::UnsafePathSeparator {
+                index: 0,
+                path: "src\\index.js".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn validate_rollback_plan_rejects_backslash_parent_traversal_vector() {
+        let plan = MigrationRollbackPlan {
+            schema_version: "1.0.0".to_string(),
+            project_path: "/tmp/project".to_string(),
+            generated_at_utc: "2026-04-24T00:00:00Z".to_string(),
+            apply_mode: false,
+            entry_count: 1,
+            entries: vec![MigrationRollbackEntry {
+                path: "..\\package.json".to_string(),
+                original_content: "old".to_string(),
+                rewritten_content: "new".to_string(),
+            }],
+        };
+
+        let err = validate_rollback_plan(&plan, &default_rollback_validation_policy())
+            .expect_err("backslash traversal vector must be rejected");
+
+        assert_eq!(
+            err,
+            MigrationRollbackValidationError::UnsafePathSeparator {
+                index: 0,
+                path: "..\\package.json".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn run_rewrite_can_apply_node_engine_pin() {
         let temp = tempfile::tempdir().expect("tempdir");
         let project = temp.path();
@@ -5289,5 +5376,84 @@ mod tests {
             safe_cast_demo > 0,
             "Safe cast should preserve non-zero values"
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn signal_runtime_smoke_process_group_fails_with_invalid_pid() {
+        // Test that signal_runtime_smoke_process_group returns error for invalid process group
+        let result = signal_runtime_smoke_process_group(0, "-TERM");
+
+        assert!(
+            result.is_err(),
+            "Signaling invalid process group should return error"
+        );
+
+        let error = result.unwrap_err();
+        assert!(
+            error.to_string().contains("kill command failed"),
+            "Error should mention kill command failure: {}",
+            error
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn terminate_runtime_smoke_process_group_propagates_signal_errors() {
+        // Test that terminate_runtime_smoke_process_group propagates signal errors
+        let result = terminate_runtime_smoke_process_group(0);
+
+        assert!(
+            result.is_err(),
+            "Terminating invalid process group should return error"
+        );
+
+        let error = result.unwrap_err();
+        assert!(
+            error.to_string().contains("kill command failed"),
+            "Error should mention kill command failure: {}",
+            error
+        );
+    }
+
+    #[test]
+    fn terminate_runtime_smoke_process_tree_error_propagation_pattern() {
+        // Test that the error propagation follows the expected pattern
+        // We can't easily mock Child::kill()/wait() failures, but we can test the error structure
+
+        use std::process::{Command, Stdio};
+        use std::thread;
+        use std::time::Duration;
+
+        // Start a process that will exit quickly
+        let mut child = Command::new("true")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Failed to spawn test process");
+
+        // Wait for process to exit
+        thread::sleep(Duration::from_millis(100));
+
+        // Now try to terminate an already-dead process - this should succeed
+        // since kill() on a dead process typically succeeds
+        let result = terminate_runtime_smoke_process_tree(&mut child);
+
+        // The result pattern should be a Result type that can be checked
+        match result {
+            Ok(()) => {
+                // Expected for already-dead process
+            }
+            Err(err) => {
+                // If there's an error, it should contain meaningful context
+                let error_msg = err.to_string();
+                assert!(
+                    error_msg.contains("failed to kill") || error_msg.contains("failed to wait"),
+                    "Error should contain context about kill or wait failure: {}",
+                    error_msg
+                );
+            }
+        }
     }
 }
