@@ -590,6 +590,16 @@ fn test_verification_result_json_shape() -> Result<(), String> {
     assert!(parsed_value.get("verifier_signature").unwrap().is_string());
     assert!(parsed_value.get("sdk_version").unwrap().is_string());
     assert!(parsed_value.get("result_origin_nonce").is_none());
+    assert_rfc3339_timestamp(&result.execution_timestamp, "live result execution_timestamp")?;
+    assert_eq!(result.verifier_identity, "verifier://shape-test");
+    assert!(
+        is_lower_hex_digest(&result.artifact_binding_hash),
+        "live result artifact_binding_hash must be a bare lowercase 64-hex digest"
+    );
+    assert!(
+        is_lower_hex_digest(&result.verifier_signature),
+        "live result verifier_signature must be a bare lowercase 64-hex digest"
+    );
 
     Ok(())
 }
@@ -693,12 +703,15 @@ fn test_session_step_fixture_matches_live_json_contract() -> Result<(), String> 
 
 fn test_transparency_log_entry_json_shape() -> Result<(), String> {
     // TransparencyLogEntry must have stable JSON schema
-    let entry = TransparencyLogEntry {
-        result_hash: "hash123".to_string(),
-        timestamp: "2026-04-21T12:00:00Z".to_string(),
-        verifier_id: "test-verifier".to_string(),
-        merkle_proof: vec!["proof1".to_string(), "proof2".to_string()],
-    };
+    let sdk = create_verifier_sdk("verifier://shape-test");
+    let capsule = capsule::build_reference_capsule();
+    let result = sdk
+        .verify_claim(&capsule)
+        .map_err(|err| format!("expected reference claim verification, got {err:?}"))?;
+    let mut log = Vec::new();
+    let entry = sdk
+        .append_transparency_log(&mut log, &result)
+        .map_err(|err| format!("expected transparency append, got {err:?}"))?;
 
     let json_str = serde_json::to_string_pretty(&entry).unwrap();
     let parsed_value: serde_json::Value = serde_json::from_str(&json_str).unwrap();
@@ -712,6 +725,19 @@ fn test_transparency_log_entry_json_shape() -> Result<(), String> {
     // Test round-trip
     let roundtrip: TransparencyLogEntry = serde_json::from_str(&json_str).unwrap();
     assert_eq!(entry, roundtrip);
+    assert_rfc3339_timestamp(&entry.timestamp, "live transparency entry timestamp")?;
+    assert_eq!(entry.verifier_id, result.verifier_identity);
+    assert!(
+        is_lower_hex_digest(&entry.result_hash),
+        "live transparency entry result_hash must be a bare lowercase 64-hex digest"
+    );
+    assert!(entry.merkle_proof.len() >= 3);
+    assert!(
+        entry.merkle_proof[0].starts_with("root:"),
+        "live transparency entry must emit root: Merkle proof prefix"
+    );
+    assert_eq!(entry.merkle_proof[1], "leaf_index:0");
+    assert_eq!(entry.merkle_proof[2], "tree_size:1");
 
     Ok(())
 }
