@@ -77,7 +77,7 @@ pub struct PlatformCapabilities {
 /// Checks common OCI runtime executables via PATH lookup. Returns `false`
 /// (fail-closed) if no runtime is found or if all probes fail.
 fn probe_oci_runtime() -> bool {
-    const OCI_RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(1);
+    const OCI_RUNTIME_PROBE_TIMEOUT: Duration = crate::config::timeouts::OCI_RUNTIME_PROBE_TIMEOUT;
 
     fn probe_runtime(runtime: &str, timeout: Duration) -> bool {
         let mut child = match Command::new(runtime)
@@ -101,7 +101,7 @@ fn probe_oci_runtime() -> bool {
                         let _ = child.wait();
                         return false;
                     }
-                    thread::sleep(Duration::from_millis(25));
+                    thread::sleep(crate::config::timeouts::OCI_RUNTIME_PROBE_POLL_INTERVAL);
                 }
                 Err(_) => {
                     let _ = child.kill();

@@ -32,7 +32,7 @@ pub(crate) const COMPAT_TRANSITION_RECEIPT_DOMAIN: &str =
     "franken_node.policy.compat.transition_receipt.v1";
 pub(crate) const COMPAT_DIVERGENCE_RECEIPT_DOMAIN: &str =
     "franken_node.policy.compat.divergence_receipt.v1";
-const DEFAULT_RECEIPT_TTL_SECS: u64 = 3600;
+const DEFAULT_RECEIPT_TTL_SECS: u64 = crate::config::timeouts::COMPAT_DEFAULT_RECEIPT_TTL_SECS;
 
 pub mod reason_codes {
     pub const POLICY_COMPAT_ALLOW: &str = "POLICY_COMPAT_ALLOW";

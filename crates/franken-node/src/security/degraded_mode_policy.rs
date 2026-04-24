@@ -40,7 +40,8 @@ pub const AUDIT_EVENT_MISSED: &str = "AUDIT_EVENT_MISSED";
 
 const DEFAULT_MANDATORY_AUDIT_INTERVAL_SECS: u64 = 60;
 const DEFAULT_STABILIZATION_WINDOW_SECS: u64 = 300;
-const DEFAULT_MAX_DEGRADED_DURATION_SECS: u64 = 3_600;
+const DEFAULT_MAX_DEGRADED_DURATION_SECS: u64 =
+    crate::config::timeouts::SECURITY_MAX_DEGRADED_DURATION_SECS;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DegradedModePolicy {

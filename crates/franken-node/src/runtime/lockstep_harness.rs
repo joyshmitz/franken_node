@@ -845,7 +845,7 @@ impl LockstepHarness {
             )
         });
 
-        let timeout = Duration::from_secs(30);
+        let timeout = crate::config::timeouts::LOCKSTEP_RUNTIME_TIMEOUT;
         let start = Instant::now();
 
         let mut is_timeout = false;
@@ -866,7 +866,7 @@ impl LockstepHarness {
                 is_timeout = true;
                 break;
             }
-            thread::sleep(Duration::from_millis(50));
+            thread::sleep(crate::config::timeouts::LOCKSTEP_RUNTIME_POLL_INTERVAL);
         }
 
         let drain_timeout = Duration::from_millis(PIPE_DRAIN_JOIN_TIMEOUT_MS);
@@ -960,7 +960,7 @@ impl LockstepHarness {
             .arg("--")
             .arg(&process_group)
             .status();
-        thread::sleep(Duration::from_millis(50));
+        thread::sleep(crate::config::timeouts::LOCKSTEP_PROCESS_KILL_GRACE);
         let _ = Command::new("kill")
             .arg("-KILL")
             .arg("--")
@@ -977,7 +977,8 @@ impl LockstepHarness {
         while !handle.is_finished() {
             if Self::has_timed_out(start.elapsed(), timeout) {
                 // Try a final join attempt with a grace period to prevent thread leaks
-                let grace_timeout = timeout.saturating_add(Duration::from_millis(100));
+                let grace_timeout =
+                    timeout.saturating_add(crate::config::timeouts::LOCKSTEP_PIPE_DRAIN_GRACE_EXTENSION);
                 let grace_start = Instant::now();
                 while !handle.is_finished() {
                     if Self::has_timed_out(grace_start.elapsed(), grace_timeout) {

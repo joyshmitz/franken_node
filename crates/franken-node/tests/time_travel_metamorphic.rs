@@ -8,9 +8,7 @@ use proptest::test_runner::TestRunner;
 use std::collections::BTreeMap;
 
 use frankenengine_node::capacity_defaults::aliases::MAX_TRACE_STEPS;
-use frankenengine_node::replay::time_travel_engine::{
-    EnvironmentSnapshot, TraceBuilder,
-};
+use frankenengine_node::replay::time_travel_engine::{EnvironmentSnapshot, TraceBuilder};
 
 /// Create a demo environment for testing.
 fn demo_env() -> EnvironmentSnapshot {
@@ -54,169 +52,180 @@ fn trace_builder_preserves_step_order() {
     let mut runner = TestRunner::default();
     let strategy = prop::collection::vec(any::<StepData>(), 1..=20);
 
-    runner.run(&strategy, |steps_data| {
-        let trace_id = "metamorphic-order-test";
-        let workflow_name = "step-order-preservation";
+    runner
+        .run(&strategy, |steps_data| {
+            let trace_id = "metamorphic-order-test";
+            let workflow_name = "step-order-preservation";
 
-        // Create builder and add steps in order
-        let mut builder = TraceBuilder::new(trace_id, workflow_name, demo_env());
-        let mut expected_seqs = Vec::new();
+            // Create builder and add steps in order
+            let mut builder = TraceBuilder::new(trace_id, workflow_name, demo_env());
+            let mut expected_seqs = Vec::new();
 
-        for (expected_seq, step_data) in steps_data.iter().enumerate() {
-            let actual_seq = builder.record_step(
-                step_data.input.clone(),
-                step_data.output.clone(),
-                vec![], // no side effects for this test
-                step_data.timestamp_ns,
-            );
+            for (expected_seq, step_data) in steps_data.iter().enumerate() {
+                let actual_seq = builder.record_step(
+                    step_data.input.clone(),
+                    step_data.output.clone(),
+                    vec![], // no side effects for this test
+                    step_data.timestamp_ns,
+                );
 
-            // Verify sequence number assignment is correct
-            prop_assert_eq!(actual_seq, expected_seq as u64);
-            expected_seqs.push(expected_seq as u64);
+                // Verify sequence number assignment is correct
+                prop_assert_eq!(actual_seq, expected_seq as u64);
+                expected_seqs.push(expected_seq as u64);
 
-            // Verify step count increases monotonically
-            prop_assert_eq!(builder.step_count(), expected_seq + 1);
-        }
+                // Verify step count increases monotonically
+                prop_assert_eq!(builder.step_count(), expected_seq + 1);
+            }
 
-        // Build the final trace
-        let (trace, _audit_log) = builder.build()
-            .expect("trace should build successfully");
+            // Build the final trace
+            let (trace, _audit_log) = builder.build().expect("trace should build successfully");
 
-        // METAMORPHIC PROPERTY: Order preservation
-        // The final trace must have exactly the same number of steps
-        prop_assert_eq!(trace.steps.len(), steps_data.len());
+            // METAMORPHIC PROPERTY: Order preservation
+            // The final trace must have exactly the same number of steps
+            prop_assert_eq!(trace.steps.len(), steps_data.len());
 
-        // Each step's sequence number must match its position in the vector
-        for (index, step) in trace.steps.iter().enumerate() {
+            // Each step's sequence number must match its position in the vector
+            for (index, step) in trace.steps.iter().enumerate() {
+                prop_assert_eq!(
+                    step.seq,
+                    index as u64,
+                    "Step at index {} has seq {}, expected {}",
+                    index,
+                    step.seq,
+                    index
+                );
+            }
+
+            // Additional invariant: sequence numbers must be strictly ascending
+            let seq_numbers: Vec<u64> = trace.steps.iter().map(|s| s.seq).collect();
+            for window in seq_numbers.windows(2) {
+                prop_assert!(
+                    window[1] == window[0] + 1,
+                    "Sequence numbers not consecutive: {} -> {}",
+                    window[0],
+                    window[1]
+                );
+            }
+
+            // Additional invariant: no gaps in sequence numbering
+            let first_seq = trace.steps.first().map(|s| s.seq).unwrap_or(0);
+            let last_seq = trace.steps.last().map(|s| s.seq).unwrap_or(0);
+            let expected_len = if trace.steps.is_empty() {
+                0
+            } else {
+                last_seq.saturating_sub(first_seq).saturating_add(1) as usize
+            };
             prop_assert_eq!(
-                step.seq,
-                index as u64,
-                "Step at index {} has seq {}, expected {}",
-                index,
-                step.seq,
-                index
+                expected_len,
+                trace.steps.len(),
+                "Sequence numbers have gaps: range {}..={} vs {} steps",
+                first_seq,
+                last_seq,
+                trace.steps.len()
             );
-        }
-
-        // Additional invariant: sequence numbers must be strictly ascending
-        let seq_numbers: Vec<u64> = trace.steps.iter().map(|s| s.seq).collect();
-        for window in seq_numbers.windows(2) {
-            prop_assert!(
-                window[1] == window[0] + 1,
-                "Sequence numbers not consecutive: {} -> {}",
-                window[0],
-                window[1]
-            );
-        }
-
-        // Additional invariant: no gaps in sequence numbering
-        let first_seq = trace.steps.first().map(|s| s.seq).unwrap_or(0);
-        let last_seq = trace.steps.last().map(|s| s.seq).unwrap_or(0);
-        let expected_len = if trace.steps.is_empty() {
-            0
-        } else {
-            last_seq.saturating_sub(first_seq).saturating_add(1) as usize
-        };
-        prop_assert_eq!(
-            expected_len,
-            trace.steps.len(),
-            "Sequence numbers have gaps: range {}..={} vs {} steps",
-            first_seq,
-            last_seq,
-            trace.steps.len()
-        );
-        Ok(())
-    })
-    .expect("step order property should hold");
+            Ok(())
+        })
+        .expect("step order property should hold");
 }
 
 #[test]
 fn empty_trace_builder_fails_correctly() {
     let mut runner = TestRunner::default();
 
-    runner.run(&Just(()), |_| {
-        let builder = TraceBuilder::new("empty-test", "empty-workflow", demo_env());
+    runner
+        .run(&Just(()), |_| {
+            let builder = TraceBuilder::new("empty-test", "empty-workflow", demo_env());
 
-        // Empty builder should fail to build
-        let result = builder.build();
-        prop_assert!(result.is_err());
+            // Empty builder should fail to build
+            let result = builder.build();
+            prop_assert!(result.is_err());
 
-        // Should be specifically an EmptyTrace error
-        match result {
-            Err(e) => {
-                let error_str = format!("{:?}", e);
-                prop_assert!(
-                    error_str.contains("EmptyTrace") || error_str.contains("empty"),
-                    "Expected EmptyTrace error, got: {}",
-                    error_str
-                );
+            // Should be specifically an EmptyTrace error
+            match result {
+                Err(e) => {
+                    let error_str = format!("{:?}", e);
+                    prop_assert!(
+                        error_str.contains("EmptyTrace") || error_str.contains("empty"),
+                        "Expected EmptyTrace error, got: {}",
+                        error_str
+                    );
+                }
+                Ok(_) => prop_assert!(false, "Empty trace should not build successfully"),
             }
-            Ok(_) => prop_assert!(false, "Empty trace should not build successfully"),
-        }
-        Ok(())
-    })
-    .expect("empty builder property should hold");
+            Ok(())
+        })
+        .expect("empty builder property should hold");
 }
 
 #[test]
 fn trace_builder_respects_max_capacity() {
     let mut runner = TestRunner::default();
 
-    runner.run(&(1..=10_usize), |extra_steps| {
-        // Skip this test if MAX_TRACE_STEPS is too large for reasonable testing
-        prop_assume!(MAX_TRACE_STEPS <= 100);
+    runner
+        .run(&(1..=10_usize), |extra_steps| {
+            // Skip this test if MAX_TRACE_STEPS is too large for reasonable testing
+            prop_assume!(MAX_TRACE_STEPS <= 100);
 
-        let trace_id = "capacity-test";
-        let workflow_name = "max-capacity-preservation";
-        let mut builder = TraceBuilder::new(trace_id, workflow_name, demo_env());
+            let trace_id = "capacity-test";
+            let workflow_name = "max-capacity-preservation";
+            let mut builder = TraceBuilder::new(trace_id, workflow_name, demo_env());
 
-        let total_attempts = MAX_TRACE_STEPS + extra_steps;
-        let mut recorded_seqs = Vec::new();
+            let total_attempts = MAX_TRACE_STEPS + extra_steps;
+            let mut recorded_seqs = Vec::new();
 
-        // Add more steps than the maximum capacity
-        for i in 0..total_attempts {
-            let input = vec![i as u8];
-            let output = vec![(i * 2) as u8];
-            let timestamp = 1_000_000 + i as u64;
+            // Add more steps than the maximum capacity
+            for i in 0..total_attempts {
+                let input = vec![i as u8];
+                let output = vec![(i * 2) as u8];
+                let timestamp = 1_000_000 + i as u64;
 
-            let seq = builder.record_step(input, output, vec![], timestamp);
+                let seq = builder.record_step(input, output, vec![], timestamp);
 
-            // Sequence numbers should still be assigned correctly
-            prop_assert_eq!(seq, i as u64);
-            recorded_seqs.push(seq);
+                // Sequence numbers should still be assigned correctly
+                prop_assert_eq!(seq, i as u64);
+                recorded_seqs.push(seq);
 
-            // Step count should cap at MAX_TRACE_STEPS
-            let expected_count = std::cmp::min(i + 1, MAX_TRACE_STEPS);
-            prop_assert_eq!(builder.step_count(), expected_count);
-        }
+                // Step count should cap at MAX_TRACE_STEPS
+                let expected_count = std::cmp::min(i + 1, MAX_TRACE_STEPS);
+                prop_assert_eq!(builder.step_count(), expected_count);
+            }
 
-        // Build the trace
-        let (trace, _audit_log) = builder.build()
-            .expect("trace should build successfully even when capped");
+            // Build the trace
+            let (trace, _audit_log) = builder
+                .build()
+                .expect("trace should build successfully even when capped");
 
-        // METAMORPHIC PROPERTY: Capped order preservation
-        // Should have exactly MAX_TRACE_STEPS, no more
-        prop_assert_eq!(trace.steps.len(), MAX_TRACE_STEPS);
+            // METAMORPHIC PROPERTY: Capped order preservation
+            // Should have exactly MAX_TRACE_STEPS, no more
+            prop_assert_eq!(trace.steps.len(), MAX_TRACE_STEPS);
 
-        // The recorded steps should be the FIRST MAX_TRACE_STEPS steps
-        // (not the last ones - the comment in record_step says it caps, not evicts)
-        for (index, step) in trace.steps.iter().enumerate() {
+            // The retained bounded window should be reindexed from zero after old
+            // steps are evicted, so validation has no sequence gaps.
+            for (index, step) in trace.steps.iter().enumerate() {
+                prop_assert_eq!(
+                    step.seq,
+                    index as u64,
+                    "Capped trace step at index {} has seq {}, expected {}",
+                    index,
+                    step.seq,
+                    index
+                );
+            }
+
+            // Sequence numbers should still be consecutive from 0
+            prop_assert_eq!(trace.steps[0].seq, 0);
             prop_assert_eq!(
-                step.seq,
-                index as u64,
-                "Capped trace step at index {} has seq {}, expected {}",
-                index,
-                step.seq,
-                index
+                trace.steps[MAX_TRACE_STEPS - 1].seq,
+                (MAX_TRACE_STEPS - 1) as u64
             );
-        }
-
-        // Sequence numbers should still be consecutive from 0
-        prop_assert_eq!(trace.steps[0].seq, 0);
-        prop_assert_eq!(trace.steps[MAX_TRACE_STEPS - 1].seq, (MAX_TRACE_STEPS - 1) as u64);
-        Ok(())
-    })
-    .expect("max capacity property should hold");
+            prop_assert_eq!(
+                trace.steps[MAX_TRACE_STEPS - 1].input,
+                vec![(total_attempts - 1) as u8],
+                "bounded trace should retain the newest step after overflow"
+            );
+            Ok(())
+        })
+        .expect("max capacity property should hold");
 }
 
 #[cfg(test)]
@@ -236,12 +245,7 @@ mod unit_tests {
     fn test_single_step_order() {
         let mut builder = TraceBuilder::new("single-test", "single-workflow", demo_env());
 
-        let seq = builder.record_step(
-            vec![1, 2, 3],
-            vec![4, 5, 6],
-            vec![],
-            2_000_000,
-        );
+        let seq = builder.record_step(vec![1, 2, 3], vec![4, 5, 6], vec![], 2_000_000);
 
         assert_eq!(seq, 0);
         assert_eq!(builder.step_count(), 1);

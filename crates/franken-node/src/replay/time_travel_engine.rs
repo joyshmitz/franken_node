@@ -60,6 +60,12 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     items.push(item);
 }
 
+fn reindex_trace_steps(steps: &mut [TraceStep]) {
+    for (idx, step) in steps.iter_mut().enumerate() {
+        step.seq = u64::try_from(idx).unwrap_or(u64::MAX);
+    }
+}
+
 fn update_hash_len_prefixed(hasher: &mut Sha256, bytes: &[u8]) {
     let len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
     hasher.update(len.to_le_bytes());
@@ -642,21 +648,15 @@ impl TraceBuilder {
         timestamp_ns: u64,
     ) -> u64 {
         let seq = self.next_seq;
-        // Use push_bounded to enforce capacity limit and maintain hardening pattern.
-        // Note: push_bounded with LIFO eviction may shift indices, potentially
-        // violating INV-TTR-STEP-ORDER, but hardening requires push_bounded for
-        // all struct field Vec operations to prevent unbounded memory growth.
+        let will_evict = self.steps.len() >= MAX_TRACE_STEPS;
         push_bounded(
             &mut self.steps,
-            TraceStep::new(
-                seq,
-                input,
-                output,
-                side_effects,
-                timestamp_ns,
-            ),
+            TraceStep::new(seq, input, output, side_effects, timestamp_ns),
             MAX_TRACE_STEPS,
         );
+        if will_evict {
+            reindex_trace_steps(&mut self.steps);
+        }
         let trace_id = self.trace_id.clone();
         push_bounded(
             &mut self.audit_log,
@@ -1113,6 +1113,9 @@ pub fn build_demo_trace(trace_id: &str, workflow_name: &str, step_count: usize) 
             TraceStep::new(seq, input, output, effects, timestamp),
             MAX_TRACE_STEPS,
         );
+    }
+    if step_count > MAX_TRACE_STEPS {
+        reindex_trace_steps(&mut steps);
     }
 
     let trace_digest = WorkflowTrace::compute_digest(&steps);
@@ -4428,11 +4431,26 @@ mod tests {
             "TraceBuilder steps should be bounded by MAX_TRACE_STEPS"
         );
 
-        // Verify most recent steps are preserved (LIFO eviction)
+        // Verify most recent steps are preserved after FIFO eviction.
         let last_step = &builder.steps[builder.steps.len() - 1];
         assert!(
             String::from_utf8_lossy(&last_step.input).starts_with("overflow-input-"),
             "Most recent step should be preserved after overflow"
+        );
+
+        let (trace, _) = builder
+            .build()
+            .expect("bounded trace should remain valid after evicting old steps");
+        assert!(trace.validate().is_ok());
+        assert_eq!(trace.steps[0].seq, 0);
+        assert_eq!(
+            trace.steps[trace.steps.len() - 1].seq,
+            u64::try_from(MAX_TRACE_STEPS.saturating_sub(1)).unwrap_or(u64::MAX)
+        );
+        assert!(
+            String::from_utf8_lossy(&trace.steps[trace.steps.len() - 1].input)
+                .starts_with("overflow-input-"),
+            "Built trace should preserve the newest bounded window"
         );
     }
 }

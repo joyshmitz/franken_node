@@ -56,7 +56,7 @@ fn hash_u64_field(hasher: &mut Sha256, value: u64) {
 pub const SCHEMA_VERSION: &str = "ids-v1.0";
 
 /// Default time-to-live: 7 days in seconds.
-pub const DEFAULT_TTL_SECS: u64 = 604_800;
+pub const DEFAULT_TTL_SECS: u64 = crate::config::timeouts::REMOTE_IDEMPOTENCY_TTL_SECS;
 /// Default maximum number of audit records retained in-memory.
 pub const DEFAULT_MAX_AUDIT_RECORDS: usize = 4_096;
 

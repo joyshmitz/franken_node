@@ -57,7 +57,8 @@ pub const INV_CSR_IDEMPOTENT: &str = "INV-CSR-IDEMPOTENT";
 // ── Default configuration ────────────────────────────────────────────────────
 
 /// Default freshness window for artifacts in seconds (30 days).
-pub const DEFAULT_FRESHNESS_WINDOW_SECS: u64 = 30 * 24 * 3600;
+pub const DEFAULT_FRESHNESS_WINDOW_SECS: u64 =
+    crate::config::timeouts::TRUST_FRESHNESS_WINDOW_SECS;
 
 /// Default report schedule interval description.
 pub const DEFAULT_SCHEDULE: &str = "monthly";

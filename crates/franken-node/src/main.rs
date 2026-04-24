@@ -151,7 +151,7 @@ mod migration;
 
 const PROFILE_EXAMPLES_TEMPLATE: &str =
     include_str!("../../../config/franken_node.profile_examples.toml");
-const REGISTRY_GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
+const REGISTRY_GIT_COMMAND_TIMEOUT: Duration = config::timeouts::REGISTRY_GIT_COMMAND_TIMEOUT;
 const VERIFY_MODULE_IDS: &[&str] = &[
     "api",
     "claims",
@@ -6238,7 +6238,10 @@ fn maybe_auto_quarantine_run_dependencies(
         return Ok(Vec::new());
     }
 
-    let cache_ttl = config.trust.card_cache_ttl_secs.unwrap_or(60);
+    let cache_ttl = config
+        .trust
+        .card_cache_ttl_secs
+        .unwrap_or(config::timeouts::TRUST_CARD_CACHE_TTL_SECS);
     let mut registry =
         TrustCardRegistry::load_authoritative_state(&registry_path, cache_ttl, now_secs)
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
@@ -10928,7 +10931,11 @@ fn trust_card_cli_registry(now_secs: u64) -> Result<TrustCardCliRegistryState> {
             path.display()
         );
     }
-    let cache_ttl = resolved.config.trust.card_cache_ttl_secs.unwrap_or(60);
+    let cache_ttl = resolved
+        .config
+        .trust
+        .card_cache_ttl_secs
+        .unwrap_or(config::timeouts::TRUST_CARD_CACHE_TTL_SECS);
     let registry = TrustCardRegistry::load_authoritative_state(&path, cache_ttl, now_secs)
         .map_err(|err| anyhow::anyhow!(err.to_string()))?;
     Ok(TrustCardCliRegistryState {
@@ -12024,7 +12031,10 @@ fn evaluate_run_trust_preflight(
 ) -> Result<RunPreFlightReport> {
     let project_root = run_project_root(app_path);
     let dependencies = collect_run_package_dependencies(&project_root)?;
-    let cache_ttl = config.trust.card_cache_ttl_secs.unwrap_or(60);
+    let cache_ttl = config
+        .trust
+        .card_cache_ttl_secs
+        .unwrap_or(config::timeouts::TRUST_CARD_CACHE_TTL_SECS);
     let mut registry_path = None::<PathBuf>;
 
     let verdict = match dependencies {
@@ -13789,7 +13799,7 @@ fn run_command_capture_stdout(
     args: &[&str],
     timeout: Duration,
 ) -> std::result::Result<String, String> {
-    const PIPE_DRAIN_GRACE: Duration = Duration::from_millis(100);
+    const PIPE_DRAIN_GRACE: Duration = config::timeouts::EXTERNAL_COMMAND_PIPE_DRAIN_GRACE;
 
     #[cfg(unix)]
     fn isolate_process_group(command: &mut ProcessCommand) {
@@ -13809,7 +13819,7 @@ fn run_command_capture_stdout(
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
-        std::thread::sleep(Duration::from_millis(25));
+        std::thread::sleep(config::timeouts::EXTERNAL_COMMAND_TERMINATE_GRACE);
         let _ = ProcessCommand::new("kill")
             .args(["-KILL", "--", &process_group])
             .stdin(Stdio::null())
@@ -13926,7 +13936,7 @@ fn run_command_capture_stdout(
                         timeout.as_millis()
                     ));
                 }
-                std::thread::sleep(Duration::from_millis(25));
+                std::thread::sleep(config::timeouts::EXTERNAL_COMMAND_POLL_INTERVAL);
             }
             Err(error) => {
                 terminate_process_group(child_id);
@@ -15880,7 +15890,7 @@ fn sleep_until_next_fleet_poll(
             return;
         }
         let remaining = poll_interval.saturating_sub(started.elapsed());
-        std::thread::sleep(remaining.min(Duration::from_millis(100)));
+        std::thread::sleep(remaining.min(config::timeouts::FLEET_AGENT_POLL_SLEEP_SLICE));
     }
 }
 

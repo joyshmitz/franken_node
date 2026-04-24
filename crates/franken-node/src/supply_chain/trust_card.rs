@@ -114,7 +114,7 @@ pub const TRUST_CARD_STALE_REFRESH: &str = "TRUST_CARD_STALE_REFRESH";
 pub const TRUST_CARD_FORCE_REFRESH: &str = "TRUST_CARD_FORCE_REFRESH";
 pub const TRUST_CARD_DIFF_COMPUTED: &str = "TRUST_CARD_DIFF_COMPUTED";
 
-const DEFAULT_CACHE_TTL_SECS: u64 = 60;
+const DEFAULT_CACHE_TTL_SECS: u64 = crate::config::timeouts::TRUST_CARD_CACHE_TTL_SECS;
 const DEFAULT_REGISTRY_KEY: &[u8] = b"franken-node-trust-card-registry-key-v1";
 pub const TRUST_CARD_REGISTRY_SNAPSHOT_SCHEMA: &str = "franken-node/trust-card-registry-state/v1";
 const TRUST_CARD_REGISTRY_HIGH_WATER_SCHEMA: &str =

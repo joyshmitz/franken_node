@@ -170,20 +170,30 @@ mod evidence_backed_roundtrip_metamorphic {
 
             let imported = write_then_read_bundle(&original, &first_path);
             let reimported = write_then_read_bundle(&imported, &second_path);
+            let first_wire = std::fs::read_to_string(&first_path)
+                .expect("first replay bundle export should be readable");
+            let second_wire = std::fs::read_to_string(&second_path)
+                .expect("second replay bundle export should be readable");
             let imported_json = to_canonical_json(&imported).expect("canonicalize imported bundle");
             let reimported_json =
                 to_canonical_json(&reimported).expect("canonicalize reimported bundle");
 
             prop_assert_eq!(
-                original,
-                imported,
+                &original,
+                &imported,
                 "case {}: first export/import changed the bundle",
                 case_index
             );
             prop_assert_eq!(
-                imported,
-                reimported,
+                &imported,
+                &reimported,
                 "case {}: export(import(bundle)) was not idempotent",
+                case_index
+            );
+            prop_assert_eq!(
+                first_wire,
+                second_wire,
+                "case {}: export(import(bundle)) changed canonical wire bytes",
                 case_index
             );
             prop_assert_eq!(
@@ -193,17 +203,18 @@ mod evidence_backed_roundtrip_metamorphic {
                 case_index
             );
             prop_assert_eq!(
-                imported.evidence_refs,
-                package.evidence_refs,
+                &imported.evidence_refs,
+                &package.evidence_refs,
                 "case {}: evidence refs changed during round-trip",
                 case_index
             );
+            let expected_trust_artifact_refs = vec![
+                format!("trust/card-{case_index}/manifest.json"),
+                format!("trust-artifacts/case-{case_index}/receipt.json"),
+            ];
             prop_assert_eq!(
-                imported.trust_artifact_refs,
-                vec![
-                    format!("trust/card-{case_index}/manifest.json"),
-                    format!("trust-artifacts/case-{case_index}/receipt.json"),
-                ],
+                &imported.trust_artifact_refs,
+                &expected_trust_artifact_refs,
                 "case {}: trust artifact refs changed during round-trip",
                 case_index
             );

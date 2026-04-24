@@ -1,0 +1,177 @@
+{
+  "schema_version": "franken-node/incident-replay-bundle-golden/v1",
+  "bundle_id": "019c7a7e-1428-7245-afc9-b7e9883a8a6e",
+  "incident_id": "INC-E2E-PIPE-001",
+  "created_at": "2026-02-20T10:00:09.000000Z",
+  "policy_version": "balanced",
+  "initial_state_snapshot": {
+    "epoch": 11,
+    "mode": "degraded"
+  },
+  "manifest": {
+    "event_count": 10,
+    "first_timestamp": "2026-02-20T10:00:00.000000Z",
+    "last_timestamp": "2026-02-20T10:00:09.000000Z",
+    "time_span_micros": 9000000,
+    "compressed_size_bytes": 324,
+    "chunk_count": 1,
+    "decision_sequence_hash": "0b5be05ccafbc8838f0739e2dff4aed1a94a31fe6801cda4dc4a4b69e74fc4ea"
+  },
+  "integrity_hash": "1f9fbe04e19a554b6b32083695c3c3632d456eceda5483a851ae43dfb8b39f5b",
+  "signature": {
+    "algorithm": "ed25519",
+    "public_key_hex": "2152f8d19b791d24453242e15f2eab6cb7cffa7b6a5ed30097960e069881db12",
+    "key_id": "8cab4af922e0f48b",
+    "key_source": "config",
+    "signing_identity": "incident-control-plane",
+    "trust_scope": "incident_replay_bundle",
+    "signed_payload_sha256": "af73f605a90e827a8bf6de2dff3318b71c24c8d8d852bcf65dc42d66e277e779",
+    "signature_hex": "c2f692856585a2347c084ee0fb11b730d950ec4996990cb29b2bd855f2729f032b1ac845cbde80bddea3cc030c912f7b43dc402d733ec3b35560905bc26a3106"
+  },
+  "timeline": [
+    {
+      "sequence_number": 1,
+      "timestamp": "2026-02-20T10:00:00.000000Z",
+      "event_type": "external_signal",
+      "payload": {
+        "confidence": 50,
+        "degraded_mode": true,
+        "mode": "degraded",
+        "signal": "incident-step-0"
+      },
+      "causal_parent": null
+    },
+    {
+      "sequence_number": 2,
+      "timestamp": "2026-02-20T10:00:01.000000Z",
+      "event_type": "policy_eval",
+      "payload": {
+        "confidence": 30,
+        "degraded_mode": true,
+        "mode": "degraded",
+        "signal": "incident-step-1"
+      },
+      "causal_parent": 1
+    },
+    {
+      "sequence_number": 3,
+      "timestamp": "2026-02-20T10:00:02.000000Z",
+      "event_type": "operator_action",
+      "payload": {
+        "confidence": 50,
+        "degraded_mode": true,
+        "mode": "degraded",
+        "signal": "incident-step-2"
+      },
+      "causal_parent": 2
+    },
+    {
+      "sequence_number": 4,
+      "timestamp": "2026-02-20T10:00:03.000000Z",
+      "event_type": "external_signal",
+      "payload": {
+        "confidence": 30,
+        "degraded_mode": true,
+        "mode": "degraded",
+        "signal": "incident-step-3"
+      },
+      "causal_parent": 3
+    },
+    {
+      "sequence_number": 5,
+      "timestamp": "2026-02-20T10:00:04.000000Z",
+      "event_type": "policy_eval",
+      "payload": {
+        "confidence": 50,
+        "degraded_mode": true,
+        "mode": "degraded",
+        "signal": "incident-step-4"
+      },
+      "causal_parent": 4
+    },
+    {
+      "sequence_number": 6,
+      "timestamp": "2026-02-20T10:00:05.000000Z",
+      "event_type": "operator_action",
+      "payload": {
+        "confidence": 30,
+        "degraded_mode": true,
+        "mode": "degraded",
+        "signal": "incident-step-5"
+      },
+      "causal_parent": 5
+    },
+    {
+      "sequence_number": 7,
+      "timestamp": "2026-02-20T10:00:06.000000Z",
+      "event_type": "external_signal",
+      "payload": {
+        "confidence": 50,
+        "degraded_mode": true,
+        "mode": "degraded",
+        "signal": "incident-step-6"
+      },
+      "causal_parent": 6
+    },
+    {
+      "sequence_number": 8,
+      "timestamp": "2026-02-20T10:00:07.000000Z",
+      "event_type": "policy_eval",
+      "payload": {
+        "confidence": 30,
+        "degraded_mode": true,
+        "mode": "degraded",
+        "signal": "incident-step-7"
+      },
+      "causal_parent": 7
+    },
+    {
+      "sequence_number": 9,
+      "timestamp": "2026-02-20T10:00:08.000000Z",
+      "event_type": "operator_action",
+      "payload": {
+        "confidence": 50,
+        "degraded_mode": true,
+        "mode": "degraded",
+        "signal": "incident-step-8"
+      },
+      "causal_parent": 8
+    },
+    {
+      "sequence_number": 10,
+      "timestamp": "2026-02-20T10:00:09.000000Z",
+      "event_type": "external_signal",
+      "payload": {
+        "confidence": 30,
+        "degraded_mode": true,
+        "mode": "degraded",
+        "signal": "incident-step-9"
+      },
+      "causal_parent": 9
+    }
+  ],
+  "chunks": [
+    {
+      "bundle_id": "019c7a7e-1428-7245-afc9-b7e9883a8a6e",
+      "chunk_index": 0,
+      "total_chunks": 1,
+      "event_count": 10,
+      "first_sequence_number": 1,
+      "last_sequence_number": 10,
+      "compressed_size_bytes": 324,
+      "chunk_hash": "db9de601d6ce3581114f0c6c439e8b68f9b15b6eb5708d3908e877a7dee03d54",
+      "event_sequence_numbers": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    }
+  ]
+}

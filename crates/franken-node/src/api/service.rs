@@ -443,9 +443,9 @@ mod tests {
             .count();
 
         assert_eq!(operator_count, 4);
-        assert_eq!(verifier_count, 3);
+        assert_eq!(verifier_count, 7);
         assert_eq!(fleet_count, 10);
-        assert_eq!(routes.len(), 17);
+        assert_eq!(routes.len(), 21);
     }
 
     #[test]
@@ -453,7 +453,7 @@ mod tests {
         let _lock = super::operator_routes::process_start_test_lock();
         super::operator_routes::clear_process_start_override_for_tests();
         let catalog = build_endpoint_catalog();
-        assert_eq!(catalog.len(), 17);
+        assert_eq!(catalog.len(), 21);
 
         // All entries have non-empty fields
         for entry in &catalog {
@@ -714,7 +714,7 @@ mod tests {
         let routes = all_route_metadata();
         for route in &routes {
             assert!(
-                route.path.starts_with("/v1/"),
+                route.path.starts_with("/v1/") || route.path.starts_with("/api/v1/"),
                 "route {} is not versioned",
                 route.path
             );

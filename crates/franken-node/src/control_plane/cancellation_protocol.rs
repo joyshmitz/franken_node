@@ -23,10 +23,11 @@ use std::fmt;
 pub const SCHEMA_VERSION: &str = "cp-v1.0";
 
 /// Default drain timeout in milliseconds.
-pub const DEFAULT_DRAIN_TIMEOUT_MS: u64 = 30_000;
+pub const DEFAULT_DRAIN_TIMEOUT_MS: u64 = crate::config::timeouts::RUNTIME_DRAIN_TIMEOUT_MS;
 
 /// Minimum drain timeout in milliseconds.
-pub const MIN_DRAIN_TIMEOUT_MS: u64 = 1_000;
+pub const MIN_DRAIN_TIMEOUT_MS: u64 =
+    crate::config::timeouts::CANCELLATION_PROTOCOL_MIN_DRAIN_TIMEOUT_MS;
 
 /// Default max number of retained audit log entries.
 pub const DEFAULT_MAX_AUDIT_LOG_ENTRIES: usize = 4_096;

@@ -16,7 +16,10 @@ use std::{
 
 #[cfg(feature = "asupersync-transport")]
 use crate::capacity_defaults::aliases::MAX_CONTROL_EVENTS;
-use crate::capacity_defaults::aliases::{MAX_ACTION_LOG_ENTRIES, MAX_NODES_CAP};
+use crate::{
+    capacity_defaults::aliases::{MAX_ACTION_LOG_ENTRIES, MAX_NODES_CAP},
+    config::timeouts,
+};
 use chrono::{DateTime, Utc};
 use ed25519_dalek::Signer;
 use rand::Rng;
@@ -37,8 +40,8 @@ const MAX_ACTION_ID_LEN: usize = 128;
 const MAX_ACTION_RECORD_BYTES: usize = 2_048;
 const ACTION_LOG_COMPACTION_THRESHOLD_BYTES: u64 = 10 * 1024 * 1024;
 const ACTION_LOG_RETENTION_DAYS: i64 = 30;
-const LOCK_RETRY_BACKOFF_MILLIS: [u64; 5] = [100, 200, 400, 800, 1_600];
-pub const FLEET_CONVERGENCE_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const LOCK_RETRY_BACKOFF_MILLIS: [u64; 5] = timeouts::FLEET_LOCK_RETRY_BACKOFF_MILLIS;
+pub const FLEET_CONVERGENCE_POLL_INTERVAL: Duration = timeouts::FLEET_CONVERGENCE_POLL_INTERVAL;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FleetConvergenceWaitOutcome {

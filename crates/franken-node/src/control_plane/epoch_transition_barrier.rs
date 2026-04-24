@@ -29,10 +29,11 @@ use std::fmt;
 pub const SCHEMA_VERSION: &str = "eb-v1.0";
 
 /// Default global barrier timeout in milliseconds.
-pub const DEFAULT_BARRIER_TIMEOUT_MS: u64 = 30_000;
+pub const DEFAULT_BARRIER_TIMEOUT_MS: u64 = crate::config::timeouts::FLEET_BARRIER_TIMEOUT_MS;
 
 /// Default per-participant drain timeout in milliseconds.
-pub const DEFAULT_DRAIN_TIMEOUT_MS: u64 = 10_000;
+pub const DEFAULT_DRAIN_TIMEOUT_MS: u64 =
+    crate::config::timeouts::EPOCH_TRANSITION_DRAIN_TIMEOUT_MS;
 
 use crate::capacity_defaults::aliases::MAX_BARRIER_HISTORY;
 

@@ -29,10 +29,11 @@ use std::fmt;
 pub const SCHEMA_VERSION: &str = "cxt-v1.0";
 
 /// Default drain timeout in milliseconds.
-pub const DEFAULT_DRAIN_TIMEOUT_MS: u64 = 30_000;
+pub const DEFAULT_DRAIN_TIMEOUT_MS: u64 = crate::config::timeouts::RUNTIME_DRAIN_TIMEOUT_MS;
 
 /// Minimum drain timeout in milliseconds.
-pub const MIN_DRAIN_TIMEOUT_MS: u64 = 500;
+pub const MIN_DRAIN_TIMEOUT_MS: u64 =
+    crate::config::timeouts::CANCELLABLE_TASK_MIN_DRAIN_TIMEOUT_MS;
 
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
 const MAX_CHILD_TASKS: usize = 1024;

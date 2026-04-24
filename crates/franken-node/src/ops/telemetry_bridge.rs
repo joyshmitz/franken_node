@@ -1,3 +1,4 @@
+use crate::config::timeouts;
 use crate::storage::frankensqlite_adapter::{
     CallerContext, FrankensqliteAdapter, PersistenceClass,
 };
@@ -16,14 +17,14 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 const PERSIST_QUEUE_CAPACITY: usize = 256;
-const ENQUEUE_TIMEOUT_MS: u64 = 50;
+const ENQUEUE_TIMEOUT_MS: u64 = timeouts::TELEMETRY_ENQUEUE_TIMEOUT_MS;
 const MAX_EVENT_BYTES: usize = 64 * 1024;
 const MAX_RECENT_EVENTS: usize = 256;
 const MAX_RUNTIME_EVENTS: usize = 256;
 const MAX_ACTIVE_CONNECTIONS: usize = 64;
-const ACCEPT_POLL_INTERVAL_MS: u64 = 100;
-const CONNECTION_READ_TIMEOUT_MS: u64 = 500;
-const DEFAULT_DRAIN_TIMEOUT_MS: u64 = 5000;
+const ACCEPT_POLL_INTERVAL_MS: u64 = timeouts::TELEMETRY_ACCEPT_POLL_INTERVAL_MS;
+const CONNECTION_READ_TIMEOUT_MS: u64 = timeouts::TELEMETRY_CONNECTION_READ_TIMEOUT_MS;
+const DEFAULT_DRAIN_TIMEOUT_MS: u64 = timeouts::TELEMETRY_DEFAULT_DRAIN_TIMEOUT_MS;
 
 /// Cross-process file lock guard for socket setup/teardown operations
 struct SocketLockGuard {
@@ -523,7 +524,7 @@ impl TelemetryRuntimeHandle {
                     if park_start.elapsed() >= remaining {
                         break true;
                     }
-                    thread::sleep(Duration::from_millis(10));
+                    thread::sleep(timeouts::TELEMETRY_WORKER_JOIN_POLL_INTERVAL);
                 }
             };
 
@@ -617,13 +618,13 @@ impl TelemetryRuntimeHandle {
                 // CRITICAL: Give worker brief grace period to notice stop flag and exit cleanly
                 // Without this, handle.join() could hang indefinitely if worker is blocked in I/O
                 let grace_start = Instant::now();
-                let grace_period = Duration::from_millis(100); // 100ms grace to notice stop flag
+                let grace_period = timeouts::TELEMETRY_CONNECTION_TIMEOUT_GRACE;
 
                 while grace_start.elapsed() < grace_period {
                     if handle.is_finished() {
                         break; // Worker noticed stop flag and exited cleanly
                     }
-                    thread::sleep(Duration::from_millis(5));
+                    thread::sleep(timeouts::TELEMETRY_CONNECTION_TIMEOUT_GRACE_POLL);
                 }
 
                 // Continue to join() - even if still running, we must join to prevent detachment
@@ -644,7 +645,7 @@ impl TelemetryRuntimeHandle {
                         if park_start.elapsed() >= remaining_time {
                             break true;
                         }
-                        thread::sleep(Duration::from_millis(10));
+                        thread::sleep(timeouts::TELEMETRY_WORKER_JOIN_POLL_INTERVAL);
                     }
                 };
 
@@ -1282,7 +1283,7 @@ impl TelemetryBridge {
 
             match outcome {
                 EnqueueOutcome::Accepted => return true,
-                EnqueueOutcome::Retry => thread::sleep(Duration::from_millis(1)),
+                EnqueueOutcome::Retry => thread::sleep(timeouts::TELEMETRY_ENQUEUE_RETRY_DELAY),
                 EnqueueOutcome::Rejected => return false,
             }
         }

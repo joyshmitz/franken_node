@@ -775,7 +775,8 @@ fn run_command_capture_output(cmd: &mut Command) -> io::Result<Output> {
     use std::time::Duration;
 
     const MAX_CAPTURED_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
-    const PIPE_READER_TIMEOUT: Duration = Duration::from_secs(2);
+    const PIPE_READER_TIMEOUT: Duration =
+        crate::config::timeouts::ENGINE_DISPATCH_PIPE_READER_TIMEOUT;
 
     fn spawn_bounded_reader(
         mut stream: impl Read + Send + 'static,
@@ -1261,7 +1262,7 @@ impl EngineDispatcher {
         let timeout_secs = std::env::var("FRANKEN_ENGINE_TIMEOUT_SECS")
             .ok()
             .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(300); // 5 minute default
+            .unwrap_or(crate::config::timeouts::ENGINE_DISPATCH_DEFAULT_TIMEOUT_SECS);
         let timeout = Duration::from_secs(timeout_secs);
         let app_path_buf = app_path.to_path_buf();
 
@@ -1338,7 +1339,7 @@ impl EngineDispatcher {
                 break Err(dispatch_error.to_actionable().into());
             }
 
-            thread::sleep(Duration::from_millis(10));
+            thread::sleep(crate::config::timeouts::ENGINE_DISPATCH_POLL_INTERVAL);
         };
 
         // Restore original panic hook

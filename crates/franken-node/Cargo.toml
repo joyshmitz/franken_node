@@ -150,6 +150,11 @@ path = "tests/connector_interop_suite_revocation.rs"
 required-features = ["control-plane"]
 
 [[test]]
+name = "atc_verifier_api_routes"
+path = "tests/atc_verifier_api_routes.rs"
+required-features = ["control-plane"]
+
+[[test]]
 name = "fleet_cli_e2e"
 path = "tests/fleet_cli_e2e.rs"
 required-features = ["test-support"]
