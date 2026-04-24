@@ -570,6 +570,28 @@ pub fn test_scenario_compatibility(scenario: &CompatibilityScenario) -> Conforma
         frame_compatibility,
     ]);
 
+    // Collect limitations based on compatibility threshold failures
+    let mut discovered_limitations = Vec::new();
+    if state_compatibility < 0.8 {
+        discovered_limitations.push(format!("State management compatibility below threshold: {:.2}", state_compatibility));
+    }
+    if transition_compatibility < 0.8 {
+        discovered_limitations.push(format!("State transition compatibility below threshold: {:.2}", transition_compatibility));
+    }
+    if endpoint_compatibility < 0.8 {
+        discovered_limitations.push(format!("API endpoint compatibility below threshold: {:.2}", endpoint_compatibility));
+    }
+    if frame_compatibility < 0.8 {
+        discovered_limitations.push(format!("Frame parser compatibility below threshold: {:.2}", frame_compatibility));
+    }
+
+    // Add protocol negotiation limitations if applicable
+    if let Some(ref protocol_result) = protocol_negotiation {
+        if !protocol_result.success {
+            discovered_limitations.push(format!("Protocol negotiation failed: {}", protocol_result.error));
+        }
+    }
+
     let actual_result = if compatibility_score >= 0.95 {
         TestOutcome::Success
     } else if compatibility_score >= 0.7 {
@@ -593,7 +615,7 @@ pub fn test_scenario_compatibility(scenario: &CompatibilityScenario) -> Conforma
         expected: scenario.expected_compatibility.clone(),
         actual_result,
         compatibility_score,
-        discovered_limitations: vec![], // TODO: collect actual limitations
+        discovered_limitations,
         protocol_negotiation: Some(protocol_negotiation),
     }
 }
