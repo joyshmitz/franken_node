@@ -7,7 +7,11 @@
 //! - network guard enforces centralized capability gate
 
 use std::fs;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::path::Path;
 use std::process::Command;
+use std::sync::{Arc, Mutex, Once};
 
 use ed25519_dalek::{Signer, SigningKey};
 use frankenengine_node::security::impossible_default::{
@@ -19,15 +23,190 @@ use frankenengine_node::security::network_guard::{
 use frankenengine_node::security::remote_cap::{
     CapabilityGate, CapabilityProvider, ConnectivityMode, RemoteOperation, RemoteScope,
 };
+use frankenengine_node::supply_chain::trust_card::fixture_registry;
+
+static TEST_TRACING_INIT: Once = Once::new();
 
 fn provider() -> CapabilityProvider {
     CapabilityProvider::new("remote-cap-test-secret")
         .expect("remote cap test signing secret should be valid")
 }
 
+fn init_test_tracing() {
+    TEST_TRACING_INIT.call_once(|| {
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+    });
+}
+
+fn read_http_request(stream: &mut impl Read) -> String {
+    let mut buffer = Vec::new();
+    let mut chunk = [0_u8; 1024];
+
+    loop {
+        let bytes_read = stream.read(&mut chunk).expect("read request chunk");
+        if bytes_read == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&chunk[..bytes_read]);
+
+        let Some(headers_end) = buffer.windows(4).position(|window| window == b"\r\n\r\n") else {
+            continue;
+        };
+        let headers = String::from_utf8_lossy(&buffer[..headers_end + 4]);
+        let content_length = headers
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("Content-Length")
+                    .then(|| value.trim().parse::<usize>().ok())
+                    .flatten()
+            })
+            .unwrap_or(0);
+        let total_length = headers_end + 4 + content_length;
+        if buffer.len() >= total_length {
+            break;
+        }
+    }
+
+    String::from_utf8_lossy(&buffer).to_string()
+}
+
+fn spawn_osv_fixture_server() -> (String, Arc<Mutex<Vec<String>>>, std::thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind OSV fixture server");
+    let address = format!("http://{}", listener.local_addr().expect("local addr"));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let captured_requests = Arc::clone(&requests);
+
+    let handle = std::thread::spawn(move || {
+        for stream in listener.incoming().take(2) {
+            let mut stream = stream.expect("accept fixture connection");
+            let request = read_http_request(&mut stream);
+            let body = request
+                .split("\r\n\r\n")
+                .nth(1)
+                .unwrap_or_default()
+                .to_string();
+            captured_requests
+                .lock()
+                .expect("lock requests")
+                .push(body.clone());
+
+            let (status_code, status_text, response_body) = if body.contains("\"@acme/auth-guard\"")
+            {
+                (
+                    200,
+                    "OK",
+                    r#"{"vulns":[{"id":"OSV-2026-0001"}]}"#.to_string(),
+                )
+            } else if body.contains("\"@beta/telemetry-bridge\"") {
+                (
+                    503,
+                    "Service Unavailable",
+                    r#"{"error":"upstream unavailable"}"#.to_string(),
+                )
+            } else {
+                (
+                    404,
+                    "Not Found",
+                    r#"{"error":"unexpected package"}"#.to_string(),
+                )
+            };
+
+            let response = format!(
+                "HTTP/1.1 {status_code} {status_text}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                response_body.len(),
+                response_body
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("write fixture response");
+        }
+    });
+
+    (format!("{address}/query"), requests, handle)
+}
+
+fn spawn_osv_observer_server() -> (String, Arc<Mutex<usize>>, std::thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind observer server");
+    listener
+        .set_nonblocking(true)
+        .expect("set observer listener nonblocking");
+    let address = format!("http://{}", listener.local_addr().expect("local addr"));
+    let request_count = Arc::new(Mutex::new(0_usize));
+    let captured_count = Arc::clone(&request_count);
+
+    let handle = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while std::time::Instant::now() < deadline {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    let _ = read_http_request(&mut stream);
+                    *captured_count.lock().expect("lock observer count") += 1;
+                    let response_body = r#"{"vulns":[]}"#;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        response_body.len(),
+                        response_body
+                    );
+                    stream
+                        .write_all(response.as_bytes())
+                        .expect("write observer response");
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(err) => panic!("observer accept failed: {err}"),
+            }
+        }
+    });
+
+    (format!("{address}/query"), request_count, handle)
+}
+
+fn seeded_fixture_trust_workspace() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(
+        dir.path().join("franken_node.toml"),
+        "profile = \"balanced\"\n",
+    )
+    .expect("write config");
+
+    let registry = fixture_registry(1_000).expect("fixture registry");
+    let path = dir
+        .path()
+        .join(".franken-node/state/trust-card-registry.v1.json");
+    registry
+        .persist_authoritative_state(&path)
+        .expect("persist trust registry");
+    fs::write(
+        dir.path()
+            .join(".franken-node/state/trust-card-registry.fixture-source.json"),
+        concat!(
+            "{\n",
+            "  \"source_helper\": \"fixture_registry\",\n",
+            "  \"purpose\": \"remote-cap-enforcement deterministic fixture seed\",\n",
+            "  \"authoritative_state_path\": \".franken-node/state/trust-card-registry.v1.json\"\n",
+            "}\n"
+        ),
+    )
+    .expect("write fixture metadata");
+    dir
+}
+
+fn write_remotecap_token(path: &Path, cap: &frankenengine_node::security::remote_cap::RemoteCap) {
+    fs::write(
+        path,
+        serde_json::to_vec_pretty(&serde_json::json!({ "token": cap })).expect("token JSON"),
+    )
+    .expect("write token");
+}
+
 fn write_scannable_trust_workspace(workspace: &std::path::Path) {
-    fs::write(workspace.join("franken_node.toml"), "profile = \"balanced\"\n")
-        .expect("write config");
+    fs::write(
+        workspace.join("franken_node.toml"),
+        "profile = \"balanced\"\n",
+    )
+    .expect("write config");
     fs::write(
         workspace.join("package.json"),
         r#"{"name":"remote-cap-scan","version":"1.0.0","dependencies":{"left-pad":"1.3.0"}}"#,
@@ -124,8 +303,8 @@ fn impossible_default_token_for(
 
 #[test]
 fn all_network_operations_require_token() {
-    let mut gate =
-        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
+    let mut gate = CapabilityGate::new("remote-cap-test-secret")
+        .expect("remote cap test gate should be valid");
 
     let ops = [
         (RemoteOperation::NetworkEgress, "https://egress.example.com"),
@@ -195,8 +374,8 @@ fn remote_cap_signed_subject_mismatch_is_rejected() {
 #[test]
 fn valid_token_allows_scoped_operations() {
     let cap = issue_cap(false);
-    let mut gate =
-        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
+    let mut gate = CapabilityGate::new("remote-cap-test-secret")
+        .expect("remote cap test gate should be valid");
     gate.authorize_network(
         Some(&cap),
         RemoteOperation::FederationSync,
@@ -215,8 +394,8 @@ fn forged_signature_is_rejected() {
     let forged: frankenengine_node::security::remote_cap::RemoteCap =
         serde_json::from_value(tampered).expect("from value");
 
-    let mut gate =
-        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
+    let mut gate = CapabilityGate::new("remote-cap-test-secret")
+        .expect("remote cap test gate should be valid");
     let err = gate
         .authorize_network(
             Some(&forged),
@@ -243,8 +422,8 @@ fn expired_token_is_rejected() {
         )
         .expect("issue")
         .0;
-    let mut gate =
-        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
+    let mut gate = CapabilityGate::new("remote-cap-test-secret")
+        .expect("remote cap test gate should be valid");
     let err = gate
         .authorize_network(
             Some(&cap),
@@ -276,8 +455,8 @@ fn scope_escalation_is_rejected() {
         .expect("issue")
         .0;
 
-    let mut gate =
-        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
+    let mut gate = CapabilityGate::new("remote-cap-test-secret")
+        .expect("remote cap test gate should be valid");
     let err = gate
         .authorize_network(
             Some(&cap),
@@ -293,8 +472,8 @@ fn scope_escalation_is_rejected() {
 #[test]
 fn replay_of_consumed_single_use_token_is_rejected() {
     let cap = issue_cap(true);
-    let mut gate =
-        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
+    let mut gate = CapabilityGate::new("remote-cap-test-secret")
+        .expect("remote cap test gate should be valid");
     gate.authorize_network(
         Some(&cap),
         RemoteOperation::TelemetryExport,
@@ -319,8 +498,8 @@ fn replay_of_consumed_single_use_token_is_rejected() {
 #[test]
 fn revocation_blocks_previously_valid_token() {
     let cap = issue_cap(false);
-    let mut gate =
-        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
+    let mut gate = CapabilityGate::new("remote-cap-test-secret")
+        .expect("remote cap test gate should be valid");
     gate.revoke(&cap, 1_700_000_020, "trace-revoke");
 
     let err = gate
@@ -337,9 +516,8 @@ fn revocation_blocks_previously_valid_token() {
 
 #[test]
 fn local_only_mode_keeps_local_ops_functional() {
-    let mut gate =
-        CapabilityGate::with_mode("remote-cap-test-secret", ConnectivityMode::LocalOnly)
-            .expect("remote cap test gate should be valid");
+    let mut gate = CapabilityGate::with_mode("remote-cap-test-secret", ConnectivityMode::LocalOnly)
+        .expect("remote cap test gate should be valid");
     gate.authorize_local_operation("evidence_ledger_append", 1_700_000_030, "trace-local-op");
     let event = gate.audit_log().last().expect("local event");
     assert_eq!(event.event_code, "REMOTECAP_LOCAL_MODE_ACTIVE");
@@ -358,8 +536,8 @@ fn network_guard_is_enforced_by_capability_gate() {
         })
         .expect("add rule");
     let mut guard = NetworkGuard::new(policy);
-    let mut gate =
-        CapabilityGate::new("remote-cap-test-secret").expect("remote cap test gate should be valid");
+    let mut gate = CapabilityGate::new("remote-cap-test-secret")
+        .expect("remote cap test gate should be valid");
 
     let err = guard
         .process_egress(
@@ -399,80 +577,142 @@ fn network_guard_is_enforced_by_capability_gate() {
 
 #[test]
 fn osv_trust_sync_network_egress_requires_authorization() {
-    // Test for bd-piggu: Verify OSV network operations pass through CapabilityGate::authorize_network
-    let mut gate =
-        CapabilityGate::new("osv-test-secret").expect("OSV test gate should be valid");
+    init_test_tracing();
 
-    // Test OSV query endpoint - should fail without RemoteCap
-    let osv_url = "https://api.osv.dev/v1/query";
-    let err = gate
-        .authorize_network(
-            None, // No RemoteCap token
-            RemoteOperation::NetworkEgress,
-            osv_url,
-            1_700_000_200,
-            "trace-osv-missing-cap",
-        )
-        .expect_err("OSV network call without RemoteCap should fail");
-
-    assert_eq!(err.code(), "REMOTECAP_MISSING");
-    assert_eq!(err.compatibility_code(), Some("ERR_REMOTE_CAP_REQUIRED"));
-
-    // Test deps.dev dependents endpoint - should also fail without RemoteCap
-    let deps_url = "https://deps.dev/systems/npm/packages/test/versions/1.0.0:dependents";
-    let err = gate
-        .authorize_network(
-            None,
-            RemoteOperation::NetworkEgress,
-            deps_url,
-            1_700_000_201,
-            "trace-deps-missing-cap",
-        )
-        .expect_err("deps.dev network call without RemoteCap should fail");
-
-    assert_eq!(err.code(), "REMOTECAP_MISSING");
-    assert_eq!(err.compatibility_code(), Some("ERR_REMOTE_CAP_REQUIRED"));
-
-    // Test with valid RemoteCap - should succeed
-    let provider = CapabilityProvider::new("osv-test-secret")
-        .expect("OSV test provider should be valid");
-
-    let scope = RemoteScope::new(
-        vec![RemoteOperation::NetworkEgress],
-        vec![osv_url.to_string(), deps_url.to_string()],
+    let secret = "osv-test-secret";
+    let workspace = seeded_fixture_trust_workspace();
+    tracing::info!(
+        phase = "workspace_seeded",
+        workspace = %workspace.path().display(),
+        "seeded authoritative trust registry for CLI trust sync"
     );
 
+    let (blocked_osv_url, blocked_request_count, blocked_server) = spawn_osv_observer_server();
+    tracing::info!(
+        phase = "observer_server_started",
+        osv_url = %blocked_osv_url,
+        "started observer server for unauthenticated trust sync"
+    );
+
+    let blocked = Command::new(env!("CARGO_BIN_EXE_franken-node"))
+        .current_dir(workspace.path())
+        .env("FRANKEN_NODE_REMOTECAP_KEY", secret)
+        .env("FRANKEN_NODE_OSV_QUERY_URL", &blocked_osv_url)
+        .args(["trust", "sync", "--force"])
+        .output()
+        .expect("run unauthenticated trust sync");
+    tracing::info!(
+        phase = "unauthenticated_sync_completed",
+        success = blocked.status.success(),
+        stdout_len = blocked.stdout.len(),
+        stderr_len = blocked.stderr.len(),
+        "completed trust sync without RemoteCap token"
+    );
+
+    blocked_server.join().expect("join observer server");
+    let blocked_requests = *blocked_request_count.lock().expect("lock observer count");
+    let blocked_stdout = String::from_utf8_lossy(&blocked.stdout);
+    let blocked_stderr = String::from_utf8_lossy(&blocked.stderr);
+    tracing::info!(
+        phase = "unauthenticated_sync_observed",
+        request_count = blocked_requests,
+        stdout = %blocked_stdout,
+        stderr = %blocked_stderr,
+        "captured unauthenticated trust sync outputs"
+    );
+    assert_eq!(
+        blocked_requests, 0,
+        "trust sync should fail closed before OSV egress without RemoteCap:\nstdout:\n{blocked_stdout}\nstderr:\n{blocked_stderr}"
+    );
+    assert!(
+        blocked_stderr.contains("REMOTECAP_MISSING"),
+        "unauthenticated trust sync should surface RemoteCap denial:\nstdout:\n{blocked_stdout}\nstderr:\n{blocked_stderr}"
+    );
+
+    let (osv_url, requests, server) = spawn_osv_fixture_server();
+    tracing::info!(
+        phase = "fixture_server_started",
+        osv_url = %osv_url,
+        "started OSV fixture server for authorized trust sync"
+    );
+
+    let now_epoch_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock after epoch")
+        .as_secs();
+    let provider = CapabilityProvider::new(secret).expect("OSV test provider should be valid");
     let (cap, _audit_event) = provider
         .issue(
             "test-issuer",
-            scope,
-            1_700_010_000,
-            1_700_000_100,
-            true, // operator_authorized
-            false, // single_use
+            RemoteScope::new(vec![RemoteOperation::NetworkEgress], vec![osv_url.clone()]),
+            now_epoch_secs,
+            3_600,
+            true,
+            false,
             "trace-osv-issue",
         )
         .expect("OSV test cap should be valid");
+    tracing::info!(
+        phase = "cap_issued",
+        token_id = %cap.token_id(),
+        issued_at_epoch_secs = cap.issued_at_epoch_secs,
+        expires_at_epoch_secs = cap.expires_at_epoch_secs,
+        "issued RemoteCap token for trust sync"
+    );
 
-    // OSV query should now succeed with valid cap
-    gate.authorize_network(
-        Some(&cap),
-        RemoteOperation::NetworkEgress,
-        osv_url,
-        1_700_000_202,
-        "trace-osv-authorized",
-    )
-    .expect("OSV query with valid RemoteCap should pass");
+    let token_path = workspace.path().join("capability.json");
+    write_remotecap_token(&token_path, &cap);
+    tracing::info!(
+        phase = "token_written",
+        token_path = %token_path.display(),
+        "wrote RemoteCap token to disk"
+    );
 
-    // deps.dev query should also succeed with valid cap
-    gate.authorize_network(
-        Some(&cap),
-        RemoteOperation::NetworkEgress,
-        deps_url,
-        1_700_000_203,
-        "trace-deps-authorized",
-    )
-    .expect("deps.dev query with valid RemoteCap should pass");
+    let authorized = Command::new(env!("CARGO_BIN_EXE_franken-node"))
+        .current_dir(workspace.path())
+        .env("FRANKEN_NODE_REMOTECAP_KEY", secret)
+        .env("FRANKEN_NODE_OSV_QUERY_URL", &osv_url)
+        .env("FRANKEN_NODE_TRUST_SCAN_REMOTECAP_TOKEN", &token_path)
+        .args(["trust", "sync", "--force"])
+        .output()
+        .expect("run authorized trust sync");
+    tracing::info!(
+        phase = "authorized_sync_completed",
+        success = authorized.status.success(),
+        stdout_len = authorized.stdout.len(),
+        stderr_len = authorized.stderr.len(),
+        "completed trust sync with authorized RemoteCap token"
+    );
+
+    server.join().expect("join OSV fixture server");
+    let request_bodies = requests.lock().expect("lock requests").clone();
+    let stdout = String::from_utf8_lossy(&authorized.stdout);
+    let stderr = String::from_utf8_lossy(&authorized.stderr);
+    tracing::info!(
+        phase = "authorized_sync_observed",
+        request_count = request_bodies.len(),
+        stdout = %stdout,
+        stderr = %stderr,
+        "captured authorized trust sync outputs"
+    );
+
+    assert!(
+        authorized.status.success(),
+        "authorized trust sync should succeed:\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert_eq!(
+        request_bodies.len(),
+        2,
+        "authorized trust sync should reach the OSV network boundary for both seeded cards:\nrequests:\n{request_bodies:#?}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stdout.contains("trust sync completed: force=true"));
+    assert!(stdout.contains("refreshed=1"));
+    assert!(stdout.contains("vulnerabilities=1"));
+    assert!(stdout.contains("network_errors=1"));
+    assert!(
+        stderr.contains("@beta/telemetry-bridge"),
+        "authorized trust sync should preserve downstream error breadcrumbs:\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
 }
 
 // Conformance test that validates INV-REMOTECAP-REQUIRED spec invariant
@@ -484,8 +724,14 @@ fn trust_sync_network_operations_conform_to_remotecap_spec() {
 
     let test_scenarios = vec![
         ("OSV vulnerability query", "https://api.osv.dev/v1/query"),
-        ("deps.dev dependents API", "https://deps.dev/systems/npm/packages/lodash/versions/4.17.21:dependents"),
-        ("deps.dev security API", "https://deps.dev/systems/npm/packages/lodash/versions/4.17.21:security"),
+        (
+            "deps.dev dependents API",
+            "https://deps.dev/systems/npm/packages/lodash/versions/4.17.21:dependents",
+        ),
+        (
+            "deps.dev security API",
+            "https://deps.dev/systems/npm/packages/lodash/versions/4.17.21:security",
+        ),
     ];
 
     for (description, endpoint) in test_scenarios {
