@@ -7,7 +7,7 @@ set -u
 
 PROJECT=franken_node
 PROJECT_DIR=/data/projects/franken_node
-STALE_BEAD_MIN=${STALE_BEAD_MIN:-45}
+STALE_BEAD_MIN=${STALE_BEAD_MIN:-1440}
 TMUX=/usr/bin/tmux
 
 echo "====== TICK $(date -u +%FT%TZ) ======"
