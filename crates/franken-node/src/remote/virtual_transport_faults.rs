@@ -126,9 +126,7 @@ impl FaultConfig {
             return Err("corrupt_bit_count must be > 0 when corrupt_probability > 0".to_string());
         }
         if self.corrupt_bit_count > MAX_CORRUPT_BITS {
-            return Err(format!(
-                "corrupt_bit_count must be <= {MAX_CORRUPT_BITS}"
-            ));
+            return Err(format!("corrupt_bit_count must be <= {MAX_CORRUPT_BITS}"));
         }
         if self.max_faults == 0 {
             return Err("max_faults must be > 0".to_string());
@@ -893,9 +891,9 @@ mod tests {
         );
         expected.update(payload);
 
-        let legacy_unframed = hex::encode(
-            Sha256::digest([b"virtual_transport_faults_payload_v1:" as &[u8], payload].concat())
-        );
+        let legacy_unframed = hex::encode(Sha256::digest(
+            [b"virtual_transport_faults_payload_v1:" as &[u8], payload].concat(),
+        ));
 
         assert_eq!(payload_hash(payload), hex::encode(expected.finalize()));
         assert_ne!(payload_hash(payload), legacy_unframed);
@@ -907,24 +905,18 @@ mod tests {
         let config = chaos();
         let result = harness.run_campaign("chaos", &config, 100, "t1");
         assert_eq!(harness.fault_count(), result.total_faults);
-        assert!(
-            harness
-                .audit_log()
-                .iter()
-                .any(|entry| entry.event_code == event_codes::FAULT_SCHEDULE_CREATED)
-        );
-        assert!(
-            harness
-                .audit_log()
-                .iter()
-                .any(|entry| entry.event_code == event_codes::FAULT_INJECTED)
-        );
-        assert!(
-            harness
-                .audit_log()
-                .iter()
-                .any(|entry| entry.event_code == event_codes::FAULT_SCENARIO_END)
-        );
+        assert!(harness
+            .audit_log()
+            .iter()
+            .any(|entry| entry.event_code == event_codes::FAULT_SCHEDULE_CREATED));
+        assert!(harness
+            .audit_log()
+            .iter()
+            .any(|entry| entry.event_code == event_codes::FAULT_INJECTED));
+        assert!(harness
+            .audit_log()
+            .iter()
+            .any(|entry| entry.event_code == event_codes::FAULT_SCENARIO_END));
     }
 
     #[test]
@@ -1316,12 +1308,10 @@ mod tests {
         assert_eq!(result.corruptions, 0);
         assert_eq!(harness.fault_count(), 0);
         assert!(!result.content_hash.is_empty());
-        assert!(
-            harness
-                .audit_log()
-                .iter()
-                .any(|record| record.event_code == event_codes::FAULT_SCENARIO_END)
-        );
+        assert!(harness
+            .audit_log()
+            .iter()
+            .any(|record| record.event_code == event_codes::FAULT_SCENARIO_END));
     }
 
     #[test]
