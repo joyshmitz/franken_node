@@ -32,7 +32,7 @@ Do not reintroduce obsolete placeholder contracts such as:
 
 - `sha256:<digest>` prefixes
 - fixed fake Ed25519 blobs
-- verifier IDs like `test-verifier-deterministic`
+- raw verifier IDs like `test-verifier-deterministic` (use `verifier://test-verifier-deterministic` format)
 - dummy filler values such as `deadbeef...`
 
 ## Fixture Roles

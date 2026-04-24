@@ -1523,8 +1523,8 @@ fn test_bundle_timeline_causal_ordering() -> TestResult {
 // ============================================================================
 
 fn test_create_verifier_sdk() -> TestResult {
-    let sdk = create_verifier_sdk("test-verifier");
-    if sdk.verifier_identity == "test-verifier" && sdk.sdk_version == SDK_VERSION {
+    let sdk = create_verifier_sdk("verifier://test-verifier");
+    if sdk.verifier_identity == "verifier://test-verifier" && sdk.sdk_version == SDK_VERSION {
         TestResult::Pass
     } else {
         TestResult::Fail {

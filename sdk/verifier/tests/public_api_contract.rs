@@ -1081,15 +1081,53 @@ fn test_check_sdk_version_function() -> Result<(), String> {
 
 fn test_verifier_sdk_new_function() -> Result<(), String> {
     // VerifierSdk::new function behavior must be stable
-    let sdk = VerifierSdk::new("test-verifier");
+    let sdk = VerifierSdk::new("verifier://test-verifier");
 
-    assert_eq!(sdk.verifier_identity, "test-verifier");
+    assert_eq!(sdk.verifier_identity, "verifier://test-verifier");
     assert_eq!(sdk.sdk_version, "vsdk-v1.0");
 
     // Config must contain required keys
     assert!(sdk.config.contains_key("schema_version"));
     assert!(sdk.config.contains_key("security_posture"));
     assert_eq!(sdk.config.get("schema_version").unwrap(), "vsdk-v1.0");
+
+    Ok(())
+}
+
+fn test_verifier_sdk_new_rejects_invalid_identities() -> Result<(), String> {
+    // VerifierSdk::new should validate verifier identity format
+
+    // Test raw string without verifier:// prefix
+    match std::panic::catch_unwind(|| VerifierSdk::new("test-verifier")) {
+        Ok(sdk) => {
+            // If it doesn't panic, the identity should be validated elsewhere
+            // For now we just check it doesn't accept invalid format
+            if sdk.verifier_identity == "test-verifier" {
+                return Err("VerifierSdk::new should not accept raw string identities without verifier:// prefix".to_string());
+            }
+        }
+        Err(_) => {} // Panic is acceptable for invalid input
+    }
+
+    // Test empty string
+    match std::panic::catch_unwind(|| VerifierSdk::new("")) {
+        Ok(sdk) => {
+            if sdk.verifier_identity.is_empty() {
+                return Err("VerifierSdk::new should not accept empty verifier identity".to_string());
+            }
+        }
+        Err(_) => {} // Panic is acceptable for invalid input
+    }
+
+    // Test verifier:// with empty name
+    match std::panic::catch_unwind(|| VerifierSdk::new("verifier://")) {
+        Ok(sdk) => {
+            if sdk.verifier_identity == "verifier://" {
+                return Err("VerifierSdk::new should not accept verifier:// with empty name".to_string());
+            }
+        }
+        Err(_) => {} // Panic is acceptable for invalid input
+    }
 
     Ok(())
 }
@@ -1449,6 +1487,13 @@ const API_CONTRACT_TESTS: &[ApiContractTest] = &[
         level: RequirementLevel::Must,
         description: "VerifierSdk::new function behavior must remain stable",
         test_fn: test_verifier_sdk_new_function,
+    },
+    ApiContractTest {
+        id: "API-FUNC-002b",
+        category: TestCategory::Functions,
+        level: RequirementLevel::Must,
+        description: "VerifierSdk::new must reject invalid verifier identity formats",
+        test_fn: test_verifier_sdk_new_rejects_invalid_identities,
     },
     ApiContractTest {
         id: "API-FUNC-003",
