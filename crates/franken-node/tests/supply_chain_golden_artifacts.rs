@@ -463,3 +463,80 @@ fn golden_durability_violation_bundle_escaping() {
 
     insta::assert_snapshot!("durability_violation_bundle_escaping", scrubbed);
 }
+
+// === CLI VERIFY OUTPUT GOLDEN TESTS ===
+
+/// Create deterministic verify output for CLI JSON responses.
+fn canonical_verify_output_success() -> serde_json::Value {
+    serde_json::json!({
+        "command": "verify module",
+        "contract_version": "v1.0",
+        "schema_version": "verify-contract/v1",
+        "compat_version": 1,
+        "verdict": "PASS",
+        "status": "pass",
+        "exit_code": 0,
+        "reason": "Module verification completed successfully with no violations"
+    })
+}
+
+fn canonical_verify_output_failure() -> serde_json::Value {
+    serde_json::json!({
+        "command": "verify compatibility",
+        "contract_version": "v1.0",
+        "schema_version": "verify-contract/v1",
+        "compat_version": 2,
+        "verdict": "FAIL",
+        "status": "fail",
+        "exit_code": 1,
+        "reason": "Compatibility check failed: 3 breaking changes detected in API surface",
+        "details": {
+            "breaking_changes": [
+                {"type": "removed_field", "location": "Config.timeout_ms", "impact": "high"},
+                {"type": "changed_type", "location": "Response.status", "impact": "medium"},
+                {"type": "removed_method", "location": "Client.deprecated_call", "impact": "low"}
+            ],
+            "migration_required": true
+        }
+    })
+}
+
+fn canonical_verify_output_error() -> serde_json::Value {
+    serde_json::json!({
+        "command": "verify corpus",
+        "contract_version": "v1.0",
+        "schema_version": "verify-contract/v1",
+        "compat_version": null,
+        "verdict": "ERROR",
+        "status": "error",
+        "exit_code": 2,
+        "reason": "Corpus verification failed due to missing dependencies: libssl.so.1.1 not found"
+    })
+}
+
+#[test]
+fn golden_cli_verify_output_success() {
+    let output = canonical_verify_output_success();
+    let json_str = serde_json::to_string_pretty(&output).expect("success output should serialize");
+    let scrubbed = scrub_output(&json_str);
+
+    insta::assert_snapshot!("cli_verify_output_success", scrubbed);
+}
+
+#[test]
+fn golden_cli_verify_output_failure() {
+    let output = canonical_verify_output_failure();
+    let json_str = serde_json::to_string_pretty(&output).expect("failure output should serialize");
+    let scrubbed = scrub_output(&json_str);
+
+    insta::assert_snapshot!("cli_verify_output_failure", scrubbed);
+}
+
+#[test]
+fn golden_cli_verify_output_error() {
+    let output = canonical_verify_output_error();
+    let json_str = serde_json::to_string_pretty(&output).expect("error output should serialize");
+    let scrubbed = scrub_output(&json_str);
+
+    insta::assert_snapshot!("cli_verify_output_error", scrubbed);
+}
