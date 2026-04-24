@@ -126,6 +126,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "fuzz_trust_card_canonicalize"
+path = "fuzz_targets/fuzz_trust_card_canonicalize.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "fuzz_remote_cap_scope_check"
 path = "fuzz_targets/fuzz_remote_cap_scope_check.rs"
 test = false

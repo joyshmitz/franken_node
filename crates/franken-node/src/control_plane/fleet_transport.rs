@@ -43,10 +43,24 @@ const ACTION_LOG_RETENTION_DAYS: i64 = 30;
 const LOCK_RETRY_BACKOFF_MILLIS: [u64; 5] = timeouts::FLEET_LOCK_RETRY_BACKOFF_MILLIS;
 pub const FLEET_CONVERGENCE_POLL_INTERVAL: Duration = timeouts::FLEET_CONVERGENCE_POLL_INTERVAL;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FleetConvergenceWaitOutcome {
     pub elapsed: Duration,
     pub timed_out: bool,
+    /// Number of convergence check attempts made during wait
+    pub check_attempts: u32,
+    /// Diagnostic context for timeout troubleshooting
+    pub failure_context: Option<FleetConvergenceFailureContext>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FleetConvergenceFailureContext {
+    /// Suggested doctor command for diagnosis
+    pub doctor_command: String,
+    /// Timeout configuration used
+    pub timeout_secs: u64,
+    /// Brief diagnostic hint for operators
+    pub diagnostic_hint: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1254,11 +1268,18 @@ where
     F: FnMut() -> Result<bool, FleetTransportError>,
 {
     let started = Instant::now();
+    let timeout_secs = timeout.as_secs();
+    let mut check_attempts = 0u32;
+
     loop {
+        check_attempts = check_attempts.saturating_add(1);
+
         if is_converged()? {
             return Ok(FleetConvergenceWaitOutcome {
                 elapsed: started.elapsed(),
                 timed_out: false,
+                check_attempts,
+                failure_context: None,
             });
         }
 
@@ -1267,6 +1288,15 @@ where
             return Ok(FleetConvergenceWaitOutcome {
                 elapsed,
                 timed_out: true,
+                check_attempts,
+                failure_context: Some(FleetConvergenceFailureContext {
+                    doctor_command: "franken-node doctor --fleet --convergence".to_string(),
+                    timeout_secs,
+                    diagnostic_hint: format!(
+                        "Fleet failed to converge after {}s ({} attempts). Check network connectivity, node health, or configuration drift.",
+                        timeout_secs, check_attempts
+                    ),
+                }),
             });
         }
 
@@ -3327,5 +3357,76 @@ mod tests {
                 // Compaction failed again, but importantly didn't deadlock
             }
         }
+    }
+
+    #[test]
+    fn fleet_convergence_timeout_includes_diagnostic_context() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let never_converges = Arc::new(AtomicBool::new(false));
+        let timeout = Duration::from_millis(50);
+
+        let result = wait_until_fleet_converged_or_timeout(timeout, {
+            let flag = never_converges.clone();
+            move || Ok(flag.load(Ordering::Relaxed))
+        }).expect("should not error");
+
+        // Verify timeout occurred
+        assert!(result.timed_out);
+        assert!(result.elapsed >= timeout);
+        assert!(result.check_attempts > 0);
+
+        // Verify diagnostic context is present for timeouts
+        let context = result.failure_context.expect("should have failure context for timeout");
+        assert_eq!(context.doctor_command, "franken-node doctor --fleet --convergence");
+        assert_eq!(context.timeout_secs, timeout.as_secs());
+        assert!(context.diagnostic_hint.contains("Fleet failed to converge"));
+        assert!(context.diagnostic_hint.contains(&format!("{} attempts", result.check_attempts)));
+    }
+
+    #[test]
+    fn fleet_convergence_success_excludes_diagnostic_context() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let converges_immediately = Arc::new(AtomicBool::new(true));
+        let timeout = Duration::from_secs(10);
+
+        let result = wait_until_fleet_converged_or_timeout(timeout, {
+            let flag = converges_immediately.clone();
+            move || Ok(flag.load(Ordering::Relaxed))
+        }).expect("should not error");
+
+        // Verify success
+        assert!(!result.timed_out);
+        assert!(result.elapsed < timeout);
+        assert_eq!(result.check_attempts, 1);
+
+        // Verify no diagnostic context for success
+        assert!(result.failure_context.is_none());
+    }
+
+    #[test]
+    fn fleet_convergence_diagnostic_tracks_check_attempts() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc;
+
+        let attempt_counter = Arc::new(AtomicU32::new(0));
+        let timeout = Duration::from_millis(100);
+
+        let result = wait_until_fleet_converged_or_timeout(timeout, {
+            let counter = attempt_counter.clone();
+            move || {
+                let attempts = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                // Converge on 3rd attempt
+                Ok(attempts >= 3)
+            }
+        }).expect("should not error");
+
+        // Verify convergence after multiple attempts
+        assert!(!result.timed_out);
+        assert_eq!(result.check_attempts, 3);
+        assert!(result.failure_context.is_none());
     }
 }

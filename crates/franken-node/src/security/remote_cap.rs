@@ -807,8 +807,17 @@ impl fmt::Display for RemoteCapError {
             Self::CryptoEngineUnavailable { detail } => {
                 write!(f, "{}: {detail}", self.code())
             }
-            Self::LockTimeout { operation, timeout_ms } => {
-                write!(f, "{}: lock timeout after {}ms during {}", self.code(), timeout_ms, operation)
+            Self::LockTimeout {
+                operation,
+                timeout_ms,
+            } => {
+                write!(
+                    f,
+                    "{}: lock timeout after {}ms during {}",
+                    self.code(),
+                    timeout_ms,
+                    operation
+                )
             }
         }
     }
@@ -975,12 +984,18 @@ impl CapabilityProvider {
             .unwrap_or(0) // Return 0 on timeout
     }
 
-    fn with_audit_log<R>(&self, action: impl FnOnce(&mut Vec<RemoteCapAuditEvent>) -> R) -> Result<R, RemoteCapError> {
+    fn with_audit_log<R>(
+        &self,
+        action: impl FnOnce(&mut Vec<RemoteCapAuditEvent>) -> R,
+    ) -> Result<R, RemoteCapError> {
         let mut audit_log = self.try_lock_audit_log_with_timeout(Duration::from_millis(100))?;
         Ok(action(&mut audit_log))
     }
 
-    fn try_lock_audit_log_with_timeout(&self, timeout: Duration) -> Result<std::sync::MutexGuard<'_, Vec<RemoteCapAuditEvent>>, RemoteCapError> {
+    fn try_lock_audit_log_with_timeout(
+        &self,
+        timeout: Duration,
+    ) -> Result<std::sync::MutexGuard<'_, Vec<RemoteCapAuditEvent>>, RemoteCapError> {
         let start = std::time::Instant::now();
         let mut backoff = Duration::from_millis(1);
 
@@ -1371,41 +1386,43 @@ impl CapabilityGate {
             return Err(err);
         }
 
-        if let Some(replay_key) = replay_key.as_deref() {
-            match self.replay_store.contains_consumed(replay_key) {
-                Ok(false) => {}
-                Ok(true) => {
-                    let err = RemoteCapError::ReplayDetected {
-                        token_id: cap.token_id.clone(),
-                    };
-                    self.push_audit(build_audit_event(
-                        "REMOTECAP_DENIED",
-                        "RC_CHECK_DENIED",
-                        Some(cap.token_id.clone()),
-                        Some(cap.issuer_identity.clone()),
-                        Some(operation),
-                        Some(endpoint.to_string()),
-                        trace_id.to_string(),
-                        now_epoch_secs,
-                        false,
-                        Some(err.code().to_string()),
-                    ));
-                    return Err(err);
-                }
-                Err(err) => {
-                    self.push_audit(build_audit_event(
-                        "REMOTECAP_DENIED",
-                        "RC_CHECK_DENIED",
-                        Some(cap.token_id.clone()),
-                        Some(cap.issuer_identity.clone()),
-                        Some(operation),
-                        Some(endpoint.to_string()),
-                        trace_id.to_string(),
-                        now_epoch_secs,
-                        false,
-                        Some(err.code().to_string()),
-                    ));
-                    return Err(err);
+        if !consume_single_use {
+            if let Some(replay_key) = replay_key.as_deref() {
+                match self.replay_store.contains_consumed(replay_key) {
+                    Ok(false) => {}
+                    Ok(true) => {
+                        let err = RemoteCapError::ReplayDetected {
+                            token_id: cap.token_id.clone(),
+                        };
+                        self.push_audit(build_audit_event(
+                            "REMOTECAP_DENIED",
+                            "RC_CHECK_DENIED",
+                            Some(cap.token_id.clone()),
+                            Some(cap.issuer_identity.clone()),
+                            Some(operation),
+                            Some(endpoint.to_string()),
+                            trace_id.to_string(),
+                            now_epoch_secs,
+                            false,
+                            Some(err.code().to_string()),
+                        ));
+                        return Err(err);
+                    }
+                    Err(err) => {
+                        self.push_audit(build_audit_event(
+                            "REMOTECAP_DENIED",
+                            "RC_CHECK_DENIED",
+                            Some(cap.token_id.clone()),
+                            Some(cap.issuer_identity.clone()),
+                            Some(operation),
+                            Some(endpoint.to_string()),
+                            trace_id.to_string(),
+                            now_epoch_secs,
+                            false,
+                            Some(err.code().to_string()),
+                        ));
+                        return Err(err);
+                    }
                 }
             }
         }
@@ -1973,6 +1990,92 @@ mod tests {
             .expect_err("replay after gate restart must fail");
 
         assert_eq!(err.code(), "REMOTECAP_REPLAY");
+    }
+
+    #[test]
+    fn durable_replay_store_allows_only_one_concurrent_single_use_consume() {
+        let provider = CapabilityProvider::new("secret-a").expect("valid provider");
+        let (cap, _) = provider
+            .issue(
+                "operator",
+                scope(),
+                1_700_000_000,
+                300,
+                true,
+                true,
+                "trace-durable-race",
+            )
+            .expect("issue");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store_dir = dir.path().join("remote-cap-replay-race");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+
+        let spawn_attempt = |trace_id: &'static str,
+                             barrier: std::sync::Arc<std::sync::Barrier>,
+                             cap: RemoteCap,
+                             store_dir: PathBuf| {
+            std::thread::spawn(move || {
+                let mut gate = CapabilityGate::with_durable_replay_store("secret-a", &store_dir)
+                    .expect("open durable store");
+                barrier.wait();
+                gate.authorize_network(
+                    Some(&cap),
+                    RemoteOperation::TelemetryExport,
+                    "https://telemetry.example.com/v1",
+                    1_700_000_010,
+                    trace_id,
+                )
+                .map_err(|err| err.code().to_string())
+            })
+        };
+
+        let first = spawn_attempt(
+            "trace-durable-race-first",
+            barrier.clone(),
+            cap.clone(),
+            store_dir.clone(),
+        );
+        let second = spawn_attempt(
+            "trace-durable-race-second",
+            barrier.clone(),
+            cap.clone(),
+            store_dir.clone(),
+        );
+
+        let first_result = first.join().expect("first thread joins");
+        let second_result = second.join().expect("second thread joins");
+        let success_count = [first_result.as_ref(), second_result.as_ref()]
+            .iter()
+            .filter(|result| result.is_ok())
+            .count();
+        let replay_count = [first_result.as_ref(), second_result.as_ref()]
+            .iter()
+            .filter(|result| matches!(result, Err(code) if *code == "REMOTECAP_REPLAY"))
+            .count();
+
+        assert_eq!(
+            success_count, 1,
+            "exactly one concurrent consume should succeed"
+        );
+        assert_eq!(
+            replay_count, 1,
+            "losing concurrent consume must be treated as replay"
+        );
+
+        let replay_key = replay_store_key(&cap);
+        let consumed_dir = store_dir.join("consumed");
+        let marker_path = consumed_dir.join(format!("{replay_key}.seen"));
+        assert!(
+            marker_path.exists(),
+            "winner should durably create the replay marker"
+        );
+        assert_eq!(
+            std::fs::read_dir(&consumed_dir)
+                .expect("read consumed dir")
+                .count(),
+            1,
+            "exactly one replay marker should exist after the race"
+        );
     }
 
     #[test]
@@ -4114,7 +4217,8 @@ mod remote_cap_comprehensive_negative_tests {
 
         let handle = thread::spawn(move || {
             // Acquire lock and hold it
-            let _guard = provider_clone.try_lock_audit_log_with_timeout(Duration::from_millis(1000))
+            let _guard = provider_clone
+                .try_lock_audit_log_with_timeout(Duration::from_millis(1000))
                 .expect("Should be able to acquire lock initially");
 
             // Signal that we have the lock
@@ -4131,13 +4235,18 @@ mod remote_cap_comprehensive_negative_tests {
         let result = provider_arc.try_lock_audit_log_with_timeout(Duration::from_millis(50));
 
         match result {
-            Err(RemoteCapError::LockTimeout { operation, timeout_ms }) => {
+            Err(RemoteCapError::LockTimeout {
+                operation,
+                timeout_ms,
+            }) => {
                 assert_eq!(operation, "audit_log_access");
                 assert_eq!(timeout_ms, 50);
             }
             _ => panic!("Expected LockTimeout error, got: {:?}", result),
         }
 
-        handle.join().expect("Background thread should complete successfully");
+        handle
+            .join()
+            .expect("Background thread should complete successfully");
     }
 }

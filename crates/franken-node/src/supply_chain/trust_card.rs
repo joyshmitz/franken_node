@@ -137,38 +137,111 @@ type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum TrustCardError {
+    /// Operator remediation: seed or refresh trust-card state for this extension, then retry the lookup.
     #[error("trust card not found for extension `{0}`")]
     NotFound(String),
+    /// Operator remediation: refresh the registry snapshot or request the exact historical card version.
     #[error("trust card version `{version}` not found for extension `{extension_id}`")]
     VersionNotFound { extension_id: String, version: u64 },
+    /// Operator remediation: rotate or restore the registry signing key, refresh the card, and re-verify.
     #[error("trust card signature verification failed for extension `{0}`")]
     SignatureInvalid(String),
+    /// Operator remediation: discard the stale or tampered card, reload authoritative registry state, and recompute the hash.
     #[error("trust card hash mismatch for extension `{0}`")]
     CardHashMismatch(String),
+    /// Operator remediation: inspect the serialized trust-card payload for malformed JSON or unsupported field values.
     #[error("json serialization error: {0}")]
     Json(String),
+    /// Operator remediation: replace the registry HMAC key with valid key material before signing or verifying cards.
     #[error("invalid hmac key")]
     InvalidRegistryKey,
+    /// Operator remediation: retry with a one-based page number and a positive page size within operator policy limits.
     #[error("invalid pagination: page={page}, per_page={per_page}")]
     InvalidPagination { page: usize, per_page: usize },
+    /// Operator remediation: correct the rejected input field named in the reason before deriving or mutating a card.
     #[error("invalid trust-card input: {reason}")]
     InvalidInput { reason: String },
+    /// Operator remediation: attach at least one verified evidence receipt before deriving the trust card.
     #[error("trust card derivation requires at least one verified evidence reference")]
     EvidenceMissing,
+    /// Operator remediation: add verified upgrade evidence before raising a card's certification level.
     #[error("upgrading certification level requires evidence references")]
     EvidenceRequiredForUpgrade,
+    /// Operator remediation: create a new replacement card instead of attempting to reactivate a revoked one.
     #[error("revocation is irreversible: cannot transition from Revoked to Active")]
     RevocationIrreversible,
+    /// Operator remediation: migrate or regenerate the snapshot with the current trust-card registry schema.
     #[error("unsupported trust-card registry snapshot schema `{0}`")]
     UnsupportedSnapshotSchema(String),
+    /// Operator remediation: repair the snapshot contents from authoritative state or restore the last valid snapshot.
     #[error("invalid trust-card registry snapshot: {0}")]
     InvalidSnapshot(String),
+    /// Operator remediation: check that the snapshot path exists and that the process has read permission.
     #[error("failed reading trust-card registry snapshot {path}: {detail}")]
     SnapshotRead { path: PathBuf, detail: String },
+    /// Operator remediation: validate the snapshot JSON and regenerate it if parsing fails.
     #[error("failed parsing trust-card registry snapshot {path}: {detail}")]
     SnapshotParse { path: PathBuf, detail: String },
+    /// Operator remediation: verify parent directory permissions and disk space, then retry the atomic snapshot write.
     #[error("failed writing trust-card registry snapshot {path}: {detail}")]
     SnapshotWrite { path: PathBuf, detail: String },
+}
+
+impl TrustCardError {
+    /// Return a short operator-facing remediation step for this error class.
+    #[must_use]
+    pub fn remediation(&self) -> &'static str {
+        match self {
+            TrustCardError::NotFound(_) => {
+                "Seed or refresh trust-card state for this extension, then retry the lookup."
+            }
+            TrustCardError::VersionNotFound { .. } => {
+                "Refresh the registry snapshot or request the exact historical card version."
+            }
+            TrustCardError::SignatureInvalid(_) => {
+                "Rotate or restore the registry signing key, refresh the card, and re-verify."
+            }
+            TrustCardError::CardHashMismatch(_) => {
+                "Discard the stale or tampered card, reload authoritative registry state, and recompute the hash."
+            }
+            TrustCardError::Json(_) => {
+                "Inspect the serialized trust-card payload for malformed JSON or unsupported field values."
+            }
+            TrustCardError::InvalidRegistryKey => {
+                "Replace the registry HMAC key with valid key material before signing or verifying cards."
+            }
+            TrustCardError::InvalidPagination { .. } => {
+                "Retry with a one-based page number and a positive page size within operator policy limits."
+            }
+            TrustCardError::InvalidInput { .. } => {
+                "Correct the rejected input field named in the reason before deriving or mutating a card."
+            }
+            TrustCardError::EvidenceMissing => {
+                "Attach at least one verified evidence receipt before deriving the trust card."
+            }
+            TrustCardError::EvidenceRequiredForUpgrade => {
+                "Add verified upgrade evidence before raising a card's certification level."
+            }
+            TrustCardError::RevocationIrreversible => {
+                "Create a new replacement card instead of attempting to reactivate a revoked one."
+            }
+            TrustCardError::UnsupportedSnapshotSchema(_) => {
+                "Migrate or regenerate the snapshot with the current trust-card registry schema."
+            }
+            TrustCardError::InvalidSnapshot(_) => {
+                "Repair the snapshot contents from authoritative state or restore the last valid snapshot."
+            }
+            TrustCardError::SnapshotRead { .. } => {
+                "Check that the snapshot path exists and that the process has read permission."
+            }
+            TrustCardError::SnapshotParse { .. } => {
+                "Validate the snapshot JSON and regenerate it if parsing fails."
+            }
+            TrustCardError::SnapshotWrite { .. } => {
+                "Verify parent directory permissions and disk space, then retry the atomic snapshot write."
+            }
+        }
+    }
 }
 
 impl From<serde_json::Error> for TrustCardError {
@@ -832,25 +905,30 @@ impl TrustCardRegistry {
             && now_secs.saturating_sub(cached.cached_at_secs) < self.cache_ttl_secs
         {
             let card = cached.card.clone();
-            if verify_card_signature(&card, &self.registry_key).is_ok() {
-                self.emit(
-                    TRUST_CARD_CACHE_HIT,
-                    Some(extension_id.to_string()),
-                    trace_id,
-                    now_secs,
-                    "served from cache",
-                );
-                self.emit(
-                    TRUST_CARD_SERVED,
-                    Some(extension_id.to_string()),
-                    trace_id,
-                    now_secs,
-                    "served verified trust card",
-                );
-                return Ok(Some(card));
-            }
+            // SECURITY: Always re-verify signature on cache hit to prevent serving tampered cards.
+            // This protects against cache poisoning attacks where malicious cards could be injected.
+            verify_card_signature(&card, &self.registry_key)
+                .map_err(|_| {
+                    // Remove invalid cached entry immediately
+                    self.cache_by_extension.remove(extension_id);
+                    TrustCardError::SignatureInvalid(extension_id.to_string())
+                })?;
 
-            self.cache_by_extension.remove(extension_id);
+            self.emit(
+                TRUST_CARD_CACHE_HIT,
+                Some(extension_id.to_string()),
+                trace_id,
+                now_secs,
+                "served from cache after signature re-verification",
+            );
+            self.emit(
+                TRUST_CARD_SERVED,
+                Some(extension_id.to_string()),
+                trace_id,
+                now_secs,
+                "served verified trust card",
+            );
+            return Ok(Some(card));
         }
 
         let Some(latest_card) = self.latest_verified_card(extension_id)?.cloned() else {
@@ -985,27 +1063,33 @@ impl TrustCardRegistry {
                         .cache_by_extension
                         .get(&extension_id)
                         .ok_or_else(|| TrustCardError::NotFound(extension_id.clone()))?;
-                    if verify_card_signature(&cached.card, &self.registry_key).is_ok() {
-                        report.cache_hits = report.cache_hits.saturating_add(1);
-                        self.emit(
-                            TRUST_CARD_CACHE_HIT,
-                            Some(extension_id),
-                            trace_id,
-                            now_secs,
-                            "sync skipped fresh cache entry",
-                        );
-                        continue;
-                    }
 
-                    self.cache_by_extension.remove(&extension_id);
-                    report.cache_misses = report.cache_misses.saturating_add(1);
-                    self.emit(
-                        TRUST_CARD_CACHE_MISS,
-                        Some(extension_id.clone()),
-                        trace_id,
-                        now_secs,
-                        "sync discarded invalid cache entry and repopulated from source",
-                    );
+                    // SECURITY: Always re-verify signature on cache sync to detect tampering
+                    match verify_card_signature(&cached.card, &self.registry_key) {
+                        Ok(()) => {
+                            report.cache_hits = report.cache_hits.saturating_add(1);
+                            self.emit(
+                                TRUST_CARD_CACHE_HIT,
+                                Some(extension_id),
+                                trace_id,
+                                now_secs,
+                                "sync skipped fresh cache entry after signature re-verification",
+                            );
+                            continue;
+                        }
+                        Err(_) => {
+                            // Invalid signature - remove from cache and rebuild
+                            self.cache_by_extension.remove(&extension_id);
+                            report.cache_misses = report.cache_misses.saturating_add(1);
+                            self.emit(
+                                TRUST_CARD_CACHE_MISS,
+                                Some(extension_id.clone()),
+                                trace_id,
+                                now_secs,
+                                "sync discarded invalid cache entry and repopulated from source",
+                            );
+                        }
+                    }
                 }
                 CacheSyncState::Missing => {
                     report.cache_misses = report.cache_misses.saturating_add(1);
@@ -2152,6 +2236,93 @@ mod tests {
                 summary: "low risk".to_string(),
             },
             evidence_refs: test_evidence_refs(),
+        }
+    }
+
+    #[test]
+    fn trust_card_error_remediation_covers_operator_recovery_paths() {
+        let path = std::path::PathBuf::from("state/trust-card-registry.json");
+        let cases = [
+            (
+                TrustCardError::NotFound("npm:@missing/plugin".to_string()),
+                "Seed or refresh",
+            ),
+            (
+                TrustCardError::VersionNotFound {
+                    extension_id: "npm:@acme/plugin".to_string(),
+                    version: 42,
+                },
+                "historical card version",
+            ),
+            (
+                TrustCardError::SignatureInvalid("npm:@acme/plugin".to_string()),
+                "registry signing key",
+            ),
+            (
+                TrustCardError::CardHashMismatch("npm:@acme/plugin".to_string()),
+                "tampered card",
+            ),
+            (
+                TrustCardError::Json("invalid type".to_string()),
+                "malformed JSON",
+            ),
+            (TrustCardError::InvalidRegistryKey, "HMAC key"),
+            (
+                TrustCardError::InvalidPagination {
+                    page: 0,
+                    per_page: 0,
+                },
+                "one-based page number",
+            ),
+            (
+                TrustCardError::InvalidInput {
+                    reason: "extension_id cannot be empty".to_string(),
+                },
+                "rejected input field",
+            ),
+            (TrustCardError::EvidenceMissing, "verified evidence receipt"),
+            (
+                TrustCardError::EvidenceRequiredForUpgrade,
+                "verified upgrade evidence",
+            ),
+            (TrustCardError::RevocationIrreversible, "replacement card"),
+            (
+                TrustCardError::UnsupportedSnapshotSchema("legacy".to_string()),
+                "current trust-card registry schema",
+            ),
+            (
+                TrustCardError::InvalidSnapshot("missing cards".to_string()),
+                "authoritative state",
+            ),
+            (
+                TrustCardError::SnapshotRead {
+                    path: path.clone(),
+                    detail: "not found".to_string(),
+                },
+                "read permission",
+            ),
+            (
+                TrustCardError::SnapshotParse {
+                    path: path.clone(),
+                    detail: "syntax".to_string(),
+                },
+                "regenerate it",
+            ),
+            (
+                TrustCardError::SnapshotWrite {
+                    path,
+                    detail: "disk full".to_string(),
+                },
+                "disk space",
+            ),
+        ];
+
+        for (error, expected) in cases {
+            let remediation = error.remediation();
+            assert!(
+                remediation.contains(expected),
+                "{error:?} remediation `{remediation}` did not include `{expected}`"
+            );
         }
     }
 

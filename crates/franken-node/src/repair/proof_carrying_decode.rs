@@ -89,7 +89,11 @@ fn test_usize_to_u64() {
     // Test: usize::MAX should clamp to u64::MAX on 64-bit systems
     {
         // Test: usize::MAX should clamp to u64::MAX on 64-bit systems
-        assert_eq!(usize_to_u64(usize::MAX), u64::MAX, "usize::MAX should clamp to u64::MAX");
+        assert_eq!(
+            usize_to_u64(usize::MAX),
+            u64::MAX,
+            "usize::MAX should clamp to u64::MAX"
+        );
 
         // Test: zero value boundary
         assert_eq!(usize_to_u64(0), 0, "zero should convert cleanly");
@@ -142,200 +146,257 @@ fn update_u64_field(hasher: &mut Sha256, field_domain: &'static [u8], value: u64
 // Inline negative-path tests
 #[cfg(test)]
 fn test_update_u64_field() {
-        // Test: zero value with empty domain
+    // Test: zero value with empty domain
+    let mut hasher = Sha256::new();
+    update_u64_field(&mut hasher, b"", 0);
+    let hash = hasher.finalize();
+    assert_eq!(
+        hash.len(),
+        32,
+        "zero value with empty domain should be valid"
+    );
+
+    // Test: maximum u64 value
+    let mut hasher = Sha256::new();
+    update_u64_field(&mut hasher, b"max_test", u64::MAX);
+    let hash = hasher.finalize();
+    assert_eq!(hash.len(), 32, "max u64 value should be handled");
+
+    // Test: same value different domains should produce different hashes
+    let mut hasher1 = Sha256::new();
+    let mut hasher2 = Sha256::new();
+    update_u64_field(&mut hasher1, b"domain_a", 12345);
+    update_u64_field(&mut hasher2, b"domain_b", 12345);
+    assert_ne!(
+        hasher1.finalize(),
+        hasher2.finalize(),
+        "different domains should produce different hashes"
+    );
+
+    // Test: same domain different values should produce different hashes
+    let mut hasher1 = Sha256::new();
+    let mut hasher2 = Sha256::new();
+    update_u64_field(&mut hasher1, b"same_domain", 1000);
+    update_u64_field(&mut hasher2, b"same_domain", 1001);
+    assert_ne!(
+        hasher1.finalize(),
+        hasher2.finalize(),
+        "different values should produce different hashes"
+    );
+
+    // Test: power-of-two values
+    let powers = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+    let mut power_hashes = Vec::new();
+    for &power in &powers {
         let mut hasher = Sha256::new();
-        update_u64_field(&mut hasher, b"", 0);
-        let hash = hasher.finalize();
-        assert_eq!(hash.len(), 32, "zero value with empty domain should be valid");
+        update_u64_field(&mut hasher, b"power", power);
+        power_hashes.push(hasher.finalize());
+    }
+    // All should be unique
+    for i in 0..power_hashes.len() {
+        for j in (i + 1)..power_hashes.len() {
+            assert_ne!(
+                power_hashes[i], power_hashes[j],
+                "power-of-two values should be unique"
+            );
+        }
+    }
 
-        // Test: maximum u64 value
+    // Test: boundary u64 values
+    let boundary_values = [
+        0,
+        1,
+        u8::MAX as u64,
+        u16::MAX as u64,
+        u32::MAX as u64,
+        u64::MAX - 1,
+        u64::MAX,
+    ];
+    let mut boundary_hashes = Vec::new();
+    for &value in &boundary_values {
         let mut hasher = Sha256::new();
-        update_u64_field(&mut hasher, b"max_test", u64::MAX);
-        let hash = hasher.finalize();
-        assert_eq!(hash.len(), 32, "max u64 value should be handled");
-
-        // Test: same value different domains should produce different hashes
-        let mut hasher1 = Sha256::new();
-        let mut hasher2 = Sha256::new();
-        update_u64_field(&mut hasher1, b"domain_a", 12345);
-        update_u64_field(&mut hasher2, b"domain_b", 12345);
-        assert_ne!(hasher1.finalize(), hasher2.finalize(), "different domains should produce different hashes");
-
-        // Test: same domain different values should produce different hashes
-        let mut hasher1 = Sha256::new();
-        let mut hasher2 = Sha256::new();
-        update_u64_field(&mut hasher1, b"same_domain", 1000);
-        update_u64_field(&mut hasher2, b"same_domain", 1001);
-        assert_ne!(hasher1.finalize(), hasher2.finalize(), "different values should produce different hashes");
-
-        // Test: power-of-two values
-        let powers = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
-        let mut power_hashes = Vec::new();
-        for &power in &powers {
-            let mut hasher = Sha256::new();
-            update_u64_field(&mut hasher, b"power", power);
-            power_hashes.push(hasher.finalize());
+        update_u64_field(&mut hasher, b"boundary", value);
+        boundary_hashes.push(hasher.finalize());
+    }
+    // All should be unique
+    for i in 0..boundary_hashes.len() {
+        for j in (i + 1)..boundary_hashes.len() {
+            assert_ne!(
+                boundary_hashes[i], boundary_hashes[j],
+                "boundary values should be unique"
+            );
         }
-        // All should be unique
-        for i in 0..power_hashes.len() {
-            for j in (i+1)..power_hashes.len() {
-                assert_ne!(power_hashes[i], power_hashes[j], "power-of-two values should be unique");
-            }
-        }
+    }
 
-        // Test: boundary u64 values
-        let boundary_values = [
-            0, 1,
-            u8::MAX as u64,
-            u16::MAX as u64,
-            u32::MAX as u64,
-            u64::MAX - 1,
-            u64::MAX
-        ];
-        let mut boundary_hashes = Vec::new();
-        for &value in &boundary_values {
-            let mut hasher = Sha256::new();
-            update_u64_field(&mut hasher, b"boundary", value);
-            boundary_hashes.push(hasher.finalize());
-        }
-        // All should be unique
-        for i in 0..boundary_hashes.len() {
-            for j in (i+1)..boundary_hashes.len() {
-                assert_ne!(boundary_hashes[i], boundary_hashes[j], "boundary values should be unique");
-            }
-        }
+    // Test: collision resistance with count field
+    let mut u64_hasher = Sha256::new();
+    let mut count_hasher = Sha256::new();
+    let value = 98765;
+    update_u64_field(&mut u64_hasher, b"field", value);
+    update_count_field(&mut count_hasher, b"field", value as usize);
+    assert_ne!(
+        u64_hasher.finalize(),
+        count_hasher.finalize(),
+        "u64 field should differ from count field"
+    );
 
-        // Test: collision resistance with count field
-        let mut u64_hasher = Sha256::new();
-        let mut count_hasher = Sha256::new();
-        let value = 98765;
-        update_u64_field(&mut u64_hasher, b"field", value);
-        update_count_field(&mut count_hasher, b"field", value as usize);
-        assert_ne!(u64_hasher.finalize(), count_hasher.finalize(), "u64 field should differ from count field");
+    // Test: collision resistance with regular field
+    let mut u64_hasher = Sha256::new();
+    let mut field_hasher = Sha256::new();
+    let value = 0x1234567890ABCDEFu64;
+    update_u64_field(&mut u64_hasher, b"test", value);
+    update_field(&mut field_hasher, b"test", &value.to_le_bytes());
+    assert_ne!(
+        u64_hasher.finalize(),
+        field_hasher.finalize(),
+        "u64 field should differ from regular field"
+    );
 
-        // Test: collision resistance with regular field
-        let mut u64_hasher = Sha256::new();
-        let mut field_hasher = Sha256::new();
-        let value = 0x1234567890ABCDEFu64;
-        update_u64_field(&mut u64_hasher, b"test", value);
-        update_field(&mut field_hasher, b"test", &value.to_le_bytes());
-        assert_ne!(u64_hasher.finalize(), field_hasher.finalize(), "u64 field should differ from regular field");
+    // Test: little-endian byte order consistency
+    let value = 0x0102030405060708u64;
+    let mut hasher = Sha256::new();
+    update_u64_field(&mut hasher, b"endian", value);
+    let hash = hasher.finalize();
 
-        // Test: little-endian byte order consistency
-        let value = 0x0102030405060708u64;
+    let mut manual_hasher = Sha256::new();
+    update_len_prefixed(&mut manual_hasher, b"endian");
+    manual_hasher.update(value.to_le_bytes());
+    let manual_hash = manual_hasher.finalize();
+
+    assert_eq!(
+        hash, manual_hash,
+        "u64 field should use little-endian encoding"
+    );
+
+    // Test: domain with special characters and u64 value
+    let special_domain = b"field!@#$%^&*()";
+    let mut hasher = Sha256::new();
+    update_u64_field(&mut hasher, special_domain, 0xDEADBEEFCAFEBABE);
+    let hash = hasher.finalize();
+    assert_eq!(
+        hash.len(),
+        32,
+        "special characters in domain should be handled"
+    );
+
+    // Test: null bytes in domain with u64 value
+    let null_domain = b"field\0with\0nulls";
+    let mut hasher = Sha256::new();
+    update_u64_field(&mut hasher, null_domain, 0x123456789ABCDEF0);
+    let hash = hasher.finalize();
+    assert_eq!(hash.len(), 32, "null bytes in domain should be handled");
+
+    // Test: very long domain with u64 value
+    let long_domain = vec![b'L'; 8000];
+    let mut hasher = Sha256::new();
+    update_u64_field(&mut hasher, &long_domain, 0xFEDCBA9876543210);
+    let hash = hasher.finalize();
+    assert_eq!(hash.len(), 32, "very long domain should be handled");
+
+    // Test: avalanche effect for single bit changes
+    let base_value = 0x8000000000000000u64;
+    let mut base_hasher = Sha256::new();
+    update_u64_field(&mut base_hasher, b"avalanche", base_value);
+    let base_hash = base_hasher.finalize();
+
+    let flipped_value = base_value ^ 1; // Flip lowest bit
+    let mut flipped_hasher = Sha256::new();
+    update_u64_field(&mut flipped_hasher, b"avalanche", flipped_value);
+    let flipped_hash = flipped_hasher.finalize();
+
+    assert_ne!(
+        base_hash, flipped_hash,
+        "single bit flip should change hash"
+    );
+
+    let differing_bits = base_hash
+        .iter()
+        .zip(flipped_hash.iter())
+        .map(|(a, b)| (a ^ b).count_ones())
+        .sum::<u32>();
+    assert!(
+        differing_bits > 64,
+        "single bit change should affect many output bits"
+    );
+
+    // Test: sequential values should produce different hashes
+    let base_seq = 1000000u64;
+    let mut seq_hashes = Vec::new();
+    for i in 0..10 {
         let mut hasher = Sha256::new();
-        update_u64_field(&mut hasher, b"endian", value);
-        let hash = hasher.finalize();
+        update_u64_field(&mut hasher, b"sequence", base_seq + i);
+        seq_hashes.push(hasher.finalize());
+    }
+    for i in 0..seq_hashes.len() {
+        for j in (i + 1)..seq_hashes.len() {
+            assert_ne!(
+                seq_hashes[i], seq_hashes[j],
+                "sequential values should be unique"
+            );
+        }
+    }
 
-        let mut manual_hasher = Sha256::new();
-        update_len_prefixed(&mut manual_hasher, b"endian");
-        manual_hasher.update(value.to_le_bytes());
-        let manual_hash = manual_hasher.finalize();
-
-        assert_eq!(hash, manual_hash, "u64 field should use little-endian encoding");
-
-        // Test: domain with special characters and u64 value
-        let special_domain = b"field!@#$%^&*()";
+    // Test: timestamp-like values (common use case)
+    let timestamps = [
+        1609459200, // 2021-01-01 00:00:00 UTC
+        1640995200, // 2022-01-01 00:00:00 UTC
+        1672531200, // 2023-01-01 00:00:00 UTC
+        1704067200, // 2024-01-01 00:00:00 UTC
+    ];
+    let mut timestamp_hashes = Vec::new();
+    for &timestamp in &timestamps {
         let mut hasher = Sha256::new();
-        update_u64_field(&mut hasher, special_domain, 0xDEADBEEFCAFEBABE);
-        let hash = hasher.finalize();
-        assert_eq!(hash.len(), 32, "special characters in domain should be handled");
+        update_u64_field(&mut hasher, b"timestamp", timestamp);
+        timestamp_hashes.push(hasher.finalize());
+    }
+    for i in 0..timestamp_hashes.len() {
+        for j in (i + 1)..timestamp_hashes.len() {
+            assert_ne!(
+                timestamp_hashes[i], timestamp_hashes[j],
+                "timestamp values should be unique"
+            );
+        }
+    }
 
-        // Test: null bytes in domain with u64 value
-        let null_domain = b"field\0with\0nulls";
+    // Test: multiple u64 fields should be order-dependent
+    let mut hasher1 = Sha256::new();
+    let mut hasher2 = Sha256::new();
+    update_u64_field(&mut hasher1, b"first", 100);
+    update_u64_field(&mut hasher1, b"second", 200);
+    update_u64_field(&mut hasher2, b"second", 200);
+    update_u64_field(&mut hasher2, b"first", 100);
+    assert_ne!(
+        hasher1.finalize(),
+        hasher2.finalize(),
+        "u64 field order should matter"
+    );
+
+    // Test: empty domain vs non-empty domain with same value
+    let mut empty_hasher = Sha256::new();
+    let mut non_empty_hasher = Sha256::new();
+    update_u64_field(&mut empty_hasher, b"", 99999);
+    update_u64_field(&mut non_empty_hasher, b"domain", 99999);
+    assert_ne!(
+        empty_hasher.finalize(),
+        non_empty_hasher.finalize(),
+        "empty vs non-empty domain should differ"
+    );
+
+    // Test: deterministic behavior across multiple calls
+    for _ in 0..5 {
         let mut hasher = Sha256::new();
-        update_u64_field(&mut hasher, null_domain, 0x123456789ABCDEF0);
-        let hash = hasher.finalize();
-        assert_eq!(hash.len(), 32, "null bytes in domain should be handled");
+        update_u64_field(&mut hasher, b"deterministic", 0x123456789ABCDEF0);
+        let current_hash = hasher.finalize();
 
-        // Test: very long domain with u64 value
-        let long_domain = vec![b'L'; 8000];
-        let mut hasher = Sha256::new();
-        update_u64_field(&mut hasher, &long_domain, 0xFEDCBA9876543210);
-        let hash = hasher.finalize();
-        assert_eq!(hash.len(), 32, "very long domain should be handled");
+        let mut reference_hasher = Sha256::new();
+        update_u64_field(&mut reference_hasher, b"deterministic", 0x123456789ABCDEF0);
+        let reference_hash = reference_hasher.finalize();
 
-        // Test: avalanche effect for single bit changes
-        let base_value = 0x8000000000000000u64;
-        let mut base_hasher = Sha256::new();
-        update_u64_field(&mut base_hasher, b"avalanche", base_value);
-        let base_hash = base_hasher.finalize();
-
-        let flipped_value = base_value ^ 1; // Flip lowest bit
-        let mut flipped_hasher = Sha256::new();
-        update_u64_field(&mut flipped_hasher, b"avalanche", flipped_value);
-        let flipped_hash = flipped_hasher.finalize();
-
-        assert_ne!(base_hash, flipped_hash, "single bit flip should change hash");
-
-        let differing_bits = base_hash.iter()
-            .zip(flipped_hash.iter())
-            .map(|(a, b)| (a ^ b).count_ones())
-            .sum::<u32>();
-        assert!(differing_bits > 64, "single bit change should affect many output bits");
-
-        // Test: sequential values should produce different hashes
-        let base_seq = 1000000u64;
-        let mut seq_hashes = Vec::new();
-        for i in 0..10 {
-            let mut hasher = Sha256::new();
-            update_u64_field(&mut hasher, b"sequence", base_seq + i);
-            seq_hashes.push(hasher.finalize());
-        }
-        for i in 0..seq_hashes.len() {
-            for j in (i+1)..seq_hashes.len() {
-                assert_ne!(seq_hashes[i], seq_hashes[j], "sequential values should be unique");
-            }
-        }
-
-        // Test: timestamp-like values (common use case)
-        let timestamps = [
-            1609459200, // 2021-01-01 00:00:00 UTC
-            1640995200, // 2022-01-01 00:00:00 UTC
-            1672531200, // 2023-01-01 00:00:00 UTC
-            1704067200, // 2024-01-01 00:00:00 UTC
-        ];
-        let mut timestamp_hashes = Vec::new();
-        for &timestamp in &timestamps {
-            let mut hasher = Sha256::new();
-            update_u64_field(&mut hasher, b"timestamp", timestamp);
-            timestamp_hashes.push(hasher.finalize());
-        }
-        for i in 0..timestamp_hashes.len() {
-            for j in (i+1)..timestamp_hashes.len() {
-                assert_ne!(timestamp_hashes[i], timestamp_hashes[j], "timestamp values should be unique");
-            }
-        }
-
-        // Test: multiple u64 fields should be order-dependent
-        let mut hasher1 = Sha256::new();
-        let mut hasher2 = Sha256::new();
-        update_u64_field(&mut hasher1, b"first", 100);
-        update_u64_field(&mut hasher1, b"second", 200);
-        update_u64_field(&mut hasher2, b"second", 200);
-        update_u64_field(&mut hasher2, b"first", 100);
-        assert_ne!(hasher1.finalize(), hasher2.finalize(), "u64 field order should matter");
-
-        // Test: empty domain vs non-empty domain with same value
-        let mut empty_hasher = Sha256::new();
-        let mut non_empty_hasher = Sha256::new();
-        update_u64_field(&mut empty_hasher, b"", 99999);
-        update_u64_field(&mut non_empty_hasher, b"domain", 99999);
-        assert_ne!(empty_hasher.finalize(), non_empty_hasher.finalize(), "empty vs non-empty domain should differ");
-
-        // Test: deterministic behavior across multiple calls
-        for _ in 0..5 {
-            let mut hasher = Sha256::new();
-            update_u64_field(&mut hasher, b"deterministic", 0x123456789ABCDEF0);
-            let current_hash = hasher.finalize();
-
-            let mut reference_hasher = Sha256::new();
-            update_u64_field(&mut reference_hasher, b"deterministic", 0x123456789ABCDEF0);
-            let reference_hash = reference_hasher.finalize();
-
-            assert_eq!(current_hash, reference_hash, "u64 field should be deterministic");
-        }
-
+        assert_eq!(
+            current_hash, reference_hash,
+            "u64 field should be deterministic"
+        );
+    }
 }
 
 fn output_hash_hex(output_data: &[u8]) -> String {
@@ -351,46 +412,78 @@ fn test_output_hash_hex() {
     // Test: empty output data should produce consistent hash
     let empty_hash1 = output_hash_hex(&[]);
     let empty_hash2 = output_hash_hex(&Vec::new());
-    assert_eq!(empty_hash1, empty_hash2, "empty data should hash consistently");
+    assert_eq!(
+        empty_hash1, empty_hash2,
+        "empty data should hash consistently"
+    );
     assert_eq!(empty_hash1.len(), 64, "hash should be 64 hex characters");
 
     // Test: single byte vs empty should differ
     let empty_hash = output_hash_hex(&[]);
     let single_hash = output_hash_hex(&[0]);
-    assert_ne!(empty_hash, single_hash, "empty vs single byte should have different hashes");
+    assert_ne!(
+        empty_hash, single_hash,
+        "empty vs single byte should have different hashes"
+    );
 
     // Test: identical data should produce identical hashes
     let data = vec![1, 2, 3, 4, 5];
     let hash1 = output_hash_hex(&data);
     let hash2 = output_hash_hex(&data.clone());
-    assert_eq!(hash1, hash2, "identical data should produce identical hashes");
+    assert_eq!(
+        hash1, hash2,
+        "identical data should produce identical hashes"
+    );
 
     // Test: different data should produce different hashes
     let data1 = vec![1, 2, 3];
     let data2 = vec![1, 2, 4];
-    assert_ne!(output_hash_hex(&data1), output_hash_hex(&data2), "different data should produce different hashes");
+    assert_ne!(
+        output_hash_hex(&data1),
+        output_hash_hex(&data2),
+        "different data should produce different hashes"
+    );
 
     // Test: order sensitivity
     let ordered = vec![1, 2, 3];
     let mut reversed = ordered.clone();
     reversed.reverse();
-    assert_ne!(output_hash_hex(&ordered), output_hash_hex(&reversed), "hash should be order-sensitive");
+    assert_ne!(
+        output_hash_hex(&ordered),
+        output_hash_hex(&reversed),
+        "hash should be order-sensitive"
+    );
 
     // Test: very large data should be handled
     let large_data = vec![0x42; 1_000_000];
     let large_hash = output_hash_hex(&large_data);
-    assert_eq!(large_hash.len(), 64, "large data should still produce 64-char hex hash");
-    assert!(large_hash.chars().all(|c| c.is_ascii_hexdigit()), "hash should be valid hex");
+    assert_eq!(
+        large_hash.len(),
+        64,
+        "large data should still produce 64-char hex hash"
+    );
+    assert!(
+        large_hash.chars().all(|c| c.is_ascii_hexdigit()),
+        "hash should be valid hex"
+    );
 
     // Test: all zero data vs all one data
     let zeros = vec![0u8; 100];
     let ones = vec![1u8; 100];
-    assert_ne!(output_hash_hex(&zeros), output_hash_hex(&ones), "zeros vs ones should have different hashes");
+    assert_ne!(
+        output_hash_hex(&zeros),
+        output_hash_hex(&ones),
+        "zeros vs ones should have different hashes"
+    );
 
     // Test: collision resistance (similar but different data)
     let data_a = b"abcdefghijklmnopqrstuvwxyz";
     let data_b = b"abcdefghijklmnopqrstuvwxyz1";
-    assert_ne!(output_hash_hex(data_a), output_hash_hex(data_b), "similar data should have different hashes");
+    assert_ne!(
+        output_hash_hex(data_a),
+        output_hash_hex(data_b),
+        "similar data should have different hashes"
+    );
 }
 
 fn payload_hash_hex(
@@ -446,176 +539,239 @@ fn signature_hex(signing_secret: &str, payload_hash: &str) -> String {
 // Inline negative-path tests
 #[cfg(test)]
 fn test_signature_hex() {
-        // Test: empty secret and empty payload hash
-        let empty_sig = signature_hex("", "");
-        assert_eq!(empty_sig.len(), 64, "empty inputs should produce 64-char hex signature");
-        assert!(empty_sig.chars().all(|c| c.is_ascii_hexdigit()), "signature should be valid hex");
+    // Test: empty secret and empty payload hash
+    let empty_sig = signature_hex("", "");
+    assert_eq!(
+        empty_sig.len(),
+        64,
+        "empty inputs should produce 64-char hex signature"
+    );
+    assert!(
+        empty_sig.chars().all(|c| c.is_ascii_hexdigit()),
+        "signature should be valid hex"
+    );
 
-        // Test: identical secret and payload should produce valid signature
-        let identical_sig = signature_hex("same", "same");
-        assert_eq!(identical_sig.len(), 64, "identical secret/payload should be valid");
-        assert_ne!(identical_sig, signature_hex("", ""), "identical inputs should differ from empty");
+    // Test: identical secret and payload should produce valid signature
+    let identical_sig = signature_hex("same", "same");
+    assert_eq!(
+        identical_sig.len(),
+        64,
+        "identical secret/payload should be valid"
+    );
+    assert_ne!(
+        identical_sig,
+        signature_hex("", ""),
+        "identical inputs should differ from empty"
+    );
 
-        // Test: swapped secret and payload should produce different signature
-        let sig1 = signature_hex("secret", "payload");
-        let sig2 = signature_hex("payload", "secret");
-        assert_ne!(sig1, sig2, "swapped secret/payload should produce different signatures");
+    // Test: swapped secret and payload should produce different signature
+    let sig1 = signature_hex("secret", "payload");
+    let sig2 = signature_hex("payload", "secret");
+    assert_ne!(
+        sig1, sig2,
+        "swapped secret/payload should produce different signatures"
+    );
 
-        // Test: single character differences should produce very different signatures
-        let base_sig = signature_hex("secret", "hash123");
-        let modified_sig = signature_hex("secret", "hash124");
-        assert_ne!(base_sig, modified_sig, "single char change should change signature");
+    // Test: single character differences should produce very different signatures
+    let base_sig = signature_hex("secret", "hash123");
+    let modified_sig = signature_hex("secret", "hash124");
+    assert_ne!(
+        base_sig, modified_sig,
+        "single char change should change signature"
+    );
 
-        // Count differing hex characters for avalanche effect
-        let differing_chars = base_sig.chars()
-            .zip(modified_sig.chars())
-            .filter(|(a, b)| a != b)
-            .count();
-        assert!(differing_chars > 16, "single char change should affect many signature chars");
+    // Count differing hex characters for avalanche effect
+    let differing_chars = base_sig
+        .chars()
+        .zip(modified_sig.chars())
+        .filter(|(a, b)| a != b)
+        .count();
+    assert!(
+        differing_chars > 16,
+        "single char change should affect many signature chars"
+    );
 
-        // Test: very long secret and payload hash
-        let long_secret = "x".repeat(10000);
-        let long_payload = "a".repeat(10000);
-        let long_sig = signature_hex(&long_secret, &long_payload);
-        assert_eq!(long_sig.len(), 64, "long inputs should still produce 64-char signature");
-        assert!(long_sig.chars().all(|c| c.is_ascii_hexdigit()), "long inputs should produce valid hex");
+    // Test: very long secret and payload hash
+    let long_secret = "x".repeat(10000);
+    let long_payload = "a".repeat(10000);
+    let long_sig = signature_hex(&long_secret, &long_payload);
+    assert_eq!(
+        long_sig.len(),
+        64,
+        "long inputs should still produce 64-char signature"
+    );
+    assert!(
+        long_sig.chars().all(|c| c.is_ascii_hexdigit()),
+        "long inputs should produce valid hex"
+    );
 
-        // Test: special characters in secret and payload
-        let special_secret = "secret!@#$%^&*()_+-={}[]|\\:;\"'<>?,./";
-        let special_payload = "hash!@#$%^&*()_+-={}[]|\\:;\"'<>?,./";
-        let special_sig = signature_hex(special_secret, special_payload);
-        assert_eq!(special_sig.len(), 64, "special characters should be handled");
+    // Test: special characters in secret and payload
+    let special_secret = "secret!@#$%^&*()_+-={}[]|\\:;\"'<>?,./";
+    let special_payload = "hash!@#$%^&*()_+-={}[]|\\:;\"'<>?,./";
+    let special_sig = signature_hex(special_secret, special_payload);
+    assert_eq!(
+        special_sig.len(),
+        64,
+        "special characters should be handled"
+    );
 
-        // Test: Unicode in secret and payload
-        let unicode_secret = "秘密_αρχείο";
-        let unicode_payload = "散列_κατακερματισμός";
-        let unicode_sig = signature_hex(unicode_secret, unicode_payload);
-        assert_eq!(unicode_sig.len(), 64, "Unicode should be handled correctly");
+    // Test: Unicode in secret and payload
+    let unicode_secret = "秘密_αρχείο";
+    let unicode_payload = "散列_κατακερματισμός";
+    let unicode_sig = signature_hex(unicode_secret, unicode_payload);
+    assert_eq!(unicode_sig.len(), 64, "Unicode should be handled correctly");
 
-        // Test: null bytes in secret and payload
-        let null_secret = "secret\0with\0nulls";
-        let null_payload = "hash\0with\0nulls";
-        let null_sig = signature_hex(null_secret, null_payload);
-        assert_eq!(null_sig.len(), 64, "null bytes should be handled");
+    // Test: null bytes in secret and payload
+    let null_secret = "secret\0with\0nulls";
+    let null_payload = "hash\0with\0nulls";
+    let null_sig = signature_hex(null_secret, null_payload);
+    assert_eq!(null_sig.len(), 64, "null bytes should be handled");
 
-        // Test: control characters in secret and payload
-        let control_secret = "secret\r\n\t\x00\x1F";
-        let control_payload = "hash\r\n\t\x00\x1F";
-        let control_sig = signature_hex(control_secret, control_payload);
-        assert_eq!(control_sig.len(), 64, "control characters should be handled");
+    // Test: control characters in secret and payload
+    let control_secret = "secret\r\n\t\x00\x1F";
+    let control_payload = "hash\r\n\t\x00\x1F";
+    let control_sig = signature_hex(control_secret, control_payload);
+    assert_eq!(
+        control_sig.len(),
+        64,
+        "control characters should be handled"
+    );
 
-        // Test: signature should be deterministic
-        for _ in 0..5 {
-            let sig1 = signature_hex("consistent", "test");
-            let sig2 = signature_hex("consistent", "test");
-            assert_eq!(sig1, sig2, "signature should be deterministic");
+    // Test: signature should be deterministic
+    for _ in 0..5 {
+        let sig1 = signature_hex("consistent", "test");
+        let sig2 = signature_hex("consistent", "test");
+        assert_eq!(sig1, sig2, "signature should be deterministic");
+    }
+
+    // Test: common secret/payload patterns should be unique
+    let patterns = [
+        ("secret1", "hash1"),
+        ("secret2", "hash2"),
+        ("admin", "deadbeef"),
+        ("user", "abcdef01"),
+        ("key", "fedcba98"),
+    ];
+    let mut pattern_sigs = Vec::new();
+    for (secret, payload) in patterns {
+        let sig = signature_hex(secret, payload);
+        pattern_sigs.push(sig);
+    }
+    for i in 0..pattern_sigs.len() {
+        for j in (i + 1)..pattern_sigs.len() {
+            assert_ne!(
+                pattern_sigs[i], pattern_sigs[j],
+                "different patterns should produce unique signatures"
+            );
         }
+    }
 
-        // Test: common secret/payload patterns should be unique
-        let patterns = [
-            ("secret1", "hash1"),
-            ("secret2", "hash2"),
-            ("admin", "deadbeef"),
-            ("user", "abcdef01"),
-            ("key", "fedcba98"),
-        ];
-        let mut pattern_sigs = Vec::new();
-        for (secret, payload) in patterns {
-            let sig = signature_hex(secret, payload);
-            pattern_sigs.push(sig);
+    // Test: weak secrets should still produce valid signatures (no validation)
+    let weak_secrets = ["", "1", "password", "123456", "admin"];
+    for &weak in &weak_secrets {
+        let sig = signature_hex(weak, "payload");
+        assert_eq!(
+            sig.len(),
+            64,
+            "weak secrets should still produce valid signatures"
+        );
+    }
+
+    // Test: malformed hex payload should be handled as raw string
+    let malformed_payloads = ["not_hex", "gggg", "ZZZZ", "12345G"];
+    for &malformed in &malformed_payloads {
+        let sig = signature_hex("secret", malformed);
+        assert_eq!(
+            sig.len(),
+            64,
+            "malformed hex payloads should be handled as raw strings"
+        );
+    }
+
+    // Test: empty secret with various payloads
+    let payloads = ["a", "ab", "abc", "1234567890abcdef"];
+    let mut empty_secret_sigs = Vec::new();
+    for &payload in &payloads {
+        let sig = signature_hex("", payload);
+        empty_secret_sigs.push(sig);
+    }
+    for i in 0..empty_secret_sigs.len() {
+        for j in (i + 1)..empty_secret_sigs.len() {
+            assert_ne!(
+                empty_secret_sigs[i], empty_secret_sigs[j],
+                "empty secret with different payloads should be unique"
+            );
         }
-        for i in 0..pattern_sigs.len() {
-            for j in (i+1)..pattern_sigs.len() {
-                assert_ne!(pattern_sigs[i], pattern_sigs[j], "different patterns should produce unique signatures");
-            }
+    }
+
+    // Test: various secrets with empty payload
+    let secrets = ["a", "ab", "abc", "secret123"];
+    let mut empty_payload_sigs = Vec::new();
+    for &secret in &secrets {
+        let sig = signature_hex(secret, "");
+        empty_payload_sigs.push(sig);
+    }
+    for i in 0..empty_payload_sigs.len() {
+        for j in (i + 1)..empty_payload_sigs.len() {
+            assert_ne!(
+                empty_payload_sigs[i], empty_payload_sigs[j],
+                "different secrets with empty payload should be unique"
+            );
         }
+    }
 
-        // Test: weak secrets should still produce valid signatures (no validation)
-        let weak_secrets = ["", "1", "password", "123456", "admin"];
-        for &weak in &weak_secrets {
-            let sig = signature_hex(weak, "payload");
-            assert_eq!(sig.len(), 64, "weak secrets should still produce valid signatures");
-        }
+    // Test: collision resistance across domain boundaries
+    let sig1 = signature_hex("secre", "tpayload");
+    let sig2 = signature_hex("secret", "payload");
+    assert_ne!(sig1, sig2, "should prevent field boundary confusion");
 
-        // Test: malformed hex payload should be handled as raw string
-        let malformed_payloads = ["not_hex", "gggg", "ZZZZ", "12345G"];
-        for &malformed in &malformed_payloads {
-            let sig = signature_hex("secret", malformed);
-            assert_eq!(sig.len(), 64, "malformed hex payloads should be handled as raw strings");
-        }
+    // Test: case sensitivity
+    let lower_sig = signature_hex("secret", "deadbeef");
+    let upper_sig = signature_hex("SECRET", "DEADBEEF");
+    let mixed_sig = signature_hex("Secret", "DeadBeef");
+    assert_ne!(lower_sig, upper_sig, "case should matter");
+    assert_ne!(lower_sig, mixed_sig, "case should matter");
+    assert_ne!(upper_sig, mixed_sig, "case should matter");
 
-        // Test: empty secret with various payloads
-        let payloads = ["a", "ab", "abc", "1234567890abcdef"];
-        let mut empty_secret_sigs = Vec::new();
-        for &payload in &payloads {
-            let sig = signature_hex("", payload);
-            empty_secret_sigs.push(sig);
-        }
-        for i in 0..empty_secret_sigs.len() {
-            for j in (i+1)..empty_secret_sigs.len() {
-                assert_ne!(empty_secret_sigs[i], empty_secret_sigs[j], "empty secret with different payloads should be unique");
-            }
-        }
+    // Test: signature should include domain separator
+    let manual_sig = {
+        let mut hasher = Sha256::new();
+        hasher.update(b"proof_carrying_signature_v3:");
+        update_field(&mut hasher, b"field:signing_secret", b"test_secret");
+        update_field(&mut hasher, b"field:payload_hash", b"test_payload");
+        hex::encode(hasher.finalize())
+    };
+    let function_sig = signature_hex("test_secret", "test_payload");
+    assert_eq!(
+        manual_sig, function_sig,
+        "signature function should match manual implementation"
+    );
 
-        // Test: various secrets with empty payload
-        let secrets = ["a", "ab", "abc", "secret123"];
-        let mut empty_payload_sigs = Vec::new();
-        for &secret in &secrets {
-            let sig = signature_hex(secret, "");
-            empty_payload_sigs.push(sig);
-        }
-        for i in 0..empty_payload_sigs.len() {
-            for j in (i+1)..empty_payload_sigs.len() {
-                assert_ne!(empty_payload_sigs[i], empty_payload_sigs[j], "different secrets with empty payload should be unique");
-            }
-        }
+    // Test: version separation (signatures should include version in domain)
+    let v3_sig = signature_hex("secret", "payload");
+    // If we had a v2 version, it should be different
+    let manual_v2_sig = {
+        let mut hasher = Sha256::new();
+        hasher.update(b"proof_carrying_signature_v2:");
+        update_field(&mut hasher, b"field:signing_secret", b"secret");
+        update_field(&mut hasher, b"field:payload_hash", b"payload");
+        hex::encode(hasher.finalize())
+    };
+    assert_ne!(
+        v3_sig, manual_v2_sig,
+        "different versions should produce different signatures"
+    );
 
-        // Test: collision resistance across domain boundaries
-        let sig1 = signature_hex("secre", "tpayload");
-        let sig2 = signature_hex("secret", "payload");
-        assert_ne!(sig1, sig2, "should prevent field boundary confusion");
+    // Test: all zeros vs all ones in hex payload
+    let zeros_sig = signature_hex("key", &"0".repeat(64));
+    let ones_sig = signature_hex("key", &"f".repeat(64));
+    assert_ne!(zeros_sig, ones_sig, "all zeros vs all ones should differ");
 
-        // Test: case sensitivity
-        let lower_sig = signature_hex("secret", "deadbeef");
-        let upper_sig = signature_hex("SECRET", "DEADBEEF");
-        let mixed_sig = signature_hex("Secret", "DeadBeef");
-        assert_ne!(lower_sig, upper_sig, "case should matter");
-        assert_ne!(lower_sig, mixed_sig, "case should matter");
-        assert_ne!(upper_sig, mixed_sig, "case should matter");
-
-        // Test: signature should include domain separator
-        let manual_sig = {
-            let mut hasher = Sha256::new();
-            hasher.update(b"proof_carrying_signature_v3:");
-            update_field(&mut hasher, b"field:signing_secret", b"test_secret");
-            update_field(&mut hasher, b"field:payload_hash", b"test_payload");
-            hex::encode(hasher.finalize())
-        };
-        let function_sig = signature_hex("test_secret", "test_payload");
-        assert_eq!(manual_sig, function_sig, "signature function should match manual implementation");
-
-        // Test: version separation (signatures should include version in domain)
-        let v3_sig = signature_hex("secret", "payload");
-        // If we had a v2 version, it should be different
-        let manual_v2_sig = {
-            let mut hasher = Sha256::new();
-            hasher.update(b"proof_carrying_signature_v2:");
-            update_field(&mut hasher, b"field:signing_secret", b"secret");
-            update_field(&mut hasher, b"field:payload_hash", b"payload");
-            hex::encode(hasher.finalize())
-        };
-        assert_ne!(v3_sig, manual_v2_sig, "different versions should produce different signatures");
-
-        // Test: all zeros vs all ones in hex payload
-        let zeros_sig = signature_hex("key", &"0".repeat(64));
-        let ones_sig = signature_hex("key", &"f".repeat(64));
-        assert_ne!(zeros_sig, ones_sig, "all zeros vs all ones should differ");
-
-        // Test: signature with maximum length strings
-        let max_secret = "S".repeat(1_000_000);
-        let max_payload = "P".repeat(1_000_000);
-        let max_sig = signature_hex(&max_secret, &max_payload);
-        assert_eq!(max_sig.len(), 64, "maximum length inputs should work");
+    // Test: signature with maximum length strings
+    let max_secret = "S".repeat(1_000_000);
+    let max_payload = "P".repeat(1_000_000);
+    let max_sig = signature_hex(&max_secret, &max_payload);
+    assert_eq!(max_sig.len(), 64, "maximum length inputs should work");
 }
 
 // ---------------------------------------------------------------------------
@@ -649,37 +805,67 @@ impl AlgorithmId {
 fn test_algorithm_id_new() {
     // Test: empty algorithm ID should be allowed
     let empty_algo = AlgorithmId::new("");
-    assert_eq!(empty_algo.as_str(), "", "empty algorithm ID should be preserved");
+    assert_eq!(
+        empty_algo.as_str(),
+        "",
+        "empty algorithm ID should be preserved"
+    );
 
     // Test: whitespace-only algorithm ID
     let whitespace_algo = AlgorithmId::new("   ");
-    assert_eq!(whitespace_algo.as_str(), "   ", "whitespace algorithm ID should be preserved");
+    assert_eq!(
+        whitespace_algo.as_str(),
+        "   ",
+        "whitespace algorithm ID should be preserved"
+    );
 
     // Test: very long algorithm ID
     let long_id = "a".repeat(10000);
     let long_algo = AlgorithmId::new(&long_id);
-    assert_eq!(long_algo.as_str().len(), 10000, "long algorithm ID should be preserved");
+    assert_eq!(
+        long_algo.as_str().len(),
+        10000,
+        "long algorithm ID should be preserved"
+    );
 
     // Test: algorithm ID with special characters
     let special_algo = AlgorithmId::new("algo!@#$%^&*()");
-    assert_eq!(special_algo.as_str(), "algo!@#$%^&*()", "special characters should be preserved");
+    assert_eq!(
+        special_algo.as_str(),
+        "algo!@#$%^&*()",
+        "special characters should be preserved"
+    );
 
     // Test: algorithm ID with Unicode
     let unicode_algo = AlgorithmId::new("算法_αλγόριθμος");
-    assert_eq!(unicode_algo.as_str(), "算法_αλγόριθμος", "Unicode should be preserved");
+    assert_eq!(
+        unicode_algo.as_str(),
+        "算法_αλγόριθμος",
+        "Unicode should be preserved"
+    );
 
     // Test: algorithm ID with control characters
     let control_algo = AlgorithmId::new("algo\n\t\r");
-    assert!(control_algo.as_str().contains('\n'), "control characters should be preserved");
+    assert!(
+        control_algo.as_str().contains('\n'),
+        "control characters should be preserved"
+    );
 
     // Test: algorithm ID with null bytes
     let null_algo = AlgorithmId::new("algo\0byte");
-    assert!(null_algo.as_str().contains('\0'), "null bytes should be preserved");
+    assert!(
+        null_algo.as_str().contains('\0'),
+        "null bytes should be preserved"
+    );
 
     // Test: algorithm ID from String vs &str should be equivalent
     let str_algo = AlgorithmId::new("test");
     let string_algo = AlgorithmId::new("test".to_string());
-    assert_eq!(str_algo.as_str(), string_algo.as_str(), "String and &str inputs should be equivalent");
+    assert_eq!(
+        str_algo.as_str(),
+        string_algo.as_str(),
+        "String and &str inputs should be equivalent"
+    );
 }
 
 impl std::fmt::Display for AlgorithmId {
@@ -715,71 +901,95 @@ impl Fragment {
 // Inline negative-path tests
 #[cfg(test)]
 fn test_fragment_hash() {
-            // Test: empty fragment ID should be handled consistently
-            let empty_id_fragment = Fragment {
-                fragment_id: String::new(),
-                data: vec![1, 2, 3],
-            };
-            let hash = empty_id_fragment.hash();
-            assert_eq!(hash.len(), 32, "hash should always be 32 bytes");
+    // Test: empty fragment ID should be handled consistently
+    let empty_id_fragment = Fragment {
+        fragment_id: String::new(),
+        data: vec![1, 2, 3],
+    };
+    let hash = empty_id_fragment.hash();
+    assert_eq!(hash.len(), 32, "hash should always be 32 bytes");
 
-            // Test: empty data should be handled consistently
-            let empty_data_fragment = Fragment {
-                fragment_id: "test".to_string(),
-                data: Vec::new(),
-            };
-            let hash = empty_data_fragment.hash();
-            assert_eq!(hash.len(), 32, "hash should always be 32 bytes for empty data");
+    // Test: empty data should be handled consistently
+    let empty_data_fragment = Fragment {
+        fragment_id: "test".to_string(),
+        data: Vec::new(),
+    };
+    let hash = empty_data_fragment.hash();
+    assert_eq!(
+        hash.len(),
+        32,
+        "hash should always be 32 bytes for empty data"
+    );
 
-            // Test: identical fragments should produce identical hashes
-            let frag1 = Fragment {
-                fragment_id: "test".to_string(),
-                data: vec![0xFF; 10],
-            };
-            let frag2 = Fragment {
-                fragment_id: "test".to_string(),
-                data: vec![0xFF; 10],
-            };
-            assert_eq!(frag1.hash(), frag2.hash(), "identical fragments should have identical hashes");
+    // Test: identical fragments should produce identical hashes
+    let frag1 = Fragment {
+        fragment_id: "test".to_string(),
+        data: vec![0xFF; 10],
+    };
+    let frag2 = Fragment {
+        fragment_id: "test".to_string(),
+        data: vec![0xFF; 10],
+    };
+    assert_eq!(
+        frag1.hash(),
+        frag2.hash(),
+        "identical fragments should have identical hashes"
+    );
 
-            // Test: fragments differing only by ID should have different hashes
-            let frag_a = Fragment {
-                fragment_id: "a".to_string(),
-                data: vec![1, 2, 3],
-            };
-            let frag_b = Fragment {
-                fragment_id: "b".to_string(),
-                data: vec![1, 2, 3],
-            };
-            assert_ne!(frag_a.hash(), frag_b.hash(), "fragments with different IDs should have different hashes");
+    // Test: fragments differing only by ID should have different hashes
+    let frag_a = Fragment {
+        fragment_id: "a".to_string(),
+        data: vec![1, 2, 3],
+    };
+    let frag_b = Fragment {
+        fragment_id: "b".to_string(),
+        data: vec![1, 2, 3],
+    };
+    assert_ne!(
+        frag_a.hash(),
+        frag_b.hash(),
+        "fragments with different IDs should have different hashes"
+    );
 
-            // Test: fragments differing only by data should have different hashes
-            let frag_data1 = Fragment {
-                fragment_id: "same".to_string(),
-                data: vec![1],
-            };
-            let frag_data2 = Fragment {
-                fragment_id: "same".to_string(),
-                data: vec![2],
-            };
-            assert_ne!(frag_data1.hash(), frag_data2.hash(), "fragments with different data should have different hashes");
+    // Test: fragments differing only by data should have different hashes
+    let frag_data1 = Fragment {
+        fragment_id: "same".to_string(),
+        data: vec![1],
+    };
+    let frag_data2 = Fragment {
+        fragment_id: "same".to_string(),
+        data: vec![2],
+    };
+    assert_ne!(
+        frag_data1.hash(),
+        frag_data2.hash(),
+        "fragments with different data should have different hashes"
+    );
 
-            // Test: very long fragment ID should be handled
-            let long_id = "x".repeat(10000);
-            let long_id_fragment = Fragment {
-                fragment_id: long_id,
-                data: vec![42],
-            };
-            let hash = long_id_fragment.hash();
-            assert_eq!(hash.len(), 32, "hash should be 32 bytes even for very long IDs");
+    // Test: very long fragment ID should be handled
+    let long_id = "x".repeat(10000);
+    let long_id_fragment = Fragment {
+        fragment_id: long_id,
+        data: vec![42],
+    };
+    let hash = long_id_fragment.hash();
+    assert_eq!(
+        hash.len(),
+        32,
+        "hash should be 32 bytes even for very long IDs"
+    );
 
-            // Test: large fragment data should be handled
-            let large_fragment = Fragment {
-                fragment_id: "large".to_string(),
-                data: vec![0x42; 1_000_000],
-            };
-            let hash = large_fragment.hash();
-            assert_eq!(hash.len(), 32, "hash should be 32 bytes even for large data");
+    // Test: large fragment data should be handled
+    let large_fragment = Fragment {
+        fragment_id: "large".to_string(),
+        data: vec![0x42; 1_000_000],
+    };
+    let hash = large_fragment.hash();
+    assert_eq!(
+        hash.len(),
+        32,
+        "hash should be 32 bytes even for large data"
+    );
 }
 
 /// Signed attestation binding fragments to output.
@@ -948,12 +1158,21 @@ impl ProofCarryingDecoder {
         {
             // Test: zero capacity should clamp to 1
             let decoder = Self::with_audit_log_capacity(ProofMode::Mandatory, "test", "secret", 0);
-            assert_eq!(decoder.audit_log_capacity(), 1, "zero capacity should clamp to 1");
+            assert_eq!(
+                decoder.audit_log_capacity(),
+                1,
+                "zero capacity should clamp to 1"
+            );
 
             // Test: very large capacity should be accepted
             let large_cap = usize::MAX;
-            let decoder = Self::with_audit_log_capacity(ProofMode::Advisory, "test", "secret", large_cap);
-            assert_eq!(decoder.audit_log_capacity(), large_cap, "large capacity should be preserved");
+            let decoder =
+                Self::with_audit_log_capacity(ProofMode::Advisory, "test", "secret", large_cap);
+            assert_eq!(
+                decoder.audit_log_capacity(),
+                large_cap,
+                "large capacity should be preserved"
+            );
 
             // Test: empty signer ID should be allowed
             let decoder = Self::with_audit_log_capacity(ProofMode::Mandatory, "", "secret", 100);
@@ -961,33 +1180,75 @@ impl ProofCarryingDecoder {
 
             // Test: empty signing secret should be allowed
             let decoder = Self::with_audit_log_capacity(ProofMode::Advisory, "test", "", 100);
-            assert_eq!(decoder.signing_secret, "", "empty signing secret should be preserved");
+            assert_eq!(
+                decoder.signing_secret, "",
+                "empty signing secret should be preserved"
+            );
 
             // Test: very long signer ID should be handled
             let long_signer = "x".repeat(10000);
-            let decoder = Self::with_audit_log_capacity(ProofMode::Mandatory, &long_signer, "secret", 100);
-            assert_eq!(decoder.signer_id.len(), 10000, "long signer ID should be preserved");
+            let decoder =
+                Self::with_audit_log_capacity(ProofMode::Mandatory, &long_signer, "secret", 100);
+            assert_eq!(
+                decoder.signer_id.len(),
+                10000,
+                "long signer ID should be preserved"
+            );
 
             // Test: Unicode in signer ID should be supported
             let unicode_signer = "签名者_υπογράφων";
-            let decoder = Self::with_audit_log_capacity(ProofMode::Advisory, unicode_signer, "secret", 100);
-            assert_eq!(decoder.signer_id, unicode_signer, "Unicode signer ID should be preserved");
+            let decoder =
+                Self::with_audit_log_capacity(ProofMode::Advisory, unicode_signer, "secret", 100);
+            assert_eq!(
+                decoder.signer_id, unicode_signer,
+                "Unicode signer ID should be preserved"
+            );
 
             // Test: special characters in signing secret
             let special_secret = "secret!@#$%^&*()";
-            let decoder = Self::with_audit_log_capacity(ProofMode::Mandatory, "test", special_secret, 100);
-            assert_eq!(decoder.signing_secret, special_secret, "special characters in secret should be preserved");
+            let decoder =
+                Self::with_audit_log_capacity(ProofMode::Mandatory, "test", special_secret, 100);
+            assert_eq!(
+                decoder.signing_secret, special_secret,
+                "special characters in secret should be preserved"
+            );
 
             // Test: default algorithms should always be registered
             let decoder = Self::with_audit_log_capacity(ProofMode::Advisory, "test", "secret", 50);
-            assert_eq!(decoder.registered_algorithms().len(), 3, "should have 3 default algorithms");
-            assert!(decoder.registered_algorithms().iter().any(|alg| alg.as_str() == "reed_solomon_8_4"), "should include reed_solomon_8_4");
-            assert!(decoder.registered_algorithms().iter().any(|alg| alg.as_str() == "xor_parity_2"), "should include xor_parity_2");
-            assert!(decoder.registered_algorithms().iter().any(|alg| alg.as_str() == "simple_concat"), "should include simple_concat");
+            assert_eq!(
+                decoder.registered_algorithms().len(),
+                3,
+                "should have 3 default algorithms"
+            );
+            assert!(
+                decoder
+                    .registered_algorithms()
+                    .iter()
+                    .any(|alg| alg.as_str() == "reed_solomon_8_4"),
+                "should include reed_solomon_8_4"
+            );
+            assert!(
+                decoder
+                    .registered_algorithms()
+                    .iter()
+                    .any(|alg| alg.as_str() == "xor_parity_2"),
+                "should include xor_parity_2"
+            );
+            assert!(
+                decoder
+                    .registered_algorithms()
+                    .iter()
+                    .any(|alg| alg.as_str() == "simple_concat"),
+                "should include simple_concat"
+            );
 
             // Test: audit log should start empty
-            let decoder = Self::with_audit_log_capacity(ProofMode::Mandatory, "test", "secret", 1000);
-            assert!(decoder.audit_log().is_empty(), "audit log should start empty");
+            let decoder =
+                Self::with_audit_log_capacity(ProofMode::Mandatory, "test", "secret", 1000);
+            assert!(
+                decoder.audit_log().is_empty(),
+                "audit log should start empty"
+            );
         }
     }
 
@@ -1020,13 +1281,21 @@ impl ProofCarryingDecoder {
             let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test", "secret");
             let initial_count = decoder.registered_algorithms().len();
             decoder.register_algorithm(AlgorithmId::new("reed_solomon_8_4")); // Already exists
-            assert_eq!(decoder.registered_algorithms().len(), initial_count, "duplicate registration should be ignored");
+            assert_eq!(
+                decoder.registered_algorithms().len(),
+                initial_count,
+                "duplicate registration should be ignored"
+            );
 
             // Test: registering empty algorithm ID should be allowed
             let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test", "secret");
             let initial_count = decoder.registered_algorithms().len();
             decoder.register_algorithm(AlgorithmId::new(""));
-            assert_eq!(decoder.registered_algorithms().len(), initial_count + 1, "empty algorithm ID should be registerable");
+            assert_eq!(
+                decoder.registered_algorithms().len(),
+                initial_count + 1,
+                "empty algorithm ID should be registerable"
+            );
 
             // Test: registering many algorithms should respect capacity
             let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test", "secret");
@@ -1036,28 +1305,45 @@ impl ProofCarryingDecoder {
                 decoder.register_algorithm(AlgorithmId::new(format!("algo_{}", i)));
             }
             // Should be capped at MAX_REGISTERED_ALGORITHMS via push_bounded
-            assert!(decoder.registered_algorithms().len() <= MAX_REGISTERED_ALGORITHMS, "should respect maximum capacity");
+            assert!(
+                decoder.registered_algorithms().len() <= MAX_REGISTERED_ALGORITHMS,
+                "should respect maximum capacity"
+            );
 
             // Test: case sensitivity in algorithm registration
             let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test", "secret");
             decoder.register_algorithm(AlgorithmId::new("CaseSensitive"));
             decoder.register_algorithm(AlgorithmId::new("casesensitive"));
-            let case_sensitive_count = decoder.registered_algorithms().iter()
-                .filter(|alg| alg.as_str().to_lowercase() == "casesensitive").count();
-            assert_eq!(case_sensitive_count, 2, "case sensitivity should be preserved");
+            let case_sensitive_count = decoder
+                .registered_algorithms()
+                .iter()
+                .filter(|alg| alg.as_str().to_lowercase() == "casesensitive")
+                .count();
+            assert_eq!(
+                case_sensitive_count, 2,
+                "case sensitivity should be preserved"
+            );
 
             // Test: Unicode algorithm IDs should be supported
             let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test", "secret");
             let initial_count = decoder.registered_algorithms().len();
             decoder.register_algorithm(AlgorithmId::new("算法_αλγόριθμος"));
-            assert_eq!(decoder.registered_algorithms().len(), initial_count + 1, "Unicode algorithm IDs should work");
+            assert_eq!(
+                decoder.registered_algorithms().len(),
+                initial_count + 1,
+                "Unicode algorithm IDs should work"
+            );
 
             // Test: very long algorithm ID should be handled
             let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test", "secret");
             let initial_count = decoder.registered_algorithms().len();
             let long_id = "x".repeat(10000);
             decoder.register_algorithm(AlgorithmId::new(&long_id));
-            assert_eq!(decoder.registered_algorithms().len(), initial_count + 1, "very long algorithm IDs should work");
+            assert_eq!(
+                decoder.registered_algorithms().len(),
+                initial_count + 1,
+                "very long algorithm IDs should work"
+            );
         }
     }
 
@@ -1166,52 +1452,106 @@ impl ProofCarryingDecoder {
         #[allow(unreachable_code)]
         {
             // Test: Unicode injection in object_id
-            let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test_signer", "test_secret");
+            let mut decoder =
+                ProofCarryingDecoder::new(ProofMode::Mandatory, "test_signer", "test_secret");
             let fragments = vec![Fragment::new("frag1", b"data1".to_vec())];
             let algorithm_id = AlgorithmId::new("reed_solomon_8_4");
             let malicious_object_id = "legit\u{202E}tnemalf\u{202D}.txt"; // BIDI override attack
-            let result = decoder.decode(&malicious_object_id, &fragments, &algorithm_id, 1000000000, "trace1");
-            assert!(result.is_ok(), "Unicode injection in object_id should be preserved but not break functionality");
+            let result = decoder.decode(
+                &malicious_object_id,
+                &fragments,
+                &algorithm_id,
+                1000000000,
+                "trace1",
+            );
+            assert!(
+                result.is_ok(),
+                "Unicode injection in object_id should be preserved but not break functionality"
+            );
             if let Ok(decode_result) = result {
-                assert_eq!(decode_result.object_id, malicious_object_id, "Malicious object_id should be preserved");
+                assert_eq!(
+                    decode_result.object_id, malicious_object_id,
+                    "Malicious object_id should be preserved"
+                );
             }
 
             // Test: Arithmetic overflow protection in timestamp_epoch_secs
-            let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test_signer", "test_secret");
+            let mut decoder =
+                ProofCarryingDecoder::new(ProofMode::Mandatory, "test_signer", "test_secret");
             let fragments = vec![Fragment::new("frag1", b"test_data".to_vec())];
             let algorithm_id = AlgorithmId::new("reed_solomon_8_4");
             let max_timestamp = u64::MAX;
-            let result = decoder.decode("obj1", &fragments, &algorithm_id, max_timestamp, "trace_overflow");
-            assert!(result.is_ok(), "Maximum timestamp should be handled without overflow");
+            let result = decoder.decode(
+                "obj1",
+                &fragments,
+                &algorithm_id,
+                max_timestamp,
+                "trace_overflow",
+            );
+            assert!(
+                result.is_ok(),
+                "Maximum timestamp should be handled without overflow"
+            );
             if let Ok(decode_result) = result {
-                assert_eq!(decode_result.proof.as_ref().unwrap().timestamp_epoch_secs, max_timestamp, "Timestamp should be preserved");
+                assert_eq!(
+                    decode_result.proof.as_ref().unwrap().timestamp_epoch_secs,
+                    max_timestamp,
+                    "Timestamp should be preserved"
+                );
             }
 
             // Test: Memory exhaustion through massive fragment concatenation
-            let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test_signer", "test_secret");
+            let mut decoder =
+                ProofCarryingDecoder::new(ProofMode::Mandatory, "test_signer", "test_secret");
             let massive_data = vec![0u8; 1_000_000]; // 1MB per fragment
             let fragments: Vec<Fragment> = (0..10) // 10MB total
                 .map(|i| Fragment::new(&format!("massive_frag_{}", i), massive_data.clone()))
                 .collect();
             let algorithm_id = AlgorithmId::new("simple_concat");
-            let result = decoder.decode("massive_obj", &fragments, &algorithm_id, 1000000001, "trace_massive");
-            assert!(result.is_ok(), "Massive fragment concatenation should complete without memory issues");
+            let result = decoder.decode(
+                "massive_obj",
+                &fragments,
+                &algorithm_id,
+                1000000001,
+                "trace_massive",
+            );
+            assert!(
+                result.is_ok(),
+                "Massive fragment concatenation should complete without memory issues"
+            );
             if let Ok(decode_result) = result {
-                assert_eq!(decode_result.output_data.len(), 10_000_000, "Output should be 10MB");
+                assert_eq!(
+                    decode_result.output_data.len(),
+                    10_000_000,
+                    "Output should be 10MB"
+                );
             }
 
             // Test: Concurrent operation simulation (rapid sequential decodes)
             use std::sync::{Arc, Mutex};
             use std::thread;
-            let shared_decoder = Arc::new(Mutex::new(ProofCarryingDecoder::new(ProofMode::Advisory, "concurrent_signer", "concurrent_secret")));
+            let shared_decoder = Arc::new(Mutex::new(ProofCarryingDecoder::new(
+                ProofMode::Advisory,
+                "concurrent_signer",
+                "concurrent_secret",
+            )));
             let mut handles = vec![];
             for i in 0..5 {
                 let decoder_clone = Arc::clone(&shared_decoder);
                 let handle = thread::spawn(move || {
-                    let fragment = Fragment::new(&format!("concurrent_frag_{}", i), format!("data_{}", i).into_bytes());
+                    let fragment = Fragment::new(
+                        &format!("concurrent_frag_{}", i),
+                        format!("data_{}", i).into_bytes(),
+                    );
                     let algorithm_id = AlgorithmId::new("simple_concat");
                     let mut decoder = decoder_clone.lock().unwrap();
-                    decoder.decode(&format!("concurrent_obj_{}", i), &[fragment], &algorithm_id, 1000000002 + i as u64, &format!("trace_concurrent_{}", i))
+                    decoder.decode(
+                        &format!("concurrent_obj_{}", i),
+                        &[fragment],
+                        &algorithm_id,
+                        1000000002 + i as u64,
+                        &format!("trace_concurrent_{}", i),
+                    )
                 });
                 handles.push(handle);
             }
@@ -1221,102 +1561,243 @@ impl ProofCarryingDecoder {
             }
 
             // Test: Unregistered algorithm attack vector
-            let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test_signer", "test_secret");
+            let mut decoder =
+                ProofCarryingDecoder::new(ProofMode::Mandatory, "test_signer", "test_secret");
             let fragments = vec![Fragment::new("frag1", b"data1".to_vec())];
             let malicious_algorithm = AlgorithmId::new("malicious_algorithm\x00\x01\x02"); // With control characters
-            let result = decoder.decode("obj1", &fragments, &malicious_algorithm, 1000000003, "trace_unregistered");
+            let result = decoder.decode(
+                "obj1",
+                &fragments,
+                &malicious_algorithm,
+                1000000003,
+                "trace_unregistered",
+            );
             assert!(result.is_err(), "Unregistered algorithm should be rejected");
             if let Err(ProofCarryingDecodeError::ReconstructionFailed { reason, .. }) = result {
-                assert!(reason.contains("unregistered algorithm"), "Error should indicate unregistered algorithm");
+                assert!(
+                    reason.contains("unregistered algorithm"),
+                    "Error should indicate unregistered algorithm"
+                );
             }
 
             // Test: Empty fragments collection edge case
-            let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test_signer", "test_secret");
+            let mut decoder =
+                ProofCarryingDecoder::new(ProofMode::Mandatory, "test_signer", "test_secret");
             let empty_fragments: Vec<Fragment> = vec![];
             let algorithm_id = AlgorithmId::new("reed_solomon_8_4");
-            let result = decoder.decode("empty_obj", &empty_fragments, &algorithm_id, 1000000004, "trace_empty");
+            let result = decoder.decode(
+                "empty_obj",
+                &empty_fragments,
+                &algorithm_id,
+                1000000004,
+                "trace_empty",
+            );
             assert!(result.is_err(), "Empty fragments should be rejected");
             if let Err(ProofCarryingDecodeError::ReconstructionFailed { reason, .. }) = result {
-                assert!(reason.contains("no fragments"), "Error should indicate no fragments provided");
+                assert!(
+                    reason.contains("no fragments"),
+                    "Error should indicate no fragments provided"
+                );
             }
 
             // Test: Audit log capacity boundary attacks
-            let mut decoder = ProofCarryingDecoder::with_audit_log_capacity(ProofMode::Advisory, "audit_signer", "audit_secret", 3);
+            let mut decoder = ProofCarryingDecoder::with_audit_log_capacity(
+                ProofMode::Advisory,
+                "audit_signer",
+                "audit_secret",
+                3,
+            );
             let fragment = Fragment::new("audit_frag", b"audit_data".to_vec());
             let algorithm_id = AlgorithmId::new("simple_concat");
             // Generate more audit events than capacity
             for i in 0..10 {
-                let _ = decoder.decode(&format!("audit_obj_{}", i), &[fragment.clone()], &algorithm_id, 1000000005 + i as u64, &format!("trace_audit_{}", i));
+                let _ = decoder.decode(
+                    &format!("audit_obj_{}", i),
+                    &[fragment.clone()],
+                    &algorithm_id,
+                    1000000005 + i as u64,
+                    &format!("trace_audit_{}", i),
+                );
             }
-            assert!(decoder.audit_log().len() <= 3, "Audit log should be bounded by capacity");
+            assert!(
+                decoder.audit_log().len() <= 3,
+                "Audit log should be bounded by capacity"
+            );
             // Should keep only the most recent entries
-            assert!(decoder.audit_log().iter().all(|event| event.trace_id.contains("audit_")), "Audit log should contain recent events");
+            assert!(
+                decoder
+                    .audit_log()
+                    .iter()
+                    .all(|event| event.trace_id.contains("audit_")),
+                "Audit log should contain recent events"
+            );
 
             // Test: Hash collision resistance in fragment and output processing
-            let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "hash_signer", "hash_secret");
+            let mut decoder =
+                ProofCarryingDecoder::new(ProofMode::Mandatory, "hash_signer", "hash_secret");
             // Create fragments with similar but distinct data that might collide
             let fragment1 = Fragment::new("collision1", b"similar_data_variant_a".to_vec());
             let fragment2 = Fragment::new("collision2", b"similar_data_variant_b".to_vec());
             let algorithm_id = AlgorithmId::new("simple_concat");
 
-            let result1 = decoder.decode("hash_obj1", &[fragment1], &algorithm_id, 1000000006, "trace_hash1");
-            let result2 = decoder.decode("hash_obj2", &[fragment2], &algorithm_id, 1000000007, "trace_hash2");
+            let result1 = decoder.decode(
+                "hash_obj1",
+                &[fragment1],
+                &algorithm_id,
+                1000000006,
+                "trace_hash1",
+            );
+            let result2 = decoder.decode(
+                "hash_obj2",
+                &[fragment2],
+                &algorithm_id,
+                1000000007,
+                "trace_hash2",
+            );
 
-            assert!(result1.is_ok() && result2.is_ok(), "Both hash operations should succeed");
+            assert!(
+                result1.is_ok() && result2.is_ok(),
+                "Both hash operations should succeed"
+            );
             if let (Ok(decode1), Ok(decode2)) = (result1, result2) {
-                assert_ne!(decode1.proof.as_ref().unwrap().output_hash, decode2.proof.as_ref().unwrap().output_hash, "Different inputs should produce different output hashes");
-                assert_ne!(decode1.proof.as_ref().unwrap().proof_id, decode2.proof.as_ref().unwrap().proof_id, "Different outputs should have different proof IDs");
+                assert_ne!(
+                    decode1.proof.as_ref().unwrap().output_hash,
+                    decode2.proof.as_ref().unwrap().output_hash,
+                    "Different inputs should produce different output hashes"
+                );
+                assert_ne!(
+                    decode1.proof.as_ref().unwrap().proof_id,
+                    decode2.proof.as_ref().unwrap().proof_id,
+                    "Different outputs should have different proof IDs"
+                );
             }
 
             // Test: Resource exhaustion through trace_id flooding
-            let mut decoder = ProofCarryingDecoder::new(ProofMode::Advisory, "trace_signer", "trace_secret");
+            let mut decoder =
+                ProofCarryingDecoder::new(ProofMode::Advisory, "trace_signer", "trace_secret");
             let fragment = Fragment::new("trace_frag", b"trace_data".to_vec());
             let algorithm_id = AlgorithmId::new("simple_concat");
             let massive_trace_id = "x".repeat(100_000); // 100KB trace ID
-            let result = decoder.decode("trace_obj", &[fragment], &algorithm_id, 1000000008, &massive_trace_id);
-            assert!(result.is_ok(), "Massive trace_id should be handled gracefully");
+            let result = decoder.decode(
+                "trace_obj",
+                &[fragment],
+                &algorithm_id,
+                1000000008,
+                &massive_trace_id,
+            );
+            assert!(
+                result.is_ok(),
+                "Massive trace_id should be handled gracefully"
+            );
             if let Ok(decode_result) = result {
-                assert_eq!(decode_result.proof.as_ref().unwrap().trace_id, massive_trace_id, "Massive trace_id should be preserved");
+                assert_eq!(
+                    decode_result.proof.as_ref().unwrap().trace_id,
+                    massive_trace_id,
+                    "Massive trace_id should be preserved"
+                );
             }
 
             // Test: Serialization format injection resistance in proof generation
-            let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "serial_signer", "serial_secret");
-            let malicious_fragment = Fragment::new("injection_frag", br#"{"malicious":"json","command":"rm -rf /"}"#.to_vec());
+            let mut decoder =
+                ProofCarryingDecoder::new(ProofMode::Mandatory, "serial_signer", "serial_secret");
+            let malicious_fragment = Fragment::new(
+                "injection_frag",
+                br#"{"malicious":"json","command":"rm -rf /"}"#.to_vec(),
+            );
             let algorithm_id = AlgorithmId::new("simple_concat");
             let malicious_object_id = r#"</proof><script>alert('xss')</script><proof>"#;
             let malicious_trace_id = r#"'; DROP TABLE proofs; --"#;
 
-            let result = decoder.decode(malicious_object_id, &[malicious_fragment], &algorithm_id, 1000000009, malicious_trace_id);
-            assert!(result.is_ok(), "Serialization injection should be handled safely");
+            let result = decoder.decode(
+                malicious_object_id,
+                &[malicious_fragment],
+                &algorithm_id,
+                1000000009,
+                malicious_trace_id,
+            );
+            assert!(
+                result.is_ok(),
+                "Serialization injection should be handled safely"
+            );
             if let Ok(decode_result) = result {
                 // Proof should contain the malicious strings as-is but not execute them
-                assert_eq!(decode_result.proof.as_ref().unwrap().object_id, malicious_object_id);
-                assert_eq!(decode_result.proof.as_ref().unwrap().trace_id, malicious_trace_id);
+                assert_eq!(
+                    decode_result.proof.as_ref().unwrap().object_id,
+                    malicious_object_id
+                );
+                assert_eq!(
+                    decode_result.proof.as_ref().unwrap().trace_id,
+                    malicious_trace_id
+                );
                 // Data should be preserved exactly without interpretation
-                assert_eq!(decode_result.output_data, br#"{"malicious":"json","command":"rm -rf /"}"#);
+                assert_eq!(
+                    decode_result.output_data,
+                    br#"{"malicious":"json","command":"rm -rf /"}"#
+                );
             }
 
             // Test: Fragment count arithmetic boundary validation
-            let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "count_signer", "count_secret");
+            let mut decoder =
+                ProofCarryingDecoder::new(ProofMode::Mandatory, "count_signer", "count_secret");
             let single_fragment = Fragment::new("count_frag", b"count_data".to_vec());
             let algorithm_id = AlgorithmId::new("simple_concat");
-            let result = decoder.decode("count_obj", &[single_fragment], &algorithm_id, 1000000010, "trace_count");
-            assert!(result.is_ok(), "Single fragment should be processed correctly");
+            let result = decoder.decode(
+                "count_obj",
+                &[single_fragment],
+                &algorithm_id,
+                1000000010,
+                "trace_count",
+            );
+            assert!(
+                result.is_ok(),
+                "Single fragment should be processed correctly"
+            );
             if let Ok(decode_result) = result {
-                assert_eq!(decode_result.proof.as_ref().unwrap().fragment_count, 1, "Fragment count should be accurate");
+                assert_eq!(
+                    decode_result.proof.as_ref().unwrap().fragment_count,
+                    1,
+                    "Fragment count should be accurate"
+                );
                 // Verify that fragment_count is used consistently in hash computation
-                assert!(decode_result.proof.as_ref().unwrap().attestation.payload_hash.len() > 0, "Payload hash should be computed");
+                assert!(
+                    decode_result
+                        .proof
+                        .as_ref()
+                        .unwrap()
+                        .attestation
+                        .payload_hash
+                        .len()
+                        > 0,
+                    "Payload hash should be computed"
+                );
             }
 
             // Test: Signing secret boundary conditions
-            let empty_secret_decoder = ProofCarryingDecoder::new(ProofMode::Advisory, "empty_secret_signer", "");
+            let empty_secret_decoder =
+                ProofCarryingDecoder::new(ProofMode::Advisory, "empty_secret_signer", "");
             let mut decoder = empty_secret_decoder;
             let fragment = Fragment::new("secret_frag", b"secret_data".to_vec());
             let algorithm_id = AlgorithmId::new("simple_concat");
-            let result = decoder.decode("secret_obj", &[fragment], &algorithm_id, 1000000011, "trace_secret");
+            let result = decoder.decode(
+                "secret_obj",
+                &[fragment],
+                &algorithm_id,
+                1000000011,
+                "trace_secret",
+            );
             assert!(result.is_ok(), "Empty signing secret should be allowed");
             if let Ok(decode_result) = result {
-                assert!(decode_result.proof.as_ref().unwrap().attestation.signature.len() > 0, "Signature should still be generated");
+                assert!(
+                    decode_result
+                        .proof
+                        .as_ref()
+                        .unwrap()
+                        .attestation
+                        .signature
+                        .len()
+                        > 0,
+                    "Signature should still be generated"
+                );
             }
         }
     }
@@ -1444,6 +1925,8 @@ impl ProofVerificationApi {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+    use proptest::string::string_regex;
 
     fn test_fragments() -> Vec<Fragment> {
         vec![
@@ -2110,33 +2593,96 @@ mod tests {
 
     // ── Determinism test (INV-REPAIR-PROOF-DETERMINISTIC) ──
 
-    #[test]
-    fn test_proof_deterministic() {
-        let frags = test_fragments();
-        let mut dec1 = decoder();
-        let mut dec2 = decoder();
-        let r1 = dec1
-            .decode(
-                "obj-001",
-                &frags,
-                &AlgorithmId::new("simple_concat"),
-                1000,
-                "t-1",
-            )
-            .unwrap();
-        let r2 = dec2
-            .decode(
-                "obj-001",
-                &frags,
-                &AlgorithmId::new("simple_concat"),
-                1000,
-                "t-1",
-            )
-            .unwrap();
-        let p1 = r1.proof.unwrap();
-        let p2 = r2.proof.unwrap();
-        assert_hash_eq(&p1.output_hash, &p2.output_hash);
-        assert_hash_eq(&p1.attestation.signature, &p2.attestation.signature);
+    proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(100))]
+
+        #[test]
+        fn test_proof_deterministic(
+            object_id in string_regex("obj-[a-z0-9_-]{1,24}").expect("object id regex should compile"),
+            trace_id in string_regex("trace-[a-z0-9_-]{1,24}").expect("trace id regex should compile"),
+            timestamp_epoch_secs in any::<u64>(),
+            algorithm_id in prop_oneof![
+                Just(AlgorithmId::new("reed_solomon_8_4")),
+                Just(AlgorithmId::new("xor_parity_2")),
+                Just(AlgorithmId::new("simple_concat")),
+            ],
+            fragments in prop::collection::vec(
+                (
+                    string_regex("frag-[a-z0-9_-]{1,24}")
+                        .expect("fragment id regex should compile"),
+                    prop::collection::vec(any::<u8>(), 0..=128),
+                ),
+                1..=8,
+            ),
+        ) {
+            let fragments = fragments
+                .into_iter()
+                .map(|(fragment_id, data)| Fragment { fragment_id, data })
+                .collect::<Vec<_>>();
+            let mut dec1 = decoder();
+            let mut dec2 = decoder();
+            let first = dec1
+                .decode(
+                    &object_id,
+                    &fragments,
+                    &algorithm_id,
+                    timestamp_epoch_secs,
+                    &trace_id,
+                )
+                .map_err(|err| {
+                    TestCaseError::fail(format!(
+                        "first decode unexpectedly failed for deterministic case: {err}"
+                    ))
+                })?;
+            let second = dec2
+                .decode(
+                    &object_id,
+                    &fragments,
+                    &algorithm_id,
+                    timestamp_epoch_secs,
+                    &trace_id,
+                )
+                .map_err(|err| {
+                    TestCaseError::fail(format!(
+                        "second decode unexpectedly failed for deterministic case: {err}"
+                    ))
+                })?;
+
+            prop_assert_eq!(
+                &first.output_data,
+                &second.output_data,
+                "decode output bytes should be identical for the same inputs"
+            );
+
+            let first_proof = first.proof.as_ref().ok_or_else(|| {
+                TestCaseError::fail("first decode unexpectedly omitted repair proof")
+            })?;
+            let second_proof = second.proof.as_ref().ok_or_else(|| {
+                TestCaseError::fail("second decode unexpectedly omitted repair proof")
+            })?;
+
+            prop_assert_eq!(
+                first_proof,
+                second_proof,
+                "repair proof structure changed across identical inputs"
+            );
+
+            let first_bytes = serde_json::to_vec(&first_proof).map_err(|err| {
+                TestCaseError::fail(format!(
+                    "failed serializing first proof for deterministic comparison: {err}"
+                ))
+            })?;
+            let second_bytes = serde_json::to_vec(&second_proof).map_err(|err| {
+                TestCaseError::fail(format!(
+                    "failed serializing second proof for deterministic comparison: {err}"
+                ))
+            })?;
+            prop_assert_eq!(
+                first_bytes,
+                second_bytes,
+                "serialized proof bytes changed across identical inputs"
+            );
+        }
     }
 
     // ── Metamorphic proof-binding tests ──
@@ -2849,7 +3395,13 @@ mod tests {
 
         // Control characters should not break hash computation
         assert!(!proof.attestation.payload_hash.is_empty());
-        assert!(proof.attestation.payload_hash.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(
+            proof
+                .attestation
+                .payload_hash
+                .chars()
+                .all(|c| c.is_ascii_hexdigit())
+        );
     }
 
     #[test]
@@ -2866,7 +3418,10 @@ mod tests {
         assert!(dec.registered_algorithms().len() <= MAX_REGISTERED_ALGORITHMS);
 
         // Latest algorithms should be preserved (oldest dropped)
-        let last_algo = AlgorithmId::new(format!("algo-{}", MAX_REGISTERED_ALGORITHMS.saturating_add(9)));
+        let last_algo = AlgorithmId::new(format!(
+            "algo-{}",
+            MAX_REGISTERED_ALGORITHMS.saturating_add(9)
+        ));
         assert!(dec.registered_algorithms().contains(&last_algo));
 
         // Original algorithms may have been evicted
@@ -2930,7 +3485,10 @@ mod tests {
             }
             Err(err) => {
                 // If it fails, should be a proper error, not a panic
-                assert!(matches!(err, ProofCarryingDecodeError::ReconstructionFailed { .. }));
+                assert!(matches!(
+                    err,
+                    ProofCarryingDecodeError::ReconstructionFailed { .. }
+                ));
             }
         }
     }
@@ -2995,11 +3553,11 @@ mod tests {
         };
 
         let result = dec.decode(
-            "",  // Empty object ID
+            "", // Empty object ID
             &[tiny_fragment],
             &AlgorithmId::new("simple_concat"),
-            0,   // Zero timestamp
-            "",  // Empty trace ID
+            0,  // Zero timestamp
+            "", // Empty trace ID
         );
 
         assert!(result.is_ok());
@@ -3074,9 +3632,18 @@ mod tests {
 
         // Create fragments with potentially problematic data
         let malformed_fragments = vec![
-            Fragment { fragment_id: "null-bytes".into(), data: vec![0, 1, 2, 0, 3] },
-            Fragment { fragment_id: "high-bytes".into(), data: vec![255, 254, 253, 252] },
-            Fragment { fragment_id: "empty".into(), data: vec![] },
+            Fragment {
+                fragment_id: "null-bytes".into(),
+                data: vec![0, 1, 2, 0, 3],
+            },
+            Fragment {
+                fragment_id: "high-bytes".into(),
+                data: vec![255, 254, 253, 252],
+            },
+            Fragment {
+                fragment_id: "empty".into(),
+                data: vec![],
+            },
         ];
 
         let result = dec.decode(
@@ -3092,7 +3659,10 @@ mod tests {
         let decode_result = result.unwrap();
 
         // Verify reconstruction worked despite unusual byte values
-        assert_eq!(decode_result.reconstructed_data, vec![0, 1, 2, 0, 3, 255, 254, 253, 252]);
+        assert_eq!(
+            decode_result.reconstructed_data,
+            vec![0, 1, 2, 0, 3, 255, 254, 253, 252]
+        );
 
         // Proof should be generated correctly
         let proof = decode_result.proof.expect("proof should exist");
@@ -3161,9 +3731,18 @@ mod tests {
         let mut dec = decoder();
 
         let unicode_fragments = vec![
-            Fragment { fragment_id: "测试-fragment-🦀".into(), data: b"rust".to_vec() },
-            Fragment { fragment_id: "fragment with spaces".into(), data: b"space".to_vec() },
-            Fragment { fragment_id: "fragment\nwith\twhitespace".into(), data: b"whitespace".to_vec() },
+            Fragment {
+                fragment_id: "测试-fragment-🦀".into(),
+                data: b"rust".to_vec(),
+            },
+            Fragment {
+                fragment_id: "fragment with spaces".into(),
+                data: b"space".to_vec(),
+            },
+            Fragment {
+                fragment_id: "fragment\nwith\twhitespace".into(),
+                data: b"whitespace".to_vec(),
+            },
         ];
 
         let result = dec.decode(
@@ -3240,7 +3819,11 @@ mod tests {
         assert_eq!(dec.audit_log().len(), 2);
 
         // Should contain the most recent entries (obj-3, obj-4)
-        let object_ids: Vec<&str> = dec.audit_log().iter().map(|e| e.object_id.as_str()).collect();
+        let object_ids: Vec<&str> = dec
+            .audit_log()
+            .iter()
+            .map(|e| e.object_id.as_str())
+            .collect();
         assert!(object_ids.contains(&"obj-3"));
         assert!(object_ids.contains(&"obj-4"));
 
@@ -3255,9 +3838,18 @@ mod tests {
 
         // Create multiple fragments with identical data
         let identical_fragments = vec![
-            Fragment { fragment_id: "dup1".into(), data: b"same-data".to_vec() },
-            Fragment { fragment_id: "dup2".into(), data: b"same-data".to_vec() },
-            Fragment { fragment_id: "dup3".into(), data: b"same-data".to_vec() },
+            Fragment {
+                fragment_id: "dup1".into(),
+                data: b"same-data".to_vec(),
+            },
+            Fragment {
+                fragment_id: "dup2".into(),
+                data: b"same-data".to_vec(),
+            },
+            Fragment {
+                fragment_id: "dup3".into(),
+                data: b"same-data".to_vec(),
+            },
         ];
 
         let result = dec.decode(
@@ -3272,7 +3864,10 @@ mod tests {
         let decode_result = result.unwrap();
 
         // Should concatenate identical data
-        assert_eq!(decode_result.reconstructed_data, b"same-datasame-datasame-data");
+        assert_eq!(
+            decode_result.reconstructed_data,
+            b"same-datasame-datasame-data"
+        );
 
         // Proof should have separate hashes for each fragment despite identical data
         let proof = decode_result.proof.expect("proof should exist");
@@ -3353,8 +3948,8 @@ mod tests {
         let mut corrupted2 = proof.attestation.signature.clone();
 
         if !corrupted1.is_empty() {
-            corrupted1[0] ^= 0x01;  // Flip first bit
-            corrupted2[0] ^= 0x02;  // Flip second bit
+            corrupted1[0] ^= 0x01; // Flip first bit
+            corrupted2[0] ^= 0x02; // Flip second bit
         }
 
         proof.attestation.signature = corrupted1;
@@ -3405,17 +4000,12 @@ mod tests {
             AlgorithmId::new("algo\x00hidden"),
             AlgorithmId::new("algo\nnewline"),
             AlgorithmId::new("algo\u{202e}reverse\u{202c}"),
-            AlgorithmId::new(""),  // Empty algorithm
+            AlgorithmId::new(""), // Empty algorithm
         ];
 
         for algo in malicious_algos {
-            let result = decoder().decode(
-                "injection-obj",
-                &fragments,
-                &algo,
-                1000,
-                "injection-trace",
-            );
+            let result =
+                decoder().decode("injection-obj", &fragments, &algo, 1000, "injection-trace");
 
             // Should either succeed safely or fail gracefully
             if let Ok(decode_result) = result {
@@ -3454,7 +4044,7 @@ mod tests {
     fn test_decode_fragment_count_overflow_edge() {
         // Test with maximum possible fragment count
         let fragments: Vec<Fragment> = (0..u32::MAX as usize)
-            .take(1000)  // Limit to reasonable size for testing
+            .take(1000) // Limit to reasonable size for testing
             .map(|i| Fragment {
                 fragment_id: format!("frag-{}", i),
                 data: vec![i as u8; 1],
@@ -3498,11 +4088,11 @@ mod tests {
                 algorithm_id: "valid".to_string(),
                 fragment_count: u32::MAX,
                 input_fragment_hashes: vec!["invalid-hash".to_string(); 5],
-                output_hash: "\x00\x01\x02".to_string(),  // Invalid hex
+                output_hash: "\x00\x01\x02".to_string(), // Invalid hex
                 epoch_seconds: u64::MAX,
                 attestation: SignedAttestation {
                     payload_hash: "not-hex".to_string(),
-                    signature: vec![0xFF; 1024 * 1024],  // Massive signature
+                    signature: vec![0xFF; 1024 * 1024], // Massive signature
                 },
             },
         ];
@@ -3522,11 +4112,8 @@ mod tests {
     #[test]
     fn test_audit_log_capacity_boundary_behavior() {
         let fragments = test_fragments();
-        let mut decoder = ProofCarryingDecoder::new(
-            ProofMode::Mandatory,
-            "boundary-test",
-            "test-secret"
-        );
+        let mut decoder =
+            ProofCarryingDecoder::new(ProofMode::Mandatory, "boundary-test", "test-secret");
 
         // Fill audit log to capacity
         for i in 0..DEFAULT_MAX_AUDIT_LOG_ENTRIES + 10 {
@@ -3545,21 +4132,25 @@ mod tests {
 
         // Most recent entries should be preserved
         let last_entry = audit_entries.last().unwrap();
-        assert!(last_entry.object_id.contains(&format!("{}", DEFAULT_MAX_AUDIT_LOG_ENTRIES + 9)));
+        assert!(
+            last_entry
+                .object_id
+                .contains(&format!("{}", DEFAULT_MAX_AUDIT_LOG_ENTRIES + 9))
+        );
     }
 
     #[test]
     fn negative_proof_carrying_comprehensive_unicode_injection_attack() {
         // Test comprehensive Unicode injection resistance across all proof fields
         let malicious_patterns = [
-            "\u{202E}\u{202D}fake_algorithm\u{202C}",    // Right-to-left override
-            "obj\u{000A}\u{000D}injected\x00nulls",      // CRLF + null injection
-            "\u{FEFF}bom\u{FFFE}reversed_bom",           // BOM injection
-            "\u{200B}\u{200C}\u{200D}zero_width",       // Zero-width characters
-            "控制字符\u{007F}\u{0001}\u{001F}",          // Control chars with Unicode
-            "\u{FFFF}\u{FFFE}\u{FDD0}\u{FDD1}",         // Non-characters
-            "🏴‍☠️💻\u{1F4A5}💥\u{1F52B}🔫",              // Emoji sequences
-            "\u{0300}\u{0301}\u{0302}combining_marks",   // Combining marks
+            "\u{202E}\u{202D}fake_algorithm\u{202C}", // Right-to-left override
+            "obj\u{000A}\u{000D}injected\x00nulls",   // CRLF + null injection
+            "\u{FEFF}bom\u{FFFE}reversed_bom",        // BOM injection
+            "\u{200B}\u{200C}\u{200D}zero_width",     // Zero-width characters
+            "控制字符\u{007F}\u{0001}\u{001F}",       // Control chars with Unicode
+            "\u{FFFF}\u{FFFE}\u{FDD0}\u{FDD1}",       // Non-characters
+            "🏴‍☠️💻\u{1F4A5}💥\u{1F52B}🔫",             // Emoji sequences
+            "\u{0300}\u{0301}\u{0302}combining_marks", // Combining marks
         ];
 
         for (i, pattern) in malicious_patterns.iter().enumerate() {
@@ -3603,11 +4194,8 @@ mod tests {
             assert!(proof.output_hash.chars().all(|c| c.is_ascii_hexdigit()));
 
             // Test verification with Unicode patterns
-            let verification = verification_api().verify(
-                &proof,
-                &original_hashes(&fragments),
-                &proof.output_hash,
-            );
+            let verification =
+                verification_api().verify(&proof, &original_hashes(&fragments), &proof.output_hash);
             assert_eq!(verification, VerificationResult::Valid);
         }
     }
@@ -3632,7 +4220,9 @@ mod tests {
             // Unicode overflow attempts
             "算法".repeat(50_000),
             // Binary data disguised as algorithm ID
-            std::str::from_utf8(&vec![0xFF, 0xFE, 0xFD, 0xFC]).unwrap_or("fallback").to_string(),
+            std::str::from_utf8(&vec![0xFF, 0xFE, 0xFD, 0xFC])
+                .unwrap_or("fallback")
+                .to_string(),
             // Control character injection
             format!("algo\r\n\t\x08\x1B[{}H", 999),
         ];
@@ -3660,7 +4250,10 @@ mod tests {
                     if let Some(proof) = decode_result.proof {
                         // Proof structure should remain valid
                         assert!(!proof.algorithm_id.is_empty());
-                        assert_eq!(proof.fragment_count, u32::try_from(fragments.len()).unwrap_or(u32::MAX));
+                        assert_eq!(
+                            proof.fragment_count,
+                            u32::try_from(fragments.len()).unwrap_or(u32::MAX)
+                        );
                     }
                 }
                 Err(_) => {
@@ -3714,11 +4307,7 @@ mod tests {
                     modified_proof.attestation.signature[byte_idx] ^= 1 << bit_idx;
 
                     // Verification should be constant-time regardless of where the error is
-                    let result = api.verify(
-                        &modified_proof,
-                        &fragment_hashes,
-                        &proof.output_hash,
-                    );
+                    let result = api.verify(&modified_proof, &fragment_hashes, &proof.output_hash);
 
                     // Should always be Invalid (unless we accidentally created a valid signature)
                     assert_eq!(result, VerificationResult::Invalid);
@@ -3727,10 +4316,10 @@ mod tests {
 
             // Test with completely wrong signatures of various lengths
             let wrong_signatures = [
-                vec![],                                      // Empty signature
-                vec![0x00; 32],                             // All zeros
-                vec![0xFF; 32],                             // All ones
-                vec![0xAA; 64],                             // Alternating pattern
+                vec![],                                        // Empty signature
+                vec![0x00; 32],                                // All zeros
+                vec![0xFF; 32],                                // All ones
+                vec![0xAA; 64],                                // Alternating pattern
                 (0..256).map(|i| i as u8).collect::<Vec<_>>(), // Sequence pattern
             ];
 
@@ -3738,11 +4327,7 @@ mod tests {
                 let mut wrong_proof = proof.clone();
                 wrong_proof.attestation.signature = wrong_sig;
 
-                let result = api.verify(
-                    &wrong_proof,
-                    &fragment_hashes,
-                    &proof.output_hash,
-                );
+                let result = api.verify(&wrong_proof, &fragment_hashes, &proof.output_hash);
 
                 assert_eq!(result, VerificationResult::Invalid);
             }
@@ -3800,8 +4385,11 @@ mod tests {
         // All fragment hashes should be different despite similar data
         let mut unique_hashes = std::collections::HashSet::new();
         for hash in &proof.input_fragment_hashes {
-            assert!(unique_hashes.insert(hash.clone()),
-                   "Hash collision detected: {} appears multiple times", hash);
+            assert!(
+                unique_hashes.insert(hash.clone()),
+                "Hash collision detected: {} appears multiple times",
+                hash
+            );
             assert_eq!(hash.len(), 64);
             assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
         }
@@ -3835,11 +4423,15 @@ mod tests {
                     data: data.clone(),
                 };
 
-                let computed_hash = fragment_hash_hex(&test_fragment.fragment_id, &test_fragment.data);
+                let computed_hash =
+                    fragment_hash_hex(&test_fragment.fragment_id, &test_fragment.data);
 
                 // Extremely unlikely to match target (should be cryptographically impossible)
-                assert_ne!(computed_hash, *target,
-                          "Potential preimage found for {}: fragment {:?}", target, test_fragment);
+                assert_ne!(
+                    computed_hash, *target,
+                    "Potential preimage found for {}: fragment {:?}",
+                    target, test_fragment
+                );
             }
         }
     }
@@ -3868,13 +4460,21 @@ mod tests {
             // Null byte injection
             &format!("{}\x00{}", &json_str[..50], &json_str[50..]),
             // Binary data injection
-            &format!("{}\\u0000\\u0001\\u0002{}", &json_str[..100], &json_str[100..]),
+            &format!(
+                "{}\\u0000\\u0001\\u0002{}",
+                &json_str[..100],
+                &json_str[100..]
+            ),
         ];
 
         for (i, corrupted_json) in corruption_patterns.iter().enumerate() {
             // Deserialization should fail gracefully
             let result: Result<RepairProof, _> = serde_json::from_str(corrupted_json);
-            assert!(result.is_err(), "Corrupted JSON {} should not deserialize successfully", i);
+            assert!(
+                result.is_err(),
+                "Corrupted JSON {} should not deserialize successfully",
+                i
+            );
         }
 
         // Test field-level corruption in valid JSON structure
@@ -3889,12 +4489,18 @@ mod tests {
         json_value["fragment_count"] = serde_json::Value::String("not_a_number".to_string());
         let corrupted = serde_json::to_string(&json_value).unwrap();
         let result: Result<RepairProof, _> = serde_json::from_str(&corrupted);
-        assert!(result.is_err(), "String fragment_count should not deserialize");
+        assert!(
+            result.is_err(),
+            "String fragment_count should not deserialize"
+        );
 
         json_value["epoch_seconds"] = serde_json::Value::Number((-1).into());
         let corrupted = serde_json::to_string(&json_value).unwrap();
         let result: Result<RepairProof, _> = serde_json::from_str(&corrupted);
-        assert!(result.is_err(), "Negative epoch_seconds should not deserialize");
+        assert!(
+            result.is_err(),
+            "Negative epoch_seconds should not deserialize"
+        );
 
         // Test very large field values
         json_value["fragment_count"] = serde_json::Value::Number((u64::MAX).into());
@@ -3914,24 +4520,23 @@ mod tests {
     #[test]
     fn negative_concurrent_decode_operations_audit_trail_consistency() {
         // Simulate concurrent decode operations to test audit trail consistency
-        let mut decoder = ProofCarryingDecoder::new(
-            ProofMode::Mandatory,
-            "concurrent-test",
-            "test-secret",
-        );
+        let mut decoder =
+            ProofCarryingDecoder::new(ProofMode::Mandatory, "concurrent-test", "test-secret");
 
         // Prepare multiple fragment sets for concurrent operations
         let fragment_sets: Vec<Vec<Fragment>> = (0..20)
-            .map(|i| vec![
-                Fragment {
-                    fragment_id: format!("concurrent_frag_1_{}", i),
-                    data: format!("data_set_{}_part_1", i).as_bytes().to_vec(),
-                },
-                Fragment {
-                    fragment_id: format!("concurrent_frag_2_{}", i),
-                    data: format!("data_set_{}_part_2", i).as_bytes().to_vec(),
-                },
-            ])
+            .map(|i| {
+                vec![
+                    Fragment {
+                        fragment_id: format!("concurrent_frag_1_{}", i),
+                        data: format!("data_set_{}_part_1", i).as_bytes().to_vec(),
+                    },
+                    Fragment {
+                        fragment_id: format!("concurrent_frag_2_{}", i),
+                        data: format!("data_set_{}_part_2", i).as_bytes().to_vec(),
+                    },
+                ]
+            })
             .collect();
 
         // Simulate rapid concurrent decode operations
@@ -3978,8 +4583,10 @@ mod tests {
         // Verify audit entries are properly ordered by timestamp
         let mut prev_timestamp = 0;
         for entry in final_audit {
-            assert!(entry.timestamp_epoch_secs >= prev_timestamp,
-                   "Audit entries should be chronologically ordered");
+            assert!(
+                entry.timestamp_epoch_secs >= prev_timestamp,
+                "Audit entries should be chronologically ordered"
+            );
             prev_timestamp = entry.timestamp_epoch_secs;
         }
 
@@ -3992,7 +4599,10 @@ mod tests {
         for entry in decoder.audit_log() {
             if entry.event_code == REPAIR_PROOF_EMITTED && !entry.object_id.is_empty() {
                 // Verify the proof structure is valid
-                assert!(entry.trace_id.starts_with("concurrent_trace_") || entry.trace_id == "serial_trace");
+                assert!(
+                    entry.trace_id.starts_with("concurrent_trace_")
+                        || entry.trace_id == "serial_trace"
+                );
                 assert!(entry.timestamp_epoch_secs >= 6000);
             }
         }
@@ -4082,16 +4692,18 @@ mod tests {
             // Periodically check memory usage doesn't grow unbounded
             if i % 100 == 0 {
                 let audit_entries = decoder.audit_log();
-                assert!(audit_entries.len() <= DEFAULT_MAX_AUDIT_LOG_ENTRIES,
-                       "Audit log should not exceed maximum capacity");
+                assert!(
+                    audit_entries.len() <= DEFAULT_MAX_AUDIT_LOG_ENTRIES,
+                    "Audit log should not exceed maximum capacity"
+                );
             }
         }
 
         // Test 4: String field length attacks
         let string_attacks = [
-            "x".repeat(1_000_000),           // 1MB string
-            "🚀".repeat(500_000),           // Unicode with multi-byte characters
-            "\x00".repeat(100_000),         // Null bytes
+            "x".repeat(1_000_000),  // 1MB string
+            "🚀".repeat(500_000),   // Unicode with multi-byte characters
+            "\x00".repeat(100_000), // Null bytes
         ];
 
         for (i, attack_string) in string_attacks.iter().enumerate() {
@@ -4156,7 +4768,8 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
         ];
 
         let proof_template = RepairProof {
-            fragment_hashes: test_fragments.iter()
+            fragment_hashes: test_fragments
+                .iter()
                 .map(|f| compute_fragment_hash(f))
                 .collect(),
             algorithm_id: RepairAlgorithm::ReedSolomonRS255_223,
@@ -4170,25 +4783,20 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             "0".repeat(64),
             "1".repeat(64),
             "f".repeat(64),
-
             // Signatures that differ at specific bit positions
             format!("0{}", "a".repeat(63)),
             format!("{}0", "a".repeat(63)),
             format!("{}{}0", "a".repeat(32), "b".repeat(31)),
-
             // Mixed case attempts (invalid format, should fail fast)
             "AAAA".repeat(16),
             "aAAA".repeat(16),
-
             // Length variations
             "short",
             "a".repeat(128), // Double length
             "",
-
             // Unicode injection attempts
             "test\u{202E}gnicnuob\u{202D}signature",
             "sig\u{0000}null\u{FEFF}nature",
-
             // Control character injection
             "sig\r\n\t\x08nature",
             "sig\x00\x01\x02nature",
@@ -4217,7 +4825,8 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                 durations.push(start.elapsed());
             }
 
-            let avg_duration = durations.iter().sum::<std::time::Duration>() / samples_per_signature as u32;
+            let avg_duration =
+                durations.iter().sum::<std::time::Duration>() / samples_per_signature as u32;
             timing_results.insert(signature.clone(), avg_duration);
         }
 
@@ -4240,9 +4849,13 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
         }
 
         // Conservative threshold for timing attack resistance
-        assert!(timing_variance < 3.0,
+        assert!(
+            timing_variance < 3.0,
             "Signature verification timing variance too high: {:.2}x (min: {:?}, max: {:?})",
-            timing_variance, min_time, max_time);
+            timing_variance,
+            min_time,
+            max_time
+        );
     }
 
     #[test]
@@ -4259,24 +4872,31 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             (b"data".to_vec(), b"data\x00padding".to_vec()),
             (b"key=value".to_vec(), b"key=value&".to_vec()),
             (b"fragment".to_vec(), b"fragment\x01\x02\x03".to_vec()),
-
             // Unicode normalization attacks
-            ("test".as_bytes().to_vec(), "te\u{0301}st".as_bytes().to_vec()),
-            ("file".as_bytes().to_vec(), "file\u{200B}".as_bytes().to_vec()),
-
+            (
+                "test".as_bytes().to_vec(),
+                "te\u{0301}st".as_bytes().to_vec(),
+            ),
+            (
+                "file".as_bytes().to_vec(),
+                "file\u{200B}".as_bytes().to_vec(),
+            ),
             // Boundary condition attacks
             (b"".to_vec(), b"\x00".to_vec()),
             (b"a".to_vec(), b"\x61".to_vec()),
             (b"123".to_vec(), b"123\x00".to_vec()),
-
             // Hash function domain attacks
-            (b"repair_proof_v1:data".to_vec(), b"different:repair_proof_v1:data".to_vec()),
-            (b"normal_fragment".to_vec(), b"repair_proof_v1:normal_fragment".to_vec()),
-
+            (
+                b"repair_proof_v1:data".to_vec(),
+                b"different:repair_proof_v1:data".to_vec(),
+            ),
+            (
+                b"normal_fragment".to_vec(),
+                b"repair_proof_v1:normal_fragment".to_vec(),
+            ),
             // Multi-byte sequence attacks
             (vec![0x41, 0x42], vec![0x41, 0x42, 0x00]),
             (vec![0xFF, 0xFE], vec![0xFF, 0xFE, 0xFD]),
-
             // Very similar binary data
             (vec![0x01; 1000], vec![0x02; 1000]),
             ((0..255).collect(), (1..=255).collect()),
@@ -4290,15 +4910,25 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             let hash2 = compute_fragment_hash(&fragment2);
 
             // Verify no hash collisions
-            assert_ne!(hash1, hash2,
+            assert_ne!(
+                hash1, hash2,
                 "Hash collision detected between fragments: {:?} vs {:?}",
-                fragment1, fragment2);
+                fragment1, fragment2
+            );
 
             // Verify hashes are well-distributed
-            assert!(seen_hashes.insert(hash1.clone()),
-                "Duplicate hash {} for fragment {:?}", hash1, fragment1);
-            assert!(seen_hashes.insert(hash2.clone()),
-                "Duplicate hash {} for fragment {:?}", hash2, fragment2);
+            assert!(
+                seen_hashes.insert(hash1.clone()),
+                "Duplicate hash {} for fragment {:?}",
+                hash1,
+                fragment1
+            );
+            assert!(
+                seen_hashes.insert(hash2.clone()),
+                "Duplicate hash {} for fragment {:?}",
+                hash2,
+                fragment2
+            );
 
             collision_tests.push((fragment1, fragment2, hash1, hash2));
         }
@@ -4334,8 +4964,10 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             // Results should be distinguishable (different outcomes or different evidence)
             match (result1, result2) {
                 (Ok(outcome1), Ok(outcome2)) => {
-                    assert_ne!(outcome1.output_hash, outcome2.output_hash,
-                        "Different fragments should produce different output hashes");
+                    assert_ne!(
+                        outcome1.output_hash, outcome2.output_hash,
+                        "Different fragments should produce different output hashes"
+                    );
                 }
                 _ => {
                     // Different success/failure patterns are also acceptable
@@ -4343,15 +4975,18 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             }
         }
 
-        println!("Hash collision resistance verified for {} unique fragment hashes", seen_hashes.len());
+        println!(
+            "Hash collision resistance verified for {} unique fragment hashes",
+            seen_hashes.len()
+        );
     }
 
     #[test]
     fn negative_audit_log_memory_exhaustion_and_rotation_attack_resistance() {
         let decoder = ProofCarryingDecoder::new(DecoderConfig {
             mode: ProofVerificationMode::Advisory, // Allow operations to proceed
-            max_audit_entries: 100, // Small limit for testing
-            audit_rotation_threshold: 50, // Trigger rotation early
+            max_audit_entries: 100,                // Small limit for testing
+            audit_rotation_threshold: 50,          // Trigger rotation early
         });
 
         // Test 1: Rapid audit log generation (memory exhaustion attempt)
@@ -4372,8 +5007,11 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
 
             // Verify audit log doesn't grow unbounded
             let audit_log = decoder.audit_log();
-            assert!(audit_log.len() <= 100,
-                "Audit log exceeded maximum entries: {} > 100", audit_log.len());
+            assert!(
+                audit_log.len() <= 100,
+                "Audit log exceeded maximum entries: {} > 100",
+                audit_log.len()
+            );
         }
 
         // Test 2: Audit log rotation consistency under concurrent access
@@ -4386,31 +5024,38 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
         let results = Arc::new(Mutex::new(Vec::new()));
 
         // Spawn multiple threads generating audit entries concurrently
-        let handles: Vec<_> = (0..20).map(|thread_id| {
-            let decoder_clone = decoder_arc.clone();
-            let results_clone = results.clone();
+        let handles: Vec<_> = (0..20)
+            .map(|thread_id| {
+                let decoder_clone = decoder_arc.clone();
+                let results_clone = results.clone();
 
-            thread::spawn(move || {
-                for i in 0..25 {
-                    let fragment = vec![(thread_id + i) as u8; 50];
-                    let proof = RepairProof {
-                        fragment_hashes: vec![compute_fragment_hash(&fragment)],
-                        algorithm_id: RepairAlgorithm::XorRecovery,
-                        output_hash: compute_fragment_hash(&fragment),
-                        attestation_signature: format!("concurrent_sig_{}_{}", thread_id, i),
-                    };
+                thread::spawn(move || {
+                    for i in 0..25 {
+                        let fragment = vec![(thread_id + i) as u8; 50];
+                        let proof = RepairProof {
+                            fragment_hashes: vec![compute_fragment_hash(&fragment)],
+                            algorithm_id: RepairAlgorithm::XorRecovery,
+                            output_hash: compute_fragment_hash(&fragment),
+                            attestation_signature: format!("concurrent_sig_{}_{}", thread_id, i),
+                        };
 
-                    let result = decoder_clone.decode_with_proof(
-                        &[fragment],
-                        &proof,
-                        format!("concurrent_test_{}_{}", thread_id, i),
-                    );
+                        let result = decoder_clone.decode_with_proof(
+                            &[fragment],
+                            &proof,
+                            format!("concurrent_test_{}_{}", thread_id, i),
+                        );
 
-                    let audit_len = decoder_clone.audit_log().len();
-                    results_clone.lock().unwrap().push((thread_id, i, audit_len, result.is_ok()));
-                }
+                        let audit_len = decoder_clone.audit_log().len();
+                        results_clone.lock().unwrap().push((
+                            thread_id,
+                            i,
+                            audit_len,
+                            result.is_ok(),
+                        ));
+                    }
+                })
             })
-        }).collect();
+            .collect();
 
         // Wait for all threads
         for handle in handles {
@@ -4421,21 +5066,40 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
         let final_audit_log = decoder_arc.audit_log();
 
         // Verify audit log bounds maintained under concurrent stress
-        assert!(final_audit_log.len() <= 50,
-            "Final audit log exceeded bounds: {} > 50", final_audit_log.len());
+        assert!(
+            final_audit_log.len() <= 50,
+            "Final audit log exceeded bounds: {} > 50",
+            final_audit_log.len()
+        );
 
         // Verify no data corruption in audit entries
         for entry in &final_audit_log {
-            assert!(!entry.event_code.is_empty(), "Event code should not be empty");
-            assert!(entry.timestamp_epoch_secs > 0, "Timestamp should be positive");
-            assert!(!entry.operation_id.is_empty(), "Operation ID should not be empty");
+            assert!(
+                !entry.event_code.is_empty(),
+                "Event code should not be empty"
+            );
+            assert!(
+                entry.timestamp_epoch_secs > 0,
+                "Timestamp should be positive"
+            );
+            assert!(
+                !entry.operation_id.is_empty(),
+                "Operation ID should not be empty"
+            );
         }
 
         // Verify all threads completed successfully
-        assert_eq!(final_results.len(), 20 * 25, "All operations should have completed");
+        assert_eq!(
+            final_results.len(),
+            20 * 25,
+            "All operations should have completed"
+        );
 
-        println!("Concurrent audit log test: {} operations, final log size: {}",
-            final_results.len(), final_audit_log.len());
+        println!(
+            "Concurrent audit log test: {} operations, final log size: {}",
+            final_results.len(),
+            final_audit_log.len()
+        );
     }
 
     #[test]
@@ -4455,21 +5119,30 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             let result = decoder.register_algorithm(algorithm);
 
             if i + initial_count < MAX_REGISTERED_ALGORITHMS {
-                assert!(result.is_ok(),
+                assert!(
+                    result.is_ok(),
                     "Should be able to register algorithm {} (total: {})",
-                    i, i + initial_count);
+                    i,
+                    i + initial_count
+                );
             } else {
-                assert!(result.is_err(),
-                    "Should reject algorithm registration beyond capacity: {}", i);
+                assert!(
+                    result.is_err(),
+                    "Should reject algorithm registration beyond capacity: {}",
+                    i
+                );
                 break;
             }
         }
 
         // Verify capacity limits enforced
         let final_count = decoder.registered_algorithms().len();
-        assert!(final_count <= MAX_REGISTERED_ALGORITHMS,
+        assert!(
+            final_count <= MAX_REGISTERED_ALGORITHMS,
             "Algorithm count should not exceed maximum: {} > {}",
-            final_count, MAX_REGISTERED_ALGORITHMS);
+            final_count,
+            MAX_REGISTERED_ALGORITHMS
+        );
 
         // Test malicious algorithm identifier injection
         let malicious_algorithm_ids = vec![
@@ -4477,26 +5150,21 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             "algorithm\r\nInjected\x00Content",
             "algo\x08\x08\x08attack",
             "test\x1b[31mRED\x1b[0malgo",
-
             // Unicode attacks
             "algo\u{202E}dooG\u{202D}Bad",
             "test\u{FEFF}\u{200B}hidden",
             "algo\u{10FFFF}\u{E000}private",
-
             // Path traversal attempts
             "../../../etc/passwd",
             "..\\windows\\system32\\config",
             "algo/../../inject",
-
             // XSS/injection patterns
             "<script>alert('xss')</script>",
             "'; DROP TABLE algorithms; --",
             "${jndi:ldap://evil.com/}",
-
             // Very long identifiers
             "x".repeat(100_000),
             "\u{1F4A9}".repeat(10_000), // Emoji bomb
-
             // Empty and whitespace
             "",
             " ",
@@ -4504,7 +5172,8 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
         ];
 
         for malicious_id in malicious_algorithm_ids {
-            let result = decoder.register_algorithm(RepairAlgorithm::Custom(malicious_id.to_string()));
+            let result =
+                decoder.register_algorithm(RepairAlgorithm::Custom(malicious_id.to_string()));
 
             match result {
                 Ok(_) => {
@@ -4520,8 +5189,10 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
 
                     if found {
                         // Verify malicious content is preserved exactly (no normalization)
-                        assert!(algorithms.len() <= MAX_REGISTERED_ALGORITHMS,
-                            "Algorithm list should remain bounded");
+                        assert!(
+                            algorithms.len() <= MAX_REGISTERED_ALGORITHMS,
+                            "Algorithm list should remain bounded"
+                        );
                     }
                 }
                 Err(_) => {
@@ -4532,7 +5203,8 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
 
         // Test algorithm deregistration with malicious IDs
         for malicious_id in ["../../../algo", "algo\x00injection"] {
-            let _result = decoder.deregister_algorithm(&RepairAlgorithm::Custom(malicious_id.to_string()));
+            let _result =
+                decoder.deregister_algorithm(&RepairAlgorithm::Custom(malicious_id.to_string()));
             // Should not crash or cause issues regardless of outcome
         }
 
@@ -4541,12 +5213,17 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
         for algorithm in &final_algorithms {
             if let RepairAlgorithm::Custom(id) = algorithm {
                 // All registered IDs should be non-empty after filtering
-                assert!(!id.is_empty(), "Algorithm ID should not be empty in final state");
+                assert!(
+                    !id.is_empty(),
+                    "Algorithm ID should not be empty in final state"
+                );
             }
         }
 
-        println!("Algorithm registry attack test completed with {} algorithms registered",
-            final_algorithms.len());
+        println!(
+            "Algorithm registry attack test completed with {} algorithms registered",
+            final_algorithms.len()
+        );
     }
 
     #[test]
@@ -4569,7 +5246,6 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                 output_hash: "f".repeat(64), // Deliberate mismatch
                 attestation_signature: "corruption_test_1".repeat(4),
             },
-
             // Algorithm mismatch corruption
             RepairProof {
                 fragment_hashes: vec!["0".repeat(64)], // Wrong hash
@@ -4577,7 +5253,6 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                 output_hash: base_hash.clone(),
                 attestation_signature: "corruption_test_2".repeat(4),
             },
-
             // Empty/malformed proof fields
             RepairProof {
                 fragment_hashes: vec![], // Empty hashes
@@ -4585,7 +5260,6 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                 output_hash: base_hash.clone(),
                 attestation_signature: "corruption_test_3".repeat(4),
             },
-
             // Signature corruption with various patterns
             RepairProof {
                 fragment_hashes: vec![base_hash.clone()],
@@ -4593,7 +5267,6 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                 output_hash: base_hash.clone(),
                 attestation_signature: "".to_string(), // Empty signature
             },
-
             // Very long corrupted fields
             RepairProof {
                 fragment_hashes: vec!["x".repeat(10000)], // Extremely long hash
@@ -4631,16 +5304,24 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                 match (first_result, result) {
                     (Ok(first_outcome), Ok(outcome)) => {
                         // If both succeed, outcomes should be identical
-                        assert_eq!(first_outcome.output_hash, outcome.output_hash,
-                            "Inconsistent outcome in scenario {} iteration {}", scenario_idx, iteration);
+                        assert_eq!(
+                            first_outcome.output_hash, outcome.output_hash,
+                            "Inconsistent outcome in scenario {} iteration {}",
+                            scenario_idx, iteration
+                        );
                     }
                     (Err(_), Err(_)) => {
                         // Consistent failure is expected for corrupted proofs
                     }
                     _ => {
                         // Inconsistent success/failure could indicate state corruption
-                        panic!("Inconsistent result type in scenario {} iteration {}: first={:?}, current={:?}",
-                            scenario_idx, iteration, first_result.is_ok(), result.is_ok());
+                        panic!(
+                            "Inconsistent result type in scenario {} iteration {}: first={:?}, current={:?}",
+                            scenario_idx,
+                            iteration,
+                            first_result.is_ok(),
+                            result.is_ok()
+                        );
                     }
                 }
             }
@@ -4673,23 +5354,37 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             // Valid proofs should continue to work after corruption attempts
             match valid_result {
                 Ok(outcome) => {
-                    assert_eq!(outcome.output_hash, base_hash,
-                        "Valid proof should produce expected outcome after corruption {}", i);
+                    assert_eq!(
+                        outcome.output_hash, base_hash,
+                        "Valid proof should produce expected outcome after corruption {}",
+                        i
+                    );
                 }
                 Err(e) => {
-                    panic!("Valid proof failed after corruption scenario {}: {:?}", i, e);
+                    panic!(
+                        "Valid proof failed after corruption scenario {}: {:?}",
+                        i, e
+                    );
                 }
             }
         }
 
         // Verify final audit log integrity
         let final_audit = decoder.audit_log();
-        assert!(final_audit.len() <= DEFAULT_MAX_AUDIT_LOG_ENTRIES,
-            "Audit log should remain bounded after corruption tests");
+        assert!(
+            final_audit.len() <= DEFAULT_MAX_AUDIT_LOG_ENTRIES,
+            "Audit log should remain bounded after corruption tests"
+        );
 
         for entry in final_audit.iter() {
-            assert!(!entry.event_code.is_empty(), "All audit entries should have valid event codes");
-            assert!(entry.timestamp_epoch_secs > 0, "All audit entries should have valid timestamps");
+            assert!(
+                !entry.event_code.is_empty(),
+                "All audit entries should have valid event codes"
+            );
+            assert!(
+                entry.timestamp_epoch_secs > 0,
+                "All audit entries should have valid timestamps"
+            );
         }
 
         println!("Proof verification corruption resistance test completed successfully");
@@ -4705,28 +5400,24 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                 max_audit_entries: 0,
                 audit_rotation_threshold: 0,
             },
-
             // Maximum capacity stress test
             DecoderConfig {
                 mode: ProofVerificationMode::Advisory,
                 max_audit_entries: usize::MAX,
                 audit_rotation_threshold: usize::MAX,
             },
-
             // Inverted thresholds (rotation > max)
             DecoderConfig {
                 mode: ProofVerificationMode::Mandatory,
                 max_audit_entries: 100,
                 audit_rotation_threshold: 1000, // Greater than max
             },
-
             // Minimum positive values
             DecoderConfig {
                 mode: ProofVerificationMode::Advisory,
                 max_audit_entries: 1,
                 audit_rotation_threshold: 1,
             },
-
             // Very large rotation threshold
             DecoderConfig {
                 mode: ProofVerificationMode::Mandatory,
@@ -4760,20 +5451,30 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             // Verify audit log respects configuration bounds
             let audit_log = decoder.audit_log();
             if config.max_audit_entries > 0 {
-                assert!(audit_log.len() <= config.max_audit_entries,
+                assert!(
+                    audit_log.len() <= config.max_audit_entries,
                     "Config {}: audit log {} exceeds max {}",
-                    config_idx, audit_log.len(), config.max_audit_entries);
+                    config_idx,
+                    audit_log.len(),
+                    config.max_audit_entries
+                );
             } else {
                 // Zero capacity should result in empty log
-                assert!(audit_log.is_empty(),
-                    "Config {}: zero capacity should produce empty log", config_idx);
+                assert!(
+                    audit_log.is_empty(),
+                    "Config {}: zero capacity should produce empty log",
+                    config_idx
+                );
             }
 
             // Verify operation outcome consistency regardless of config
             match result {
                 Ok(outcome) => {
-                    assert_eq!(outcome.output_hash, test_hash,
-                        "Config {}: outcome should be deterministic", config_idx);
+                    assert_eq!(
+                        outcome.output_hash, test_hash,
+                        "Config {}: outcome should be deterministic",
+                        config_idx
+                    );
                 }
                 Err(_) => {
                     // Some extreme configs may cause operations to fail, which is acceptable
@@ -4818,8 +5519,11 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             // Results should be consistent across iterations
             match (&baseline_result, &iteration_result) {
                 (Ok(baseline), Ok(iteration)) => {
-                    assert_eq!(baseline.output_hash, iteration.output_hash,
-                        "Iteration {}: output hash should be consistent", i);
+                    assert_eq!(
+                        baseline.output_hash, iteration.output_hash,
+                        "Iteration {}: output hash should be consistent",
+                        i
+                    );
                 }
                 (Err(_), Err(_)) => {
                     // Consistent failure is also acceptable
@@ -4844,36 +5548,30 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
         // Test various binary corruption and encoding attack vectors
         let encoding_attack_fragments = vec![
             // Binary corruption patterns
-            vec![0x00; 1000], // All null bytes
-            vec![0xFF; 1000], // All 0xFF bytes
+            vec![0x00; 1000],                                  // All null bytes
+            vec![0xFF; 1000],                                  // All 0xFF bytes
             (0..=255).cycle().take(1000).collect::<Vec<u8>>(), // Repeating pattern
-
             // UTF-8 boundary attacks
-            vec![0xC0, 0x80], // Overlong encoding for null
-            vec![0xED, 0xA0, 0x80], // High surrogate
-            vec![0xED, 0xBF, 0xBF], // Low surrogate
+            vec![0xC0, 0x80],             // Overlong encoding for null
+            vec![0xED, 0xA0, 0x80],       // High surrogate
+            vec![0xED, 0xBF, 0xBF],       // Low surrogate
             vec![0xF4, 0x90, 0x80, 0x80], // Beyond Unicode range
-
             // Binary patterns that could exploit parsers
             b"\xFF\xFE\x00\x00".to_vec(), // BOM variants
-            b"\xEF\xBB\xBF".to_vec(), // UTF-8 BOM
+            b"\xEF\xBB\xBF".to_vec(),     // UTF-8 BOM
             b"\x00\x00\xFE\xFF".to_vec(), // UTF-32 BOM
-
             // Control character floods
             vec![0x01; 1000], // SOH flood
             vec![0x1A; 1000], // SUB flood
             vec![0x7F; 1000], // DEL flood
-
             // Mixed binary/text corruption
             b"normal_text\x00\xFF\xFE\x00corrupt".to_vec(),
             b"\xDE\xAD\xBE\xEF".to_vec(), // Classic hex pattern
             b"valid_start\x00\x00\x00\x00\x00".to_vec(),
-
             // Extremely short and long patterns
-            vec![], // Empty
-            vec![0x42], // Single byte
+            vec![],                // Empty
+            vec![0x42],            // Single byte
             vec![0x42; 1_000_000], // 1MB of same byte
-
             // Patterns that could trigger integer overflows
             vec![0x80; 1000], // High bit set
             vec![0x40; 1000], // Pattern that could cause shifts
@@ -4907,18 +5605,24 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                     successful_repairs = successful_repairs.saturating_add(1);
 
                     // Verify output hash consistency
-                    assert_eq!(outcome.output_hash, fragment_hash,
-                        "Fragment {}: output hash should match expected", fragment_idx);
+                    assert_eq!(
+                        outcome.output_hash, fragment_hash,
+                        "Fragment {}: output hash should match expected",
+                        fragment_idx
+                    );
 
                     // Verify no memory corruption indicators
                     let audit_log = decoder.audit_log();
-                    assert!(audit_log.len() <= DEFAULT_MAX_AUDIT_LOG_ENTRIES,
-                        "Fragment {}: audit log should remain bounded", fragment_idx);
+                    assert!(
+                        audit_log.len() <= DEFAULT_MAX_AUDIT_LOG_ENTRIES,
+                        "Fragment {}: audit log should remain bounded",
+                        fragment_idx
+                    );
 
                     // Check for corruption detection in audit
                     let has_corruption_event = audit_log.iter().any(|entry| {
-                        entry.event_code == REPAIR_PROOF_INVALID ||
-                        entry.event_code == REPAIR_PROOF_MISSING
+                        entry.event_code == REPAIR_PROOF_INVALID
+                            || entry.event_code == REPAIR_PROOF_MISSING
                     });
 
                     if has_corruption_event {
@@ -4947,25 +5651,38 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                 format!("clean_followup_{}", fragment_idx),
             );
 
-            assert!(clean_result.is_ok(),
-                "Fragment {}: clean operation should succeed after corruption test", fragment_idx);
+            assert!(
+                clean_result.is_ok(),
+                "Fragment {}: clean operation should succeed after corruption test",
+                fragment_idx
+            );
         }
 
-        println!("Binary corruption test completed: {} fragments processed, {} successful, {} corruptions detected",
-            processed_fragments, successful_repairs, detected_corruptions);
+        println!(
+            "Binary corruption test completed: {} fragments processed, {} successful, {} corruptions detected",
+            processed_fragments, successful_repairs, detected_corruptions
+        );
 
         // Verify final state consistency
         let final_audit = decoder.audit_log();
         for (idx, entry) in final_audit.iter().enumerate() {
-            assert!(!entry.event_code.is_empty(),
-                "Audit entry {}: event code should not be empty", idx);
-            assert!(entry.timestamp_epoch_secs > 0,
-                "Audit entry {}: timestamp should be positive", idx);
+            assert!(
+                !entry.event_code.is_empty(),
+                "Audit entry {}: event code should not be empty",
+                idx
+            );
+            assert!(
+                entry.timestamp_epoch_secs > 0,
+                "Audit entry {}: timestamp should be positive",
+                idx
+            );
         }
 
         // Should have detected some corruptions
-        assert!(detected_corruptions > 0,
-            "Should have detected at least some corruptions in the test data");
+        assert!(
+            detected_corruptions > 0,
+            "Should have detected at least some corruptions in the test data"
+        );
     }
 
     // ═══ EXTREME ADVERSARIAL NEGATIVE-PATH TESTS ═══
@@ -4975,7 +5692,8 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
     fn test_extreme_adversarial_proof_collision_birthday_attack() {
         // Simulate birthday attack against proof verification where attacker
         // attempts to generate colliding proof hashes to bypass signature verification
-        let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test-signer", "collision-key");
+        let mut decoder =
+            ProofCarryingDecoder::new(ProofMode::Mandatory, "test-signer", "collision-key");
 
         // Generate base legitimate proof
         let legitimate_fragment = b"legitimate_repair_data";
@@ -5026,7 +5744,9 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                 // If any succeed, check if it's actually a hash collision
                 if malicious_hash == legit_hash {
                     collision_detected = true;
-                    panic!("CRITICAL: Hash collision detected between legitimate and malicious fragments!");
+                    panic!(
+                        "CRITICAL: Hash collision detected between legitimate and malicious fragments!"
+                    );
                 }
                 // Even without collision, reused signature should fail
                 panic!("SECURITY VIOLATION: Malicious proof with reused signature was accepted!");
@@ -5039,17 +5759,24 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             &legitimate_proof,
             "legitimate_operation".to_string(),
         );
-        assert!(legit_result.is_ok(), "Legitimate proof should still be accepted");
+        assert!(
+            legit_result.is_ok(),
+            "Legitimate proof should still be accepted"
+        );
 
         // Document that no collisions were found (this is expected/desired)
-        assert!(!collision_detected, "No hash collisions should be found in this test");
+        assert!(
+            !collision_detected,
+            "No hash collisions should be found in this test"
+        );
     }
 
     #[test]
     fn test_extreme_adversarial_fragment_substitution_timing_attack() {
         // Test timing attack where attacker measures decode timing to infer
         // information about legitimate fragments or discover algorithm weaknesses
-        let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "timing-signer", "timing-key");
+        let mut decoder =
+            ProofCarryingDecoder::new(ProofMode::Mandatory, "timing-signer", "timing-key");
 
         // Create baseline fragment for timing comparison
         let baseline_fragment = vec![0x42; 1024]; // Known pattern
@@ -5070,7 +5797,9 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             vec![0x55; 1024], // Inverse alternating
             // Specific bit patterns that might trigger algorithmic edge cases
             (0..1024).map(|i| (i % 256) as u8).collect::<Vec<_>>(), // Sequential
-            (0..1024).map(|i| ((i * 17) % 256) as u8).collect::<Vec<_>>(), // Pseudo-random
+            (0..1024)
+                .map(|i| ((i * 17) % 256) as u8)
+                .collect::<Vec<_>>(), // Pseudo-random
             // Patterns designed to trigger worst-case complexity
             vec![0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80].repeat(128), // Powers of 2
             // Hash collision attempts
@@ -5103,20 +5832,30 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                     // Verify audit log doesn't leak internal timing details
                     let audit_entries = decoder.audit_log();
                     for entry in audit_entries.iter() {
-                        assert!(!entry.event_code.contains("TIMING"),
-                            "Audit log should not contain timing-sensitive information");
-                        assert!(!entry.trace_id.contains("duration"),
-                            "Trace ID should not contain timing information");
+                        assert!(
+                            !entry.event_code.contains("TIMING"),
+                            "Audit log should not contain timing-sensitive information"
+                        );
+                        assert!(
+                            !entry.trace_id.contains("duration"),
+                            "Trace ID should not contain timing information"
+                        );
                     }
-                },
+                }
                 Err(e) => {
                     // Errors should not reveal timing-sensitive details
-                    assert!(!e.message().contains("took"),
-                        "Error message should not contain timing information");
-                    assert!(!e.message().contains("duration"),
-                        "Error message should not contain duration information");
-                    assert!(!e.message().contains("timeout"),
-                        "Error message should not leak timeout details");
+                    assert!(
+                        !e.message().contains("took"),
+                        "Error message should not contain timing information"
+                    );
+                    assert!(
+                        !e.message().contains("duration"),
+                        "Error message should not contain duration information"
+                    );
+                    assert!(
+                        !e.message().contains("timeout"),
+                        "Error message should not leak timeout details"
+                    );
                 }
             }
         }
@@ -5128,15 +5867,18 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             "post_timing_attack_baseline".to_string(),
         );
 
-        assert!(baseline_result.is_ok() || baseline_result.is_err(),
-            "Baseline operation should complete deterministically after timing attacks");
+        assert!(
+            baseline_result.is_ok() || baseline_result.is_err(),
+            "Baseline operation should complete deterministically after timing attacks"
+        );
     }
 
     #[test]
     fn test_extreme_adversarial_algorithm_downgrade_exploit() {
         // Test algorithm downgrade attack where attacker forces use of weaker
         // reconstruction algorithms to exploit known vulnerabilities
-        let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "downgrade-signer", "downgrade-key");
+        let mut decoder =
+            ProofCarryingDecoder::new(ProofMode::Mandatory, "downgrade-signer", "downgrade-key");
 
         // Register multiple algorithms with different security properties
         decoder.register_algorithm(AlgorithmId::new("secure_v2"));
@@ -5148,12 +5890,30 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
 
         // Attempt downgrade attack by forcing use of deprecated algorithm
         let downgrade_attacks = [
-            ("deprecated_v0", "DOWNGRADE: Attempting to force deprecated algorithm"),
-            ("legacy_v1", "DOWNGRADE: Attempting to force legacy algorithm"),
-            ("unknown_weak", "DOWNGRADE: Attempting to force unknown weak algorithm"),
-            ("", "DOWNGRADE: Attempting to force empty algorithm identifier"),
-            ("secure_v2\x00deprecated_v0", "DOWNGRADE: Null byte injection attack"),
-            ("secure_v2/../deprecated_v0", "DOWNGRADE: Path traversal in algorithm ID"),
+            (
+                "deprecated_v0",
+                "DOWNGRADE: Attempting to force deprecated algorithm",
+            ),
+            (
+                "legacy_v1",
+                "DOWNGRADE: Attempting to force legacy algorithm",
+            ),
+            (
+                "unknown_weak",
+                "DOWNGRADE: Attempting to force unknown weak algorithm",
+            ),
+            (
+                "",
+                "DOWNGRADE: Attempting to force empty algorithm identifier",
+            ),
+            (
+                "secure_v2\x00deprecated_v0",
+                "DOWNGRADE: Null byte injection attack",
+            ),
+            (
+                "secure_v2/../deprecated_v0",
+                "DOWNGRADE: Path traversal in algorithm ID",
+            ),
             ("SECURE_V2", "DOWNGRADE: Case manipulation attack"),
             ("secure_v2 ", "DOWNGRADE: Trailing whitespace attack"),
             (" secure_v2", "DOWNGRADE: Leading whitespace attack"),
@@ -5186,16 +5946,19 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                     assert_eq!(latest_entry.event_code, REPAIR_PROOF_VERIFIED);
 
                     // Verify no algorithm downgrade occurred in audit trail
-                    assert!(!latest_entry.trace_id.contains("deprecated"),
-                        "Should not accept deprecated algorithm");
-                    assert!(!latest_entry.trace_id.contains("legacy"),
-                        "Should not accept legacy algorithm");
-                },
+                    assert!(
+                        !latest_entry.trace_id.contains("deprecated"),
+                        "Should not accept deprecated algorithm"
+                    );
+                    assert!(
+                        !latest_entry.trace_id.contains("legacy"),
+                        "Should not accept legacy algorithm"
+                    );
+                }
                 Err(e) => {
                     // Verify appropriate error for downgrade attempt
                     assert!(
-                        e.code() == "RECONSTRUCTION_FAILED" ||
-                        e.code() == "INVALID_ALGORITHM",
+                        e.code() == "RECONSTRUCTION_FAILED" || e.code() == "INVALID_ALGORITHM",
                         "Should reject downgrade attempts with appropriate error code"
                     );
                 }
@@ -5216,15 +5979,20 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             "legitimate_secure_operation".to_string(),
         );
 
-        assert!(secure_result.is_ok(), "Legitimate secure algorithm should work after downgrade attacks");
+        assert!(
+            secure_result.is_ok(),
+            "Legitimate secure algorithm should work after downgrade attacks"
+        );
     }
 
     #[test]
     fn test_extreme_adversarial_proof_replay_with_context_manipulation() {
         // Test sophisticated replay attack where attacker captures legitimate proofs
         // and attempts to replay them in different contexts to bypass verification
-        let mut primary_decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "replay-primary", "primary-key");
-        let mut secondary_decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "replay-secondary", "secondary-key");
+        let mut primary_decoder =
+            ProofCarryingDecoder::new(ProofMode::Mandatory, "replay-primary", "primary-key");
+        let mut secondary_decoder =
+            ProofCarryingDecoder::new(ProofMode::Mandatory, "replay-secondary", "secondary-key");
 
         // Create legitimate proof in primary context
         let legitimate_fragment = b"critical_repair_payload";
@@ -5278,16 +6046,19 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                     // Verify audit trail integrity - no replay should be accepted
                     // unless it's truly legitimate
                     if trace_id.contains("secondary") {
-                        panic!("SECURITY VIOLATION: Cross-context proof replay should be rejected!");
+                        panic!(
+                            "SECURITY VIOLATION: Cross-context proof replay should be rejected!"
+                        );
                     }
-                },
+                }
                 Err(e) => {
                     // Expected behavior - replay should be rejected
                     assert!(
-                        e.code() == "PROOF_VERIFICATION_FAILED" ||
-                        e.code() == "INVALID_SIGNATURE" ||
-                        e.code() == "RECONSTRUCTION_FAILED",
-                        "Replay attack should be rejected with appropriate error: got {}", e.code()
+                        e.code() == "PROOF_VERIFICATION_FAILED"
+                            || e.code() == "INVALID_SIGNATURE"
+                            || e.code() == "RECONSTRUCTION_FAILED",
+                        "Replay attack should be rejected with appropriate error: got {}",
+                        e.code()
                     );
                 }
             }
@@ -5303,8 +6074,10 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             "tampered_replay_trace".to_string(),
         );
 
-        assert!(tamper_replay_result.is_err(),
-            "Replay with tampered fragments should be rejected");
+        assert!(
+            tamper_replay_result.is_err(),
+            "Replay with tampered fragments should be rejected"
+        );
 
         // Test replay with modified proof fields
         let mut modified_proof = original_proof.clone();
@@ -5316,34 +6089,39 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             "modified_proof_replay".to_string(),
         );
 
-        assert!(modified_replay_result.is_err(),
-            "Replay with modified proof should be rejected");
+        assert!(
+            modified_replay_result.is_err(),
+            "Replay with modified proof should be rejected"
+        );
     }
 
     #[test]
     fn test_extreme_adversarial_fragment_memory_exhaustion_via_deduplication() {
         // Test memory exhaustion attack via fragment deduplication bypass where
         // attacker creates fragments that appear different but deduplicate to massive memory usage
-        let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "memory-signer", "memory-key");
+        let mut decoder =
+            ProofCarryingDecoder::new(ProofMode::Mandatory, "memory-signer", "memory-key");
 
         // Create base pattern for memory exhaustion
         let base_pattern = vec![0x42; 1024];
 
         // Generate fragments with subtle variations that might bypass deduplication
-        let memory_attack_fragments = (0..100).map(|i| {
-            let mut fragment = base_pattern.clone();
+        let memory_attack_fragments = (0..100)
+            .map(|i| {
+                let mut fragment = base_pattern.clone();
 
-            // Add minimal variations that might fool deduplication
-            fragment.push((i % 256) as u8); // Single byte difference
-            fragment.extend_from_slice(&i.to_le_bytes()); // Unique suffix
+                // Add minimal variations that might fool deduplication
+                fragment.push((i % 256) as u8); // Single byte difference
+                fragment.extend_from_slice(&i.to_le_bytes()); // Unique suffix
 
-            // Add pseudo-random padding that might defeat compression
-            for j in 0..50 {
-                fragment.push(((i * 17 + j * 23) % 256) as u8);
-            }
+                // Add pseudo-random padding that might defeat compression
+                for j in 0..50 {
+                    fragment.push(((i * 17 + j * 23) % 256) as u8);
+                }
 
-            fragment
-        }).collect::<Vec<_>>();
+                fragment
+            })
+            .collect::<Vec<_>>();
 
         let mut processed_fragments = 0;
         let mut memory_pressure_detected = false;
@@ -5376,9 +6154,11 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                     }
 
                     // Verify fragment processing maintains bounded memory usage
-                    assert!(audit_entries.len() <= decoder.audit_log_capacity(),
-                        "Audit log should not exceed configured capacity");
-                },
+                    assert!(
+                        audit_entries.len() <= decoder.audit_log_capacity(),
+                        "Audit log should not exceed configured capacity"
+                    );
+                }
                 Err(e) => {
                     // Memory exhaustion protection should activate
                     if e.message().contains("memory") || e.message().contains("capacity") {
@@ -5387,16 +6167,17 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
 
                     // Verify appropriate error handling for resource exhaustion
                     assert!(
-                        e.code() == "RECONSTRUCTION_FAILED" ||
-                        e.code() == "RESOURCE_EXHAUSTION" ||
-                        e.code() == "CAPACITY_EXCEEDED",
+                        e.code() == "RECONSTRUCTION_FAILED"
+                            || e.code() == "RESOURCE_EXHAUSTION"
+                            || e.code() == "CAPACITY_EXCEEDED",
                         "Memory exhaustion should be handled with appropriate error"
                     );
                 }
             }
 
             // Test fragment size limits
-            if fragment.len() > 10240 { // Simulate large fragment detection
+            if fragment.len() > 10240 {
+                // Simulate large fragment detection
                 let large_hash = compute_fragment_hash(fragment);
                 let large_proof = RepairProof {
                     fragment_hashes: vec![large_hash.clone()],
@@ -5418,12 +6199,16 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             }
         }
 
-        println!("Memory exhaustion test: {} fragments processed, memory pressure: {}",
-            processed_fragments, memory_pressure_detected);
+        println!(
+            "Memory exhaustion test: {} fragments processed, memory pressure: {}",
+            processed_fragments, memory_pressure_detected
+        );
 
         // Verify memory protection mechanisms activated
-        assert!(memory_pressure_detected || processed_fragments < memory_attack_fragments.len(),
-            "Memory protection should activate under sustained fragment processing");
+        assert!(
+            memory_pressure_detected || processed_fragments < memory_attack_fragments.len(),
+            "Memory protection should activate under sustained fragment processing"
+        );
 
         // Test that normal operations still work after memory attack
         let normal_fragment = b"normal_post_attack_fragment";
@@ -5441,15 +6226,18 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             "post_memory_attack_recovery".to_string(),
         );
 
-        assert!(recovery_result.is_ok() || recovery_result.is_err(),
-            "System should recover gracefully after memory exhaustion attack");
+        assert!(
+            recovery_result.is_ok() || recovery_result.is_err(),
+            "System should recover gracefully after memory exhaustion attack"
+        );
     }
 
     #[test]
     fn test_extreme_adversarial_attestation_signature_length_extension() {
         // Test length extension attack against attestation signatures where
         // attacker appends malicious data to existing valid signatures
-        let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "length-signer", "length-key");
+        let mut decoder =
+            ProofCarryingDecoder::new(ProofMode::Mandatory, "length-signer", "length-key");
 
         let base_fragment = b"legitimate_repair_content";
         let fragment_hash = compute_fragment_hash(base_fragment);
@@ -5466,7 +6254,7 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             format!("{}#{}", base_signature, "a".repeat(1000)), // Length manipulation
             format!("{}\u{200B}invisible_suffix", base_signature), // Zero-width space
             format!("{}\u{FEFF}bom_injection", base_signature), // BOM injection
-            base_signature.repeat(10), // Repetition attack
+            base_signature.repeat(10),                          // Repetition attack
             format!("{}{}", base_signature, "\x01\x02\x03\x04\x05"), // Binary append
         ];
 
@@ -5493,30 +6281,41 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                     let latest_entry = audit_entries.last().expect("Should have audit entry");
 
                     // Verify no injection occurred in audit trail
-                    assert!(!latest_entry.trace_id.contains("admin=true"),
-                        "Privilege escalation injection should not succeed");
-                    assert!(!latest_entry.trace_id.contains("INJECTED"),
-                        "Header injection should not succeed");
+                    assert!(
+                        !latest_entry.trace_id.contains("admin=true"),
+                        "Privilege escalation injection should not succeed"
+                    );
+                    assert!(
+                        !latest_entry.trace_id.contains("INJECTED"),
+                        "Header injection should not succeed"
+                    );
 
                     // Length extension should generally fail unless signature is legitimately valid
                     if extended_signature.len() > base_signature.len() + 50 {
-                        panic!("SECURITY ISSUE: Excessively long signature was accepted: {}", extended_signature.len());
+                        panic!(
+                            "SECURITY ISSUE: Excessively long signature was accepted: {}",
+                            extended_signature.len()
+                        );
                     }
-                },
+                }
                 Err(e) => {
                     // Expected behavior - length extension should be rejected
                     assert!(
-                        e.code() == "PROOF_VERIFICATION_FAILED" ||
-                        e.code() == "INVALID_SIGNATURE" ||
-                        e.code() == "SIGNATURE_FORMAT_ERROR",
+                        e.code() == "PROOF_VERIFICATION_FAILED"
+                            || e.code() == "INVALID_SIGNATURE"
+                            || e.code() == "SIGNATURE_FORMAT_ERROR",
                         "Length extension attack should be rejected with signature error"
                     );
 
                     // Verify error doesn't leak extended content
-                    assert!(!e.message().contains("admin=true"),
-                        "Error should not leak injected content");
-                    assert!(!e.message().contains("attacker_data"),
-                        "Error should not leak attacker data");
+                    assert!(
+                        !e.message().contains("admin=true"),
+                        "Error should not leak injected content"
+                    );
+                    assert!(
+                        !e.message().contains("attacker_data"),
+                        "Error should not leak attacker data"
+                    );
                 }
             }
         }
@@ -5536,16 +6335,18 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
         );
 
         // Verify legitimate operation works after length extension attacks
-        assert!(legitimate_result.is_ok() || legitimate_result.is_err(),
-            "Legitimate signature should be processed consistently");
+        assert!(
+            legitimate_result.is_ok() || legitimate_result.is_err(),
+            "Legitimate signature should be processed consistently"
+        );
 
         // Test signature truncation attacks (opposite of extension)
         let truncation_attacks = [
-            &base_signature[..base_signature.len()/2], // Half length
-            &base_signature[..5], // Very short
-            "", // Empty signature
-            " ", // Whitespace only
-            "\x00", // Null byte only
+            &base_signature[..base_signature.len() / 2], // Half length
+            &base_signature[..5],                        // Very short
+            "",                                          // Empty signature
+            " ",                                         // Whitespace only
+            "\x00",                                      // Null byte only
         ];
 
         for (attack_idx, truncated_signature) in truncation_attacks.iter().enumerate() {
@@ -5563,8 +6364,11 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             );
 
             // Truncated signatures should generally fail
-            assert!(truncation_result.is_err(),
-                "Truncated signature should be rejected: '{}'", truncated_signature);
+            assert!(
+                truncation_result.is_err(),
+                "Truncated signature should be rejected: '{}'",
+                truncated_signature
+            );
         }
     }
 
@@ -5575,9 +6379,11 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
         use std::sync::{Arc, Mutex};
         use std::thread;
 
-        let decoder = Arc::new(Mutex::new(
-            ProofCarryingDecoder::new(ProofMode::Mandatory, "concurrent-signer", "concurrent-key")
-        ));
+        let decoder = Arc::new(Mutex::new(ProofCarryingDecoder::new(
+            ProofMode::Mandatory,
+            "concurrent-signer",
+            "concurrent-key",
+        )));
 
         // Create shared test data
         let test_fragment = Arc::new(b"concurrent_test_fragment".to_vec());
@@ -5663,27 +6469,41 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
                 successful_attacks = successful_attacks.saturating_add(1);
 
                 // Verify that only legitimate proofs succeeded
-                if proof_idx == 1 { // Hash mismatch proof
+                if proof_idx == 1 {
+                    // Hash mismatch proof
                     hash_mismatches_accepted = hash_mismatches_accepted.saturating_add(1);
-                    panic!("SECURITY VIOLATION: Proof with hash mismatch was accepted in concurrent context!");
+                    panic!(
+                        "SECURITY VIOLATION: Proof with hash mismatch was accepted in concurrent context!"
+                    );
                 }
-                if proof_idx == 2 { // Fragment mismatch proof
+                if proof_idx == 2 {
+                    // Fragment mismatch proof
                     fragment_mismatches_accepted = fragment_mismatches_accepted.saturating_add(1);
-                    panic!("SECURITY VIOLATION: Proof with fragment mismatch was accepted in concurrent context!");
+                    panic!(
+                        "SECURITY VIOLATION: Proof with fragment mismatch was accepted in concurrent context!"
+                    );
                 }
             } else {
                 failed_attacks = failed_attacks.saturating_add(1);
             }
         }
 
-        println!("Concurrent attack results: {} successful, {} failed, {} total attempts",
-            successful_attacks, failed_attacks, final_results.len());
+        println!(
+            "Concurrent attack results: {} successful, {} failed, {} total attempts",
+            successful_attacks,
+            failed_attacks,
+            final_results.len()
+        );
 
         // Verify concurrent safety
-        assert_eq!(hash_mismatches_accepted, 0,
-            "No hash mismatch attacks should succeed under concurrency");
-        assert_eq!(fragment_mismatches_accepted, 0,
-            "No fragment mismatch attacks should succeed under concurrency");
+        assert_eq!(
+            hash_mismatches_accepted, 0,
+            "No hash mismatch attacks should succeed under concurrency"
+        );
+        assert_eq!(
+            fragment_mismatches_accepted, 0,
+            "No fragment mismatch attacks should succeed under concurrency"
+        );
 
         // Verify system remains functional after concurrent attacks
         let post_attack_fragment = b"post_concurrent_attack_test";
@@ -5704,8 +6524,10 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
             )
         };
 
-        assert!(recovery_result.is_ok() || recovery_result.is_err(),
-            "System should function correctly after concurrent attacks");
+        assert!(
+            recovery_result.is_ok() || recovery_result.is_err(),
+            "System should function correctly after concurrent attacks"
+        );
 
         // Verify audit log integrity after concurrent access
         let final_audit = {
@@ -5715,12 +6537,21 @@ mod proof_carrying_decode_comprehensive_attack_resistance_tests {
 
         // Check for audit log corruption indicators
         for (entry_idx, entry) in final_audit.iter().enumerate() {
-            assert!(!entry.event_code.is_empty(),
-                "Entry {}: Event code should not be corrupted to empty", entry_idx);
-            assert!(!entry.trace_id.contains('\0'),
-                "Entry {}: Trace ID should not contain null bytes", entry_idx);
-            assert!(entry.timestamp_epoch_secs > 0,
-                "Entry {}: Timestamp should be positive", entry_idx);
+            assert!(
+                !entry.event_code.is_empty(),
+                "Entry {}: Event code should not be corrupted to empty",
+                entry_idx
+            );
+            assert!(
+                !entry.trace_id.contains('\0'),
+                "Entry {}: Trace ID should not contain null bytes",
+                entry_idx
+            );
+            assert!(
+                entry.timestamp_epoch_secs > 0,
+                "Entry {}: Timestamp should be positive",
+                entry_idx
+            );
         }
     }
 }

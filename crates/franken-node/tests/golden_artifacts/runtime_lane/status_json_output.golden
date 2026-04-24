@@ -1,0 +1,27 @@
+{
+  "lane_policy": {
+    "max_concurrent_tasks": 10,
+    "priority_weights": {
+      "high": 1.0,
+      "normal": 0.7,
+      "low": 0.3
+    },
+    "default_timeout_ms": 30000,
+    "queue_overflow_policy": "Reject"
+  },
+  "telemetry_snapshot": {
+    "timestamp": "[TIMESTAMP]",
+    "active_tasks": 0,
+    "queued_tasks": 0,
+    "completed_tasks": 0,
+    "failed_tasks": 0,
+    "memory_usage_bytes": "[MEMORY_USAGE]",
+    "cpu_time_ns": "[CPU_TIME]",
+    "queue_depth_by_priority": {
+      "high": 0,
+      "normal": 0,
+      "low": 0
+    }
+  },
+  "status": "ready"
+}

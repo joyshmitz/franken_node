@@ -1,0 +1,19 @@
+{
+  "assignment_id": "[ASSIGNMENT_ID]",
+  "task_id": "[TASK_ID]",
+  "task_class": "log_rotation",
+  "priority": "normal",
+  "assigned_lane": 2,
+  "trace_id": "test-custom-trace-123",
+  "created_at": "[TIMESTAMP]",
+  "requested_timestamp_ms": 1698768000000,
+  "status": "assigned",
+  "estimated_duration_ms": null,
+  "memory_limit_bytes": null,
+  "queue_position": 0,
+  "lane_config": {
+    "max_concurrent": 10,
+    "timeout_ms": 30000,
+    "overflow_policy": "Reject"
+  }
+}
