@@ -52,9 +52,38 @@ impl std::fmt::Display for ActionableError {
 
 impl std::error::Error for ActionableError {}
 
+/// Mutex lock utilities with proper error handling.
+pub mod lock_utils {
+    use super::ActionableError;
+    use std::sync::{Mutex, MutexGuard};
+
+    /// Safely acquire a mutex lock with proper error handling.
+    ///
+    /// Replaces the dangerous pattern: `mutex.lock().unwrap()`
+    /// With safe pattern: `safe_lock(&mutex)?`
+    pub fn safe_lock<T>(mutex: &Mutex<T>) -> Result<MutexGuard<T>, ActionableError> {
+        mutex.lock().map_err(|poison_err| {
+            ActionableError::new(
+                format!("Mutex poisoned due to panic in another thread: {}", poison_err),
+                "Check for panics in concurrent code and fix root cause",
+            ).with_help_url("https://doc.rust-lang.org/std/sync/struct.Mutex.html#poisoning")
+        })
+    }
+
+    /// For infallible contexts where poison should never happen in well-tested code.
+    /// Use this ONLY when mutex poisoning indicates an unrecoverable program state.
+    pub fn expect_lock<'a, T>(mutex: &'a Mutex<T>, context: &str) -> MutexGuard<'a, T> {
+        mutex.lock().unwrap_or_else(|poison_err| {
+            panic!("Critical mutex poisoned in {}: {}. This indicates a serious bug in concurrent code.", context, poison_err)
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ActionableError, MAX_HELP_URLS, push_bounded};
+    use super::{ActionableError, MAX_HELP_URLS, push_bounded, lock_utils};
+    use std::sync::{Arc, Mutex};
+    use std::thread;
 
     #[test]
     fn actionable_error_without_help_urls_omits_help_url_lines() {
@@ -923,6 +952,30 @@ mod tests {
             .iter()
             .any(|url| url.as_str() == "https://example.invalid/mixed-1"));
         assert!(err.help_urls.iter().any(String::is_empty));
+    }
+
+    #[test]
+    fn safe_lock_handles_poisoned_mutex() {
+        let mutex = Arc::new(Mutex::new(42));
+        let poison_mutex = Arc::clone(&mutex);
+
+        // Create a poisoned mutex by panicking while holding the lock
+        let handle = thread::spawn(move || {
+            let _guard = poison_mutex.lock().unwrap();
+            panic!("Intentional panic to poison mutex");
+        });
+
+        // Wait for the thread to panic and poison the mutex
+        handle.join().unwrap_err();
+
+        // Now test that safe_lock properly handles the poisoned mutex
+        let result = lock_utils::safe_lock(&mutex);
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        assert!(error.message.contains("Mutex poisoned"));
+        assert!(error.fix_command.contains("Check for panics"));
+        assert!(error.help_urls.len() > 0);
     }
 }
 
