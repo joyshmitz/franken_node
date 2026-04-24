@@ -2930,7 +2930,11 @@ mod tests {
                     // Should not match the tampered hash (except by coincidence)
                     if computed_hash == tampered_hash {
                         // This would be an extremely unlikely hash collision
-                        println!("Warning: Possible hash collision detected");
+                        tracing::warn!(
+                            computed_hash = %hex::encode(&computed_hash),
+                            tampered_hash = %hex::encode(&tampered_hash),
+                            "possible hash collision detected"
+                        );
                     }
                 }
             }
@@ -3047,7 +3051,10 @@ mod tests {
                     // Normal cases should produce finite results
                     if !pct.is_finite() {
                         // Document the current vulnerable behavior
-                        println!("Warning: Non-finite percentage detected: {}", pct);
+                        tracing::warn!(
+                            percentage = %pct,
+                            "non-finite percentage detected"
+                        );
                     }
 
                     // In a hardened version, this should always be finite:

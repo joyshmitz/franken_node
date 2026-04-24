@@ -1002,8 +1002,11 @@ mod tests {
 
                     // Warn about extreme timestamp deviations
                     if time_diff > 365 * 24 * 3600 * 1000 { // More than 1 year difference
-                        eprintln!("Warning: Extreme timestamp deviation for {}: {} ms",
-                            description, time_diff);
+                        tracing::warn!(
+                            description = %description,
+                            time_diff_ms = %time_diff,
+                            "extreme timestamp deviation detected"
+                        );
                     }
                 },
                 Err(_) => {
