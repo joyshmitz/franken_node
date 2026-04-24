@@ -150,6 +150,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "fuzz_canonical_serializer_deserialize"
+path = "fuzz_targets/fuzz_canonical_serializer_deserialize.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "fuzz_replay_bundle_chunking_export"
 path = "fuzz_targets/fuzz_replay_bundle_chunking_export.rs"
 test = false

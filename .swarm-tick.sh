@@ -38,7 +38,7 @@ $TMUX list-panes -t "${PROJECT}:${WIN}" -F '#{pane_index} #{pane_id} #{pane_curr
     FP=$(printf '%s' "$TAIL" | command md5sum | cut -c1-8)
     RL="OK"; WORK="I"
     if printf '%s' "$TAIL" | command grep -qE "You've hit your (usage )?limit|hit your limit|You've hit|rate.?limit|usage limit"; then RL="RL"; fi
-    if printf '%s' "$TAIL" | command grep -qE "Churn|Crunch|Cogitat|Zest|Boondoggl|Thinking|Working|esc to interrupt|• Working"; then WORK="W"; fi
+    if printf '%s' "$TAIL" | command grep -qE "Churn|Crunch|Cogitat|Zest|Boondoggl|Thinking|Working|esc to interrupt|• Working|Concoct|Swirl|\([0-9]+s\)|\(thinking\)|✻|✺|✶|⏺|Running…|Pondering|Brewing|Distilling|Hatching|Marinating|Percolating|Simmering|Steeping|Stewing"; then WORK="W"; fi
     # Last non-empty line for signal
     LAST=$(printf '%s' "$TAIL" | awk 'NF' | tail -1 | cut -c1-70)
     echo "  pane=$IDX id=$PANEID cmd=$CMD fp=$FP rl=$RL work=$WORK last=\"$LAST\""
