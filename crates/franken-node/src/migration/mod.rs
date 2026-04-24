@@ -3884,7 +3884,6 @@ fn render_sarif(report: &MigrationAuditReport) -> anyhow::Result<String> {
             "tool": {
                 "driver": {
                     "name": "franken-node migrate audit",
-                    "informationUri": "https://github.com/Dicklesworthstone/franken_node",
                 }
             },
             "invocations": [{
