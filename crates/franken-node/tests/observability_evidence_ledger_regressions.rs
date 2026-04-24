@@ -5,7 +5,7 @@ use frankenengine_node::observability::durability_violation::{
     CausalEvent, CausalEventType, FailedArtifact, ProofContext, ViolationContext, generate_bundle,
 };
 use frankenengine_node::observability::evidence_ledger::{
-    DecisionKind, EvidenceEntry, EvidenceLedger, LabSpillMode, LedgerCapacity,
+    DecisionKind, EvidenceEntry, EvidenceLedger, LabSpillMode, LedgerCapacity, SharedEvidenceLedger,
 };
 use frankenengine_node::observability::witness_ref::{
     WitnessKind, WitnessRef, WitnessSet, WitnessValidator,
@@ -200,6 +200,35 @@ fn observability_ledger_uses_server_computed_size_for_snapshot_and_spill() {
     );
     assert_eq!(retained.size_bytes, spilled.size_bytes);
     assert_eq!(spilled_snapshot.current_bytes, spilled.size_bytes);
+}
+
+#[test]
+fn shared_observability_ledger_serves_parallel_read_snapshots() {
+    let ledger = Arc::new(SharedEvidenceLedger::new(LedgerCapacity::new(10, 100_000)));
+    for idx in 0..3 {
+        ledger
+            .append(misleading_size_entry(
+                &format!("shared-ledger-rwlock-{idx}"),
+                0,
+            ))
+            .expect("seed append should succeed");
+    }
+
+    let mut readers = Vec::new();
+    for _ in 0..8 {
+        let reader = Arc::clone(&ledger);
+        readers.push(std::thread::spawn(move || {
+            for _ in 0..25 {
+                assert_eq!(reader.len(), 3);
+                assert_eq!(reader.metrics().retained_entries, 3);
+                assert_eq!(reader.snapshot().entries.len(), 3);
+            }
+        }));
+    }
+
+    for reader in readers {
+        reader.join().expect("parallel ledger reader should finish");
+    }
 }
 
 #[test]
