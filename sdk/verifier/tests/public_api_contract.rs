@@ -183,6 +183,12 @@ fn is_lower_hex_digest(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
+fn is_valid_merkle_proof_step(step: &str) -> bool {
+    step.strip_prefix("left:")
+        .or_else(|| step.strip_prefix("right:"))
+        .is_some_and(is_lower_hex_digest)
+}
+
 fn bundle_error_display_from_fixture(entry: &ErrorMatrixEntry) -> Result<String, String> {
     let display = match entry.error_type.as_str() {
         "Json" => format!(
@@ -600,6 +606,14 @@ fn test_verification_result_fixture_matches_live_json_contract() -> Result<(), S
     assert!((0.0..=1.0).contains(&fixture.confidence_score));
     assert!(!fixture.checked_assertions.is_empty());
     assert_eq!(fixture.verifier_identity, "verifier://facade-test");
+    assert!(
+        is_lower_hex_digest(&fixture.artifact_binding_hash),
+        "facade_result artifact_binding_hash must be a bare lowercase 64-hex digest"
+    );
+    assert!(
+        is_lower_hex_digest(&fixture.verifier_signature),
+        "facade_result verifier_signature must be a bare lowercase 64-hex digest"
+    );
     assert_eq!(fixture.sdk_version, SDK_VERSION);
 
     Ok(())
@@ -705,9 +719,33 @@ fn test_transparency_entry_fixture_matches_live_json_contract() -> Result<(), St
 
     assert_eq!(fixture.verifier_id, "verifier://facade-test");
     assert!(fixture.merkle_proof.len() >= 3);
-    assert!(fixture.merkle_proof[0].starts_with("root:"));
-    assert!(fixture.merkle_proof[1].starts_with("leaf_index:"));
-    assert!(fixture.merkle_proof[2].starts_with("tree_size:"));
+    assert!(
+        is_lower_hex_digest(&fixture.result_hash),
+        "transparency_entry result_hash must be a bare lowercase 64-hex digest"
+    );
+    let root = fixture.merkle_proof[0]
+        .strip_prefix("root:")
+        .ok_or_else(|| "transparency_entry merkle_proof[0] must start with root:".to_string())?;
+    assert!(
+        is_lower_hex_digest(root),
+        "transparency_entry merkle root must be a bare lowercase 64-hex digest"
+    );
+    fixture.merkle_proof[1]
+        .strip_prefix("leaf_index:")
+        .ok_or_else(|| "transparency_entry merkle_proof[1] must start with leaf_index:".to_string())?
+        .parse::<usize>()
+        .map_err(|err| format!("transparency_entry leaf_index must parse as usize: {err}"))?;
+    fixture.merkle_proof[2]
+        .strip_prefix("tree_size:")
+        .ok_or_else(|| "transparency_entry merkle_proof[2] must start with tree_size:".to_string())?
+        .parse::<usize>()
+        .map_err(|err| format!("transparency_entry tree_size must parse as usize: {err}"))?;
+    for step in &fixture.merkle_proof[3..] {
+        assert!(
+            is_valid_merkle_proof_step(step),
+            "transparency_entry Merkle sibling steps must be left:/right: followed by a bare lowercase 64-hex digest"
+        );
+    }
 
     Ok(())
 }
