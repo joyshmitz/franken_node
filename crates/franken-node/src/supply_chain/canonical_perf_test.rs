@@ -1,6 +1,6 @@
 //! Manual performance test for canonical encoding optimization
 
-use super::*;
+use super::trust_card::canonicalize_value;
 use std::time::{Duration, Instant};
 use serde_json::{Map, Value};
 
@@ -53,7 +53,7 @@ fn generate_complex_trust_card() -> Value {
 
 #[cfg(test)]
 mod perf_tests {
-    use super::*;
+    use super::{canonicalize_value, generate_complex_trust_card};
 
     #[test]
     fn manual_performance_comparison() {

@@ -167,7 +167,8 @@ pub fn domain_keyed_hash(domain: &str, key: &[u8], data: &[u8]) -> [u8; 32] {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{HashProvider, Sha2HmacProvider, HmacSha256};
+    use sha2::{Digest, Sha256};
 
     #[test]
     fn test_sha2_hmac_provider() {

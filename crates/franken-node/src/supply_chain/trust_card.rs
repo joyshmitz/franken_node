@@ -2062,7 +2062,13 @@ mod canonical_perf_test;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        TrustCard, TrustCardRegistry, TrustCardMutation, TrustCardError, ExtensionIdentity,
+        PublisherIdentity, CertificationLevel, ReputationTrend, CapabilityRisk, RiskLevel,
+        RevocationStatus, CapabilityDeclaration, BehavioralProfile, ProvenanceSummary,
+        DependencyTrustStatus, RiskAssessment, AuditRecord, VerifiedEvidenceRef,
+        canonicalize_value, update_card_hash, validate_trust_card_structure
+    };
 
     fn test_evidence_refs() -> Vec<VerifiedEvidenceRef> {
         use super::super::certification::EvidenceType;

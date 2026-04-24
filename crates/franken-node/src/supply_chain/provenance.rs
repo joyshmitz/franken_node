@@ -876,7 +876,11 @@ fn sha256_hex(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        ProvenanceAttestation, AttestationEnvelopeFormat, ProvenanceLevel, AttestationLink,
+        VerificationPolicy, VerificationMode, ChainLinkRole, VerificationFailure,
+        verify_attestation_chain, sign_links_in_place, verify_and_project_gates, canonical_attestation_json
+    };
 
     fn base_attestation() -> ProvenanceAttestation {
         let mut attestation = ProvenanceAttestation {

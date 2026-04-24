@@ -431,7 +431,7 @@ impl RevocationRegistry {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{RevocationHead, RevocationRegistry, RevocationError, RevocationAudit};
 
     fn head(zone: &str, seq: u64, artifact: &str) -> RevocationHead {
         RevocationHead {
@@ -1181,7 +1181,7 @@ mod tests {
 
 #[cfg(test)]
 mod revocation_registry_comprehensive_negative_tests {
-    use super::*;
+    use super::{RevocationHead, RevocationRegistry, RevocationError};
     use std::collections::HashMap;
 
     /// Negative test: Unicode injection and encoding attacks in zone IDs and artifact names

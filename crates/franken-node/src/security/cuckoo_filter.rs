@@ -252,7 +252,7 @@ impl Default for CuckooFilter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::CuckooFilter;
     use std::collections::BTreeSet;
 
     #[test]

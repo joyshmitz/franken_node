@@ -443,7 +443,7 @@ pub fn build_test_tree(leaves: &[&str]) -> (String, Vec<InclusionProof>) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{LogRoot, TransparencyPolicy, InclusionProof, ProofReceipt, ProofFailure, TransparencyError, verify_inclusion_proof};
 
     fn test_policy(root: &str, tree_size: u64) -> TransparencyPolicy {
         TransparencyPolicy {

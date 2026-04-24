@@ -1253,7 +1253,13 @@ impl std::error::Error for QuarantineError {}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        QuarantineOrder, QuarantineSeverity, QuarantineMode, QuarantineScope, QuarantineReason, QuarantineState,
+        QuarantineRegistry, QuarantineError, QuarantineClearance, RecallReceipt, QuarantineImpactReport,
+        QuarantineAuditEntry, QuarantineRecord, RecallOrder, constant_time,
+        ERR_QUARANTINE_ALREADY_ACTIVE, ERR_LIFT_REQUIRES_CLEARANCE, ERR_AUDIT_CHAIN_BROKEN,
+        MAX_AUDIT_TRAIL, MAX_STATE_HISTORY, MAX_PROPAGATION_STATUS
+    };
 
     fn make_order(id: &str, severity: QuarantineSeverity, mode: QuarantineMode) -> QuarantineOrder {
         QuarantineOrder {
@@ -2223,7 +2229,7 @@ mod tests {
     // ---------------------------------------------------------------------------
 
     mod quarantine_comprehensive_negative_tests {
-        use super::*;
+        use super::{QuarantineOrder, QuarantineSeverity, QuarantineMode, QuarantineScope, QuarantineReason, QuarantineRegistry};
 
         #[test]
         fn unicode_injection_in_quarantine_identifiers_and_metadata() {

@@ -828,7 +828,12 @@ pub fn demo_signing_key_3() -> SigningKey {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        ManifestEntry, ChecksumManifest, KeyRing, ArtifactVerificationResult, VerificationReport,
+        KeyTransitionRecord, PartialSignature, AuditLogEntry, ArtifactSigningError, KeyId,
+        demo_signing_key, demo_signing_key_2, sha256_hex, verify_checksums, sign_manifest
+    };
+    use ed25519_dalek::{SigningKey, VerifyingKey};
 
     fn setup_keys() -> (SigningKey, VerifyingKey, KeyRing) {
         let sk = demo_signing_key();
@@ -1985,7 +1990,8 @@ mod tests {
 
 #[cfg(test)]
 mod artifact_signing_boundary_negative_tests {
-    use super::*;
+    use super::{KeyId, demo_signing_key, demo_signing_key_2, constant_time};
+    use ed25519_dalek::{SigningKey, VerifyingKey};
 
     #[test]
     fn hardening_keyid_derivation_preserves_timing_safety() {

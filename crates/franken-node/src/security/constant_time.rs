@@ -25,7 +25,7 @@ pub fn ct_eq_bytes(a: &[u8], b: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ct_eq, ct_eq_bytes};
 
     #[test]
     fn equal_strings_match() {
@@ -183,7 +183,7 @@ mod tests {
 
 #[cfg(test)]
 mod constant_time_additional_negative_tests {
-    use super::*;
+    use super::{ct_eq, ct_eq_bytes};
 
     #[test]
     fn rejects_same_length_domain_separator_substitution() {
@@ -292,7 +292,7 @@ mod constant_time_additional_negative_tests {
 
 #[cfg(test)]
 mod comprehensive_boundary_negative_tests {
-    use super::*;
+    use super::{ct_eq, ct_eq_bytes};
 
     #[test]
     fn negative_ct_eq_with_maximum_unicode_codepoints() {

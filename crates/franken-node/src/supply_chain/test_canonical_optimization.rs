@@ -1,6 +1,8 @@
 //! Test to verify canonical encoding optimization preserves exact output
 
-use super::*;
+use super::trust_card::canonicalize_value;
+use sha2::Digest;
+use hex;
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 
@@ -26,7 +28,7 @@ fn canonicalize_value_optimized(value: Value) -> Value {
 
 #[cfg(test)]
 mod optimization_tests {
-    use super::*;
+    use super::{canonicalize_value, canonicalize_value_optimized};
 
     #[test]
     fn test_canonical_optimization_isomorphism() {

@@ -180,7 +180,7 @@ impl DegradedModeAuditLog {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{AuditError, DegradedModeAuditLog, DegradedModeEvent, validate_schema};
 
     fn valid_event() -> DegradedModeEvent {
         DegradedModeEvent {
