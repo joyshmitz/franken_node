@@ -2240,15 +2240,21 @@ mod integration_tests {
 #[cfg(test)]
 mod contract_tests {
     use super::*;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     const ARTIFACT_PATH: &str = "artifacts/10.16/fastapi_endpoint_report.json";
 
+    fn artifact_report_path() -> Option<PathBuf> {
+        Some(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.join(ARTIFACT_PATH))?,
+        )
+    }
+
     fn load_artifact_report() -> Option<EndpointReport> {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(|p| p.parent())
-            .map(|p| p.join(ARTIFACT_PATH))?;
+        let path = artifact_report_path()?;
 
         if !path.exists() {
             return None;
@@ -2265,9 +2271,14 @@ mod contract_tests {
         // are present in runtime (runtime is a superset of artifact).
         let _lock = super::operator_routes::process_start_test_lock();
         super::operator_routes::clear_process_start_override_for_tests();
+        let artifact_path = artifact_report_path().unwrap_or_else(|| PathBuf::from(ARTIFACT_PATH));
 
         let Some(artifact) = load_artifact_report() else {
-            tracing::warn!("artifact file not found, skipping contract validation");
+            tracing::warn!(
+                artifact_path = %artifact_path.display(),
+                operation = "runtime_includes_all_artifact_endpoints",
+                "artifact file not found, skipping contract validation"
+            );
             return;
         };
 
@@ -2288,9 +2299,14 @@ mod contract_tests {
         // Runtime may include additional endpoints from control-plane feature.
         let _lock = super::operator_routes::process_start_test_lock();
         super::operator_routes::clear_process_start_override_for_tests();
+        let artifact_path = artifact_report_path().unwrap_or_else(|| PathBuf::from(ARTIFACT_PATH));
 
         let Some(artifact) = load_artifact_report() else {
-            tracing::warn!("artifact file not found, skipping contract validation");
+            tracing::warn!(
+                artifact_path = %artifact_path.display(),
+                operation = "artifact_endpoints_present_in_runtime",
+                "artifact file not found, skipping contract validation"
+            );
             return;
         };
 
@@ -2318,8 +2334,14 @@ mod contract_tests {
 
     #[test]
     fn runtime_middleware_coverage_matches_artifact() {
+        let artifact_path = artifact_report_path().unwrap_or_else(|| PathBuf::from(ARTIFACT_PATH));
+
         let Some(artifact) = load_artifact_report() else {
-            tracing::warn!("artifact file not found, skipping contract validation");
+            tracing::warn!(
+                artifact_path = %artifact_path.display(),
+                operation = "runtime_middleware_coverage_matches_artifact",
+                "artifact file not found, skipping contract validation"
+            );
             return;
         };
 
@@ -2343,8 +2365,14 @@ mod contract_tests {
 
     #[test]
     fn runtime_transport_boundary_matches_artifact() {
+        let artifact_path = artifact_report_path().unwrap_or_else(|| PathBuf::from(ARTIFACT_PATH));
+
         let Some(artifact) = load_artifact_report() else {
-            tracing::warn!("artifact file not found, skipping contract validation");
+            tracing::warn!(
+                artifact_path = %artifact_path.display(),
+                operation = "runtime_transport_boundary_matches_artifact",
+                "artifact file not found, skipping contract validation"
+            );
             return;
         };
 
@@ -2390,8 +2418,14 @@ mod contract_tests {
 
     #[test]
     fn all_endpoints_have_conformance_pass_in_artifact() {
+        let artifact_path = artifact_report_path().unwrap_or_else(|| PathBuf::from(ARTIFACT_PATH));
+
         let Some(artifact) = load_artifact_report() else {
-            tracing::warn!("artifact file not found, skipping contract validation");
+            tracing::warn!(
+                artifact_path = %artifact_path.display(),
+                operation = "all_endpoints_have_conformance_pass_in_artifact",
+                "artifact file not found, skipping contract validation"
+            );
             return;
         };
 
