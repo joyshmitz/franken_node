@@ -314,6 +314,7 @@ pub enum VerifierSdkError {
         expected: String,
         actual: String,
     },
+    NonceCounterExhausted,
     Json(String),
 }
 
@@ -386,6 +387,7 @@ impl fmt::Display for VerifierSdkError {
                 formatter,
                 "verifier SDK result origin mismatch: expected={expected}, actual={actual}"
             ),
+            Self::NonceCounterExhausted => write!(formatter, "nonce counter exhausted - no more unique nonces available"),
             Self::Json(message) => write!(formatter, "verifier SDK JSON error: {message}"),
         }
     }
@@ -592,7 +594,7 @@ impl VerifierSdk {
             &session_id,
             &self.verifier_identity,
             &created_at,
-            next_session_nonce_counter(),
+            next_session_nonce_counter()?,
         );
         Ok(VerificationSession {
             session_id: session_id.clone(),
@@ -832,23 +834,36 @@ fn facade_result_signature(result: &VerificationResult) -> Result<String, Verifi
 }
 
 fn default_result_origin_nonce() -> String {
+    // Serde default function - if nonce counter is exhausted, panic since this is catastrophic
+    default_result_origin_nonce_fallible().unwrap_or_else(|_| {
+        panic!("Nonce counter exhausted - this is a catastrophic security failure")
+    })
+}
+
+fn default_result_origin_nonce_fallible() -> Result<String, VerifierSdkError> {
     let mut payload = Vec::new();
     push_length_prefixed(&mut payload, RESULT_ORIGIN_DOMAIN);
     push_length_prefixed(&mut payload, SDK_VERSION.as_bytes());
-    payload.extend_from_slice(&next_session_nonce_counter().to_le_bytes());
-    bundle::hash(&payload)
+    payload.extend_from_slice(&next_session_nonce_counter()?.to_le_bytes());
+    Ok(bundle::hash(&payload))
 }
 
-fn next_session_nonce_counter() -> u64 {
+fn next_session_nonce_counter() -> Result<u64, VerifierSdkError> {
     SESSION_NONCE_COUNTER
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |counter| {
-            Some(increment_session_nonce_counter(counter))
+            if counter == u64::MAX {
+                None // Prevent update - counter is exhausted
+            } else {
+                Some(increment_session_nonce_counter(counter))
+            }
         })
-        .expect("session nonce counter update should not fail")
+        .map_err(|_| VerifierSdkError::NonceCounterExhausted)
 }
 
 fn increment_session_nonce_counter(counter: u64) -> u64 {
-    counter.saturating_add(1)
+    // Use checked_add to detect overflow - though next_session_nonce_counter
+    // should prevent calling this at u64::MAX
+    counter.checked_add(1).unwrap_or(u64::MAX)
 }
 
 fn current_utc_timestamp() -> String {
@@ -1216,10 +1231,20 @@ mod tests {
     }
 
     #[test]
-    fn session_nonce_counter_increment_saturates_at_u64_max() {
+    fn session_nonce_counter_increment_handles_overflow() {
         assert_eq!(increment_session_nonce_counter(0), 1);
         assert_eq!(increment_session_nonce_counter(u64::MAX - 1), u64::MAX);
         assert_eq!(increment_session_nonce_counter(u64::MAX), u64::MAX);
+    }
+
+    #[test]
+    fn session_nonce_counter_exhaustion_regression_test() {
+        // Force the global counter to u64::MAX
+        SESSION_NONCE_COUNTER.store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
+
+        // Next call should fail with NonceCounterExhausted error
+        let result = next_session_nonce_counter();
+        assert!(matches!(result, Err(VerifierSdkError::NonceCounterExhausted)));
     }
 
     #[test]
