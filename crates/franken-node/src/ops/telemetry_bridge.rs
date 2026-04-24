@@ -955,6 +955,18 @@ impl TelemetryBridge {
                             stop_inner,
                         );
                     });
+                    // bd-2jv5m fix: Reap finished workers BEFORE push_bounded to prevent
+                    // dropping live JoinHandles without join when at MAX_ACTIVE_CONNECTIONS
+                    if !Self::reap_finished_connection_workers(
+                        &connection_handles,
+                        &connection_worker_panicked,
+                    ) {
+                        lifecycle.store(BridgeLifecycleState::Failed as u8, Ordering::SeqCst);
+                        stop_flag.store(true, Ordering::SeqCst);
+                        let _ = handle.join();
+                        break;
+                    }
+
                     if let Ok(mut handles) = connection_handles.lock() {
                         push_bounded(&mut handles, handle, MAX_ACTIVE_CONNECTIONS);
                     } else {
@@ -962,15 +974,6 @@ impl TelemetryBridge {
                         lifecycle.store(BridgeLifecycleState::Failed as u8, Ordering::SeqCst);
                         stop_flag.store(true, Ordering::SeqCst);
                         let _ = handle.join();
-                        break;
-                    }
-
-                    if !Self::reap_finished_connection_workers(
-                        &connection_handles,
-                        &connection_worker_panicked,
-                    ) {
-                        lifecycle.store(BridgeLifecycleState::Failed as u8, Ordering::SeqCst);
-                        stop_flag.store(true, Ordering::SeqCst);
                         break;
                     }
                 }
