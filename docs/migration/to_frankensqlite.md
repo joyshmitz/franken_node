@@ -1,8 +1,25 @@
 # Migration to Frankensqlite
 
-This document defines the migration path from interim/local connector stores to the `frankensqlite` substrate for section 10.16. The goal is a single durable source of truth with deterministic replay, explicit rollback, and idempotent reruns.
+This document now separates the section 10.16 end-state from the live operator
+surface in `crates/franken-node/src/migration/`. The end-state remains a single
+durable `frankensqlite` source of truth, but the current CLI only exposes
+project-level `migrate audit`, `migrate rewrite`, and `migrate validate`
+workflows over package manifests and JS/TS source files. It does not yet expose
+connector-store cutover, dual-write execution, or a
+`migrate to-frankensqlite --rollback --run-id ...` command.
 
-## Migration inventory
+## Current live surface
+
+- `franken-node migrate audit <project>` inventories migration risk and emits
+  audit findings.
+- `franken-node migrate rewrite <project> --apply --emit-rollback <path>`
+  rewrites manifests and JS/TS modules, writes original file snapshots under
+  `.migrate-backup/`, and emits a file-scoped `MigrationRollbackPlan`.
+- `franken-node migrate validate <project>` reruns the static migration checks
+  and executes transformed-runtime smoke validation; it does not orchestrate a
+  live connector-state cutover into `frankensqlite`.
+
+## Migration inventory (target state)
 
 | Domain | Source module | Current source type | Migration status target | Primary persistence after cutover |
 |---|---|---|---|---|
@@ -58,39 +75,43 @@ Each domain follows the same deterministic pipeline:
 
 ## Rollback path
 
-Rollback is mandatory for every migration run and is executed per migration run id.
+Rollback is file-scoped today, not connector-store dual-write.
 
-1. Start dual-write mode for the run id (`run_id`) so interim stores and `frankensqlite` receive the same write set.
-2. Snapshot interim stores to immutable rollback artifacts.
-3. Execute domain migration in transactional staging.
-4. If any domain fails verification, abort cutover and run rollback.
-5. Rollback command:
-
-```bash
-franken-node migrate to-frankensqlite --rollback --run-id <run_id>
-```
-
-6. Rollback verification:
-  - Interim store hash matches pre-migration snapshot hash.
-  - No domain remains in a half-migrated state.
-  - `frankensqlite` writes from the failed run id are discarded or marked invalid.
+1. `migrate rewrite --apply` writes the original file contents to
+   `.migrate-backup/<relative-path>` before mutating the source file.
+2. The rewrite report records `rollback_entries` with both original and
+   rewritten content.
+3. `--emit-rollback <path>` serializes those entries into a
+   `MigrationRollbackPlan`.
+4. Operator rollback today means restoring from the emitted rollback plan and/or
+   `.migrate-backup` snapshots; there is no live `run_id` rollback command in
+   this module.
+5. `validate_rollback_plan()` hardens rollback artifacts against absolute paths,
+   traversal, unsafe separators, oversized entries, and entry-count mismatch.
 
 ## Idempotency guarantee
 
-Idempotency is guaranteed by deterministic domain ordering and stable primary keys.
+The durable-cutover guarantees below remain the target design. The current live
+module only guarantees deterministic rewrite planning/report serialization and
+runtime-smoke receipt round-trips for the file-oriented migration surface.
 
-- Domain import uses upsert keys derived from canonical source identifiers.
-- Running migration twice on the same source data produces identical row values and row counts.
-- No duplicate rows are introduced on rerun.
-- Invariant checks (fencing uniqueness, lease non-overlap, replay ordering) must pass on both first and second runs.
+- Target cutover import should use upsert keys derived from canonical source
+  identifiers.
+- Target cutover should make repeated runs over the same source data converge on
+  identical row values and row counts.
+- Target cutover should not introduce duplicate rows on rerun.
+- Target invariants (fencing uniqueness, lease non-overlap, replay ordering)
+  should pass on both first and second runs.
 
-## Migration events
+## Current evidence surface
 
-Every domain migration emits the following event codes with `run_id` and `domain` fields:
+The live migration module currently emits/produces:
 
-- `MIGRATION_DOMAIN_START` (info)
-- `MIGRATION_DOMAIN_COMPLETE` (info)
-- `MIGRATION_DOMAIN_FAIL` (error)
-- `MIGRATION_ROLLBACK_START` (warning)
-- `MIGRATION_ROLLBACK_COMPLETE` (info)
-- `MIGRATION_IDEMPOTENCY_VERIFIED` (info)
+- `MigrationAuditReport`
+- `MigrationRewriteReport`
+- `MigrationRollbackPlan`
+- transformed-runtime smoke receipts with stdout/stderr digests during
+  `migrate validate`
+
+Per-domain `run_id` migration events remain future work for the eventual
+connector-store cutover path.
