@@ -125,15 +125,18 @@ impl LockstepHarness {
     }
 
     fn normalize_runtimes(runtimes: Vec<String>) -> Vec<String> {
-        let mut normalized = Vec::new();
+        let mut normalized = Vec::with_capacity(runtimes.len().min(32));
         let mut seen = BTreeSet::new();
-        for runtime in runtimes {
-            let trimmed = runtime.trim();
-            if trimmed.is_empty() {
+        for mut runtime in runtimes {
+            let trimmed_len = runtime.trim().len();
+            if trimmed_len == 0 {
                 continue;
             }
 
-            let runtime = trimmed.to_string();
+            if trimmed_len != runtime.len() {
+                runtime = runtime.trim().to_string();
+            }
+
             if seen.insert(runtime.clone()) {
                 push_bounded(&mut normalized, runtime, 32); // Reasonable limit for runtime count
             }
