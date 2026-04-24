@@ -477,3 +477,7 @@ harness = false
 [[bench]]
 name = "trust_card_canonical_bench"
 harness = false
+
+[[bench]]
+name = "proof_verifier_gate_bench"
+harness = false

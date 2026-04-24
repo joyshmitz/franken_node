@@ -648,7 +648,7 @@ impl VerificationGate {
 
         // Look up matching predicate
         let predicate = match self.predicates.get(&request.proof.action_class) {
-            Some(p) => p.clone(),
+            Some(predicate) => predicate,
             None => {
                 let err = VerifierError::policy_missing(format!(
                     "no predicate for action_class '{}'",

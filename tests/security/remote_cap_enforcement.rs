@@ -383,3 +383,117 @@ fn network_guard_is_enforced_by_capability_gate() {
     );
     assert!(ok.is_ok(), "valid cap should permit policy evaluation");
 }
+
+#[test]
+fn osv_trust_sync_network_egress_requires_authorization() {
+    // Test for bd-piggu: Verify OSV network operations pass through CapabilityGate::authorize_network
+    let mut gate =
+        CapabilityGate::new("osv-test-secret").expect("OSV test gate should be valid");
+
+    // Test OSV query endpoint - should fail without RemoteCap
+    let osv_url = "https://api.osv.dev/v1/query";
+    let err = gate
+        .authorize_network(
+            None, // No RemoteCap token
+            RemoteOperation::NetworkEgress,
+            osv_url,
+            1_700_000_200,
+            "trace-osv-missing-cap",
+        )
+        .expect_err("OSV network call without RemoteCap should fail");
+
+    assert_eq!(err.code(), "REMOTECAP_MISSING");
+    assert_eq!(err.compatibility_code(), Some("ERR_REMOTE_CAP_REQUIRED"));
+
+    // Test deps.dev dependents endpoint - should also fail without RemoteCap
+    let deps_url = "https://deps.dev/systems/npm/packages/test/versions/1.0.0:dependents";
+    let err = gate
+        .authorize_network(
+            None,
+            RemoteOperation::NetworkEgress,
+            deps_url,
+            1_700_000_201,
+            "trace-deps-missing-cap",
+        )
+        .expect_err("deps.dev network call without RemoteCap should fail");
+
+    assert_eq!(err.code(), "REMOTECAP_MISSING");
+    assert_eq!(err.compatibility_code(), Some("ERR_REMOTE_CAP_REQUIRED"));
+
+    // Test with valid RemoteCap - should succeed
+    let provider = CapabilityProvider::new("osv-test-secret")
+        .expect("OSV test provider should be valid");
+
+    let scope = RemoteScope {
+        operations: vec![RemoteOperation::NetworkEgress].into_iter().collect(),
+        endpoints: vec![osv_url.to_string(), deps_url.to_string()]
+            .into_iter()
+            .collect(),
+    };
+
+    let cap = provider
+        .issue(scope, 1_700_000_100, 1_700_010_000, "trace-osv-issue")
+        .expect("OSV test cap should be valid");
+
+    // OSV query should now succeed with valid cap
+    gate.authorize_network(
+        Some(&cap),
+        RemoteOperation::NetworkEgress,
+        osv_url,
+        1_700_000_202,
+        "trace-osv-authorized",
+    )
+    .expect("OSV query with valid RemoteCap should pass");
+
+    // deps.dev query should also succeed with valid cap
+    gate.authorize_network(
+        Some(&cap),
+        RemoteOperation::NetworkEgress,
+        deps_url,
+        1_700_000_203,
+        "trace-deps-authorized",
+    )
+    .expect("deps.dev query with valid RemoteCap should pass");
+}
+
+// Conformance test that validates INV-REMOTECAP-REQUIRED spec invariant
+// for trust sync operations
+#[test]
+fn trust_sync_network_operations_conform_to_remotecap_spec() {
+    // Regression test for bd-piggu: Trust sync OSV/deps.dev operations must follow
+    // docs/specs/remote_cap_contract.md:41 - "Every network-bound operation must pass CapabilityGate::authorize_network"
+
+    let test_scenarios = vec![
+        ("OSV vulnerability query", "https://api.osv.dev/v1/query"),
+        ("deps.dev dependents API", "https://deps.dev/systems/npm/packages/lodash/versions/4.17.21:dependents"),
+        ("deps.dev security API", "https://deps.dev/systems/npm/packages/lodash/versions/4.17.21:security"),
+    ];
+
+    for (description, endpoint) in test_scenarios {
+        let mut gate = CapabilityGate::new(&format!("test-{}", description.replace(' ', "-")))
+            .expect("test gate should be valid");
+
+        // Verify spec invariant: network-bound operations fail without proper authorization
+        let result = gate.authorize_network(
+            None,
+            RemoteOperation::NetworkEgress,
+            endpoint,
+            1_700_000_300,
+            &format!("trace-{}", description.replace(' ', "-")),
+        );
+
+        assert!(
+            result.is_err(),
+            "{} should fail without RemoteCap authorization per INV-REMOTECAP-REQUIRED",
+            description
+        );
+
+        let err = result.unwrap_err();
+        assert_eq!(
+            err.code(),
+            "REMOTECAP_MISSING",
+            "{} should return REMOTECAP_MISSING error",
+            description
+        );
+    }
+}
