@@ -29,8 +29,6 @@ Starvation detection at **1000 ms** — a Cancel-tier task must never wait more
 than 1 tick (≈1 starvation window).
 
 **Task classes:**
-- `epoch_transition` — monotonic control epoch advancement
-- `barrier_coordination` — cross-service drain/quiescence barriers
 - `marker_write` — append-only marker stream writes
 
 ### Timed Tier (RemoteEffect lane)
@@ -40,6 +38,8 @@ transitions. Deadline-bound with timeout enforcement. Guaranteed minimum budget
 of **30%** of scheduler capacity.
 
 **Task classes:**
+- `epoch_transition` — monotonic control epoch advancement
+- `barrier_coordination` — cross-service drain/quiescence barriers
 - `remote_computation` — outbound trust/control RPCs
 - `artifact_upload` — L2→L3 lifecycle transitions
 - `artifact_eviction` — eviction saga phases
