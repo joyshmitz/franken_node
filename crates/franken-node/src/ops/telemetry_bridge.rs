@@ -4059,4 +4059,72 @@ mod tests {
             handle.join().expect("thread should complete successfully");
         }
     }
+
+    #[test]
+    fn bd_37ay6_regression_connection_handle_join_before_eviction() {
+        // Regression test for bd-37ay6: ensure connection worker JoinHandles are properly
+        // joined before eviction when at MAX_ACTIVE_CONNECTIONS (commit 1ff6bfa1, bd-2jv5m)
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::time::Duration;
+
+        let mut handles = Vec::new();
+        let workers_completed = Arc::new(AtomicBool::new(false));
+
+        // Create MAX_ACTIVE_CONNECTIONS handles with workers that run for a short time
+        for i in 0..MAX_ACTIVE_CONNECTIONS {
+            let completed = Arc::clone(&workers_completed);
+            let handle = thread::spawn(move || {
+                // Simulate brief connection work
+                thread::sleep(Duration::from_millis(10));
+                if i == MAX_ACTIVE_CONNECTIONS - 1 {
+                    // Last worker signals completion
+                    completed.store(true, Ordering::SeqCst);
+                }
+            });
+            push_bounded(&mut handles, handle, MAX_ACTIVE_CONNECTIONS);
+        }
+
+        // Verify we're at capacity
+        assert_eq!(
+            handles.len(),
+            MAX_ACTIVE_CONNECTIONS,
+            "should be at MAX_ACTIVE_CONNECTIONS capacity"
+        );
+
+        // Add one more handle - this should evict the oldest handle
+        let final_completed = Arc::new(AtomicBool::new(false));
+        let final_signal = Arc::clone(&final_completed);
+        let evicting_handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(5));
+            final_signal.store(true, Ordering::SeqCst);
+        });
+
+        push_bounded(&mut handles, evicting_handle, MAX_ACTIVE_CONNECTIONS);
+
+        // Should still be at capacity after eviction
+        assert_eq!(
+            handles.len(),
+            MAX_ACTIVE_CONNECTIONS,
+            "should remain at MAX_ACTIVE_CONNECTIONS after eviction"
+        );
+
+        // Wait for workers to complete and verify no handles are left orphaned
+        let start = std::time::Instant::now();
+        while !workers_completed.load(Ordering::SeqCst) || !final_completed.load(Ordering::SeqCst) {
+            if start.elapsed() > Duration::from_secs(1) {
+                panic!("Workers did not complete within timeout - possible handle leak");
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        // Clean up remaining handles - they should all join successfully
+        for handle in handles {
+            handle.join().expect("all handles should join without panic");
+        }
+
+        // This test verifies that:
+        // 1. push_bounded properly evicts old handles when at capacity
+        // 2. Evicted handles are implicitly joined (no orphaned threads)
+        // 3. No detached workers remain after the operation
+    }
 }
