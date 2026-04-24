@@ -7,8 +7,10 @@
 use frankenengine_node::supply_chain::trust_card::{
     AuditRecord, BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
     DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary, PublisherIdentity,
-    ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard, to_canonical_json,
+    ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard, TrustCardError,
+    compute_card_hash, to_canonical_json, verify_card_signature,
 };
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
@@ -67,6 +69,22 @@ struct SectionStats {
     passing: usize,
     failing: usize,
     expected_failures: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TrustCardWireVectors {
+    vectors: Vec<TrustCardWireVector>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TrustCardWireVector {
+    name: String,
+    registry_key_ascii: String,
+    expected_card_hash: String,
+    expected_registry_signature: String,
+    expected_wire_artifact: String,
+    expected_hash_preimage_artifact: String,
+    expected_signature_preimage_hex_artifact: String,
 }
 
 // ============================================================================
@@ -296,6 +314,267 @@ fn create_maximal_trust_card() -> TrustCard {
     card
 }
 
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|path| path.parent())
+        .map(PathBuf::from)
+        .expect("workspace root should exist")
+}
+
+fn workspace_path(relative: &str) -> PathBuf {
+    workspace_root().join(relative)
+}
+
+fn read_workspace_file(relative: &str) -> Result<String, String> {
+    fs::read_to_string(workspace_path(relative))
+        .map_err(|err| format!("failed reading workspace file `{relative}`: {err}"))
+}
+
+fn load_signature_vector(name: &str) -> Result<TrustCardWireVector, String> {
+    let raw = read_workspace_file("artifacts/conformance/trust_card_wire_vectors.json")?;
+    let vectors: TrustCardWireVectors = serde_json::from_str(&raw)
+        .map_err(|err| format!("failed parsing trust card wire vectors: {err}"))?;
+    vectors
+        .vectors
+        .into_iter()
+        .find(|vector| vector.name == name)
+        .ok_or_else(|| format!("missing trust card wire vector `{name}`"))
+}
+
+fn load_trust_card_fixture(relative: &str) -> Result<TrustCard, String> {
+    let raw = read_workspace_file(relative)?;
+    serde_json::from_str(&raw)
+        .map_err(|err| format!("failed parsing trust card fixture `{relative}`: {err}"))
+}
+
+fn canonical_hash_preimage(card: &TrustCard) -> Result<String, String> {
+    let mut value = serde_json::to_value(card)
+        .map_err(|err| format!("failed converting trust card to JSON value: {err}"))?;
+    let Some(map) = value.as_object_mut() else {
+        return Err("trust card fixture did not serialize to a JSON object".to_string());
+    };
+    map.insert("card_hash".to_string(), Value::String(String::new()));
+    map.insert(
+        "registry_signature".to_string(),
+        Value::String(String::new()),
+    );
+    to_canonical_json(&value)
+        .map_err(|err| format!("failed canonicalizing card hash preimage: {err}"))
+}
+
+fn signature_preimage_string(card_hash: &str) -> String {
+    format!("trust_card_registry_sig_v1:{card_hash}")
+}
+
+fn test_signature_vector_verification(_card: &TrustCard) -> TestResult {
+    let vector = match load_signature_vector("signed_card_baseline") {
+        Ok(vector) => vector,
+        Err(reason) => return TestResult::Fail { reason },
+    };
+    let fixture = match load_trust_card_fixture(&vector.expected_wire_artifact) {
+        Ok(card) => card,
+        Err(reason) => return TestResult::Fail { reason },
+    };
+    let expected_wire = match read_workspace_file(&vector.expected_wire_artifact) {
+        Ok(raw) => raw,
+        Err(reason) => return TestResult::Fail { reason },
+    };
+    let expected_signature_preimage_hex =
+        match read_workspace_file(&vector.expected_signature_preimage_hex_artifact) {
+            Ok(raw) => raw,
+            Err(reason) => return TestResult::Fail { reason },
+        };
+    let expected_signature_preimage = match hex::decode(expected_signature_preimage_hex.trim())
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+    {
+        Some(value) => value,
+        None => {
+            return TestResult::Fail {
+                reason: format!(
+                    "failed decoding signature preimage artifact `{}`",
+                    vector.expected_signature_preimage_hex_artifact
+                ),
+            };
+        }
+    };
+    let actual_wire = match to_canonical_json(&fixture) {
+        Ok(json) => json,
+        Err(err) => {
+            return TestResult::Fail {
+                reason: format!("failed serializing wire fixture canonically: {err}"),
+            };
+        }
+    };
+    if actual_wire != expected_wire.trim_end() {
+        return TestResult::Fail {
+            reason: "wire fixture canonical JSON diverged from expected artifact".to_string(),
+        };
+    }
+    if fixture.registry_signature != vector.expected_registry_signature {
+        return TestResult::Fail {
+            reason: format!(
+                "fixture registry signature mismatch: expected {} got {}",
+                vector.expected_registry_signature, fixture.registry_signature
+            ),
+        };
+    }
+
+    let expected_preimage = signature_preimage_string(&fixture.card_hash);
+    if expected_preimage != expected_signature_preimage {
+        return TestResult::Fail {
+            reason: format!(
+                "signature preimage mismatch: expected `{expected_signature_preimage}` got `{expected_preimage}`"
+            ),
+        };
+    }
+
+    let registry_key = vector.registry_key_ascii.as_bytes();
+    if let Err(err) = verify_card_signature(&fixture, registry_key) {
+        return TestResult::Fail {
+            reason: format!("fixture signature should verify with documented registry key: {err}"),
+        };
+    }
+
+    let wrong_key_err = match verify_card_signature(&fixture, TEST_REGISTRY_KEY.as_bytes()) {
+        Ok(()) => {
+            return TestResult::Fail {
+                reason: "fixture signature unexpectedly verified with the wrong registry key"
+                    .to_string(),
+            };
+        }
+        Err(err) => err,
+    };
+    if !matches!(wrong_key_err, TrustCardError::SignatureInvalid(_)) {
+        return TestResult::Fail {
+            reason: format!(
+                "wrong registry key should fail with SignatureInvalid, got {wrong_key_err}"
+            ),
+        };
+    }
+
+    let mut tampered = fixture.clone();
+    tampered.registry_signature = "00".repeat(fixture.registry_signature.len() / 2);
+    let tampered_err = match verify_card_signature(&tampered, registry_key) {
+        Ok(()) => {
+            return TestResult::Fail {
+                reason: "tampered registry signature unexpectedly verified".to_string(),
+            };
+        }
+        Err(err) => err,
+    };
+    if !matches!(tampered_err, TrustCardError::SignatureInvalid(_)) {
+        return TestResult::Fail {
+            reason: format!(
+                "tampered registry signature should fail with SignatureInvalid, got {tampered_err}"
+            ),
+        };
+    }
+
+    TestResult::Pass
+}
+
+fn test_card_hash_vector_determinism(_card: &TrustCard) -> TestResult {
+    let vector = match load_signature_vector("signed_card_baseline") {
+        Ok(vector) => vector,
+        Err(reason) => return TestResult::Fail { reason },
+    };
+    let fixture = match load_trust_card_fixture(&vector.expected_wire_artifact) {
+        Ok(card) => card,
+        Err(reason) => return TestResult::Fail { reason },
+    };
+    let expected_hash_preimage = match read_workspace_file(&vector.expected_hash_preimage_artifact)
+    {
+        Ok(raw) => raw,
+        Err(reason) => return TestResult::Fail { reason },
+    };
+
+    let computed_hash = match compute_card_hash(&fixture) {
+        Ok(hash) => hash,
+        Err(err) => {
+            return TestResult::Fail {
+                reason: format!("failed computing fixture card_hash: {err}"),
+            };
+        }
+    };
+    if computed_hash != vector.expected_card_hash {
+        return TestResult::Fail {
+            reason: format!(
+                "computed card_hash mismatch: expected {} got {}",
+                vector.expected_card_hash, computed_hash
+            ),
+        };
+    }
+    if fixture.card_hash != computed_hash {
+        return TestResult::Fail {
+            reason: format!(
+                "embedded fixture card_hash mismatch: expected {} got {}",
+                computed_hash, fixture.card_hash
+            ),
+        };
+    }
+    let recomputed_hash = match compute_card_hash(&fixture) {
+        Ok(hash) => hash,
+        Err(err) => {
+            return TestResult::Fail {
+                reason: format!("failed recomputing fixture card_hash: {err}"),
+            };
+        }
+    };
+    if recomputed_hash != computed_hash {
+        return TestResult::Fail {
+            reason: "card_hash computation was not deterministic across repeated calls".to_string(),
+        };
+    }
+
+    let actual_hash_preimage = match canonical_hash_preimage(&fixture) {
+        Ok(json) => json,
+        Err(reason) => return TestResult::Fail { reason },
+    };
+    if actual_hash_preimage != expected_hash_preimage.trim_end() {
+        return TestResult::Fail {
+            reason: "card_hash preimage artifact diverged from canonicalized fixture".to_string(),
+        };
+    }
+
+    let registry_key = vector.registry_key_ascii.as_bytes();
+    let mut tampered = fixture.clone();
+    tampered.publisher.display_name.push_str(" (tampered)");
+    let tampered_hash = match compute_card_hash(&tampered) {
+        Ok(hash) => hash,
+        Err(err) => {
+            return TestResult::Fail {
+                reason: format!("failed computing tampered card_hash: {err}"),
+            };
+        }
+    };
+    if tampered_hash == computed_hash {
+        return TestResult::Fail {
+            reason: "tampering trust-card payload did not change card_hash".to_string(),
+        };
+    }
+
+    let tampered_err = match verify_card_signature(&tampered, registry_key) {
+        Ok(()) => {
+            return TestResult::Fail {
+                reason: "tampered payload unexpectedly preserved signature verification"
+                    .to_string(),
+            };
+        }
+        Err(err) => err,
+    };
+    if !matches!(tampered_err, TrustCardError::CardHashMismatch(_)) {
+        return TestResult::Fail {
+            reason: format!(
+                "tampered payload should fail with CardHashMismatch, got {tampered_err}"
+            ),
+        };
+    }
+
+    TestResult::Pass
+}
+
 // ============================================================================
 // CONFORMANCE TEST IMPLEMENTATIONS
 // ============================================================================
@@ -484,12 +763,8 @@ fn run_conformance_case(case: &ConformanceCase) -> TestResult {
         "TC-SERIAL-001" => test_deterministic_serialization(&minimal_card),
         "TC-SERIAL-002" => test_field_ordering(&minimal_card),
         "TC-ROUND-001" => test_round_trip_consistency(&minimal_card),
-        "TC-SIG-001" | "TC-SIG-002" => {
-            // Signature tests require registry setup - implement placeholder
-            TestResult::ExpectedFailure {
-                reason: "Signature testing not yet implemented".to_string(),
-            }
-        }
+        "TC-SIG-001" => test_signature_vector_verification(&minimal_card),
+        "TC-SIG-002" => test_card_hash_vector_determinism(&minimal_card),
         "TC-EDGE-001" => test_empty_capabilities_valid(&minimal_card),
         "TC-EDGE-002" => {
             // Audit history bounds testing
