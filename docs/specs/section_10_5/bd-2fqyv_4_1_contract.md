@@ -145,6 +145,9 @@ Bundle generation from `IncidentEvidencePackage` MUST be deterministic:
    first event-specific override in sorted order when present, otherwise the
    top-level `policy_version`.
 7. Call `generate_replay_bundle(package.incident_id, &event_log)`.
+8. Preserve `evidence_refs` in the resulting replay bundle and expose any
+   trust artifact references as a first-class subset covered by the bundle
+   integrity hash.
 
 The evidence package is authoritative; any representation quirks of `RawEvent`
 or the current bundle generator are downstream implementation details. The

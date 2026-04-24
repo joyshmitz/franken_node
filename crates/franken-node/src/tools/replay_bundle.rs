@@ -190,6 +190,10 @@ pub enum ReplayBundleError {
     #[error("incident evidence reference `{reference}` must be relative to the incident root")]
     EvidenceRefNotRelative { reference: String },
     #[error(
+        "replay bundle trust artifact reference `{reference}` must also appear in evidence_refs"
+    )]
+    TrustArtifactRefMissingEvidence { reference: String },
+    #[error(
         "incident evidence event `{event_id}` has invalid causal_parent={causal_parent}; it must refer to an earlier event"
     )]
     EvidenceCausalParentInvalid {
@@ -324,6 +328,10 @@ pub struct ReplayBundle {
     pub policy_version: String,
     pub manifest: BundleManifest,
     pub chunks: Vec<BundleChunk>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence_refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub trust_artifact_refs: Vec<String>,
     pub integrity_hash: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<ReplayBundleSignature>,
@@ -427,6 +435,10 @@ struct ReplayBundleIntegrityView<'a> {
     policy_version: &'a str,
     manifest: &'a BundleManifest,
     chunks: &'a [BundleChunk],
+    #[serde(default, skip_serializing_if = "<[_]>::is_empty")]
+    evidence_refs: &'a [String],
+    #[serde(default, skip_serializing_if = "<[_]>::is_empty")]
+    trust_artifact_refs: &'a [String],
 }
 
 pub fn read_incident_evidence_package(
@@ -651,7 +663,25 @@ pub fn generate_replay_bundle_from_evidence(
         first.policy_version = Some(selected_policy_version);
     }
 
-    generate_replay_bundle(&package.incident_id, &event_log)
+    let mut bundle = generate_replay_bundle(&package.incident_id, &event_log)?;
+    bundle.evidence_refs = package.evidence_refs.clone();
+    bundle.trust_artifact_refs = trust_artifact_refs_from_evidence_refs(&bundle.evidence_refs);
+    bundle.integrity_hash = compute_integrity_hash(&bundle)?;
+    Ok(bundle)
+}
+
+fn trust_artifact_refs_from_evidence_refs(evidence_refs: &[String]) -> Vec<String> {
+    evidence_refs
+        .iter()
+        .filter(|reference| is_trust_artifact_ref(reference))
+        .cloned()
+        .collect()
+}
+
+fn is_trust_artifact_ref(reference: &str) -> bool {
+    reference
+        .split('/')
+        .any(|component| matches!(component, "trust" | "trust-artifacts" | "trust_artifacts"))
 }
 
 fn validate_nonempty_field(field: &str, value: &str) -> Result<(), ReplayBundleError> {
@@ -770,6 +800,8 @@ pub fn generate_replay_bundle(
         policy_version,
         manifest,
         chunks,
+        evidence_refs: Vec::new(),
+        trust_artifact_refs: Vec::new(),
         integrity_hash: String::new(),
         signature: None,
     };
@@ -1377,6 +1409,8 @@ fn compute_integrity_hash(bundle: &ReplayBundle) -> Result<String, ReplayBundleE
         policy_version: &bundle.policy_version,
         manifest: &bundle.manifest,
         chunks: &bundle.chunks,
+        evidence_refs: &bundle.evidence_refs,
+        trust_artifact_refs: &bundle.trust_artifact_refs,
     };
     let canonical = canonicalize_value(&serde_json::to_value(view)?, "$.integrity_view")?;
     Ok(sha256_hex(&canonical_json_bytes(&canonical)?))
@@ -1423,6 +1457,32 @@ fn validate_bundle_structure(bundle: &ReplayBundle) -> Result<(), ReplayBundleEr
     )?;
     if bundle.manifest != expected_manifest {
         return Err(ReplayBundleError::ManifestMismatch);
+    }
+
+    validate_replay_bundle_refs(bundle)?;
+
+    Ok(())
+}
+
+fn validate_replay_bundle_refs(bundle: &ReplayBundle) -> Result<(), ReplayBundleError> {
+    for reference in &bundle.evidence_refs {
+        validate_relative_evidence_ref(reference)?;
+    }
+    for reference in &bundle.trust_artifact_refs {
+        validate_relative_evidence_ref(reference)?;
+    }
+
+    let evidence_refs = bundle
+        .evidence_refs
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    for reference in &bundle.trust_artifact_refs {
+        if !evidence_refs.contains(reference.as_str()) {
+            return Err(ReplayBundleError::TrustArtifactRefMissingEvidence {
+                reference: reference.clone(),
+            });
+        }
     }
 
     Ok(())
@@ -2283,6 +2343,45 @@ mod tests {
         assert_eq!(
             to_canonical_json(&first).expect("json 1"),
             to_canonical_json(&second).expect("json 2")
+        );
+    }
+
+    #[test]
+    fn evidence_package_bundle_round_trip_preserves_refs_and_trust_artifacts() {
+        let mut package = fixture_evidence_package("INC-EVID-REFS-001");
+        package
+            .evidence_refs
+            .push("refs/trust/trust-card.json".to_string());
+
+        let mut bundle = generate_replay_bundle_from_evidence(&package).expect("bundle");
+        assert_eq!(bundle.evidence_refs, package.evidence_refs);
+        assert_eq!(
+            bundle.trust_artifact_refs,
+            vec!["refs/trust/trust-card.json".to_string()]
+        );
+        assert!(validate_bundle_integrity(&bundle).expect("integrity"));
+
+        sign_fixture_bundle(&mut bundle);
+        let trusted_key_id = fixture_trusted_key_id();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("bundle.json");
+        write_bundle_to_path_with_trusted_key(&bundle, &path, &trusted_key_id)
+            .expect("write bundle");
+
+        let loaded =
+            read_bundle_from_path_with_trusted_key(&path, Some(&trusted_key_id)).expect("read");
+        assert_eq!(loaded.evidence_refs, package.evidence_refs);
+        assert_eq!(loaded.trust_artifact_refs, bundle.trust_artifact_refs);
+
+        let wire = serde_json::to_value(&loaded).expect("bundle json");
+        assert_eq!(
+            wire.get("evidence_refs").expect("evidence_refs"),
+            &serde_json::json!(package.evidence_refs)
+        );
+        assert_eq!(
+            wire.get("trust_artifact_refs")
+                .expect("trust_artifact_refs"),
+            &serde_json::json!(["refs/trust/trust-card.json"])
         );
     }
 

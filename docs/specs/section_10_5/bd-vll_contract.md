@@ -73,6 +73,8 @@ snapshots, integrity metadata, and chunk manifests for large incidents.
 - `policy_version: String`
 - `manifest: BundleManifest`
 - `chunks: Vec<BundleChunk>`
+- `evidence_refs: Vec<String>` (validated incident-root-relative source evidence references)
+- `trust_artifact_refs: Vec<String>` (validated subset of `evidence_refs` that points at trust artifacts)
 - `integrity_hash: String`
 
 ### `ReplayOutcome`

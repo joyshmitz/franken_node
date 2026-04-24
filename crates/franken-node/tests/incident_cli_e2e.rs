@@ -73,7 +73,7 @@ fn write_replay_trust_anchor(path: &Path) {
 }
 
 fn replay_bundle_trusted_key_id() -> String {
-    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[42_u8; 32]);
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[0x42_u8; 32]);
     frankenengine_node::supply_chain::artifact_signing::KeyId::from_verifying_key(
         &signing_key.verifying_key(),
     )
@@ -427,6 +427,66 @@ fn incident_bundle_accepts_explicit_evidence_path_and_writes_bundle() {
     assert_eq!(signature.key_source, "config");
     assert_eq!(signature.signing_identity, "incident-control-plane");
     assert_eq!(signature.trust_scope, "incident_replay_bundle");
+}
+
+#[test]
+fn incident_bundle_round_trips_evidence_refs_and_trust_artifacts() {
+    let workspace = config_only_workspace();
+    configure_replay_bundle_signing_key(workspace.path());
+    let evidence_path = workspace
+        .path()
+        .join("fixtures/incidents/INC-E2E-REFS-001/evidence.v1.json");
+    write_fixture_incident_evidence(&evidence_path, "INC-E2E-REFS-001");
+
+    let mut package: IncidentEvidencePackage =
+        serde_json::from_str(&fs::read_to_string(&evidence_path).expect("read evidence package"))
+            .expect("parse evidence package");
+    package
+        .evidence_refs
+        .push("refs/trust/trust-card.json".to_string());
+    fs::write(
+        &evidence_path,
+        serde_json::to_string_pretty(&package).expect("serialize evidence package"),
+    )
+    .expect("write evidence package");
+
+    let evidence_arg = evidence_path.to_string_lossy().to_string();
+    let output = run_cli_in_workspace(
+        workspace.path(),
+        &[
+            "incident",
+            "bundle",
+            "--id",
+            "INC-E2E-REFS-001",
+            "--evidence-path",
+            &evidence_arg,
+            "--verify",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "incident bundle failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let trusted_key_id = replay_bundle_trusted_key_id();
+    let bundle_path = workspace.path().join("INC-E2E-REFS-001.fnbundle");
+    let bundle = read_bundle_from_path_with_trusted_key(&bundle_path, Some(&trusted_key_id))
+        .expect("read bundle");
+    assert_eq!(bundle.evidence_refs, package.evidence_refs);
+    assert_eq!(
+        bundle.trust_artifact_refs,
+        vec!["refs/trust/trust-card.json".to_string()]
+    );
+    assert!(validate_bundle_integrity(&bundle).expect("validate bundle"));
+
+    let wire = fs::read_to_string(&bundle_path).expect("read bundle json");
+    let round_tripped: ReplayBundle = serde_json::from_str(&wire).expect("round-trip bundle json");
+    assert_eq!(round_tripped.evidence_refs, package.evidence_refs);
+    assert_eq!(
+        round_tripped.trust_artifact_refs,
+        bundle.trust_artifact_refs
+    );
 }
 
 #[test]
