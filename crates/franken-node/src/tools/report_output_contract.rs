@@ -46,6 +46,10 @@ fn contains_nul_byte(value: &str) -> bool {
     value.contains('\0')
 }
 
+fn len_to_u64(len: usize) -> u64 {
+    u64::try_from(len).unwrap_or(u64::MAX)
+}
+
 pub mod event_codes {
     pub const ROC_BUNDLE_CREATED: &str = "ROC-001";
     pub const ROC_ARTIFACT_ADDED: &str = "ROC-002";
@@ -338,15 +342,15 @@ impl ReportOutputContract {
         let content_hash = {
             let mut hasher = Sha256::new();
             hasher.update(b"report_output_catalog_hash_v1:");
-            hasher.update((self.contract_version.len() as u64).to_le_bytes());
+            hasher.update(len_to_u64(self.contract_version.len()).to_le_bytes());
             hasher.update(self.contract_version.as_bytes());
-            hasher.update((self.bundles.len() as u64).to_le_bytes());
-            hasher.update((complete as u64).to_le_bytes());
-            hasher.update((by_type.len() as u64).to_le_bytes());
+            hasher.update(len_to_u64(self.bundles.len()).to_le_bytes());
+            hasher.update(len_to_u64(complete).to_le_bytes());
+            hasher.update(len_to_u64(by_type.len()).to_le_bytes());
             for (type_name, count) in &by_type {
-                hasher.update((type_name.len() as u64).to_le_bytes());
+                hasher.update(len_to_u64(type_name.len()).to_le_bytes());
                 hasher.update(type_name.as_bytes());
-                hasher.update((*count as u64).to_le_bytes());
+                hasher.update(len_to_u64(*count).to_le_bytes());
             }
             hex::encode(hasher.finalize())
         };

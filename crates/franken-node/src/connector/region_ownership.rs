@@ -514,8 +514,8 @@ impl Region {
 
         // Simulate drain completion for tasks that can complete within budget.
         // In a real async runtime, this would await task completion with a timeout.
-        let mut tasks_drained = 0;
-        let mut tasks_force_terminated = 0;
+        let mut tasks_drained = 0usize;
+        let mut tasks_force_terminated = 0usize;
         let mut force_terminated_ids: Vec<String> = Vec::new();
 
         for task in &mut self.tasks {
@@ -524,18 +524,18 @@ impl Region {
                     let elapsed = start.elapsed();
                     if elapsed < Duration::from_millis(self.quiescence_budget_ms) {
                         task.state = TaskState::Completed;
-                        tasks_drained += 1;
+                        tasks_drained = tasks_drained.saturating_add(1);
                     } else {
                         task.state = TaskState::ForceTerminated;
-                        tasks_force_terminated += 1;
+                        tasks_force_terminated = tasks_force_terminated.saturating_add(1);
                         force_terminated_ids.push(task.task_id.clone());
                     }
                 }
                 TaskState::Completed => {
-                    tasks_drained += 1;
+                    tasks_drained = tasks_drained.saturating_add(1);
                 }
                 TaskState::ForceTerminated => {
-                    tasks_force_terminated += 1;
+                    tasks_force_terminated = tasks_force_terminated.saturating_add(1);
                 }
                 TaskState::Running => {} // not yet draining; handled by next drain cycle
             }

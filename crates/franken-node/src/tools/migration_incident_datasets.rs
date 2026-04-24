@@ -43,6 +43,10 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     items.push(item);
 }
 
+fn len_to_u64(len: usize) -> u64 {
+    u64::try_from(len).unwrap_or(u64::MAX)
+}
+
 // ---------------------------------------------------------------------------
 // Event codes
 // ---------------------------------------------------------------------------
@@ -485,24 +489,24 @@ impl ReproducibleDatasets {
         let content_hash = {
             let mut hasher = Sha256::new();
             hasher.update(b"migration_incident_catalog_hash_v1:");
-            hasher.update((self.config.schema_version.len() as u64).to_le_bytes());
+            hasher.update(len_to_u64(self.config.schema_version.len()).to_le_bytes());
             hasher.update(self.config.schema_version.as_bytes());
-            hasher.update((self.datasets.len() as u64).to_le_bytes());
-            hasher.update((total_records as u64).to_le_bytes());
-            hasher.update((by_type.len() as u64).to_le_bytes());
+            hasher.update(len_to_u64(self.datasets.len()).to_le_bytes());
+            hasher.update(len_to_u64(total_records).to_le_bytes());
+            hasher.update(len_to_u64(by_type.len()).to_le_bytes());
             for (type_name, count) in &by_type {
-                hasher.update((type_name.len() as u64).to_le_bytes());
+                hasher.update(len_to_u64(type_name.len()).to_le_bytes());
                 hasher.update(type_name.as_bytes());
-                hasher.update((*count as u64).to_le_bytes());
+                hasher.update(len_to_u64(*count).to_le_bytes());
             }
-            hasher.update((self.bundles.len() as u64).to_le_bytes());
+            hasher.update(len_to_u64(self.bundles.len()).to_le_bytes());
             for bundle in &self.bundles {
-                hasher.update((bundle.bundle_id.len() as u64).to_le_bytes());
+                hasher.update(len_to_u64(bundle.bundle_id.len()).to_le_bytes());
                 hasher.update(bundle.bundle_id.as_bytes());
-                hasher.update((bundle.bundle_hash.len() as u64).to_le_bytes());
+                hasher.update(len_to_u64(bundle.bundle_hash.len()).to_le_bytes());
                 hasher.update(bundle.bundle_hash.as_bytes());
-                hasher.update((bundle.total_records as u64).to_le_bytes());
-                hasher.update((bundle.datasets.len() as u64).to_le_bytes());
+                hasher.update(len_to_u64(bundle.total_records).to_le_bytes());
+                hasher.update(len_to_u64(bundle.datasets.len()).to_le_bytes());
             }
             hex::encode(hasher.finalize())
         };
