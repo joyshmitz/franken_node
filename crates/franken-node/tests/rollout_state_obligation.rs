@@ -3,12 +3,14 @@ use frankenengine_node::connector::lifecycle::ConnectorState;
 use frankenengine_node::connector::obligation_tracker::{
     ObligationState, ObligationTracker, event_codes,
 };
+use frankenengine_node::connector::region_ownership::{RegionError, atomic_next_for_test};
 use frankenengine_node::connector::rollout_state::{
     PersistError, RolloutPhase, RolloutState,
     persist_with_obligation_tracker_and_rename_and_orphan_for_test,
     persist_with_obligation_tracker_and_rename_for_test, persist_with_obligation_tracker_for_test,
 };
 use frankenengine_node::control_plane::control_epoch::ControlEpoch;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tempfile::TempDir;
 
 fn sample_state() -> RolloutState {
@@ -31,6 +33,25 @@ fn temp_leftovers(dir: &std::path::Path, marker: &str) -> Vec<String> {
         .collect::<Vec<_>>();
     leftovers.sort();
     leftovers
+}
+
+#[test]
+fn region_sequence_fails_closed_at_u64_boundary() {
+    let counter = AtomicU64::new(u64::MAX - 1);
+
+    let last_unique = atomic_next_for_test(&counter, "region_sequence").unwrap();
+    assert_eq!(last_unique, u64::MAX - 1);
+    assert_eq!(counter.load(Ordering::Relaxed), u64::MAX);
+
+    let err = atomic_next_for_test(&counter, "region_sequence").unwrap_err();
+    assert_eq!(
+        err,
+        RegionError::SequenceExhausted {
+            counter: "region_sequence".to_string(),
+            last_value: u64::MAX
+        }
+    );
+    assert_eq!(counter.load(Ordering::Relaxed), u64::MAX);
 }
 
 #[test]

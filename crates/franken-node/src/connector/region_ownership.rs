@@ -52,8 +52,8 @@ pub mod event_codes {
 
 static REGION_SEQ: AtomicU64 = AtomicU64::new(1);
 
-fn next_region_id() -> RegionId {
-    RegionId(atomic_next(&REGION_SEQ))
+fn next_region_id() -> Result<RegionId, RegionError> {
+    atomic_next(&REGION_SEQ, "region").map(RegionId)
 }
 
 // ---------------------------------------------------------------------------
@@ -62,17 +62,30 @@ fn next_region_id() -> RegionId {
 
 static CX_SEQ: AtomicU64 = AtomicU64::new(1);
 
-fn atomic_next(counter: &AtomicU64) -> u64 {
+fn atomic_next(counter: &AtomicU64, counter_name: &'static str) -> Result<u64, RegionError> {
     loop {
         let current = counter.load(Ordering::Relaxed);
-        let next = current.saturating_add(1);
+        let Some(next) = current.checked_add(1) else {
+            return Err(RegionError::SequenceExhausted {
+                counter: counter_name.to_string(),
+                last_value: current,
+            });
+        };
         if counter
             .compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed)
             .is_ok()
         {
-            return current;
+            return Ok(current);
         }
     }
+}
+
+#[cfg(feature = "test-support")]
+pub fn atomic_next_for_test(
+    counter: &AtomicU64,
+    counter_name: &'static str,
+) -> Result<u64, RegionError> {
+    atomic_next(counter, counter_name)
 }
 
 /// asupersync execution context for control-plane operations.
@@ -100,31 +113,31 @@ pub struct ControlPlaneCx {
 
 impl ControlPlaneCx {
     /// Create a new root Cx for a control-plane lifecycle.
-    pub fn new_root(connector_id: &str, trace_id: &str, epoch: u64) -> Self {
-        let seq = atomic_next(&CX_SEQ);
+    pub fn new_root(connector_id: &str, trace_id: &str, epoch: u64) -> Result<Self, RegionError> {
+        let seq = atomic_next(&CX_SEQ, "control_plane_cx")?;
         let cx_id = compute_cx_id(epoch, seq);
-        Self {
+        Ok(Self {
             epoch,
             seq,
             parent_cx_id: None,
             cx_id,
             connector_id: connector_id.to_string(),
             trace_id: trace_id.to_string(),
-        }
+        })
     }
 
     /// Derive a child Cx inheriting the epoch and parent linkage.
-    pub fn child(&self) -> Self {
-        let seq = atomic_next(&CX_SEQ);
+    pub fn child(&self) -> Result<Self, RegionError> {
+        let seq = atomic_next(&CX_SEQ, "control_plane_cx")?;
         let cx_id = compute_cx_id(self.epoch, seq);
-        Self {
+        Ok(Self {
             epoch: self.epoch,
             seq,
             parent_cx_id: Some(self.cx_id.clone()),
             cx_id,
             connector_id: self.connector_id.clone(),
             trace_id: self.trace_id.clone(),
-        }
+        })
     }
 
     /// Returns true if this context has a parent (i.e., is not a root).
@@ -265,6 +278,8 @@ pub enum RegionError {
         region_id: RegionId,
         task_id: String,
     },
+    #[serde(rename = "RGN_SEQUENCE_EXHAUSTED")]
+    SequenceExhausted { counter: String, last_value: u64 },
 }
 
 impl fmt::Display for RegionError {
@@ -294,6 +309,13 @@ impl fmt::Display for RegionError {
             Self::TaskNotFound { region_id, task_id } => write!(
                 f,
                 "RGN_TASK_NOT_FOUND: task {task_id} not found in region {region_id}"
+            ),
+            Self::SequenceExhausted {
+                counter,
+                last_value,
+            } => write!(
+                f,
+                "RGN_SEQUENCE_EXHAUSTED: {counter} sequence exhausted at {last_value}"
             ),
         }
     }
@@ -334,11 +356,11 @@ impl Region {
     /// Create a new root region for a connector lifecycle.
     ///
     /// Accepts a `ControlPlaneCx` that links this region to the asupersync epoch.
-    pub fn new_root(cx: ControlPlaneCx, quiescence_budget_ms: u64) -> Self {
+    pub fn new_root(cx: ControlPlaneCx, quiescence_budget_ms: u64) -> Result<Self, RegionError> {
         let connector_id = cx.connector_id.clone();
         let trace_id = cx.trace_id.clone();
-        Self {
-            id: next_region_id(),
+        Ok(Self {
+            id: next_region_id()?,
             kind: RegionKind::ConnectorLifecycle,
             parent_id: None,
             connector_id,
@@ -348,16 +370,20 @@ impl Region {
             child_region_ids: Vec::new(),
             closed: false,
             quiescence_budget_ms,
-        }
+        })
     }
 
     /// Create a child region nested under this region.
     ///
     /// Derives a child `ControlPlaneCx` from the parent, maintaining causal linkage.
-    pub fn open_child(&mut self, kind: RegionKind, quiescence_budget_ms: u64) -> Region {
-        let child_cx = self.cx.child();
+    pub fn open_child(
+        &mut self,
+        kind: RegionKind,
+        quiescence_budget_ms: u64,
+    ) -> Result<Region, RegionError> {
+        let child_cx = self.cx.child()?;
         let child = Region {
-            id: next_region_id(),
+            id: next_region_id()?,
             kind,
             parent_id: Some(self.id),
             connector_id: self.connector_id.clone(),
@@ -370,7 +396,7 @@ impl Region {
         };
         let child_id = child.id;
         push_bounded(&mut self.child_region_ids, child_id, MAX_CHILD_REGION_IDS);
-        child
+        Ok(child)
     }
 
     /// Register a task within this region.
@@ -605,12 +631,12 @@ pub fn build_lifecycle_hierarchy(
     cx: ControlPlaneCx,
     root_budget_ms: u64,
     child_budget_ms: u64,
-) -> (Region, Region, Region, Region) {
-    let mut root = Region::new_root(cx, root_budget_ms);
-    let health_gate = root.open_child(RegionKind::HealthGate, child_budget_ms);
-    let rollout = root.open_child(RegionKind::Rollout, child_budget_ms);
-    let fencing = root.open_child(RegionKind::Fencing, child_budget_ms);
-    (root, health_gate, rollout, fencing)
+) -> Result<(Region, Region, Region, Region), RegionError> {
+    let mut root = Region::new_root(cx, root_budget_ms)?;
+    let health_gate = root.open_child(RegionKind::HealthGate, child_budget_ms)?;
+    let rollout = root.open_child(RegionKind::Rollout, child_budget_ms)?;
+    let fencing = root.open_child(RegionKind::Fencing, child_budget_ms)?;
+    Ok((root, health_gate, rollout, fencing))
 }
 
 /// Generate a quiescence trace as a list of JSONL-formatted region events.
@@ -640,12 +666,12 @@ mod tests {
     use super::*;
 
     fn test_cx() -> ControlPlaneCx {
-        ControlPlaneCx::new_root("test-conn", "trace-001", 42)
+        ControlPlaneCx::new_root("test-conn", "trace-001", 42).unwrap()
     }
 
     #[test]
     fn root_region_creation() {
-        let root = Region::new_root(test_cx(), 5000);
+        let root = Region::new_root(test_cx(), 5000).unwrap();
         assert_eq!(root.kind, RegionKind::ConnectorLifecycle);
         assert!(root.parent_id.is_none());
         assert!(!root.closed);
@@ -656,8 +682,8 @@ mod tests {
 
     #[test]
     fn child_region_linkage() {
-        let mut root = Region::new_root(test_cx(), 5000);
-        let child = root.open_child(RegionKind::HealthGate, 2000);
+        let mut root = Region::new_root(test_cx(), 5000).unwrap();
+        let child = root.open_child(RegionKind::HealthGate, 2000).unwrap();
         assert_eq!(child.parent_id, Some(root.id));
         assert!(root.child_region_ids.contains(&child.id));
         // Child Cx links to parent
@@ -670,7 +696,7 @@ mod tests {
 
     #[test]
     fn task_registration_and_completion() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         region.register_task("task-1").unwrap();
         region.register_task("task-2").unwrap();
         assert_eq!(region.active_task_count(), 2);
@@ -684,7 +710,7 @@ mod tests {
 
     #[test]
     fn close_drains_all_tasks() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         region.register_task("task-1").unwrap();
         region.register_task("task-2").unwrap();
 
@@ -697,7 +723,7 @@ mod tests {
 
     #[test]
     fn close_emits_correct_events() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         region.register_task("task-1").unwrap();
 
         let result = region.close().unwrap();
@@ -714,7 +740,7 @@ mod tests {
     fn close_events_carry_cx_id() {
         let cx = test_cx();
         let expected_cx_id = cx.cx_id.clone();
-        let mut region = Region::new_root(cx, 5000);
+        let mut region = Region::new_root(cx, 5000).unwrap();
         region.register_task("task-1").unwrap();
 
         let result = region.close().unwrap();
@@ -725,7 +751,7 @@ mod tests {
 
     #[test]
     fn already_closed_region_rejects_operations() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         region.close().unwrap();
 
         let err = region.close().unwrap_err();
@@ -737,16 +763,16 @@ mod tests {
 
     #[test]
     fn task_not_found_error() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         let err = region.complete_task("nonexistent").unwrap_err();
         assert!(matches!(err, RegionError::TaskNotFound { .. }));
     }
 
     #[test]
     fn hierarchy_builder() {
-        let cx = ControlPlaneCx::new_root("test-conn", "trace-001", 100);
+        let cx = ControlPlaneCx::new_root("test-conn", "trace-001", 100).unwrap();
         let root_cx_id = cx.cx_id.clone();
-        let (root, health, rollout, fencing) = build_lifecycle_hierarchy(cx, 5000, 2000);
+        let (root, health, rollout, fencing) = build_lifecycle_hierarchy(cx, 5000, 2000).unwrap();
         assert_eq!(root.child_region_ids.len(), 3);
         assert_eq!(health.parent_id, Some(root.id));
         assert_eq!(rollout.parent_id, Some(root.id));
@@ -765,7 +791,7 @@ mod tests {
 
     #[test]
     fn quiescence_trace_generation() {
-        let mut root = Region::new_root(test_cx(), 5000);
+        let mut root = Region::new_root(test_cx(), 5000).unwrap();
         root.register_task("task-1").unwrap();
         let result = root.close().unwrap();
 
@@ -775,7 +801,7 @@ mod tests {
 
     #[test]
     fn completed_tasks_counted_as_drained() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         region.register_task("task-1").unwrap();
         region.complete_task("task-1").unwrap();
 
@@ -795,7 +821,7 @@ mod tests {
 
     #[test]
     fn serde_roundtrip() {
-        let region = Region::new_root(test_cx(), 5000);
+        let region = Region::new_root(test_cx(), 5000).unwrap();
         let json = serde_json::to_string(&region).unwrap();
         let parsed: Region = serde_json::from_str(&json).unwrap();
         assert_eq!(region.kind, parsed.kind);
@@ -807,7 +833,7 @@ mod tests {
 
     #[test]
     fn cx_root_has_no_parent() {
-        let cx = ControlPlaneCx::new_root("conn-1", "trace-1", 10);
+        let cx = ControlPlaneCx::new_root("conn-1", "trace-1", 10).unwrap();
         assert!(cx.parent_cx_id.is_none());
         assert!(!cx.is_child());
         assert_eq!(cx.epoch, 10);
@@ -817,8 +843,8 @@ mod tests {
 
     #[test]
     fn cx_child_links_to_parent() {
-        let root = ControlPlaneCx::new_root("conn-1", "trace-1", 10);
-        let child = root.child();
+        let root = ControlPlaneCx::new_root("conn-1", "trace-1", 10).unwrap();
+        let child = root.child().unwrap();
         assert!(child.is_child());
         assert_eq!(child.parent_cx_id.as_deref(), Some(root.cx_id.as_str()));
         assert_eq!(child.epoch, root.epoch);
@@ -843,8 +869,27 @@ mod tests {
     }
 
     #[test]
+    fn atomic_next_fails_closed_at_u64_boundary() {
+        let counter = AtomicU64::new(u64::MAX - 1);
+
+        let last_unique = atomic_next(&counter, "test_counter").unwrap();
+        assert_eq!(last_unique, u64::MAX - 1);
+        assert_eq!(counter.load(Ordering::Relaxed), u64::MAX);
+
+        let err = atomic_next(&counter, "test_counter").unwrap_err();
+        assert_eq!(
+            err,
+            RegionError::SequenceExhausted {
+                counter: "test_counter".to_string(),
+                last_value: u64::MAX
+            }
+        );
+        assert_eq!(counter.load(Ordering::Relaxed), u64::MAX);
+    }
+
+    #[test]
     fn cx_display_format() {
-        let cx = ControlPlaneCx::new_root("conn-1", "trace-1", 7);
+        let cx = ControlPlaneCx::new_root("conn-1", "trace-1", 7).unwrap();
         let s = cx.to_string();
         assert!(s.contains("epoch=7"));
         assert!(s.contains("cx("));
@@ -852,7 +897,7 @@ mod tests {
 
     #[test]
     fn cx_serde_roundtrip() {
-        let cx = ControlPlaneCx::new_root("conn-1", "trace-1", 42);
+        let cx = ControlPlaneCx::new_root("conn-1", "trace-1", 42).unwrap();
         let json = serde_json::to_string(&cx).unwrap();
         let parsed: ControlPlaneCx = serde_json::from_str(&json).unwrap();
         assert_eq!(cx, parsed);
@@ -862,7 +907,7 @@ mod tests {
     fn open_event_carries_cx_id() {
         let cx = test_cx();
         let expected = cx.cx_id.clone();
-        let region = Region::new_root(cx, 5000);
+        let region = Region::new_root(cx, 5000).unwrap();
         let event = region.open_event();
         assert_eq!(event.cx_id, expected);
         assert!(event.detail.contains("cx="));
@@ -870,7 +915,7 @@ mod tests {
 
     #[test]
     fn close_with_zero_budget_force_terminates_running_task() {
-        let mut region = Region::new_root(test_cx(), 0);
+        let mut region = Region::new_root(test_cx(), 0).unwrap();
         region.register_task("slow-task").unwrap();
 
         let result = region.close().unwrap();
@@ -893,7 +938,7 @@ mod tests {
 
     #[test]
     fn close_with_existing_force_terminated_task_reports_timeout() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         region.register_task("already-killed").unwrap();
         region.tasks[0].state = TaskState::ForceTerminated;
 
@@ -908,7 +953,7 @@ mod tests {
 
     #[test]
     fn close_twice_preserves_region_id_in_error() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         let region_id = region.id;
         region.close().unwrap();
 
@@ -920,7 +965,7 @@ mod tests {
 
     #[test]
     fn register_task_after_close_preserves_region_id_in_error() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         let region_id = region.id;
         region.close().unwrap();
 
@@ -932,7 +977,7 @@ mod tests {
 
     #[test]
     fn complete_missing_task_preserves_task_id_in_error() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         region.register_task("existing-task").unwrap();
         let region_id = region.id;
 
@@ -1034,7 +1079,7 @@ mod tests {
 
     #[test]
     fn completing_force_terminated_task_does_not_resurrect_it() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         region.register_task("killed").unwrap();
         region.tasks[0].state = TaskState::ForceTerminated;
 
@@ -1047,7 +1092,7 @@ mod tests {
 
     #[test]
     fn close_mixed_completed_and_force_terminated_tasks_reports_timeout() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         region.register_task("done").unwrap();
         region.register_task("killed").unwrap();
         region.tasks[0].state = TaskState::Completed;
@@ -1059,8 +1104,7 @@ mod tests {
         assert_eq!(result.tasks_drained, 1);
         assert_eq!(result.tasks_force_terminated, 1);
         assert!(result.events.iter().any(|event| {
-            event.event_code == event_codes::QUIESCENCE_TIMEOUT
-                && event.child_task_count == 2
+            event.event_code == event_codes::QUIESCENCE_TIMEOUT && event.child_task_count == 2
         }));
     }
 
@@ -1068,21 +1112,23 @@ mod tests {
     fn timeout_close_events_preserve_region_cx_id() {
         let cx = test_cx();
         let expected_cx_id = cx.cx_id.clone();
-        let mut region = Region::new_root(cx, 0);
+        let mut region = Region::new_root(cx, 0).unwrap();
         region.register_task("slow").unwrap();
 
         let result = region.close().unwrap();
 
         assert!(!result.quiescence_achieved);
-        assert!(result
-            .events
-            .iter()
-            .all(|event| event.cx_id == expected_cx_id));
+        assert!(
+            result
+                .events
+                .iter()
+                .all(|event| event.cx_id == expected_cx_id)
+        );
     }
 
     #[test]
     fn complete_empty_task_id_is_rejected_without_touching_tasks() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         region.register_task("task-1").unwrap();
 
         let err = region.complete_task("").unwrap_err();
@@ -1095,7 +1141,7 @@ mod tests {
 
     #[test]
     fn complete_task_is_case_sensitive_and_preserves_original() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         region.register_task("Task-A").unwrap();
 
         let err = region.complete_task("task-a").unwrap_err();
@@ -1110,7 +1156,7 @@ mod tests {
 
     #[test]
     fn register_task_after_close_preserves_existing_terminal_task() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         region.register_task("done").unwrap();
         region.complete_task("done").unwrap();
         region.close().unwrap();
@@ -1196,7 +1242,7 @@ mod tests {
 
     #[test]
     fn register_task_rejects_empty_task_id() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
 
         let err = region.register_task("").unwrap_err();
 
@@ -1207,7 +1253,7 @@ mod tests {
 
     #[test]
     fn register_task_rejects_blank_task_id() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
 
         let err = region.register_task("\t ").unwrap_err();
 
@@ -1218,7 +1264,7 @@ mod tests {
 
     #[test]
     fn register_task_rejects_task_id_with_edge_whitespace() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
 
         let err = region.register_task(" task-1").unwrap_err();
 
@@ -1229,7 +1275,7 @@ mod tests {
 
     #[test]
     fn register_task_rejects_task_id_with_nul() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
 
         let err = region.register_task("task\0shadow").unwrap_err();
 
@@ -1240,7 +1286,7 @@ mod tests {
 
     #[test]
     fn complete_task_rejects_empty_task_id_without_lookup() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         region.register_task("task-1").unwrap();
 
         let err = region.complete_task("").unwrap_err();
@@ -1252,7 +1298,7 @@ mod tests {
 
     #[test]
     fn complete_task_rejects_nul_task_id_without_mutating_tasks() {
-        let mut region = Region::new_root(test_cx(), 5000);
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
         region.register_task("task-1").unwrap();
 
         let err = region.complete_task("task-1\0shadow").unwrap_err();
