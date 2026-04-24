@@ -6,6 +6,9 @@
 //! - local-only operations remain functional without RemoteCap
 //! - network guard enforces centralized capability gate
 
+use std::fs;
+use std::process::Command;
+
 use ed25519_dalek::{Signer, SigningKey};
 use frankenengine_node::security::impossible_default::{
     CapabilityEnforcer, CapabilityToken, ERR_IBD_SUBJECT_MISMATCH, ImpossibleCapability,
@@ -20,6 +23,16 @@ use frankenengine_node::security::remote_cap::{
 fn provider() -> CapabilityProvider {
     CapabilityProvider::new("remote-cap-test-secret")
         .expect("remote cap test signing secret should be valid")
+}
+
+fn write_scannable_trust_workspace(workspace: &std::path::Path) {
+    fs::write(workspace.join("franken_node.toml"), "profile = \"balanced\"\n")
+        .expect("write config");
+    fs::write(
+        workspace.join("package.json"),
+        r#"{"name":"remote-cap-scan","version":"1.0.0","dependencies":{"left-pad":"1.3.0"}}"#,
+    )
+    .expect("write package manifest");
 }
 
 #[test]
@@ -504,40 +517,48 @@ fn trust_sync_network_operations_conform_to_remotecap_spec() {
     }
 }
 
-// Integration test demonstrating that production trust sync network calls
-// bypass RemoteCap authorization (bd-an6bg)
 #[test]
-fn trust_scan_functions_bypass_remotecap_authorization() {
-    // This test demonstrates the issue from bd-an6bg by examining the source
-    // code structure: trust scan functions make direct ureq network calls
-    // without consulting CapabilityGate::authorize_network
+fn trust_scan_deep_denies_token_without_network_egress_scope() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    write_scannable_trust_workspace(workspace.path());
+    let secret = "trust-scan-cli-remote-cap-secret";
+    let provider = CapabilityProvider::new(secret).expect("provider");
+    let (cap, _) = provider
+        .issue(
+            "remote-cap-regression",
+            RemoteScope::new(
+                vec![RemoteOperation::TelemetryExport],
+                vec!["https://telemetry.example.com".to_string()],
+            ),
+            1_700_000_000,
+            3_600,
+            true,
+            false,
+            "trace-trust-scan-no-egress",
+        )
+        .expect("issue non-egress token");
+    let token_path = workspace.path().join("capability.json");
+    fs::write(
+        &token_path,
+        serde_json::to_vec_pretty(&serde_json::json!({ "token": cap })).expect("token JSON"),
+    )
+    .expect("write token");
 
-    // The following functions in main.rs make direct network calls:
-    // 1. fetch_trust_scan_audit_metadata() -> ureq::post to OSV API
-    // 2. fetch_trust_scan_npm_metadata() -> ureq::get to npm registry
-    // 3. fetch_trust_scan_dependent_count() -> ureq::get to deps.dev
+    let output = Command::new(env!("CARGO_BIN_EXE_franken-node"))
+        .current_dir(workspace.path())
+        .env("FRANKEN_NODE_REMOTECAP_KEY", secret)
+        .env("FRANKEN_NODE_TRUST_SCAN_REMOTECAP_TOKEN", &token_path)
+        .args(["trust", "scan", ".", "--deep"])
+        .output()
+        .expect("run trust scan");
 
-    // These are called from run_trust_scan() which is invoked by CLI trust scan command
-    // None of these functions call CapabilityGate::authorize_network before making requests
-
-    // To verify this issue exists, we check that:
-    // 1. RemoteCap authorization is required for all network operations per spec
-    // 2. Trust scan functions make network calls
-    // 3. Trust scan functions don't use CapabilityGate
-
-    // This constitutes a security policy violation where network egress
-    // bypasses the capability-based authorization system
-
-    // The fix would be to modify these functions to:
-    // 1. Accept a CapabilityGate parameter
-    // 2. Call gate.authorize_network() before each ureq request
-    // 3. Pass appropriate RemoteCap tokens from the caller
-
-    // This test serves as documentation of the vulnerability
-    // The actual network bypass can be observed by running:
-    // cargo test --test remote_cap_enforcement trust_sync_network_operations_conform_to_remotecap_spec
-    // which shows that the authorization gate correctly enforces the policy,
-    // but the production trust scan code doesn't use the gate at all.
-
-    assert!(true, "This test documents the bypass vulnerability - see comments for details");
+    assert!(
+        !output.status.success(),
+        "trust scan deep should fail closed when token lacks network_egress scope"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("REMOTECAP_SCOPE_DENIED"),
+        "stderr should include RemoteCap denial, got:\n{stderr}"
+    );
 }

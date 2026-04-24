@@ -95,7 +95,7 @@ use frankenengine_node::{
     security::{
         decision_receipt::{
             Decision, Receipt, ReceiptQuery, append_signed_receipt, export_receipts_to_path,
-            write_receipts_markdown,
+            sign_receipt, write_receipts_markdown,
         },
         remote_cap::{
             CapabilityGate, CapabilityProvider, RemoteCap, RemoteCapError, RemoteOperation,
@@ -202,6 +202,7 @@ const RUN_EXECUTION_RECEIPT_AUTO_QUARANTINE_THRESHOLD: usize = 1;
 const TRUST_SCAN_NPM_REGISTRY_BASE_URL: &str = "https://registry.npmjs.org";
 const TRUST_SCAN_OSV_QUERY_URL: &str = "https://api.osv.dev/v1/query";
 const TRUST_SCAN_DEPS_DEV_BASE_URL: &str = "https://api.deps.dev/v3alpha";
+const TRUST_SCAN_REMOTECAP_TOKEN_ENV: &str = "FRANKEN_NODE_TRUST_SCAN_REMOTECAP_TOKEN";
 
 struct TrustCardCliRegistryState {
     path: PathBuf,
@@ -4700,26 +4701,32 @@ fn resolve_receipt_signing_key_path(
 
     let resolved = config::Config::resolve(None, CliOverrides::default())
         .context("failed resolving configuration for receipt export")?;
-    let Some(path) = resolved
+    if let Some(path) = resolved
         .config
         .security
         .decision_receipt_signing_key_path
         .clone()
-    else {
-        return Ok(None);
-    };
+    {
+        let source = resolved
+            .decisions
+            .iter()
+            .rev()
+            .find(|decision| decision.field == "security.decision_receipt_signing_key_path")
+            .map(|decision| match decision.stage {
+                config::MergeStage::Env => "env",
+                _ => "config",
+            })
+            .unwrap_or("config");
+        return Ok(Some((path, source)));
+    }
 
-    let source = resolved
-        .decisions
-        .iter()
-        .rev()
-        .find(|decision| decision.field == "security.decision_receipt_signing_key_path")
-        .map(|decision| match decision.stage {
-            config::MergeStage::Env => "env",
-            _ => "config",
-        })
-        .unwrap_or("config");
-    Ok(Some((path, source)))
+    // Fall back to default key path if it exists
+    let default_path = PathBuf::from(".franken-node/keys/receipt-signing.key");
+    if default_path.is_file() {
+        return Ok(Some((default_path, "default")));
+    }
+
+    Ok(None)
 }
 
 fn load_ed25519_signing_material_from_path(
@@ -4758,14 +4765,47 @@ fn load_registry_publish_signing_material(path: &Path) -> Result<Ed25519SigningM
     load_ed25519_signing_material_from_path(path, "registry publish signing key", "cli")
 }
 
+fn bootstrap_receipt_signing_key() -> Result<()> {
+    use ed25519_dalek::SigningKey;
+    use rand::rngs::OsRng;
+    use std::fs;
+
+    // Create the default key directory
+    let key_dir = std::path::Path::new(".franken-node/keys");
+    fs::create_dir_all(key_dir)
+        .with_context(|| format!("failed creating key directory {}", key_dir.display()))?;
+
+    // Generate a new Ed25519 signing key
+    let signing_key = SigningKey::generate(&mut OsRng);
+    let key_bytes = signing_key.to_bytes();
+
+    // Save as hex-encoded private key (32 bytes)
+    let hex_key = hex::encode(key_bytes);
+    let key_path = key_dir.join("receipt-signing.key");
+
+    fs::write(&key_path, hex_key)
+        .with_context(|| format!("failed writing signing key to {}", key_path.display()))?;
+
+    eprintln!("✓ Generated fleet signing key: {}", key_path.display());
+    Ok(())
+}
+
 fn load_fleet_signing_material() -> Result<Ed25519SigningMaterial> {
     match load_receipt_signing_material(None)? {
         Some(material) => Ok(material),
-        None => Err(ActionableError::new(
-            "fleet convergence receipt signing requires a configured fleet-level signing key; local state-dir self-attestation is not trusted",
-            receipt_signing_key_fix_command(),
-        )
-        .into()),
+        None => {
+            // Bootstrap a new signing key for first-run scenarios
+            bootstrap_receipt_signing_key()?;
+            // Load the newly created key
+            match load_receipt_signing_material(None)? {
+                Some(material) => Ok(material),
+                None => Err(ActionableError::new(
+                    "fleet convergence receipt signing requires a configured fleet-level signing key; bootstrap failed",
+                    receipt_signing_key_fix_command(),
+                )
+                .into()),
+            }
+        }
     }
 }
 
@@ -4785,6 +4825,13 @@ fn missing_replay_bundle_signing_key_error(action: &str) -> ActionableError {
         format!(
             "incident replay bundle {action} requires a configured fleet-level signing key; pass --receipt-signing-key for export, set FRANKEN_NODE_SECURITY_DECISION_RECEIPT_SIGNING_KEY_PATH, or configure security.decision_receipt_signing_key_path"
         ),
+        receipt_signing_key_fix_command(),
+    )
+}
+
+fn missing_counterfactual_promotion_signing_key_error() -> ActionableError {
+    ActionableError::new(
+        "counterfactual promotion requires an operator signing key; pass --promotion-signing-key, set FRANKEN_NODE_SECURITY_DECISION_RECEIPT_SIGNING_KEY_PATH, or configure security.decision_receipt_signing_key_path",
         receipt_signing_key_fix_command(),
     )
 }
@@ -8719,8 +8766,41 @@ mod trust_command_tests {
         assert!(
             tmp.path()
                 .join(TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH)
-                .is_file()
+            .is_file()
         );
+    }
+
+    #[test]
+    fn trust_scan_deep_fetch_denies_token_without_network_egress_scope() {
+        let secret = "trust-scan-egress-test-secret";
+        let provider = CapabilityProvider::new(secret).expect("provider");
+        let (cap, _) = provider
+            .issue(
+                "trust-scan-test",
+                RemoteScope::new(
+                    vec![RemoteOperation::TelemetryExport],
+                    vec!["https://telemetry.example.com".to_string()],
+                ),
+                1_700_000_000,
+                3_600,
+                true,
+                false,
+                "trace-trust-scan-issue",
+            )
+            .expect("issue non-egress token");
+        let mut remote_cap = TrustScanRemoteCapContext {
+            cap: Some(cap),
+            gate: CapabilityGate::new(secret).expect("gate"),
+            now_epoch_secs: 1_700_000_010,
+            trace_id: "trace-trust-scan-denied".to_string(),
+        };
+
+        let err = fetch_trust_scan_npm_metadata("left-pad", None, &mut remote_cap)
+            .expect_err("trust scan metadata fetch must fail before network egress");
+        let remote_cap_err = err
+            .downcast_ref::<RemoteCapError>()
+            .expect("error should preserve RemoteCap denial");
+        assert_eq!(remote_cap_err.code(), "REMOTECAP_SCOPE_DENIED");
     }
 
     #[test]
@@ -11291,12 +11371,17 @@ fn parse_trust_scan_npm_metadata(
     }
 }
 
-fn fetch_trust_scan_dependent_count(dependency_name: &str, resolved_version: &str) -> Result<u64> {
+fn fetch_trust_scan_dependent_count(
+    dependency_name: &str,
+    resolved_version: &str,
+    remote_cap: &mut TrustScanRemoteCapContext,
+) -> Result<u64> {
     let package_name = percent_encode_path_component(dependency_name);
     let version = percent_encode_path_component(resolved_version);
     let url = format!(
         "{TRUST_SCAN_DEPS_DEV_BASE_URL}/systems/npm/packages/{package_name}/versions/{version}:dependents"
     );
+    remote_cap.authorize_egress(&url)?;
     let mut response = ureq::get(&url)
         .header("User-Agent", &trust_scan_user_agent())
         .call()
@@ -11317,12 +11402,71 @@ fn parse_deps_dev_dependent_count(payload: &serde_json::Value) -> Result<u64> {
         .ok_or_else(|| anyhow::anyhow!("deps.dev response did not include dependentCount"))
 }
 
+#[derive(Debug)]
+struct TrustScanRemoteCapContext {
+    cap: Option<RemoteCap>,
+    gate: CapabilityGate,
+    now_epoch_secs: u64,
+    trace_id: String,
+}
+
+impl TrustScanRemoteCapContext {
+    fn authorize_egress(&mut self, endpoint: &str) -> Result<()> {
+        self.gate
+            .authorize_network(
+                self.cap.as_ref(),
+                RemoteOperation::NetworkEgress,
+                endpoint,
+                self.now_epoch_secs,
+                &self.trace_id,
+            )
+            .map_err(anyhow::Error::new)
+    }
+}
+
+fn trust_scan_remote_cap_context(now_epoch_secs: u64) -> Result<TrustScanRemoteCapContext> {
+    let cap = match std::env::var_os(TRUST_SCAN_REMOTECAP_TOKEN_ENV) {
+        Some(path) if !path.as_os_str().is_empty() => {
+            let token_path = PathBuf::from(path);
+            let cap = read_remotecap_token(&token_path)?;
+            let state = load_remotecap_cli_state()?;
+            if state.revoked_token_ids.contains(cap.token_id()) {
+                return Err(anyhow::Error::new(RemoteCapError::Revoked {
+                    token_id: cap.token_id().to_string(),
+                }));
+            }
+            Some(cap)
+        }
+        Some(_) => {
+            anyhow::bail!("{TRUST_SCAN_REMOTECAP_TOKEN_ENV} is empty");
+        }
+        None => None,
+    };
+    let signing_key = resolve_remotecap_signing_key()?;
+    let gate = match cap.as_ref() {
+        Some(cap) => remotecap_cli_capability_gate(&signing_key, cap)?,
+        None => CapabilityGate::try_new(&signing_key)?,
+    };
+    Ok(TrustScanRemoteCapContext {
+        cap,
+        gate,
+        now_epoch_secs,
+        trace_id: "trace-cli-trust-scan-remotecap".to_string(),
+    })
+}
+
+fn is_remote_cap_denial(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<RemoteCapError>().is_some()
+}
+
 fn fetch_trust_scan_npm_metadata(
     dependency_name: &str,
     preferred_version: Option<&str>,
+    remote_cap: &mut TrustScanRemoteCapContext,
 ) -> Result<TrustScanDeepMetadata> {
     let package_name = percent_encode_path_component(dependency_name);
     let url = format!("{TRUST_SCAN_NPM_REGISTRY_BASE_URL}/{package_name}");
+    remote_cap.authorize_egress(&url)?;
     let mut response = ureq::get(&url)
         .header("User-Agent", &trust_scan_user_agent())
         .call()
@@ -11337,6 +11481,7 @@ fn fetch_trust_scan_npm_metadata(
         metadata.dependent_count = Some(fetch_trust_scan_dependent_count(
             dependency_name,
             &resolved_version,
+            remote_cap,
         )?);
     }
     Ok(metadata)
@@ -11360,9 +11505,10 @@ fn parse_osv_vulnerability_ids(payload: &serde_json::Value) -> Vec<String> {
     ids
 }
 
-fn fetch_trust_scan_audit_metadata(
+fn fetch_trust_scan_audit_metadata_with_remote_cap(
     dependency_name: &str,
     resolved_version: Option<&str>,
+    remote_cap: &mut TrustScanRemoteCapContext,
 ) -> Result<TrustScanAuditMetadata> {
     let mut body = serde_json::json!({
         "package": {
@@ -11375,6 +11521,7 @@ fn fetch_trust_scan_audit_metadata(
     }
 
     let query_config = trust_scan_osv_query_config();
+    remote_cap.authorize_egress(&query_config.url)?;
     let mut response = ureq::post(&query_config.url)
         .header("User-Agent", &trust_scan_user_agent())
         .header("Content-Type", "application/json")
@@ -11389,6 +11536,18 @@ fn fetch_trust_scan_audit_metadata(
         vulnerability_ids: parse_osv_vulnerability_ids(&payload),
         risk_lowering_authenticated: query_config.risk_lowering_authenticated,
     })
+}
+
+fn fetch_trust_scan_audit_metadata(
+    dependency_name: &str,
+    resolved_version: Option<&str>,
+) -> Result<TrustScanAuditMetadata> {
+    let mut remote_cap = trust_scan_remote_cap_context(now_unix_secs())?;
+    fetch_trust_scan_audit_metadata_with_remote_cap(
+        dependency_name,
+        resolved_version,
+        &mut remote_cap,
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11664,6 +11823,11 @@ fn run_trust_scan(project_root: &Path, deep: bool, audit: bool) -> Result<TrustS
     let mut items = Vec::new();
     let mut created_cards = 0usize;
     let mut skipped_existing = 0usize;
+    let mut remote_cap_context = if deep || audit {
+        Some(trust_scan_remote_cap_context(now_secs)?)
+    } else {
+        None
+    };
 
     for dependency in &dependencies {
         if let Some(existing) = state
@@ -11685,11 +11849,21 @@ fn run_trust_scan(project_root: &Path, deep: bool, audit: bool) -> Result<TrustS
         let lockfile_entry = lockfile_metadata.get(&dependency.dependency_name);
         let mut deep_metadata = TrustScanDeepMetadata::default();
         if deep {
+            let remote_cap = remote_cap_context
+                .as_mut()
+                .expect("trust scan RemoteCap context initialized for deep scan");
             match fetch_trust_scan_npm_metadata(
                 &dependency.dependency_name,
                 lockfile_entry.and_then(|entry| entry.resolved_version.as_deref()),
+                remote_cap,
             ) {
                 Ok(metadata) => deep_metadata = metadata,
+                Err(err) if is_remote_cap_denial(&err) => {
+                    return Err(err.context(format!(
+                        "RemoteCap denied trust scan deep metadata for {}",
+                        dependency.dependency_name
+                    )));
+                }
                 Err(err) => warnings.push(format!(
                     "deep metadata unavailable for {}: {err}",
                     dependency.dependency_name
@@ -11702,8 +11876,21 @@ fn run_trust_scan(project_root: &Path, deep: bool, audit: bool) -> Result<TrustS
             let resolved_version = lockfile_entry
                 .and_then(|entry| entry.resolved_version.as_deref())
                 .or(deep_metadata.resolved_version.as_deref());
-            match fetch_trust_scan_audit_metadata(&dependency.dependency_name, resolved_version) {
+            let remote_cap = remote_cap_context
+                .as_mut()
+                .expect("trust scan RemoteCap context initialized for audit scan");
+            match fetch_trust_scan_audit_metadata_with_remote_cap(
+                &dependency.dependency_name,
+                resolved_version,
+                remote_cap,
+            ) {
                 Ok(metadata) => audit_metadata = metadata,
+                Err(err) if is_remote_cap_denial(&err) => {
+                    return Err(err.context(format!(
+                        "RemoteCap denied trust scan audit metadata for {}",
+                        dependency.dependency_name
+                    )));
+                }
                 Err(err) => warnings.push(format!(
                     "OSV audit unavailable for {}: {err}",
                     dependency.dependency_name
@@ -12260,11 +12447,21 @@ fn handle_incident_replay_command(args: &cli::IncidentReplayArgs) -> Result<()> 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct IncidentCounterfactualCliSummary {
+    bundle_id: String,
+    incident_id: String,
+    bundle_created_at: String,
+    bundle_integrity_hash: String,
+    bundle_policy_version: String,
+    evidence_refs: Vec<String>,
     total_decisions: usize,
     changed_decisions: usize,
     severity_delta: i64,
     canonical_json: String,
 }
+
+const INCIDENT_COUNTERFACTUAL_REPORT_SCHEMA: &str =
+    "franken-node/incident-counterfactual-report/v1";
+const COUNTERFACTUAL_PROMOTION_VALIDITY_MS: i64 = 24 * 60 * 60 * 1_000;
 
 fn incident_counterfactual_cli_summary(
     bundle_path: &Path,
@@ -12288,13 +12485,247 @@ fn incident_counterfactual_cli_summary(
     let (total_decisions, changed_decisions, severity_delta) = summarize_output(&output);
     let canonical_json = counterfactual_to_json(&output)
         .context("failed encoding counterfactual output to canonical json")?;
+    let evidence_refs = bundle.evidence_refs.clone();
 
     Ok(IncidentCounterfactualCliSummary {
+        bundle_id: bundle.bundle_id.to_string(),
+        incident_id: bundle.incident_id,
+        bundle_created_at: bundle.created_at,
+        bundle_integrity_hash: bundle.integrity_hash,
+        bundle_policy_version: bundle.policy_version,
+        evidence_refs,
         total_decisions,
         changed_decisions,
         severity_delta,
         canonical_json,
     })
+}
+
+fn incident_counterfactual_report_json(
+    summary: &IncidentCounterfactualCliSummary,
+    policy: &str,
+    promotion_signing_material: Option<&Ed25519SigningMaterial>,
+    operator_id: Option<&str>,
+) -> Result<String> {
+    let timestamp = Utc::now().to_rfc3339();
+    let counterfactual_value: serde_json::Value = serde_json::from_str(&summary.canonical_json)
+        .context("failed parsing canonical counterfactual output for structured report")?;
+    let counterfactual_digest = incident_counterfactual_sha256(summary.canonical_json.as_bytes());
+    let (promotion_contract, promotion_contract_digest, promotion_signature) =
+        if let Some(signing_material) = promotion_signing_material {
+            let (contract, contract_digest, signature) = build_incident_counterfactual_promotion(
+                summary,
+                policy,
+                &timestamp,
+                &counterfactual_digest,
+                &counterfactual_value,
+                signing_material,
+                operator_id,
+            )?;
+            (Some(contract), Some(contract_digest), Some(signature))
+        } else {
+            (None, None, None)
+        };
+
+    let report = serde_json::json!({
+        "schema_version": INCIDENT_COUNTERFACTUAL_REPORT_SCHEMA,
+        "timestamp": timestamp,
+        "bundle_id": &summary.bundle_id,
+        "incident_id": &summary.incident_id,
+        "bundle_created_at": &summary.bundle_created_at,
+        "bundle_integrity_hash": &summary.bundle_integrity_hash,
+        "policy": policy,
+        "evidence_refs": &summary.evidence_refs,
+        "total_decisions": summary.total_decisions,
+        "changed_decisions": summary.changed_decisions,
+        "severity_delta": summary.severity_delta,
+        "counterfactual_digest": counterfactual_digest,
+        "counterfactual": counterfactual_value,
+        "promotion_contract": promotion_contract,
+        "promotion_contract_digest": promotion_contract_digest,
+        "promotion_signature": promotion_signature,
+    });
+
+    counterfactual_to_json(&report).context("failed encoding structured counterfactual report")
+}
+
+fn build_incident_counterfactual_promotion(
+    summary: &IncidentCounterfactualCliSummary,
+    policy: &str,
+    timestamp: &str,
+    counterfactual_digest: &str,
+    counterfactual_value: &serde_json::Value,
+    signing_material: &Ed25519SigningMaterial,
+    operator_id: Option<&str>,
+) -> Result<(serde_json::Value, String, serde_json::Value)> {
+    let expected_loss_delta = summary.severity_delta.checked_neg().unwrap_or(i64::MAX);
+    if expected_loss_delta <= 0 {
+        anyhow::bail!(
+            "counterfactual promotion requires expected_loss_delta > 0; severity_delta={}",
+            summary.severity_delta
+        );
+    }
+
+    let default_operator_id = signing_material_key_id(signing_material);
+    let operator_id = operator_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(default_operator_id.as_str());
+    let digest_suffix = counterfactual_digest
+        .strip_prefix("sha256:")
+        .unwrap_or(counterfactual_digest)
+        .chars()
+        .take(16)
+        .collect::<String>();
+    let mitigation_id = format!("{}:{policy}:{digest_suffix}", summary.incident_id);
+    let valid_from_epoch_ms = Utc::now().timestamp_millis();
+    let valid_until_epoch_ms =
+        valid_from_epoch_ms.saturating_add(COUNTERFACTUAL_PROMOTION_VALIDITY_MS);
+    let policy_diff = counterfactual_value
+        .pointer("/metadata/policy_override_diff")
+        .cloned()
+        .unwrap_or_else(|| {
+            serde_json::json!([{
+                "field": "policy",
+                "original": &summary.bundle_policy_version,
+                "counterfactual": policy,
+            }])
+        });
+
+    let rollout_unsigned = serde_json::json!({
+        "mitigation_id": &mitigation_id,
+        "policy_diff": policy_diff,
+        "expected_loss_delta": expected_loss_delta,
+        "operator_id": operator_id,
+        "valid_from_epoch_ms": valid_from_epoch_ms,
+        "valid_until_epoch_ms": valid_until_epoch_ms,
+    });
+    let rollout_digest = incident_counterfactual_json_digest(&rollout_unsigned)?;
+    let rollout_signature = sign_incident_counterfactual_contract_receipt(
+        "incident.counterfactual.rollout",
+        operator_id,
+        timestamp,
+        counterfactual_digest,
+        &rollout_digest,
+        &summary.evidence_refs,
+        policy,
+        expected_loss_delta,
+        "operator_abort_or_expected_loss_delta_non_positive",
+        signing_material,
+    )?;
+    let mut rollout_contract = rollout_unsigned;
+    rollout_contract
+        .as_object_mut()
+        .expect("rollout contract must be a json object")
+        .insert("signature".to_string(), rollout_signature);
+
+    let rollback_unsigned = serde_json::json!({
+        "mitigation_id": &mitigation_id,
+        "rollback_trigger": "operator_abort_or_expected_loss_delta_non_positive",
+        "rollback_policy": &summary.bundle_policy_version,
+        "operator_id": operator_id,
+    });
+    let rollback_digest = incident_counterfactual_json_digest(&rollback_unsigned)?;
+    let rollback_signature = sign_incident_counterfactual_contract_receipt(
+        "incident.counterfactual.rollback",
+        operator_id,
+        timestamp,
+        counterfactual_digest,
+        &rollback_digest,
+        &summary.evidence_refs,
+        policy,
+        expected_loss_delta,
+        &format!("restore_policy_version:{}", summary.bundle_policy_version),
+        signing_material,
+    )?;
+    let mut rollback_contract = rollback_unsigned;
+    rollback_contract
+        .as_object_mut()
+        .expect("rollback contract must be a json object")
+        .insert("signature".to_string(), rollback_signature);
+
+    let promotion_contract = serde_json::json!({
+        "mitigation_id": &mitigation_id,
+        "rollout": rollout_contract,
+        "rollback": rollback_contract,
+    });
+    let promotion_contract_digest = incident_counterfactual_json_digest(&promotion_contract)?;
+    let promotion_signature = sign_incident_counterfactual_contract_receipt(
+        "incident.counterfactual.promote",
+        operator_id,
+        timestamp,
+        counterfactual_digest,
+        &promotion_contract_digest,
+        &summary.evidence_refs,
+        policy,
+        expected_loss_delta,
+        &format!("restore_policy_version:{}", summary.bundle_policy_version),
+        signing_material,
+    )?;
+
+    Ok((
+        promotion_contract,
+        promotion_contract_digest,
+        promotion_signature,
+    ))
+}
+
+fn sign_incident_counterfactual_contract_receipt(
+    action_name: &str,
+    operator_id: &str,
+    timestamp: &str,
+    input_hash: &str,
+    output_hash: &str,
+    evidence_refs: &[String],
+    policy: &str,
+    expected_loss_delta: i64,
+    rollback_command: &str,
+    signing_material: &Ed25519SigningMaterial,
+) -> Result<serde_json::Value> {
+    let receipt = Receipt {
+        receipt_id: incident_counterfactual_receipt_id(action_name, output_hash),
+        action_name: action_name.to_string(),
+        actor_identity: operator_id.to_string(),
+        timestamp: timestamp.to_string(),
+        input_hash: input_hash.to_string(),
+        output_hash: output_hash.to_string(),
+        decision: Decision::Approved,
+        rationale: format!(
+            "signed counterfactual promotion contract for policy {policy}; expected_loss_delta={expected_loss_delta}"
+        ),
+        evidence_refs: evidence_refs.to_vec(),
+        policy_rule_chain: vec![
+            "INV-LAB-SIGNED-ROLLOUT".to_string(),
+            "INV-LAB-ROLLBACK-CONTRACT".to_string(),
+            "INV-LAB-LOSS-DELTA-POSITIVE".to_string(),
+        ],
+        confidence: 1.0,
+        rollback_command: rollback_command.to_string(),
+        previous_receipt_hash: None,
+    };
+    let signed = sign_receipt(&receipt, &signing_material.signing_key)
+        .with_context(|| format!("failed signing {action_name} receipt"))?;
+    serde_json::to_value(signed).context("failed serializing counterfactual promotion signature")
+}
+
+fn incident_counterfactual_receipt_id(action_name: &str, output_hash: &str) -> String {
+    let digest_suffix = output_hash
+        .strip_prefix("sha256:")
+        .unwrap_or(output_hash)
+        .chars()
+        .take(16)
+        .collect::<String>();
+    format!("{action_name}:{digest_suffix}")
+}
+
+fn incident_counterfactual_json_digest(value: &serde_json::Value) -> Result<String> {
+    let canonical = counterfactual_to_json(value)
+        .context("failed canonicalizing counterfactual promotion contract")?;
+    Ok(incident_counterfactual_sha256(canonical.as_bytes()))
+}
+
+fn incident_counterfactual_sha256(bytes: &[u8]) -> String {
+    format!("sha256:{}", hex::encode(sha2::Sha256::digest(bytes)))
 }
 
 fn handle_incident_counterfactual_command(args: &cli::IncidentCounterfactualArgs) -> Result<()> {
@@ -12309,11 +12740,28 @@ fn handle_incident_counterfactual_command(args: &cli::IncidentCounterfactualArgs
     )?;
     let summary =
         incident_counterfactual_cli_summary(&args.bundle, &trusted_key_ids, &args.policy)?;
+    let promotion_signing_material = if args.promote {
+        match load_receipt_signing_material(args.promotion_signing_key.as_deref())? {
+            Some(material) => Some(material),
+            None => return Err(missing_counterfactual_promotion_signing_key_error().into()),
+        }
+    } else {
+        None
+    };
     eprintln!(
         "counterfactual summary: total_decisions={} changed_decisions={} severity_delta={}",
         summary.total_decisions, summary.changed_decisions, summary.severity_delta
     );
     eprintln!("counterfactual output: {}", summary.canonical_json);
+    if args.json || args.promote {
+        let report_json = incident_counterfactual_report_json(
+            &summary,
+            &args.policy,
+            promotion_signing_material.as_ref(),
+            args.operator_id.as_deref(),
+        )?;
+        println!("{report_json}");
+    }
     Ok(())
 }
 

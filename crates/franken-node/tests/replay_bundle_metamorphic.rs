@@ -47,6 +47,170 @@ fn write_then_read_bundle(bundle: &ReplayBundle, path: &std::path::Path) -> Repl
         .expect("bundle should read successfully")
 }
 
+#[cfg(test)]
+mod evidence_backed_roundtrip_metamorphic {
+    use super::*;
+    use frankenengine_node::tools::replay_bundle::{
+        INCIDENT_EVIDENCE_SCHEMA, IncidentEvidenceEvent, IncidentEvidenceMetadata,
+        IncidentEvidencePackage, IncidentSeverity, generate_replay_bundle_from_evidence,
+        to_canonical_json,
+    };
+    use proptest::prelude::*;
+
+    fn evidence_package(rng: &mut impl rand::Rng, case_index: usize) -> IncidentEvidencePackage {
+        let evidence_refs = vec![
+            format!("evidence/case-{case_index}/collector.json"),
+            format!("trust/card-{case_index}/manifest.json"),
+            format!("trust-artifacts/case-{case_index}/receipt.json"),
+        ];
+        let event_count = rng.gen_range(1..30);
+        let events = (0..event_count)
+            .map(|event_index| {
+                let provenance_ref = evidence_refs[rng.gen_range(0..evidence_refs.len())].clone();
+                let parent_event_id = if event_index > 0 && rng.gen_bool(0.35) {
+                    Some(format!(
+                        "evt-{case_index}-{}",
+                        rng.gen_range(0..event_index)
+                    ))
+                } else {
+                    None
+                };
+                IncidentEvidenceEvent {
+                    event_id: format!("evt-{case_index}-{event_index}"),
+                    timestamp: format!(
+                        "2024-04-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+                        (case_index % 20) + 1,
+                        (event_index / 3600) % 24,
+                        (event_index / 60) % 60,
+                        event_index % 60,
+                        rng.gen_range(0..1000)
+                    ),
+                    event_type: [
+                        EventType::StateChange,
+                        EventType::PolicyEval,
+                        EventType::ExternalSignal,
+                        EventType::OperatorAction,
+                    ][rng.gen_range(0..4)]
+                    .clone(),
+                    payload: json!({
+                        "case": case_index,
+                        "event": event_index,
+                        "signal": Alphanumeric.sample_string(rng, 12),
+                        "score_micros": rng.gen_range(0..=1_000_000)
+                    }),
+                    provenance_ref,
+                    parent_event_id,
+                    state_snapshot: (event_index == 0).then(|| {
+                        json!({
+                            "case": case_index,
+                            "seeded": true,
+                            "state": rng.gen_range(0..10_000)
+                        })
+                    }),
+                    policy_version: (event_index == 0)
+                        .then(|| format!("policy-v{}", rng.gen_range(1..5))),
+                }
+            })
+            .collect();
+
+        IncidentEvidencePackage {
+            schema_version: INCIDENT_EVIDENCE_SCHEMA.to_string(),
+            incident_id: format!("incident-mr-{case_index}"),
+            collected_at: "2024-04-30T00:00:00.000Z".to_string(),
+            trace_id: format!("trace-mr-{case_index}"),
+            severity: match case_index % 4 {
+                0 => IncidentSeverity::Low,
+                1 => IncidentSeverity::Medium,
+                2 => IncidentSeverity::High,
+                _ => IncidentSeverity::Critical,
+            },
+            incident_type: "metamorphic-roundtrip".to_string(),
+            detector: "replay-bundle-metamorphic-test".to_string(),
+            policy_version: "policy-v1".to_string(),
+            initial_state_snapshot: json!({
+                "case": case_index,
+                "snapshot": "initial",
+                "nonce": rng.next_u64()
+            }),
+            events,
+            evidence_refs,
+            metadata: IncidentEvidenceMetadata {
+                title: format!("Metamorphic replay bundle case {case_index}"),
+                affected_components: vec![
+                    format!("component-{}", case_index % 7),
+                    format!("component-{}", (case_index + 3) % 11),
+                ],
+                tags: vec!["metamorphic".to_string(), "roundtrip".to_string()],
+            },
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig {
+            cases: 50,
+            ..ProptestConfig::default()
+        })]
+
+        #[test]
+        fn evidence_backed_replay_bundle_export_import_is_fixed_point(
+            seed in any::<u64>(),
+            case_index in 0usize..10_000,
+        ) {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let temp_dir = TempDir::new().expect("create replay bundle temp directory");
+            let package = evidence_package(&mut rng, case_index);
+            let mut original = generate_replay_bundle_from_evidence(&package)
+                .expect("evidence package should generate a replay bundle");
+            sign_metamorphic_bundle(&mut original);
+
+            let first_path = temp_dir.path().join(format!("bundle-{case_index}-first.json"));
+            let second_path = temp_dir
+                .path()
+                .join(format!("bundle-{case_index}-second.json"));
+
+            let imported = write_then_read_bundle(&original, &first_path);
+            let reimported = write_then_read_bundle(&imported, &second_path);
+            let imported_json = to_canonical_json(&imported).expect("canonicalize imported bundle");
+            let reimported_json =
+                to_canonical_json(&reimported).expect("canonicalize reimported bundle");
+
+            prop_assert_eq!(
+                original,
+                imported,
+                "case {}: first export/import changed the bundle",
+                case_index
+            );
+            prop_assert_eq!(
+                imported,
+                reimported,
+                "case {}: export(import(bundle)) was not idempotent",
+                case_index
+            );
+            prop_assert_eq!(
+                imported_json,
+                reimported_json,
+                "case {}: canonical wire output changed after repeated round-trip",
+                case_index
+            );
+            prop_assert_eq!(
+                imported.evidence_refs,
+                package.evidence_refs,
+                "case {}: evidence refs changed during round-trip",
+                case_index
+            );
+            prop_assert_eq!(
+                imported.trust_artifact_refs,
+                vec![
+                    format!("trust/card-{case_index}/manifest.json"),
+                    format!("trust-artifacts/case-{case_index}/receipt.json"),
+                ],
+                "case {}: trust artifact refs changed during round-trip",
+                case_index
+            );
+        }
+    }
+}
+
 /// Generate arbitrary RawEvent for property-based testing
 fn arbitrary_raw_event(rng: &mut impl Rng, sequence_base: u64) -> RawEvent {
     let event_types = [

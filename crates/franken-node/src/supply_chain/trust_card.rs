@@ -451,8 +451,7 @@ impl TrustCardRegistry {
         }
     }
 
-    #[must_use]
-    pub fn snapshot(&self) -> TrustCardRegistrySnapshot {
+    pub fn snapshot(&self) -> Result<TrustCardRegistrySnapshot, TrustCardError> {
         let mut snapshot = TrustCardRegistrySnapshot {
             schema_version: TRUST_CARD_REGISTRY_SNAPSHOT_SCHEMA.to_string(),
             snapshot_epoch: self.snapshot_epoch,
@@ -462,9 +461,8 @@ impl TrustCardRegistry {
             snapshot_hash: String::new(),
             registry_signature: String::new(),
         };
-        sign_snapshot_in_place(&mut snapshot, &self.registry_key)
-            .expect("registry key should sign trust-card snapshots");
-        snapshot
+        sign_snapshot_in_place(&mut snapshot, &self.registry_key)?;
+        Ok(snapshot)
     }
 
     fn advance_snapshot_sequence_for_mutation(&mut self) {
@@ -542,7 +540,7 @@ impl TrustCardRegistry {
     }
 
     pub fn persist_authoritative_state(&self, path: &Path) -> Result<(), TrustCardError> {
-        let snapshot = self.snapshot();
+        let snapshot = self.snapshot()?;
         let high_water_path = authoritative_snapshot_high_water_path(path);
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
         with_authoritative_snapshot_persist_lock(path, || {
@@ -3102,7 +3100,7 @@ mod tests {
         registry
             .create(sample_input(), 1_000, "trace-create")
             .expect("create");
-        let older_snapshot = registry.snapshot();
+        let older_snapshot = registry.snapshot().expect("snapshot");
         registry
             .update(
                 "npm:@acme/plugin",

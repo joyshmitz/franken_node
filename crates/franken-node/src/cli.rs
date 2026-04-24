@@ -957,6 +957,22 @@ pub struct IncidentCounterfactualArgs {
     /// Policy to simulate.
     #[arg(long)]
     pub policy: String,
+
+    /// Emit the structured counterfactual report as canonical JSON on stdout.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Promote the counterfactual with signed rollout and rollback contracts.
+    #[arg(long)]
+    pub promote: bool,
+
+    /// Ed25519 operator signing key for promoted counterfactual contracts.
+    #[arg(long = "promotion-signing-key", alias = "operator-signing-key")]
+    pub promotion_signing_key: Option<PathBuf>,
+
+    /// Operator identity embedded in signed promotion contracts.
+    #[arg(long)]
+    pub operator_id: Option<String>,
 }
 
 #[derive(Debug, Parser)]

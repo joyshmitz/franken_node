@@ -2224,6 +2224,48 @@ fn fleet_reconcile_json_matches_snapshot() {
 }
 
 #[test]
+fn fleet_reconcile_bootstrap_signing_key_on_first_run() {
+    let fleet_state = tempdir().expect("tempdir");
+    let fleet_state_dir = fleet_state.path().join("fleet-state");
+
+    // Ensure no signing key exists - the system should bootstrap one automatically
+    let key_dir = fleet_state.path().join(".franken-node/keys");
+    let key_path = key_dir.join("receipt-signing.key");
+    assert!(!key_path.exists(), "signing key should not exist before bootstrap");
+
+    // Run fleet reconcile WITHOUT setting FRANKEN_NODE_SECURITY_DECISION_RECEIPT_SIGNING_KEY_PATH
+    // This should trigger the bootstrap path
+    let output = run_cli_in_dir_with_fleet_state(
+        &fleet_state.path(),
+        &["fleet", "reconcile"],
+        &fleet_state_dir,
+    );
+
+    assert!(
+        output.status.success(),
+        "fleet reconcile bootstrap failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Verify the signing key was created
+    assert!(key_path.exists(), "signing key should be bootstrapped");
+
+    // Verify the key is valid by reading it
+    let key_content = std::fs::read_to_string(&key_path).expect("read bootstrapped key");
+    assert_eq!(key_content.len(), 64, "key should be 32 bytes as hex (64 chars)");
+    assert!(key_content.chars().all(|c| c.is_ascii_hexdigit()), "key should be valid hex");
+
+    // Verify CLI output indicates success
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("fleet action: type=reconcile"));
+    assert!(stdout.contains("success=true"));
+
+    // Verify stderr shows bootstrap message
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Generated fleet signing key"), "should show bootstrap message");
+}
+
+#[test]
 fn fleet_cli_json_output_matrix_matches_snapshots() {
     let status_state = tempdir().expect("status tempdir");
     let status_state_dir = status_state.path().join("fleet-state");

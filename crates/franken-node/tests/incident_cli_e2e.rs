@@ -719,6 +719,158 @@ fn incident_replay_counterfactual_pipeline_is_deterministic_and_fail_closed() {
     assert!(corrupted_stderr.contains("bundle integrity mismatch"));
 }
 
+#[test]
+fn incident_counterfactual_json_promotes_signed_contracts() {
+    let workspace = config_only_workspace();
+    configure_replay_bundle_signing_key(workspace.path());
+    let evidence_path = workspace
+        .path()
+        .join("fixtures/incidents/INC-E2E-CF-PROMOTE-001/evidence.v1.json");
+    write_dense_fixture_incident_evidence(&evidence_path, "INC-E2E-CF-PROMOTE-001", 6);
+    let evidence_arg = evidence_path.to_string_lossy().to_string();
+
+    let bundle_output = run_cli_in_workspace(
+        workspace.path(),
+        &[
+            "incident",
+            "bundle",
+            "--id",
+            "INC-E2E-CF-PROMOTE-001",
+            "--evidence-path",
+            &evidence_arg,
+            "--verify",
+        ],
+    );
+    assert!(
+        bundle_output.status.success(),
+        "incident bundle failed: {}",
+        String::from_utf8_lossy(&bundle_output.stderr)
+    );
+
+    let trust_anchor_path = workspace.path().join("keys/replay-trust-anchor.pub");
+    write_replay_trust_anchor(&trust_anchor_path);
+    let trust_anchor_arg = trust_anchor_path.to_string_lossy().to_string();
+    let promotion_key_arg = workspace
+        .path()
+        .join("keys/receipt-signing.key")
+        .to_string_lossy()
+        .to_string();
+
+    let output = run_cli_in_workspace(
+        workspace.path(),
+        &[
+            "incident",
+            "counterfactual",
+            "--bundle",
+            "INC-E2E-CF-PROMOTE-001.fnbundle",
+            "--trusted-public-key",
+            &trust_anchor_arg,
+            "--policy",
+            "strict",
+            "--json",
+            "--promote",
+            "--promotion-signing-key",
+            &promotion_key_arg,
+            "--operator-id",
+            "incident-counterfactual-e2e",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "counterfactual promotion failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("counterfactual summary:"));
+    assert!(stderr.contains("counterfactual output:"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("parse structured counterfactual report");
+
+    assert_eq!(
+        report["schema_version"],
+        json!("franken-node/incident-counterfactual-report/v1")
+    );
+    assert_eq!(report["incident_id"], json!("INC-E2E-CF-PROMOTE-001"));
+    assert!(
+        report["timestamp"]
+            .as_str()
+            .expect("timestamp")
+            .contains('T')
+    );
+    assert!(
+        report["evidence_refs"]
+            .as_array()
+            .expect("evidence refs")
+            .len()
+            >= 6
+    );
+    assert!(
+        report["counterfactual_digest"]
+            .as_str()
+            .expect("counterfactual digest")
+            .starts_with("sha256:")
+    );
+
+    let promotion_signature = &report["promotion_signature"];
+    assert_eq!(
+        promotion_signature["action_name"],
+        json!("incident.counterfactual.promote")
+    );
+    assert_eq!(
+        promotion_signature["actor_identity"],
+        json!("incident-counterfactual-e2e")
+    );
+    assert_eq!(
+        promotion_signature["input_hash"],
+        report["counterfactual_digest"]
+    );
+    assert_eq!(
+        promotion_signature["output_hash"],
+        report["promotion_contract_digest"]
+    );
+    assert!(
+        promotion_signature["signature"]
+            .as_str()
+            .expect("promotion signature")
+            .len()
+            > 40
+    );
+
+    let rollout = &report["promotion_contract"]["rollout"];
+    assert!(
+        rollout["expected_loss_delta"]
+            .as_i64()
+            .expect("expected loss delta")
+            > 0
+    );
+    assert_eq!(
+        rollout["signature"]["action_name"],
+        json!("incident.counterfactual.rollout")
+    );
+    assert!(
+        rollout["signature"]["signature"]
+            .as_str()
+            .expect("rollout signature")
+            .len()
+            > 40
+    );
+
+    let rollback = &report["promotion_contract"]["rollback"];
+    assert_eq!(
+        rollback["signature"]["action_name"],
+        json!("incident.counterfactual.rollback")
+    );
+    assert!(
+        rollback["signature"]["signature"]
+            .as_str()
+            .expect("rollback signature")
+            .len()
+            > 40
+    );
+}
+
 // Boundary testing for malformed evidence packages (bd-1wdtq)
 
 #[test]
