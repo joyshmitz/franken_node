@@ -956,7 +956,7 @@ impl TelemetryBridge {
                         );
                     });
                     if let Ok(mut handles) = connection_handles.lock() {
-                        handles.push(handle);
+                        push_bounded(&mut handles, handle, MAX_ACTIVE_CONNECTIONS);
                     } else {
                         connection_worker_panicked.store(true, Ordering::SeqCst);
                         lifecycle.store(BridgeLifecycleState::Failed as u8, Ordering::SeqCst);
@@ -4029,5 +4029,31 @@ mod tests {
         // Both guards can coexist
         drop(_guard1);
         drop(_guard2);
+    }
+
+    #[test]
+    fn connection_handles_respects_max_active_connections_bound() {
+        // Test that connection handles Vec is properly bounded to MAX_ACTIVE_CONNECTIONS
+        let mut handles: Vec<JoinHandle<()>> = Vec::new();
+
+        // Fill beyond the MAX_ACTIVE_CONNECTIONS limit
+        for _ in 0..MAX_ACTIVE_CONNECTIONS + 10 {
+            let handle = thread::spawn(|| {
+                // Empty thread that completes immediately
+            });
+            push_bounded(&mut handles, handle, MAX_ACTIVE_CONNECTIONS);
+        }
+
+        // Verify the bound is enforced
+        assert_eq!(
+            handles.len(),
+            MAX_ACTIVE_CONNECTIONS,
+            "connection handles should be bounded to MAX_ACTIVE_CONNECTIONS"
+        );
+
+        // Wait for all handles to complete
+        for handle in handles {
+            handle.join().expect("thread should complete successfully");
+        }
     }
 }

@@ -1,8 +1,8 @@
 use std::error::Error;
 
 use frankenengine_node::security::decision_receipt::{
-    Decision, Receipt, ReceiptQuery, export_receipts_cbor, import_receipts_cbor, sign_receipt,
-    verify_receipt,
+    Decision, Receipt, ReceiptError, ReceiptQuery, export_receipts_cbor, export_receipts_to_path,
+    import_receipts_cbor, sign_receipt, verify_receipt,
 };
 use frankenengine_node::supply_chain::artifact_signing::{
     ArtifactSigningError, generate_artifact_signing_key, sign_bytes, signing_key_from_seed_bytes,
@@ -102,6 +102,47 @@ fn decision_receipt_cbor_preserves_confidence_bit_pattern() -> Result<(), Box<dy
 
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].receipt.confidence.to_bits(), confidence_bits);
+
+    Ok(())
+}
+
+#[test]
+fn decision_receipt_export_failure_leaves_no_partial_target_file() -> Result<(), Box<dyn Error>> {
+    let signing_key = generate_artifact_signing_key();
+    let receipt = Receipt::new(
+        "quarantine",
+        "control-plane@prod",
+        &json!({"target":"node-a","policy":"strict"}),
+        &json!({"status":"accepted"}),
+        Decision::Approved,
+        "policy gate evaluated",
+        vec!["ledger-001".to_string()],
+        vec!["rule-A".to_string()],
+        0.91,
+        "franken-node trust release --incident INC-001",
+    )?;
+    let signed = sign_receipt(&receipt, &signing_key)?;
+    let dir = tempfile::Builder::new()
+        .prefix("bd-j6r3z-")
+        .tempdir_in(".")?;
+    let relative_dir = std::path::PathBuf::from(
+        dir.path()
+            .file_name()
+            .expect("tempdir in cwd has a final component"),
+    );
+    let target_dir = relative_dir.join("receipts.json");
+    std::fs::create_dir(&target_dir)?;
+
+    let err = export_receipts_to_path(&[signed], &ReceiptQuery::default(), &target_dir)
+        .expect_err("atomic rename over directory must fail");
+
+    assert!(matches!(err, ReceiptError::WriteFailed { .. }));
+    assert!(target_dir.is_dir());
+    assert!(std::fs::read_to_string(&target_dir).is_err());
+    let entries: Vec<_> = std::fs::read_dir(dir.path())?
+        .map(|entry| entry.map(|entry| entry.file_name()))
+        .collect::<Result<_, _>>()?;
+    assert_eq!(entries, vec![std::ffi::OsString::from("receipts.json")]);
 
     Ok(())
 }

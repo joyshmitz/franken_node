@@ -8,7 +8,10 @@
 //! - High-impact action receipt enforcement
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::fs::OpenOptions;
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
@@ -20,6 +23,8 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::capacity_defaults::aliases::MAX_RECEIPT_CHAIN;
+
+static PERSIST_LOCK: Mutex<()> = Mutex::new(());
 
 mod canonical_f64 {
     use serde::{Deserialize, Deserializer, Serializer, de};
@@ -467,21 +472,17 @@ pub fn export_receipts_to_path(
         #[cfg(feature = "cbor-serialization")]
         {
             let bytes = export_receipts_cbor(receipts, filter)?;
-            std::fs::write(path, bytes).map_err(|source| ReceiptError::WriteFailed {
-                path: path.display().to_string(),
-                source,
-            })
+            write_bytes_atomically(path, &bytes)
         }
         #[cfg(not(feature = "cbor-serialization"))]
         {
-            Err(ReceiptError::UnsupportedFormat("CBOR export disabled (cbor-serialization feature not enabled)".to_string()))
+            Err(ReceiptError::UnsupportedFormat(
+                "CBOR export disabled (cbor-serialization feature not enabled)".to_string(),
+            ))
         }
     } else {
         let json = export_receipts_json(receipts, filter)?;
-        std::fs::write(path, json).map_err(|source| ReceiptError::WriteFailed {
-            path: path.display().to_string(),
-            source,
-        })
+        write_bytes_atomically(path, json.as_bytes())
     }
 }
 
@@ -517,21 +518,88 @@ pub fn write_receipts_markdown(
     validate_safe_path(path)?;
     ensure_parent_dir(path)?;
     let markdown = render_receipts_markdown(receipts);
-    std::fs::write(path, markdown).map_err(|source| ReceiptError::WriteFailed {
+    write_bytes_atomically(path, markdown.as_bytes())
+}
+
+fn write_bytes_atomically(path: &Path, bytes: &[u8]) -> Result<(), ReceiptError> {
+    let _guard = PERSIST_LOCK.lock().map_err(|_| ReceiptError::WriteFailed {
         path: path.display().to_string(),
-        source,
-    })
+        source: std::io::Error::other("receipt persist lock poisoned"),
+    })?;
+    let mut temp = TempFileGuard::new(path);
+    {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(temp.path())
+            .map_err(|source| ReceiptError::WriteFailed {
+                path: path.display().to_string(),
+                source,
+            })?;
+        file.write_all(bytes)
+            .and_then(|()| file.sync_all())
+            .map_err(|source| ReceiptError::WriteFailed {
+                path: path.display().to_string(),
+                source,
+            })?;
+    }
+    temp.persist(path)
+}
+
+struct TempFileGuard {
+    path: PathBuf,
+    persisted: bool,
+}
+
+impl TempFileGuard {
+    fn new(target: &Path) -> Self {
+        let file_name = target
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            .filter(|name| !name.is_empty())
+            .unwrap_or("receipt-export");
+        let temp_name = format!(".{file_name}.{}.tmp", Uuid::now_v7());
+        let temp_path = target
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .map_or_else(
+                || PathBuf::from(&temp_name),
+                |parent| parent.join(&temp_name),
+            );
+
+        Self {
+            path: temp_path,
+            persisted: false,
+        }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn persist(&mut self, target: &Path) -> Result<(), ReceiptError> {
+        std::fs::rename(&self.path, target).map_err(|source| ReceiptError::WriteFailed {
+            path: target.display().to_string(),
+            source,
+        })?;
+        self.persisted = true;
+        Ok(())
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if !self.persisted {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
 fn fixture_signing_key(label: &[u8]) -> Ed25519PrivateKey {
     let mut hasher = Sha256::new();
     hasher.update(b"decision_receipt_test_fixture_key_v1:");
-    hasher.update(
-        u64::try_from(label.len())
-            .unwrap_or(u64::MAX)
-            .to_le_bytes(),
-    );
+    hasher.update(u64::try_from(label.len()).unwrap_or(u64::MAX).to_le_bytes());
     hasher.update(label);
     let seed: [u8; 32] = hasher.finalize().into();
     SigningKey::from_bytes(&seed)
@@ -676,8 +744,8 @@ fn ensure_parent_dir(path: &Path) -> Result<(), ReceiptError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     use crate::security::constant_time;
+    use serde_json::json;
 
     fn make_receipt(action_name: &str, decision: Decision) -> Receipt {
         Receipt::new(
@@ -719,7 +787,10 @@ mod tests {
 
         assert_eq!(first.to_bytes(), second.to_bytes());
         assert_ne!(first.to_bytes(), [42_u8; 32]);
-        assert_eq!(demo_public_key().as_bytes(), first.verifying_key().as_bytes());
+        assert_eq!(
+            demo_public_key().as_bytes(),
+            first.verifying_key().as_bytes()
+        );
     }
 
     #[test]
@@ -1316,6 +1387,25 @@ mod tests {
         assert!(markdown.contains("revocation"));
     }
 
+    #[test]
+    fn atomic_export_failure_leaves_no_partial_target_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target_dir = dir.path().join("receipts.json");
+        std::fs::create_dir(&target_dir).expect("create target directory");
+
+        let err = write_bytes_atomically(&target_dir, b"partial export bytes")
+            .expect_err("rename over a directory must fail");
+
+        assert!(matches!(err, ReceiptError::WriteFailed { .. }));
+        assert!(target_dir.is_dir());
+        assert!(std::fs::read_to_string(&target_dir).is_err());
+        let entries: Vec<_> = std::fs::read_dir(dir.path())
+            .expect("read tempdir")
+            .map(|entry| entry.expect("entry").file_name())
+            .collect();
+        assert_eq!(entries, vec![std::ffi::OsString::from("receipts.json")]);
+    }
+
     /// Negative path: empty receipt ID accepted but may cause lookup issues
     #[test]
     fn receipt_with_empty_id_field_constructed_successfully() {
@@ -1389,7 +1479,8 @@ mod tests {
     #[test]
     fn export_to_invalid_file_path_returns_write_error() {
         let key = demo_signing_key();
-        let signed = sign_receipt(&make_receipt("quarantine", Decision::Approved), &key).expect("sign");
+        let signed =
+            sign_receipt(&make_receipt("quarantine", Decision::Approved), &key).expect("sign");
 
         // Attempt to write to invalid path (contains null byte on Unix systems)
         let invalid_path = std::path::Path::new("receipts\0.json");
@@ -1404,7 +1495,9 @@ mod tests {
         let err = validate_safe_path(std::path::Path::new("file\0name.json"))
             .expect_err("null bytes should be rejected");
 
-        assert!(matches!(err, ReceiptError::UnsafePath { reason, .. } if reason.contains("null bytes")));
+        assert!(
+            matches!(err, ReceiptError::UnsafePath { reason, .. } if reason.contains("null bytes"))
+        );
     }
 
     #[test]
@@ -1412,7 +1505,9 @@ mod tests {
         let err = validate_safe_path(std::path::Path::new("/etc/passwd"))
             .expect_err("absolute paths should be rejected");
 
-        assert!(matches!(err, ReceiptError::UnsafePath { reason, .. } if reason.contains("absolute paths")));
+        assert!(
+            matches!(err, ReceiptError::UnsafePath { reason, .. } if reason.contains("absolute paths"))
+        );
     }
 
     #[test]
@@ -1420,7 +1515,9 @@ mod tests {
         let err = validate_safe_path(std::path::Path::new("../../../etc/passwd"))
             .expect_err("parent directory traversal should be rejected");
 
-        assert!(matches!(err, ReceiptError::UnsafePath { reason, .. } if reason.contains("path traversal")));
+        assert!(
+            matches!(err, ReceiptError::UnsafePath { reason, .. } if reason.contains("path traversal"))
+        );
     }
 
     #[test]
@@ -1428,7 +1525,9 @@ mod tests {
         let err = validate_safe_path(std::path::Path::new("directory\\filename.json"))
             .expect_err("backslashes should be rejected");
 
-        assert!(matches!(err, ReceiptError::UnsafePath { reason, .. } if reason.contains("backslashes")));
+        assert!(
+            matches!(err, ReceiptError::UnsafePath { reason, .. } if reason.contains("backslashes"))
+        );
     }
 
     #[test]
@@ -1475,7 +1574,8 @@ mod tests {
             vec![],
             just_over_one,
             "rollback command",
-        ).expect_err("just over 1.0 should fail");
+        )
+        .expect_err("just over 1.0 should fail");
 
         assert!(matches!(err, ReceiptError::InvalidConfidence { .. }));
 
@@ -1492,7 +1592,8 @@ mod tests {
             vec![],
             just_under_zero,
             "rollback command",
-        ).expect_err("just under 0.0 should fail");
+        )
+        .expect_err("just under 0.0 should fail");
 
         assert!(matches!(err, ReceiptError::InvalidConfidence { .. }));
     }
@@ -1510,9 +1611,8 @@ mod tests {
 
         // Self-referential structures can't be created directly in serde_json::Value,
         // but we can test with deeply nested structures that might cause stack overflow
-        let deeply_nested = (0..10000).fold(json!({}), |acc, i| {
-            json!({ format!("level_{}", i): acc })
-        });
+        let deeply_nested =
+            (0..10000).fold(json!({}), |acc, i| json!({ format!("level_{}", i): acc }));
 
         let receipt = Receipt::new(
             "test_action",
@@ -1525,7 +1625,8 @@ mod tests {
             vec!["test-rule".to_string()],
             0.95,
             "test rollback command",
-        ).expect("deeply nested input should be handled without stack overflow");
+        )
+        .expect("deeply nested input should be handled without stack overflow");
 
         assert!(!receipt.input_hash.is_empty());
         assert!(!receipt.output_hash.is_empty());
@@ -1538,23 +1639,28 @@ mod tests {
         let key = demo_signing_key();
 
         let malformed_timestamps = vec![
-            "",                           // Empty string
-            "2026",                       // Year only
+            "",                          // Empty string
+            "2026",                      // Year only
             "2026-13-45T25:70:90Z",      // Invalid date/time components
             "not-a-date-at-all",         // Non-date string
             "2026-02-20T10:00:00",       // Missing timezone
             "2026-02-20T10:00:00+25:00", // Invalid timezone offset
-            "\x00\x01\x02",             // Binary data
+            "\x00\x01\x02",              // Binary data
         ];
 
         for malformed_ts in malformed_timestamps {
             let mut receipt = make_receipt("test", Decision::Approved);
             receipt.timestamp = malformed_ts.to_string();
-            let signed = sign_receipt(&receipt, &key).expect("should sign despite malformed timestamp");
+            let signed =
+                sign_receipt(&receipt, &key).expect("should sign despite malformed timestamp");
 
             // Export filter should exclude receipts with unparseable timestamps
             let exported = export_receipts(&[signed], &ReceiptQuery::default());
-            assert!(exported.is_empty(), "malformed timestamp '{}' should be excluded", malformed_ts);
+            assert!(
+                exported.is_empty(),
+                "malformed timestamp '{}' should be excluded",
+                malformed_ts
+            );
         }
     }
 }
