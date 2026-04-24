@@ -387,6 +387,10 @@ name = "fleet_quarantine_rollback_receipt"
 path = "tests/fleet_quarantine_rollback_receipt.rs"
 
 [[test]]
+name = "fleet_quarantine_serde_fuzz_harness"
+path = "tests/fleet_quarantine_serde_fuzz_harness.rs"
+
+[[test]]
 name = "replay_bundle_metamorphic"
 path = "tests/replay_bundle_metamorphic.rs"
 
