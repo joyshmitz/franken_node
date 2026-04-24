@@ -1111,12 +1111,10 @@ fn test_verifier_sdk_new_rejects_invalid_identities() -> Result<(), String> {
     ];
 
     for (invalid_input, description) in invalid_cases {
-        let result = VerifierSdk::new(invalid_input);
-
         // All invalid inputs should either panic or return proper validation
         // For now we accept either behavior but verify invalid format is rejected
-        if let Ok(sdk) = std::panic::catch_unwind(|| result) {
-            match sdk {
+        if let Ok(result) = std::panic::catch_unwind(|| VerifierSdk::new(invalid_input)) {
+            match result {
                 Ok(created_sdk) => {
                     // If SDK was created, verify it transformed the input to valid format
                     if !created_sdk.verifier_identity.starts_with("verifier://") {
