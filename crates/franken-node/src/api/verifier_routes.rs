@@ -18,6 +18,7 @@ use super::middleware::{
 };
 use super::trust_card_routes::ApiResponse;
 use super::utf8_prefix;
+use crate::encoding::deterministic_seed::push_bounded;
 
 const MAX_STORED_CONFORMANCE_CHECKS: usize = 256;
 const MAX_VERIFIER_AUDIT_LOG_ENTRIES: usize = 512;
@@ -138,19 +139,19 @@ impl VerifierRouteState {
         outcome: &str,
         trace_id: &str,
     ) {
-        if self.audit_log.len() >= MAX_VERIFIER_AUDIT_LOG_ENTRIES {
-            let overflow = self.audit_log.len() - MAX_VERIFIER_AUDIT_LOG_ENTRIES + 1;
-            self.audit_log.drain(0..overflow);
-        }
-        self.audit_log.push(AuditLogEntry {
-            entry_id,
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            action: action.to_string(),
-            actor: actor.to_string(),
-            resource: resource.to_string(),
-            outcome: outcome.to_string(),
-            trace_id: trace_id.to_string(),
-        });
+        push_bounded(
+            &mut self.audit_log,
+            AuditLogEntry {
+                entry_id,
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                action: action.to_string(),
+                actor: actor.to_string(),
+                resource: resource.to_string(),
+                outcome: outcome.to_string(),
+                trace_id: trace_id.to_string(),
+            },
+            MAX_VERIFIER_AUDIT_LOG_ENTRIES,
+        );
     }
 
     fn append_audit(
@@ -1057,15 +1058,19 @@ mod tests {
         reset_verifier_state();
         {
             let mut state = verifier_route_state().lock().expect("state lock");
-            state.audit_log.push(AuditLogEntry {
-                entry_id: "audit-boundary".to_string(),
-                timestamp: "2026-01-01T00:00:00Z".to_string(),
-                action: "conformance.trigger".to_string(),
-                actor: "test-verifier".to_string(),
-                resource: "chk-boundary".to_string(),
-                outcome: "pass".to_string(),
-                trace_id: "trace-boundary".to_string(),
-            });
+            push_bounded(
+                &mut state.audit_log,
+                AuditLogEntry {
+                    entry_id: "audit-boundary".to_string(),
+                    timestamp: "2026-01-01T00:00:00Z".to_string(),
+                    action: "conformance.trigger".to_string(),
+                    actor: "test-verifier".to_string(),
+                    resource: "chk-boundary".to_string(),
+                    outcome: "pass".to_string(),
+                    trace_id: "trace-boundary".to_string(),
+                },
+                MAX_VERIFIER_AUDIT_LOG_ENTRIES,
+            );
         }
         let identity = test_identity();
         let trace = test_trace();
@@ -1719,5 +1724,52 @@ mod tests {
                 ref trace_id
             } if detail.contains("since timestamp") && trace_id == "test-trace-verifier-001"
         ));
+    }
+
+    #[test]
+    fn audit_log_respects_bounded_capacity() {
+        let _guard = test_guard();
+        reset_verifier_state();
+
+        // Add entries up to capacity + some overflow
+        let test_capacity = MAX_VERIFIER_AUDIT_LOG_ENTRIES + 10;
+        for i in 0..test_capacity {
+            {
+                let mut state = verifier_route_state().lock().expect("state lock");
+                state.append_audit(
+                    format!("entry_{}", i).as_str(),
+                    &format!("action_{}", i),
+                    &format!("actor_{}", i),
+                    &format!("resource_{}", i),
+                    "pass",
+                    &format!("trace_{}", i),
+                );
+            }
+        }
+
+        // Verify audit log size is capped at MAX_VERIFIER_AUDIT_LOG_ENTRIES
+        {
+            let state = verifier_route_state().lock().expect("state lock");
+            assert_eq!(
+                state.audit_log.len(),
+                MAX_VERIFIER_AUDIT_LOG_ENTRIES,
+                "audit log should be capped at MAX_VERIFIER_AUDIT_LOG_ENTRIES"
+            );
+
+            // Verify oldest entries were evicted (should have the last MAX_VERIFIER_AUDIT_LOG_ENTRIES entries)
+            let first_preserved_idx = test_capacity - MAX_VERIFIER_AUDIT_LOG_ENTRIES;
+            assert_eq!(
+                state.audit_log[0].entry_id,
+                format!("entry_{}", first_preserved_idx),
+                "oldest entry should be from index {}",
+                first_preserved_idx
+            );
+            assert_eq!(
+                state.audit_log.last().unwrap().entry_id,
+                format!("entry_{}", test_capacity - 1),
+                "newest entry should be from index {}",
+                test_capacity - 1
+            );
+        }
     }
 }
