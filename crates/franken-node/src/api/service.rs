@@ -2267,7 +2267,7 @@ mod contract_tests {
         super::operator_routes::clear_process_start_override_for_tests();
 
         let Some(artifact) = load_artifact_report() else {
-            eprintln!("artifact file not found, skipping contract validation");
+            tracing::warn!("artifact file not found, skipping contract validation");
             return;
         };
 
@@ -2290,7 +2290,7 @@ mod contract_tests {
         super::operator_routes::clear_process_start_override_for_tests();
 
         let Some(artifact) = load_artifact_report() else {
-            eprintln!("artifact file not found, skipping contract validation");
+            tracing::warn!("artifact file not found, skipping contract validation");
             return;
         };
 
@@ -2319,7 +2319,7 @@ mod contract_tests {
     #[test]
     fn runtime_middleware_coverage_matches_artifact() {
         let Some(artifact) = load_artifact_report() else {
-            eprintln!("artifact file not found, skipping contract validation");
+            tracing::warn!("artifact file not found, skipping contract validation");
             return;
         };
 
@@ -2344,7 +2344,7 @@ mod contract_tests {
     #[test]
     fn runtime_transport_boundary_matches_artifact() {
         let Some(artifact) = load_artifact_report() else {
-            eprintln!("artifact file not found, skipping contract validation");
+            tracing::warn!("artifact file not found, skipping contract validation");
             return;
         };
 
@@ -2391,7 +2391,7 @@ mod contract_tests {
     #[test]
     fn all_endpoints_have_conformance_pass_in_artifact() {
         let Some(artifact) = load_artifact_report() else {
-            eprintln!("artifact file not found, skipping contract validation");
+            tracing::warn!("artifact file not found, skipping contract validation");
             return;
         };
 
