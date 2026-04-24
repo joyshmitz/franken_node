@@ -17,7 +17,8 @@
 `franken_node` is a trust-native JavaScript/TypeScript runtime platform for extension-heavy systems; it pairs Node/Bun migration speed with deterministic security controls and replayable operations.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/franken_node/main/install.sh | bash
+# Build from source
+cargo build --release -p frankenengine-node
 ```
 
 ## TL;DR
@@ -43,8 +44,8 @@ Node/Bun make rapid extension development easy, but production security and inci
 ## Quick Example
 
 ```bash
-# 1) Install
-curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/franken_node/main/install.sh | bash
+# 1) Build from source
+cargo build --release -p frankenengine-node
 
 # 2) Initialize policy and workspace metadata
 franken-node init --profile balanced
