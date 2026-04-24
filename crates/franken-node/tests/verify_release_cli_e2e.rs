@@ -821,6 +821,10 @@ fn verify_release_fails_when_unlisted_artifact_exists() {
             .unwrap_or_default()
             .contains("not listed")
     );
+    assert_json_snapshot!(
+        "verify_release_unlisted_artifact_json",
+        canonicalize_verify_release_snapshot(payload, &release_dir, &key_dir)
+    );
 }
 
 #[test]

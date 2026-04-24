@@ -1,0 +1,24 @@
+---
+source: crates/franken-node/tests/verify_release_cli_e2e.rs
+expression: "canonicalize_verify_release_snapshot(payload, &release_dir, &key_dir)"
+---
+{
+  "release_path": "[release]",
+  "manifest_signature_ok": true,
+  "results": [
+    {
+      "artifact_name": "franken-node-linux-x64.tar.xz",
+      "passed": true,
+      "key_id": "d71b59ff094a2868",
+      "failure_reason": null
+    },
+    {
+      "artifact_name": "rogue-extra.bin",
+      "passed": false,
+      "key_id": "d71b59ff094a2868",
+      "failure_reason": "artifact present but not listed in SHA256SUMS"
+    }
+  ],
+  "overall_pass": false,
+  "unlisted_artifact_count": 1
+}
