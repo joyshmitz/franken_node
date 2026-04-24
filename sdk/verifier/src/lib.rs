@@ -569,7 +569,7 @@ impl VerifierSdk {
             &session_id,
             &self.verifier_identity,
             &created_at,
-            SESSION_NONCE_COUNTER.fetch_add(1, Ordering::Relaxed),
+            next_session_nonce_counter(),
         );
         Ok(VerificationSession {
             session_id: session_id.clone(),
@@ -598,13 +598,13 @@ impl VerifierSdk {
             return Err(VerifierSdkError::SessionSealed(session.session_id.clone()));
         }
         self.verify_result_belongs_to_current_verifier(result)?;
-        if session.origin_verifier_identity != self.verifier_identity {
+        if !constant_time_eq(&session.origin_verifier_identity, &self.verifier_identity) {
             return Err(VerifierSdkError::SessionVerifierMismatch {
                 expected: session.origin_verifier_identity.clone(),
                 actual: self.verifier_identity.clone(),
             });
         }
-        if result.verifier_identity != session.origin_verifier_identity {
+        if !constant_time_eq(&result.verifier_identity, &session.origin_verifier_identity) {
             return Err(VerifierSdkError::SessionVerifierMismatch {
                 expected: session.origin_verifier_identity.clone(),
                 actual: result.verifier_identity.clone(),
@@ -636,7 +636,7 @@ impl VerifierSdk {
         if session.sealed {
             return Err(VerifierSdkError::SessionSealed(session.session_id.clone()));
         }
-        if session.origin_verifier_identity != self.verifier_identity {
+        if !constant_time_eq(&session.origin_verifier_identity, &self.verifier_identity) {
             return Err(VerifierSdkError::SessionVerifierMismatch {
                 expected: self.verifier_identity.clone(),
                 actual: session.origin_verifier_identity.clone(),
@@ -705,7 +705,7 @@ impl VerifierSdk {
             });
         }
         self.verify_result_signature(result)?;
-        if result.verifier_identity != self.verifier_identity {
+        if !constant_time_eq(&result.verifier_identity, &self.verifier_identity) {
             return Err(VerifierSdkError::SessionVerifierMismatch {
                 expected: self.verifier_identity.clone(),
                 actual: result.verifier_identity.clone(),
@@ -719,7 +719,7 @@ impl VerifierSdk {
         bundle: &bundle::ReplayBundle,
     ) -> Result<(), VerifierSdkError> {
         self.validate_current_verifier_identity()?;
-        if bundle.verifier_identity != self.verifier_identity {
+        if !constant_time_eq(&bundle.verifier_identity, &self.verifier_identity) {
             return Err(VerifierSdkError::SessionVerifierMismatch {
                 expected: self.verifier_identity.clone(),
                 actual: bundle.verifier_identity.clone(),
@@ -802,12 +802,20 @@ fn default_result_origin_nonce() -> String {
     let mut payload = Vec::new();
     push_length_prefixed(&mut payload, RESULT_ORIGIN_DOMAIN);
     push_length_prefixed(&mut payload, SDK_VERSION.as_bytes());
-    payload.extend_from_slice(
-        &SESSION_NONCE_COUNTER
-            .fetch_add(1, Ordering::Relaxed)
-            .to_le_bytes(),
-    );
+    payload.extend_from_slice(&next_session_nonce_counter().to_le_bytes());
     bundle::hash(&payload)
+}
+
+fn next_session_nonce_counter() -> u64 {
+    SESSION_NONCE_COUNTER
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |counter| {
+            Some(increment_session_nonce_counter(counter))
+        })
+        .expect("session nonce counter update should not fail")
+}
+
+fn increment_session_nonce_counter(counter: u64) -> u64 {
+    counter.saturating_add(1)
 }
 
 fn current_utc_timestamp() -> String {
@@ -1036,14 +1044,17 @@ fn validate_session_id(session_id: &str) -> Result<(), VerifierSdkError> {
 fn validate_session_provenance(session: &VerificationSession) -> Result<(), VerifierSdkError> {
     validate_session_id(&session.session_id)?;
     validate_verifier_identity(&session.verifier_identity)?;
-    if session.session_id != session.origin_session_id {
+    if !constant_time_eq(&session.session_id, &session.origin_session_id) {
         return Err(VerifierSdkError::SessionProvenanceMismatch {
             field: "session_id",
             expected: session.origin_session_id.clone(),
             actual: session.session_id.clone(),
         });
     }
-    if session.verifier_identity != session.origin_verifier_identity {
+    if !constant_time_eq(
+        &session.verifier_identity,
+        &session.origin_verifier_identity,
+    ) {
         return Err(VerifierSdkError::SessionProvenanceMismatch {
             field: "verifier_identity",
             expected: session.origin_verifier_identity.clone(),
@@ -1057,7 +1068,7 @@ fn validate_session_provenance(session: &VerificationSession) -> Result<(), Veri
             actual: session.created_at.clone(),
         });
     }
-    if session.session_nonce != session.origin_session_nonce {
+    if !constant_time_eq(&session.session_nonce, &session.origin_session_nonce) {
         return Err(VerifierSdkError::SessionProvenanceMismatch {
             field: "session_nonce",
             expected: session.origin_session_nonce.clone(),
@@ -1149,6 +1160,13 @@ mod tests {
     }
 
     #[test]
+    fn session_nonce_counter_increment_saturates_at_u64_max() {
+        assert_eq!(increment_session_nonce_counter(0), 1);
+        assert_eq!(increment_session_nonce_counter(u64::MAX - 1), u64::MAX);
+        assert_eq!(increment_session_nonce_counter(u64::MAX), u64::MAX);
+    }
+
+    #[test]
     fn session_step_accepts_signed_result_from_same_verifier() {
         let sdk = create_verifier_sdk("verifier://alpha");
         let mut session = sdk
@@ -1205,10 +1223,7 @@ mod tests {
             .record_session_step(&mut session, &foreign_result)
             .expect_err("foreign verifier result must be rejected");
 
-        assert!(matches!(
-            err,
-            VerifierSdkError::ResultOriginMismatch { .. }
-        ));
+        assert!(matches!(err, VerifierSdkError::ResultOriginMismatch { .. }));
         assert!(session.steps().is_empty());
     }
 
@@ -1547,10 +1562,7 @@ mod tests {
             .append_transparency_log(&mut log, &foreign_result)
             .expect_err("foreign verifier result must be rejected");
 
-        assert!(matches!(
-            err,
-            VerifierSdkError::ResultOriginMismatch { .. }
-        ));
+        assert!(matches!(err, VerifierSdkError::ResultOriginMismatch { .. }));
         assert!(log.is_empty());
     }
 
