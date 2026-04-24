@@ -151,7 +151,7 @@ pub const VERIFY_CLI_CONTRACT: &str = "3.0.0";
 // ── Utility ────────────────────────────────────────────────────────
 
 /// Return all registered schema versions as `(name, version)` pairs.
-/// Useful for diagnostics (e.g., `franken-node doctor --versions`).
+/// Useful for diagnostics and schema validation.
 pub fn all_versions() -> Vec<(&'static str, &'static str)> {
     vec![
         // Runtime & Scheduling
