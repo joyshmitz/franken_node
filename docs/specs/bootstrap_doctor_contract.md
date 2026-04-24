@@ -39,8 +39,13 @@ Runtime metadata (`generated_at_utc`, per-check `duration_ms`) may vary, but doe
 | `DR-POLICY-009` | `DOC-009` | `policy.guardrails` | dominant guardrail verdict is `allow` | Warn on dominant `warn`; Fail on dominant `block` or invalid input | resolve blocked budgets and telemetry anomalies before policy activation |
 | `DR-POLICY-010` | `DOC-010` | `policy.decision_engine` | top candidate accepted | Warn when fallback candidate used; Fail when all candidates blocked/no candidates/invalid input | provide safer candidates or reduce risk exposure |
 | `DR-POLICY-011` | `DOC-011` | `policy.explainer_wording` | wording validator passes | Fail when wording separation fails or policy pipeline cannot execute | fix diagnostic-vs-guarantee wording and input integrity |
+| `DR-STORAGE-012` | `DOC-012` | `storage.state_dir` | configured fleet state directory exists and is writable | Warn when missing; Fail when unwritable | create the directory or fix permissions |
+| `DR-SECURITY-013` | `DOC-013` | `security.signing_key` | configured receipt signing key path is a readable regular file | Fail when missing, unreadable, or not a regular file | create the signing key or update `security.decision_receipt_signing_key_path` |
+| `DR-ENGINE-014` | `DOC-014` | `engine.binary` | configured engine binary path is a regular executable file | Warn when missing or non-executable; Fail when not a regular file or metadata cannot be read | install `franken_engine`, update `engine.binary_path`, or fix permissions |
+| `DR-BENCH-015` | `DOC-015` | `benchmark.validation` | benchmark threshold artifact exists and thresholds pass | Warn when validation cannot run; Fail when thresholds fail | run category shift validation and fix benchmark regressions |
 
 `DR-POLICY-009..011` are emitted only when `--policy-activation-input` is supplied.
+`DR-STORAGE-012`, `DR-SECURITY-013`, and `DR-ENGINE-014` are emitted only when their corresponding config paths are set.
 
 ## Status Aggregation
 
