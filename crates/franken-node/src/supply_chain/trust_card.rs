@@ -471,7 +471,7 @@ impl TrustCardRegistry {
         } else {
             self.last_snapshot_hash
                 .clone()
-                .or_else(|| Some(self.snapshot().snapshot_hash))
+                .or_else(|| self.snapshot().ok().map(|s| s.snapshot_hash))
         };
         self.snapshot_epoch = self.snapshot_epoch.saturating_add(1);
         self.last_snapshot_hash = None;
@@ -3147,7 +3147,7 @@ mod tests {
     #[test]
     fn registry_snapshot_rejects_tampered_card_history() {
         let registry = fixture_registry(1_000).expect("fixture registry");
-        let mut snapshot = registry.snapshot();
+        let mut snapshot = registry.snapshot().expect("snapshot");
         snapshot
             .cards_by_extension
             .get_mut("npm:@beta/telemetry-bridge")
@@ -3164,7 +3164,7 @@ mod tests {
     #[test]
     fn registry_snapshot_rejects_mismatched_extension_bucket() {
         let registry = fixture_registry(1_000).expect("fixture registry");
-        let mut snapshot = registry.snapshot();
+        let mut snapshot = registry.snapshot().expect("snapshot");
         let history = snapshot
             .cards_by_extension
             .remove("npm:@acme/auth-guard")
@@ -3183,7 +3183,7 @@ mod tests {
     #[test]
     fn registry_snapshot_rejects_unsupported_schema() {
         let registry = fixture_registry(1_000).expect("fixture registry");
-        let mut snapshot = registry.snapshot();
+        let mut snapshot = registry.snapshot().expect("snapshot");
         snapshot.schema_version = "franken-node/trust-card-registry-state/v0".to_string();
 
         let err = TrustCardRegistry::from_snapshot(snapshot, DEFAULT_REGISTRY_KEY, 2_000)
@@ -3199,7 +3199,7 @@ mod tests {
     #[test]
     fn registry_snapshot_rejects_empty_history_bucket() {
         let registry = fixture_registry(1_000).expect("fixture registry");
-        let mut snapshot = registry.snapshot();
+        let mut snapshot = registry.snapshot().expect("snapshot");
         snapshot
             .cards_by_extension
             .insert("npm:@empty/plugin".to_string(), Vec::new());
@@ -3215,7 +3215,7 @@ mod tests {
     #[test]
     fn registry_snapshot_rejects_non_monotonic_versions() {
         let registry = fixture_registry(1_000).expect("fixture registry");
-        let mut snapshot = registry.snapshot();
+        let mut snapshot = registry.snapshot().expect("snapshot");
         let history = snapshot
             .cards_by_extension
             .get_mut("npm:@beta/telemetry-bridge")
@@ -3234,7 +3234,7 @@ mod tests {
     #[test]
     fn registry_snapshot_rejects_broken_previous_hash_linkage() {
         let registry = fixture_registry(1_000).expect("fixture registry");
-        let mut snapshot = registry.snapshot();
+        let mut snapshot = registry.snapshot().expect("snapshot");
         let history = snapshot
             .cards_by_extension
             .get_mut("npm:@beta/telemetry-bridge")
@@ -3271,6 +3271,17 @@ mod tests {
             .expect_err("malformed state file must fail");
 
         assert!(matches!(err, TrustCardError::SnapshotParse { .. }));
+    }
+
+    #[test]
+    fn snapshot_fails_with_invalid_registry_key() {
+        // Use an empty key which should be invalid for HMAC
+        let invalid_key = b"";
+        let mut registry = TrustCardRegistry::new(0, invalid_key);
+        registry.create(sample_input(), 1_000, "trace-create").expect("create");
+
+        let err = registry.snapshot().expect_err("snapshot with invalid key should fail");
+        assert!(matches!(err, TrustCardError::InvalidRegistryKey));
     }
 
     // ── NEGATIVE-PATH TESTS: Security & Robustness ──────────────────
