@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 use std::fmt;
 use std::io::Write;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::security::constant_time;
 use crate::supply_chain::artifact_signing::{sign_bytes, verify_signature};
@@ -703,7 +703,7 @@ impl EvidenceLedger {
 /// concerns around the ledger instead of simple bounded state access.
 #[derive(Clone)]
 pub struct SharedEvidenceLedger {
-    inner: Arc<Mutex<EvidenceLedger>>,
+    inner: Arc<RwLock<EvidenceLedger>>,
 }
 
 impl SharedEvidenceLedger {
@@ -712,13 +712,13 @@ impl SharedEvidenceLedger {
         C: Into<LedgerCapacity>,
     {
         Self {
-            inner: Arc::new(Mutex::new(EvidenceLedger::new(capacity))),
+            inner: Arc::new(RwLock::new(EvidenceLedger::new(capacity))),
         }
     }
 
     pub fn with_verifying_key(capacity: LedgerCapacity, verifying_key: VerifyingKey) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(EvidenceLedger::with_verifying_key(
+            inner: Arc::new(RwLock::new(EvidenceLedger::with_verifying_key(
                 capacity,
                 verifying_key,
             ))),
@@ -726,28 +726,38 @@ impl SharedEvidenceLedger {
     }
 
     pub fn append(&self, entry: EvidenceEntry) -> Result<EntryId, LedgerError> {
-        let mut ledger = self.lock_recover();
+        let mut ledger = self.write_recover();
         ledger.append(entry)
     }
 
     pub fn len(&self) -> usize {
-        self.lock_recover().len()
+        self.read_recover().len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.lock_recover().is_empty()
+        self.read_recover().is_empty()
     }
 
     pub fn snapshot(&self) -> LedgerSnapshot {
-        self.lock_recover().snapshot()
+        self.read_recover().snapshot()
     }
 
     pub fn metrics(&self) -> LedgerMetrics {
-        self.lock_recover().metrics()
+        self.read_recover().metrics()
     }
 
-    fn lock_recover(&self) -> MutexGuard<'_, EvidenceLedger> {
-        match self.inner.lock() {
+    fn read_recover(&self) -> RwLockReadGuard<'_, EvidenceLedger> {
+        match self.inner.read() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                eprintln!("{}", format_ledger_lock_poison_recovered_event());
+                poisoned.into_inner()
+            }
+        }
+    }
+
+    fn write_recover(&self) -> RwLockWriteGuard<'_, EvidenceLedger> {
+        match self.inner.write() {
             Ok(guard) => guard,
             Err(poisoned) => {
                 eprintln!("{}", format_ledger_lock_poison_recovered_event());
@@ -1761,14 +1771,31 @@ mod tests {
     }
 
     #[test]
+    fn shared_ledger_permits_parallel_read_guards() {
+        let shared = SharedEvidenceLedger::new(LedgerCapacity::new(100, 100_000));
+        shared
+            .append(make_entry("DEC-001", 1))
+            .expect("should succeed");
+
+        let first_reader = shared.inner.read().expect("first read guard");
+        let second_reader = shared
+            .inner
+            .try_read()
+            .expect("second read guard should not block while first reader is active");
+
+        assert_eq!(first_reader.len(), 1);
+        assert_eq!(second_reader.metrics().retained_entries, 1);
+    }
+
+    #[test]
     fn shared_ledger_recovers_from_poisoned_lock() {
         let shared = SharedEvidenceLedger::new(LedgerCapacity::new(100, 100_000));
         let poison_target = shared.clone();
         let join = std::thread::spawn(move || {
             let _guard = poison_target
                 .inner
-                .lock()
-                .expect("lock acquired for poison test");
+                .write()
+                .expect("write lock acquired for poison test");
             panic!("intentional poison");
         });
         assert!(join.join().is_err(), "poisoning thread should panic");
