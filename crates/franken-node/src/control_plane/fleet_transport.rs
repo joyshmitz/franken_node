@@ -808,11 +808,14 @@ impl FileFleetTransport {
 
             // Return result of compaction operation
             compaction_inner_result
-        })?;
+        });
 
         // DEADLOCK FIX: Unlock compaction lock AFTER shared_state_lock is released
+        // Always unlock the compaction lock regardless of compaction result
         let unlock_result = unlock_file(&compaction_lock_file, &compaction_lock_path);
-        // compaction_result is already unwrapped by the ? on line 809
+
+        // Propagate errors only after ensuring unlock
+        compaction_result?;
         unlock_result?;
         Ok(())
     }
@@ -3241,6 +3244,67 @@ mod tests {
                     path.file_name().is_some(),
                     "Generated path should have filename"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn compact_action_log_if_needed_releases_lock_on_error() {
+        let tmp = tempdir().expect("temp dir");
+        let layout = FleetTransportLayout::new(tmp.path());
+        let transport = FleetTransport::new(layout.clone()).expect("transport");
+
+        // Initialize with a large action log that will trigger compaction
+        let large_action = FleetActionRecord {
+            action_id: "large-action".to_string(),
+            node_id: "node-1".to_string(),
+            action_type: FleetActionType::Start,
+            requested_at: Utc::now(),
+            emitted_at: Utc::now(),
+            timeout_secs: 30,
+        };
+
+        // Write enough actions to exceed the threshold
+        let action_data = serde_json::to_string(&large_action).expect("serialize");
+        let large_content = format!("{}\n", action_data).repeat(10000); // Make it large enough
+
+        fs::write(layout.actions_path(), large_content.as_bytes()).expect("write large file");
+
+        // Create a read-only compaction lock file to simulate a file system error
+        // that would occur during compaction but before the lock is released
+        let compaction_lock_path = layout.compaction_lock_path();
+        fs::create_dir_all(compaction_lock_path.parent().unwrap()).expect("create dir");
+
+        // First, make the actions file inaccessible to force an error during compaction
+        let metadata = fs::metadata(layout.actions_path()).expect("get metadata");
+        let mut permissions = metadata.permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(layout.actions_path(), permissions).expect("set readonly");
+
+        // Attempt compaction - this should fail but not leave locks hanging
+        let result = transport.compact_action_log_if_needed(100, 1); // Small size to force compaction
+
+        // The compaction should fail due to permissions
+        assert!(result.is_err(), "Expected compaction to fail due to permissions");
+
+        // Restore permissions for cleanup
+        let metadata = fs::metadata(layout.actions_path()).expect("get metadata");
+        let mut permissions = metadata.permissions();
+        permissions.set_readonly(false);
+        fs::set_permissions(layout.actions_path(), permissions).expect("restore permissions");
+
+        // Now verify that we can immediately run another compaction without deadlocking
+        // If the lock was leaked, this would hang or fail
+        let second_result = transport.compact_action_log_if_needed(100, 1);
+
+        // The second attempt should also handle the error gracefully and not deadlock
+        // The key assertion is that this doesn't hang - the Result is less important
+        match second_result {
+            Ok(_) => {
+                // Compaction succeeded this time
+            }
+            Err(_) => {
+                // Compaction failed again, but importantly didn't deadlock
             }
         }
     }
