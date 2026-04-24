@@ -282,8 +282,12 @@ const MAX_CONFORMANCE_RESULTS: usize = 4096;
 const MAX_CONFORMANCE_AUDIT_LOG: usize = 4096;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
     if items.len() >= cap {
-        let overflow = items.len() - cap + 1;
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
         items.drain(0..overflow);
     }
     items.push(item);
@@ -310,7 +314,11 @@ impl ConformanceSuiteRunner {
 
     fn push_fixture(&mut self, fixture: ConformanceFixture) {
         if self.fixtures.len() >= MAX_CONFORMANCE_FIXTURES {
-            let overflow = self.fixtures.len() - MAX_CONFORMANCE_FIXTURES + 1;
+            let overflow = self
+                .fixtures
+                .len()
+                .saturating_sub(MAX_CONFORMANCE_FIXTURES)
+                .saturating_add(1);
             for f in self.fixtures.drain(0..overflow) {
                 self.id_registry.remove(f.conformance_id.as_str());
             }
