@@ -644,6 +644,12 @@ impl ReportingPipeline {
         input: &EvidenceInput,
         now_secs: u64,
     ) -> Result<ShiftEvidence, CategoryShiftError> {
+        if input.generated_at_secs > now_secs {
+            return Err(CategoryShiftError::ClaimInvalid(format!(
+                "artifact `{}` generated_at_secs {} is in the future relative to report time {}",
+                input.artifact_path, input.generated_at_secs, now_secs
+            )));
+        }
         let age = now_secs.saturating_sub(input.generated_at_secs);
         let freshness = if age >= self.config.freshness_window_secs {
             FreshnessStatus::Stale

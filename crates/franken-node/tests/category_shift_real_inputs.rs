@@ -119,3 +119,35 @@ fn category_shift_report_rejects_missing_evidence_content() {
         matches!(err, CategoryShiftError::EvidenceMissingContent(path) if path == "artifacts/real/economics.json")
     );
 }
+
+#[test]
+fn category_shift_report_rejects_future_dated_evidence() {
+    let now: u64 = 1_000_000;
+    let content = r#"{"compatibility_percent":97}"#;
+    let dimensions = vec![CategoryShiftDimensionInput {
+        dimension: ReportDimension::BenchmarkComparisons,
+        source_name: "real-benchmark-job".to_string(),
+        source_bead: "bd-real-benchmark".to_string(),
+        claims: vec![claim(
+            "future evidence must fail closed",
+            97.0,
+            "percent",
+            EvidenceInput {
+                artifact_path: "artifacts/real/future-benchmark.json".to_string(),
+                sha256_hash: sha256_hex(content.as_bytes()),
+                generated_at_secs: now.saturating_add(60),
+                content: Some(content.to_string()),
+            },
+        )],
+    }];
+
+    let err = build_category_shift_report(now, "trace-future", &dimensions, &[]).unwrap_err();
+
+    assert!(matches!(
+        err,
+        CategoryShiftError::ClaimInvalid(detail)
+            if detail.contains("generated_at_secs")
+                && detail.contains("future-benchmark.json")
+                && detail.contains("future")
+    ));
+}
