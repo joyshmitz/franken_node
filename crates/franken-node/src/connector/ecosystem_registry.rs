@@ -625,8 +625,8 @@ impl EcosystemRegistry {
         };
         entry.entry_hash = compute_audit_hash(&entry);
         if self.audit_trail.len() >= MAX_AUDIT_LOG_ENTRIES {
-            let overflow = self.audit_trail.len() - MAX_AUDIT_LOG_ENTRIES + 1;
-            self.chain_anchor_hash = Some(self.audit_trail[overflow - 1].entry_hash.clone());
+            let overflow = self.audit_trail.len().saturating_sub(MAX_AUDIT_LOG_ENTRIES).saturating_add(1);
+            self.chain_anchor_hash = Some(self.audit_trail[overflow.saturating_sub(1)].entry_hash.clone());
             self.audit_trail.drain(0..overflow);
         }
         self.audit_trail.push(entry);
@@ -1460,5 +1460,35 @@ mod tests {
         assert!(record.compatibility.is_empty());
         assert_eq!(reg.audit_trail_len(), audit_len);
         assert!(reg.take_events().is_empty());
+    }
+
+    #[test]
+    fn test_audit_trail_overflow_uses_saturating_arithmetic() {
+        // Regression test for bd-51xqb: ensure audit trail overflow calculation
+        // uses saturating_sub and saturating_add to prevent arithmetic overflow
+        let mut reg = EcosystemRegistry::new();
+        let meta = make_metadata("ext-1", "pub-1", "key-1");
+
+        // Fill the audit trail to capacity
+        for i in 0..MAX_AUDIT_LOG_ENTRIES {
+            let test_meta = make_metadata(&format!("ext-{}", i), "pub-1", "key-1");
+            reg.register_extension(test_meta, &ts(i as u64), "t").unwrap();
+        }
+
+        assert_eq!(reg.audit_trail_len(), MAX_AUDIT_LOG_ENTRIES);
+        let initial_chain_anchor = reg.chain_anchor_hash.clone();
+
+        // Add one more entry to trigger overflow with saturating arithmetic
+        let overflow_meta = make_metadata("overflow-ext", "pub-1", "key-1");
+        reg.register_extension(overflow_meta, &ts(MAX_AUDIT_LOG_ENTRIES as u64), "t").unwrap();
+
+        // Should still be at capacity, with oldest entry evicted and chain anchor updated
+        assert_eq!(reg.audit_trail_len(), MAX_AUDIT_LOG_ENTRIES);
+        assert!(reg.chain_anchor_hash.is_some());
+        assert_ne!(reg.chain_anchor_hash, initial_chain_anchor);
+
+        // Verify the newest entry is present
+        let last_entry = &reg.audit_trail[reg.audit_trail_len() - 1];
+        assert_eq!(last_entry.extension_id, "overflow-ext");
     }
 }
