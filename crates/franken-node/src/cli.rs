@@ -265,6 +265,10 @@ pub struct MigrateRewriteArgs {
     /// Path to emit rollback plan.
     #[arg(long)]
     pub emit_rollback: Option<PathBuf>,
+
+    /// Emit structured JSON output.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -317,6 +321,10 @@ pub struct VerifyLockstepArgs {
     /// Emit divergence fixtures for failing comparisons.
     #[arg(long)]
     pub emit_fixtures: bool,
+
+    /// Emit structured JSON output.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -416,6 +424,10 @@ pub enum TrustCommand {
 pub struct TrustCardArgs {
     /// Extension identifier (e.g., npm:@example/plugin).
     pub extension_id: String,
+
+    /// Emit structured JSON output.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -427,6 +439,10 @@ pub struct TrustListArgs {
     /// Filter by revocation status.
     #[arg(long)]
     pub revoked: Option<bool>,
+
+    /// Emit structured JSON output.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -441,6 +457,10 @@ pub struct TrustScanArgs {
     /// Query OSV for known npm vulnerabilities during the scan.
     #[arg(long)]
     pub audit: bool,
+
+    /// Emit structured JSON output.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Parser)]
