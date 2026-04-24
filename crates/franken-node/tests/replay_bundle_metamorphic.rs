@@ -8,12 +8,44 @@
 //! If this relation fails, it indicates a serialization bug that could cause data loss.
 
 use frankenengine_node::tools::replay_bundle::{
-    RawEvent, ReplayBundle, EventType, generate_replay_bundle, write_bundle_to_path, read_bundle_from_path,
+    EventType, RawEvent, ReplayBundle, ReplayBundleSigningMaterial, generate_replay_bundle,
+    read_bundle_from_path_with_trusted_key, sign_replay_bundle,
+    write_bundle_to_path_with_trusted_key,
 };
-use rand::{Rng, RngCore, SeedableRng};
 use rand::distributions::{Alphanumeric, DistString};
+use rand::{Rng, RngCore, SeedableRng};
 use serde_json::json;
 use tempfile::TempDir;
+
+fn metamorphic_signing_key() -> ed25519_dalek::SigningKey {
+    ed25519_dalek::SigningKey::from_bytes(&[47_u8; 32])
+}
+
+fn metamorphic_trusted_key_id() -> String {
+    let signing_key = metamorphic_signing_key();
+    frankenengine_node::supply_chain::artifact_signing::KeyId::from_verifying_key(
+        &signing_key.verifying_key(),
+    )
+    .to_string()
+}
+
+fn sign_metamorphic_bundle(bundle: &mut ReplayBundle) {
+    let signing_key = metamorphic_signing_key();
+    let signing_material = ReplayBundleSigningMaterial {
+        signing_key: &signing_key,
+        key_source: "test",
+        signing_identity: "replay-bundle-metamorphic",
+    };
+    sign_replay_bundle(bundle, &signing_material).expect("sign metamorphic replay bundle");
+}
+
+fn write_then_read_bundle(bundle: &ReplayBundle, path: &std::path::Path) -> ReplayBundle {
+    let trusted_key_id = metamorphic_trusted_key_id();
+    write_bundle_to_path_with_trusted_key(bundle, path, &trusted_key_id)
+        .expect("bundle should write successfully");
+    read_bundle_from_path_with_trusted_key(path, Some(&trusted_key_id))
+        .expect("bundle should read successfully")
+}
 
 /// Generate arbitrary RawEvent for property-based testing
 fn arbitrary_raw_event(rng: &mut impl Rng, sequence_base: u64) -> RawEvent {
@@ -35,22 +67,22 @@ fn arbitrary_raw_event(rng: &mut impl Rng, sequence_base: u64) -> RawEvent {
                 "to_state": format!("state_{}", rng.gen_range(1..5)),
                 "trigger": "automated_transition"
             })
-        },
+        }
         EventType::PolicyEval => {
             let decisions = ["allow", "deny", "defer"];
             json!({
                 "policy_id": format!("policy_{}", Alphanumeric.sample_string(rng, 8)),
                 "decision": decisions[rng.gen_range(0..3)],
-                "confidence": rng.gen_range(0.0..1.0)
+                "confidence_micros": rng.gen_range(0..=1_000_000)
             })
-        },
+        }
         EventType::ExternalSignal => {
             json!({
                 "signal_type": format!("signal_{}", rng.gen_range(1..20)),
                 "source": format!("external_system_{}", rng.gen_range(1..5)),
                 "payload_size": rng.gen_range(0..10_000)
             })
-        },
+        }
         EventType::OperatorAction => {
             let actions = ["deploy", "rollback", "scale", "restart"];
             json!({
@@ -58,7 +90,7 @@ fn arbitrary_raw_event(rng: &mut impl Rng, sequence_base: u64) -> RawEvent {
                 "operator": format!("operator_{}", rng.gen_range(1..10)),
                 "target": format!("service_{}", rng.gen_range(1..20))
             })
-        },
+        }
     };
 
     let causal_parent = if rng.gen_bool(0.3) && sequence_base > 0 {
@@ -68,10 +100,15 @@ fn arbitrary_raw_event(rng: &mut impl Rng, sequence_base: u64) -> RawEvent {
     };
 
     RawEvent {
-        timestamp: format!("2024-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
-            rng.gen_range(1..13), rng.gen_range(1..29),
-            rng.gen_range(0..24), rng.gen_range(0..60), rng.gen_range(0..60),
-            rng.gen_range(0..1000)),
+        timestamp: format!(
+            "2024-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+            rng.gen_range(1..13),
+            rng.gen_range(1..29),
+            rng.gen_range(0..24),
+            rng.gen_range(0..60),
+            rng.gen_range(0..60),
+            rng.gen_range(0..1000)
+        ),
         event_type,
         payload,
         causal_parent,
@@ -93,8 +130,10 @@ fn arbitrary_replay_bundle(rng: &mut impl Rng) -> ReplayBundle {
         sequence_base += rng.gen_range(1..10);
     }
 
-    generate_replay_bundle(&incident_id, &events)
-        .expect("Generated events should always produce valid bundle")
+    let mut bundle = generate_replay_bundle(&incident_id, &events)
+        .expect("Generated events should always produce valid bundle");
+    sign_metamorphic_bundle(&mut bundle);
+    bundle
 }
 
 /// Test the core metamorphic relation: export ∘ import = identity
@@ -106,22 +145,13 @@ fn metamorphic_replay_bundle_compose_decompose_inversion() {
     // Test across multiple randomly generated bundles
     for test_case in 0..20 {
         let original_bundle = arbitrary_replay_bundle(&mut rng);
-        let bundle_path = temp_dir.path().join(format!("test_bundle_{}.rbundle", test_case));
+        let bundle_path = temp_dir
+            .path()
+            .join(format!("test_bundle_{}.rbundle", test_case));
 
         // MR: export then import should equal original
-        // Step 1: Export (compose)
-        write_bundle_to_path(&original_bundle, &bundle_path)
-            .unwrap_or_else(|e| panic!(
-                "Test case {}: Failed to write bundle to {}: {}",
-                test_case, bundle_path.display(), e
-            ));
-
-        // Step 2: Import (decompose)
-        let recovered_bundle = read_bundle_from_path(&bundle_path)
-            .unwrap_or_else(|e| panic!(
-                "Test case {}: Failed to read bundle from {}: {}",
-                test_case, bundle_path.display(), e
-            ));
+        // Step 1/2: Export (compose) then import (decompose)
+        let recovered_bundle = write_then_read_bundle(&original_bundle, &bundle_path);
 
         // Step 3: Assert metamorphic relation holds
         assert_eq!(
@@ -131,20 +161,32 @@ fn metamorphic_replay_bundle_compose_decompose_inversion() {
              This indicates a serialization bug that could cause data loss.\n\
              Original bundle_id: {}\n\
              Recovered bundle_id: {}",
-            test_case,
-            original_bundle.bundle_id,
-            recovered_bundle.bundle_id
+            test_case, original_bundle.bundle_id, recovered_bundle.bundle_id
         );
 
         // Additional semantic invariants that must be preserved
-        assert_eq!(original_bundle.incident_id, recovered_bundle.incident_id,
-            "Test case {}: Incident ID changed during round-trip", test_case);
-        assert_eq!(original_bundle.manifest.event_count, recovered_bundle.manifest.event_count,
-            "Test case {}: Event count changed during round-trip", test_case);
-        assert_eq!(original_bundle.timeline.len(), recovered_bundle.timeline.len(),
-            "Test case {}: Timeline length changed during round-trip", test_case);
-        assert_eq!(original_bundle.chunks.len(), recovered_bundle.chunks.len(),
-            "Test case {}: Chunk count changed during round-trip", test_case);
+        assert_eq!(
+            original_bundle.incident_id, recovered_bundle.incident_id,
+            "Test case {}: Incident ID changed during round-trip",
+            test_case
+        );
+        assert_eq!(
+            original_bundle.manifest.event_count, recovered_bundle.manifest.event_count,
+            "Test case {}: Event count changed during round-trip",
+            test_case
+        );
+        assert_eq!(
+            original_bundle.timeline.len(),
+            recovered_bundle.timeline.len(),
+            "Test case {}: Timeline length changed during round-trip",
+            test_case
+        );
+        assert_eq!(
+            original_bundle.chunks.len(),
+            recovered_bundle.chunks.len(),
+            "Test case {}: Chunk count changed during round-trip",
+            test_case
+        );
     }
 }
 
@@ -162,13 +204,16 @@ fn metamorphic_replay_bundle_edge_cases() {
         state_snapshot: None,
         policy_version: None,
     }];
-    let single_bundle = generate_replay_bundle("edge_single", &single_event)
+    let mut single_bundle = generate_replay_bundle("edge_single", &single_event)
         .expect("Single event should generate valid bundle");
+    sign_metamorphic_bundle(&mut single_bundle);
 
     let path = temp_dir.path().join("single.rbundle");
-    write_bundle_to_path(&single_bundle, &path).unwrap();
-    let recovered = read_bundle_from_path(&path).unwrap();
-    assert_eq!(single_bundle, recovered, "Single event bundle failed round-trip");
+    let recovered = write_then_read_bundle(&single_bundle, &path);
+    assert_eq!(
+        single_bundle, recovered,
+        "Single event bundle failed round-trip"
+    );
 
     // Edge case 2: Empty payload bundle
     let empty_payload = vec![RawEvent {
@@ -179,13 +224,16 @@ fn metamorphic_replay_bundle_edge_cases() {
         state_snapshot: None,
         policy_version: None,
     }];
-    let empty_bundle = generate_replay_bundle("edge_empty", &empty_payload)
+    let mut empty_bundle = generate_replay_bundle("edge_empty", &empty_payload)
         .expect("Empty payload should generate valid bundle");
+    sign_metamorphic_bundle(&mut empty_bundle);
 
     let path2 = temp_dir.path().join("empty.rbundle");
-    write_bundle_to_path(&empty_bundle, &path2).unwrap();
-    let recovered2 = read_bundle_from_path(&path2).unwrap();
-    assert_eq!(empty_bundle, recovered2, "Empty payload bundle failed round-trip");
+    let recovered2 = write_then_read_bundle(&empty_bundle, &path2);
+    assert_eq!(
+        empty_bundle, recovered2,
+        "Empty payload bundle failed round-trip"
+    );
 
     // Edge case 3: Complex nested payload
     let complex_event = vec![RawEvent {
@@ -196,7 +244,7 @@ fn metamorphic_replay_bundle_edge_cases() {
                 "array": [1, 2, 3, null, "string"],
                 "object": {
                     "boolean": true,
-                    "number": 3.14159,
+                    "number_micros": 3_141_590,
                     "unicode": "🚀 test émojis and àccénts"
                 }
             },
@@ -211,13 +259,16 @@ fn metamorphic_replay_bundle_edge_cases() {
         state_snapshot: None,
         policy_version: None,
     }];
-    let complex_bundle = generate_replay_bundle("edge_complex", &complex_event)
+    let mut complex_bundle = generate_replay_bundle("edge_complex", &complex_event)
         .expect("Complex payload should generate valid bundle");
+    sign_metamorphic_bundle(&mut complex_bundle);
 
     let path3 = temp_dir.path().join("complex.rbundle");
-    write_bundle_to_path(&complex_bundle, &path3).unwrap();
-    let recovered3 = read_bundle_from_path(&path3).unwrap();
-    assert_eq!(complex_bundle, recovered3, "Complex payload bundle failed round-trip");
+    let recovered3 = write_then_read_bundle(&complex_bundle, &path3);
+    assert_eq!(
+        complex_bundle, recovered3,
+        "Complex payload bundle failed round-trip"
+    );
 }
 
 /// Test metamorphic invariants under stress conditions
@@ -233,11 +284,23 @@ fn metamorphic_replay_bundle_stress_test() {
     // Create enough events to force multiple chunks
     for i in 0..500 {
         events.push(RawEvent {
-            timestamp: format!("2024-01-{:02}T{:02}:{:02}:{:02}.{:03}Z",
-                (i % 28) + 1, (i % 24), (i % 60), (i % 60), i % 1000),
-            event_type: [EventType::StateChange, EventType::PolicyEval, EventType::ExternalSignal, EventType::OperatorAction][i % 4].clone(),
+            timestamp: format!(
+                "2024-01-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+                (i % 28) + 1,
+                (i % 24),
+                (i % 60),
+                (i % 60),
+                i % 1000
+            ),
+            event_type: [
+                EventType::StateChange,
+                EventType::PolicyEval,
+                EventType::ExternalSignal,
+                EventType::OperatorAction,
+            ][i % 4]
+                .clone(),
             payload: json!({
-                "stress_data": "x".repeat(rng.gen_range(10..1000)),
+                "stress_data": "x".repeat(if i < 20 { 600_000 } else { rng.gen_range(10..1000) }),
                 "index": i,
                 "random": rng.next_u64()
             }),
@@ -251,30 +314,45 @@ fn metamorphic_replay_bundle_stress_test() {
         });
     }
 
-    let stress_bundle = generate_replay_bundle(incident_id, &events)
+    let mut stress_bundle = generate_replay_bundle(incident_id, &events)
         .expect("Stress test events should generate valid bundle");
+    sign_metamorphic_bundle(&mut stress_bundle);
 
-    assert!(stress_bundle.chunks.len() > 1,
-        "Stress test should produce multiple chunks, got {}", stress_bundle.chunks.len());
+    assert!(
+        stress_bundle.chunks.len() > 1,
+        "Stress test should produce multiple chunks, got {}",
+        stress_bundle.chunks.len()
+    );
 
     let stress_path = temp_dir.path().join("stress.rbundle");
-    write_bundle_to_path(&stress_bundle, &stress_path)
-        .expect("Stress bundle should write successfully");
+    let recovered_stress = write_then_read_bundle(&stress_bundle, &stress_path);
 
-    let recovered_stress = read_bundle_from_path(&stress_path)
-        .expect("Stress bundle should read successfully");
-
-    assert_eq!(stress_bundle, recovered_stress,
+    assert_eq!(
+        stress_bundle, recovered_stress,
         "CRITICAL: Large bundle failed compose/decompose inversion.\n\
-         This could indicate chunking or compression bugs.");
+         This could indicate chunking or compression bugs."
+    );
 
     // Verify all events preserved correctly
-    assert_eq!(stress_bundle.timeline.len(), recovered_stress.timeline.len());
-    for (i, (orig, recovered)) in stress_bundle.timeline.iter()
-        .zip(recovered_stress.timeline.iter()).enumerate() {
-        assert_eq!(orig.timestamp, recovered.timestamp,
-            "Event {}: timestamp mismatch", i);
-        assert_eq!(orig.payload, recovered.payload,
-            "Event {}: payload mismatch", i);
+    assert_eq!(
+        stress_bundle.timeline.len(),
+        recovered_stress.timeline.len()
+    );
+    for (i, (orig, recovered)) in stress_bundle
+        .timeline
+        .iter()
+        .zip(recovered_stress.timeline.iter())
+        .enumerate()
+    {
+        assert_eq!(
+            orig.timestamp, recovered.timestamp,
+            "Event {}: timestamp mismatch",
+            i
+        );
+        assert_eq!(
+            orig.payload, recovered.payload,
+            "Event {}: payload mismatch",
+            i
+        );
     }
 }
