@@ -737,6 +737,7 @@ impl RemoteCapError {
             Self::ReplayDetected { .. } => "REMOTECAP_REPLAY",
             Self::ConnectivityModeDenied { .. } => "REMOTECAP_CONNECTIVITY_MODE_DENIED",
             Self::CryptoEngineUnavailable { .. } => "REMOTECAP_CRYPTO_UNAVAILABLE",
+            Self::LockTimeout { .. } => "REMOTECAP_LOCK_TIMEOUT",
         }
     }
 
@@ -805,6 +806,9 @@ impl fmt::Display for RemoteCapError {
             ),
             Self::CryptoEngineUnavailable { detail } => {
                 write!(f, "{}: {detail}", self.code())
+            }
+            Self::LockTimeout { operation, timeout_ms } => {
+                write!(f, "{}: lock timeout after {}ms during {}", self.code(), timeout_ms, operation)
             }
         }
     }
