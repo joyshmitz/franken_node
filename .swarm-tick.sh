@@ -44,20 +44,13 @@ $TMUX list-panes -t "${PROJECT}:${WIN}" -F '#{pane_index} #{pane_id} #{pane_curr
     echo "  pane=$IDX id=$PANEID cmd=$CMD fp=$FP rl=$RL work=$WORK last=\"$LAST\""
 done
 
-# --- 5. Build artifact inventory --------------------------------------------
+# --- 5. Build artifact inventory (lightweight: ls only) ----------------------
 echo "RCH_TARGETS:"
 for D in "$PROJECT_DIR"/.rch-target-*; do
     [ -d "$D" ] || continue
     NAME=$(basename "$D")
-    BEAD=$(echo "$NAME" | command grep -oE 'bd-[a-z0-9]+' | head -1)
-    SIZE_MB=$(command du -sBM "$D" 2>/dev/null | cut -f1 | tr -d M)
     MTIME_MIN=$(( ( $(date +%s) - $(stat -c %Y "$D") ) / 60 ))
-    STATUS=UNKNOWN
-    if [ -n "$BEAD" ]; then
-        STATUS=$(br show "$BEAD" 2>/dev/null | head -1 | command grep -oE 'OPEN|CLOSED|IN_PROGRESS|BLOCKED|DEFERRED' | head -1)
-        STATUS=${STATUS:-UNKNOWN}
-    fi
-    echo "  dir=$NAME bead=${BEAD:-N/A} size_mb=$SIZE_MB idle_min=$MTIME_MIN status=$STATUS"
+    echo "  dir=$NAME idle_min=$MTIME_MIN"
 done
 
 # --- 6. Stalled in-progress beads (>STALE_BEAD_MIN since Updated) -----------
