@@ -1777,6 +1777,24 @@ impl ConfigDocument {
     }
 }
 
+/// Normalize profile key for case-insensitive matching.
+///
+/// Applies standard normalization rules:
+/// - Trims leading/trailing whitespace
+/// - Converts to lowercase ASCII
+/// - Replaces underscores with hyphens
+///
+/// # Input forms accepted
+///
+/// - Case variations: "strict", "STRICT", "Strict"
+/// - Underscore variations: "legacy_risky", "legacy-risky"
+/// - Whitespace variations: " strict ", "balanced "
+///
+/// # Invalid profiles
+///
+/// Unknown profile names after normalization will be rejected by
+/// [`Profile::from_str`] with a hard error listing valid options.
+/// No silent fallback is applied.
 fn normalize_profile_key(raw: &str) -> String {
     raw.trim().to_ascii_lowercase().replace('_', "-")
 }
