@@ -1359,4 +1359,84 @@ mod tests {
                    bit_differences);
         }
     }
+
+    #[test]
+    fn root_secret_zeroizes_on_drop() {
+        // Regression test for bd-2dqfc: Verify RootSecret properly zeros memory on drop
+
+        // Create a test pattern that we can detect
+        let test_bytes = [0x42u8; DERIVED_KEY_LEN];
+        let secret_ptr: *const [u8; DERIVED_KEY_LEN];
+
+        {
+            // Create RootSecret with known pattern
+            let secret = RootSecret::from_bytes(test_bytes);
+            secret_ptr = secret.as_bytes() as *const [u8; DERIVED_KEY_LEN];
+
+            // Verify the secret contains our test pattern
+            assert_eq!(secret.as_bytes(), &test_bytes);
+        } // secret drops here, should be zeroized
+
+        // SAFETY: This is unsafe but necessary to verify zeroization worked.
+        // We're reading memory that was previously owned by the dropped RootSecret.
+        // This is only safe in a test context where we control the memory layout.
+        unsafe {
+            let memory_after_drop = &*secret_ptr;
+
+            // Verify the memory has been zeroed (not containing the original pattern)
+            let all_zeros = [0u8; DERIVED_KEY_LEN];
+            assert_eq!(
+                memory_after_drop,
+                &all_zeros,
+                "RootSecret memory was not properly zeroized on drop - security violation!"
+            );
+
+            // Additional check: ensure it's not still the original test pattern
+            assert_ne!(
+                memory_after_drop,
+                &test_bytes,
+                "RootSecret still contains original sensitive data after drop!"
+            );
+        }
+    }
+
+    #[test]
+    fn derived_key_zeroizes_on_drop() {
+        // Regression test for bd-2dqfc: Verify DerivedKey also zeroizes memory on drop
+
+        let secret = root_secret();
+        let key_ptr: *const [u8; DERIVED_KEY_LEN];
+        let original_bytes: [u8; DERIVED_KEY_LEN];
+
+        {
+            // Derive a key with known inputs
+            let key = derive_epoch_key(&secret, ControlEpoch::new(42), "test-domain");
+            key_ptr = key.as_bytes() as *const [u8; DERIVED_KEY_LEN];
+            original_bytes = *key.as_bytes();
+
+            // Sanity check: derived key should not be all zeros initially
+            let all_zeros = [0u8; DERIVED_KEY_LEN];
+            assert_ne!(key.as_bytes(), &all_zeros, "Derived key should not be all zeros");
+        } // key drops here, should be zeroized
+
+        // SAFETY: Unsafe memory access to verify zeroization
+        unsafe {
+            let memory_after_drop = &*key_ptr;
+
+            // Verify the memory has been zeroed
+            let all_zeros = [0u8; DERIVED_KEY_LEN];
+            assert_eq!(
+                memory_after_drop,
+                &all_zeros,
+                "DerivedKey memory was not properly zeroized on drop - security violation!"
+            );
+
+            // Ensure it's not the original derived key material
+            assert_ne!(
+                memory_after_drop,
+                &original_bytes,
+                "DerivedKey still contains original key material after drop!"
+            );
+        }
+    }
 }

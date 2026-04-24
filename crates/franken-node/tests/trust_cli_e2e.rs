@@ -1497,6 +1497,63 @@ fn trust_sync_reports_summary_counts() {
 }
 
 #[test]
+fn trust_sync_rejects_unauthenticated_clean_refresh_that_lowers_risk() {
+    let workspace = seeded_fixture_trust_workspace();
+    let (vulnerable_osv_url, _, vulnerable_server) = spawn_osv_fixture_server();
+    let vulnerable = run_cli_in_workspace_with_env(
+        workspace.path(),
+        &["trust", "sync", "--force"],
+        &[("FRANKEN_NODE_OSV_QUERY_URL", vulnerable_osv_url.as_str())],
+    );
+    assert!(
+        vulnerable.status.success(),
+        "trust sync vulnerable seed failed: {}",
+        String::from_utf8_lossy(&vulnerable.stderr)
+    );
+    vulnerable_server
+        .join()
+        .expect("join vulnerable OSV fixture server");
+
+    let (clean_osv_url, request_count, clean_server) = spawn_osv_observer_server();
+    let clean = run_cli_in_workspace_with_env(
+        workspace.path(),
+        &["trust", "sync", "--force"],
+        &[("FRANKEN_NODE_OSV_QUERY_URL", clean_osv_url.as_str())],
+    );
+    assert!(
+        clean.status.success(),
+        "trust sync unauthenticated clean refresh failed: {}",
+        String::from_utf8_lossy(&clean.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&clean.stdout);
+    assert!(stdout.contains("risk_lowering_rejections=1"));
+    let stderr = String::from_utf8_lossy(&clean.stderr);
+    assert!(stderr.contains("unauthenticated OSV refresh cannot lower risk"));
+
+    let exported = run_cli_in_workspace(
+        workspace.path(),
+        &["trust-card", "export", "npm:@acme/auth-guard", "--json"],
+    );
+    assert!(
+        exported.status.success(),
+        "trust-card export after rejected clean refresh failed: {}",
+        String::from_utf8_lossy(&exported.stderr)
+    );
+    let payload = parse_json_stdout(&exported, "trust-card export after rejected clean refresh");
+    assert_eq!(payload["user_facing_risk_assessment"]["level"], "high");
+    assert!(
+        payload["user_facing_risk_assessment"]["summary"]
+            .as_str()
+            .expect("risk summary")
+            .contains("OSV-2026-0001")
+    );
+
+    clean_server.join().expect("join clean OSV fixture server");
+    assert!(*request_count.lock().expect("lock observer count") >= 1);
+}
+
+#[test]
 fn trust_sync_without_force_skips_fresh_network_refresh() {
     let now_secs = chrono::Utc::now().timestamp() as u64;
     let workspace = seeded_fixture_trust_workspace_with_timestamp(now_secs);

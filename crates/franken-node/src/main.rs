@@ -77,7 +77,6 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use chrono::{DateTime, Utc};
 use clap::Parser;
-use uuid::Uuid;
 use frankenengine_node::control_plane::fleet_transport::{
     FileFleetTransport, FleetAction as PersistedFleetAction,
     FleetActionRecord as PersistedFleetActionRecord, FleetConvergenceReceiptSignature,
@@ -5964,7 +5963,7 @@ fn build_run_execution_receipt(
 ) -> Result<RunExecutionReceipt> {
     let violation_count = ssrf_violations.len();
     let mut core = RunExecutionReceiptCore {
-        receipt_id: Uuid::new_v4().to_string(),
+        receipt_id: Uuid::now_v7().to_string(),
         schema_version: RUN_EXECUTION_RECEIPT_SCHEMA_VERSION.to_string(),
         app_path: app_path.display().to_string(),
         policy_mode: policy_mode.to_string(),
