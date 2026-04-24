@@ -183,6 +183,12 @@ fn is_lower_hex_digest(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
+fn assert_rfc3339_timestamp(value: &str, context: &str) -> Result<(), String> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .map(|_| ())
+        .map_err(|err| format!("{context} must be RFC3339: {err}"))
+}
+
 fn is_valid_merkle_proof_step(step: &str) -> bool {
     step.strip_prefix("left:")
         .or_else(|| step.strip_prefix("right:"))
@@ -614,6 +620,10 @@ fn test_verification_result_fixture_matches_live_json_contract() -> Result<(), S
         is_lower_hex_digest(&fixture.verifier_signature),
         "facade_result verifier_signature must be a bare lowercase 64-hex digest"
     );
+    assert_rfc3339_timestamp(
+        &fixture.execution_timestamp,
+        "facade_result execution_timestamp",
+    )?;
     assert_eq!(fixture.sdk_version, SDK_VERSION);
 
     Ok(())
@@ -676,6 +686,7 @@ fn test_session_step_fixture_matches_live_json_contract() -> Result<(), String> 
         is_lower_hex_digest(&fixture.step_signature),
         "session_step step_signature must be a bare lowercase 64-hex digest"
     );
+    assert_rfc3339_timestamp(&fixture.timestamp, "session_step timestamp")?;
 
     Ok(())
 }
@@ -723,6 +734,7 @@ fn test_transparency_entry_fixture_matches_live_json_contract() -> Result<(), St
         is_lower_hex_digest(&fixture.result_hash),
         "transparency_entry result_hash must be a bare lowercase 64-hex digest"
     );
+    assert_rfc3339_timestamp(&fixture.timestamp, "transparency_entry timestamp")?;
     let root = fixture.merkle_proof[0]
         .strip_prefix("root:")
         .ok_or_else(|| "transparency_entry merkle_proof[0] must start with root:".to_string())?;
