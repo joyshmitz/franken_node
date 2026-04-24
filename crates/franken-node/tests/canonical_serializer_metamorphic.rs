@@ -6,13 +6,15 @@
 //! canonical form, which would break deterministic serialization requirements.
 
 use arbitrary::Arbitrary;
+use frankenengine_node::connector::canonical_serializer::{CanonicalSerializer, TrustObjectType};
 use frankenengine_node::supply_chain::certification::{EvidenceType, VerifiedEvidenceRef};
 use frankenengine_node::supply_chain::trust_card::{
-    to_canonical_json, BehavioralProfile, CapabilityDeclaration, CapabilityRisk,
-    CertificationLevel, DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary,
-    PublisherIdentity, ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard,
-    TrustCardInput,
+    BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
+    DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary, PublisherIdentity,
+    ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard, TrustCardInput,
+    to_canonical_json,
 };
+use proptest::prelude::*;
 use serde_json::{Map, Value};
 
 /// Arbitrary implementation for generating diverse JSON structures to test canonicalization
@@ -359,8 +361,7 @@ fn canonical_serializer_collapses_semantically_equivalent_json_texts() -> Result
         "path": "/tmp/replay",
         "unicode": "franken",
     });
-    let expected_canonical =
-        to_canonical_json(&expected).map_err(|error| error.to_string())?;
+    let expected_canonical = to_canonical_json(&expected).map_err(|error| error.to_string())?;
 
     for json_text in json_variants {
         let parsed: Value = serde_json::from_str(json_text).map_err(|error| error.to_string())?;
@@ -520,4 +521,108 @@ fn canonical_serialization_key_ordering_stability() {
     assert!(
         canonical.find("\"alpha_nested\"").unwrap() < canonical.find("\"zebra_nested\"").unwrap()
     );
+}
+
+fn connector_payload_pair(seed: u64, object_type: TrustObjectType) -> (String, String) {
+    let label = object_type.label();
+    let serializer = CanonicalSerializer::with_all_schemas();
+    let schema = serializer
+        .get_schema(object_type)
+        .expect("object type should have a default schema");
+    let values = [
+        serde_json::json!(format!("{label}-{seed}")),
+        serde_json::json!(seed),
+        serde_json::json!({
+            "right": seed % 17,
+            "left": format!("left-{label}"),
+            "flags": {
+                "enabled": seed % 2 == 0,
+                "reviewed": seed % 3 == 0
+            }
+        }),
+        serde_json::json!([
+            seed,
+            seed.wrapping_mul(3).wrapping_add(1),
+            seed ^ 0xa5a5_a5a5_a5a5_a5a5
+        ]),
+        serde_json::json!(seed % 5),
+    ];
+
+    let mut original = Map::new();
+    for (field, value) in schema.field_order.iter().zip(values.iter()) {
+        original.insert(field.clone(), value.clone());
+    }
+    let permuted_fields = schema
+        .field_order
+        .iter()
+        .zip(values.iter())
+        .rev()
+        .map(|(field, value)| {
+            format!(
+                "{}:{}",
+                serde_json::to_string(field).expect("field must serialize"),
+                serde_json::to_string(value).expect("value must serialize")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+
+    (
+        serde_json::to_string(&Value::Object(original)).expect("fixture must serialize"),
+        format!("{{{permuted_fields}}}"),
+    )
+}
+
+proptest! {
+    #[test]
+    fn connector_canonical_serializer_round_trip_and_permutation_metamorphic(seed in 0_u64..1024) {
+        for &object_type in TrustObjectType::all() {
+            let (original_json, permuted_json) = connector_payload_pair(seed, object_type);
+
+            let mut serializer = CanonicalSerializer::with_all_schemas();
+            let original = serializer
+                .serialize(object_type, original_json.as_bytes(), "integration-mr-original")
+                .map_err(|err| TestCaseError::fail(format!("original serialize failed for {object_type:?}: {err}")))?;
+
+            let mut permuted_serializer = CanonicalSerializer::with_all_schemas();
+            let permuted = permuted_serializer
+                .serialize(object_type, permuted_json.as_bytes(), "integration-mr-permuted")
+                .map_err(|err| TestCaseError::fail(format!("permuted serialize failed for {object_type:?}: {err}")))?;
+            prop_assert_eq!(
+                &original,
+                &permuted,
+                "field-order permutation changed canonical bytes for {:?}",
+                object_type
+            );
+
+            let decoded = permuted_serializer
+                .deserialize(object_type, &permuted)
+                .map_err(|err| TestCaseError::fail(format!("deserialize failed for {object_type:?}: {err}")))?;
+            let mut reencode_serializer = CanonicalSerializer::with_all_schemas();
+            let reencoded = reencode_serializer
+                .serialize(object_type, &decoded, "integration-mr-reencoded")
+                .map_err(|err| TestCaseError::fail(format!("re-serialize failed for {object_type:?}: {err}")))?;
+            prop_assert_eq!(
+                &permuted,
+                &reencoded,
+                "deserialize(serialize(x)) did not re-encode stably for {:?}",
+                object_type
+            );
+
+            let mut round_trip_serializer = CanonicalSerializer::with_all_schemas();
+            let round_trip = round_trip_serializer
+                .round_trip_canonical(
+                    object_type,
+                    original_json.as_bytes(),
+                    "integration-mr-round-trip",
+                )
+                .map_err(|err| TestCaseError::fail(format!("round trip failed for {object_type:?}: {err}")))?;
+            prop_assert_eq!(
+                &original,
+                &round_trip,
+                "round_trip_canonical disagreed with direct serialization for {:?}",
+                object_type
+            );
+        }
+    }
 }
