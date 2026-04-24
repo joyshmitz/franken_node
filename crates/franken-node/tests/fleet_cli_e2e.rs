@@ -193,7 +193,7 @@ fn seed_fleet_quarantine(
 
 /// Seed realistic multi-node fleet with 5+ nodes across geographic zones
 fn seed_realistic_multi_zone_fleet(transport: &mut FileFleetTransport, base_time: chrono::DateTime<Utc>) {
-    let zones = [
+    let _zones = [
         "us-east-1-production",
         "eu-west-1-production",
         "ap-southeast-1-production",
@@ -207,13 +207,28 @@ fn seed_realistic_multi_zone_fleet(transport: &mut FileFleetTransport, base_time
         ("web-prod-us-east-1b", "us-east-1-production", 0, NodeHealth::Healthy),
         ("api-prod-eu-west-1a", "eu-west-1-production", 0, NodeHealth::Healthy),
         ("worker-prod-ap-southeast-1a", "ap-southeast-1-production", 0, NodeHealth::Healthy),
-        ("cache-prod-ap-southeast-1b", "ap-southeast-1-production", 120, NodeHealth::Degraded), // slightly behind
+        (
+            "cache-prod-ap-southeast-1b",
+            "ap-southeast-1-production",
+            120,
+            NodeHealth::Degraded,
+        ), // slightly behind
     ];
 
     // Staging nodes - mixed states, some stale
     let staging_nodes = [
-        ("web-staging-us-west-2a", "us-west-2-staging", 1800, NodeHealth::Degraded),  // 30min stale
-        ("api-staging-eu-central-1a", "eu-central-1-staging", 3600, NodeHealth::Unhealthy), // 1hr stale
+        (
+            "web-staging-us-west-2a",
+            "us-west-2-staging",
+            1800,
+            NodeHealth::Degraded,
+        ), // 30min stale
+        (
+            "api-staging-eu-central-1a",
+            "eu-central-1-staging",
+            3600,
+            NodeHealth::Stale,
+        ), // 1hr stale
         ("worker-staging-us-west-2b", "us-west-2-staging", 0, NodeHealth::Healthy),
     ];
 
@@ -224,7 +239,8 @@ fn seed_realistic_multi_zone_fleet(transport: &mut FileFleetTransport, base_time
             last_seen: base_time - TimeDelta::seconds(*stale_seconds),
             quarantine_version: 3, // Current baseline
             health: *health,
-        }).expect("upsert node status");
+        })
+        .expect("upsert node status");
     }
 }
 
@@ -233,7 +249,7 @@ fn seed_realistic_security_quarantine(
     transport: &mut FileFleetTransport,
     incident_id: &str,
     quarantine_version: u64,
-    base_time: chrono::DateTime<Utc>
+    base_time: chrono::DateTime<Utc>,
 ) {
     let realistic_incidents = [
         ("CVE-2024-45678-openssl", "artifact", "Critical OpenSSL vulnerability CVE-2024-45678 detected in runtime dependencies"),
@@ -249,7 +265,8 @@ fn seed_realistic_security_quarantine(
     ];
 
     let target_kind = match target_kind_str {
-        "zone" => FleetTargetKind::Zone,
+        "artifact" => FleetTargetKind::Artifact,
+        "zone" => FleetTargetKind::Extension,
         _ => FleetTargetKind::Artifact,
     };
 
@@ -274,8 +291,8 @@ fn seed_partial_reconcile_scenario(transport: &mut FileFleetTransport, base_time
         ("web-prod-reconciled-1", "us-east-1-production", 4, 0, NodeHealth::Healthy),
         ("web-prod-reconciled-2", "us-east-1-production", 4, 60, NodeHealth::Healthy),
         ("api-prod-partial-1", "us-east-1-production", 3, 300, NodeHealth::Degraded),   // Stuck on v3
-        ("api-prod-partial-2", "us-east-1-production", 2, 900, NodeHealth::Unhealthy), // Still on v2
-        ("worker-prod-failed", "us-east-1-production", 1, 1800, NodeHealth::Unhealthy), // Failed reconcile
+        ("api-prod-partial-2", "us-east-1-production", 2, 900, NodeHealth::Stale), // Still on v2
+        ("worker-prod-failed", "us-east-1-production", 1, 1800, NodeHealth::Stale), // Failed reconcile
     ];
 
     for (node_id, zone_id, quarantine_version, stale_seconds, health) in mixed_reconcile_nodes {
@@ -2574,10 +2591,10 @@ fn fleet_agent_invalid_node_id_exits_with_application_error_code() {
 }
 
 // Structured E2E Test Logging Infrastructure (Perfect E2E Pattern)
-use std::time::Instant;
 use serde_json::json;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct TestPhaseLog {
     phase: String,
     event: String,
@@ -2802,7 +2819,7 @@ fn fleet_release_with_structured_logging_and_real_pipeline() {
 fn fleet_release_handles_realistic_partial_release_scenarios_across_multi_incident_fleet() {
     let fleet_state = tempdir().expect("tempdir");
     let fleet_state_dir = fleet_state.path().join("fleet-state");
-    let (signing_key_path, signing_key) =
+    let (signing_key_path, _signing_key) =
         write_test_signing_key(fleet_state.path(), "keys/fleet.key", 42);
     let signing_key_path = signing_key_path.display().to_string();
     let mut transport = seed_transport(&fleet_state_dir);
@@ -3005,6 +3022,88 @@ fn fleet_reconcile_with_complete_transport_verification() {
     // CRITICAL: Transport state verification BETWEEN phases
     log.transport_snapshot(&transport, "after_reconcile_execution");
     let post_reconcile_actions = transport.list_actions().expect("list post-reconcile actions");
+    let post_reconcile_nodes = transport
+        .list_node_statuses()
+        .expect("list post-reconcile nodes");
+    log.assertion(
+        "post_reconcile_action_count",
+        &json!(2),
+        &json!(post_reconcile_actions.len()),
+    );
+    assert_eq!(
+        post_reconcile_actions.len(),
+        2,
+        "reconcile should republish the active quarantine for stale nodes"
+    );
+    log.assertion(
+        "post_reconcile_node_count",
+        &json!(1),
+        &json!(post_reconcile_nodes.len()),
+    );
+    assert_eq!(
+        post_reconcile_nodes.len(),
+        1,
+        "reconcile should preserve the stale node status for convergence accounting"
+    );
+    let republished_quarantine = post_reconcile_actions
+        .iter()
+        .find(|action| action.action_id != "fleet-op-quarantine-pre-reconcile")
+        .expect("reconcile republished quarantine action");
+    assert!(
+        republished_quarantine
+            .action_id
+            .starts_with("fleet-op-reconcile-republish-"),
+        "unexpected reconcile action id: {}",
+        republished_quarantine.action_id
+    );
+    match &republished_quarantine.action {
+        FleetAction::Quarantine {
+            zone_id,
+            incident_id,
+            target_id,
+            target_kind,
+            reason,
+            quarantine_version,
+        } => {
+            log.assertion(
+                "reconcile_republish_zone",
+                &json!("zone-reconcile-verify"),
+                &json!(zone_id),
+            );
+            log.assertion(
+                "reconcile_republish_incident",
+                &json!("inc-reconcile-verify"),
+                &json!(incident_id),
+            );
+            log.assertion(
+                "reconcile_republish_target",
+                &json!("sha256:reconcile-verify"),
+                &json!(target_id),
+            );
+            log.assertion(
+                "reconcile_republish_kind",
+                &json!("artifact"),
+                &json!(format!("{target_kind:?}").to_lowercase()),
+            );
+            log.assertion(
+                "reconcile_republish_reason",
+                &json!("reconcile transport verification test"),
+                &json!(reason),
+            );
+            log.assertion(
+                "reconcile_republish_version",
+                &json!(9),
+                &json!(quarantine_version),
+            );
+            assert_eq!(zone_id.as_str(), "zone-reconcile-verify");
+            assert_eq!(incident_id.as_str(), "inc-reconcile-verify");
+            assert_eq!(target_id.as_str(), "sha256:reconcile-verify");
+            assert_eq!(*target_kind, FleetTargetKind::Artifact);
+            assert_eq!(reason.as_str(), "reconcile transport verification test");
+            assert_eq!(*quarantine_version, 9);
+        }
+        other => panic!("expected reconcile to republish quarantine action, got: {other:?}"),
+    }
 
     // Verify signature round-trip
     assert_convergence_receipt_signature_round_trips(&payload["convergence_receipt"], &signing_key);

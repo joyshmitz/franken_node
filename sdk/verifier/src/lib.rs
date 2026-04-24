@@ -279,6 +279,10 @@ pub enum VerifierSdkError {
     MalformedTrustAnchor {
         actual: String,
     },
+    TrustAnchorMismatch {
+        expected: String,
+        actual: String,
+    },
     SessionSealed(String),
     SessionVerifierMismatch {
         expected: String,
@@ -334,6 +338,10 @@ impl fmt::Display for VerifierSdkError {
             Self::MalformedTrustAnchor { actual } => write!(
                 formatter,
                 "trust anchor must be a canonical lowercase 64-nybble sha256 digest: got {actual}"
+            ),
+            Self::TrustAnchorMismatch { expected, actual } => write!(
+                formatter,
+                "trust anchor mismatch: expected={expected}, actual={actual}"
             ),
             Self::SessionSealed(session_id) => {
                 write!(formatter, "verification session {session_id} is sealed")
@@ -489,6 +497,12 @@ impl VerifierSdk {
 
         let verified = bundle::verify(state)?;
         self.verify_bundle_belongs_to_current_verifier(&verified)?;
+        if !constant_time_eq(anchor_integrity_hash, &verified.integrity_hash) {
+            return Err(VerifierSdkError::TrustAnchorMismatch {
+                expected: anchor_integrity_hash.to_string(),
+                actual: verified.integrity_hash,
+            });
+        }
         Err(VerifierSdkError::UnauthenticatedStructuralBundle {
             bundle_id: verified.bundle_id,
             verifier_identity: verified.verifier_identity,
@@ -1833,20 +1847,21 @@ mod tests {
     }
 
     #[test]
-    fn verify_trust_state_rejects_mismatched_anchor_without_emitting_result() {
+    fn verify_trust_state_rejects_mismatched_anchor_before_structural_guardrail() {
         let sdk = create_verifier_sdk("verifier://alpha");
         let state = make_replay_bundle_bytes("verifier://alpha");
         let verified = bundle::verify(&state).expect("test bundle should verify");
+        let wrong_anchor = "0".repeat(64);
 
         let err = sdk
-            .verify_trust_state(&state, &"0".repeat(64))
-            .expect_err("mismatched trust anchor must still fail closed for structural bundles");
+            .verify_trust_state(&state, &wrong_anchor)
+            .expect_err("mismatched trust anchor must fail before structural bundle handling");
 
         assert_eq!(
             err,
-            VerifierSdkError::UnauthenticatedStructuralBundle {
-                bundle_id: verified.bundle_id,
-                verifier_identity: verified.verifier_identity,
+            VerifierSdkError::TrustAnchorMismatch {
+                expected: wrong_anchor,
+                actual: verified.integrity_hash,
             }
         );
     }

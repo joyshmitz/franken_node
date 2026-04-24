@@ -883,7 +883,7 @@ mod tests {
         let capsule = build_reference_capsule();
         match replay(&capsule, "   ") {
             Err(CapsuleError::AccessDenied(msg)) => {
-                assert!(msg.contains("verifier://"));
+                assert!(msg.contains("leading or trailing whitespace"));
             }
             other => panic!("expected AccessDenied, got {other:?}"),
         }
@@ -1883,10 +1883,10 @@ mod tests {
         let tricky_keys = vec![
             "1".to_string(),
             "10".to_string(),
-            "2".to_string(),  // Lexicographic: "1" < "10" < "2"
-            "ä".to_string(),  // Unicode
-            "z".to_string(),  // ASCII
-            "😀".to_string(), // High Unicode
+            "2".to_string(),   // Lexicographic: "1" < "10" < "2"
+            "a_".to_string(),  // Valid ASCII with underscore
+            "z".to_string(),   // ASCII
+            "Z-test".to_string(), // Valid ASCII with dash
         ];
 
         // Insert in random order
@@ -2344,11 +2344,17 @@ mod tests {
             );
         }
 
+        // This test intentionally uses invalid input_refs with non-ASCII characters
+        // The validation should reject these and return an appropriate error
         capsule.manifest.expected_output_hash = hash_attempts[0].clone();
         sign_capsule(&mut capsule);
 
-        let result = replay(&capsule, "verifier://adversarial-keys").unwrap();
-        assert_eq!(result.verdict, CapsuleVerdict::Pass);
+        match replay(&capsule, "verifier://adversarial-keys") {
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("identifier must include only ASCII letters"));
+            }
+            other => panic!("Expected ManifestIncomplete for invalid input_refs, got {other:?}"),
+        }
     }
 
     #[test]
@@ -2832,13 +2838,17 @@ mod tests {
             compute_replay_hash(&unicode_capsule.payload, &unicode_capsule.inputs);
         sign_capsule(&mut unicode_capsule);
 
-        // Unicode capsule replay should work consistently
+        // Unicode input_refs are no longer valid - should be rejected
         let unicode_start = Instant::now();
-        let unicode_result = replay(&unicode_capsule, "verifier://unicode-test").unwrap();
-        let unicode_replay_time = unicode_start.elapsed();
-
-        assert_eq!(unicode_result.verdict, CapsuleVerdict::Pass);
-        assert!(unicode_replay_time < std::time::Duration::from_millis(100));
+        match replay(&unicode_capsule, "verifier://unicode-test") {
+            Err(CapsuleError::ManifestIncomplete(msg)) => {
+                assert!(msg.contains("identifier must include only ASCII letters"));
+                let unicode_replay_time = unicode_start.elapsed();
+                // Validation should be fast regardless of Unicode complexity
+                assert!(unicode_replay_time < std::time::Duration::from_millis(100));
+            }
+            other => panic!("Expected ManifestIncomplete for Unicode input_ref, got {other:?}"),
+        }
     }
 
     #[test]

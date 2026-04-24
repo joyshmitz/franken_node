@@ -3080,10 +3080,14 @@ mod tests {
         let mut runner = TestRunner::default();
         let strategy = prop::collection::vec(
             (
-                prop::collection::vec(any::<u8>(), 0..=6),
-                prop::collection::vec(any::<u8>(), 0..=32),
+                prop::collection::vec(any::<u8>(), 0..=16),
+                prop_oneof![
+                    Just(Vec::new()),
+                    prop::collection::vec(any::<u8>(), 0..=64),
+                    prop::collection::vec(any::<u8>(), 1024..=4096),
+                ],
             ),
-            3..=8,
+            0..=100,
         );
 
         runner
@@ -3101,6 +3105,24 @@ mod tests {
                         SideEffect::new(&format!("effect-{idx}-{kind_suffix}"), payload)
                     })
                     .collect();
+
+                let stable_step = TraceStep::new(
+                    0,
+                    b"input".to_vec(),
+                    b"output".to_vec(),
+                    side_effects.clone(),
+                    1000,
+                );
+                let digest_once = stable_step.side_effects_digest();
+                let digest_twice = stable_step.clone().side_effects_digest();
+                prop_assert_eq!(
+                    digest_once,
+                    digest_twice,
+                    "side-effects digest must be deterministic for generated edge counts and payload sizes"
+                );
+                if side_effects.len() < 2 {
+                    return Ok(());
+                }
 
                 let mut rotated = side_effects.clone();
                 rotated.rotate_left(1);
@@ -3189,10 +3211,14 @@ mod tests {
         let mut runner = TestRunner::default();
         let strategy = prop::collection::vec(
             (
-                prop::collection::vec(any::<u8>(), 0..=6),
-                prop::collection::vec(any::<char>(), 0..=24),
+                prop::collection::vec(any::<u8>(), 0..=16),
+                prop_oneof![
+                    Just(Vec::new()),
+                    prop::collection::vec(any::<char>(), 0..=64),
+                    prop::collection::vec(any::<char>(), 512..=1024),
+                ],
             ),
-            1..=12,
+            0..=100,
         );
 
         runner
