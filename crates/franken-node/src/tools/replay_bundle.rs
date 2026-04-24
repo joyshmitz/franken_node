@@ -1445,7 +1445,7 @@ fn chunk_timeline(
 
     for event in timeline {
         let event_json = canonicalize_value(&serde_json::to_value(event)?, "$.timeline_event")?;
-        let event_size = canonical_json_bytes(&event_json)?.len();
+        let event_size = canonical_json_len(&event_json)?;
         if event_size >= max_event_size {
             return Err(ReplayBundleError::OversizedEvent {
                 sequence_number: event.sequence_number,
@@ -1529,6 +1529,31 @@ fn gzip_size_bytes(bytes: &[u8]) -> Result<u64, ReplayBundleError> {
 
 fn canonical_json_bytes(value: &Value) -> Result<Vec<u8>, ReplayBundleError> {
     Ok(serde_json::to_vec(value)?)
+}
+
+fn canonical_json_len(value: &Value) -> Result<usize, ReplayBundleError> {
+    let mut counter = JsonByteCounter::default();
+    serde_json::to_writer(&mut counter, value)?;
+    Ok(counter.len)
+}
+
+#[derive(Default)]
+struct JsonByteCounter {
+    len: usize,
+}
+
+impl std::io::Write for JsonByteCounter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.len = self
+            .len
+            .checked_add(buf.len())
+            .ok_or_else(|| std::io::Error::other("canonical JSON length exceeds usize"))?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
