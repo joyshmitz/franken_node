@@ -159,73 +159,51 @@ fn empty_trace_builder_fails_correctly() {
 
 #[test]
 fn trace_builder_respects_max_capacity() {
-    let mut runner = TestRunner::default();
+    let trace_id = "capacity-test";
+    let workflow_name = "max-capacity-preservation";
+    let mut builder = TraceBuilder::new(trace_id, workflow_name, demo_env());
 
-    runner
-        .run(&(1..=10_usize), |extra_steps| {
-            // Skip this test if MAX_TRACE_STEPS is too large for reasonable testing
-            prop_assume!(MAX_TRACE_STEPS <= 100);
+    let extra_steps = 10;
+    let total_attempts = MAX_TRACE_STEPS + extra_steps;
 
-            let trace_id = "capacity-test";
-            let workflow_name = "max-capacity-preservation";
-            let mut builder = TraceBuilder::new(trace_id, workflow_name, demo_env());
+    for i in 0..total_attempts {
+        let input = vec![i as u8];
+        let output = vec![(i * 2) as u8];
+        let timestamp = 1_000_000 + i as u64;
 
-            let total_attempts = MAX_TRACE_STEPS + extra_steps;
-            let mut recorded_seqs = Vec::new();
+        let seq = builder.record_step(input, output, vec![], timestamp);
 
-            // Add more steps than the maximum capacity
-            for i in 0..total_attempts {
-                let input = vec![i as u8];
-                let output = vec![(i * 2) as u8];
-                let timestamp = 1_000_000 + i as u64;
+        assert_eq!(seq, i as u64);
+        assert_eq!(builder.step_count(), std::cmp::min(i + 1, MAX_TRACE_STEPS));
+    }
 
-                let seq = builder.record_step(input, output, vec![], timestamp);
+    let (trace, _audit_log) = builder
+        .build()
+        .expect("trace should build successfully even when capped");
 
-                // Sequence numbers should still be assigned correctly
-                prop_assert_eq!(seq, i as u64);
-                recorded_seqs.push(seq);
+    assert_eq!(trace.steps.len(), MAX_TRACE_STEPS);
 
-                // Step count should cap at MAX_TRACE_STEPS
-                let expected_count = std::cmp::min(i + 1, MAX_TRACE_STEPS);
-                prop_assert_eq!(builder.step_count(), expected_count);
-            }
+    // The retained bounded window must be reindexed from zero after old steps
+    // are evicted, so validation has no sequence gaps.
+    for (index, step) in trace.steps.iter().enumerate() {
+        assert_eq!(
+            step.seq, index as u64,
+            "Capped trace step at index {index} has seq {}, expected {index}",
+            step.seq
+        );
+    }
 
-            // Build the trace
-            let (trace, _audit_log) = builder
-                .build()
-                .expect("trace should build successfully even when capped");
-
-            // METAMORPHIC PROPERTY: Capped order preservation
-            // Should have exactly MAX_TRACE_STEPS, no more
-            prop_assert_eq!(trace.steps.len(), MAX_TRACE_STEPS);
-
-            // The retained bounded window should be reindexed from zero after old
-            // steps are evicted, so validation has no sequence gaps.
-            for (index, step) in trace.steps.iter().enumerate() {
-                prop_assert_eq!(
-                    step.seq,
-                    index as u64,
-                    "Capped trace step at index {} has seq {}, expected {}",
-                    index,
-                    step.seq,
-                    index
-                );
-            }
-
-            // Sequence numbers should still be consecutive from 0
-            prop_assert_eq!(trace.steps[0].seq, 0);
-            prop_assert_eq!(
-                trace.steps[MAX_TRACE_STEPS - 1].seq,
-                (MAX_TRACE_STEPS - 1) as u64
-            );
-            prop_assert_eq!(
-                trace.steps[MAX_TRACE_STEPS - 1].input,
-                vec![(total_attempts - 1) as u8],
-                "bounded trace should retain the newest step after overflow"
-            );
-            Ok(())
-        })
-        .expect("max capacity property should hold");
+    assert_eq!(trace.steps[0].seq, 0);
+    assert_eq!(
+        trace.steps[MAX_TRACE_STEPS - 1].seq,
+        (MAX_TRACE_STEPS - 1) as u64
+    );
+    assert_eq!(
+        trace.steps[MAX_TRACE_STEPS - 1].timestamp_ns,
+        1_000_000 + (total_attempts - 1) as u64,
+        "bounded trace should retain the newest step after overflow"
+    );
+    assert!(trace.validate().is_ok());
 }
 
 #[cfg(test)]
