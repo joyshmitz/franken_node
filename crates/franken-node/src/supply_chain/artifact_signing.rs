@@ -20,6 +20,8 @@ const RELEASE_MANIFEST_SIGNATURE_DOMAIN: &[u8] = b"release_manifest_v1:";
 
 /// Maximum artifact name length to prevent memory exhaustion DoS attacks.
 const MAX_ARTIFACT_NAME_LEN: usize = 512;
+/// Maximum entries accepted from an attacker-controlled checksum manifest.
+const MAX_MANIFEST_ENTRIES: usize = 4096;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
@@ -254,6 +256,12 @@ impl ChecksumManifest {
                 ));
             }
             previous_name = Some(name.to_string());
+            if entries.len() >= MAX_MANIFEST_ENTRIES {
+                return Err(manifest_line_error(
+                    line_number,
+                    "manifest entry count exceeds maximum",
+                ));
+            }
 
             let Ok(size_bytes) = parts[2].parse::<u64>() else {
                 return Err(manifest_line_error(
@@ -829,9 +837,9 @@ pub fn demo_signing_key_3() -> SigningKey {
 #[cfg(test)]
 mod tests {
     use super::{
-        ManifestEntry, ChecksumManifest, KeyRing, ArtifactVerificationResult, VerificationReport,
-        KeyTransitionRecord, PartialSignature, AuditLogEntry, ArtifactSigningError, KeyId,
-        demo_signing_key, demo_signing_key_2, sha256_hex, verify_checksums, sign_manifest
+        ArtifactSigningError, ArtifactVerificationResult, AuditLogEntry, ChecksumManifest, KeyId,
+        KeyRing, KeyTransitionRecord, ManifestEntry, PartialSignature, VerificationReport,
+        demo_signing_key, demo_signing_key_2, sha256_hex, sign_manifest, verify_checksums,
     };
     use ed25519_dalek::{SigningKey, VerifyingKey};
 
@@ -1990,7 +1998,7 @@ mod tests {
 
 #[cfg(test)]
 mod artifact_signing_boundary_negative_tests {
-    use super::{KeyId, demo_signing_key, demo_signing_key_2, constant_time};
+    use super::{KeyId, constant_time, demo_signing_key, demo_signing_key_2};
     use ed25519_dalek::{SigningKey, VerifyingKey};
 
     #[test]

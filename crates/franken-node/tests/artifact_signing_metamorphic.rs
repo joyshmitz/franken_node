@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use frankenengine_node::supply_chain::artifact_signing::{
-    ChecksumManifest, KeyRing, ManifestEntry, build_and_sign_manifest, sign_artifact,
-    verify_release,
+    ArtifactSigningError, ChecksumManifest, KeyRing, ManifestEntry, build_and_sign_manifest,
+    sign_artifact, verify_release,
 };
 
 const CASES: usize = 100;
@@ -86,6 +86,24 @@ fn manifest_canonicalization_is_permutation_idempotent_and_detects_bit_flips() {
             "case {case_index}: bit-flipped artifact was not reported as failed"
         );
     }
+}
+
+#[test]
+fn parse_canonical_rejects_overlarge_manifest_without_partial_acceptance() {
+    let hash = "a".repeat(64);
+    let mut manifest = String::new();
+    for index in 0..=4096 {
+        manifest.push_str(&format!("{hash}  artifact-{index:04}.bin  1\n"));
+    }
+
+    let err = ChecksumManifest::parse_canonical(&manifest)
+        .expect_err("overlarge manifest must fail closed");
+
+    assert!(matches!(
+        err,
+        ArtifactSigningError::ManifestLineInvalid { line_number: 4097, ref reason }
+            if reason == "manifest entry count exceeds maximum"
+    ));
 }
 
 fn generated_artifacts(case_index: usize) -> Vec<(String, Vec<u8>)> {
