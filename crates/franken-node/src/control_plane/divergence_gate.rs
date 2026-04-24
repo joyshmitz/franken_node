@@ -276,7 +276,7 @@ impl OperatorAuthorization {
         hasher.update(canonical.as_bytes());
         let authorization_hash = hex::encode(hasher.finalize());
 
-        use hmac::{Hmac, Mac};
+        use hmac::{Hmac, KeyInit, Mac};
         let signature = match Hmac::<Sha256>::new_from_slice(signing_key) {
             Ok(mut mac) => {
                 mac.update(b"divergence_gate_sign_v1:");
@@ -315,7 +315,7 @@ impl OperatorAuthorization {
             return false;
         }
 
-        use hmac::{Hmac, Mac};
+        use hmac::{Hmac, KeyInit, Mac};
         let mut mac = match Hmac::<Sha256>::new_from_slice(verification_key) {
             Ok(mac) => mac,
             Err(_) => return false,

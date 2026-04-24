@@ -1,5 +1,5 @@
 use frankenengine_node::tools::replay_bundle::{
-    RawEvent, ReplayBundle, generate_replay_bundle, to_canonical_json, validate_bundle_integrity,
+    generate_replay_bundle, to_canonical_json, validate_bundle_integrity, RawEvent, ReplayBundle,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -156,6 +156,19 @@ fn assert_fail_closed(result: Result<bool, impl std::fmt::Display>, context: &st
         Ok(false) | Err(_) => Ok(()),
         Ok(true) => Err(format!("{context} must fail closed")),
     }
+}
+
+#[cfg(feature = "advanced-features")]
+#[test]
+fn repro_bundle_evidence_ref_rejects_nul_byte_relative_path() {
+    let evidence_ref = frankenengine_node::tools::repro_bundle_export::EvidenceRef {
+        evidence_id: "evidence-1".to_string(),
+        decision_kind: "admit".to_string(),
+        epoch_id: 7,
+        relative_path: "logs/evidence\0.json".to_string(),
+    };
+
+    assert!(!evidence_ref.is_portable());
 }
 
 #[test]
