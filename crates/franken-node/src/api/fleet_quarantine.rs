@@ -220,6 +220,31 @@ pub struct DecisionReceiptPayload {
 }
 
 impl DecisionReceiptPayload {
+    /// Creates a decision receipt payload for fleet quarantine action.
+    ///
+    /// Generates a tamper-evident payload for isolating an extension across fleet nodes
+    /// to prevent further execution while preserving audit trail.
+    ///
+    /// ## Parameters
+    /// - `extension_id`: Unique identifier of the extension to quarantine
+    /// - `scope`: Quarantine scope defining zone, tenant, affected nodes, and reason
+    ///
+    /// ## Semantics
+    /// - Action type: "quarantine"
+    /// - Event code: [`FLEET_QUARANTINE_INITIATED`]
+    /// - Subject: Extension (via `extension_id`)
+    /// - Scope: Zone-based with optional tenant filtering
+    ///
+    /// ## Lifecycle
+    /// 1. Fleet manager receives quarantine request
+    /// 2. This payload is bound into a [`DecisionReceipt`] with cryptographic signature
+    /// 3. Receipt is propagated to affected nodes for enforcement
+    /// 4. Extension execution is suspended until release or rollback
+    ///
+    /// ## Related Types
+    /// - [`QuarantineScope`]: Defines blast radius and reason
+    /// - [`DecisionReceipt`]: Container with signature verification
+    /// - [`FleetActionResult`]: Async result with convergence tracking
     #[must_use]
     pub fn quarantine(extension_id: &str, scope: &QuarantineScope) -> Self {
         Self {
@@ -237,6 +262,31 @@ impl DecisionReceiptPayload {
         }
     }
 
+    /// Creates a decision receipt payload for fleet revocation action.
+    ///
+    /// Generates a tamper-evident payload for permanently revoking an extension's
+    /// execution privileges based on severity assessment.
+    ///
+    /// ## Parameters
+    /// - `extension_id`: Unique identifier of the extension to revoke
+    /// - `scope`: Revocation scope defining zone, tenant, severity, and reason
+    ///
+    /// ## Semantics
+    /// - Action type: "revoke"
+    /// - Event code: [`FLEET_REVOCATION_ISSUED`]
+    /// - Subject: Extension (via `extension_id`)
+    /// - Scope: Zone-based with severity-driven enforcement
+    ///
+    /// ## Lifecycle
+    /// 1. Fleet manager assesses revocation severity and scope
+    /// 2. This payload is bound into a [`DecisionReceipt`] with cryptographic signature
+    /// 3. Receipt is distributed to enforcement points
+    /// 4. Extension is permanently blocked (irreversible without manual intervention)
+    ///
+    /// ## Related Types
+    /// - [`RevocationScope`]: Defines severity and enforcement scope
+    /// - [`RevocationSeverity`]: Enumeration of revocation severity levels
+    /// - [`DecisionReceipt`]: Signed container for audit and verification
     #[must_use]
     pub fn revoke(extension_id: &str, scope: &RevocationScope) -> Self {
         Self {
@@ -254,6 +304,31 @@ impl DecisionReceiptPayload {
         }
     }
 
+    /// Creates a decision receipt payload for fleet release action.
+    ///
+    /// Generates a tamper-evident payload for releasing quarantined resources
+    /// after successful incident resolution or false positive determination.
+    ///
+    /// ## Parameters
+    /// - `incident_id`: Unique identifier of the resolved incident
+    /// - `zone_id`: Zone where quarantine should be lifted
+    /// - `reason`: Human-readable justification for release
+    ///
+    /// ## Semantics
+    /// - Action type: "release"
+    /// - Event code: [`FLEET_RELEASED`]
+    /// - Subject: Incident (via `incident_id`)
+    /// - Scope: Zone-wide release of quarantine measures
+    ///
+    /// ## Lifecycle
+    /// 1. Incident investigation completes successfully
+    /// 2. This payload is bound into a [`DecisionReceipt`] with signature
+    /// 3. Receipt authorizes lifting quarantine restrictions
+    /// 4. Normal operations resume for affected resources
+    ///
+    /// ## Related Types
+    /// - [`DecisionReceiptScope`]: Zone-scoped enforcement boundary
+    /// - [`FleetActionResult`]: Contains convergence state for async release
     #[must_use]
     pub fn release(incident_id: &str, zone_id: &str, reason: &str) -> Self {
         Self {
@@ -266,6 +341,35 @@ impl DecisionReceiptPayload {
         }
     }
 
+    /// Creates a decision receipt payload for fleet rollback action.
+    ///
+    /// Generates a tamper-evident payload for emergency rollback of fleet operations
+    /// when incidents require immediate state restoration.
+    ///
+    /// ## Parameters
+    /// - `incident_id`: Unique identifier of the triggering incident
+    /// - `zone_id`: Zone requiring emergency rollback
+    /// - `reason`: Human-readable justification for rollback action
+    ///
+    /// ## Semantics
+    /// - Action type: "rollback"
+    /// - Event code: "FLEET-ROLLBACK"
+    /// - Subject: Incident (via `incident_id`)
+    /// - Scope: Zone-wide state restoration
+    ///
+    /// ## Lifecycle
+    /// 1. Critical incident detected requiring immediate state restoration
+    /// 2. This payload is bound into a [`DecisionReceipt`] for authorization
+    /// 3. Receipt triggers emergency rollback procedures
+    /// 4. Fleet state is restored to last known-good configuration
+    ///
+    /// ## Safety
+    /// Rollback operations are irreversible and may result in data loss.
+    /// Use only when incident severity justifies potential data loss risk.
+    ///
+    /// ## Related Types
+    /// - [`DecisionReceiptScope`]: Zone-scoped rollback boundary
+    /// - [`FleetActionResult`]: Tracks rollback convergence state
     #[must_use]
     pub fn rollback(incident_id: &str, zone_id: &str, reason: &str) -> Self {
         Self {
@@ -278,6 +382,32 @@ impl DecisionReceiptPayload {
         }
     }
 
+    /// Creates a decision receipt payload for fleet reconciliation action.
+    ///
+    /// Generates a tamper-evident payload for global fleet state reconciliation
+    /// to ensure consistency across all zones and resolve drift.
+    ///
+    /// ## Semantics
+    /// - Action type: "reconcile"
+    /// - Event code: [`FLEET_RECONCILE_COMPLETED`]
+    /// - Subject: Global fleet state (no specific extension or incident)
+    /// - Scope: All zones ("all")
+    ///
+    /// ## Lifecycle
+    /// 1. Fleet manager initiates periodic or emergency reconciliation
+    /// 2. This payload is bound into a [`DecisionReceipt`] for audit trail
+    /// 3. Receipt authorizes cross-zone consistency verification
+    /// 4. State discrepancies are resolved and normalized
+    ///
+    /// ## Use Cases
+    /// - Periodic maintenance reconciliation
+    /// - Recovery from network partition events
+    /// - Resolution of configuration drift
+    /// - Post-incident state verification
+    ///
+    /// ## Related Types
+    /// - [`DecisionReceiptScope`]: Global scope covering all zones
+    /// - [`ConvergenceState`]: Tracks reconciliation progress across zones
     #[must_use]
     pub fn reconcile() -> Self {
         Self {
