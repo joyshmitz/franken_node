@@ -245,6 +245,18 @@ impl DecisionReceiptPayload {
     /// - [`QuarantineScope`]: Defines blast radius and reason
     /// - [`DecisionReceipt`]: Container with signature verification
     /// - [`FleetActionResult`]: Async result with convergence tracking
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let scope = QuarantineScope {
+    ///     zone_id: "prod-us-east".to_string(),
+    ///     tenant_id: Some("tenant-a".to_string()),
+    ///     affected_nodes: 12,
+    ///     reason: "suspicious extension activity".to_string(),
+    /// };
+    /// let payload = DecisionReceiptPayload::quarantine("ext.audit", &scope);
+    /// assert_eq!(payload.action_type, "quarantine");
+    /// ```
     #[must_use]
     pub fn quarantine(extension_id: &str, scope: &QuarantineScope) -> Self {
         Self {
@@ -287,6 +299,18 @@ impl DecisionReceiptPayload {
     /// - [`RevocationScope`]: Defines severity and enforcement scope
     /// - [`RevocationSeverity`]: Enumeration of revocation severity levels
     /// - [`DecisionReceipt`]: Signed container for audit and verification
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let scope = RevocationScope {
+    ///     zone_id: "prod-us-east".to_string(),
+    ///     tenant_id: None,
+    ///     severity: RevocationSeverity::Emergency,
+    ///     reason: "publisher trust root revoked".to_string(),
+    /// };
+    /// let payload = DecisionReceiptPayload::revoke("ext.audit", &scope);
+    /// assert_eq!(payload.event_code, FLEET_REVOCATION_ISSUED);
+    /// ```
     #[must_use]
     pub fn revoke(extension_id: &str, scope: &RevocationScope) -> Self {
         Self {
@@ -329,6 +353,16 @@ impl DecisionReceiptPayload {
     /// ## Related Types
     /// - [`DecisionReceiptScope`]: Zone-scoped enforcement boundary
     /// - [`FleetActionResult`]: Contains convergence state for async release
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let payload = DecisionReceiptPayload::release(
+    ///     "inc-op-42",
+    ///     "prod-us-east",
+    ///     "false positive cleared",
+    /// );
+    /// assert_eq!(payload.incident_id.as_deref(), Some("inc-op-42"));
+    /// ```
     #[must_use]
     pub fn release(incident_id: &str, zone_id: &str, reason: &str) -> Self {
         Self {
@@ -370,6 +404,16 @@ impl DecisionReceiptPayload {
     /// ## Related Types
     /// - [`DecisionReceiptScope`]: Zone-scoped rollback boundary
     /// - [`FleetActionResult`]: Tracks rollback convergence state
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let payload = DecisionReceiptPayload::rollback(
+    ///     "inc-op-42",
+    ///     "prod-us-east",
+    ///     "rollback signed quarantine state",
+    /// );
+    /// assert_eq!(payload.action_type, "rollback");
+    /// ```
     #[must_use]
     pub fn rollback(incident_id: &str, zone_id: &str, reason: &str) -> Self {
         Self {
@@ -408,6 +452,12 @@ impl DecisionReceiptPayload {
     /// ## Related Types
     /// - [`DecisionReceiptScope`]: Global scope covering all zones
     /// - [`ConvergenceState`]: Tracks reconciliation progress across zones
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let payload = DecisionReceiptPayload::reconcile();
+    /// assert_eq!(payload.scope.zone_id, "all");
+    /// ```
     #[must_use]
     pub fn reconcile() -> Self {
         Self {
@@ -447,6 +497,12 @@ pub struct DecisionReceiptScope {
 }
 
 impl DecisionReceiptScope {
+    /// # Examples
+    /// ```ignore
+    /// let scope = DecisionReceiptScope::zone("prod-us-east");
+    /// assert_eq!(scope.zone_id, "prod-us-east");
+    /// assert!(scope.tenant_id.is_none());
+    /// ```
     #[must_use]
     pub fn zone(zone_id: &str) -> Self {
         Self {
@@ -500,6 +556,13 @@ pub struct FleetDecisionTrustRoot {
 
 impl FleetDecisionTrustRoot {
     /// Build a fleet trust root from configured Ed25519 verifying-key material.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let signing_key = ed25519_dalek::SigningKey::from_bytes(&[7_u8; 32]);
+    /// let trust_root = FleetDecisionTrustRoot::from_verifying_key(&signing_key.verifying_key());
+    /// assert!(!trust_root.key_id.is_empty());
+    /// ```
     #[must_use]
     pub fn from_verifying_key(verifying_key: &VerifyingKey) -> Self {
         Self {
@@ -545,6 +608,19 @@ fn revocation_severity_tag(severity: RevocationSeverity) -> &'static str {
 }
 
 /// Computes canonical hash of fleet decision receipt payload for tamper detection.
+///
+/// # Examples
+/// ```ignore
+/// let payload = DecisionReceiptPayload::reconcile();
+/// let hash = canonical_decision_receipt_payload_hash(
+///     "op-1",
+///     "fleet-admin",
+///     "all",
+///     "2026-04-24T00:00:00Z",
+///     &payload,
+/// );
+/// assert_eq!(hash.len(), 64);
+/// ```
 #[must_use]
 pub fn canonical_decision_receipt_payload_hash(
     operation_id: &str,
@@ -580,6 +656,30 @@ fn decision_receipt_payload_bytes(receipt: &DecisionReceipt) -> Vec<u8> {
 }
 
 /// Create an Ed25519 signature envelope for a fleet decision receipt.
+///
+/// # Examples
+/// ```ignore
+/// let signing_key = ed25519_dalek::SigningKey::from_bytes(&[9_u8; 32]);
+/// let mut receipt = DecisionReceipt {
+///     operation_id: "op-1".to_string(),
+///     receipt_id: "rcpt-op-1".to_string(),
+///     issuer: "fleet-admin".to_string(),
+///     issued_at: "2026-04-24T00:00:00Z".to_string(),
+///     zone_id: "prod-us-east".to_string(),
+///     payload_hash: canonical_decision_receipt_payload_hash(
+///         "op-1",
+///         "fleet-admin",
+///         "prod-us-east",
+///         "2026-04-24T00:00:00Z",
+///         &DecisionReceiptPayload::reconcile(),
+///     ),
+///     decision_payload: DecisionReceiptPayload::reconcile(),
+///     signature: None,
+/// };
+/// let signature = sign_decision_receipt(&receipt, &signing_key, "test", "fleet-control-plane");
+/// receipt.signature = Some(signature);
+/// assert!(receipt.signature.is_some());
+/// ```
 #[must_use]
 pub fn sign_decision_receipt(
     receipt: &DecisionReceipt,
@@ -607,12 +707,80 @@ pub fn sign_decision_receipt(
 }
 
 /// Verify the embedded Ed25519 signature on a fleet decision receipt.
+///
+/// # Examples
+/// ```ignore
+/// let signing_key = ed25519_dalek::SigningKey::from_bytes(&[9_u8; 32]);
+/// let verifying_key = signing_key.verifying_key();
+/// let decision_payload = DecisionReceiptPayload::reconcile();
+/// let mut receipt = DecisionReceipt {
+///     operation_id: "op-1".to_string(),
+///     receipt_id: "rcpt-op-1".to_string(),
+///     issuer: "fleet-admin".to_string(),
+///     issued_at: "2026-04-24T00:00:00Z".to_string(),
+///     zone_id: "all".to_string(),
+///     payload_hash: canonical_decision_receipt_payload_hash(
+///         "op-1",
+///         "fleet-admin",
+///         "all",
+///         "2026-04-24T00:00:00Z",
+///         &decision_payload,
+///     ),
+///     decision_payload,
+///     signature: None,
+/// };
+/// receipt.signature = Some(sign_decision_receipt(
+///     &receipt,
+///     &signing_key,
+///     "test",
+///     "fleet-control-plane",
+/// ));
+/// let trust_root = FleetDecisionTrustRoot::from_verifying_key(&verifying_key);
+/// assert!(verify_decision_receipt_signature_with_trust_roots(
+///     &receipt,
+///     &[trust_root],
+/// ));
+/// ```
 #[must_use]
 pub fn verify_decision_receipt_signature(receipt: &DecisionReceipt) -> bool {
     verify_decision_receipt_signature_with_trust_roots(receipt, &[])
 }
 
 /// Verify a fleet decision receipt against configured trusted fleet roots.
+///
+/// # Examples
+/// ```ignore
+/// let signing_key = ed25519_dalek::SigningKey::from_bytes(&[11_u8; 32]);
+/// let decision_payload = DecisionReceiptPayload::reconcile();
+/// let mut receipt = DecisionReceipt {
+///     operation_id: "op-1".to_string(),
+///     receipt_id: "rcpt-op-1".to_string(),
+///     issuer: "fleet-admin".to_string(),
+///     issued_at: "2026-04-24T00:00:00Z".to_string(),
+///     zone_id: "all".to_string(),
+///     payload_hash: canonical_decision_receipt_payload_hash(
+///         "op-1",
+///         "fleet-admin",
+///         "all",
+///         "2026-04-24T00:00:00Z",
+///         &decision_payload,
+///     ),
+///     decision_payload,
+///     signature: None,
+/// };
+/// receipt.signature = Some(sign_decision_receipt(
+///     &receipt,
+///     &signing_key,
+///     "test",
+///     "fleet-control-plane",
+/// ));
+/// let trust_root =
+///     FleetDecisionTrustRoot::from_verifying_key(&signing_key.verifying_key());
+/// assert!(verify_decision_receipt_signature_with_trust_roots(
+///     &receipt,
+///     &[trust_root],
+/// ));
+/// ```
 #[must_use]
 pub fn verify_decision_receipt_signature_with_trust_roots(
     receipt: &DecisionReceipt,
@@ -778,6 +946,17 @@ pub struct NodeStatus {
 }
 
 impl NodeStatus {
+    /// # Examples
+    /// ```ignore
+    /// let status = NodeStatus::new(
+    ///     "node-a",
+    ///     chrono::Utc::now(),
+    ///     7,
+    ///     NodeHealth::Healthy,
+    /// )?;
+    /// assert_eq!(status.node_id, "node-a");
+    /// # Ok::<(), FleetTransportError>(())
+    /// ```
     pub fn new(
         node_id: impl Into<String>,
         last_seen: chrono::DateTime<chrono::Utc>,
@@ -794,6 +973,17 @@ impl NodeStatus {
         Ok(status)
     }
 
+    /// # Examples
+    /// ```ignore
+    /// let status = NodeStatus::new(
+    ///     "node-a",
+    ///     chrono::Utc::now(),
+    ///     7,
+    ///     NodeHealth::Healthy,
+    /// )?;
+    /// status.validate()?;
+    /// # Ok::<(), FleetTransportError>(())
+    /// ```
     pub fn validate(&self) -> Result<(), FleetTransportError> {
         validate_node_id(&self.node_id)?;
         Ok(())
@@ -812,6 +1002,19 @@ pub struct FleetActionEnvelope {
 }
 
 impl FleetActionEnvelope {
+    /// # Examples
+    /// ```ignore
+    /// let envelope = FleetActionEnvelope::new(
+    ///     "act-1",
+    ///     "trace-1",
+    ///     "prod-us-east",
+    ///     chrono::Utc::now(),
+    ///     3,
+    ///     FleetAction::Reconcile,
+    /// )?;
+    /// assert_eq!(envelope.zone_id, "prod-us-east");
+    /// # Ok::<(), FleetTransportError>(())
+    /// ```
     pub fn new(
         action_id: impl Into<String>,
         trace_id: impl Into<String>,
@@ -832,6 +1035,21 @@ impl FleetActionEnvelope {
         Ok(envelope)
     }
 
+    /// # Examples
+    /// ```ignore
+    /// let envelope = FleetActionEnvelope::new(
+    ///     "act-1",
+    ///     "trace-1",
+    ///     "prod-us-east",
+    ///     chrono::Utc::now(),
+    ///     3,
+    ///     FleetAction::Status {
+    ///         zone_id: "prod-us-east".to_string(),
+    ///     },
+    /// )?;
+    /// envelope.validate()?;
+    /// # Ok::<(), FleetTransportError>(())
+    /// ```
     pub fn validate(&self) -> Result<(), FleetTransportError> {
         if self.action_id.trim().is_empty() {
             return Err(FleetTransportError::serialization(
@@ -915,6 +1133,12 @@ impl Default for FleetStateSnapshot {
 }
 
 impl FleetStateSnapshot {
+    /// # Examples
+    /// ```ignore
+    /// let snapshot = FleetStateSnapshot::default();
+    /// snapshot.validate()?;
+    /// # Ok::<(), FleetTransportError>(())
+    /// ```
     pub fn validate(&self) -> Result<(), FleetTransportError> {
         if self.schema_version.trim().is_empty() {
             return Err(FleetTransportError::serialization(
@@ -942,6 +1166,11 @@ pub struct FleetStateLayout {
 }
 
 impl FleetStateLayout {
+    /// # Examples
+    /// ```ignore
+    /// let layout = FleetStateLayout::new("/tmp/fleet-state");
+    /// assert!(layout.actions_log_path.ends_with("actions.jsonl"));
+    /// ```
     #[must_use]
     pub fn new(root_dir: impl Into<PathBuf>) -> Self {
         let root_dir = root_dir.into();
@@ -954,6 +1183,14 @@ impl FleetStateLayout {
         }
     }
 
+    /// # Examples
+    /// ```ignore
+    /// let tempdir = tempfile::tempdir()?;
+    /// let layout = FleetStateLayout::new(tempdir.path());
+    /// layout.create_all()?;
+    /// assert!(layout.node_status_dir.exists());
+    /// # Ok::<(), FleetTransportError>(())
+    /// ```
     pub fn create_all(&self) -> Result<(), FleetTransportError> {
         std::fs::create_dir_all(&self.root_dir).map_err(|err| {
             FleetTransportError::io(format!(
@@ -988,30 +1225,55 @@ pub enum FleetTransportError {
 }
 
 impl FleetTransportError {
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetTransportError::io("permission denied");
+    /// assert_eq!(err.to_string(), "io error: permission denied");
+    /// ```
     pub fn io(detail: impl Into<String>) -> Self {
         Self::IoError {
             detail: detail.into(),
         }
     }
 
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetTransportError::serialization("missing zone_id");
+    /// assert_eq!(err.to_string(), "serialization error: missing zone_id");
+    /// ```
     pub fn serialization(detail: impl Into<String>) -> Self {
         Self::SerializationError {
             detail: detail.into(),
         }
     }
 
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetTransportError::lock_contention("fleet-state lock busy");
+    /// assert_eq!(err.to_string(), "lock contention: fleet-state lock busy");
+    /// ```
     pub fn lock_contention(detail: impl Into<String>) -> Self {
         Self::LockContention {
             detail: detail.into(),
         }
     }
 
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetTransportError::stale_state("heartbeat older than threshold");
+    /// assert_eq!(err.to_string(), "stale state: heartbeat older than threshold");
+    /// ```
     pub fn stale_state(detail: impl Into<String>) -> Self {
         Self::StaleState {
             detail: detail.into(),
         }
     }
 
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetTransportError::not_initialized("call initialize before append_action");
+    /// assert_eq!(err.to_string(), "not initialized: call initialize before append_action");
+    /// ```
     pub fn not_initialized(detail: impl Into<String>) -> Self {
         Self::NotInitialized {
             detail: detail.into(),
@@ -1156,6 +1418,11 @@ pub enum FleetControlError {
 }
 
 impl FleetControlError {
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetControlError::scope_invalid("zone_id must not be empty");
+    /// assert_eq!(err.error_code(), FLEET_SCOPE_INVALID);
+    /// ```
     pub fn scope_invalid(detail: &str) -> Self {
         Self::ScopeInvalid {
             code: FLEET_SCOPE_INVALID.to_string(),
@@ -1164,6 +1431,11 @@ impl FleetControlError {
     }
 
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetControlError::zone_unreachable("prod-us-east");
+    /// assert_eq!(err.error_code(), FLEET_ZONE_UNREACHABLE);
+    /// ```
     pub fn zone_unreachable(zone_id: &str) -> Self {
         Self::ZoneUnreachable {
             code: FLEET_ZONE_UNREACHABLE.to_string(),
@@ -1172,6 +1444,11 @@ impl FleetControlError {
     }
 
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetControlError::convergence_timeout(120);
+    /// assert_eq!(err.error_code(), FLEET_CONVERGENCE_TIMEOUT);
+    /// ```
     pub fn convergence_timeout(elapsed: u32) -> Self {
         Self::ConvergenceTimeout {
             code: FLEET_CONVERGENCE_TIMEOUT.to_string(),
@@ -1179,6 +1456,11 @@ impl FleetControlError {
         }
     }
 
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetControlError::rollback_failed("inc-op-42", "receipt missing");
+    /// assert_eq!(err.error_code(), FLEET_ROLLBACK_FAILED);
+    /// ```
     pub fn rollback_failed(incident_id: &str, detail: &str) -> Self {
         Self::RollbackFailed {
             code: FLEET_ROLLBACK_FAILED.to_string(),
@@ -1187,6 +1469,11 @@ impl FleetControlError {
         }
     }
 
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetControlError::rollback_unverified("inc-op-42", "signature mismatch");
+    /// assert_eq!(err.error_code(), FLEET_ROLLBACK_UNVERIFIED);
+    /// ```
     pub fn rollback_unverified(incident_id: &str, detail: &str) -> Self {
         Self::RollbackUnverified {
             code: FLEET_ROLLBACK_UNVERIFIED.to_string(),
@@ -1195,18 +1482,33 @@ impl FleetControlError {
         }
     }
 
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetControlError::not_activated();
+    /// assert_eq!(err.error_code(), FLEET_NOT_ACTIVATED);
+    /// ```
     pub fn not_activated() -> Self {
         Self::NotActivated {
             code: FLEET_NOT_ACTIVATED.to_string(),
         }
     }
 
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetControlError::operation_id_exhausted();
+    /// assert_eq!(err.error_code(), FLEET_OPERATION_ID_EXHAUSTED);
+    /// ```
     pub fn operation_id_exhausted() -> Self {
         Self::OperationIdExhausted {
             code: FLEET_OPERATION_ID_EXHAUSTED.to_string(),
         }
     }
 
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetControlError::receipt_signing_material_missing();
+    /// assert_eq!(err.error_code(), FLEET_RECEIPT_SIGNING_MATERIAL_MISSING);
+    /// ```
     pub fn receipt_signing_material_missing() -> Self {
         Self::ReceiptSigningMaterialMissing {
             code: FLEET_RECEIPT_SIGNING_MATERIAL_MISSING.to_string(),
@@ -1214,6 +1516,11 @@ impl FleetControlError {
     }
 
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetControlError::incident_capacity_exceeded();
+    /// assert_eq!(err.error_code(), FLEET_INCIDENT_CAPACITY_EXCEEDED);
+    /// ```
     pub fn incident_capacity_exceeded() -> Self {
         Self::IncidentCapacityExceeded {
             code: FLEET_INCIDENT_CAPACITY_EXCEEDED.to_string(),
@@ -1221,6 +1528,11 @@ impl FleetControlError {
     }
 
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetControlError::zone_status_capacity_exceeded();
+    /// assert_eq!(err.error_code(), FLEET_ZONE_STATUS_CAPACITY_EXCEEDED);
+    /// ```
     pub fn zone_status_capacity_exceeded() -> Self {
         Self::ZoneStatusCapacityExceeded {
             code: FLEET_ZONE_STATUS_CAPACITY_EXCEEDED.to_string(),
@@ -1228,6 +1540,12 @@ impl FleetControlError {
     }
 
     /// Return the stable error code for this error.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let err = FleetControlError::not_activated();
+    /// assert_eq!(err.error_code(), FLEET_NOT_ACTIVATED);
+    /// ```
     pub fn error_code(&self) -> &str {
         match self {
             Self::ScopeInvalid { code, .. } => code,
@@ -1269,6 +1587,15 @@ pub struct FleetControlEvent {
 
 impl FleetControlEvent {
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let event = FleetControlEvent::quarantine_initiated(
+    ///     "trace-1",
+    ///     "prod-us-east",
+    ///     "ext.audit",
+    /// );
+    /// assert_eq!(event.event_code, FLEET_QUARANTINE_INITIATED);
+    /// ```
     pub fn quarantine_initiated(trace_id: &str, zone_id: &str, extension_id: &str) -> Self {
         Self {
             event_code: FLEET_QUARANTINE_INITIATED.to_string(),
@@ -1282,6 +1609,15 @@ impl FleetControlEvent {
     }
 
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let event = FleetControlEvent::revocation_issued(
+    ///     "trace-1",
+    ///     "prod-us-east",
+    ///     "ext.audit",
+    /// );
+    /// assert_eq!(event.event_code, FLEET_REVOCATION_ISSUED);
+    /// ```
     pub fn revocation_issued(trace_id: &str, zone_id: &str, extension_id: &str) -> Self {
         Self {
             event_code: FLEET_REVOCATION_ISSUED.to_string(),
@@ -1295,6 +1631,11 @@ impl FleetControlEvent {
     }
 
     #[cfg(feature = "control-plane")]
+    /// # Examples
+    /// ```ignore
+    /// let event = FleetControlEvent::convergence_progress("trace-1", "prod-us-east", 75);
+    /// assert_eq!(event.metadata.get("progress_pct"), Some(&"75".to_string()));
+    /// ```
     pub fn convergence_progress(trace_id: &str, zone_id: &str, progress_pct: u8) -> Self {
         let mut metadata = BTreeMap::new();
         metadata.insert("progress_pct".to_string(), progress_pct.to_string());
@@ -1309,6 +1650,11 @@ impl FleetControlEvent {
         }
     }
 
+    /// # Examples
+    /// ```ignore
+    /// let event = FleetControlEvent::fleet_released("trace-1", "prod-us-east", "inc-op-42");
+    /// assert_eq!(event.event_code, FLEET_RELEASED);
+    /// ```
     pub fn fleet_released(trace_id: &str, zone_id: &str, incident_id: &str) -> Self {
         let mut metadata = BTreeMap::new();
         metadata.insert("incident_id".to_string(), incident_id.to_string());
@@ -1323,6 +1669,11 @@ impl FleetControlEvent {
         }
     }
 
+    /// # Examples
+    /// ```ignore
+    /// let event = FleetControlEvent::reconcile_completed("trace-1", 3);
+    /// assert_eq!(event.zone_id, "all");
+    /// ```
     pub fn reconcile_completed(trace_id: &str, zone_count: usize) -> Self {
         let mut metadata = BTreeMap::new();
         metadata.insert("zone_count".to_string(), zone_count.to_string());
@@ -1573,12 +1924,20 @@ fn shared_fleet_control_manager() -> &'static SharedFleetControlOwner {
 
 /// Resets the global fleet control manager state for testing isolation.
 #[cfg(any(test, feature = "control-plane"))]
+/// # Examples
+/// ```ignore
+/// reset_shared_fleet_control_manager_for_tests();
+/// ```
 pub fn reset_shared_fleet_control_manager_for_tests() {
     shared_fleet_control_manager().reset_for_tests();
 }
 
 /// Activates the global fleet control manager for testing scenarios.
 #[cfg(any(test, feature = "control-plane"))]
+/// # Examples
+/// ```ignore
+/// activate_shared_fleet_control_manager_for_tests();
+/// ```
 pub fn activate_shared_fleet_control_manager_for_tests() {
     let mut guard = match shared_fleet_control_manager().inner.lock() {
         Ok(guard) => guard,
@@ -1590,6 +1949,12 @@ pub fn activate_shared_fleet_control_manager_for_tests() {
 impl FleetControlManager {
     /// Create a new manager in safe-start (read-only) mode.
     /// INV-FLEET-SAFE-START: API starts read-only.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let manager = FleetControlManager::new();
+    /// assert!(manager.decision_trust_roots().len() <= 1);
+    /// ```
     pub fn new() -> Self {
         Self::with_optional_decision_signing_material(default_decision_signing_material())
     }
@@ -1619,12 +1984,22 @@ impl FleetControlManager {
 
     /// Create a manager without decision-receipt signing material for fail-closed tests.
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let manager = FleetControlManager::without_decision_signing_material_for_tests();
+    /// assert!(manager.decision_trust_roots().is_empty());
+    /// ```
     pub fn without_decision_signing_material_for_tests() -> Self {
         Self::with_optional_decision_signing_material(None)
     }
 
     /// Remove decision-receipt signing material from an initialized manager for fail-closed tests.
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let mut manager = FleetControlManager::new();
+    /// manager.clear_decision_signing_material_for_tests();
+    /// ```
     pub fn clear_decision_signing_material_for_tests(&mut self) {
         self.decision_signing_material = None;
     }
@@ -1634,6 +2009,16 @@ impl FleetControlManager {
     /// This keeps integration/conformance harnesses on the production signing
     /// path instead of relying on `cfg(test)` demo material.
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let signing_key = ed25519_dalek::SigningKey::from_bytes(&[5_u8; 32]);
+    /// let manager = FleetControlManager::with_decision_signing_key(
+    ///     signing_key,
+    ///     "fixture",
+    ///     "fleet-admin",
+    /// );
+    /// assert_eq!(manager.decision_trust_roots().len(), 1);
+    /// ```
     pub fn with_decision_signing_key(
         signing_key: ed25519_dalek::SigningKey,
         key_source: &'static str,
@@ -1648,23 +2033,49 @@ impl FleetControlManager {
 
     /// Activate the fleet control API for mutations.
     /// Must be called before quarantine/revoke/release/reconcile.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let mut manager = FleetControlManager::new();
+    /// manager.activate();
+    /// ```
     pub fn activate(&mut self) {
         self.activated = true;
     }
 
     /// Check if the manager is activated.
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let mut manager = FleetControlManager::new();
+    /// manager.activate();
+    /// assert!(manager.is_activated());
+    /// ```
     pub fn is_activated(&self) -> bool {
         self.activated
     }
 
     /// Trusted roots currently configured for decision-receipt verification.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let manager = FleetControlManager::new();
+    /// let trust_roots = manager.decision_trust_roots();
+    /// assert!(trust_roots.len() <= 1);
+    /// ```
     #[must_use]
     pub fn decision_trust_roots(&self) -> &[FleetDecisionTrustRoot] {
         &self.decision_trust_roots
     }
 
     /// Verify a decision receipt against this manager's configured trust roots.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let manager = FleetControlManager::new();
+    /// let receipt: DecisionReceipt = todo!();
+    /// let _verified = manager.verify_decision_receipt_signature(&receipt);
+    /// ```
     #[must_use]
     pub fn verify_decision_receipt_signature(&self, receipt: &DecisionReceipt) -> bool {
         verify_decision_receipt_signature_with_trust_roots(receipt, &self.decision_trust_roots)
@@ -1674,6 +2085,22 @@ impl FleetControlManager {
     /// INV-FLEET-ZONE-SCOPE: scope must have a valid zone_id.
     /// INV-FLEET-RECEIPT: produces a signed decision receipt.
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let mut manager = FleetControlManager::new();
+    /// manager.activate();
+    /// let scope = QuarantineScope {
+    ///     zone_id: "prod-us-east".to_string(),
+    ///     tenant_id: None,
+    ///     affected_nodes: 8,
+    ///     reason: "contain extension drift".to_string(),
+    /// };
+    /// let identity: AuthIdentity = todo!();
+    /// let trace: TraceContext = todo!();
+    /// let result = manager.quarantine("ext.audit", &scope, &identity, &trace)?;
+    /// assert_eq!(result.action_type, "quarantine");
+    /// # Ok::<(), FleetControlError>(())
+    /// ```
     pub fn quarantine(
         &mut self,
         extension_id: &str,
@@ -1779,6 +2206,22 @@ impl FleetControlManager {
     /// Revoke an extension.
     /// INV-FLEET-ZONE-SCOPE: scope must have a valid zone_id.
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let mut manager = FleetControlManager::new();
+    /// manager.activate();
+    /// let scope = RevocationScope {
+    ///     zone_id: "prod-us-east".to_string(),
+    ///     tenant_id: None,
+    ///     severity: RevocationSeverity::Mandatory,
+    ///     reason: "publisher key rotated".to_string(),
+    /// };
+    /// let identity: AuthIdentity = todo!();
+    /// let trace: TraceContext = todo!();
+    /// let result = manager.revoke("ext.audit", &scope, &identity, &trace)?;
+    /// assert_eq!(result.action_type, "revoke");
+    /// # Ok::<(), FleetControlError>(())
+    /// ```
     pub fn revoke(
         &mut self,
         extension_id: &str,
@@ -1865,6 +2308,17 @@ impl FleetControlManager {
 
     /// Release a quarantine incident, rolling back state.
     /// INV-FLEET-ROLLBACK: deterministic rollback with verification.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let mut manager = FleetControlManager::new();
+    /// manager.activate();
+    /// let identity: AuthIdentity = todo!();
+    /// let trace: TraceContext = todo!();
+    /// let result = manager.release("inc-op-42", &identity, &trace)?;
+    /// assert_eq!(result.action_type, "release");
+    /// # Ok::<(), FleetControlError>(())
+    /// ```
     pub fn release(
         &mut self,
         incident_id: &str,
@@ -1938,6 +2392,14 @@ impl FleetControlManager {
 
     /// Get fleet status for a zone.
     /// Does not require activation (read-only, safe in safe-start mode).
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let manager = FleetControlManager::new();
+    /// let status = manager.status("prod-us-east")?;
+    /// assert_eq!(status.zone_id, "prod-us-east");
+    /// # Ok::<(), FleetControlError>(())
+    /// ```
     pub fn status(&self, zone_id: &str) -> Result<FleetStatus, FleetControlError> {
         let zone_id = Self::validated_zone_id(zone_id)?;
 
@@ -1961,6 +2423,17 @@ impl FleetControlManager {
     }
 
     /// Reconcile fleet state across all zones.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let mut manager = FleetControlManager::new();
+    /// manager.activate();
+    /// let identity: AuthIdentity = todo!();
+    /// let trace: TraceContext = todo!();
+    /// let result = manager.reconcile(&identity, &trace)?;
+    /// assert_eq!(result.action_type, "reconcile");
+    /// # Ok::<(), FleetControlError>(())
+    /// ```
     pub fn reconcile(
         &mut self,
         identity: &AuthIdentity,
@@ -2026,12 +2499,22 @@ impl FleetControlManager {
 
     /// Return all events in the audit trail.
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let manager = FleetControlManager::new();
+    /// let _events = manager.events();
+    /// ```
     pub fn events(&self) -> &[FleetControlEvent] {
         &self.events
     }
 
     /// Return all active incidents.
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let manager = FleetControlManager::new();
+    /// let _incidents = manager.active_incidents();
+    /// ```
     pub fn active_incidents(&self) -> Vec<&IncidentHandle> {
         self.incidents
             .values()
@@ -2041,12 +2524,22 @@ impl FleetControlManager {
 
     /// Return all zone IDs known to the manager.
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let manager = FleetControlManager::new();
+    /// let _zones = manager.zones();
+    /// ```
     pub fn zones(&self) -> Vec<String> {
         self.zone_status.keys().cloned().collect()
     }
 
     /// Return the total number of incidents (all statuses).
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let manager = FleetControlManager::new();
+    /// assert_eq!(manager.incident_count(), 0);
+    /// ```
     pub fn incident_count(&self) -> usize {
         self.incidents.len()
     }
@@ -2246,6 +2739,15 @@ impl FleetControlManager {
     }
 
     #[cfg(any(test, feature = "control-plane"))]
+    /// # Examples
+    /// ```ignore
+    /// let manager = FleetControlManager::new();
+    /// manager.verify_convergence_rollback_receipt_at_for_tests(
+    ///     "inc-op-42",
+    ///     chrono::Utc::now(),
+    /// )?;
+    /// # Ok::<(), FleetControlError>(())
+    /// ```
     pub fn verify_convergence_rollback_receipt_at_for_tests(
         &self,
         incident_id: &str,
@@ -2305,6 +2807,13 @@ impl FleetControlManager {
 
     /// Register convergence rollback receipt for an incident.
     /// Used by convergence rollback operations to enable subsequent release.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let mut manager = FleetControlManager::new();
+    /// let receipt: DecisionReceipt = todo!();
+    /// manager.register_rollback_receipt("inc-op-42", receipt);
+    /// ```
     pub fn register_rollback_receipt(&mut self, incident_id: &str, receipt: DecisionReceipt) {
         self.rollback_receipts
             .insert(incident_id.to_string(), receipt);
@@ -2355,6 +2864,11 @@ pub struct ReconcileResult {
 // ── Route Metadata ────────────────────────────────────────────────────────
 
 #[cfg(any(test, feature = "control-plane"))]
+/// # Examples
+/// ```ignore
+/// let routes = quarantine_route_metadata();
+/// assert!(routes.iter().any(|route| route.path == "/v1/fleet/quarantine"));
+/// ```
 pub fn quarantine_route_metadata() -> Vec<RouteMetadata> {
     vec![
         RouteMetadata {
@@ -2424,6 +2938,23 @@ pub fn quarantine_route_metadata() -> Vec<RouteMetadata> {
 
 /// Processes fleet quarantine requests to isolate problematic extensions.
 #[cfg(any(test, feature = "control-plane"))]
+/// # Examples
+/// ```ignore
+/// let identity: AuthIdentity = todo!();
+/// let trace: TraceContext = todo!();
+/// let request = QuarantineRequest {
+///     extension_id: "ext.audit".to_string(),
+///     scope: QuarantineScope {
+///         zone_id: "prod-us-east".to_string(),
+///         tenant_id: None,
+///         affected_nodes: 8,
+///         reason: "suspicious behavior".to_string(),
+///     },
+/// };
+/// let response = handle_quarantine(&identity, &trace, &request)?;
+/// assert!(response.ok);
+/// # Ok::<(), ApiError>(())
+/// ```
 pub fn handle_quarantine(
     identity: &AuthIdentity,
     trace: &TraceContext,
@@ -2439,6 +2970,23 @@ pub fn handle_quarantine(
 
 /// Processes fleet revocation requests to disable compromised extensions.
 #[cfg(any(test, feature = "control-plane"))]
+/// # Examples
+/// ```ignore
+/// let identity: AuthIdentity = todo!();
+/// let trace: TraceContext = todo!();
+/// let request = RevokeRequest {
+///     extension_id: "ext.audit".to_string(),
+///     scope: RevocationScope {
+///         zone_id: "prod-us-east".to_string(),
+///         tenant_id: None,
+///         severity: RevocationSeverity::Mandatory,
+///         reason: "malicious publisher signal".to_string(),
+///     },
+/// };
+/// let response = handle_revoke(&identity, &trace, &request)?;
+/// assert!(response.ok);
+/// # Ok::<(), ApiError>(())
+/// ```
 pub fn handle_revoke(
     identity: &AuthIdentity,
     trace: &TraceContext,
@@ -2453,6 +3001,18 @@ pub fn handle_revoke(
 }
 
 /// Processes fleet release requests to restore quarantined extensions.
+///
+/// # Examples
+/// ```ignore
+/// let identity: AuthIdentity = todo!();
+/// let trace: TraceContext = todo!();
+/// let request = ReleaseRequest {
+///     incident_id: "inc-op-42".to_string(),
+/// };
+/// let response = handle_release(&identity, &trace, &request)?;
+/// assert!(response.ok);
+/// # Ok::<(), ApiError>(())
+/// ```
 pub fn handle_release(
     identity: &AuthIdentity,
     trace: &TraceContext,
@@ -2474,6 +3034,16 @@ pub fn handle_release(
     })
 }
 
+/// Return the current fleet status payload for a zone.
+///
+/// # Examples
+/// ```ignore
+/// let identity: AuthIdentity = todo!();
+/// let trace: TraceContext = todo!();
+/// let response = handle_status(&identity, &trace, "prod-us-east")?;
+/// assert!(response.ok);
+/// # Ok::<(), ApiError>(())
+/// ```
 pub fn handle_status(
     _identity: &AuthIdentity,
     trace: &TraceContext,
@@ -2487,6 +3057,16 @@ pub fn handle_status(
     })
 }
 
+/// Reconcile the shared fleet manager and return convergence state.
+///
+/// # Examples
+/// ```ignore
+/// let identity: AuthIdentity = todo!();
+/// let trace: TraceContext = todo!();
+/// let response = handle_reconcile(&identity, &trace)?;
+/// assert!(response.ok);
+/// # Ok::<(), ApiError>(())
+/// ```
 pub fn handle_reconcile(
     identity: &AuthIdentity,
     trace: &TraceContext,
