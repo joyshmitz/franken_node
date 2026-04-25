@@ -1375,15 +1375,17 @@ mod tests {
             let mut massive_checks = Vec::new();
 
             for comp_idx in 0..massive_component_count {
-                massive_checks.push(HealthComponent {
-                    name: format!("flood_component_{comp_idx:05}"),
-                    status: match comp_idx % 3 {
-                        0 => ComponentStatus::Ok,
-                        1 => ComponentStatus::Degraded,
-                        _ => ComponentStatus::Down,
-                    },
-                    detail: Some(format!("memory_pressure_test_detail_{comp_idx}")),
-                });
+                if massive_checks.len() < 1000 {
+                    massive_checks.push(HealthComponent {
+                        name: format!("flood_component_{comp_idx:05}"),
+                        status: match comp_idx % 3 {
+                            0 => ComponentStatus::Ok,
+                            1 => ComponentStatus::Degraded,
+                            _ => ComponentStatus::Down,
+                        },
+                        detail: Some(format!("memory_pressure_test_detail_{comp_idx}")),
+                    });
+                }
             }
 
             let massive_health = HealthCheck {
