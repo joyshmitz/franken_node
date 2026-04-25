@@ -170,6 +170,76 @@ impl fmt::Display for WitnessKind {
 // ── WitnessRef ─────────────────────────────────────────────────────
 
 /// A reference to a witness observation backing an evidence entry.
+///
+/// Witness references link high-impact evidence entries (quarantine, release, escalate)
+/// to the specific observations that justified those decisions. Each witness contains
+/// cryptographic integrity protection and optional replay bundle locators for full
+/// audit trail reconstruction.
+///
+/// # Examples
+///
+/// ## Creating a Telemetry Witness
+///
+/// ```rust
+/// use frankenengine_node::observability::witness_ref::{WitnessRef, WitnessKind};
+/// use sha2::{Digest, Sha256};
+///
+/// // Hash some telemetry data
+/// let telemetry_data = b"cpu_usage: 95%, memory_usage: 90%, threat_score: 8.5";
+/// let hash = Sha256::digest(telemetry_data).into();
+///
+/// let witness = WitnessRef::new("WIT-PERF-001", WitnessKind::Telemetry, hash)
+///     .with_locator("telemetry/performance-spike-2024-01-15.jsonl");
+///
+/// assert_eq!(witness.witness_id.as_str(), "WIT-PERF-001");
+/// assert_eq!(witness.witness_kind, WitnessKind::Telemetry);
+/// assert!(witness.replay_bundle_locator.is_some());
+/// ```
+///
+/// ## Creating a Proof Artifact Witness
+///
+/// ```rust
+/// # use frankenengine_node::observability::witness_ref::{WitnessRef, WitnessKind};
+/// # use sha2::{Digest, Sha256};
+/// // Create witness for cryptographic proof
+/// let proof_data = b"merkle_root: abc123, inclusion_proof: [def456, ghi789]";
+/// let proof_hash = Sha256::digest(proof_data).into();
+///
+/// let proof_witness = WitnessRef::new(
+///     "WIT-PROOF-045",
+///     WitnessKind::ProofArtifact,
+///     proof_hash
+/// ).with_locator("proofs/integrity-verification.proof");
+///
+/// // Verify the integrity hash format
+/// assert_eq!(proof_witness.hash_hex().len(), 64); // SHA-256 = 32 bytes = 64 hex chars
+/// ```
+///
+/// ## External Signal Witness
+///
+/// ```rust
+/// # use frankenengine_node::observability::witness_ref::{WitnessRef, WitnessKind};
+/// # use sha2::{Digest, Sha256};
+/// // Operator decision or external threat intelligence
+/// let signal_data = b"cve_id: CVE-2024-0001, severity: critical, affected_versions: 1.0-1.5";
+/// let signal_hash = Sha256::digest(signal_data).into();
+///
+/// let operator_witness = WitnessRef::new(
+///     "WIT-CVE-001",
+///     WitnessKind::ExternalSignal,
+///     signal_hash
+/// );
+///
+/// // No replay bundle needed for external signals
+/// assert!(operator_witness.replay_bundle_locator.is_none());
+/// ```
+///
+/// # Security Properties
+///
+/// - **Tamper detection**: SHA-256 integrity hash prevents modification of witness content
+/// - **Replay capability**: Bundle locators enable full audit trail reconstruction
+/// - **Traceability**: Stable witness IDs link decisions to supporting evidence
+/// - **Content verification**: Hash can be verified against actual witness content
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WitnessRef {
     /// Stable identifier for this witness.

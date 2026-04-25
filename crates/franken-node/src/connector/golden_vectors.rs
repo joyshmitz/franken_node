@@ -42,28 +42,104 @@ impl fmt::Display for SchemaCategory {
 
 // ── Schema spec ─────────────────────────────────────────────────────────────
 
+/// A changelog entry describing changes in a specific schema version.
+///
+/// Used to track the evolution of schemas over time, providing human-readable
+/// descriptions of what changed between versions.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::connector::golden_vectors::ChangelogEntry;
+///
+/// let entry = ChangelogEntry {
+///     version: 2,
+///     description: "Added support for nested objects".to_string(),
+/// };
+/// ```
 #[derive(Debug, Clone)]
 pub struct ChangelogEntry {
+    /// The schema version this entry describes.
     pub version: u32,
+    /// Human-readable description of changes in this version.
     pub description: String,
 }
 
+/// A complete schema specification for a particular category.
+///
+/// Defines the structure and version history of a data schema used throughout
+/// the connector system. Each schema has a unique category, version number,
+/// content hash for integrity verification, and changelog tracking evolution.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::connector::golden_vectors::{
+///     SchemaSpec, ChangelogEntry, SchemaCategory
+/// };
+///
+/// let spec = SchemaSpec {
+///     category: SchemaCategory::Connector,
+///     version: 2,
+///     content_hash: "abc123...".to_string(),
+///     changelog: vec![
+///         ChangelogEntry {
+///             version: 1,
+///             description: "Initial schema".to_string(),
+///         },
+///         ChangelogEntry {
+///             version: 2,
+///             description: "Added validation rules".to_string(),
+///         },
+///     ],
+/// };
+/// ```
 #[derive(Debug, Clone)]
 pub struct SchemaSpec {
+    /// The category this schema specification belongs to.
     pub category: SchemaCategory,
+    /// The current version number of this schema.
     pub version: u32,
+    /// Hash of the schema content for integrity verification.
     pub content_hash: String,
+    /// Complete changelog tracking evolution across versions.
     pub changelog: Vec<ChangelogEntry>,
 }
 
 // ── Golden vectors ──────────────────────────────────────────────────────────
 
+/// A golden vector test case for schema validation.
+///
+/// Contains a known input/output pair used to verify that schema processing
+/// produces consistent, expected results. Golden vectors serve as regression
+/// tests ensuring that schema changes don't break existing functionality.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::connector::golden_vectors::{
+///     GoldenVector, SchemaCategory
+/// };
+///
+/// let vector = GoldenVector {
+///     category: SchemaCategory::Connector,
+///     vector_id: "basic_transform_001".to_string(),
+///     input: r#"{"name": "test", "value": 42}"#.to_string(),
+///     expected_output: r#"{"processed_name": "test", "doubled_value": 84}"#.to_string(),
+///     description: "Basic transformation with name and doubled value".to_string(),
+/// };
+/// ```
 #[derive(Debug, Clone)]
 pub struct GoldenVector {
+    /// The schema category this vector tests.
     pub category: SchemaCategory,
+    /// Unique identifier for this test vector.
     pub vector_id: String,
+    /// Input data for the test case.
     pub input: String,
+    /// Expected output that should be produced from the input.
     pub expected_output: String,
+    /// Human-readable description of what this vector tests.
     pub description: String,
 }
 
