@@ -131,6 +131,7 @@ pub const INV_CAPSULE_VERDICT_REPRODUCIBLE: &str = "INV-CAPSULE-VERDICT-REPRODUC
 /// assert!(check_sdk_version(SDK_VERSION).is_ok());
 /// assert!(check_sdk_version("vsdk-v0.0").is_err());
 /// ```
+/// Validates SDK version compatibility against required minimum version.
 ///
 /// # INV-CAPSULE-VERSIONED-API
 /// # INV-CAPSULE-STABLE-SCHEMA

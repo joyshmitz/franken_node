@@ -121,6 +121,7 @@ fn span_id_from_unix_nanos(unix_nanos: u128) -> u64 {
     bounded_nanos ^ SPAN_ID_MIX
 }
 
+/// Generates deterministic span ID from unix nanoseconds for testing consistency.
 #[cfg(any(test, feature = "control-plane"))]
 pub fn span_id_from_unix_nanos_for_tests(unix_nanos: u128) -> u64 {
     span_id_from_unix_nanos(unix_nanos)
