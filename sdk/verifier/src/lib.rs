@@ -212,6 +212,49 @@ pub enum ValidationWorkflow {
 }
 
 /// Append-only transparency log entry for facade verification results.
+///
+/// Records a verification result in a cryptographically verifiable transparency log
+/// with Merkle tree inclusion proofs. This enables external parties to audit the
+/// complete history of verification decisions and detect tampering or omissions.
+///
+/// # Examples
+///
+/// ```rust
+/// use frankenengine_verifier_sdk::TransparencyLogEntry;
+///
+/// // Create a transparency log entry with inclusion proof
+/// let entry = TransparencyLogEntry {
+///     result_hash: "sha256:abc123def456".to_string(),
+///     timestamp: "2024-01-01T00:00:00Z".to_string(),
+///     verifier_id: "verifier://production".to_string(),
+///     merkle_proof: vec![
+///         "root:deadbeefcafe".to_string(),
+///         "leaf_index:42".to_string(),
+///         "tree_size:1000".to_string(),
+///         "left:cafebabe".to_string(),
+///         "right:beefdead".to_string(),
+///     ],
+/// };
+///
+/// // Verify the entry contains the expected proof components
+/// assert!(entry.merkle_proof.iter().any(|p| p.starts_with("root:")));
+/// assert!(entry.merkle_proof.iter().any(|p| p.starts_with("leaf_index:")));
+/// ```
+///
+/// # Merkle Proof Format
+///
+/// The `merkle_proof` field encodes the audit path required to verify inclusion:
+/// - `root:<hex>`: Merkle tree root hash at append time
+/// - `leaf_index:<n>`: Zero-based position of this entry in the tree
+/// - `tree_size:<n>`: Total number of entries in the tree at append time
+/// - `left:<hex>` / `right:<hex>`: Sibling hashes from leaf to root level
+///
+/// # Security Properties
+///
+/// - **Tamper detection**: Any modification to historical entries breaks the Merkle proof
+/// - **Append-only**: Entries cannot be removed without invalidating subsequent proofs
+/// - **Verifiable inclusion**: Third parties can verify an entry exists at the claimed position
+/// - **Timeline integrity**: Timestamp order can be verified against tree growth
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransparencyLogEntry {
     pub result_hash: String,
