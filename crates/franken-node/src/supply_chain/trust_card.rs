@@ -4702,4 +4702,87 @@ mod tests {
         let scrubbed = scrub_trust_card_output(&json1);
         insta::assert_snapshot!("trust_card_canonical_json_stability", scrubbed);
     }
+
+    #[test]
+    fn test_cache_poisoning_attack_prevention() {
+        // Test that cache poisoning attacks are prevented by signature re-verification
+        // This validates the bd-dz3yz fix that enforces signature verification on cache hits
+        let mut registry = TrustCardRegistry::default();
+
+        // Create a legitimate card
+        let original_card = registry
+            .create(sample_input(), 1_000, "trace-create")
+            .expect("create legitimate card");
+
+        // Verify the card is cached
+        assert!(registry.cache_by_extension.contains_key("npm:@acme/plugin"));
+
+        // ATTACK: Directly poison the cache with a malicious card that has the same extension
+        // but different content, simulating what an attacker might try to inject
+        let mut poisoned_card = original_card.clone();
+        poisoned_card.reputation_score_basis_points = 9999; // Malicious modification
+        poisoned_card.security_advisory_count = 0; // Hide security issues
+        poisoned_card.signature_hex = "deadbeefdeadbeefdeadbeefdeadbeef".to_string(); // Invalid signature
+
+        // Insert the poisoned entry directly into cache (bypassing normal validation)
+        registry.cache_by_extension.insert(
+            "npm:@acme/plugin".to_string(),
+            CachedCard {
+                card: poisoned_card,
+                cached_at_secs: 1_001, // Fresh timestamp
+            },
+        );
+
+        // DEFENSE: Attempt to read the card - this should trigger signature re-verification
+        let result = registry.read("npm:@acme/plugin", 1_002, "trace-poison-test");
+
+        // The poisoned entry should be rejected and removed from cache
+        assert!(result.is_ok(), "Read should succeed after cache repair");
+        let retrieved_card = result.unwrap().expect("Card should exist after repair");
+
+        // Verify the returned card is the original legitimate card, not the poisoned one
+        assert_eq!(retrieved_card.reputation_score_basis_points, original_card.reputation_score_basis_points);
+        assert_eq!(retrieved_card.security_advisory_count, original_card.security_advisory_count);
+        assert_eq!(retrieved_card.card_hash, original_card.card_hash);
+        assert_eq!(retrieved_card.signature_hex, original_card.signature_hex);
+
+        // Verify the cache now contains the repaired legitimate card
+        let cached = registry
+            .cache_by_extension
+            .get("npm:@acme/plugin")
+            .expect("Cache should contain repaired entry");
+        assert_eq!(cached.card.card_hash, original_card.card_hash);
+        assert_eq!(cached.card.signature_hex, original_card.signature_hex);
+        assert_ne!(cached.card.signature_hex, "deadbeefdeadbeefdeadbeefdeadbeef");
+
+        // Additional test: Verify that sync_cache also detects and removes poisoned entries
+        registry.cache_by_extension.insert(
+            "npm:@acme/plugin".to_string(),
+            CachedCard {
+                card: {
+                    let mut another_poison = original_card.clone();
+                    another_poison.reputation_score_basis_points = 1; // Different poison
+                    another_poison.signature_hex = "cafebabecafebabecafebabecafebabe".to_string();
+                    another_poison
+                },
+                cached_at_secs: 1_003,
+            },
+        );
+
+        let sync_report = registry
+            .sync_cache(1_004, "trace-sync-poison", false)
+            .expect("Sync should handle poisoned cache");
+
+        // Sync should detect the poisoned entry and rebuild it
+        assert_eq!(sync_report.cache_misses, 1, "Poisoned entry should count as cache miss");
+        assert_eq!(sync_report.cache_hits, 0, "No valid cache hits with poisoned entry");
+
+        // Final verification: cache contains only legitimate card
+        let final_cached = registry
+            .cache_by_extension
+            .get("npm:@acme/plugin")
+            .expect("Cache should be repaired after sync");
+        assert_eq!(final_cached.card.card_hash, original_card.card_hash);
+        assert_ne!(final_cached.card.signature_hex, "cafebabecafebabecafebabecafebabe");
+    }
 }
