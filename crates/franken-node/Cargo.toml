@@ -14,6 +14,7 @@ test = false
 name = "test-engine"
 path = "src/bin/test_engine.rs"
 test = false
+required-features = ["test-support"]
 
 [lib]
 path = "src/lib.rs"
@@ -48,7 +49,9 @@ compression = ["dep:flate2"]
 cbor-serialization = ["dep:serde_cbor"]
 engine = ["dep:frankenengine-engine", "dep:frankenengine-extension-host"]
 blake3 = ["dep:blake3"]
-default = ["extended-surfaces", "http-client", "external-commands", "compression", "cbor-serialization", "engine"]
+# Default stays limited to features needed for a usable node binary.
+# Heavy product surfaces and optional export formats require explicit opt-in.
+default = ["engine", "http-client", "external-commands"]
 
 [dependencies]
 anyhow.workspace = true
