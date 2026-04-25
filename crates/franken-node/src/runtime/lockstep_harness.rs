@@ -983,13 +983,16 @@ impl LockstepHarness {
                 let grace_start = Instant::now();
                 while !handle.is_finished() {
                     if Self::has_timed_out(grace_start.elapsed(), grace_timeout) {
-                        // Thread is truly stuck - we must leak it but document the issue
-                        eprintln!(
-                            "Warning: pipe drain thread '{label}' leaked due to blocked read (likely descendant process)"
+                        // Detach the blocked reader thread and return a bounded timeout marker.
+                        tracing::warn!(
+                            stream = label,
+                            timeout_ms = timeout.as_millis(),
+                            grace_timeout_ms = grace_timeout.as_millis(),
+                            "pipe drain thread detached after bounded timeout"
                         );
-                        std::mem::forget(handle); // Explicitly leak to avoid panic on drop
+                        drop(handle);
                         return PipeDrainResult {
-                            bytes: format!("__pipe_drain_leaked:{label}").into_bytes(),
+                            bytes: format!("__pipe_drain_timeout:{label}").into_bytes(),
                             cap_reached: false,
                         };
                     }
@@ -1301,6 +1304,40 @@ mod tests {
         assert!(!output.cap_reached);
         assert!(start.elapsed() < Duration::from_secs(1));
         drop(sender);
+    }
+
+    #[test]
+    fn pipe_drain_timeout_detaches_thread_and_allows_late_exit() {
+        let (sender, receiver) = std::sync::mpsc::channel::<()>();
+        let exited = Arc::new(AtomicBool::new(false));
+        let exited_clone = Arc::clone(&exited);
+        let handle = thread::spawn(move || {
+            let _ = receiver.recv();
+            exited_clone.store(true, Ordering::Release);
+            PipeDrainResult {
+                bytes: b"late-output".to_vec(),
+                cap_reached: false,
+            }
+        });
+
+        let output = LockstepHarness::join_pipe_drain(handle, "stdout", Duration::from_millis(30));
+
+        assert_eq!(output.bytes, b"__pipe_drain_timeout:stdout".to_vec());
+        assert!(!output.cap_reached);
+        assert!(
+            !exited.load(Ordering::Acquire),
+            "thread should still be blocked when timeout marker is returned"
+        );
+
+        sender.send(()).expect("unblock detached thread");
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !exited.load(Ordering::Acquire) && Instant::now() < deadline {
+            thread::sleep(crate::config::timeouts::LOCKSTEP_PIPE_DRAIN_JOIN_POLL);
+        }
+        assert!(
+            exited.load(Ordering::Acquire),
+            "detached pipe drain thread should still be able to exit after timeout"
+        );
     }
 
     #[test]
