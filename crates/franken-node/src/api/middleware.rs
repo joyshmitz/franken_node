@@ -2540,4 +2540,100 @@ mod api_middleware_advanced_security_edge_tests {
                 .is_empty()
         );
     }
+
+    #[test]
+    fn auth_failure_rate_limiting_prevents_brute_force() {
+        let route = RouteMetadata {
+            method: "POST".to_string(),
+            path: "/v1/fleet/quarantine".to_string(),
+            group: EndpointGroup::FleetControl,
+            lifecycle: EndpointLifecycle::Stable,
+            auth_method: AuthMethod::BearerToken,
+            policy_hook: PolicyHook {
+                hook_id: "fleet.quarantine.execute".to_string(),
+                required_roles: vec!["fleet-admin".to_string()],
+            },
+            trace_propagation: true,
+        };
+
+        // Create auth failure limiter with strict limits for testing
+        let mut auth_limiter = AuthFailureLimiter::with_config(RateLimitConfig {
+            sustained_rps: 1,
+            burst_size: 2,
+            fail_closed: true,
+        });
+        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
+        let keys = get_test_keys();
+
+        // First two attempts should be allowed (burst_size = 2)
+        for attempt in 1..=2 {
+            let (result, log) = execute_middleware_chain(
+                &route,
+                Some("Bearer invalid-token"),
+                None,
+                &mut auth_limiter,
+                &mut limiter,
+                &keys,
+                |_identity, _ctx| Ok("should not reach"),
+            );
+
+            // Should fail due to invalid auth, not rate limiting
+            assert!(result.is_err(), "Attempt {}: should fail auth", attempt);
+            assert_eq!(log.status, 401, "Attempt {}: should be auth failure", attempt);
+        }
+
+        // Third attempt should be rate limited
+        let (result, log) = execute_middleware_chain(
+            &route,
+            Some("Bearer invalid-token"),
+            None,
+            &mut auth_limiter,
+            &mut limiter,
+            &keys,
+            |_identity, _ctx| Ok("should not reach"),
+        );
+
+        // Should fail due to rate limiting before reaching auth
+        assert!(result.is_err(), "Third attempt should fail");
+        assert_eq!(log.status, 429, "Third attempt should be rate limited");
+    }
+
+    #[test]
+    fn auth_failure_rate_limiting_skips_no_auth_routes() {
+        let route = RouteMetadata {
+            method: "GET".to_string(),
+            path: "/v1/operator/health".to_string(),
+            group: EndpointGroup::Operator,
+            lifecycle: EndpointLifecycle::Stable,
+            auth_method: AuthMethod::None, // No authentication required
+            policy_hook: PolicyHook {
+                hook_id: "operator.health.read".to_string(),
+                required_roles: vec![],
+            },
+            trace_propagation: true,
+        };
+
+        // Create auth failure limiter with burst size 0 (should block everything if applied)
+        let mut auth_limiter = AuthFailureLimiter::with_config(RateLimitConfig {
+            sustained_rps: 1,
+            burst_size: 0,
+            fail_closed: true,
+        });
+        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
+        let keys = get_test_keys();
+
+        // Should succeed because auth failure limiting is skipped for AuthMethod::None
+        let (result, log) = execute_middleware_chain(
+            &route,
+            None,
+            None,
+            &mut auth_limiter,
+            &mut limiter,
+            &keys,
+            |_identity, _ctx| Ok("success".to_string()),
+        );
+
+        assert!(result.is_ok(), "Should succeed for no-auth route");
+        assert_eq!(log.status, 200, "Should return success status");
+    }
 }
