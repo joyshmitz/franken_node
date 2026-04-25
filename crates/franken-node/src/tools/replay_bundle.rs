@@ -1086,6 +1086,7 @@ pub fn read_bundle_from_path_with_trusted_key(
     if !validate_bundle_integrity(&bundle)? {
         return Err(ReplayBundleError::IntegrityMismatch);
     }
+    validate_adversarial_bundle_shape(&bundle)?;
     verify_replay_bundle_signature(&bundle, trusted_key_id)?;
     Ok(bundle)
 }
@@ -1100,6 +1101,7 @@ pub fn read_bundle_from_path_with_trusted_keys(
     if !validate_bundle_integrity(&bundle)? {
         return Err(ReplayBundleError::IntegrityMismatch);
     }
+    validate_adversarial_bundle_shape(&bundle)?;
     verify_replay_bundle_signature_with_trust_set(&bundle, trusted_key_ids)?;
     Ok(bundle)
 }
