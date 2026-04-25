@@ -178,6 +178,24 @@ impl std::fmt::Display for PersistenceError {
 }
 
 use crate::capacity_defaults::aliases::MAX_TOTAL_ARTIFACTS;
+use crate::capacity_defaults::base;
+
+/// Maximum sequence length per artifact type to prevent unbounded growth.
+const MAX_SEQUENCE_PER_TYPE: usize = base::STANDARD;
+
+/// Push item to vector with bounded capacity to prevent memory exhaustion.
+/// When capacity is exceeded, removes oldest entries to maintain the limit.
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
+    if items.len() >= cap {
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow);
+    }
+    items.push(item);
+}
 
 /// Artifact persistence store with replay hooks.
 #[derive(Debug)]
@@ -268,7 +286,7 @@ impl ArtifactStore {
 
         self.artifacts.insert(artifact_id.to_string(), artifact);
         let seq_list = self.sequences.entry(artifact_type).or_default();
-        seq_list.push(artifact_id.to_string());
+        push_bounded(seq_list, artifact_id.to_string(), MAX_SEQUENCE_PER_TYPE);
         // Evict oldest artifacts when total exceeds capacity
         if self.artifacts.len() > MAX_TOTAL_ARTIFACTS
             && let Some((_, evict_list)) = self.sequences.iter_mut().max_by_key(|(_, v)| v.len())
