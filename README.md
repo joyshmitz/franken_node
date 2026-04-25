@@ -1,7 +1,7 @@
 # franken_node
 
 <div align="center">
-  <img src="franken_node_illustration.webp" alt="franken_node - trust-native JavaScript and TypeScript runtime platform">
+  <img src="docs/assets/franken_node_illustration.webp" alt="franken_node - trust-native JavaScript and TypeScript runtime platform">
 </div>
 
 <div align="center">
