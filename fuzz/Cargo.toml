@@ -267,3 +267,9 @@ name = "fuzz_compromise_reduction_report_json"
 path = "fuzz_targets/fuzz_compromise_reduction_report_json.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_evidence_ledger_jsonl_spill"
+path = "fuzz_targets/fuzz_evidence_ledger_jsonl_spill.rs"
+test = false
+doc = false
