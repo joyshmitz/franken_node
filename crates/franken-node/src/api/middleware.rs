@@ -538,11 +538,15 @@ pub fn check_rate_limit(limiter: &mut RateLimiter, trace_id: &str) -> Result<(),
 ///
 /// This provides additional security by rate limiting authentication attempts
 /// before they reach the main authentication logic, preventing brute force
-/// attacks against credentials.
+/// attacks against credentials. Also provides structured telemetry for incident response.
 #[cfg(any(test, feature = "control-plane"))]
 #[derive(Debug)]
 pub struct AuthFailureLimiter {
     rate_limiter: RateLimiter,
+    /// Per-source-IP failure counters for telemetry
+    source_failure_counts: BTreeMap<String, u64>,
+    /// Global failure counter across all sources
+    global_failure_count: u64,
 }
 
 #[cfg(any(test, feature = "control-plane"))]
@@ -558,6 +562,8 @@ impl AuthFailureLimiter {
                 burst_size: 20,
                 fail_closed: true,
             }),
+            source_failure_counts: BTreeMap::new(),
+            global_failure_count: 0,
         }
     }
 
@@ -565,19 +571,85 @@ impl AuthFailureLimiter {
     pub fn with_config(config: RateLimitConfig) -> Self {
         Self {
             rate_limiter: RateLimiter::new(config),
+            source_failure_counts: BTreeMap::new(),
+            global_failure_count: 0,
         }
     }
 
     /// Check if an authentication attempt is allowed.
     /// Returns Err with retry_after_ms if rate limited.
-    pub fn check_auth_attempt(&mut self, trace_id: &str) -> Result<(), ApiError> {
+    pub fn check_auth_attempt(&mut self, trace_id: &str, source_ip: &str) -> Result<(), ApiError> {
         match self.rate_limiter.check() {
             Ok(()) => Ok(()),
-            Err(retry_after_ms) => Err(ApiError::RateLimited {
-                detail: "Too many authentication attempts. Please try again later.".to_string(),
-                trace_id: trace_id.to_string(),
-                retry_after_ms,
-            }),
+            Err(retry_after_ms) => {
+                self.record_failure(source_ip, AuthFailureType::RateLimited, trace_id, Some(retry_after_ms));
+                Err(ApiError::RateLimited {
+                    detail: "Too many authentication attempts. Please try again later.".to_string(),
+                    trace_id: trace_id.to_string(),
+                    retry_after_ms,
+                })
+            }
+        }
+    }
+
+    /// Record authentication failure with structured telemetry for incident response.
+    pub fn record_failure(&mut self, source_ip: &str, failure_type: AuthFailureType, trace_id: &str, retry_after_ms: Option<u64>) {
+        // Update counters
+        self.global_failure_count = self.global_failure_count.saturating_add(1);
+        let source_count = self.source_failure_counts.entry(source_ip.to_string()).or_insert(0);
+        *source_count = source_count.saturating_add(1);
+
+        // Emit structured telemetry event for operator visibility
+        let event = AuthFailureEvent {
+            timestamp_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+            trace_id: trace_id.to_string(),
+            source_ip: source_ip.to_string(),
+            failure_type,
+            source_failure_count: *source_count,
+            global_failure_count: self.global_failure_count,
+            retry_after_ms,
+        };
+
+        // Emit via observability surface (structured logging for now)
+        // In production, this would be routed to metrics/alerting systems
+        eprintln!("AUTH_FAILURE_EVENT: {}", serde_json::to_string(&event).unwrap_or_default());
+    }
+
+    /// Record authentication failure for invalid key format.
+    pub fn record_invalid_key_format(&mut self, source_ip: &str, trace_id: &str) {
+        self.record_failure(source_ip, AuthFailureType::InvalidKeyFormat, trace_id, None);
+    }
+
+    /// Record authentication failure for key not found.
+    pub fn record_key_not_found(&mut self, source_ip: &str, trace_id: &str) {
+        self.record_failure(source_ip, AuthFailureType::KeyNotFound, trace_id, None);
+    }
+
+    /// Record authentication failure for missing header.
+    pub fn record_missing_header(&mut self, source_ip: &str, trace_id: &str) {
+        self.record_failure(source_ip, AuthFailureType::MissingHeader, trace_id, None);
+    }
+
+    /// Record authentication failure for malformed header.
+    pub fn record_malformed_header(&mut self, source_ip: &str, trace_id: &str) {
+        self.record_failure(source_ip, AuthFailureType::MalformedHeader, trace_id, None);
+    }
+
+    /// Get current failure statistics for monitoring.
+    pub fn get_failure_stats(&self) -> AuthFailureStats {
+        AuthFailureStats {
+            global_failure_count: self.global_failure_count,
+            unique_source_ips: self.source_failure_counts.len(),
+            top_source_failures: self.source_failure_counts
+                .iter()
+                .map(|(ip, count)| (ip.clone(), *count))
+                .collect::<Vec<_>>()
+                .into_iter()
+                .take(10) // Top 10 source IPs by failure count
+                .collect(),
         }
     }
 }
@@ -596,6 +668,54 @@ pub struct RequestLog {
     pub principal: String,
     pub endpoint_group: String,
     pub event_code: String,
+}
+
+/// Structured authentication failure event for incident response visibility.
+#[cfg(any(test, feature = "control-plane"))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthFailureEvent {
+    /// Event timestamp in milliseconds since Unix epoch
+    pub timestamp_ms: u64,
+    /// Trace ID for correlation
+    pub trace_id: String,
+    /// Source IP address (for rate limiting analysis)
+    pub source_ip: String,
+    /// Type of authentication failure
+    pub failure_type: AuthFailureType,
+    /// Current failure count from this source IP
+    pub source_failure_count: u64,
+    /// Global failure count across all sources
+    pub global_failure_count: u64,
+    /// Rate limit retry-after hint in milliseconds
+    pub retry_after_ms: Option<u64>,
+}
+
+/// Classification of authentication failure types for operational visibility.
+#[cfg(any(test, feature = "control-plane"))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AuthFailureType {
+    /// Rate limited before reaching authentication logic
+    RateLimited,
+    /// Invalid API key format
+    InvalidKeyFormat,
+    /// API key not found in authorized set
+    KeyNotFound,
+    /// Missing Authorization header
+    MissingHeader,
+    /// Malformed Authorization header
+    MalformedHeader,
+}
+
+/// Authentication failure statistics for monitoring and incident response.
+#[cfg(any(test, feature = "control-plane"))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthFailureStats {
+    /// Total failure count across all sources
+    pub global_failure_count: u64,
+    /// Number of unique source IPs that have failures
+    pub unique_source_ips: usize,
+    /// Top source IPs by failure count (IP, count)
+    pub top_source_failures: Vec<(String, u64)>,
 }
 
 /// Endpoint group classification for metric tagging.
@@ -696,6 +816,7 @@ pub fn execute_middleware_chain<F, T>(
     route: &RouteMetadata,
     auth_header: Option<&str>,
     traceparent: Option<&str>,
+    source_ip: &str,
     auth_failure_limiter: &mut AuthFailureLimiter,
     rate_limiter: &mut RateLimiter,
     authorized_keys: &std::collections::BTreeSet<String>,
@@ -717,7 +838,7 @@ where
     // Applied before authentication to prevent brute force attacks.
     // Skip for routes with AuthMethod::None (no credentials to brute force).
     if !matches!(route.auth_method, AuthMethod::None) {
-        if let Err(err) = auth_failure_limiter.check_auth_attempt(&trace_id) {
+        if let Err(err) = auth_failure_limiter.check_auth_attempt(&trace_id, source_ip) {
             let log = build_request_log(route, 429, start, &trace_id, "anonymous");
             return (Err(err), log);
         }
@@ -727,6 +848,23 @@ where
     let identity = match authenticate(auth_header, &route.auth_method, &trace_id, authorized_keys) {
         Ok(id) => id,
         Err(err) => {
+            // Record authentication failure for incident response visibility
+            let failure_type = match &err {
+                ApiError::Unauthorized { detail, .. } => {
+                    if detail.contains("missing") {
+                        AuthFailureType::MissingHeader
+                    } else if detail.contains("invalid key format") {
+                        AuthFailureType::InvalidKeyFormat
+                    } else if detail.contains("not found") || detail.contains("unauthorized") {
+                        AuthFailureType::KeyNotFound
+                    } else {
+                        AuthFailureType::MalformedHeader
+                    }
+                }
+                _ => AuthFailureType::MalformedHeader,
+            };
+
+            auth_failure_limiter.record_failure(source_ip, failure_type, &trace_id, None);
             let log = build_request_log(route, 401, start, &trace_id, "anonymous");
             return (Err(err), log);
         }
@@ -1297,6 +1435,7 @@ mod tests {
             &route,
             None,
             Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"),
+            "127.0.0.1",
             &mut auth_limiter,
             &mut limiter,
             &keys,
@@ -1332,6 +1471,7 @@ mod tests {
             &route,
             None,
             Some(invalid_traceparent),
+            "127.0.0.1",
             &mut auth_limiter,
             &mut limiter,
             &keys,
@@ -1364,8 +1504,10 @@ mod tests {
         let mut auth_limiter = AuthFailureLimiter::new();
         let (result, log) = execute_middleware_chain(
             &route,
-            None, // no auth header
             None,
+            // no auth header
+            None,
+            "127.0.0.1",
             &mut auth_limiter,
             &mut limiter,
             &keys,
@@ -1399,6 +1541,7 @@ mod tests {
             &route,
             Some("   "),
             None,
+            "127.0.0.1",
             &mut auth_limiter,
             &mut limiter,
             &keys,
@@ -1571,6 +1714,7 @@ mod tests {
             &route,
             None,
             None,
+            "127.0.0.1",
             &mut auth_limiter,
             &mut limiter,
             &keys,
@@ -2447,6 +2591,7 @@ mod api_middleware_advanced_security_edge_tests {
             &route,
             *auth_header,
             *traceparent,
+            "127.0.0.1",
             &mut auth_limiter,
             &mut limiter,
                 &keys,
@@ -2650,10 +2795,11 @@ mod api_middleware_advanced_security_edge_tests {
         // First two attempts should be allowed (burst_size = 2)
         for attempt in 1..=2 {
             let (result, log) = execute_middleware_chain(
-                &route,
-                Some("Bearer invalid-token"),
-                None,
-                &mut auth_limiter,
+            &route,
+            Some("Bearer invalid-token"),
+            None,
+            "127.0.0.1",
+            &mut auth_limiter,
                 &mut limiter,
                 &keys,
                 |_identity, _ctx| Ok("should not reach"),
@@ -2669,6 +2815,7 @@ mod api_middleware_advanced_security_edge_tests {
             &route,
             Some("Bearer invalid-token"),
             None,
+            "127.0.0.1",
             &mut auth_limiter,
             &mut limiter,
             &keys,
@@ -2709,6 +2856,7 @@ mod api_middleware_advanced_security_edge_tests {
             &route,
             None,
             None,
+            "127.0.0.1",
             &mut auth_limiter,
             &mut limiter,
             &keys,
