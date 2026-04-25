@@ -154,6 +154,21 @@ fn run_doctor(args: &[String]) -> Output {
         .expect("run franken-node doctor")
 }
 
+fn run_doctor_with_env(args: &[String], env_pairs: &[(&str, String)]) -> Output {
+    let repo = repo_root();
+    let mut command = doctor_command(&repo);
+    command.env_remove(POLICY_ACTIVATION_INPUT_ENV);
+    command.env_remove("FRANKEN_NODE_PROFILE");
+    command.env_remove("FRANKEN_NODE_MAX_MERGE_DECISIONS");
+    for (key, value) in env_pairs {
+        command.env(key, value);
+    }
+    command
+        .args(args)
+        .output()
+        .expect("run franken-node doctor with env")
+}
+
 fn parse_report(output: &Output) -> Value {
     assert!(
         output.status.success(),
@@ -162,6 +177,36 @@ fn parse_report(output: &Output) -> Value {
         String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).expect("doctor stdout must be valid JSON")
+}
+
+fn canonicalize_doctor_runtime_metadata(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            for (key, nested) in object {
+                match key.as_str() {
+                    "generated_at_utc" | "timestamp" => {
+                        *nested = Value::String("[TIMESTAMP]".to_string());
+                    }
+                    "duration_ms" => {
+                        *nested = Value::Number(0_u64.into());
+                    }
+                    _ => canonicalize_doctor_runtime_metadata(nested),
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                canonicalize_doctor_runtime_metadata(item);
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
+fn canonical_doctor_stdout_bytes(output: &Output) -> Vec<u8> {
+    let mut report = parse_report(output);
+    canonicalize_doctor_runtime_metadata(&mut report);
+    serde_json::to_vec(&report).expect("canonical doctor JSON should serialize")
 }
 
 fn parse_jsonl(bytes: &[u8]) -> Vec<Value> {
@@ -654,4 +699,135 @@ fn doctor_json_schema_validator_rejects_contract_drift() {
         result.is_err(),
         "schema validator must reject statuses outside pass|warn|fail"
     );
+}
+
+#[cfg(test)]
+mod doctor_json_metamorphic_tests {
+    use super::*;
+
+    #[derive(Debug, Clone)]
+    struct DeterministicRng {
+        state: u64,
+    }
+
+    impl DeterministicRng {
+        fn new(seed: u64) -> Self {
+            Self { state: seed }
+        }
+
+        fn next_u64(&mut self) -> u64 {
+            self.state = self
+                .state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
+            self.state
+        }
+
+        fn next_usize(&mut self, upper_bound: usize) -> usize {
+            (self.next_u64() as usize) % upper_bound
+        }
+    }
+
+    fn shuffled_env_pairs(
+        seed: u64,
+        profile: &str,
+        max_merge_decisions: u64,
+    ) -> Vec<(&'static str, String)> {
+        let mut pairs = vec![
+            ("FRANKEN_NODE_PROFILE", profile.to_string()),
+            (
+                "FRANKEN_NODE_MAX_MERGE_DECISIONS",
+                max_merge_decisions.to_string(),
+            ),
+            ("ZZ_DOCTOR_RANDOM_ENV", format!("z-{seed:016x}")),
+            ("AA_DOCTOR_RANDOM_ENV", format!("a-{seed:016x}")),
+            ("MM_DOCTOR_RANDOM_ENV", format!("m-{seed:016x}")),
+        ];
+        let mut rng = DeterministicRng::new(seed ^ 0xa11c_e55e_d0c7_0123);
+        for index in 0..pairs.len() {
+            let swap_index = index + rng.next_usize(pairs.len() - index);
+            pairs.swap(index, swap_index);
+        }
+        pairs
+    }
+
+    fn random_doctor_args(rng: &mut DeterministicRng, index: usize) -> Vec<String> {
+        let mut args = doctor_args(&format!("doctor-metamorphic-{index:02x}"), []);
+        match rng.next_usize(5) {
+            0 => {}
+            1 => {
+                args.push("--profile".to_string());
+                args.push("strict".to_string());
+            }
+            2 => {
+                args.push("--profile".to_string());
+                args.push("balanced".to_string());
+            }
+            3 => {
+                args.push("--profile".to_string());
+                args.push("legacy-risky".to_string());
+            }
+            _ => {
+                args.push("--structured-logs-jsonl".to_string());
+            }
+        }
+
+        match rng.next_usize(4) {
+            0 => {}
+            1 => {
+                args.push("--policy-activation-input".to_string());
+                args.push(
+                    fixture_path("doctor_policy_activation_pass.json")
+                        .display()
+                        .to_string(),
+                );
+            }
+            2 => {
+                args.push("--policy-activation-input".to_string());
+                args.push(
+                    fixture_path("doctor_policy_activation_block.json")
+                        .display()
+                        .to_string(),
+                );
+            }
+            _ => {
+                args.push("--policy-activation-input".to_string());
+                args.push(
+                    fixture_path("doctor_policy_activation_invalid.json")
+                        .display()
+                        .to_string(),
+                );
+            }
+        }
+
+        args
+    }
+
+    #[test]
+    fn doctor_json_output_canonicalization_is_metamorphically_stable() {
+        let mut rng = DeterministicRng::new(0xd0c7_0c4f_e1f0_2026);
+
+        for index in 0..56 {
+            let seed = rng.next_u64();
+            let args = random_doctor_args(&mut rng, index);
+            let profile = match rng.next_usize(3) {
+                0 => "strict",
+                1 => "balanced",
+                _ => "legacy-risky",
+            };
+            let max_merge_decisions = 1 + (rng.next_u64() % 32);
+            let cold_env = shuffled_env_pairs(seed, profile, max_merge_decisions);
+            let mut warm_env = cold_env.clone();
+            warm_env.reverse();
+
+            let cold_output = run_doctor_with_env(&args, &cold_env);
+            let warm_output = run_doctor_with_env(&args, &warm_env);
+
+            assert_eq!(
+                canonical_doctor_stdout_bytes(&cold_output),
+                canonical_doctor_stdout_bytes(&warm_output),
+                "doctor JSON canonical output drifted for args={args:?} env={cold_env:?}"
+            );
+        }
+    }
 }
