@@ -79,6 +79,11 @@ pub mod error_codes {
     pub const ERR_PIPE_ROLLBACK_FAILED: &str = "ERR_PIPE_ROLLBACK_FAILED";
     pub const ERR_PIPE_THRESHOLD_NOT_MET: &str = "ERR_PIPE_THRESHOLD_NOT_MET";
     pub const ERR_PIPE_DUPLICATE_EXTENSION: &str = "ERR_PIPE_DUPLICATE_EXTENSION";
+    /// Hash input exceeded the deterministic pipeline length-prefix boundary.
+    ///
+    /// Operator recovery: reduce the artifact below the 4 GiB input boundary, or
+    /// split it into chunks and retry through the streaming hash path.
+    pub const ERR_PIPE_HASH_OVERFLOW: &str = "ERR_PIPE_HASH_OVERFLOW";
 }
 
 // ---------------------------------------------------------------------------
@@ -788,8 +793,10 @@ pub fn is_idempotent(a: &PipelineState, b: &PipelineState) -> bool {
 /// Convert length to u64 safely for hash prefixing.
 fn safe_length_prefix(len: usize) -> Result<[u8; 8], PipelineError> {
     let len_u64 = u64::try_from(len).map_err(|_| PipelineError {
-        code: "HASH_LENGTH_OVERFLOW".to_string(),
-        message: format!("Collection length {len} exceeds u64::MAX for hash prefixing"),
+        code: error_codes::ERR_PIPE_HASH_OVERFLOW.to_string(),
+        message: format!(
+            "Collection length {len} exceeds the hash prefix limit; reduce the input below 4 GiB or chunk the artifact and use the streaming hash path"
+        ),
     })?;
     Ok(len_u64.to_le_bytes())
 }
@@ -3042,6 +3049,10 @@ mod tests {
         assert_eq!(
             error_codes::ERR_PIPE_DUPLICATE_EXTENSION,
             "ERR_PIPE_DUPLICATE_EXTENSION"
+        );
+        assert_eq!(
+            error_codes::ERR_PIPE_HASH_OVERFLOW,
+            "ERR_PIPE_HASH_OVERFLOW"
         );
     }
 
