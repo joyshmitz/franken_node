@@ -292,6 +292,24 @@ mod tests {
     }
 
     #[test]
+    fn standard_tier_allows_stale_revocation_age() {
+        let stale_age = policy().risky_max_age_secs + 1;
+
+        let decision = evaluate_freshness(
+            &policy(),
+            &check_action(SafetyTier::Standard, stale_age),
+            None,
+        )
+        .expect("standard tier should ignore stale revocation age");
+
+        assert!(decision.allowed);
+        assert_eq!(decision.tier, SafetyTier::Standard);
+        assert_eq!(decision.revocation_age_secs, stale_age);
+        assert_eq!(decision.max_age_secs, None);
+        assert_eq!(decision.override_receipt, None);
+    }
+
+    #[test]
     fn risky_fresh_passes() {
         let d = evaluate_freshness(&policy(), &check_action(SafetyTier::Risky, 1000), None)
             .expect("should succeed");
