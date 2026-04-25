@@ -219,7 +219,12 @@ impl ReliabilityTelemetry {
             } else {
                 (1u64 << 53) as f64 // Cap to prevent precision loss
             };
-            nonconforming_f64 / sample_f64
+            let result = nonconforming_f64 / sample_f64;
+            if result.is_finite() {
+                result
+            } else {
+                0.0 // Conservative default for NaN/Inf cases
+            }
         }
     }
 }
@@ -240,7 +245,12 @@ impl SystemState {
         } else {
             (1u64 << 53) as f64 // Cap to prevent precision loss
         };
-        used_f64 / budget_f64
+        let result = used_f64 / budget_f64;
+        if result.is_finite() {
+            result
+        } else {
+            1.0 // Conservative default: assume full utilization if calculation fails
+        }
     }
 }
 
