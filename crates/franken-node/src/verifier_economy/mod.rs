@@ -86,7 +86,11 @@ fn compute_claim_metadata_hash(
     payload.extend_from_slice(b"verifier_economy_replay_claim_v1:");
     push_length_prefixed(&mut payload, &dimension.to_string());
     push_length_prefixed(&mut payload, statement);
-    let score_bits = if score.is_finite() { score.to_bits() } else { 0_f64.to_bits() };
+    let score_bits = if score.is_finite() {
+        score.to_bits()
+    } else {
+        0_f64.to_bits()
+    };
     payload.extend_from_slice(&score_bits.to_le_bytes());
     push_length_prefixed(&mut payload, suite_id);
     format!("sha256:{}", hex::encode(Sha256::digest(payload)))
@@ -145,15 +149,23 @@ pub(crate) fn attestation_signature_payload(submission: &AttestationSubmission) 
     push_length_prefixed(&mut payload, &submission.verifier_id);
     push_length_prefixed(&mut payload, &submission.claim.dimension.to_string());
     push_length_prefixed(&mut payload, &submission.claim.statement);
-    let score_bits = if submission.claim.score.is_finite() { submission.claim.score.to_bits() } else { 0_f64.to_bits() };
+    let score_bits = if submission.claim.score.is_finite() {
+        submission.claim.score.to_bits()
+    } else {
+        0_f64.to_bits()
+    };
     payload.extend_from_slice(&score_bits.to_le_bytes());
     push_length_prefixed(&mut payload, &submission.evidence.suite_id);
     push_length_prefixed(&mut payload, &submission.evidence.execution_trace_hash);
-    payload.extend_from_slice(&(u64::try_from(submission.evidence.measurements.len()).unwrap_or(u64::MAX)).to_le_bytes());
+    payload.extend_from_slice(
+        &(u64::try_from(submission.evidence.measurements.len()).unwrap_or(u64::MAX)).to_le_bytes(),
+    );
     for measurement in &submission.evidence.measurements {
         push_length_prefixed(&mut payload, measurement);
     }
-    payload.extend_from_slice(&(u64::try_from(submission.evidence.environment.len()).unwrap_or(u64::MAX)).to_le_bytes());
+    payload.extend_from_slice(
+        &(u64::try_from(submission.evidence.environment.len()).unwrap_or(u64::MAX)).to_le_bytes(),
+    );
     for (key, value) in &submission.evidence.environment {
         push_length_prefixed(&mut payload, key);
         push_length_prefixed(&mut payload, value);
@@ -243,6 +255,17 @@ pub enum CapsuleVerificationFailure {
 
 impl CapsuleVerificationFailure {
     /// Stable error code for this failure reason.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::{
+    ///     CapsuleVerificationFailure, ERR_VEP_CAPSULE_MISSING_FIELDS,
+    /// };
+    ///
+    /// let failure = CapsuleVerificationFailure::MissingFields("capsule_id");
+    /// assert_eq!(failure.code(), ERR_VEP_CAPSULE_MISSING_FIELDS);
+    /// ```
     pub fn code(&self) -> &'static str {
         match self {
             Self::MissingFields(_) => ERR_VEP_CAPSULE_MISSING_FIELDS,
@@ -261,6 +284,15 @@ impl CapsuleVerificationFailure {
     }
 
     /// Human-readable detail for structured logging.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::CapsuleVerificationFailure;
+    ///
+    /// let detail = CapsuleVerificationFailure::HashFormatInvalid("integrity_hash").detail();
+    /// assert!(detail.contains("integrity_hash"));
+    /// ```
     pub fn detail(&self) -> String {
         match self {
             Self::MissingFields(field) => format!("required field empty: {field}"),
@@ -360,6 +392,15 @@ impl fmt::Display for ReputationTier {
 }
 
 /// Map a reputation score (0-100) to a tier.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::verifier_economy::{reputation_tier_from_score, ReputationTier};
+///
+/// assert_eq!(reputation_tier_from_score(10), ReputationTier::Novice);
+/// assert_eq!(reputation_tier_from_score(90), ReputationTier::Trusted);
+/// ```
 pub fn reputation_tier_from_score(score: u32) -> ReputationTier {
     match score {
         0..=24 => ReputationTier::Novice,
@@ -642,10 +683,31 @@ impl Default for VerifierEconomyRegistry {
 }
 
 impl VerifierEconomyRegistry {
+    /// Create an empty verifier-economy registry.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let registry = VerifierEconomyRegistry::new();
+    /// assert_eq!(registry.verifier_count(), 0);
+    /// assert!(registry.events().is_empty());
+    /// ```
     pub fn new() -> Self {
         Self::with_replay_capsule_freshness_secs(DEFAULT_REPLAY_CAPSULE_FRESHNESS_SECS as u64)
     }
 
+    /// Create a registry with a custom replay-capsule freshness limit.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let registry = VerifierEconomyRegistry::with_replay_capsule_freshness_secs(120);
+    /// assert_eq!(registry.replay_capsule_freshness_secs(), 120);
+    /// ```
     pub fn with_replay_capsule_freshness_secs(replay_capsule_freshness_secs: u64) -> Self {
         let replay_capsule_freshness_secs =
             i64::try_from(replay_capsule_freshness_secs.max(1)).unwrap_or(i64::MAX);
@@ -670,10 +732,32 @@ impl VerifierEconomyRegistry {
         }
     }
 
+    /// Create a registry from replay configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::ReplayConfig;
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let config = ReplayConfig { max_replay_capsule_freshness_secs: 90, ..ReplayConfig::default() };
+    /// let registry = VerifierEconomyRegistry::from_replay_config(&config);
+    /// assert_eq!(registry.replay_capsule_freshness_secs(), 90);
+    /// ```
     pub fn from_replay_config(config: &crate::config::ReplayConfig) -> Self {
         Self::with_replay_capsule_freshness_secs(config.max_replay_capsule_freshness_secs)
     }
 
+    /// Return the configured replay-capsule freshness limit in seconds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let registry = VerifierEconomyRegistry::with_replay_capsule_freshness_secs(1);
+    /// assert_eq!(registry.replay_capsule_freshness_secs(), 1);
+    /// ```
     #[must_use]
     pub fn replay_capsule_freshness_secs(&self) -> i64 {
         self.replay_capsule_freshness_secs
@@ -758,16 +842,56 @@ impl VerifierEconomyRegistry {
         })
     }
 
+    /// Return emitted verifier-economy events without draining them.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let registry = VerifierEconomyRegistry::new();
+    /// assert!(registry.events().is_empty());
+    /// ```
     pub fn events(&self) -> &[VerifierEconomyEvent] {
         &self.events
     }
 
+    /// Drain and return all emitted verifier-economy events.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let mut registry = VerifierEconomyRegistry::new();
+    /// assert!(registry.take_events().is_empty());
+    /// ```
     pub fn take_events(&mut self) -> Vec<VerifierEconomyEvent> {
         std::mem::take(&mut self.events)
     }
 
     // -- Verifier registration -----------------------------------------------
 
+    /// Register a verifier identity and canonicalize its Ed25519 public key.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::{
+    ///     VerifierEconomyRegistry, VerifierRegistration, VerifierTier, VerificationDimension,
+    ///     ERR_VEP_INVALID_PUBLIC_KEY,
+    /// };
+    ///
+    /// let mut registry = VerifierEconomyRegistry::new();
+    /// let err = registry.register_verifier(VerifierRegistration {
+    ///     name: "Example Verifier".to_string(),
+    ///     contact: "verify@example.test".to_string(),
+    ///     public_key: "not-an-ed25519-key".to_string(),
+    ///     capabilities: vec![VerificationDimension::Compatibility],
+    ///     tier: VerifierTier::Basic,
+    /// }).unwrap_err();
+    /// assert_eq!(err.code, ERR_VEP_INVALID_PUBLIC_KEY);
+    /// ```
     pub fn register_verifier(&mut self, reg: VerifierRegistration) -> VepResult<Verifier> {
         let canonical_public_key =
             canonicalize_ed25519_public_key_hex(&reg.public_key).map_err(|message| VepError {
@@ -819,14 +943,43 @@ impl VerifierEconomyRegistry {
         Ok(verifier)
     }
 
+    /// Look up a verifier by ID.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let registry = VerifierEconomyRegistry::new();
+    /// assert!(registry.get_verifier("ver-0001").is_none());
+    /// ```
     pub fn get_verifier(&self, verifier_id: &str) -> Option<&Verifier> {
         self.verifiers.get(verifier_id)
     }
 
+    /// List registered verifiers in deterministic key order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let registry = VerifierEconomyRegistry::new();
+    /// assert!(registry.list_verifiers().is_empty());
+    /// ```
     pub fn list_verifiers(&self) -> Vec<&Verifier> {
         self.verifiers.values().collect()
     }
 
+    /// Return the number of registered verifiers.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// assert_eq!(VerifierEconomyRegistry::new().verifier_count(), 0);
+    /// ```
     pub fn verifier_count(&self) -> usize {
         self.verifiers.len()
     }
@@ -835,6 +988,39 @@ impl VerifierEconomyRegistry {
 
     /// Submit an attestation. Validates structure and signature before accepting.
     /// Follows INV-VEP-PUBLISH: submit -> review -> publish.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::{
+    ///     AttestationClaim, AttestationEvidence, AttestationSignature, AttestationSubmission,
+    ///     ERR_VEP_UNREGISTERED_VERIFIER, VerifierEconomyRegistry, VerificationDimension,
+    /// };
+    /// use std::collections::BTreeMap;
+    ///
+    /// let mut registry = VerifierEconomyRegistry::new();
+    /// let err = registry.submit_attestation(AttestationSubmission {
+    ///     verifier_id: "ver-0001".to_string(),
+    ///     claim: AttestationClaim {
+    ///         dimension: VerificationDimension::Compatibility,
+    ///         statement: "compatibility suite passed".to_string(),
+    ///         score: 0.95,
+    ///     },
+    ///     evidence: AttestationEvidence {
+    ///         suite_id: "suite-compat".to_string(),
+    ///         measurements: Vec::new(),
+    ///         execution_trace_hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+    ///         environment: BTreeMap::new(),
+    ///     },
+    ///     signature: AttestationSignature {
+    ///         algorithm: "ed25519".to_string(),
+    ///         public_key: String::new(),
+    ///         value: String::new(),
+    ///     },
+    ///     timestamp: "2026-04-25T00:00:00Z".to_string(),
+    /// }).unwrap_err();
+    /// assert_eq!(err.code, ERR_VEP_UNREGISTERED_VERIFIER);
+    /// ```
     pub fn submit_attestation(
         &mut self,
         mut submission: AttestationSubmission,
@@ -875,7 +1061,11 @@ impl VerifierEconomyRegistry {
         let canonical_trace_hash = match canonicalize_sha256_prefixed_hex(
             &submission.evidence.execution_trace_hash,
         ) {
-            Some(hash) if constant_time::ct_eq(&hash, &submission.evidence.execution_trace_hash) => hash,
+            Some(hash)
+                if constant_time::ct_eq(&hash, &submission.evidence.execution_trace_hash) =>
+            {
+                hash
+            }
             _ => {
                 self.emit(
                     VEP_008,
@@ -1023,6 +1213,16 @@ impl VerifierEconomyRegistry {
 
     /// Review an attestation. Transitions from Submitted to UnderReview.
     /// Part of INV-VEP-PUBLISH flow.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::{VerifierEconomyRegistry, ERR_VEP_INCOMPLETE_PAYLOAD};
+    ///
+    /// let mut registry = VerifierEconomyRegistry::new();
+    /// let err = registry.review_attestation("att-0001").unwrap_err();
+    /// assert_eq!(err.code, ERR_VEP_INCOMPLETE_PAYLOAD);
+    /// ```
     pub fn review_attestation(&mut self, attestation_id: &str) -> VepResult<AttestationState> {
         let att = self.attestations.get_mut(attestation_id).ok_or(VepError {
             code: ERR_VEP_INCOMPLETE_PAYLOAD.to_string(),
@@ -1042,6 +1242,16 @@ impl VerifierEconomyRegistry {
 
     /// Publish an attestation. Transitions from UnderReview to Published.
     /// Sets immutable=true per INV-VEP-ATTESTATION.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::{VerifierEconomyRegistry, ERR_VEP_INCOMPLETE_PAYLOAD};
+    ///
+    /// let mut registry = VerifierEconomyRegistry::new();
+    /// let err = registry.publish_attestation("att-0001").unwrap_err();
+    /// assert_eq!(err.code, ERR_VEP_INCOMPLETE_PAYLOAD);
+    /// ```
     pub fn publish_attestation(&mut self, attestation_id: &str) -> VepResult<AttestationState> {
         let att = self.attestations.get_mut(attestation_id).ok_or(VepError {
             code: ERR_VEP_INCOMPLETE_PAYLOAD.to_string(),
@@ -1070,6 +1280,16 @@ impl VerifierEconomyRegistry {
     }
 
     /// Reject an attestation during review.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::{VerifierEconomyRegistry, ERR_VEP_INCOMPLETE_PAYLOAD};
+    ///
+    /// let mut registry = VerifierEconomyRegistry::new();
+    /// let err = registry.reject_attestation("att-0001").unwrap_err();
+    /// assert_eq!(err.code, ERR_VEP_INCOMPLETE_PAYLOAD);
+    /// ```
     pub fn reject_attestation(&mut self, attestation_id: &str) -> VepResult<AttestationState> {
         let att = self.attestations.get_mut(attestation_id).ok_or(VepError {
             code: ERR_VEP_INCOMPLETE_PAYLOAD.to_string(),
@@ -1091,14 +1311,44 @@ impl VerifierEconomyRegistry {
         Ok(AttestationState::Rejected)
     }
 
+    /// Look up an attestation by ID.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let registry = VerifierEconomyRegistry::new();
+    /// assert!(registry.get_attestation("att-0001").is_none());
+    /// ```
     pub fn get_attestation(&self, attestation_id: &str) -> Option<&Attestation> {
         self.attestations.get(attestation_id)
     }
 
+    /// List all attestations in deterministic key order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let registry = VerifierEconomyRegistry::new();
+    /// assert!(registry.list_attestations().is_empty());
+    /// ```
     pub fn list_attestations(&self) -> Vec<&Attestation> {
         self.attestations.values().collect()
     }
 
+    /// List only published attestations.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let registry = VerifierEconomyRegistry::new();
+    /// assert!(registry.published_attestations().is_empty());
+    /// ```
     pub fn published_attestations(&self) -> Vec<&Attestation> {
         self.attestations
             .values()
@@ -1106,6 +1356,15 @@ impl VerifierEconomyRegistry {
             .collect()
     }
 
+    /// Return the number of tracked attestations.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// assert_eq!(VerifierEconomyRegistry::new().attestation_count(), 0);
+    /// ```
     pub fn attestation_count(&self) -> usize {
         self.attestations.len()
     }
@@ -1113,6 +1372,20 @@ impl VerifierEconomyRegistry {
     // -- Signature verification -----------------------------------------------
 
     /// Verify an attestation signature against the verifier's public key.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::{AttestationSignature, VerifierEconomyRegistry};
+    ///
+    /// let registry = VerifierEconomyRegistry::new();
+    /// let signature = AttestationSignature {
+    ///     algorithm: "ed25519".to_string(),
+    ///     public_key: "not-a-key".to_string(),
+    ///     value: String::new(),
+    /// };
+    /// assert!(!registry.verify_signature(&signature, "not-a-key", b"payload"));
+    /// ```
     pub fn verify_signature(
         &self,
         sig: &AttestationSignature,
@@ -1165,6 +1438,20 @@ impl VerifierEconomyRegistry {
 
     /// Compute verifier reputation deterministically.
     /// INV-VEP-REPUTATION: same inputs always produce the same score.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::{ReputationDimensions, VerifierEconomyRegistry};
+    ///
+    /// let score = VerifierEconomyRegistry::compute_reputation(&ReputationDimensions {
+    ///     consistency: 1.0,
+    ///     coverage: 0.8,
+    ///     accuracy: 0.9,
+    ///     longevity: 0.5,
+    /// });
+    /// assert!(score <= 100);
+    /// ```
     pub fn compute_reputation(dims: &ReputationDimensions) -> u32 {
         let raw = 0.35 * dims.consistency
             + 0.25 * dims.coverage
@@ -1178,6 +1465,23 @@ impl VerifierEconomyRegistry {
     }
 
     /// Update a verifier's reputation score with new dimension values.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::{
+    ///     ERR_VEP_UNREGISTERED_VERIFIER, ReputationDimensions, VerifierEconomyRegistry,
+    /// };
+    ///
+    /// let mut registry = VerifierEconomyRegistry::new();
+    /// let err = registry.update_reputation("ver-0001", &ReputationDimensions {
+    ///     consistency: 1.0,
+    ///     coverage: 1.0,
+    ///     accuracy: 1.0,
+    ///     longevity: 1.0,
+    /// }).unwrap_err();
+    /// assert_eq!(err.code, ERR_VEP_UNREGISTERED_VERIFIER);
+    /// ```
     pub fn update_reputation(
         &mut self,
         verifier_id: &str,
@@ -1209,6 +1513,21 @@ impl VerifierEconomyRegistry {
     // -- Disputes -------------------------------------------------------------
 
     /// File a dispute against a published attestation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::{VerifierEconomyRegistry, ERR_VEP_INCOMPLETE_PAYLOAD};
+    ///
+    /// let mut registry = VerifierEconomyRegistry::new();
+    /// let err = registry.file_dispute(
+    ///     "att-0001",
+    ///     "operator@example.test",
+    ///     "evidence mismatch",
+    ///     vec!["trace mismatch".to_string()],
+    /// ).unwrap_err();
+    /// assert_eq!(err.code, ERR_VEP_INCOMPLETE_PAYLOAD);
+    /// ```
     pub fn file_dispute(
         &mut self,
         attestation_id: &str,
@@ -1271,6 +1590,18 @@ impl VerifierEconomyRegistry {
     }
 
     /// Resolve a dispute with an outcome.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::{
+    ///     DisputeOutcome, VerifierEconomyRegistry, ERR_VEP_INCOMPLETE_PAYLOAD,
+    /// };
+    ///
+    /// let mut registry = VerifierEconomyRegistry::new();
+    /// let err = registry.resolve_dispute("dsp-0001", DisputeOutcome::Rejected).unwrap_err();
+    /// assert_eq!(err.code, ERR_VEP_INCOMPLETE_PAYLOAD);
+    /// ```
     pub fn resolve_dispute(&mut self, dispute_id: &str, outcome: DisputeOutcome) -> VepResult<()> {
         let now = self.now_epoch();
         let outcome_display = format!("{}", outcome);
@@ -1325,10 +1656,30 @@ impl VerifierEconomyRegistry {
         Ok(())
     }
 
+    /// Look up a dispute by ID.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let registry = VerifierEconomyRegistry::new();
+    /// assert!(registry.get_dispute("dsp-0001").is_none());
+    /// ```
     pub fn get_dispute(&self, dispute_id: &str) -> Option<&Dispute> {
         self.disputes.get(dispute_id)
     }
 
+    /// List tracked disputes in deterministic key order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let registry = VerifierEconomyRegistry::new();
+    /// assert!(registry.list_disputes().is_empty());
+    /// ```
     pub fn list_disputes(&self) -> Vec<&Dispute> {
         self.disputes.values().collect()
     }
@@ -1361,6 +1712,39 @@ impl VerifierEconomyRegistry {
             .map(|(capsule_id, _)| capsule_id.clone())
     }
 
+    /// Register a replay capsule after structural, binding, and signature checks.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::{
+    ///     AttestationSignature, ReplayCapsule, VerifierEconomyRegistry,
+    ///     ERR_VEP_CAPSULE_MISSING_FIELDS,
+    /// };
+    ///
+    /// let mut registry = VerifierEconomyRegistry::new();
+    /// let err = registry.register_replay_capsule(ReplayCapsule {
+    ///     capsule_id: String::new(),
+    ///     schema_version: String::new(),
+    ///     attestation_id: String::new(),
+    ///     verifier_id: String::new(),
+    ///     claim_metadata_hash: String::new(),
+    ///     issued_at: String::new(),
+    ///     expires_at: String::new(),
+    ///     input_state_hash: String::new(),
+    ///     trace_chunk_hashes: Vec::new(),
+    ///     trace_commitment_root: String::new(),
+    ///     output_state_hash: String::new(),
+    ///     expected_result_hash: String::new(),
+    ///     integrity_hash: String::new(),
+    ///     signature: AttestationSignature {
+    ///         algorithm: String::new(),
+    ///         public_key: String::new(),
+    ///         value: String::new(),
+    ///     },
+    /// }).unwrap_err();
+    /// assert_eq!(err.code, ERR_VEP_CAPSULE_MISSING_FIELDS);
+    /// ```
     pub fn register_replay_capsule(&mut self, capsule: ReplayCapsule) -> VepResult<()> {
         if let Err(failure) = self.verify_replay_capsule(&capsule) {
             return Err(Self::replay_capsule_rejection_error(
@@ -1385,10 +1769,22 @@ impl VerifierEconomyRegistry {
             ..capsule
         };
 
-        self.replay_capsules.insert(capsule_id.clone(), bounded_capsule);
+        self.replay_capsules
+            .insert(capsule_id.clone(), bounded_capsule);
         Ok(())
     }
 
+    /// Access a replay capsule by ID and re-verify it before returning it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::{VerifierEconomyRegistry, ERR_VEP_INCOMPLETE_PAYLOAD};
+    ///
+    /// let mut registry = VerifierEconomyRegistry::new();
+    /// let err = registry.access_replay_capsule("capsule-1").unwrap_err();
+    /// assert_eq!(err.code, ERR_VEP_INCOMPLETE_PAYLOAD);
+    /// ```
     pub fn access_replay_capsule(&mut self, capsule_id: &str) -> VepResult<ReplayCapsule> {
         let capsule = self
             .replay_capsules
@@ -1417,6 +1813,36 @@ impl VerifierEconomyRegistry {
     /// Returns `Ok(())` if the capsule passes all structural and
     /// cryptographic integrity checks, or a specific
     /// [`CapsuleVerificationFailure`] identifying the first failing check.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::{
+    ///     AttestationSignature, CapsuleVerificationFailure, ReplayCapsule, VerifierEconomyRegistry,
+    /// };
+    ///
+    /// let failure = VerifierEconomyRegistry::verify_capsule_integrity(&ReplayCapsule {
+    ///     capsule_id: String::new(),
+    ///     schema_version: String::new(),
+    ///     attestation_id: String::new(),
+    ///     verifier_id: String::new(),
+    ///     claim_metadata_hash: String::new(),
+    ///     issued_at: String::new(),
+    ///     expires_at: String::new(),
+    ///     input_state_hash: String::new(),
+    ///     trace_chunk_hashes: Vec::new(),
+    ///     trace_commitment_root: String::new(),
+    ///     output_state_hash: String::new(),
+    ///     expected_result_hash: String::new(),
+    ///     integrity_hash: String::new(),
+    ///     signature: AttestationSignature {
+    ///         algorithm: String::new(),
+    ///         public_key: String::new(),
+    ///         value: String::new(),
+    ///     },
+    /// }).unwrap_err();
+    /// assert_eq!(failure, CapsuleVerificationFailure::MissingFields("capsule_id"));
+    /// ```
     pub fn verify_capsule_integrity(
         capsule: &ReplayCapsule,
     ) -> Result<(), CapsuleVerificationFailure> {
@@ -1518,6 +1944,36 @@ impl VerifierEconomyRegistry {
     }
 
     /// Legacy bool wrapper — returns `true` if capsule passes integrity.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::{
+    ///     AttestationSignature, ReplayCapsule, VerifierEconomyRegistry,
+    /// };
+    ///
+    /// let capsule = ReplayCapsule {
+    ///     capsule_id: String::new(),
+    ///     schema_version: String::new(),
+    ///     attestation_id: String::new(),
+    ///     verifier_id: String::new(),
+    ///     claim_metadata_hash: String::new(),
+    ///     issued_at: String::new(),
+    ///     expires_at: String::new(),
+    ///     input_state_hash: String::new(),
+    ///     trace_chunk_hashes: Vec::new(),
+    ///     trace_commitment_root: String::new(),
+    ///     output_state_hash: String::new(),
+    ///     expected_result_hash: String::new(),
+    ///     integrity_hash: String::new(),
+    ///     signature: AttestationSignature {
+    ///         algorithm: String::new(),
+    ///         public_key: String::new(),
+    ///         value: String::new(),
+    ///     },
+    /// };
+    /// assert!(!VerifierEconomyRegistry::verify_capsule_integrity_bool(&capsule));
+    /// ```
     pub fn verify_capsule_integrity_bool(capsule: &ReplayCapsule) -> bool {
         Self::verify_capsule_integrity(capsule).is_ok()
     }
@@ -1582,6 +2038,16 @@ impl VerifierEconomyRegistry {
     // -- Trust scoreboard -----------------------------------------------------
 
     /// Build the public trust scoreboard.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let scoreboard = VerifierEconomyRegistry::new().build_scoreboard();
+    /// assert_eq!(scoreboard.total_verifiers, 0);
+    /// assert_eq!(scoreboard.aggregate_score, 0.0);
+    /// ```
     pub fn build_scoreboard(&self) -> TrustScoreboard {
         let mut published_stats = BTreeMap::<String, PublishedVerifierStats>::new();
         let mut total_attestations: usize = 0;
@@ -1643,6 +2109,15 @@ impl VerifierEconomyRegistry {
 
     /// Check whether a verifier has been selectively reporting.
     /// Returns true if the verifier's dimension coverage is below the threshold.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let registry = VerifierEconomyRegistry::new();
+    /// assert!(registry.check_selective_reporting("ver-0001", 1));
+    /// ```
     pub fn check_selective_reporting(&self, verifier_id: &str, min_dimensions: usize) -> bool {
         let dims: std::collections::BTreeSet<_> = self
             .attestations
@@ -1655,6 +2130,16 @@ impl VerifierEconomyRegistry {
     }
 
     /// Reset submission counts (call at window boundaries).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::verifier_economy::VerifierEconomyRegistry;
+    ///
+    /// let mut registry = VerifierEconomyRegistry::new();
+    /// registry.reset_submission_counts();
+    /// assert!(registry.events().is_empty());
+    /// ```
     pub fn reset_submission_counts(&mut self) {
         self.submission_counts.clear();
     }
