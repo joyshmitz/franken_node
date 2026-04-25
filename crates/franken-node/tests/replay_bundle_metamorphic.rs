@@ -9,9 +9,10 @@
 
 use frankenengine_node::tools::replay_bundle::{
     EventType, RawEvent, ReplayBundle, ReplayBundleSigningMaterial, generate_replay_bundle,
-    read_bundle_from_path_with_trusted_key, sign_replay_bundle,
+    read_bundle_from_path_with_trusted_key, sign_replay_bundle, to_canonical_json,
     write_bundle_to_path_with_trusted_key,
 };
+use proptest::prelude::{ProptestConfig, any};
 use rand::distributions::{Alphanumeric, DistString};
 use rand::{Rng, RngCore, SeedableRng};
 use serde_json::json;
@@ -309,6 +310,41 @@ fn arbitrary_replay_bundle(rng: &mut impl Rng) -> ReplayBundle {
         .expect("Generated events should always produce valid bundle");
     sign_metamorphic_bundle(&mut bundle);
     bundle
+}
+
+proptest::proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 64,
+        ..ProptestConfig::default()
+    })]
+
+    #[test]
+    fn replay_bundle_deserialize_serialize_symmetry_holds(seed in any::<u64>()) {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let original_bundle = arbitrary_replay_bundle(&mut rng);
+
+        let serialized = serde_json::to_string(&original_bundle)
+            .expect("generated replay bundle should serialize");
+        let deserialized: ReplayBundle = serde_json::from_str(&serialized)
+            .expect("serialized replay bundle should deserialize");
+
+        proptest::prop_assert_eq!(
+            &original_bundle,
+            &deserialized,
+            "serde deserialize(serialize(bundle)) changed a valid replay bundle"
+        );
+
+        let canonical_serialized = to_canonical_json(&original_bundle)
+            .expect("generated replay bundle should canonicalize");
+        let canonical_deserialized: ReplayBundle = serde_json::from_str(&canonical_serialized)
+            .expect("canonical serialized replay bundle should deserialize");
+
+        proptest::prop_assert_eq!(
+            &original_bundle,
+            &canonical_deserialized,
+            "canonical deserialize(serialize(bundle)) changed a valid replay bundle"
+        );
+    }
 }
 
 /// Test the core metamorphic relation: export ∘ import = identity
