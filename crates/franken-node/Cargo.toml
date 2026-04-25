@@ -254,6 +254,10 @@ name = "runtime_lane_scheduler_queue_identity"
 path = "tests/runtime_lane_scheduler_queue_identity.rs"
 
 [[test]]
+name = "storage_metamorphic"
+path = "tests/storage_metamorphic.rs"
+
+[[test]]
 name = "control_lane_mapping_policy"
 path = "tests/control_lane_mapping_policy.rs"
 
