@@ -77,6 +77,20 @@ fn paged_response<T: Clone>(
 }
 
 #[cfg(any(test, feature = "control-plane"))]
+/// Create a new trust card and wrap the created card in the stable API envelope.
+///
+/// # Parameters
+/// - `registry`: mutable trust-card registry that stores and signs the new card.
+/// - `input`: canonical trust-card input payload to derive from.
+/// - `now_secs`: unix timestamp used for audit history and derivation metadata.
+/// - `trace_id`: operator-visible correlation ID recorded in trust-card telemetry.
+///
+/// # Returns
+/// An `ApiResponse` containing the newly created `TrustCard`.
+///
+/// # Errors
+/// Returns `TrustCardError` if the input is invalid, required evidence is missing,
+/// signing fails, or the registry cannot derive the next version safely.
 pub fn create_trust_card(
     registry: &mut TrustCardRegistry,
     input: TrustCardInput,
@@ -92,6 +106,21 @@ pub fn create_trust_card(
 }
 
 #[cfg(any(test, feature = "control-plane"))]
+/// Apply a mutation to an existing trust card and return the updated version.
+///
+/// # Parameters
+/// - `registry`: mutable trust-card registry containing the target extension.
+/// - `extension_id`: extension whose latest card should be mutated.
+/// - `mutation`: partial update payload describing the new trust-card state.
+/// - `now_secs`: unix timestamp used for audit history and derivation metadata.
+/// - `trace_id`: operator-visible correlation ID recorded in trust-card telemetry.
+///
+/// # Returns
+/// An `ApiResponse` containing the newly persisted `TrustCard` version.
+///
+/// # Errors
+/// Returns `TrustCardError` if the card does not exist, the mutation violates
+/// trust-card invariants, required upgrade evidence is absent, or signing fails.
 pub fn update_trust_card(
     registry: &mut TrustCardRegistry,
     extension_id: &str,
@@ -107,6 +136,21 @@ pub fn update_trust_card(
     })
 }
 
+/// Resolve one extension's latest trust card for the API read surface.
+///
+/// # Parameters
+/// - `registry`: mutable trust-card registry used for cache lookup and refresh.
+/// - `extension_id`: extension identifier to resolve.
+/// - `now_secs`: unix timestamp used for cache freshness and telemetry.
+/// - `trace_id`: operator-visible correlation ID recorded in trust-card telemetry.
+///
+/// # Returns
+/// An `ApiResponse` containing `Some(TrustCard)` when the extension exists or
+/// `None` when the registry has no card for the extension.
+///
+/// # Errors
+/// Returns `TrustCardError` if cache or source verification fails while reading
+/// the latest card.
 pub fn get_trust_card(
     registry: &mut TrustCardRegistry,
     extension_id: &str,
@@ -121,6 +165,21 @@ pub fn get_trust_card(
     })
 }
 
+/// List trust cards that match the provided filter and pagination window.
+///
+/// # Parameters
+/// - `registry`: mutable trust-card registry used for filtered lookup.
+/// - `filter`: certification, publisher, and capability filter criteria.
+/// - `now_secs`: unix timestamp used for telemetry and cache refresh decisions.
+/// - `trace_id`: operator-visible correlation ID recorded in trust-card telemetry.
+/// - `pagination`: page and page-size settings for the response envelope.
+///
+/// # Returns
+/// An `ApiResponse` containing the current page of matching trust cards.
+///
+/// # Errors
+/// Returns `TrustCardError` if pagination is invalid or any matched card fails
+/// signature verification during listing.
 pub fn list_trust_cards(
     registry: &mut TrustCardRegistry,
     filter: &TrustCardListFilter,
@@ -132,6 +191,21 @@ pub fn list_trust_cards(
     paged_response(&all, pagination)
 }
 
+/// List trust cards for one publisher and paginate the stable API response.
+///
+/// # Parameters
+/// - `registry`: mutable trust-card registry used for publisher lookup.
+/// - `publisher_id`: publisher identifier whose cards should be listed.
+/// - `now_secs`: unix timestamp used for telemetry and cache refresh decisions.
+/// - `trace_id`: operator-visible correlation ID recorded in trust-card telemetry.
+/// - `pagination`: page and page-size settings for the response envelope.
+///
+/// # Returns
+/// An `ApiResponse` containing the current page of cards owned by the publisher.
+///
+/// # Errors
+/// Returns `TrustCardError` if pagination is invalid or any matched card fails
+/// signature verification during listing.
 pub fn get_trust_cards_by_publisher(
     registry: &mut TrustCardRegistry,
     publisher_id: &str,
@@ -143,6 +217,21 @@ pub fn get_trust_cards_by_publisher(
     paged_response(&all, pagination)
 }
 
+/// Search trust cards by extension, publisher, or capability text.
+///
+/// # Parameters
+/// - `registry`: mutable trust-card registry used for search execution.
+/// - `query`: case-insensitive query string matched against searchable fields.
+/// - `now_secs`: unix timestamp used for telemetry and cache refresh decisions.
+/// - `trace_id`: operator-visible correlation ID recorded in trust-card telemetry.
+/// - `pagination`: page and page-size settings for the response envelope.
+///
+/// # Returns
+/// An `ApiResponse` containing the current page of search results.
+///
+/// # Errors
+/// Returns `TrustCardError` if pagination is invalid or any matched card fails
+/// signature verification during search.
 pub fn search_trust_cards(
     registry: &mut TrustCardRegistry,
     query: &str,
@@ -154,6 +243,21 @@ pub fn search_trust_cards(
     paged_response(&all, pagination)
 }
 
+/// Compare the latest trust cards for two extensions.
+///
+/// # Parameters
+/// - `registry`: mutable trust-card registry containing both extensions.
+/// - `left_extension_id`: first extension identifier in the comparison.
+/// - `right_extension_id`: second extension identifier in the comparison.
+/// - `now_secs`: unix timestamp used for telemetry.
+/// - `trace_id`: operator-visible correlation ID recorded in trust-card telemetry.
+///
+/// # Returns
+/// An `ApiResponse` containing the field-level `TrustCardComparison`.
+///
+/// # Errors
+/// Returns `TrustCardError` if either card is missing or fails signature
+/// verification before the comparison is produced.
 pub fn compare_trust_cards(
     registry: &mut TrustCardRegistry,
     left_extension_id: &str,
@@ -169,6 +273,22 @@ pub fn compare_trust_cards(
     })
 }
 
+/// Compare two historical trust-card versions for one extension.
+///
+/// # Parameters
+/// - `registry`: mutable trust-card registry containing the extension history.
+/// - `extension_id`: extension whose version history should be compared.
+/// - `left_version`: earlier or baseline trust-card version.
+/// - `right_version`: newer or alternate trust-card version.
+/// - `now_secs`: unix timestamp used for telemetry.
+/// - `trace_id`: operator-visible correlation ID recorded in trust-card telemetry.
+///
+/// # Returns
+/// An `ApiResponse` containing the field-level `TrustCardComparison`.
+///
+/// # Errors
+/// Returns `TrustCardError` if either version is missing or fails signature
+/// verification before the comparison is produced.
 pub fn compare_trust_card_versions(
     registry: &mut TrustCardRegistry,
     extension_id: &str,

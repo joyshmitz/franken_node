@@ -415,6 +415,16 @@ pub struct TrustCardListFilter {
 
 impl TrustCardListFilter {
     #[must_use]
+    /// Build a filter with no constraints so every current trust card matches.
+    ///
+    /// # Parameters
+    /// This helper takes no parameters.
+    ///
+    /// # Returns
+    /// A `TrustCardListFilter` with all optional selectors cleared.
+    ///
+    /// # Errors
+    /// This helper does not return errors.
     pub fn empty() -> Self {
         Self {
             certification_level: None,
@@ -484,6 +494,19 @@ struct TrustCardRegistrySnapshotHighWater {
 }
 
 impl TrustCardRegistrySnapshot {
+    /// Construct and sign a canonical trust-card registry snapshot.
+    ///
+    /// # Parameters
+    /// - `cache_ttl_secs`: cache TTL persisted into the snapshot, clamped to at least one second.
+    /// - `cards_by_extension`: authoritative extension history to embed in the snapshot.
+    /// - `registry_key`: HMAC key used to sign the snapshot payload.
+    ///
+    /// # Returns
+    /// A signed `TrustCardRegistrySnapshot` ready for persistence or transport.
+    ///
+    /// # Errors
+    /// Returns `TrustCardError` if snapshot signing fails because the registry key
+    /// or canonical serialization is invalid.
     pub fn signed(
         cache_ttl_secs: u64,
         cards_by_extension: BTreeMap<String, Vec<TrustCard>>,
@@ -523,6 +546,17 @@ impl Default for TrustCardRegistry {
 
 impl TrustCardRegistry {
     #[must_use]
+    /// Create an empty trust-card registry with bounded cache TTL and signing key.
+    ///
+    /// # Parameters
+    /// - `cache_ttl_secs`: cache TTL for hot reads, clamped to at least one second.
+    /// - `registry_key`: HMAC key used to sign cards and snapshots.
+    ///
+    /// # Returns
+    /// A new empty `TrustCardRegistry`.
+    ///
+    /// # Errors
+    /// This constructor does not return errors.
     pub fn new(cache_ttl_secs: u64, registry_key: &[u8]) -> Self {
         Self {
             cards_by_extension: BTreeMap::new(),
@@ -536,6 +570,17 @@ impl TrustCardRegistry {
         }
     }
 
+    /// Materialize the registry's current authoritative state as a signed snapshot.
+    ///
+    /// # Parameters
+    /// This method uses the registry's in-memory state and takes no extra parameters.
+    ///
+    /// # Returns
+    /// A `TrustCardRegistrySnapshot` containing the current cards, sequence state,
+    /// and fresh registry signature.
+    ///
+    /// # Errors
+    /// Returns `TrustCardError` if canonical snapshot signing fails.
     pub fn snapshot(&self) -> Result<TrustCardRegistrySnapshot, TrustCardError> {
         let mut snapshot = TrustCardRegistrySnapshot {
             schema_version: TRUST_CARD_REGISTRY_SNAPSHOT_SCHEMA.to_string(),
@@ -563,6 +608,19 @@ impl TrustCardRegistry {
         self.last_snapshot_hash = None;
     }
 
+    /// Restore a registry from a trusted signed snapshot.
+    ///
+    /// # Parameters
+    /// - `snapshot`: snapshot payload to validate and ingest.
+    /// - `registry_key`: HMAC key used to verify the snapshot and card signatures.
+    /// - `loaded_at_secs`: timestamp assigned to cache entries restored from the snapshot.
+    ///
+    /// # Returns
+    /// A `TrustCardRegistry` populated from the snapshot contents.
+    ///
+    /// # Errors
+    /// Returns `TrustCardError` if the snapshot schema is unsupported, any embedded
+    /// card history is invalid, or the snapshot signature fails verification.
     pub fn from_snapshot(
         snapshot: TrustCardRegistrySnapshot,
         registry_key: &[u8],
@@ -601,6 +659,19 @@ impl TrustCardRegistry {
         Ok(registry)
     }
 
+    /// Load authoritative trust-card state from disk and validate its high-water marker.
+    ///
+    /// # Parameters
+    /// - `path`: snapshot file to read and validate.
+    /// - `cache_ttl_secs`: cache TTL to apply to the loaded registry, clamped to at least one second.
+    /// - `loaded_at_secs`: timestamp assigned to cache entries restored from disk.
+    ///
+    /// # Returns
+    /// A validated `TrustCardRegistry` reconstructed from the on-disk snapshot.
+    ///
+    /// # Errors
+    /// Returns `TrustCardError` if reading, parsing, signature validation, or
+    /// high-water validation fails.
     pub fn load_authoritative_state(
         path: &Path,
         cache_ttl_secs: u64,
@@ -625,6 +696,17 @@ impl TrustCardRegistry {
         Ok(registry)
     }
 
+    /// Persist the registry's authoritative snapshot and signed high-water marker atomically.
+    ///
+    /// # Parameters
+    /// - `path`: destination snapshot path for the canonical registry state.
+    ///
+    /// # Returns
+    /// `Ok(())` after both the snapshot and high-water marker are durably written.
+    ///
+    /// # Errors
+    /// Returns `TrustCardError` if snapshot materialization, lock acquisition,
+    /// canonical encoding, fsync, or atomic persistence fails.
     pub fn persist_authoritative_state(&self, path: &Path) -> Result<(), TrustCardError> {
         let snapshot = self.snapshot()?;
         let high_water_path = authoritative_snapshot_high_water_path(path);
@@ -687,6 +769,19 @@ impl TrustCardRegistry {
         })
     }
 
+    /// Derive, sign, and store the next trust-card version for an extension.
+    ///
+    /// # Parameters
+    /// - `input`: canonical trust-card input payload and evidence references.
+    /// - `now_secs`: unix timestamp used for derivation evidence and audit history.
+    /// - `trace_id`: operator-visible correlation ID recorded in telemetry.
+    ///
+    /// # Returns
+    /// The newly created and signed `TrustCard`.
+    ///
+    /// # Errors
+    /// Returns `TrustCardError` if required evidence is missing, the next version
+    /// overflows, input validation fails, or signing fails.
     pub fn create(
         &mut self,
         input: TrustCardInput,
@@ -774,6 +869,20 @@ impl TrustCardRegistry {
         Ok(card)
     }
 
+    /// Apply a mutation to the latest trust card for one extension and append a new version.
+    ///
+    /// # Parameters
+    /// - `extension_id`: extension whose latest trust card should be updated.
+    /// - `mutation`: partial update payload describing the next card state.
+    /// - `now_secs`: unix timestamp used for derivation evidence and audit history.
+    /// - `trace_id`: operator-visible correlation ID recorded in telemetry.
+    ///
+    /// # Returns
+    /// The newly created replacement `TrustCard` version.
+    ///
+    /// # Errors
+    /// Returns `TrustCardError` if the extension is missing, the mutation breaks
+    /// trust-card invariants, required evidence is missing, or signing fails.
     pub fn update(
         &mut self,
         extension_id: &str,
@@ -887,6 +996,19 @@ impl TrustCardRegistry {
         Ok(next)
     }
 
+    /// Read the latest verified trust card for one extension, using the cache when valid.
+    ///
+    /// # Parameters
+    /// - `extension_id`: extension identifier to resolve.
+    /// - `now_secs`: unix timestamp used for cache freshness checks.
+    /// - `trace_id`: operator-visible correlation ID recorded in telemetry.
+    ///
+    /// # Returns
+    /// `Some(TrustCard)` when the extension exists or `None` when no card is known.
+    ///
+    /// # Errors
+    /// Returns `TrustCardError` if cached or authoritative card signatures fail
+    /// verification during the read path.
     pub fn read(
         &mut self,
         extension_id: &str,
@@ -907,12 +1029,11 @@ impl TrustCardRegistry {
             let card = cached.card.clone();
             // SECURITY: Always re-verify signature on cache hit to prevent serving tampered cards.
             // This protects against cache poisoning attacks where malicious cards could be injected.
-            verify_card_signature(&card, &self.registry_key)
-                .map_err(|_| {
-                    // Remove invalid cached entry immediately
-                    self.cache_by_extension.remove(extension_id);
-                    TrustCardError::SignatureInvalid(extension_id.to_string())
-                })?;
+            verify_card_signature(&card, &self.registry_key).map_err(|_| {
+                // Remove invalid cached entry immediately
+                self.cache_by_extension.remove(extension_id);
+                TrustCardError::SignatureInvalid(extension_id.to_string())
+            })?;
 
             self.emit(
                 TRUST_CARD_CACHE_HIT,
@@ -970,6 +1091,18 @@ impl TrustCardRegistry {
         Ok(Some(latest_card))
     }
 
+    /// List the latest verified trust cards that satisfy a filter.
+    ///
+    /// # Parameters
+    /// - `filter`: certification, publisher, and capability selectors.
+    /// - `trace_id`: operator-visible correlation ID recorded in telemetry.
+    /// - `now_secs`: unix timestamp used for telemetry timestamps.
+    ///
+    /// # Returns
+    /// A sorted vector of current trust cards that match the filter.
+    ///
+    /// # Errors
+    /// Returns `TrustCardError` if any matched card fails signature verification.
     pub fn list(
         &mut self,
         filter: &TrustCardListFilter,
@@ -1002,6 +1135,18 @@ impl TrustCardRegistry {
         Ok(out)
     }
 
+    /// List the latest verified trust cards published by one publisher.
+    ///
+    /// # Parameters
+    /// - `publisher_id`: publisher identifier to filter on.
+    /// - `now_secs`: unix timestamp used for telemetry timestamps.
+    /// - `trace_id`: operator-visible correlation ID recorded in telemetry.
+    ///
+    /// # Returns
+    /// A sorted vector of current trust cards for the publisher.
+    ///
+    /// # Errors
+    /// Returns `TrustCardError` if any matched card fails signature verification.
     pub fn list_by_publisher(
         &mut self,
         publisher_id: &str,
@@ -1019,6 +1164,19 @@ impl TrustCardRegistry {
         )
     }
 
+    /// Refresh trust-card cache entries and report the sync outcome.
+    ///
+    /// # Parameters
+    /// - `now_secs`: unix timestamp used for cache freshness decisions and telemetry.
+    /// - `trace_id`: operator-visible correlation ID recorded in telemetry.
+    /// - `force`: whether fresh cache entries should still be rebuilt from source.
+    ///
+    /// # Returns
+    /// A `TrustCardSyncReport` summarizing cache hits, misses, and refreshes.
+    ///
+    /// # Errors
+    /// Returns `TrustCardError` if a source card is missing or any cached/source
+    /// card fails verification while syncing.
     pub fn sync_cache(
         &mut self,
         now_secs: u64,
@@ -1139,6 +1297,18 @@ impl TrustCardRegistry {
         Ok(report)
     }
 
+    /// Search trust cards by extension ID, publisher ID, or capability name.
+    ///
+    /// # Parameters
+    /// - `query`: case-insensitive search string.
+    /// - `now_secs`: unix timestamp used for telemetry timestamps.
+    /// - `trace_id`: operator-visible correlation ID recorded in telemetry.
+    ///
+    /// # Returns
+    /// A sorted vector of current trust cards whose searchable text matches the query.
+    ///
+    /// # Errors
+    /// Returns `TrustCardError` if any matched card fails signature verification.
     pub fn search(
         &mut self,
         query: &str,
@@ -1183,6 +1353,20 @@ impl TrustCardRegistry {
         Ok(out)
     }
 
+    /// Compare the latest verified trust cards for two extensions.
+    ///
+    /// # Parameters
+    /// - `left_extension_id`: first extension identifier in the comparison.
+    /// - `right_extension_id`: second extension identifier in the comparison.
+    /// - `now_secs`: unix timestamp used for telemetry timestamps.
+    /// - `trace_id`: operator-visible correlation ID recorded in telemetry.
+    ///
+    /// # Returns
+    /// A field-level `TrustCardComparison` describing the latest-card differences.
+    ///
+    /// # Errors
+    /// Returns `TrustCardError` if either extension is missing or either latest
+    /// card fails signature verification.
     pub fn compare(
         &mut self,
         left_extension_id: &str,
@@ -1216,6 +1400,21 @@ impl TrustCardRegistry {
         Ok(comparison)
     }
 
+    /// Compare two verified historical trust-card versions for one extension.
+    ///
+    /// # Parameters
+    /// - `extension_id`: extension whose version history should be compared.
+    /// - `left_version`: first trust-card version to compare.
+    /// - `right_version`: second trust-card version to compare.
+    /// - `now_secs`: unix timestamp used for telemetry timestamps.
+    /// - `trace_id`: operator-visible correlation ID recorded in telemetry.
+    ///
+    /// # Returns
+    /// A field-level `TrustCardComparison` for the requested historical versions.
+    ///
+    /// # Errors
+    /// Returns `TrustCardError` if the extension or either version is missing or
+    /// either historical card fails signature verification.
     pub fn compare_versions(
         &mut self,
         extension_id: &str,
@@ -1263,6 +1462,17 @@ impl TrustCardRegistry {
         Ok(comparison)
     }
 
+    /// Read one verified historical trust-card version without touching cache state.
+    ///
+    /// # Parameters
+    /// - `extension_id`: extension whose version history should be searched.
+    /// - `trust_card_version`: historical trust-card version to resolve.
+    ///
+    /// # Returns
+    /// `Some(TrustCard)` when that historical version exists or `None` otherwise.
+    ///
+    /// # Errors
+    /// Returns `TrustCardError` if the located card fails signature verification.
     pub fn read_version(
         &self,
         extension_id: &str,
@@ -1285,6 +1495,16 @@ impl TrustCardRegistry {
     }
 
     #[must_use]
+    /// Expose the registry's bounded telemetry ring buffer.
+    ///
+    /// # Parameters
+    /// This accessor takes no parameters.
+    ///
+    /// # Returns
+    /// An immutable slice of accumulated `TelemetryEvent` entries.
+    ///
+    /// # Errors
+    /// This accessor does not return errors.
     pub fn telemetry(&self) -> &[TelemetryEvent] {
         &self.telemetry
     }
@@ -1545,6 +1765,18 @@ fn comparison_from_cards(
     }
 }
 
+/// Slice one-based pagination bounds over a collection.
+///
+/// # Parameters
+/// - `items`: source collection to paginate.
+/// - `page`: one-based page number to read.
+/// - `per_page`: maximum number of items to return.
+///
+/// # Returns
+/// A cloned page of items, or an empty vector when the page starts past the end.
+///
+/// # Errors
+/// Returns `TrustCardError::InvalidPagination` when `page` or `per_page` is zero.
 pub fn paginate<T: Clone>(
     items: &[T],
     page: usize,
@@ -1561,6 +1793,16 @@ pub fn paginate<T: Clone>(
     Ok(items[start..end].to_vec())
 }
 
+/// Render one trust card into the stable human-readable CLI summary format.
+///
+/// # Parameters
+/// - `card`: trust card to format for operator-facing output.
+///
+/// # Returns
+/// A multi-line human-readable summary string.
+///
+/// # Errors
+/// This renderer does not return errors.
 pub fn render_trust_card_human(card: &TrustCard) -> String {
     let status = match &card.revocation_status {
         RevocationStatus::Active => "active".to_string(),
@@ -1589,6 +1831,16 @@ pub fn render_trust_card_human(card: &TrustCard) -> String {
     )
 }
 
+/// Render a trust-card comparison into the stable human-readable CLI diff format.
+///
+/// # Parameters
+/// - `comparison`: field-level comparison to format.
+///
+/// # Returns
+/// A human-readable comparison string, including the no-differences case.
+///
+/// # Errors
+/// This renderer does not return errors.
 pub fn render_comparison_human(comparison: &TrustCardComparison) -> String {
     if comparison.changes.is_empty() {
         return format!(
@@ -1610,6 +1862,18 @@ pub fn render_comparison_human(comparison: &TrustCardComparison) -> String {
     out.trim_end().to_string()
 }
 
+/// Verify a trust card's canonical hash and registry signature.
+///
+/// # Parameters
+/// - `card`: trust card whose integrity should be checked.
+/// - `registry_key`: HMAC key expected to have signed the card.
+///
+/// # Returns
+/// `Ok(())` when both the card hash and registry signature verify.
+///
+/// # Errors
+/// Returns `TrustCardError` if canonical hashing fails, the HMAC key is invalid,
+/// or either integrity check does not match.
 pub fn verify_card_signature(card: &TrustCard, registry_key: &[u8]) -> Result<(), TrustCardError> {
     let expected_hash = compute_card_hash(card)?;
     if !constant_time::ct_eq(&card.card_hash, &expected_hash) {
@@ -1631,6 +1895,16 @@ pub fn verify_card_signature(card: &TrustCard, registry_key: &[u8]) -> Result<()
     Ok(())
 }
 
+/// Compute the canonical hash for a trust card payload.
+///
+/// # Parameters
+/// - `card`: trust card whose hash should be recomputed.
+///
+/// # Returns
+/// The canonical hex-encoded SHA-256 digest for the card payload.
+///
+/// # Errors
+/// Returns `TrustCardError` if canonical serialization of the card fails.
 pub fn compute_card_hash(card: &TrustCard) -> Result<String, TrustCardError> {
     let canonical = canonical_card_without_hash_and_signature(card)?;
     let encoded = serde_json::to_vec(&canonical)?;
@@ -1646,6 +1920,16 @@ pub fn compute_card_hash(card: &TrustCard) -> Result<String, TrustCardError> {
     Ok(hex::encode(digest))
 }
 
+/// Serialize a value into the trust-card module's canonical JSON ordering.
+///
+/// # Parameters
+/// - `value`: serializable value to canonicalize.
+///
+/// # Returns
+/// A JSON string with deterministically ordered object keys.
+///
+/// # Errors
+/// Returns `TrustCardError` if value serialization fails.
 pub fn to_canonical_json<T: Serialize>(value: &T) -> Result<String, TrustCardError> {
     let raw = serde_json::to_value(value)?;
     let canonical = canonicalize_value(raw);
@@ -4751,8 +5035,14 @@ mod tests {
         let retrieved_card = result.unwrap().expect("Card should exist after repair");
 
         // Verify the returned card is the original legitimate card, not the poisoned one
-        assert_eq!(retrieved_card.reputation_score_basis_points, original_card.reputation_score_basis_points);
-        assert_eq!(retrieved_card.security_advisory_count, original_card.security_advisory_count);
+        assert_eq!(
+            retrieved_card.reputation_score_basis_points,
+            original_card.reputation_score_basis_points
+        );
+        assert_eq!(
+            retrieved_card.security_advisory_count,
+            original_card.security_advisory_count
+        );
         assert_eq!(retrieved_card.card_hash, original_card.card_hash);
         assert_eq!(retrieved_card.signature_hex, original_card.signature_hex);
 
@@ -4763,7 +5053,10 @@ mod tests {
             .expect("Cache should contain repaired entry");
         assert_eq!(cached.card.card_hash, original_card.card_hash);
         assert_eq!(cached.card.signature_hex, original_card.signature_hex);
-        assert_ne!(cached.card.signature_hex, "deadbeefdeadbeefdeadbeefdeadbeef");
+        assert_ne!(
+            cached.card.signature_hex,
+            "deadbeefdeadbeefdeadbeefdeadbeef"
+        );
 
         // Additional test: Verify that sync_cache also detects and removes poisoned entries
         registry.cache_by_extension.insert(
@@ -4784,8 +5077,14 @@ mod tests {
             .expect("Sync should handle poisoned cache");
 
         // Sync should detect the poisoned entry and rebuild it
-        assert_eq!(sync_report.cache_misses, 1, "Poisoned entry should count as cache miss");
-        assert_eq!(sync_report.cache_hits, 0, "No valid cache hits with poisoned entry");
+        assert_eq!(
+            sync_report.cache_misses, 1,
+            "Poisoned entry should count as cache miss"
+        );
+        assert_eq!(
+            sync_report.cache_hits, 0,
+            "No valid cache hits with poisoned entry"
+        );
 
         // Final verification: cache contains only legitimate card
         let final_cached = registry
@@ -4793,6 +5092,9 @@ mod tests {
             .get("npm:@acme/plugin")
             .expect("Cache should be repaired after sync");
         assert_eq!(final_cached.card.card_hash, original_card.card_hash);
-        assert_ne!(final_cached.card.signature_hex, "cafebabecafebabecafebabecafebabe");
+        assert_ne!(
+            final_cached.card.signature_hex,
+            "cafebabecafebabecafebabecafebabe"
+        );
     }
 }
