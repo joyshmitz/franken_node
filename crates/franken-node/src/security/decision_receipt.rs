@@ -159,6 +159,8 @@ pub enum ReceiptError {
     MissingHighImpactReceipt { action_name: String },
     #[error("hash-chain mismatch: expected {expected}, got {actual}")]
     HashChainMismatch { expected: String, actual: String },
+    #[error("timestamp not monotonic: current '{current}' is not after previous '{previous}'")]
+    TimestampNotMonotonic { current: String, previous: String },
     /// Failed to write receipt file to filesystem.
     ///
     /// This error occurs during atomic receipt persistence operations including:
@@ -218,6 +220,81 @@ impl Receipt {
     pub fn with_previous_hash(mut self, previous_receipt_hash: Option<String>) -> Self {
         self.previous_receipt_hash = previous_receipt_hash;
         self
+    }
+
+    /// Validate timestamp monotonicity against previous receipt.
+    ///
+    /// Ensures this receipt's timestamp is strictly after the previous receipt's timestamp
+    /// to prevent chronological manipulation attacks via backdating or clock skew.
+    pub fn validate_timestamp_monotonicity(&self, previous_timestamp: &str) -> Result<(), ReceiptError> {
+        use chrono::DateTime;
+
+        // Parse both timestamps
+        let prev_time = DateTime::parse_from_rfc3339(previous_timestamp)
+            .map_err(|source| ReceiptError::TimestampParse {
+                timestamp: previous_timestamp.to_string(),
+                source,
+            })?;
+
+        let current_time = DateTime::parse_from_rfc3339(&self.timestamp)
+            .map_err(|source| ReceiptError::TimestampParse {
+                timestamp: self.timestamp.clone(),
+                source,
+            })?;
+
+        // SECURITY: Require strict monotonic ordering to prevent chronological manipulation
+        if current_time <= prev_time {
+            return Err(ReceiptError::TimestampNotMonotonic {
+                current: self.timestamp.clone(),
+                previous: previous_timestamp.to_string(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Create a new receipt with timestamp monotonicity validation against previous receipt.
+    ///
+    /// This constructor ensures cryptographically committed temporal ordering by:
+    /// 1. Requiring the new timestamp to be strictly after the previous receipt's timestamp
+    /// 2. Setting up the hash chain linkage via previous_receipt_hash
+    /// 3. Preventing chronological manipulation attacks
+    pub fn new_with_monotonic_timestamp(
+        action_name: &str,
+        actor_identity: &str,
+        input: &impl Serialize,
+        output: &impl Serialize,
+        decision: Decision,
+        rationale: &str,
+        evidence_refs: Vec<String>,
+        policy_rule_chain: Vec<String>,
+        confidence: f64,
+        rollback_command: &str,
+        previous_receipt: Option<&Receipt>,
+    ) -> Result<Self, ReceiptError> {
+        let mut receipt = Self::new(
+            action_name,
+            actor_identity,
+            input,
+            output,
+            decision,
+            rationale,
+            evidence_refs,
+            policy_rule_chain,
+            confidence,
+            rollback_command,
+        )?;
+
+        // SECURITY: If there's a previous receipt, validate monotonic timestamp ordering
+        if let Some(prev_receipt) = previous_receipt {
+            receipt.validate_timestamp_monotonicity(&prev_receipt.timestamp)?;
+
+            // Compute hash of previous receipt for chain integrity
+            let prev_hash = hash_canonical_json(prev_receipt)?;
+            receipt.previous_receipt_hash = Some(prev_hash);
+        }
+
+        Ok(receipt)
     }
 }
 
