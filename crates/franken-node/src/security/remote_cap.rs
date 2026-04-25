@@ -545,6 +545,10 @@ impl RemoteScope {
     /// ```
     #[must_use]
     pub fn allows_endpoint(&self, endpoint: &str) -> bool {
+        if validate_requested_endpoint(endpoint).is_err() {
+            return false;
+        }
+
         self.endpoint_prefixes
             .iter()
             .any(|prefix| endpoint_matches_prefix(endpoint, prefix))
@@ -666,6 +670,11 @@ fn validate_endpoint_prefix(prefix: &str) -> Result<(), String> {
 fn validate_endpoint_prefix(prefix: &str) -> Result<(), String> {
     validate_endpoint_prefix_lexical(prefix)?;
     Ok(())
+}
+
+fn validate_requested_endpoint(endpoint: &str) -> Result<(), String> {
+    validate_endpoint_prefix(endpoint)
+        .map_err(|detail| detail.replace("endpoint prefix", "endpoint"))
 }
 
 // Custom deserialization for RemoteScope with validation
@@ -2139,6 +2148,8 @@ fn token_id_hash(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+    use std::collections::BTreeSet;
 
     static REMOTE_CAP_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -2200,6 +2211,23 @@ mod tests {
             "id:v1|issuer={issuer_identity}|issued={issued_at_epoch_secs}|expires={expires_at_epoch_secs}|scope={}|single_use={single_use}|trace_id={trace_id}",
             scope_fingerprint(scope)
         )
+    }
+
+    fn operation_strategy() -> impl Strategy<Value = RemoteOperation> {
+        prop::sample::select(vec![
+            RemoteOperation::NetworkEgress,
+            RemoteOperation::FederationSync,
+            RemoteOperation::RevocationFetch,
+            RemoteOperation::RemoteAttestationVerify,
+            RemoteOperation::TelemetryExport,
+            RemoteOperation::RemoteComputation,
+            RemoteOperation::ArtifactUpload,
+        ])
+    }
+
+    fn endpoint_prefix_strategy() -> impl Strategy<Value = String> {
+        (1u16..4096, 1u16..512)
+            .prop_map(|(tenant, shard)| format!("https://tenant-{tenant}.example.com/api/{shard}"))
     }
 
     #[test]
@@ -3657,6 +3685,132 @@ mod tests {
         assert!(!gate.revoked_tokens.contains("revoked-00000"));
         assert!(gate.consumed_tokens.contains("consumed-00032"));
         assert!(gate.revoked_tokens.contains("revoked-00032"));
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(128))]
+
+        #[test]
+        fn remote_scope_normalizes_generated_operations_and_prefixes(
+            operations in prop::collection::vec(operation_strategy(), 1..32),
+            prefixes in prop::collection::vec(endpoint_prefix_strategy(), 1..16),
+        ) {
+            let mut noisy_prefixes = prefixes.clone();
+            if let Some(first) = prefixes.first() {
+                noisy_prefixes.push(format!(" {first} "));
+                noisy_prefixes.push(first.clone());
+            }
+            noisy_prefixes.push(String::new());
+            noisy_prefixes.push(" \t ".to_string());
+
+            let scope = RemoteScope::new(operations.clone(), noisy_prefixes);
+            let expected_operations: BTreeSet<_> = operations.into_iter().collect();
+            let expected_prefixes: BTreeSet<_> = prefixes.into_iter().collect();
+
+            prop_assert_eq!(scope.operations().len(), expected_operations.len());
+            for operation in expected_operations {
+                prop_assert!(scope.allows_operation(operation));
+            }
+
+            prop_assert_eq!(scope.endpoint_prefixes().len(), expected_prefixes.len());
+            for prefix in expected_prefixes {
+                let allowed_endpoint = format!("{prefix}/work");
+                let sibling_endpoint = format!("{prefix}evil/work");
+                prop_assert!(scope.allows_endpoint(&allowed_endpoint));
+                prop_assert!(!scope.allows_endpoint(&sibling_endpoint));
+            }
+        }
+
+        #[test]
+        fn generated_caps_authorize_only_generated_operation_scope(
+            operations in prop::collection::vec(operation_strategy(), 1..12),
+            prefix in endpoint_prefix_strategy(),
+            attempted_operation in operation_strategy(),
+            ttl_secs in 1u64..86_400,
+        ) {
+            let provider =
+                CapabilityProvider::new("property-key-material").expect("valid provider");
+            let scope = RemoteScope::new(operations, vec![prefix.clone()]);
+            let (cap, _) = provider
+                .issue(
+                    "operator-property",
+                    scope.clone(),
+                    1_700_000_000,
+                    ttl_secs,
+                    true,
+                    false,
+                    "trace-property-issue",
+                )
+                .expect("generated valid scope should issue");
+
+            let endpoint = format!("{prefix}/jobs?attempt=1");
+            let mut gate = CapabilityGate::new("property-key-material").expect("valid gate");
+            let result = gate.authorize_network(
+                Some(&cap),
+                attempted_operation,
+                &endpoint,
+                1_700_000_001,
+                "trace-property-authorize",
+            );
+
+            if scope.allows_operation(attempted_operation) {
+                prop_assert!(result.is_ok());
+            } else {
+                let denied_as_expected = matches!(
+                    result,
+                    Err(RemoteCapError::ScopeDenied { operation, endpoint: denied_endpoint })
+                        if operation == attempted_operation && denied_endpoint == endpoint
+                );
+                prop_assert!(denied_as_expected);
+            }
+        }
+
+        #[test]
+        fn generated_traversal_like_endpoints_never_authorize_under_path_prefix(
+            operation in operation_strategy(),
+            prefix in endpoint_prefix_strategy(),
+            suffix in prop::sample::select(vec![
+                "../admin",
+                "safe/../../admin",
+                "%2e%2e/admin",
+                "safe/%2e%2e/admin",
+                "safe\\admin",
+                "\u{202e}admin",
+            ]),
+        ) {
+            let scoped_prefix = format!("{prefix}/");
+            let endpoint = format!("{scoped_prefix}{suffix}");
+            let provider =
+                CapabilityProvider::new("property-key-material").expect("valid provider");
+            let scope = RemoteScope::new(vec![operation], vec![scoped_prefix]);
+            let (cap, _) = provider
+                .issue(
+                    "operator-property",
+                    scope,
+                    1_700_000_000,
+                    300,
+                    true,
+                    true,
+                    "trace-property-traversal-issue",
+                )
+                .expect("valid path prefix should issue");
+
+            prop_assert!(!cap.scope().allows_endpoint(&endpoint));
+
+            let mut gate = CapabilityGate::new("property-key-material").expect("valid gate");
+            let err = gate
+                .authorize_network(
+                    Some(&cap),
+                    operation,
+                    &endpoint,
+                    1_700_000_001,
+                    "trace-property-traversal-deny",
+                )
+                .expect_err("malformed endpoint under prefix must fail closed");
+
+            prop_assert_eq!(err.code(), "REMOTECAP_SCOPE_DENIED");
+            prop_assert!(gate.consumed_tokens.is_empty());
+        }
     }
 
     // Scope validation tests for bd-zie2i

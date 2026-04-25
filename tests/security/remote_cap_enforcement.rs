@@ -21,7 +21,8 @@ use frankenengine_node::security::network_guard::{
     Action, EgressPolicy, EgressRule, NetworkGuard, Protocol,
 };
 use frankenengine_node::security::remote_cap::{
-    CapabilityGate, CapabilityProvider, ConnectivityMode, RemoteOperation, RemoteScope,
+    CapabilityGate, CapabilityProvider, ConnectivityMode, RemoteCapError, RemoteOperation,
+    RemoteScope,
 };
 use frankenengine_node::supply_chain::certification::{EvidenceType, VerifiedEvidenceRef};
 use frankenengine_node::supply_chain::trust_card::{
@@ -420,6 +421,155 @@ fn issue_cap(single_use: bool) -> frankenengine_node::security::remote_cap::Remo
         .0
 }
 
+#[cfg(test)]
+mod remote_cap_property_tests {
+    use super::*;
+    use proptest::prelude::*;
+    use std::collections::BTreeSet;
+
+    fn operation_strategy() -> impl Strategy<Value = RemoteOperation> {
+        prop::sample::select(vec![
+            RemoteOperation::NetworkEgress,
+            RemoteOperation::FederationSync,
+            RemoteOperation::RevocationFetch,
+            RemoteOperation::RemoteAttestationVerify,
+            RemoteOperation::TelemetryExport,
+            RemoteOperation::RemoteComputation,
+            RemoteOperation::ArtifactUpload,
+        ])
+    }
+
+    fn endpoint_prefix_strategy() -> impl Strategy<Value = String> {
+        (1u16..4096, 1u16..512)
+            .prop_map(|(tenant, shard)| format!("https://tenant-{tenant}.example.com/api/{shard}"))
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+
+        #[test]
+        fn generated_scope_inputs_dedup_and_match_prefix_boundaries(
+            operations in prop::collection::vec(operation_strategy(), 1..32),
+            prefixes in prop::collection::vec(endpoint_prefix_strategy(), 1..16),
+        ) {
+            let mut noisy_prefixes = prefixes.clone();
+            if let Some(first) = prefixes.first() {
+                noisy_prefixes.push(format!(" {first} "));
+                noisy_prefixes.push(first.clone());
+            }
+            noisy_prefixes.push(String::new());
+            noisy_prefixes.push(" \t ".to_string());
+
+            let scope = RemoteScope::new(operations.clone(), noisy_prefixes);
+            let expected_operations: BTreeSet<_> = operations.into_iter().collect();
+            let expected_prefixes: BTreeSet<_> = prefixes.into_iter().collect();
+
+            prop_assert_eq!(scope.operations().len(), expected_operations.len());
+            for operation in expected_operations {
+                prop_assert!(scope.allows_operation(operation));
+            }
+
+            prop_assert_eq!(scope.endpoint_prefixes().len(), expected_prefixes.len());
+            for prefix in expected_prefixes {
+                let allowed_endpoint = format!("{prefix}/work");
+                let sibling_endpoint = format!("{prefix}evil/work");
+                prop_assert!(scope.allows_endpoint(&allowed_endpoint));
+                prop_assert!(!scope.allows_endpoint(&sibling_endpoint));
+            }
+        }
+
+        #[test]
+        fn generated_cap_authorization_matches_declared_operation_scope(
+            operations in prop::collection::vec(operation_strategy(), 1..12),
+            prefix in endpoint_prefix_strategy(),
+            attempted_operation in operation_strategy(),
+            ttl_secs in 1u64..86_400,
+        ) {
+            let scope = RemoteScope::new(operations, vec![prefix.clone()]);
+            let cap = provider()
+                .issue(
+                    "ops-control-plane",
+                    scope.clone(),
+                    1_700_000_000,
+                    ttl_secs,
+                    true,
+                    false,
+                    "trace-property-issue",
+                )
+                .expect("generated valid scope should issue")
+                .0;
+
+            let endpoint = format!("{prefix}/jobs?attempt=1");
+            let mut gate = CapabilityGate::new("remote-cap-test-secret")
+                .expect("remote cap test gate should be valid");
+            let result = gate.authorize_network(
+                Some(&cap),
+                attempted_operation,
+                &endpoint,
+                1_700_000_001,
+                "trace-property-authorize",
+            );
+
+            if scope.allows_operation(attempted_operation) {
+                prop_assert!(result.is_ok());
+            } else {
+                let denied_as_expected = matches!(
+                    result,
+                    Err(RemoteCapError::ScopeDenied { operation, endpoint: denied_endpoint })
+                        if operation == attempted_operation && denied_endpoint == endpoint
+                );
+                prop_assert!(denied_as_expected);
+            }
+        }
+
+        #[test]
+        fn generated_traversal_suffixes_never_authorize_under_scoped_path_prefix(
+            operation in operation_strategy(),
+            prefix in endpoint_prefix_strategy(),
+            suffix in prop::sample::select(vec![
+                "../admin",
+                "safe/../../admin",
+                "%2e%2e/admin",
+                "safe/%2e%2e/admin",
+                "safe\\admin",
+                "\u{202e}admin",
+            ]),
+        ) {
+            let scoped_prefix = format!("{prefix}/");
+            let endpoint = format!("{scoped_prefix}{suffix}");
+            let scope = RemoteScope::new(vec![operation], vec![scoped_prefix]);
+            let cap = provider()
+                .issue(
+                    "ops-control-plane",
+                    scope,
+                    1_700_000_000,
+                    300,
+                    true,
+                    true,
+                    "trace-property-traversal-issue",
+                )
+                .expect("valid path prefix should issue")
+                .0;
+
+            prop_assert!(!cap.scope().allows_endpoint(&endpoint));
+
+            let mut gate = CapabilityGate::new("remote-cap-test-secret")
+                .expect("remote cap test gate should be valid");
+            let err = gate
+                .authorize_network(
+                    Some(&cap),
+                    operation,
+                    &endpoint,
+                    1_700_000_001,
+                    "trace-property-traversal-deny",
+                )
+                .expect_err("malformed endpoint under prefix must fail closed");
+
+            prop_assert_eq!(err.code(), "REMOTECAP_SCOPE_DENIED");
+        }
+    }
+}
+
 fn sign_impossible_default_token(token: &mut CapabilityToken, signing_key: &SigningKey) {
     let hash = token.content_hash();
     let signature = signing_key.sign(hash.as_bytes());
@@ -611,6 +761,45 @@ fn scope_escalation_is_rejected() {
         )
         .expect_err("out-of-scope operation must fail");
     assert_eq!(err.code(), "REMOTECAP_SCOPE_DENIED");
+}
+
+#[test]
+fn scoped_path_prefix_rejects_traversal_endpoints() {
+    let scope = RemoteScope::new(
+        vec![RemoteOperation::NetworkEgress],
+        vec!["https://api.example.com/root/".to_string()],
+    );
+    let cap = provider()
+        .issue(
+            "ops-control-plane",
+            scope,
+            1_700_000_000,
+            3_600,
+            true,
+            false,
+            "trace-traversal-issue",
+        )
+        .expect("issue")
+        .0;
+
+    let mut gate = CapabilityGate::new("remote-cap-test-secret")
+        .expect("remote cap test gate should be valid");
+
+    for endpoint in [
+        "https://api.example.com/root/../admin",
+        "https://api.example.com/root/%2e%2e/admin",
+    ] {
+        let err = gate
+            .authorize_network(
+                Some(&cap),
+                RemoteOperation::NetworkEgress,
+                endpoint,
+                1_700_000_010,
+                "trace-traversal-denied",
+            )
+            .expect_err("path traversal must not authorize under scoped prefix");
+        assert_eq!(err.code(), "REMOTECAP_SCOPE_DENIED");
+    }
 }
 
 #[test]
