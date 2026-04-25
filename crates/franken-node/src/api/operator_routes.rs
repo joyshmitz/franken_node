@@ -166,6 +166,10 @@ fn operator_config_view() -> ConfigView {
 }
 
 #[cfg(any(test, feature = "control-plane"))]
+/// Acquire the shared process-start test lock before mutating global process-start fixtures.
+///
+/// Use this in tests that need exclusive access to the override state so setup and cleanup do not
+/// race with other helper calls in the same process.
 pub(crate) fn process_start_test_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
@@ -182,6 +186,10 @@ fn process_start_override_for_tests() -> Option<ProcessStartState> {
 }
 
 #[cfg(any(test, feature = "control-plane"))]
+/// Clear the process-start override after a test that seeded synthetic uptime metadata.
+///
+/// Use this during test teardown whenever `seed_process_start_for_tests` was used so later tests
+/// read the real initialized state instead of leaked fixture data.
 pub(crate) fn clear_process_start_override_for_tests() {
     let mut guard = try_lock_process_start_override_with_timeout(Duration::from_millis(50))
         .expect("Failed to acquire process start override lock during test cleanup");
@@ -226,16 +234,28 @@ fn try_lock_process_start_override_with_timeout(
 }
 
 #[cfg(test)]
+/// Return how many times `init_process_start` ran in the current test process.
+///
+/// Use this when asserting the atomic initialization path stayed idempotent under repeated calls or
+/// concurrency probes.
 pub(crate) fn process_start_init_call_count_for_tests() -> usize {
     PROCESS_START_INIT_CALLS.load(Ordering::Relaxed)
 }
 
 #[cfg(test)]
+/// Expose the installed monotonic process-start offset for assertions.
+///
+/// Use this after bootstrapping process-start state in tests that need to verify the persisted
+/// uptime baseline rather than the computed seconds view.
 pub(crate) fn installed_process_start_offset_nanos_for_tests() -> u64 {
     PROCESS_START_OFFSET_NANOS.load(Ordering::Relaxed)
 }
 
 #[cfg(test)]
+/// Return the installed wall-clock process-start timestamp for assertions.
+///
+/// Use this in tests that need to confirm the RFC 3339 value propagated through initialization or
+/// bootstrap helpers.
 pub(crate) fn installed_process_start_wall_clock_for_tests() -> String {
     PROCESS_START_WALL_CLOCK
         .read()
@@ -244,6 +264,10 @@ pub(crate) fn installed_process_start_wall_clock_for_tests() -> String {
 }
 
 #[cfg(test)]
+/// Seed a temporary process-start override without mutating the installed global baseline.
+///
+/// Use this when a test needs synthetic uptime and wall-clock values for read paths while keeping
+/// initialization state isolated to the override slot.
 pub(crate) fn seed_process_start_for_tests(elapsed: std::time::Duration, wall_clock_rfc3339: &str) {
     let mut guard = PROCESS_START_OVERRIDE
         .lock()
@@ -257,6 +281,10 @@ pub(crate) fn seed_process_start_for_tests(elapsed: std::time::Duration, wall_cl
 }
 
 #[cfg(test)]
+/// Install a synthetic process-start baseline into the global initialized state.
+///
+/// Use this when a test needs the normal non-override read path to observe a deterministic process
+/// start value, such as bootstrap or replay-style assertions.
 pub(crate) fn seed_bootstrapped_process_start_for_tests(
     elapsed: std::time::Duration,
     wall_clock_rfc3339: &str,
@@ -286,6 +314,10 @@ fn assert_process_start_cleanup_waits_for_init_lock() {
 }
 
 #[cfg(any(test, feature = "control-plane"))]
+/// Exercise the process-start cleanup path while the test lock is held.
+///
+/// Use this only from tests that verify the documented lock ordering for process-start fixture
+/// cleanup; it keeps the helper reachable in generated docs for downstream control-plane tests.
 pub fn assert_process_start_cleanup_lock_order_for_tests() {
     assert_process_start_cleanup_waits_for_init_lock();
 }
