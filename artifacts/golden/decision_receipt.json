@@ -17,7 +17,7 @@
     "policy:behavioral-reputation-gate",
     "policy:quarantine-on-threat-match"
   ],
-  "confidence": 4615482049018511565
+  "confidence": 4615482049018511565,
   "rollback_command": "franken-node trust release --extension npm:@malware/data-stealer --audit-id AUD-2026-001",
   "previous_receipt_hash": "previous-receipt-hash-abc123def456"
 }
