@@ -480,8 +480,7 @@ impl RemoteScope {
     }
 }
 
-#[cfg(feature = "http-client")]
-fn validate_endpoint_prefix(prefix: &str) -> Result<(), String> {
+fn validate_endpoint_prefix_lexical(prefix: &str) -> Result<&str, String> {
     if prefix.trim().is_empty() {
         return Err("endpoint prefix cannot be empty".to_string());
     }
@@ -497,6 +496,7 @@ fn validate_endpoint_prefix(prefix: &str) -> Result<(), String> {
             prefix
         ));
     }
+
     let lower_prefix = prefix.to_ascii_lowercase();
     if prefix.contains("..") || prefix.contains('\\') || lower_prefix.contains("%2e") {
         return Err(format!(
@@ -537,6 +537,12 @@ fn validate_endpoint_prefix(prefix: &str) -> Result<(), String> {
         ));
     }
 
+    Ok(scheme)
+}
+
+#[cfg(feature = "http-client")]
+fn validate_endpoint_prefix(prefix: &str) -> Result<(), String> {
+    let _scheme = validate_endpoint_prefix_lexical(prefix)?;
     let parsed = Url::parse(prefix)
         .map_err(|source| format!("endpoint prefix '{}' is not a valid URL: {source}", prefix))?;
     if parsed.host_str().is_none_or(str::is_empty) {
@@ -566,13 +572,7 @@ fn validate_endpoint_prefix(prefix: &str) -> Result<(), String> {
 
 #[cfg(not(feature = "http-client"))]
 fn validate_endpoint_prefix(prefix: &str) -> Result<(), String> {
-    if prefix.trim().is_empty() {
-        return Err("endpoint prefix cannot be empty".to_string());
-    }
-    if prefix != prefix.trim() {
-        return Err(format!("endpoint prefix '{}' must be normalized", prefix));
-    }
-    // Basic validation without URL parsing when http-client feature is disabled
+    validate_endpoint_prefix_lexical(prefix)?;
     Ok(())
 }
 
@@ -3279,6 +3279,45 @@ mod tests {
         let scope = result.unwrap();
         assert_eq!(scope.endpoint_prefixes().len(), 1);
         assert_eq!(scope.endpoint_prefixes()[0], "https://api.example.com");
+    }
+
+    #[test]
+    fn endpoint_prefix_lexical_validation_rejects_fail_closed_inputs_without_url_parser() {
+        let invalid_prefixes = [
+            "file:///etc/passwd",
+            "data:text/plain;base64,SGVsbG8=",
+            "javascript:alert('xss')",
+            "vbscript:msgbox('xss')",
+            "ftp://ftp.example.com",
+            "https://example.com/../admin",
+            "https://example.com/%2e%2e/admin",
+            "https://example.com\\admin",
+            " https://api.example.com",
+            "https://api.example.com\t",
+        ];
+
+        for prefix in invalid_prefixes {
+            assert!(
+                validate_endpoint_prefix_lexical(prefix).is_err(),
+                "lexical validation should fail closed for {prefix}"
+            );
+        }
+
+        let valid_prefixes = [
+            "https://api.example.com",
+            "http://internal.local",
+            "federation://trusted-node",
+            "revocation://authority.example",
+            "ws://socket.example.com",
+            "wss://secure.socket.example.com",
+        ];
+
+        for prefix in valid_prefixes {
+            assert!(
+                validate_endpoint_prefix_lexical(prefix).is_ok(),
+                "lexical validation should accept {prefix}"
+            );
+        }
     }
 }
 
