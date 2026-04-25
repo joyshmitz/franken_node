@@ -1910,6 +1910,71 @@ mod tests {
     }
 
     #[test]
+    fn cross_scope_capability_privilege_escalation_is_denied() {
+        let provider = CapabilityProvider::new("secret-a").expect("valid provider");
+        let cases = [
+            (
+                RemoteScope::new(
+                    vec![RemoteOperation::RevocationFetch],
+                    vec!["https://cap.example.com/resource".to_string()],
+                ),
+                RemoteOperation::ArtifactUpload,
+                "https://cap.example.com/resource",
+                "trace-cross-scope-read-write",
+            ),
+            (
+                RemoteScope::new(
+                    vec![RemoteOperation::FederationSync],
+                    vec!["https://federation.example.com/tenant-a".to_string()],
+                ),
+                RemoteOperation::FederationSync,
+                "https://federation.example.com",
+                "trace-cross-scope-narrow-broad",
+            ),
+        ];
+
+        for (allowed_scope, attempted_operation, attempted_endpoint, trace_id) in cases {
+            let (cap, _) = provider
+                .issue(
+                    "operator",
+                    allowed_scope,
+                    1_700_000_000,
+                    300,
+                    true,
+                    false,
+                    &format!("{trace_id}-issue"),
+                )
+                .expect("issue scoped capability");
+
+            let mut gate = CapabilityGate::new("secret-a").expect("valid gate");
+            let err = gate
+                .authorize_network(
+                    Some(&cap),
+                    attempted_operation,
+                    attempted_endpoint,
+                    1_700_000_010,
+                    trace_id,
+                )
+                .expect_err("cross-scope capability use must fail closed");
+
+            assert_eq!(
+                err,
+                RemoteCapError::ScopeDenied {
+                    operation: attempted_operation,
+                    endpoint: attempted_endpoint.to_string(),
+                }
+            );
+            let event = gate.audit_log().last().expect("scope denial audit event");
+            assert_eq!(event.event_code, "REMOTECAP_DENIED");
+            assert_eq!(event.legacy_event_code, "RC_CHECK_DENIED");
+            assert!(!event.allowed);
+            assert_eq!(event.operation, Some(attempted_operation));
+            assert_eq!(event.endpoint.as_deref(), Some(attempted_endpoint));
+            assert_eq!(event.denial_code.as_deref(), Some("REMOTECAP_SCOPE_DENIED"));
+        }
+    }
+
+    #[test]
     fn replay_of_single_use_token_is_denied() {
         let provider = CapabilityProvider::new("secret-a").expect("valid provider");
         let (cap, _) = provider
