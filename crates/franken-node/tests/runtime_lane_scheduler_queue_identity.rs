@@ -145,12 +145,15 @@ fn lane_scheduler_keeps_capped_task_identity_and_promotes_fifo() {
         .find(|record| record.event_code == event_codes::LANE_TASK_QUEUED)
         .expect("queue audit record");
     assert_eq!(queued_record.task_id, queued_task_id);
+    assert_eq!(queued_record.trace_id, "trace-queued");
     let promoted_record = scheduler
         .audit_log()
         .iter()
         .find(|record| record.event_code == event_codes::LANE_TASK_PROMOTED)
         .expect("promotion audit record");
     assert_eq!(promoted_record.task_id, queued_task_id);
+    assert_eq!(promoted_record.trace_id, "trace-queued");
+    assert_ne!(promoted_record.trace_id, "trace-complete");
 }
 
 #[test]
