@@ -8,6 +8,23 @@
 //! Supports Section 8.5 Invariant #3 (deterministic replay) and #9 (bounded
 //! resource consumption).
 //!
+//! # Canonical Ordering Contract
+//!
+//! The ledger's canonical order is accepted append order, represented by the
+//! monotonically increasing [`EntryId`] assigned during `append`. In-memory
+//! retention, [`EvidenceLedger::iter_all`], [`EvidenceLedger::snapshot`], and
+//! lab JSONL spill all preserve that order from oldest to newest among accepted
+//! entries. Capacity eviction removes only the oldest retained prefix, so a
+//! snapshot is always an ordered suffix of the accepted stream.
+//!
+//! Replay consumers must treat this append/`EntryId` order as authoritative for
+//! ledger evidence. They must not reorder ledger entries by `decision_time`,
+//! `timestamp_ms`, `trace_id`, `epoch_id`, JSON object order, or spill-file
+//! offsets. Workflow replay has its own canonical order: `TraceStep.seq` must
+//! be contiguous from zero, and replay iterates steps in that sequence order.
+//! Batch evidence replay validators preserve the caller-supplied slice order;
+//! callers that feed ledger snapshots should pass the snapshot entries as-is.
+//!
 //! # Invariants
 //!
 //! - INV-LEDGER-FIFO: overflow evicts the oldest entry (FIFO order)
