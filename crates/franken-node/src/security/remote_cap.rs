@@ -380,6 +380,18 @@ pub enum RemoteOperation {
 }
 
 impl RemoteOperation {
+    /// Return the canonical wire-format name for a remote operation.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::RemoteOperation;
+    ///
+    /// assert_eq!(
+    ///     RemoteOperation::FederationSync.as_str(),
+    ///     "federation_sync"
+    /// );
+    /// ```
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -425,6 +437,28 @@ pub struct RemoteScope {
 }
 
 impl RemoteScope {
+    /// Build a scope, normalizing duplicate operations and endpoint prefixes.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{RemoteOperation, RemoteScope};
+    ///
+    /// let scope = RemoteScope::new(
+    ///     vec![
+    ///         RemoteOperation::FederationSync,
+    ///         RemoteOperation::FederationSync,
+    ///         RemoteOperation::NetworkEgress,
+    ///     ],
+    ///     vec![
+    ///         " https://control.example/api ".to_string(),
+    ///         "https://control.example/api".to_string(),
+    ///     ],
+    /// );
+    ///
+    /// assert_eq!(scope.operations().len(), 2);
+    /// assert_eq!(scope.endpoint_prefixes().len(), 1);
+    /// ```
     #[must_use]
     pub fn new(operations: Vec<RemoteOperation>, endpoint_prefixes: Vec<String>) -> Self {
         let mut scope = Self {
@@ -436,21 +470,79 @@ impl RemoteScope {
         scope
     }
 
+    /// Return the normalized set of allowed operations.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{RemoteOperation, RemoteScope};
+    ///
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec!["https://control.example/api".to_string()],
+    /// );
+    ///
+    /// assert_eq!(scope.operations(), &[RemoteOperation::FederationSync]);
+    /// ```
     #[must_use]
     pub fn operations(&self) -> &[RemoteOperation] {
         &self.operations
     }
 
+    /// Return the normalized endpoint prefixes covered by this scope.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{RemoteOperation, RemoteScope};
+    ///
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec![" https://control.example/api ".to_string()],
+    /// );
+    ///
+    /// assert_eq!(scope.endpoint_prefixes(), &["https://control.example/api".to_string()]);
+    /// ```
     #[must_use]
     pub fn endpoint_prefixes(&self) -> &[String] {
         &self.endpoint_prefixes
     }
 
+    /// Return whether the scope authorizes a given remote operation.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{RemoteOperation, RemoteScope};
+    ///
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec!["https://control.example/api".to_string()],
+    /// );
+    ///
+    /// assert!(scope.allows_operation(RemoteOperation::FederationSync));
+    /// assert!(!scope.allows_operation(RemoteOperation::ArtifactUpload));
+    /// ```
     #[must_use]
     pub fn allows_operation(&self, operation: RemoteOperation) -> bool {
         self.operations.contains(&operation)
     }
 
+    /// Return whether the endpoint falls under one of the allowed prefixes.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{RemoteOperation, RemoteScope};
+    ///
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec!["https://control.example/api".to_string()],
+    /// );
+    ///
+    /// assert!(scope.allows_endpoint("https://control.example/api/jobs"));
+    /// assert!(!scope.allows_endpoint("https://other.example/api/jobs"));
+    /// ```
     #[must_use]
     pub fn allows_endpoint(&self, endpoint: &str) -> bool {
         self.endpoint_prefixes
@@ -641,36 +733,162 @@ pub struct RemoteCap {
 }
 
 impl RemoteCap {
+    /// Return the stable token identifier for this capability.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{
+    ///     CapabilityProvider, RemoteOperation, RemoteScope,
+    /// };
+    ///
+    /// let provider = CapabilityProvider::new("shared-secret").unwrap();
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec!["https://control.example/api".to_string()],
+    /// );
+    /// let (cap, _) = provider.issue("ops@example", scope, 100, 60, true, true, "trace-1").unwrap();
+    ///
+    /// assert!(!cap.token_id().is_empty());
+    /// ```
     #[must_use]
     pub fn token_id(&self) -> &str {
         &self.token_id
     }
 
+    /// Return the identity that issued the capability.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{
+    ///     CapabilityProvider, RemoteOperation, RemoteScope,
+    /// };
+    ///
+    /// let provider = CapabilityProvider::new("shared-secret").unwrap();
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec!["https://control.example/api".to_string()],
+    /// );
+    /// let (cap, _) = provider.issue("ops@example", scope, 100, 60, true, false, "trace-1").unwrap();
+    ///
+    /// assert_eq!(cap.issuer_identity(), "ops@example");
+    /// ```
     #[must_use]
     pub fn issuer_identity(&self) -> &str {
         &self.issuer_identity
     }
 
+    /// Return the epoch second when the capability becomes valid.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{
+    ///     CapabilityProvider, RemoteOperation, RemoteScope,
+    /// };
+    ///
+    /// let provider = CapabilityProvider::new("shared-secret").unwrap();
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec!["https://control.example/api".to_string()],
+    /// );
+    /// let (cap, _) = provider.issue("ops@example", scope, 100, 60, true, false, "trace-1").unwrap();
+    ///
+    /// assert_eq!(cap.issued_at_epoch_secs(), 100);
+    /// ```
     #[must_use]
     pub fn issued_at_epoch_secs(&self) -> u64 {
         self.issued_at_epoch_secs
     }
 
+    /// Return the exclusive upper-bound epoch second for the capability.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{
+    ///     CapabilityProvider, RemoteOperation, RemoteScope,
+    /// };
+    ///
+    /// let provider = CapabilityProvider::new("shared-secret").unwrap();
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec!["https://control.example/api".to_string()],
+    /// );
+    /// let (cap, _) = provider.issue("ops@example", scope, 100, 60, true, false, "trace-1").unwrap();
+    ///
+    /// assert_eq!(cap.expires_at_epoch_secs(), 160);
+    /// ```
     #[must_use]
     pub fn expires_at_epoch_secs(&self) -> u64 {
         self.expires_at_epoch_secs
     }
 
+    /// Return the normalized scope attached to the capability.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{
+    ///     CapabilityProvider, RemoteOperation, RemoteScope,
+    /// };
+    ///
+    /// let provider = CapabilityProvider::new("shared-secret").unwrap();
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec!["https://control.example/api".to_string()],
+    /// );
+    /// let (cap, _) = provider.issue("ops@example", scope, 100, 60, true, false, "trace-1").unwrap();
+    ///
+    /// assert!(cap.scope().allows_operation(RemoteOperation::FederationSync));
+    /// ```
     #[must_use]
     pub fn scope(&self) -> &RemoteScope {
         &self.scope
     }
 
+    /// Return the keyed digest signature covering the canonical payload.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{
+    ///     CapabilityProvider, RemoteOperation, RemoteScope,
+    /// };
+    ///
+    /// let provider = CapabilityProvider::new("shared-secret").unwrap();
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec!["https://control.example/api".to_string()],
+    /// );
+    /// let (cap, _) = provider.issue("ops@example", scope, 100, 60, true, false, "trace-1").unwrap();
+    ///
+    /// assert!(!cap.signature().is_empty());
+    /// ```
     #[must_use]
     pub fn signature(&self) -> &str {
         &self.signature
     }
 
+    /// Return whether the capability is consumed after one successful use.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{
+    ///     CapabilityProvider, RemoteOperation, RemoteScope,
+    /// };
+    ///
+    /// let provider = CapabilityProvider::new("shared-secret").unwrap();
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec!["https://control.example/api".to_string()],
+    /// );
+    /// let (cap, _) = provider.issue("ops@example", scope, 100, 60, true, true, "trace-1").unwrap();
+    ///
+    /// assert!(cap.is_single_use());
+    /// ```
     #[must_use]
     pub fn is_single_use(&self) -> bool {
         self.single_use
@@ -722,6 +940,16 @@ pub enum RemoteCapError {
 }
 
 impl RemoteCapError {
+    /// Return the stable machine-readable error code.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::RemoteCapError;
+    ///
+    /// let error = RemoteCapError::Missing;
+    /// assert_eq!(error.code(), "REMOTECAP_MISSING");
+    /// ```
     #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
@@ -742,6 +970,18 @@ impl RemoteCapError {
     }
 
     /// Compatibility alias used by some contracts.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::RemoteCapError;
+    ///
+    /// assert_eq!(
+    ///     RemoteCapError::Missing.compatibility_code(),
+    ///     Some("ERR_REMOTE_CAP_REQUIRED")
+    /// );
+    /// assert_eq!(RemoteCapError::InvalidSignature.compatibility_code(), None);
+    /// ```
     #[must_use]
     pub fn compatibility_code(&self) -> Option<&'static str> {
         match self {
@@ -859,6 +1099,15 @@ impl fmt::Debug for CapabilityProvider {
 impl CapabilityProvider {
     /// Create a new CapabilityProvider with validated signing secret.
     /// Fails closed if signing secret is empty or whitespace-only.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::CapabilityProvider;
+    ///
+    /// let provider = CapabilityProvider::new("shared-secret").unwrap();
+    /// assert!(provider.audit_log().is_empty());
+    /// ```
     pub fn new(signing_secret: &str) -> Result<Self, RemoteCapError> {
         validate_secret_material(signing_secret, "signing")?;
         Ok(Self {
@@ -867,11 +1116,40 @@ impl CapabilityProvider {
         })
     }
 
+    /// Fallible constructor alias for `CapabilityProvider::new`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::CapabilityProvider;
+    ///
+    /// let provider = CapabilityProvider::try_new("shared-secret").unwrap();
+    /// assert!(provider.audit_log().is_empty());
+    /// ```
     pub fn try_new(signing_secret: &str) -> Result<Self, RemoteCapError> {
         Self::new(signing_secret)
     }
 
     /// Issue a capability token after explicit operator authorization.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{
+    ///     CapabilityProvider, RemoteOperation, RemoteScope,
+    /// };
+    ///
+    /// let provider = CapabilityProvider::new("shared-secret").unwrap();
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec!["https://control.example/api".to_string()],
+    /// );
+    /// let (cap, event) =
+    ///     provider.issue("ops@example", scope, 100, 60, true, true, "trace-issue").unwrap();
+    ///
+    /// assert_eq!(event.event_code, "REMOTECAP_ISSUED");
+    /// assert_eq!(event.token_id.as_deref(), Some(cap.token_id()));
+    /// ```
     #[allow(clippy::too_many_arguments)]
     pub fn issue(
         &self,
@@ -946,6 +1224,26 @@ impl CapabilityProvider {
         Ok((cap, audit_event))
     }
 
+    /// Return a snapshot of the provider audit log.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{
+    ///     CapabilityProvider, RemoteOperation, RemoteScope,
+    /// };
+    ///
+    /// let provider = CapabilityProvider::new("shared-secret").unwrap();
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec!["https://control.example/api".to_string()],
+    /// );
+    /// provider
+    ///     .issue("ops@example", scope, 100, 60, true, false, "trace-audit")
+    ///     .unwrap();
+    ///
+    /// assert_eq!(provider.audit_log().len(), 1);
+    /// ```
     #[must_use]
     pub fn audit_log(&self) -> Vec<RemoteCapAuditEvent> {
         self.with_audit_log(|audit_log| audit_log.clone())
@@ -1045,6 +1343,15 @@ impl fmt::Debug for CapabilityGate {
 impl CapabilityGate {
     /// Create a new CapabilityGate with validated verification secret.
     /// Fails closed if verification secret is empty or whitespace-only.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{CapabilityGate, ConnectivityMode};
+    ///
+    /// let gate = CapabilityGate::new("shared-secret").unwrap();
+    /// assert_eq!(gate.mode(), ConnectivityMode::Connected);
+    /// ```
     pub fn new(verification_secret: &str) -> Result<Self, RemoteCapError> {
         validate_secret_material(verification_secret, "verification")?;
         Ok(Self {
@@ -1057,10 +1364,30 @@ impl CapabilityGate {
         })
     }
 
+    /// Fallible constructor alias for `CapabilityGate::new`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{CapabilityGate, ConnectivityMode};
+    ///
+    /// let gate = CapabilityGate::try_new("shared-secret").unwrap();
+    /// assert_eq!(gate.mode(), ConnectivityMode::Connected);
+    /// ```
     pub fn try_new(verification_secret: &str) -> Result<Self, RemoteCapError> {
         Self::new(verification_secret)
     }
 
+    /// Create a gate with an explicit connectivity mode.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{CapabilityGate, ConnectivityMode};
+    ///
+    /// let gate = CapabilityGate::with_mode("shared-secret", ConnectivityMode::LocalOnly).unwrap();
+    /// assert_eq!(gate.mode(), ConnectivityMode::LocalOnly);
+    /// ```
     pub fn with_mode(
         verification_secret: &str,
         mode: ConnectivityMode,
@@ -1070,6 +1397,18 @@ impl CapabilityGate {
         Ok(gate)
     }
 
+    /// Create a gate backed by a durable replay-store directory.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{CapabilityGate, ConnectivityMode};
+    ///
+    /// let store_dir = tempfile::tempdir().unwrap();
+    /// let gate = CapabilityGate::with_durable_replay_store("shared-secret", store_dir.path()).unwrap();
+    ///
+    /// assert_eq!(gate.mode(), ConnectivityMode::Connected);
+    /// ```
     pub fn with_durable_replay_store(
         verification_secret: &str,
         store_dir: impl AsRef<Path>,
@@ -1085,6 +1424,23 @@ impl CapabilityGate {
         })
     }
 
+    /// Create a gate with both durable replay tracking and an explicit mode.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{CapabilityGate, ConnectivityMode};
+    ///
+    /// let store_dir = tempfile::tempdir().unwrap();
+    /// let gate = CapabilityGate::with_mode_and_durable_replay_store(
+    ///     "shared-secret",
+    ///     ConnectivityMode::LocalOnly,
+    ///     store_dir.path(),
+    /// )
+    /// .unwrap();
+    ///
+    /// assert_eq!(gate.mode(), ConnectivityMode::LocalOnly);
+    /// ```
     pub fn with_mode_and_durable_replay_store(
         verification_secret: &str,
         mode: ConnectivityMode,
@@ -1095,16 +1451,50 @@ impl CapabilityGate {
         Ok(gate)
     }
 
+    /// Change the connectivity policy enforced by the gate.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{CapabilityGate, ConnectivityMode};
+    ///
+    /// let mut gate = CapabilityGate::new("shared-secret").unwrap();
+    /// gate.set_mode(ConnectivityMode::LocalOnly);
+    ///
+    /// assert_eq!(gate.mode(), ConnectivityMode::LocalOnly);
+    /// ```
     pub fn set_mode(&mut self, mode: ConnectivityMode) {
         self.connectivity_mode = mode;
     }
 
+    /// Return the current connectivity mode enforced by the gate.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{CapabilityGate, ConnectivityMode};
+    ///
+    /// let gate = CapabilityGate::with_mode("shared-secret", ConnectivityMode::LocalOnly).unwrap();
+    /// assert_eq!(gate.mode(), ConnectivityMode::LocalOnly);
+    /// ```
     #[must_use]
     pub fn mode(&self) -> ConnectivityMode {
         self.connectivity_mode
     }
 
     /// Local-only operations are always allowed and optionally logged.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{CapabilityGate, ConnectivityMode};
+    ///
+    /// let mut gate = CapabilityGate::with_mode("shared-secret", ConnectivityMode::LocalOnly).unwrap();
+    /// gate.authorize_local_operation("emit_local_report", 100, "trace-local");
+    ///
+    /// assert_eq!(gate.audit_log().len(), 1);
+    /// assert_eq!(gate.audit_log()[0].event_code, "REMOTECAP_LOCAL_MODE_ACTIVE");
+    /// ```
     pub fn authorize_local_operation(
         &mut self,
         local_operation: &str,
@@ -1128,6 +1518,27 @@ impl CapabilityGate {
     }
 
     /// Revoke a token and ensure subsequent checks fail.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{
+    ///     CapabilityGate, CapabilityProvider, RemoteOperation, RemoteScope,
+    /// };
+    ///
+    /// let provider = CapabilityProvider::new("shared-secret").unwrap();
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec!["https://control.example/api".to_string()],
+    /// );
+    /// let (cap, _) = provider.issue("ops@example", scope, 100, 60, true, false, "trace-issue").unwrap();
+    /// let mut gate = CapabilityGate::new("shared-secret").unwrap();
+    ///
+    /// let event = gate.revoke(&cap, 110, "trace-revoke");
+    ///
+    /// assert_eq!(event.event_code, "REMOTECAP_REVOKED");
+    /// assert_eq!(event.token_id.as_deref(), Some(cap.token_id()));
+    /// ```
     pub fn revoke(
         &mut self,
         cap: &RemoteCap,
@@ -1152,6 +1563,31 @@ impl CapabilityGate {
     }
 
     /// Validate remote capability for one network-bound operation.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{
+    ///     CapabilityGate, CapabilityProvider, RemoteOperation, RemoteScope,
+    /// };
+    ///
+    /// let provider = CapabilityProvider::new("shared-secret").unwrap();
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec!["https://control.example/api".to_string()],
+    /// );
+    /// let (cap, _) = provider.issue("ops@example", scope, 100, 60, true, false, "trace-issue").unwrap();
+    /// let mut gate = CapabilityGate::new("shared-secret").unwrap();
+    ///
+    /// gate.authorize_network(
+    ///     Some(&cap),
+    ///     RemoteOperation::FederationSync,
+    ///     "https://control.example/api/jobs",
+    ///     110,
+    ///     "trace-check",
+    /// )
+    /// .unwrap();
+    /// ```
     pub fn authorize_network(
         &mut self,
         cap: Option<&RemoteCap>,
@@ -1168,6 +1604,39 @@ impl CapabilityGate {
     ///
     /// This is intended for preflight checks in long-running workflows where
     /// capability validity can change between phases.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{
+    ///     CapabilityGate, CapabilityProvider, RemoteOperation, RemoteScope,
+    /// };
+    ///
+    /// let provider = CapabilityProvider::new("shared-secret").unwrap();
+    /// let scope = RemoteScope::new(
+    ///     vec![RemoteOperation::FederationSync],
+    ///     vec!["https://control.example/api".to_string()],
+    /// );
+    /// let (cap, _) = provider.issue("ops@example", scope, 100, 60, true, true, "trace-issue").unwrap();
+    /// let mut gate = CapabilityGate::new("shared-secret").unwrap();
+    ///
+    /// gate.recheck_network(
+    ///     Some(&cap),
+    ///     RemoteOperation::FederationSync,
+    ///     "https://control.example/api/jobs",
+    ///     110,
+    ///     "trace-recheck",
+    /// )
+    /// .unwrap();
+    /// gate.authorize_network(
+    ///     Some(&cap),
+    ///     RemoteOperation::FederationSync,
+    ///     "https://control.example/api/jobs",
+    ///     110,
+    ///     "trace-consume",
+    /// )
+    /// .unwrap();
+    /// ```
     pub fn recheck_network(
         &mut self,
         cap: Option<&RemoteCap>,
@@ -1489,6 +1958,18 @@ impl CapabilityGate {
         Ok(())
     }
 
+    /// Return the in-memory enforcement audit log.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use frankenengine_node::security::remote_cap::{CapabilityGate, ConnectivityMode};
+    ///
+    /// let mut gate = CapabilityGate::with_mode("shared-secret", ConnectivityMode::LocalOnly).unwrap();
+    /// gate.authorize_local_operation("emit_local_report", 100, "trace-local");
+    ///
+    /// assert_eq!(gate.audit_log().len(), 1);
+    /// ```
     #[must_use]
     pub fn audit_log(&self) -> &[RemoteCapAuditEvent] {
         &self.audit_log
