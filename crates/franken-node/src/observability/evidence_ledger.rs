@@ -5329,4 +5329,59 @@ mod tests {
             panic!("Should detect replay attack with matching timestamp and signature");
         }
     }
+
+    #[test]
+    fn bd_3dir0_inv_ledger_deterministic_identical_inputs_produce_identical_snapshots() {
+        // Test for INV-LEDGER-DETERMINISTIC: identical inputs produce identical snapshots
+        // Create two separate ledgers with identical capacity
+        let capacity = LedgerCapacity::new(5, 10_000);
+        let mut ledger1 = EvidenceLedger::new(capacity.clone());
+        let mut ledger2 = EvidenceLedger::new(capacity);
+
+        // Apply identical sequence of append operations to both ledgers
+        let test_entries = vec![
+            test_entry("DEC-001", 1000),
+            test_entry("DEC-002", 2000),
+            test_entry("DEC-003", 3000),
+        ];
+
+        for entry in test_entries {
+            let _ = ledger1.append(entry.clone()).expect("append should succeed");
+            let _ = ledger2.append(entry).expect("append should succeed");
+        }
+
+        // Take snapshots from both ledgers
+        let snapshot1 = ledger1.snapshot();
+        let snapshot2 = ledger2.snapshot();
+
+        // Assert snapshots are identical
+        assert_eq!(snapshot1.entries.len(), snapshot2.entries.len(),
+                   "Snapshot entry counts must be identical");
+        assert_eq!(snapshot1.total_appended, snapshot2.total_appended,
+                   "Total appended counts must be identical");
+        assert_eq!(snapshot1.total_evicted, snapshot2.total_evicted,
+                   "Total evicted counts must be identical");
+        assert_eq!(snapshot1.current_bytes, snapshot2.current_bytes,
+                   "Current byte counts must be identical");
+        assert_eq!(snapshot1.capacity, snapshot2.capacity,
+                   "Capacities must be identical");
+
+        // Verify each entry matches exactly (including entry IDs)
+        for (i, ((id1, entry1), (id2, entry2))) in snapshot1.entries.iter()
+            .zip(snapshot2.entries.iter()).enumerate() {
+            assert_eq!(id1, id2, "Entry IDs must be identical at position {}", i);
+            assert_eq!(entry1.decision_id, entry2.decision_id,
+                       "Decision IDs must be identical at position {}", i);
+            assert_eq!(entry1.epoch_id, entry2.epoch_id,
+                       "Epoch IDs must be identical at position {}", i);
+            assert_eq!(entry1.payload, entry2.payload,
+                       "Payloads must be identical at position {}", i);
+        }
+
+        // Verify serialized snapshots are byte-for-byte identical
+        let serialized1 = serde_json::to_string(&snapshot1).expect("serialization should succeed");
+        let serialized2 = serde_json::to_string(&snapshot2).expect("serialization should succeed");
+        assert_eq!(serialized1, serialized2,
+                   "Serialized snapshots must be byte-for-byte identical");
+    }
 }
