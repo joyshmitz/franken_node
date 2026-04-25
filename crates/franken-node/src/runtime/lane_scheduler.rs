@@ -67,6 +67,7 @@ pub mod error_codes {
     pub const ERR_LANE_INVALID_POLICY: &str = "ERR_LANE_INVALID_POLICY";
     pub const ERR_LANE_STARVATION: &str = "ERR_LANE_STARVATION";
     pub const ERR_LANE_TASK_NOT_FOUND: &str = "ERR_LANE_TASK_NOT_FOUND";
+    pub const ERR_LANE_TASK_ID_EXHAUSTED: &str = "ERR_LANE_TASK_ID_EXHAUSTED";
     pub const ERR_LANE_INVALID_WEIGHT: &str = "ERR_LANE_INVALID_WEIGHT";
 }
 
@@ -473,6 +474,8 @@ pub enum LaneSchedulerError {
     },
     /// Task not found (for completion tracking).
     TaskNotFound { task_id: String },
+    /// Task ID allocator exhausted the u64 counter space.
+    TaskIdExhausted { last_counter: u64 },
     /// Invalid priority weight.
     InvalidWeight { lane: SchedulerLane, weight: u32 },
 }
@@ -487,6 +490,7 @@ impl LaneSchedulerError {
             Self::InvalidPolicy { .. } => error_codes::ERR_LANE_INVALID_POLICY,
             Self::Starvation { .. } => error_codes::ERR_LANE_STARVATION,
             Self::TaskNotFound { .. } => error_codes::ERR_LANE_TASK_NOT_FOUND,
+            Self::TaskIdExhausted { .. } => error_codes::ERR_LANE_TASK_ID_EXHAUSTED,
             Self::InvalidWeight { .. } => error_codes::ERR_LANE_INVALID_WEIGHT,
         }
     }
@@ -542,6 +546,14 @@ impl fmt::Display for LaneSchedulerError {
             }
             Self::TaskNotFound { task_id } => {
                 write!(f, "{}: task {} not found", self.code(), task_id)
+            }
+            Self::TaskIdExhausted { last_counter } => {
+                write!(
+                    f,
+                    "{}: task id counter exhausted at {}",
+                    self.code(),
+                    last_counter
+                )
             }
             Self::InvalidWeight { lane, weight } => {
                 write!(
@@ -652,9 +664,15 @@ impl LaneScheduler {
         push_bounded(&mut self.audit_log, record, cap);
     }
 
-    fn next_task_id(&mut self) -> String {
-        self.task_counter = self.task_counter.saturating_add(1);
-        format!("task-{:08}", self.task_counter)
+    fn next_task_id(&mut self) -> Result<String, LaneSchedulerError> {
+        let next_counter = self.task_counter.saturating_add(1);
+        if next_counter == self.task_counter {
+            return Err(LaneSchedulerError::TaskIdExhausted {
+                last_counter: self.task_counter,
+            });
+        }
+        self.task_counter = next_counter;
+        Ok(format!("task-{:08}", self.task_counter))
     }
 
     fn refresh_lane_queue_counters(
@@ -700,7 +718,7 @@ impl LaneScheduler {
             return Ok(None);
         }
 
-        let task_id = self.next_task_id();
+        let task_id = self.next_task_id()?;
         let queued = QueuedTaskAssignment {
             task_id: task_id.clone(),
             task_class: task_class.clone(),
@@ -846,7 +864,7 @@ impl LaneScheduler {
             });
         }
 
-        let task_id = self.next_task_id();
+        let task_id = self.next_task_id()?;
 
         let counters = self.counters.get_mut(lane.as_str()).ok_or_else(|| {
             LaneSchedulerError::UnknownLane {
@@ -1469,6 +1487,36 @@ mod tests {
         let counters = s.lane_counter(SchedulerLane::Background).unwrap();
         assert_eq!(counters.rejected_total, 1);
         assert_eq!(counters.first_queued_at_ms, Some(1001));
+    }
+
+    #[test]
+    fn task_id_allocation_rejects_after_u64_max_without_reusing_id() {
+        let mut s = make_scheduler();
+        s.task_counter = u64::MAX - 1;
+
+        let max_id_assignment = s
+            .assign_task(&task_classes::epoch_transition(), 1000, "trace-max-id")
+            .expect("u64::MAX remains a valid final task id");
+        assert_eq!(max_id_assignment.task_id, format!("task-{:08}", u64::MAX));
+        assert_eq!(s.task_counter, u64::MAX);
+
+        let err = s
+            .assign_task(&task_classes::epoch_transition(), 1001, "trace-overflow")
+            .expect_err("allocator must reject allocation past u64::MAX");
+
+        assert_eq!(err.code(), error_codes::ERR_LANE_TASK_ID_EXHAUSTED);
+        assert_eq!(
+            err,
+            LaneSchedulerError::TaskIdExhausted {
+                last_counter: u64::MAX
+            }
+        );
+        assert_eq!(s.task_counter, u64::MAX);
+        assert_eq!(s.total_active(), 1);
+        assert_eq!(
+            s.active_task_ids(SchedulerLane::ControlCritical),
+            vec![max_id_assignment.task_id]
+        );
     }
 
     #[test]
