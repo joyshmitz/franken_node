@@ -38,55 +38,130 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     items.push(item);
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 struct ReplayTokenSet {
+    inner: Arc<Mutex<ReplayTokenSetInner>>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ReplayTokenSetInner {
     ids: BTreeSet<String>,
     insertion_order: Vec<String>,
 }
 
+impl Clone for ReplayTokenSet {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
 impl ReplayTokenSet {
-    fn insert(&mut self, token_id: String) -> bool {
-        if !self.ids.insert(token_id.clone()) {
+    /// Atomically check if token exists and insert it if not. Returns true if successfully inserted (was new).
+    /// This prevents TOCTOU race conditions between check and insert operations.
+    fn insert_if_new(&self, token_id: String) -> bool {
+        let mut inner = match self.inner.try_lock() {
+            Ok(guard) => guard,
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(TryLockError::WouldBlock) => {
+                // Under high contention, block to maintain correctness
+                return match self.inner.lock() {
+                    Ok(guard) => Self::insert_into_inner(guard, token_id),
+                    Err(poisoned) => Self::insert_into_inner(poisoned.into_inner(), token_id),
+                }
+            }
+        };
+
+        Self::insert_into_inner(inner, token_id)
+    }
+
+    fn insert_into_inner(mut inner: std::sync::MutexGuard<ReplayTokenSetInner>, token_id: String) -> bool {
+        if !inner.ids.insert(token_id.clone()) {
             return false;
         }
 
-        if self.insertion_order.len() >= MAX_REPLAY_ENTRIES {
-            let overflow = self
+        if inner.insertion_order.len() >= MAX_REPLAY_ENTRIES {
+            let overflow = inner
                 .insertion_order
                 .len()
                 .saturating_sub(MAX_REPLAY_ENTRIES)
                 .saturating_add(1);
-            let drain_len = overflow.min(self.insertion_order.len());
-            let evicted_ids: Vec<_> = self.insertion_order.drain(0..drain_len).collect();
+            let drain_len = overflow.min(inner.insertion_order.len());
+            let evicted_ids: Vec<_> = inner.insertion_order.drain(0..drain_len).collect();
             for evicted in evicted_ids {
-                self.ids.remove(&evicted);
+                inner.ids.remove(&evicted);
             }
         }
-        self.insertion_order.push(token_id);
+        inner.insertion_order.push(token_id);
         true
+    }
+
+    fn insert(&mut self, token_id: String) -> bool {
+        self.insert_if_new(token_id)
     }
 
     #[must_use]
     fn contains(&self, token_id: &str) -> bool {
-        self.ids.contains(token_id)
+        match self.inner.try_lock() {
+            Ok(inner) => inner.ids.contains(token_id),
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner().ids.contains(token_id),
+            Err(TryLockError::WouldBlock) => {
+                // Under high contention, block to maintain correctness
+                match self.inner.lock() {
+                    Ok(inner) => inner.ids.contains(token_id),
+                    Err(poisoned) => poisoned.into_inner().ids.contains(token_id),
+                }
+            }
+        }
     }
 
     #[cfg(test)]
     #[must_use]
     fn is_empty(&self) -> bool {
-        self.ids.is_empty()
+        match self.inner.try_lock() {
+            Ok(inner) => inner.ids.is_empty(),
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner().ids.is_empty(),
+            Err(TryLockError::WouldBlock) => {
+                // Under high contention, block to maintain correctness
+                match self.inner.lock() {
+                    Ok(inner) => inner.ids.is_empty(),
+                    Err(poisoned) => poisoned.into_inner().ids.is_empty(),
+                }
+            }
+        }
     }
 
     #[cfg(test)]
     #[must_use]
     fn len(&self) -> usize {
-        self.ids.len()
+        match self.inner.try_lock() {
+            Ok(inner) => inner.ids.len(),
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner().ids.len(),
+            Err(TryLockError::WouldBlock) => {
+                // Under high contention, block to maintain correctness
+                match self.inner.lock() {
+                    Ok(inner) => inner.ids.len(),
+                    Err(poisoned) => poisoned.into_inner().ids.len(),
+                }
+            }
+        }
     }
 
     #[cfg(test)]
     #[must_use]
-    fn ordered_ids(&self) -> &[String] {
-        &self.insertion_order
+    fn ordered_ids(&self) -> Vec<String> {
+        match self.inner.try_lock() {
+            Ok(inner) => inner.insertion_order.clone(),
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner().insertion_order.clone(),
+            Err(TryLockError::WouldBlock) => {
+                // Under high contention, block to maintain correctness
+                match self.inner.lock() {
+                    Ok(inner) => inner.insertion_order.clone(),
+                    Err(poisoned) => poisoned.into_inner().insertion_order.clone(),
+                }
+            }
+        }
     }
 }
 
