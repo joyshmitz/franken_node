@@ -85,6 +85,16 @@ impl Default for Config {
 
 impl Config {
     /// Create a configuration for a specific profile with appropriate defaults.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::{Config, Profile};
+    ///
+    /// let config = Config::for_profile(Profile::Strict);
+    /// assert_eq!(config.profile, Profile::Strict);
+    /// assert!(config.registry.require_signatures);
+    /// ```
     #[must_use]
     pub fn for_profile(profile: Profile) -> Self {
         match profile {
@@ -280,6 +290,23 @@ impl Config {
     /// Load configuration from a TOML file without CLI/env merge layers.
     ///
     /// This method is useful for fixtures and static snapshots.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::{Config, Profile};
+    ///
+    /// let path = std::env::temp_dir()
+    ///     .join(format!("franken-node-load-example-{}.toml", std::process::id()));
+    /// let source = Config::for_profile(Profile::LegacyRisky);
+    /// std::fs::write(&path, source.to_toml().expect("serialize config"))
+    ///     .expect("write config");
+    ///
+    /// let loaded = Config::load(&path).expect("load config");
+    /// assert_eq!(loaded.profile, Profile::LegacyRisky);
+    ///
+    /// let _ = std::fs::remove_file(path);
+    /// ```
     #[allow(dead_code)]
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
         let content =
@@ -298,6 +325,23 @@ impl Config {
     /// 3. `~/.config/franken-node/config.toml` (user)
     ///
     /// Returns the default balanced profile if no config file is found.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::{Config, Profile};
+    ///
+    /// let path = std::env::temp_dir()
+    ///     .join(format!("franken-node-discover-example-{}.toml", std::process::id()));
+    /// let source = Config::for_profile(Profile::Strict);
+    /// std::fs::write(&path, source.to_toml().expect("serialize config"))
+    ///     .expect("write config");
+    ///
+    /// let discovered = Config::discover(Some(&path)).expect("discover config");
+    /// assert_eq!(discovered.profile, Profile::Strict);
+    ///
+    /// let _ = std::fs::remove_file(path);
+    /// ```
     #[allow(dead_code)]
     pub fn discover(explicit_path: Option<&Path>) -> Result<Self, ConfigError> {
         if let Some(path) = explicit_path {
@@ -316,6 +360,33 @@ impl Config {
     /// Resolve configuration with deterministic precedence:
     ///
     /// `CLI > env > profile-block > file-base > defaults`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::{CliOverrides, Config, Profile};
+    ///
+    /// let path = std::env::temp_dir()
+    ///     .join(format!("franken-node-resolve-example-{}.toml", std::process::id()));
+    /// std::fs::write(
+    ///     &path,
+    ///     Config::for_profile(Profile::Balanced)
+    ///         .to_toml()
+    ///         .expect("serialize config"),
+    /// )
+    /// .expect("write config");
+    ///
+    /// let resolved = Config::resolve(
+    ///     Some(&path),
+    ///     CliOverrides {
+    ///         profile: Some(Profile::Strict),
+    ///     },
+    /// )
+    /// .expect("resolve config");
+    /// assert_eq!(resolved.selected_profile, Profile::Strict);
+    ///
+    /// let _ = std::fs::remove_file(path);
+    /// ```
     pub fn resolve(
         explicit_path: Option<&Path>,
         cli_overrides: CliOverrides,
@@ -327,6 +398,20 @@ impl Config {
     ///
     /// This keeps precedence tests deterministic without mutating process-global
     /// environment variables.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::{CliOverrides, Config, Profile};
+    ///
+    /// let resolved = Config::resolve_with_env(None, CliOverrides::default(), &|key| {
+    ///     (key == "FRANKEN_NODE_PROFILE").then(|| "strict".to_string())
+    /// })
+    /// .expect("resolve config");
+    ///
+    /// assert_eq!(resolved.selected_profile, Profile::Strict);
+    /// assert_eq!(resolved.config.profile, Profile::Strict);
+    /// ```
     pub fn resolve_with_env(
         explicit_path: Option<&Path>,
         cli_overrides: CliOverrides,
@@ -405,11 +490,32 @@ impl Config {
     }
 
     /// Serialize this configuration to TOML.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::{Config, Profile};
+    ///
+    /// let toml = Config::for_profile(Profile::Strict)
+    ///     .to_toml()
+    ///     .expect("serialize config");
+    /// assert!(toml.contains("profile = \"strict\""));
+    /// ```
     pub fn to_toml(&self) -> Result<String, ConfigError> {
         toml::to_string_pretty(self).map_err(ConfigError::SerializeFailed)
     }
 
     /// Build an idempotency dedupe store from the resolved remote settings.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::Config;
+    ///
+    /// let config = Config::default();
+    /// let store = config.idempotency_dedupe_store();
+    /// let _ = store;
+    /// ```
     #[cfg(feature = "remote-ops")]
     #[must_use]
     pub fn idempotency_dedupe_store(
@@ -419,6 +525,15 @@ impl Config {
     }
 
     /// Build a degraded-mode policy seeded from the resolved security settings.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::Config;
+    ///
+    /// let policy = Config::default().degraded_mode_policy("maintenance");
+    /// assert_eq!(policy.mode_name, "maintenance");
+    /// ```
     #[must_use]
     pub fn degraded_mode_policy(
         &self,
@@ -431,6 +546,16 @@ impl Config {
     }
 
     /// Build a compatibility gate evaluator from the resolved compatibility settings.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::Config;
+    /// use frankenengine_node::policy::compat_gates::ShimRegistry;
+    ///
+    /// let evaluator = Config::default().compat_gate_evaluator(ShimRegistry::new());
+    /// let _ = evaluator;
+    /// ```
     #[cfg(feature = "control-plane")]
     #[must_use]
     pub fn compat_gate_evaluator(
@@ -444,6 +569,15 @@ impl Config {
     }
 
     /// Build a compatibility gate engine from the resolved compatibility settings.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::Config;
+    ///
+    /// let engine = Config::default().compatibility_gate_engine(vec![7; 32]);
+    /// assert!(engine.divergence_receipts.is_empty());
+    /// ```
     #[cfg(feature = "control-plane")]
     #[must_use]
     pub fn compatibility_gate_engine(
@@ -457,6 +591,15 @@ impl Config {
     }
 
     /// Build a verifier economy registry from the resolved replay settings.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::Config;
+    ///
+    /// let registry = Config::default().verifier_economy_registry();
+    /// let _ = registry;
+    /// ```
     #[cfg(feature = "verifier-tools")]
     #[must_use]
     pub fn verifier_economy_registry(&self) -> crate::verifier_economy::VerifierEconomyRegistry {
@@ -2415,6 +2558,16 @@ pub enum PreferredRuntime {
 }
 
 impl PreferredRuntime {
+    /// Return true when runtime selection should be auto-detected.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::PreferredRuntime;
+    ///
+    /// assert!(PreferredRuntime::Auto.is_auto());
+    /// assert!(!PreferredRuntime::Node.is_auto());
+    /// ```
     #[must_use]
     pub const fn is_auto(self) -> bool {
         matches!(self, Self::Auto)
@@ -2463,6 +2616,20 @@ pub struct RuntimeConfig {
 }
 
 impl RuntimeConfig {
+    /// Return strict runtime lane and bulkhead defaults.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::{LaneOverflowPolicy, RuntimeConfig};
+    ///
+    /// let config = RuntimeConfig::strict_defaults();
+    /// assert_eq!(config.remote_max_in_flight, 32);
+    /// assert_eq!(
+    ///     config.lanes["cancel"].overflow_policy,
+    ///     LaneOverflowPolicy::Reject
+    /// );
+    /// ```
     #[must_use]
     pub fn strict_defaults() -> Self {
         Self {
@@ -2479,6 +2646,17 @@ impl RuntimeConfig {
         }
     }
 
+    /// Return balanced runtime lane and bulkhead defaults.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::RuntimeConfig;
+    ///
+    /// let config = RuntimeConfig::balanced_defaults();
+    /// assert_eq!(config.remote_max_in_flight, 50);
+    /// assert!(config.lanes.contains_key("realtime"));
+    /// ```
     #[must_use]
     pub fn balanced_defaults() -> Self {
         Self {
@@ -2495,6 +2673,17 @@ impl RuntimeConfig {
         }
     }
 
+    /// Return legacy-compatible runtime lane and bulkhead defaults.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::RuntimeConfig;
+    ///
+    /// let config = RuntimeConfig::legacy_defaults();
+    /// assert_eq!(config.remote_max_in_flight, 100);
+    /// assert_eq!(config.bulkhead_retry_after_ms, 20);
+    /// ```
     #[must_use]
     pub fn legacy_defaults() -> Self {
         Self {
@@ -2565,6 +2754,24 @@ pub struct RuntimeLaneConfig {
 }
 
 impl RuntimeLaneConfig {
+    /// Create a runtime lane configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::{LaneOverflowPolicy, RuntimeLaneConfig};
+    ///
+    /// let lane = RuntimeLaneConfig::new(
+    ///     8,
+    ///     100,
+    ///     32,
+    ///     25,
+    ///     LaneOverflowPolicy::EnqueueWithTimeout,
+    /// );
+    ///
+    /// assert_eq!(lane.max_concurrent, 8);
+    /// assert_eq!(lane.overflow_policy, LaneOverflowPolicy::EnqueueWithTimeout);
+    /// ```
     #[must_use]
     pub fn new(
         max_concurrent: usize,
@@ -2768,6 +2975,17 @@ pub struct ThresholdsConfig {
 }
 
 impl ThresholdsConfig {
+    /// Return the compile-time default threshold values.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use frankenengine_node::config::ThresholdsConfig;
+    ///
+    /// let defaults = ThresholdsConfig::default_values();
+    /// assert_eq!(defaults.max_failure_rate, Some(0.05));
+    /// assert_eq!(defaults.min_quality_score, Some(0.8));
+    /// ```
     #[must_use]
     pub const fn default_values() -> Self {
         Self {
