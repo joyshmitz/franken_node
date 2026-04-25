@@ -312,6 +312,100 @@ fn arbitrary_replay_bundle(rng: &mut impl Rng) -> ReplayBundle {
     bundle
 }
 
+fn entropy_pattern_name(pattern_index: usize) -> &'static str {
+    match pattern_index % 4 {
+        0 => "all_zero",
+        1 => "all_ff",
+        2 => "alternating_00_ff",
+        _ => "seeded_random",
+    }
+}
+
+fn entropy_pattern_bytes(rng: &mut impl RngCore, pattern_index: usize, byte_len: usize) -> Vec<u8> {
+    match pattern_index % 4 {
+        0 => vec![0x00; byte_len],
+        1 => vec![0xff; byte_len],
+        2 => (0..byte_len)
+            .map(|index| if index % 2 == 0 { 0x00 } else { 0xff })
+            .collect(),
+        _ => {
+            let mut bytes = vec![0x00; byte_len];
+            rng.fill_bytes(&mut bytes);
+            bytes
+        }
+    }
+}
+
+fn fuzzed_entropy_replay_bundle(seed: u64) -> ReplayBundle {
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    let event_count = rng.gen_range(5..25);
+    let events = (0..event_count)
+        .map(|event_index| {
+            let pattern_index = if event_index < 4 {
+                event_index
+            } else {
+                rng.gen_range(0..4)
+            };
+            let byte_len = match event_index {
+                0 => 64,
+                1 => 65,
+                2 => 128,
+                3 => rng.gen_range(0..=16),
+                _ => rng.gen_range(0..=768),
+            };
+            let bytes = entropy_pattern_bytes(&mut rng, pattern_index, byte_len);
+            let byte_hex = hex::encode(&bytes);
+            let prefix_hex = hex::encode(bytes.iter().take(32).copied().collect::<Vec<_>>());
+
+            RawEvent {
+                timestamp: format!(
+                    "2024-05-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+                    (event_index % 28) + 1,
+                    (event_index / 3600) % 24,
+                    (event_index / 60) % 60,
+                    event_index % 60,
+                    rng.gen_range(0..1000)
+                ),
+                event_type: [
+                    EventType::StateChange,
+                    EventType::PolicyEval,
+                    EventType::ExternalSignal,
+                    EventType::OperatorAction,
+                ][pattern_index % 4]
+                    .clone(),
+                payload: json!({
+                    "case_seed": seed,
+                    "event_index": event_index,
+                    "entropy_pattern": entropy_pattern_name(pattern_index),
+                    "byte_len": bytes.len(),
+                    "bytes_hex": byte_hex,
+                    "prefix_hex": prefix_hex
+                }),
+                causal_parent: if event_index > 0 && rng.gen_bool(0.35) {
+                    Some(rng.gen_range(1..=event_index) as u64)
+                } else {
+                    None
+                },
+                state_snapshot: (event_index == 0).then(|| {
+                    json!({
+                        "seed": seed,
+                        "entropy_pattern": entropy_pattern_name(pattern_index),
+                        "byte_len": bytes.len()
+                    })
+                }),
+                policy_version: (event_index == 0)
+                    .then(|| format!("entropy-policy-v{}", (seed % 7) + 1)),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let incident_id = format!("INC-ENTROPY-SERDE-{seed:016x}");
+    let mut bundle = generate_replay_bundle(&incident_id, &events)
+        .expect("fuzzed entropy events should generate a replay bundle");
+    sign_metamorphic_bundle(&mut bundle);
+    bundle
+}
+
 proptest::proptest! {
     #![proptest_config(ProptestConfig {
         cases: 64,
@@ -343,6 +437,26 @@ proptest::proptest! {
             &original_bundle,
             &canonical_deserialized,
             "canonical deserialize(serialize(bundle)) changed a valid replay bundle"
+        );
+    }
+
+    #[test]
+    fn replay_bundle_serde_roundtrip_is_byte_stable_for_fuzzed_entropy(
+        seed in any::<u64>(),
+    ) {
+        let original_bundle = fuzzed_entropy_replay_bundle(seed);
+        let first_wire = serde_json::to_vec(&original_bundle)
+            .expect("fuzzed entropy replay bundle should serialize");
+        let decoded: ReplayBundle = serde_json::from_slice(&first_wire)
+            .expect("serialized fuzzed entropy replay bundle should deserialize");
+        let second_wire = serde_json::to_vec(&decoded)
+            .expect("deserialized fuzzed entropy replay bundle should reserialize");
+
+        proptest::prop_assert_eq!(
+            first_wire,
+            second_wire,
+            "seed {}: serde serialize->deserialize->serialize changed wire bytes",
+            seed
         );
     }
 }
