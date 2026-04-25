@@ -915,3 +915,29 @@ fn verifier_economy_vep_conformance_matrix_executes_required_fixtures() {
         .count();
     assert_eq!(must_passed, must_total, "VEP MUST conformance must be 100%");
 }
+
+#[cfg(feature = "test-support")]
+#[test]
+fn replay_capsule_length_prefix_overflow_fails_closed() {
+    use frankenengine_node::sdk::replay_capsule::{
+        CapsuleError, CapsuleInput, compute_inputs_hash_with_prefix_limit_for_test,
+    };
+    use std::collections::BTreeMap;
+
+    let oversized_input = vec![CapsuleInput {
+        seq: 0,
+        data: vec![0, 1, 2, 3],
+        metadata: BTreeMap::new(),
+    }];
+
+    let err = compute_inputs_hash_with_prefix_limit_for_test(&oversized_input, 3)
+        .expect_err("oversized length prefix should be rejected cleanly");
+
+    assert_eq!(
+        err,
+        CapsuleError::LengthPrefixOverflow {
+            field: "input.data",
+            len: 4,
+        }
+    );
+}
