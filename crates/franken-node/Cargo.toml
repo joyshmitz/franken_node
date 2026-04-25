@@ -504,6 +504,10 @@ path = "tests/replay_bundle_event_reorder_metamorphic.rs"
 name = "proof_carrying_decode"
 path = "tests/proof_carrying_decode.rs"
 
+[[test]]
+name = "revocation_freshness_regressions"
+path = "tests/revocation_freshness_regressions.rs"
+
 [[bench]]
 name = "cuckoo_revocation_bench"
 harness = false

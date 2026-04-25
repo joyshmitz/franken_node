@@ -155,6 +155,41 @@ impl std::fmt::Display for FreshnessError {
     }
 }
 
+fn invalid_text_field(scope: &str, field: &str, value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Some(format!("{scope} {field} must not be empty"));
+    }
+    if trimmed != value {
+        return Some(format!(
+            "{scope} {field} must not contain leading or trailing whitespace"
+        ));
+    }
+    if value.contains('\0') {
+        return Some(format!("{scope} {field} must not contain null bytes"));
+    }
+    if value.chars().any(char::is_control) {
+        return Some(format!(
+            "{scope} {field} must not contain control characters"
+        ));
+    }
+    None
+}
+
+fn validate_check_fields(check: &FreshnessCheck) -> Result<(), FreshnessError> {
+    for (field, value) in [
+        ("action_id", check.action_id.as_str()),
+        ("trace_id", check.trace_id.as_str()),
+        ("timestamp", check.timestamp.as_str()),
+    ] {
+        if let Some(reason) = invalid_text_field("freshness check", field, value) {
+            return Err(FreshnessError::PolicyInvalid { reason });
+        }
+    }
+
+    Ok(())
+}
+
 /// Evaluate the freshness gate for an action.
 ///
 /// INV-RF-STANDARD-PASS: Standard tier always passes.
@@ -166,6 +201,9 @@ pub fn evaluate_freshness(
     check: &FreshnessCheck,
     override_receipt: Option<&OverrideReceipt>,
 ) -> Result<FreshnessDecision, FreshnessError> {
+    policy.validate()?;
+    validate_check_fields(check)?;
+
     let max_age_secs = match check.tier {
         // INV-RF-STANDARD-PASS: no freshness requirement
         SafetyTier::Standard => {
@@ -230,17 +268,22 @@ fn validate_override_receipt(
     check: &FreshnessCheck,
     receipt: &OverrideReceipt,
 ) -> Result<(), FreshnessError> {
-    let invalid = check.action_id.trim().is_empty()
-        || receipt.action_id.trim().is_empty()
-        || receipt.action_id != check.action_id
-        || check.trace_id.trim().is_empty()
-        || receipt.trace_id != check.trace_id
-        || receipt.actor.trim().is_empty()
-        || receipt.reason.trim().is_empty()
-        || receipt.timestamp.trim().is_empty()
-        || receipt.trace_id.trim().is_empty();
+    for (field, value) in [
+        ("action_id", receipt.action_id.as_str()),
+        ("trace_id", receipt.trace_id.as_str()),
+        ("actor", receipt.actor.as_str()),
+        ("reason", receipt.reason.as_str()),
+        ("timestamp", receipt.timestamp.as_str()),
+    ] {
+        if invalid_text_field("override receipt", field, value).is_some() {
+            return Err(FreshnessError::OverrideRequired {
+                tier: check.tier.to_string(),
+                age_secs: check.revocation_age_secs,
+            });
+        }
+    }
 
-    if invalid {
+    if receipt.action_id != check.action_id || receipt.trace_id != check.trace_id {
         return Err(FreshnessError::OverrideRequired {
             tier: check.tier.to_string(),
             age_secs: check.revocation_age_secs,
@@ -602,6 +645,59 @@ mod tests {
         assert_eq!(p.max_age_for_tier(SafetyTier::Risky), Some(3600));
         assert_eq!(p.max_age_for_tier(SafetyTier::Dangerous), Some(300));
     }
+
+    #[test]
+    fn standard_tier_rejects_whitespace_padded_action_id() {
+        let mut check = check_action(SafetyTier::Standard, 0);
+        check.action_id = " act-1".to_string();
+
+        let err = evaluate_freshness(&policy(), &check, None).expect_err("malformed action id");
+
+        assert_eq!(
+            err,
+            FreshnessError::PolicyInvalid {
+                reason: "freshness check action_id must not contain leading or trailing whitespace"
+                    .to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn fresh_risky_action_rejects_control_character_trace_id() {
+        let mut check = check_action(SafetyTier::Risky, 1);
+        check.trace_id = "trace\nbad".to_string();
+
+        let err = evaluate_freshness(&policy(), &check, None).expect_err("malformed trace id");
+
+        assert_eq!(
+            err,
+            FreshnessError::PolicyInvalid {
+                reason: "freshness check trace_id must not contain control characters".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn evaluate_rejects_invalid_policy_before_tier_decision() {
+        let invalid_policy = FreshnessPolicy {
+            risky_max_age_secs: 10,
+            dangerous_max_age_secs: 11,
+        };
+
+        let err = evaluate_freshness(
+            &invalid_policy,
+            &check_action(SafetyTier::Dangerous, 1),
+            Some(&override_receipt()),
+        )
+        .expect_err("invalid policy should fail before allowing stale action");
+
+        assert_eq!(
+            err,
+            FreshnessError::PolicyInvalid {
+                reason: "dangerous_max_age must be <= risky_max_age".to_string(),
+            }
+        );
+    }
 }
 
 #[cfg(test)]
@@ -840,6 +936,28 @@ mod override_receipt_negative_tests {
 
         expect_override_required(err, SafetyTier::Dangerous, 7200);
     }
+
+    #[test]
+    fn stale_override_rejects_actor_with_trailing_space() {
+        let check = stale_check(SafetyTier::Risky);
+        let mut override_receipt = receipt();
+        override_receipt.actor = "operator-a ".to_string();
+
+        let err = evaluate_freshness(&policy(), &check, Some(&override_receipt)).unwrap_err();
+
+        expect_override_required(err, SafetyTier::Risky, 7200);
+    }
+
+    #[test]
+    fn stale_override_rejects_reason_with_control_character() {
+        let check = stale_check(SafetyTier::Dangerous);
+        let mut override_receipt = receipt();
+        override_receipt.reason = "break-glass\tmaintenance".to_string();
+
+        let err = evaluate_freshness(&policy(), &check, Some(&override_receipt)).unwrap_err();
+
+        expect_override_required(err, SafetyTier::Dangerous, 7200);
+    }
 }
 
 #[cfg(test)]
@@ -874,21 +992,19 @@ mod revocation_freshness_boundary_negative_tests {
     }
 
     #[test]
-    fn risky_zero_max_age_fails_closed_at_exact_zero_age() {
+    fn risky_zero_max_age_policy_is_rejected_before_boundary_decision() {
         let policy = FreshnessPolicy {
             risky_max_age_secs: 0,
             dangerous_max_age_secs: 0,
         };
 
         let err = evaluate_freshness(&policy, &boundary_check(SafetyTier::Risky, 0), None)
-            .expect_err("zero max age should fail closed at exact boundary");
+            .expect_err("invalid policy should be rejected before boundary evaluation");
 
         assert_eq!(
             err,
-            FreshnessError::StaleFrontier {
-                tier: "Risky".to_string(),
-                age_secs: 0,
-                max_age_secs: 0,
+            FreshnessError::PolicyInvalid {
+                reason: "risky_max_age must be > 0".to_string(),
             }
         );
     }
