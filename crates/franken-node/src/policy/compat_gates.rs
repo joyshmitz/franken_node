@@ -543,6 +543,18 @@ impl fmt::Display for DivergenceAction {
 
 /// Look up the divergence action for a (band, mode) pair.
 /// This encodes the mode-band matrix from bd-2wz.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::policy::compat_gates::{divergence_action, CompatibilityBand, CompatibilityMode, DivergenceAction};
+///
+/// // Core band always errors on divergence
+/// assert_eq!(divergence_action(CompatibilityBand::Core, CompatibilityMode::Strict), DivergenceAction::Error);
+///
+/// // High-value band warns in balanced mode
+/// assert_eq!(divergence_action(CompatibilityBand::HighValue, CompatibilityMode::Balanced), DivergenceAction::Warn);
+/// ```
 pub fn divergence_action(band: CompatibilityBand, mode: CompatibilityMode) -> DivergenceAction {
     match (band, mode) {
         // Core band: always error on divergence
@@ -1905,6 +1917,19 @@ pub struct CompatGateReport {
 }
 
 /// Generate a summary report of the compatibility gate system.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::policy::compat_gates::{generate_compat_report, CompatGateEvaluator, ShimRegistry};
+///
+/// let registry = ShimRegistry::new();
+/// let evaluator = CompatGateEvaluator::new(registry);
+/// let report = generate_compat_report(&evaluator);
+///
+/// assert_eq!(report.shims_by_band.len(), 0); // Empty registry
+/// assert_eq!(report.decisions_summary.len(), 0); // No decisions yet
+/// ```
 pub fn generate_compat_report(evaluator: &CompatGateEvaluator) -> CompatGateReport {
     let registry = evaluator.registry();
 
