@@ -334,7 +334,16 @@ pub fn persist_epoch_scoped(
     })
 }
 
-/// Serialize concurrent persist() calls to prevent TOCTOU races on the version check.
+/// Serialize concurrent rollout `persist()` calls.
+///
+/// Canonical lifecycle: callers acquire the rollout obligation tracker first
+/// (or pass an already-exclusive test tracker), then acquire this process-local
+/// lock before reading the current state, reserving the obligation, writing the
+/// temp file, renaming it into place, and committing the obligation. The guard
+/// releases on every return path after any temp-file orphaning attempt. No file
+/// flock or other module persist lock may be acquired before this lock. If it is
+/// left held or poisoned, rollout state version checks and obligation commits in
+/// this process stall or fail before a new temp file is written.
 fn persist_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))

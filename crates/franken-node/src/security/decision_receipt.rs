@@ -26,6 +26,15 @@ use uuid::Uuid;
 
 use crate::capacity_defaults::aliases::MAX_RECEIPT_CHAIN;
 
+/// Process-local receipt persistence lock.
+///
+/// Canonical lifecycle: receipt exports validate the target path and parent
+/// directory first, then `write_bytes_atomically` acquires this lock before
+/// creating the temp file, writing, syncing, and renaming it into place. The
+/// lock is released by the guard drop on every return path; no caller may hold
+/// another module's persist lock while acquiring it. If it is left held or
+/// poisoned, subsequent receipt JSON/CBOR/Markdown writes in this process block
+/// or fail before creating new receipt temp files.
 static PERSIST_LOCK: Mutex<()> = Mutex::new(());
 
 mod canonical_f64 {

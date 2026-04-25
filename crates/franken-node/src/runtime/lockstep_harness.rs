@@ -75,6 +75,15 @@ fn extend_bounded(items: &mut Vec<u8>, new_data: &[u8], max_total_bytes: usize) 
     }
 }
 
+/// Process-local lockstep divergence fixture persistence lock.
+///
+/// Canonical lifecycle: fixture emission creates the output directory, acquires
+/// this mutex, then acquires the per-directory fixture flock before writing all
+/// temp fixtures and atomically renaming them into place. Drop order releases
+/// the file flock first and this mutex second. Callers must not acquire another
+/// module's persist lock while holding it. If it is left held or poisoned,
+/// lockstep divergence fixture export in this process blocks or fails before
+/// new fixture files are created.
 fn persist_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))

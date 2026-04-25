@@ -1340,6 +1340,17 @@ impl TrustCardRegistry {
     }
 }
 
+/// Process-local trust-card authoritative snapshot persistence lock.
+///
+/// Canonical lifecycle: `with_authoritative_snapshot_persist_lock` creates or
+/// opens the lock file, acquires the cross-process flock first, then acquires
+/// this mutex before reading high-water state and writing the snapshot plus
+/// high-water temp files. The explicit flock unlock runs after the write closure
+/// and before the mutex guard drops at function return. Callers must not hold
+/// another module's persist lock when entering this path. If this mutex is left
+/// held or poisoned, same-process snapshot writes fail before mutating snapshot
+/// files; if the flock cannot be released, closing the lock file still drops the
+/// OS lock when the function unwinds.
 fn authoritative_snapshot_persist_process_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
@@ -1428,8 +1439,7 @@ fn with_authoritative_snapshot_persist_lock<T>(
     path: &Path,
     write_snapshot: impl FnOnce() -> Result<T, TrustCardError>,
 ) -> Result<T, TrustCardError> {
-    // DEADLOCK FIX: Establish canonical lock order - file flock FIRST, then process Mutex
-    // This prevents AB-BA deadlock where Thread A (Mutex→flock) races Thread B (flock→Mutex)
+    // Canonical lock order: file flock first, process mutex second.
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(parent).map_err(|err| TrustCardError::SnapshotWrite {
         path: path.to_path_buf(),
