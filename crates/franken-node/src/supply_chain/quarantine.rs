@@ -225,7 +225,79 @@ pub enum QuarantineScope {
 
 // ── Quarantine order ─────────────────────────────────────────────────────────
 
-/// A signed quarantine order.
+/// A signed quarantine order for isolating compromised or suspicious extensions.
+///
+/// Quarantine orders are cryptographically signed directives that instruct runtime
+/// environments to isolate, restrict, or halt execution of specific extensions based
+/// on security findings such as vulnerability disclosures, malware detection, or
+/// supply chain attacks.
+///
+/// # Examples
+///
+/// ## Creating a High-Severity Quarantine Order
+///
+/// ```rust
+/// use frankenengine_node::supply_chain::quarantine::{
+///     QuarantineOrder, QuarantineScope, QuarantineMode,
+///     QuarantineSeverity, QuarantineReason
+/// };
+///
+/// let order = QuarantineOrder {
+///     order_id: "QO-2024-001".to_string(),
+///     scope: QuarantineScope::Extension {
+///         extension_id: "npm:malicious-package".to_string(),
+///         version_constraint: Some(">=1.2.0".to_string()),
+///     },
+///     mode: QuarantineMode::Hard,
+///     severity: QuarantineSeverity::Critical,
+///     reason: QuarantineReason::MalwareDetection,
+///     justification: "Embedded cryptocurrency miner detected in package".to_string(),
+///     issued_by: "security@example.com".to_string(),
+///     issued_at: "2024-01-15T10:30:00Z".to_string(),
+///     signature: "ed25519:abc123def456...".to_string(),
+///     trace_id: "incident-789".to_string(),
+///     grace_period_secs: 3600, // 1 hour to export data before hard shutdown
+/// };
+///
+/// assert_eq!(order.order_id, "QO-2024-001");
+/// assert_eq!(order.grace_period_secs, 3600);
+/// ```
+///
+/// ## Publisher-Wide Quarantine
+///
+/// ```rust
+/// # use frankenengine_node::supply_chain::quarantine::{
+/// #     QuarantineOrder, QuarantineScope, QuarantineMode,
+/// #     QuarantineSeverity, QuarantineReason
+/// # };
+/// let publisher_quarantine = QuarantineOrder {
+///     order_id: "QO-2024-002".to_string(),
+///     scope: QuarantineScope::Publisher {
+///         publisher_id: "compromised-publisher".to_string(),
+///     },
+///     mode: QuarantineMode::Soft,
+///     severity: QuarantineSeverity::High,
+///     reason: QuarantineReason::SupplyChainAttack,
+///     justification: "Publisher account compromised, reviewing all packages".to_string(),
+///     issued_by: "incident-response@example.com".to_string(),
+///     issued_at: "2024-01-15T14:45:00Z".to_string(),
+///     signature: "ed25519:def456abc123...".to_string(),
+///     trace_id: "incident-790".to_string(),
+///     grace_period_secs: 7200, // 2 hours for investigation
+/// };
+///
+/// // Publisher-wide quarantines affect all extensions from that publisher
+/// if let QuarantineScope::Publisher { publisher_id } = &publisher_quarantine.scope {
+///     assert_eq!(publisher_id, "compromised-publisher");
+/// }
+/// ```
+///
+/// # Security Properties
+///
+/// - **Cryptographic integrity**: Orders include Ed25519 signatures to prevent tampering
+/// - **Traceability**: Every order links to an incident trace for audit purposes
+/// - **Grace periods**: Hard quarantines include data export windows before shutdown
+/// - **Graduated response**: Soft quarantines warn users, hard quarantines block execution
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QuarantineOrder {
     /// Unique order identifier.
