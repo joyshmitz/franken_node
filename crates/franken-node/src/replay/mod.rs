@@ -34,11 +34,12 @@ mod negative_path_tests {
         WorkflowTrace {
             trace_id: trace_id.to_string(),
             workflow_name: "negative-path".to_string(),
-            trace_digest: WorkflowTrace::compute_digest(&steps),
+            trace_digest: String::new(),
             steps,
             environment: valid_environment(),
             schema_version: SCHEMA_VERSION.to_string(),
         }
+        .with_canonical_digest()
     }
 
     fn output_mismatch_replay(
@@ -105,7 +106,7 @@ mod negative_path_tests {
             workflow_name: "empty".to_string(),
             steps: Vec::new(),
             environment: valid_environment(),
-            trace_digest: WorkflowTrace::compute_digest(&[]),
+            trace_digest: String::new(),
             schema_version: SCHEMA_VERSION.to_string(),
         };
 
@@ -120,11 +121,12 @@ mod negative_path_tests {
         let trace = WorkflowTrace {
             trace_id: "trace-gap".to_string(),
             workflow_name: "gap".to_string(),
-            trace_digest: WorkflowTrace::compute_digest(&steps),
+            trace_digest: String::new(),
             steps,
             environment: valid_environment(),
             schema_version: SCHEMA_VERSION.to_string(),
-        };
+        }
+        .with_canonical_digest();
 
         let err = trace.validate().unwrap_err();
 
@@ -187,11 +189,12 @@ mod negative_path_tests {
         let trace = WorkflowTrace {
             trace_id: "trace-duplicate-seq".to_string(),
             workflow_name: "duplicate-seq".to_string(),
-            trace_digest: WorkflowTrace::compute_digest(&steps),
+            trace_digest: String::new(),
             steps,
             environment: valid_environment(),
             schema_version: SCHEMA_VERSION.to_string(),
-        };
+        }
+        .with_canonical_digest();
 
         let err = trace.validate().unwrap_err();
 
@@ -216,6 +219,26 @@ mod negative_path_tests {
             err,
             TimeTravelError::EnvironmentMissing { field, .. } if field == "platform"
         ));
+    }
+
+    #[test]
+    fn workflow_trace_digest_rejects_environment_tampering() {
+        let mut trace = valid_trace("trace-env-tamper");
+        trace.environment.platform = "linux-aarch64".to_string();
+
+        let err = trace.validate().unwrap_err();
+
+        assert!(matches!(err, TimeTravelError::DigestMismatch { .. }));
+    }
+
+    #[test]
+    fn workflow_trace_digest_rejects_metadata_tampering() {
+        let mut trace = valid_trace("trace-metadata-tamper");
+        trace.workflow_name = "mutated-workflow".to_string();
+
+        let err = trace.validate().unwrap_err();
+
+        assert!(matches!(err, TimeTravelError::DigestMismatch { .. }));
     }
 
     #[test]
@@ -325,11 +348,12 @@ mod negative_path_tests {
         let mut trace = WorkflowTrace {
             trace_id: "trace-effect-tamper".to_string(),
             workflow_name: "effect-tamper".to_string(),
-            trace_digest: WorkflowTrace::compute_digest(&steps),
+            trace_digest: String::new(),
             steps,
             environment: valid_environment(),
             schema_version: SCHEMA_VERSION.to_string(),
-        };
+        }
+        .with_canonical_digest();
         trace.steps[0].side_effects = vec![SideEffect::new("log", b"after".to_vec())];
 
         let err = trace.validate().unwrap_err();
@@ -354,11 +378,12 @@ mod negative_path_tests {
         let trace = WorkflowTrace {
             trace_id: "trace-side-effect-divergence".to_string(),
             workflow_name: "side-effect-divergence".to_string(),
-            trace_digest: WorkflowTrace::compute_digest(&steps),
+            trace_digest: String::new(),
             steps,
             environment: valid_environment(),
             schema_version: SCHEMA_VERSION.to_string(),
-        };
+        }
+        .with_canonical_digest();
         engine
             .register_trace(trace)
             .expect("fixture trace should register");

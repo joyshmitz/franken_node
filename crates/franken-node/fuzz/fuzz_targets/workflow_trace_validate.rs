@@ -1,7 +1,7 @@
 #![no_main]
 
+use frankenengine_node::replay::{TimeTravelError, WorkflowTrace};
 use libfuzzer_sys::fuzz_target;
-use frankenengine_node::replay::{WorkflowTrace, TimeTravelError};
 
 fuzz_target!(|trace: WorkflowTrace| {
     // Bound input size to prevent OOM
@@ -10,9 +10,18 @@ fuzz_target!(|trace: WorkflowTrace| {
     }
 
     // Bound total payload size across all steps
-    let total_payload_size: usize = trace.steps.iter()
-        .map(|step| step.input.len() + step.output.len() +
-             step.side_effects.iter().map(|e| e.payload.len()).sum::<usize>())
+    let total_payload_size: usize = trace
+        .steps
+        .iter()
+        .map(|step| {
+            step.input.len()
+                + step.output.len()
+                + step
+                    .side_effects
+                    .iter()
+                    .map(|e| e.payload.len())
+                    .sum::<usize>()
+        })
         .sum();
     if total_payload_size > 1_000_000 {
         return;
@@ -37,40 +46,51 @@ fuzz_target!(|trace: WorkflowTrace| {
         assert!(!trace.steps.is_empty(), "Valid trace must have steps");
 
         // Trace ID should not be empty
-        assert!(!trace.trace_id.is_empty(), "Valid trace must have non-empty trace_id");
+        assert!(
+            !trace.trace_id.is_empty(),
+            "Valid trace must have non-empty trace_id"
+        );
 
         // Workflow name should not be empty
-        assert!(!trace.workflow_name.is_empty(), "Valid trace must have non-empty workflow_name");
+        assert!(
+            !trace.workflow_name.is_empty(),
+            "Valid trace must have non-empty workflow_name"
+        );
 
         // Environment platform should not be empty
-        assert!(!trace.environment.platform.is_empty(), "Valid trace must have non-empty platform");
+        assert!(
+            !trace.environment.platform.is_empty(),
+            "Valid trace must have non-empty platform"
+        );
 
         // Environment runtime_version should not be empty
-        assert!(!trace.environment.runtime_version.is_empty(), "Valid trace must have non-empty runtime_version");
+        assert!(
+            !trace.environment.runtime_version.is_empty(),
+            "Valid trace must have non-empty runtime_version"
+        );
 
         // Steps should be ordered by sequence number
         for window in trace.steps.windows(2) {
             assert!(
                 window[0].seq < window[1].seq,
                 "Steps must be ordered by sequence number: {} >= {}",
-                window[0].seq, window[1].seq
+                window[0].seq,
+                window[1].seq
             );
         }
 
         // Sequence numbers should be consecutive starting from 0
         for (i, step) in trace.steps.iter().enumerate() {
             assert_eq!(
-                step.seq,
-                i as u64,
+                step.seq, i as u64,
                 "Step sequence numbers should be consecutive starting from 0"
             );
         }
 
         // Recompute digest and verify it matches
-        let recomputed_digest = WorkflowTrace::compute_digest(&trace.steps);
+        let recomputed_digest = trace.canonical_digest();
         assert_eq!(
-            trace.trace_digest,
-            recomputed_digest,
+            trace.trace_digest, recomputed_digest,
             "Trace digest should match recomputed digest for valid traces"
         );
 
@@ -86,11 +106,11 @@ fuzz_target!(|trace: WorkflowTrace| {
     if let Err(ref error) = validation_result {
         // Error should be one of the expected error types
         match error {
-            TimeTravelError::EmptyTrace { .. } |
-            TimeTravelError::SequenceGap { .. } |
-            TimeTravelError::DigestMismatch { .. } |
-            TimeTravelError::EnvironmentMissing { .. } |
-            TimeTravelError::InvalidEnvironment { .. } => {
+            TimeTravelError::EmptyTrace { .. }
+            | TimeTravelError::SequenceGap { .. }
+            | TimeTravelError::DigestMismatch { .. }
+            | TimeTravelError::EnvironmentMissing { .. }
+            | TimeTravelError::InvalidEnvironment { .. } => {
                 // Expected error types - this is good
             }
             _ => {

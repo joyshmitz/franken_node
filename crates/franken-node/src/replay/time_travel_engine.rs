@@ -72,6 +72,30 @@ fn update_hash_len_prefixed(hasher: &mut Sha256, bytes: &[u8]) {
     hasher.update(bytes);
 }
 
+fn update_hash_str_len_prefixed(hasher: &mut Sha256, value: &str) {
+    update_hash_len_prefixed(hasher, value.as_bytes());
+}
+
+fn update_side_effects_hash_len_prefixed(hasher: &mut Sha256, side_effects: &[SideEffect]) {
+    hasher.update((u64::try_from(side_effects.len()).unwrap_or(u64::MAX)).to_le_bytes());
+    for effect in side_effects {
+        update_hash_str_len_prefixed(hasher, &effect.kind);
+        update_hash_len_prefixed(hasher, &effect.payload);
+    }
+}
+
+fn update_environment_hash_len_prefixed(hasher: &mut Sha256, environment: &EnvironmentSnapshot) {
+    update_hash_str_len_prefixed(hasher, &environment.schema_version);
+    hasher.update(environment.clock_seed_ns.to_le_bytes());
+    hasher.update((u64::try_from(environment.env_vars.len()).unwrap_or(u64::MAX)).to_le_bytes());
+    for (key, value) in &environment.env_vars {
+        update_hash_str_len_prefixed(hasher, key);
+        update_hash_str_len_prefixed(hasher, value);
+    }
+    update_hash_str_len_prefixed(hasher, &environment.platform);
+    update_hash_str_len_prefixed(hasher, &environment.runtime_version);
+}
+
 // ---------------------------------------------------------------------------
 // Invariant constants (internal TTR invariants)
 // ---------------------------------------------------------------------------
@@ -463,13 +487,7 @@ impl TraceStep {
     pub fn side_effects_digest(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"replay_step_effects_v1:");
-        hasher.update((u64::try_from(self.side_effects.len()).unwrap_or(u64::MAX)).to_le_bytes());
-        for effect in &self.side_effects {
-            hasher.update((u64::try_from(effect.kind.len()).unwrap_or(u64::MAX)).to_le_bytes());
-            hasher.update(effect.kind.as_bytes());
-            hasher.update((u64::try_from(effect.payload.len()).unwrap_or(u64::MAX)).to_le_bytes());
-            hasher.update(&effect.payload);
-        }
+        update_side_effects_hash_len_prefixed(&mut hasher, &self.side_effects);
         hex::encode(hasher.finalize())
     }
 }
@@ -486,43 +504,59 @@ pub struct WorkflowTrace {
     pub steps: Vec<TraceStep>,
     /// Environment snapshot at capture time.
     pub environment: EnvironmentSnapshot,
-    /// SHA-256 digest over all step outputs, for integrity checking.
+    /// SHA-256 digest sealing trace metadata, environment, and steps for integrity checking.
     pub trace_digest: String,
     /// Schema version.
     pub schema_version: String,
 }
 
 impl WorkflowTrace {
-    /// Compute the canonical trace digest from steps.
-    pub fn compute_digest(steps: &[TraceStep]) -> String {
+    /// Compute the canonical trace digest from the full replay trace envelope.
+    pub fn compute_digest(
+        trace_id: &str,
+        workflow_name: &str,
+        steps: &[TraceStep],
+        environment: &EnvironmentSnapshot,
+        schema_version: &str,
+    ) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"replay_trace_digest_v1:");
+        update_hash_str_len_prefixed(&mut hasher, trace_id);
+        update_hash_str_len_prefixed(&mut hasher, workflow_name);
+        update_hash_str_len_prefixed(&mut hasher, schema_version);
+        update_environment_hash_len_prefixed(&mut hasher, environment);
         hasher.update((u64::try_from(steps.len()).unwrap_or(u64::MAX)).to_le_bytes());
         for step in steps {
             hasher.update(step.seq.to_le_bytes());
             hasher.update(step.timestamp_ns.to_le_bytes());
-            hasher.update((u64::try_from(step.input.len()).unwrap_or(u64::MAX)).to_le_bytes());
-            hasher.update(&step.input);
-            hasher.update((u64::try_from(step.output.len()).unwrap_or(u64::MAX)).to_le_bytes());
-            hasher.update(&step.output);
-            hasher
-                .update((u64::try_from(step.side_effects.len()).unwrap_or(u64::MAX)).to_le_bytes());
-            for effect in &step.side_effects {
-                hasher.update((u64::try_from(effect.kind.len()).unwrap_or(u64::MAX)).to_le_bytes());
-                hasher.update(effect.kind.as_bytes());
-                hasher.update(
-                    (u64::try_from(effect.payload.len()).unwrap_or(u64::MAX)).to_le_bytes(),
-                );
-                hasher.update(&effect.payload);
-            }
+            update_hash_len_prefixed(&mut hasher, &step.input);
+            update_hash_len_prefixed(&mut hasher, &step.output);
+            update_side_effects_hash_len_prefixed(&mut hasher, &step.side_effects);
         }
         hex::encode(hasher.finalize())
+    }
+
+    /// Recompute the digest that seals the current trace metadata, environment, and steps.
+    pub fn canonical_digest(&self) -> String {
+        Self::compute_digest(
+            &self.trace_id,
+            &self.workflow_name,
+            &self.steps,
+            &self.environment,
+            &self.schema_version,
+        )
+    }
+
+    /// Return a copy with `trace_digest` updated to the current canonical digest.
+    pub fn with_canonical_digest(mut self) -> Self {
+        self.trace_digest = self.canonical_digest();
+        self
     }
 
     /// Validate trace invariants (non-empty, ordered, digest match, env complete).
     pub fn validate(&self) -> Result<(), TimeTravelError> {
         self.validate_structure()?;
-        let recomputed = Self::compute_digest(&self.steps);
+        let recomputed = self.canonical_digest();
         self.validate_digest(&recomputed)?;
         self.environment.validate(&self.trace_id)?;
 
@@ -675,15 +709,16 @@ impl TraceBuilder {
             });
         }
 
-        let trace_digest = WorkflowTrace::compute_digest(&self.steps);
         let trace = WorkflowTrace {
             trace_id: self.trace_id.clone(),
             workflow_name: self.workflow_name.clone(),
             steps: self.steps,
             environment: self.environment,
-            trace_digest: trace_digest.clone(),
+            trace_digest: String::new(),
             schema_version: SCHEMA_VERSION.to_string(),
-        };
+        }
+        .with_canonical_digest();
+        let trace_digest = trace.trace_digest.clone();
 
         // Validate immediately after construction
         match trace.validate_with_digest(&trace_digest) {
@@ -946,19 +981,7 @@ impl ReplayEngine {
             let replayed_effects_digest = {
                 let mut hasher = Sha256::new();
                 hasher.update(b"replay_step_effects_v1:");
-                hasher.update(
-                    (u64::try_from(replayed_effects.len()).unwrap_or(u64::MAX)).to_le_bytes(),
-                );
-                for effect in &replayed_effects {
-                    hasher.update(
-                        (u64::try_from(effect.kind.len()).unwrap_or(u64::MAX)).to_le_bytes(),
-                    );
-                    hasher.update(effect.kind.as_bytes());
-                    hasher.update(
-                        (u64::try_from(effect.payload.len()).unwrap_or(u64::MAX)).to_le_bytes(),
-                    );
-                    hasher.update(&effect.payload);
-                }
+                update_side_effects_hash_len_prefixed(&mut hasher, &replayed_effects);
                 hex::encode(hasher.finalize())
             };
 
@@ -1108,15 +1131,15 @@ pub fn build_demo_trace(trace_id: &str, workflow_name: &str, step_count: usize) 
         reindex_trace_steps(&mut steps);
     }
 
-    let trace_digest = WorkflowTrace::compute_digest(&steps);
     WorkflowTrace {
         trace_id: trace_id.to_string(),
         workflow_name: workflow_name.to_string(),
         steps,
         environment: env,
-        trace_digest,
+        trace_digest: String::new(),
         schema_version: SCHEMA_VERSION.to_string(),
     }
+    .with_canonical_digest()
 }
 
 // ===========================================================================
@@ -1313,15 +1336,10 @@ mod tests {
             workflow_name: "wf".to_string(),
             steps: vec![TraceStep::new(0, vec![1], vec![2], vec![], 100)],
             environment: env,
-            trace_digest: WorkflowTrace::compute_digest(&[TraceStep::new(
-                0,
-                vec![1],
-                vec![2],
-                vec![],
-                100,
-            )]),
+            trace_digest: String::new(),
             schema_version: SCHEMA_VERSION.to_string(),
-        };
+        }
+        .with_canonical_digest();
         let err = trace
             .validate()
             .expect_err("workflow validation must reject embedded NUL bytes");
@@ -1397,15 +1415,15 @@ mod tests {
             TraceStep::new(0, vec![], vec![1], vec![], 100),
             TraceStep::new(2, vec![], vec![2], vec![], 200), // gap: expected 1
         ];
-        let digest = WorkflowTrace::compute_digest(&steps);
         let trace = WorkflowTrace {
             trace_id: "gap".to_string(),
             workflow_name: "test".to_string(),
             steps,
             environment: env,
-            trace_digest: digest,
+            trace_digest: String::new(),
             schema_version: SCHEMA_VERSION.to_string(),
-        };
+        }
+        .with_canonical_digest();
         let err = trace.validate().unwrap_err();
         assert!(matches!(
             err,
@@ -1975,33 +1993,73 @@ mod tests {
 
     #[test]
     fn compute_digest_deterministic() {
-        let steps = vec![
-            TraceStep::new(0, vec![1], vec![2], vec![], 100),
-            TraceStep::new(1, vec![3], vec![4], vec![], 200),
-        ];
-        let d1 = WorkflowTrace::compute_digest(&steps);
-        let d2 = WorkflowTrace::compute_digest(&steps);
+        let trace = WorkflowTrace {
+            trace_id: "digest-deterministic".to_string(),
+            workflow_name: "test".to_string(),
+            steps: vec![
+                TraceStep::new(0, vec![1], vec![2], vec![], 100),
+                TraceStep::new(1, vec![3], vec![4], vec![], 200),
+            ],
+            environment: demo_env(),
+            trace_digest: String::new(),
+            schema_version: SCHEMA_VERSION.to_string(),
+        };
+        let d1 = trace.canonical_digest();
+        let d2 = trace.canonical_digest();
         assert_eq!(d1, d2);
     }
 
     #[test]
     fn compute_digest_changes_with_different_output() {
-        let s1 = vec![TraceStep::new(0, vec![1], vec![2], vec![], 100)];
-        let s2 = vec![TraceStep::new(0, vec![1], vec![3], vec![], 100)];
-        assert_ne!(
-            WorkflowTrace::compute_digest(&s1),
-            WorkflowTrace::compute_digest(&s2)
-        );
+        let trace_one = WorkflowTrace {
+            trace_id: "digest-output".to_string(),
+            workflow_name: "test".to_string(),
+            steps: vec![TraceStep::new(0, vec![1], vec![2], vec![], 100)],
+            environment: demo_env(),
+            trace_digest: String::new(),
+            schema_version: SCHEMA_VERSION.to_string(),
+        };
+        let trace_two = WorkflowTrace {
+            trace_id: "digest-output".to_string(),
+            workflow_name: "test".to_string(),
+            steps: vec![TraceStep::new(0, vec![1], vec![3], vec![], 100)],
+            environment: demo_env(),
+            trace_digest: String::new(),
+            schema_version: SCHEMA_VERSION.to_string(),
+        };
+        assert_ne!(trace_one.canonical_digest(), trace_two.canonical_digest());
     }
 
     #[test]
     fn compute_digest_changes_with_different_timestamp() {
-        let s1 = vec![TraceStep::new(0, vec![1], vec![2], vec![], 100)];
-        let s2 = vec![TraceStep::new(0, vec![1], vec![2], vec![], 101)];
-        assert_ne!(
-            WorkflowTrace::compute_digest(&s1),
-            WorkflowTrace::compute_digest(&s2)
-        );
+        let trace_one = WorkflowTrace {
+            trace_id: "digest-timestamp".to_string(),
+            workflow_name: "test".to_string(),
+            steps: vec![TraceStep::new(0, vec![1], vec![2], vec![], 100)],
+            environment: demo_env(),
+            trace_digest: String::new(),
+            schema_version: SCHEMA_VERSION.to_string(),
+        };
+        let trace_two = WorkflowTrace {
+            trace_id: "digest-timestamp".to_string(),
+            workflow_name: "test".to_string(),
+            steps: vec![TraceStep::new(0, vec![1], vec![2], vec![], 101)],
+            environment: demo_env(),
+            trace_digest: String::new(),
+            schema_version: SCHEMA_VERSION.to_string(),
+        };
+        assert_ne!(trace_one.canonical_digest(), trace_two.canonical_digest());
+    }
+
+    #[test]
+    fn trace_validation_rejects_environment_metadata_tampering() {
+        let mut trace = one_step_trace("tampered-environment");
+        trace.environment.platform = "linux-aarch64".to_string();
+
+        let err = trace
+            .validate()
+            .expect_err("environment mutation must break digest");
+        assert!(matches!(err, TimeTravelError::DigestMismatch { .. }));
     }
 
     #[test]
@@ -2833,9 +2891,10 @@ mod tests {
             workflow_name: "serde-round-trip".to_string(),
             steps: steps.clone(),
             environment: env.clone(),
-            trace_digest: WorkflowTrace::compute_digest(&steps),
+            trace_digest: String::new(),
             schema_version: SCHEMA_VERSION.to_string(),
-        };
+        }
+        .with_canonical_digest();
 
         // MR: serialize → deserialize should be identity
         let serialized = serde_json::to_string(&original_trace).expect("serialize should succeed");
@@ -3153,8 +3212,24 @@ mod tests {
         let trace_order_abc = vec![step_a.clone(), step_b.clone(), step_c.clone()];
         let trace_order_cba = vec![step_c.clone(), step_b.clone(), step_a.clone()];
 
-        let digest_abc = WorkflowTrace::compute_digest(&trace_order_abc);
-        let digest_cba = WorkflowTrace::compute_digest(&trace_order_cba);
+        let digest_abc = WorkflowTrace {
+            trace_id: "order-abc".to_string(),
+            workflow_name: "temporal-order".to_string(),
+            steps: trace_order_abc,
+            environment: demo_env(),
+            trace_digest: String::new(),
+            schema_version: SCHEMA_VERSION.to_string(),
+        }
+        .canonical_digest();
+        let digest_cba = WorkflowTrace {
+            trace_id: "order-abc".to_string(),
+            workflow_name: "temporal-order".to_string(),
+            steps: trace_order_cba,
+            environment: demo_env(),
+            trace_digest: String::new(),
+            schema_version: SCHEMA_VERSION.to_string(),
+        }
+        .canonical_digest();
 
         // MR: Step order SHOULD matter for trace digest (steps represent temporal sequence)
         assert_ne!(
@@ -3924,7 +3999,15 @@ mod tests {
         );
 
         // Test trace-level vs step-level domain separation
-        let trace_digest = WorkflowTrace::compute_digest(&[step.clone()]);
+        let trace_digest = WorkflowTrace {
+            trace_id: "domain-separation-trace".to_string(),
+            workflow_name: "domain-separation".to_string(),
+            steps: vec![step.clone()],
+            environment: demo_env(),
+            trace_digest: String::new(),
+            schema_version: SCHEMA_VERSION.to_string(),
+        }
+        .canonical_digest();
         assert_ne!(
             trace_digest, output_digest,
             "Trace digest domain should prevent collision with step output"

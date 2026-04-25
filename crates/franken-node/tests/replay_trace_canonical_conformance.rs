@@ -82,11 +82,25 @@ fn step_effects_preimage(step: &TraceStep) -> Vec<u8> {
     bytes
 }
 
-fn trace_digest_preimage(steps: &[TraceStep]) -> Vec<u8> {
+fn trace_digest_preimage(trace: &WorkflowTrace) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(TRACE_DIGEST_DOMAIN);
-    bytes.extend_from_slice(&(u64::try_from(steps.len()).unwrap_or(u64::MAX)).to_le_bytes());
-    for step in steps {
+    push_len_prefixed(&mut bytes, trace.trace_id.as_bytes());
+    push_len_prefixed(&mut bytes, trace.workflow_name.as_bytes());
+    push_len_prefixed(&mut bytes, trace.schema_version.as_bytes());
+    push_len_prefixed(&mut bytes, trace.environment.schema_version.as_bytes());
+    bytes.extend_from_slice(&trace.environment.clock_seed_ns.to_le_bytes());
+    bytes.extend_from_slice(
+        &(u64::try_from(trace.environment.env_vars.len()).unwrap_or(u64::MAX)).to_le_bytes(),
+    );
+    for (key, value) in &trace.environment.env_vars {
+        push_len_prefixed(&mut bytes, key.as_bytes());
+        push_len_prefixed(&mut bytes, value.as_bytes());
+    }
+    push_len_prefixed(&mut bytes, trace.environment.platform.as_bytes());
+    push_len_prefixed(&mut bytes, trace.environment.runtime_version.as_bytes());
+    bytes.extend_from_slice(&(u64::try_from(trace.steps.len()).unwrap_or(u64::MAX)).to_le_bytes());
+    for step in &trace.steps {
         bytes.extend_from_slice(&step.seq.to_le_bytes());
         bytes.extend_from_slice(&step.timestamp_ns.to_le_bytes());
         push_len_prefixed(&mut bytes, &step.input);
@@ -171,8 +185,8 @@ fn vectors() -> Vec<TraceVector> {
                     expected_effects_digest: "40aaec57e5c6388bef6dbea5861ebfab2c93e27e8e706c5535039592c4b64829",
                 },
             ],
-            expected_trace_preimage_hex: "7265706c61795f74726163655f6469676573745f76313a0200000000000000000000000000000064002a36fe9c97171700000000000000666c6565743a71756172616e74696e653a7a6f6e652d6123000000000000007b226465636973696f6e223a2271756172616e74696e65222c227269736b223a39317d02000000000000001000000000000000666c6565742e71756172616e74696e6510000000000000007a6f6e652d61006578742d616c7068610c0000000000000061756469742e617070656e6412000000000000005454522d3030323a71756172616e74696e650100000000000000c8002a36fe9c97171500000000000000666c6565743a72656c656173653a696e632d30303120000000000000007b226465636973696f6e223a2272656c65617365222c227269736b223a31327d02000000000000000d00000000000000666c6565742e72656c656173650700000000000000696e632d3030310c0000000000000061756469742e617070656e640f000000000000005454522d3030333a72656c65617365",
-            expected_trace_digest: "845970535feec6490ecbb7f95e6c7c4b4b54c84b705adcbacaa7e3cc27a3b0f6",
+            expected_trace_preimage_hex: "7265706c61795f74726163655f6469676573745f76313a1c0000000000000074726163652d6f70657261746f725f72656c656173655f747261636522000000000000007265706c61792d74726163652d63616e6f6e6963616c2d636f6e666f726d616e636508000000000000007474722d76312e3008000000000000007474722d76312e300068e5cf8b010000010000000000000014000000000000004652414e4b454e5f4e4f44455f50524f46494c4512000000000000007374726963742d636f6e666f726d616e63650c000000000000006c696e75782d7838365f363418000000000000006672616e6b656e2d6e6f64652d636f6e666f726d616e63650200000000000000000000000000000064002a36fe9c97171700000000000000666c6565743a71756172616e74696e653a7a6f6e652d6123000000000000007b226465636973696f6e223a2271756172616e74696e65222c227269736b223a39317d02000000000000001000000000000000666c6565742e71756172616e74696e6510000000000000007a6f6e652d61006578742d616c7068610c0000000000000061756469742e617070656e6412000000000000005454522d3030323a71756172616e74696e650100000000000000c8002a36fe9c97171500000000000000666c6565743a72656c656173653a696e632d30303120000000000000007b226465636973696f6e223a2272656c65617365222c227269736b223a31327d02000000000000000d00000000000000666c6565742e72656c656173650700000000000000696e632d3030310c0000000000000061756469742e617070656e640f000000000000005454522d3030333a72656c65617365",
+            expected_trace_digest: "0aca68c75cf22aaf896cdbb6f1546dd89985f4531cb11ed39334f0a451bee448",
         },
         TraceVector {
             name: "boundary_split_ab_c",
@@ -189,8 +203,8 @@ fn vectors() -> Vec<TraceVector> {
                 expected_effects_preimage_hex: "7265706c61795f737465705f656666656374735f76313a010000000000000002000000000000006465010000000000000066",
                 expected_effects_digest: "8365ab4666a218ea7a8398b68af67ae05ac10696289022b8acf2d16146df3a4d",
             }],
-            expected_trace_preimage_hex: "7265706c61795f74726163655f6469676573745f76313a010000000000000000000000000000002a0000000000000002000000000000006162010000000000000063010000000000000002000000000000006465010000000000000066",
-            expected_trace_digest: "e0dcc5b8a95b0c8960f57a2c4f397301b37011f652cfddb00b2f7a41ea1dd58c",
+            expected_trace_preimage_hex: "7265706c61795f74726163655f6469676573745f76313a190000000000000074726163652d626f756e646172795f73706c69745f61625f6322000000000000007265706c61792d74726163652d63616e6f6e6963616c2d636f6e666f726d616e636508000000000000007474722d76312e3008000000000000007474722d76312e300068e5cf8b010000010000000000000014000000000000004652414e4b454e5f4e4f44455f50524f46494c4512000000000000007374726963742d636f6e666f726d616e63650c000000000000006c696e75782d7838365f363418000000000000006672616e6b656e2d6e6f64652d636f6e666f726d616e6365010000000000000000000000000000002a0000000000000002000000000000006162010000000000000063010000000000000002000000000000006465010000000000000066",
+            expected_trace_digest: "a2c27ae9bd52d70f7b93375bfaee836cafdda67cd02426d282825d326a7a0011",
         },
         TraceVector {
             name: "boundary_split_a_bc",
@@ -207,8 +221,8 @@ fn vectors() -> Vec<TraceVector> {
                 expected_effects_preimage_hex: "7265706c61795f737465705f656666656374735f76313a010000000000000001000000000000006402000000000000006566",
                 expected_effects_digest: "7ace257276e99228c13503cd9c0a48ebf1a7ed8df95c4f530474fbd1c0d53a33",
             }],
-            expected_trace_preimage_hex: "7265706c61795f74726163655f6469676573745f76313a010000000000000000000000000000002a0000000000000001000000000000006102000000000000006263010000000000000001000000000000006402000000000000006566",
-            expected_trace_digest: "fed71fdcb9ed9672810026783c21ca303fe59f0df6143c45af3615f9137384c6",
+            expected_trace_preimage_hex: "7265706c61795f74726163655f6469676573745f76313a190000000000000074726163652d626f756e646172795f73706c69745f615f626322000000000000007265706c61792d74726163652d63616e6f6e6963616c2d636f6e666f726d616e636508000000000000007474722d76312e3008000000000000007474722d76312e300068e5cf8b010000010000000000000014000000000000004652414e4b454e5f4e4f44455f50524f46494c4512000000000000007374726963742d636f6e666f726d616e63650c000000000000006c696e75782d7838365f363418000000000000006672616e6b656e2d6e6f64652d636f6e666f726d616e6365010000000000000000000000000000002a0000000000000001000000000000006102000000000000006263010000000000000001000000000000006402000000000000006566",
+            expected_trace_digest: "6e662fc09fe42327f08926ea014cc7c5932727a03c1c21e703e086149c927aff",
         },
     ]
 }
@@ -240,7 +254,15 @@ fn replay_trace_canonical_digest_vectors_match_exact_bytes() -> TestResult {
             .iter()
             .map(|step_vector| step_vector.step.clone())
             .collect::<Vec<_>>();
-        let trace_preimage = trace_digest_preimage(&steps);
+        let trace = WorkflowTrace {
+            trace_id: format!("trace-{}", vector.name),
+            workflow_name: "replay-trace-canonical-conformance".to_string(),
+            steps,
+            environment: environment(),
+            trace_digest: vector.expected_trace_digest.to_string(),
+            schema_version: SCHEMA_VERSION.to_string(),
+        };
+        let trace_preimage = trace_digest_preimage(&trace);
         assert_eq!(
             hex::encode(&trace_preimage),
             vector.expected_trace_preimage_hex,
@@ -254,7 +276,7 @@ fn replay_trace_canonical_digest_vectors_match_exact_bytes() -> TestResult {
             vector.name
         );
         assert_eq!(
-            WorkflowTrace::compute_digest(&steps),
+            trace.canonical_digest(),
             vector.expected_trace_digest,
             "{} production trace digest drifted",
             vector.name
@@ -302,14 +324,6 @@ fn replay_trace_canonical_digest_vectors_match_exact_bytes() -> TestResult {
             );
         }
 
-        let trace = WorkflowTrace {
-            trace_id: format!("trace-{}", vector.name),
-            workflow_name: "replay-trace-canonical-conformance".to_string(),
-            steps,
-            environment: environment(),
-            trace_digest: vector.expected_trace_digest.to_string(),
-            schema_version: SCHEMA_VERSION.to_string(),
-        };
         trace
             .validate()
             .map_err(|err| format!("{} exact vector must validate: {err}", vector.name))?;
@@ -339,7 +353,7 @@ fn replay_trace_builder_build_preserves_canonical_digest_validation() -> TestRes
 
     assert_eq!(
         trace.trace_digest,
-        WorkflowTrace::compute_digest(&trace.steps),
+        trace.canonical_digest(),
         "builder must store the canonical digest it validated"
     );
     assert!(
@@ -374,7 +388,7 @@ fn replay_trace_builder_build_reuses_precomputed_digest_but_output_still_validat
 
     assert_eq!(
         trace.trace_digest,
-        WorkflowTrace::compute_digest(&trace.steps),
+        trace.canonical_digest(),
         "builder must persist the same digest it validated during build"
     );
     assert!(

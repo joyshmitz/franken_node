@@ -231,13 +231,11 @@ mod tests {
                 trace_digest: String::new(), // Will be computed
                 schema_version: SCHEMA_VERSION.to_string(),
             }
+            .with_canonical_digest()
         };
 
-        let mut trace1 = create_trace();
-        let mut trace2 = create_trace();
-
-        trace1.trace_digest = WorkflowTrace::compute_digest(&trace1.steps);
-        trace2.trace_digest = WorkflowTrace::compute_digest(&trace2.steps);
+        let trace1 = create_trace();
+        let trace2 = create_trace();
 
         // Should be identical
         assert_eq!(trace1.trace_digest, trace2.trace_digest);
@@ -794,7 +792,7 @@ mod tests {
             workflow_name: "negative".to_string(),
             steps: Vec::new(),
             environment: minimal_env(),
-            trace_digest: WorkflowTrace::compute_digest(&[]),
+            trace_digest: String::new(),
             schema_version: SCHEMA_VERSION.to_string(),
         };
 
@@ -816,15 +814,15 @@ mod tests {
             vec![],
             10,
         )];
-        let trace_digest = WorkflowTrace::compute_digest(&steps);
         let trace = WorkflowTrace {
             trace_id: "seq-start-negative".to_string(),
             workflow_name: "negative".to_string(),
             steps,
             environment: minimal_env(),
-            trace_digest,
+            trace_digest: String::new(),
             schema_version: SCHEMA_VERSION.to_string(),
-        };
+        }
+        .with_canonical_digest();
 
         let err = trace.validate().unwrap_err();
         match err {
@@ -844,15 +842,15 @@ mod tests {
             TraceStep::new(0, b"in-0".to_vec(), b"out-0".to_vec(), vec![], 10),
             TraceStep::new(0, b"in-1".to_vec(), b"out-1".to_vec(), vec![], 20),
         ];
-        let trace_digest = WorkflowTrace::compute_digest(&steps);
         let trace = WorkflowTrace {
             trace_id: "duplicate-seq-negative".to_string(),
             workflow_name: "negative".to_string(),
             steps,
             environment: minimal_env(),
-            trace_digest,
+            trace_digest: String::new(),
             schema_version: SCHEMA_VERSION.to_string(),
-        };
+        }
+        .with_canonical_digest();
 
         let err = trace.validate().unwrap_err();
         match err {
@@ -887,7 +885,6 @@ mod tests {
             vec![],
             10,
         )];
-        let trace_digest = WorkflowTrace::compute_digest(&steps);
         let mut environment = minimal_env();
         environment.platform.clear();
         let trace = WorkflowTrace {
@@ -895,9 +892,10 @@ mod tests {
             workflow_name: "negative".to_string(),
             steps,
             environment,
-            trace_digest,
+            trace_digest: String::new(),
             schema_version: SCHEMA_VERSION.to_string(),
-        };
+        }
+        .with_canonical_digest();
 
         let mut engine = ReplayEngine::new();
         let err = engine.register_trace(trace).unwrap_err();
@@ -918,7 +916,6 @@ mod tests {
             vec![],
             10,
         )];
-        let trace_digest = WorkflowTrace::compute_digest(&steps);
         let mut environment = minimal_env();
         environment.runtime_version.clear();
         let trace = WorkflowTrace {
@@ -926,9 +923,10 @@ mod tests {
             workflow_name: "negative".to_string(),
             steps,
             environment,
-            trace_digest,
+            trace_digest: String::new(),
             schema_version: SCHEMA_VERSION.to_string(),
-        };
+        }
+        .with_canonical_digest();
 
         let mut engine = ReplayEngine::new();
         let err = engine.register_trace(trace).unwrap_err();
