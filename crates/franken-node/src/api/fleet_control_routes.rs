@@ -37,6 +37,23 @@ pub struct Lease {
 }
 
 /// Fencing operation result.
+/// Result of a fleet fencing operation.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::api::fleet_control_routes::{FencingResult, FencingAction, FencingStatus};
+///
+/// let result = FencingResult {
+///     operation_id: "fence-001".to_string(),
+///     target_node: "node-1".to_string(),
+///     action: FencingAction::Isolate,
+///     status: FencingStatus::Completed,
+///     fencing_token: 12345,
+///     executed_at: "2026-01-01T00:00:00Z".to_string(),
+/// };
+/// assert_eq!(result.target_node, "node-1");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FencingResult {
     pub operation_id: String,
@@ -47,6 +64,21 @@ pub struct FencingResult {
     pub executed_at: String,
 }
 
+/// Type of fencing action to execute on a fleet node.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::api::fleet_control_routes::FencingAction;
+///
+/// let action = FencingAction::Isolate;
+/// assert_eq!(action, FencingAction::Isolate);
+///
+/// // Actions for different scenarios
+/// let isolation = FencingAction::Isolate;  // Remove problematic node
+/// let draining = FencingAction::Drain;     // Graceful shutdown
+/// let rejoining = FencingAction::Rejoin;   // Re-add to cluster
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FencingAction {
     Isolate,
@@ -54,6 +86,23 @@ pub enum FencingAction {
     Rejoin,
 }
 
+/// Status of a fencing operation execution.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::api::fleet_control_routes::FencingStatus;
+///
+/// let status = FencingStatus::Completed;
+/// assert_eq!(status, FencingStatus::Completed);
+///
+/// // Different completion states
+/// match status {
+///     FencingStatus::Completed => println!("Fencing successful"),
+///     FencingStatus::Failed => println!("Fencing failed"),
+///     FencingStatus::Pending => println!("Fencing in progress"),
+/// }
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FencingStatus {
     Completed,
@@ -62,6 +111,24 @@ pub enum FencingStatus {
 }
 
 /// Multi-node coordination command result.
+/// Result of a fleet coordination command execution.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::api::fleet_control_routes::{CoordinationResult, CoordinationStatus};
+///
+/// let result = CoordinationResult {
+///     command_id: "coord-123".to_string(),
+///     command_type: "config-update".to_string(),
+///     participating_nodes: vec!["node-1".to_string(), "node-2".to_string()],
+///     ack_count: 2,
+///     total_nodes: 2,
+///     status: CoordinationStatus::Acknowledged,
+///     issued_at: "2026-01-01T00:00:00Z".to_string(),
+/// };
+/// assert_eq!(result.ack_count, result.total_nodes);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoordinationResult {
     pub command_id: String,
@@ -73,6 +140,23 @@ pub struct CoordinationResult {
     pub issued_at: String,
 }
 
+/// Status of fleet coordination command acknowledgment.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::api::fleet_control_routes::CoordinationStatus;
+///
+/// let status = CoordinationStatus::Acknowledged;
+/// assert_eq!(status, CoordinationStatus::Acknowledged);
+///
+/// // Check coordination success
+/// match status {
+///     CoordinationStatus::Acknowledged => println!("All nodes responded"),
+///     CoordinationStatus::Partial => println!("Some nodes missing"),
+///     CoordinationStatus::Timeout => println!("Coordination timed out"),
+/// }
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CoordinationStatus {
     Acknowledged,
@@ -88,6 +172,19 @@ pub struct LeaseAcquireRequest {
 }
 
 /// Request for a fencing operation.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::api::fleet_control_routes::{FencingRequest, FencingAction};
+///
+/// let request = FencingRequest {
+///     target_node: "problematic-node-5".to_string(),
+///     action: FencingAction::Isolate,
+///     reason: "High CPU usage detected".to_string(),
+/// };
+/// assert_eq!(request.action, FencingAction::Isolate);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FencingRequest {
     pub target_node: String,
@@ -96,6 +193,19 @@ pub struct FencingRequest {
 }
 
 /// Multi-node coordination command request.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::api::fleet_control_routes::CoordinationRequest;
+///
+/// let request = CoordinationRequest {
+///     command_type: "config-reload".to_string(),
+///     target_nodes: vec!["node-1".to_string(), "node-2".to_string(), "node-3".to_string()],
+///     timeout_seconds: 30,
+/// };
+/// assert_eq!(request.target_nodes.len(), 3);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoordinationRequest {
     pub command_type: String,
