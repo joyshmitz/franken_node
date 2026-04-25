@@ -83,6 +83,24 @@ pub mod error_codes {
 // ---------------------------------------------------------------------------
 
 /// Lifecycle state of a session.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::api::session_auth::SessionState;
+///
+/// let state = SessionState::Establishing;
+/// assert_eq!(state, SessionState::Establishing);
+///
+/// // State transitions
+/// match state {
+///     SessionState::Establishing => println!("Handshake in progress"),
+///     SessionState::Active => println!("Session ready"),
+///     SessionState::Terminating => println!("Shutting down"),
+///     SessionState::Expired => println!("Timeout occurred"),
+///     SessionState::Terminated => println!("Session closed"),
+/// }
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SessionState {
     /// Handshake in progress.
@@ -125,6 +143,23 @@ impl SessionState {
 // ---------------------------------------------------------------------------
 
 /// Configuration for the session manager.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::api::session_auth::SessionConfig;
+///
+/// let config = SessionConfig {
+///     replay_window: 100,
+///     max_sessions: 1000,
+///     session_timeout_ms: 300_000, // 5 minutes
+/// };
+/// assert_eq!(config.replay_window, 100);
+///
+/// // Use default configuration
+/// let default_config = SessionConfig::default();
+/// assert_eq!(default_config.replay_window, 0);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionConfig {
     /// Replay window size (0 = strict monotonicity).
@@ -150,6 +185,30 @@ impl Default for SessionConfig {
 // ---------------------------------------------------------------------------
 
 /// An authenticated control session binding identity, keys, and sequence state.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::api::session_auth::{AuthenticatedSession, SessionState};
+///
+/// let session = AuthenticatedSession {
+///     session_id: "sess-123".to_string(),
+///     state: SessionState::Active,
+///     client_identity: "client-1".to_string(),
+///     server_identity: "server-1".to_string(),
+///     encryption_key_id: "enc-key-456".to_string(),
+///     signing_key_id: "sign-key-789".to_string(),
+///     established_at: 1640995200000, // Jan 1, 2022
+///     last_activity_at: 1640995200000,
+///     send_seq: 0,
+///     send_seq_exhausted: false,
+///     recv_seq: 0,
+///     recv_window: vec![],
+///     handshake_mac: vec![0u8; 32],
+///     config: Default::default(),
+/// };
+/// assert_eq!(session.state, SessionState::Active);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthenticatedSession {
     /// Unique session identifier.
@@ -376,6 +435,24 @@ pub struct AuthenticatedMessage {
 }
 
 /// Direction of an authenticated message. Maps to connector::Direction.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::api::session_auth::MessageDirection;
+///
+/// let direction = MessageDirection::Send;
+/// assert_eq!(direction, MessageDirection::Send);
+///
+/// // Compare directions
+/// assert!(MessageDirection::Send < MessageDirection::Receive);
+///
+/// // Use in message processing
+/// match direction {
+///     MessageDirection::Send => println!("Outbound message"),
+///     MessageDirection::Receive => println!("Inbound message"),
+/// }
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum MessageDirection {
     Send,
@@ -431,6 +508,28 @@ pub struct SessionEvent {
 // ---------------------------------------------------------------------------
 
 /// Errors from session operations.
+///
+/// # Examples
+///
+/// ```
+/// use frankenengine_node::api::session_auth::{SessionError, MessageDirection};
+///
+/// let error = SessionError::NoSession {
+///     session_id: "missing-session".to_string(),
+/// };
+///
+/// match error {
+///     SessionError::NoSession { session_id } => {
+///         println!("Session not found: {}", session_id);
+///     }
+///     SessionError::DuplicateLiveSession { session_id } => {
+///         println!("Session already exists: {}", session_id);
+///     }
+///     SessionError::SequenceExhausted { session_id, direction } => {
+///         println!("Sequence exhausted for {}: {:?}", session_id, direction);
+///     }
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionError {
     NoSession {
