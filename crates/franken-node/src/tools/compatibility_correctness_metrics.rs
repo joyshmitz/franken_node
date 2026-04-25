@@ -415,7 +415,8 @@ impl CompatibilityCorrectnessMetrics {
                 api_family: m.api_family,
                 risk_band: m.risk_band,
             };
-            segment_data.entry(key).or_default().push(m);
+            let segment_vec = segment_data.entry(key).or_default();
+            push_bounded(segment_vec, m, MAX_METRICS);
         }
 
         let mut segments = Vec::new();
