@@ -4,7 +4,7 @@
 //! and object-safe transport trait used by the fleet-control track.
 
 #[cfg(feature = "asupersync-transport")]
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::{
     fs::{self, File, OpenOptions, TryLockError},
     io::{BufRead, BufReader, Write},
@@ -3363,8 +3363,8 @@ mod tests {
 
     #[test]
     fn fleet_convergence_timeout_includes_diagnostic_context() {
-        use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
 
         let never_converges = Arc::new(AtomicBool::new(false));
         let timeout = Duration::from_millis(50);
@@ -3372,7 +3372,8 @@ mod tests {
         let result = wait_until_fleet_converged_or_timeout(timeout, {
             let flag = never_converges.clone();
             move || Ok(flag.load(Ordering::Relaxed))
-        }).expect("should not error");
+        })
+        .expect("should not error");
 
         // Verify timeout occurred
         assert!(result.timed_out);
@@ -3380,17 +3381,26 @@ mod tests {
         assert!(result.check_attempts > 0);
 
         // Verify diagnostic context is present for timeouts
-        let context = result.failure_context.expect("should have failure context for timeout");
-        assert_eq!(context.doctor_command, "franken-node doctor --fleet --convergence");
+        let context = result
+            .failure_context
+            .expect("should have failure context for timeout");
+        assert_eq!(
+            context.doctor_command,
+            "franken-node doctor --fleet --convergence"
+        );
         assert_eq!(context.timeout_secs, timeout.as_secs());
         assert!(context.diagnostic_hint.contains("Fleet failed to converge"));
-        assert!(context.diagnostic_hint.contains(&format!("{} attempts", result.check_attempts)));
+        assert!(
+            context
+                .diagnostic_hint
+                .contains(&format!("{} attempts", result.check_attempts))
+        );
     }
 
     #[test]
     fn fleet_convergence_success_excludes_diagnostic_context() {
-        use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
 
         let converges_immediately = Arc::new(AtomicBool::new(true));
         let timeout = Duration::from_secs(10);
@@ -3398,7 +3408,8 @@ mod tests {
         let result = wait_until_fleet_converged_or_timeout(timeout, {
             let flag = converges_immediately.clone();
             move || Ok(flag.load(Ordering::Relaxed))
-        }).expect("should not error");
+        })
+        .expect("should not error");
 
         // Verify success
         assert!(!result.timed_out);
@@ -3411,8 +3422,8 @@ mod tests {
 
     #[test]
     fn fleet_convergence_diagnostic_tracks_check_attempts() {
-        use std::sync::atomic::{AtomicU32, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicU32, Ordering};
 
         let attempt_counter = Arc::new(AtomicU32::new(0));
         let timeout = Duration::from_millis(100);
@@ -3424,7 +3435,8 @@ mod tests {
                 // Converge on 3rd attempt
                 Ok(attempts >= 3)
             }
-        }).expect("should not error");
+        })
+        .expect("should not error");
 
         // Verify convergence after multiple attempts
         assert!(!result.timed_out);
