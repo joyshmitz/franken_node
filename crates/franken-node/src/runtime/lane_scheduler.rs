@@ -86,6 +86,16 @@ pub enum SchedulerLane {
 }
 
 impl SchedulerLane {
+    /// Returns all available scheduler lanes in priority order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use crate::runtime::lane_scheduler::SchedulerLane;
+    /// let lanes = SchedulerLane::all();
+    /// assert_eq!(lanes.len(), 4);
+    /// assert_eq!(lanes[0], SchedulerLane::ControlCritical);
+    /// ```
     pub fn all() -> &'static [SchedulerLane] {
         &[
             Self::ControlCritical,
@@ -95,6 +105,15 @@ impl SchedulerLane {
         ]
     }
 
+    /// Returns the string representation of the scheduler lane.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use crate::runtime::lane_scheduler::SchedulerLane;
+    /// assert_eq!(SchedulerLane::ControlCritical.as_str(), "control_critical");
+    /// assert_eq!(SchedulerLane::RemoteEffect.as_str(), "remote_effect");
+    /// ```
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::ControlCritical => "control_critical",
@@ -116,10 +135,28 @@ impl fmt::Display for SchedulerLane {
 pub struct TaskClass(pub String);
 
 impl TaskClass {
+    /// Creates a new task class with the given name.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use crate::runtime::lane_scheduler::TaskClass;
+    /// let task_class = TaskClass::new("custom_task");
+    /// assert_eq!(task_class.as_str(), "custom_task");
+    /// ```
     pub fn new(name: &str) -> Self {
         Self(name.to_string())
     }
 
+    /// Returns the string name of the task class.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use crate::runtime::lane_scheduler::TaskClass;
+    /// let task_class = TaskClass::new("data_processing");
+    /// assert_eq!(task_class.as_str(), "data_processing");
+    /// ```
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -136,6 +173,15 @@ impl fmt::Display for TaskClass {
 pub mod task_classes {
     use super::TaskClass;
 
+    /// Creates a task class for epoch transition operations.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use crate::runtime::lane_scheduler::task_classes;
+    /// let task = task_classes::epoch_transition();
+    /// assert_eq!(task.as_str(), "epoch_transition");
+    /// ```
     pub fn epoch_transition() -> TaskClass {
         TaskClass::new("epoch_transition")
     }
@@ -178,6 +224,16 @@ pub struct LaneConfig {
 }
 
 impl LaneConfig {
+    /// Creates a new lane configuration with default starvation window.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use crate::runtime::lane_scheduler::{LaneConfig, SchedulerLane};
+    /// let config = LaneConfig::new(SchedulerLane::ControlCritical, 100, 4);
+    /// assert_eq!(config.priority_weight, 100);
+    /// assert_eq!(config.concurrency_cap, 4);
+    /// ```
     pub fn new(lane: SchedulerLane, priority_weight: u32, concurrency_cap: usize) -> Self {
         Self {
             lane,
@@ -203,6 +259,16 @@ pub struct LaneMappingPolicy {
 }
 
 impl LaneMappingPolicy {
+    /// Creates a new empty lane mapping policy.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use crate::runtime::lane_scheduler::LaneMappingPolicy;
+    /// let policy = LaneMappingPolicy::new();
+    /// assert!(policy.lane_configs.is_empty());
+    /// assert!(policy.mapping_rules.is_empty());
+    /// ```
     pub fn new() -> Self {
         Self {
             lane_configs: BTreeMap::new(),
@@ -211,6 +277,15 @@ impl LaneMappingPolicy {
     }
 
     /// Add a lane configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use crate::runtime::lane_scheduler::{LaneMappingPolicy, LaneConfig, SchedulerLane};
+    /// let mut policy = LaneMappingPolicy::new();
+    /// let config = LaneConfig::new(SchedulerLane::ControlCritical, 100, 4);
+    /// assert!(policy.add_lane(config).is_ok());
+    /// ```
     pub fn add_lane(&mut self, config: LaneConfig) -> Result<(), LaneSchedulerError> {
         if self.lane_configs.contains_key(config.lane.as_str()) {
             return Err(LaneSchedulerError::DuplicateLane { lane: config.lane });
@@ -220,7 +295,17 @@ impl LaneMappingPolicy {
         Ok(())
     }
 
-    /// Add a mapping rule.
+    /// Add a mapping rule from task class to lane.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use crate::runtime::lane_scheduler::{LaneMappingPolicy, TaskClass, SchedulerLane};
+    /// let mut policy = LaneMappingPolicy::new();
+    /// let task_class = TaskClass::new("database_write");
+    /// policy.add_rule(&task_class, SchedulerLane::ControlCritical);
+    /// assert_eq!(policy.resolve(&task_class), Some(SchedulerLane::ControlCritical));
+    /// ```
     pub fn add_rule(&mut self, task_class: &TaskClass, lane: SchedulerLane) {
         self.mapping_rules
             .insert(task_class.as_str().to_string(), lane);
@@ -228,6 +313,17 @@ impl LaneMappingPolicy {
 
     /// Look up the lane for a task class.
     /// INV-LANE-EXACT-MAP
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use crate::runtime::lane_scheduler::{LaneMappingPolicy, TaskClass, SchedulerLane};
+    /// let mut policy = LaneMappingPolicy::new();
+    /// let task_class = TaskClass::new("artifact_upload");
+    /// policy.add_rule(&task_class, SchedulerLane::Background);
+    /// assert_eq!(policy.resolve(&task_class), Some(SchedulerLane::Background));
+    /// assert_eq!(policy.resolve(&TaskClass::new("unknown")), None);
+    /// ```
     pub fn resolve(&self, task_class: &TaskClass) -> Option<SchedulerLane> {
         self.mapping_rules.get(task_class.as_str()).copied()
     }
