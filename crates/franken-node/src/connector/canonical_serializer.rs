@@ -165,7 +165,7 @@ impl SignaturePreimage {
 
     /// Convert to the exact byte sequence for signing/verification.
     ///
-    /// Layout: [version][domain_tag_0][domain_tag_1][payload...]
+    /// Layout: \[version\]\[domain_tag_0\]\[domain_tag_1\]\[payload...\]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(3 + self.canonical_payload.len());
         bytes.push(self.version);

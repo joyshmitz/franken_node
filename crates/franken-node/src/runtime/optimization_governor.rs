@@ -794,12 +794,12 @@ impl OptimizationGovernor {
     // Contract-compatible method aliases (bd-21fo checker)
     // -----------------------------------------------------------------------
 
-    /// Alias for [`submit`] matching the contract name `submit_proposal`.
+    /// Alias for \[`submit`\] matching the contract name `submit_proposal`.
     pub fn submit_proposal(&mut self, proposal: OptimizationProposal) -> GovernorDecision {
         self.submit(proposal)
     }
 
-    /// Alias for [`live_check`] matching the contract name `auto_revert_check`.
+    /// Alias for \[`live_check`\] matching the contract name `auto_revert_check`.
     pub fn auto_revert_check(&mut self, live_metrics: &PredictedMetrics) -> Vec<String> {
         self.live_check(live_metrics)
     }

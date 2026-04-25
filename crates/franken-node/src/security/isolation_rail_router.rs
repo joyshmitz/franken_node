@@ -197,8 +197,8 @@ pub struct AuditEntry {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ElevationPolicy {
     /// Risk-score thresholds for initial rail assignment.
-    /// Workloads with score < thresholds[0] get Shared,
-    /// < thresholds[1] get Sandboxed, < thresholds[2] get HardenedSandbox,
+    /// Workloads with score < thresholds\[0\] get Shared,
+    /// < thresholds\[1\] get Sandboxed, < thresholds\[2\] get HardenedSandbox,
     /// otherwise FullIsolation.
     pub thresholds: [f64; 3],
     /// Whether to allow hot-elevation at runtime.
