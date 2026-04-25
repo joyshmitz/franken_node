@@ -11076,6 +11076,99 @@ fn trust_scan_user_agent() -> String {
     format!("franken-node/{}", env!("CARGO_PKG_VERSION"))
 }
 
+/// Validate that a package name is safe for URL construction.
+/// npm package names have strict format requirements that we can enforce.
+fn validate_package_name(name: &str) -> anyhow::Result<()> {
+    // npm package name validation rules:
+    // - length between 1 and 214 characters
+    // - lowercase only
+    // - can contain hyphens, dots, underscores
+    // - cannot start with . or _
+    // - no URL-unsafe characters
+    if name.is_empty() || name.len() > 214 {
+        anyhow::bail!("Package name length must be 1-214 characters, got {}", name.len());
+    }
+
+    if name.starts_with('.') || name.starts_with('_') {
+        anyhow::bail!("Package name cannot start with '.' or '_'");
+    }
+
+    // Only allow lowercase alphanumeric, hyphens, dots, and underscores
+    // This is stricter than npm spec but safer for URL construction
+    for ch in name.chars() {
+        if !ch.is_ascii_lowercase() && !ch.is_ascii_digit() && ch != '-' && ch != '.' && ch != '_' {
+            anyhow::bail!("Package name contains invalid character: '{}'", ch);
+        }
+    }
+
+    // Additional safety: reject names that could cause path traversal
+    if name.contains("..") || name.contains("//") {
+        anyhow::bail!("Package name cannot contain '..' or '//'");
+    }
+
+    Ok(())
+}
+
+/// Validate that a version string is safe for URL construction.
+fn validate_version_string(version: &str) -> anyhow::Result<()> {
+    if version.is_empty() || version.len() > 50 {
+        anyhow::bail!("Version length must be 1-50 characters, got {}", version.len());
+    }
+
+    // Only allow characters commonly used in semantic versions
+    // This is stricter than npm spec but safer for URL construction
+    for ch in version.chars() {
+        if !ch.is_ascii_alphanumeric() && ch != '.' && ch != '-' && ch != '+' {
+            anyhow::bail!("Version contains invalid character: '{}'", ch);
+        }
+    }
+
+    // Additional safety checks
+    if version.contains("..") || version.contains("//") {
+        anyhow::bail!("Version cannot contain '..' or '//'");
+    }
+
+    Ok(())
+}
+
+/// Validate that the constructed URL points to a trusted domain.
+fn validate_trust_scan_url(url: &str) -> anyhow::Result<()> {
+    // Allowlist of trusted domains for trust scanning
+    const TRUSTED_DOMAINS: &[&str] = &[
+        "api.deps.dev",
+        "registry.npmjs.org",
+    ];
+
+    // Parse URL to validate structure
+    let parsed_url = url::Url::parse(url)
+        .with_context(|| format!("Invalid URL format: {}", url))?;
+
+    // Ensure HTTPS only
+    if parsed_url.scheme() != "https" {
+        anyhow::bail!("Only HTTPS URLs allowed, got scheme: {}", parsed_url.scheme());
+    }
+
+    // Check domain allowlist
+    let host = parsed_url.host_str()
+        .ok_or_else(|| anyhow::anyhow!("URL missing host: {}", url))?;
+
+    if !TRUSTED_DOMAINS.contains(&host) {
+        anyhow::bail!("Untrusted domain '{}', allowed domains: {:?}", host, TRUSTED_DOMAINS);
+    }
+
+    // Ensure no credentials in URL
+    if !parsed_url.username().is_empty() || parsed_url.password().is_some() {
+        anyhow::bail!("URL cannot contain credentials");
+    }
+
+    // Length sanity check (prevents excessively long URLs)
+    if url.len() > 2048 {
+        anyhow::bail!("URL too long: {} characters", url.len());
+    }
+
+    Ok(())
+}
+
 fn percent_encode_path_component(raw: &str) -> String {
     let mut encoded = String::new();
     for byte in raw.bytes() {
@@ -11346,11 +11439,22 @@ fn fetch_trust_scan_dependent_count(
     resolved_version: &str,
     remote_cap: &mut TrustScanRemoteCapContext,
 ) -> Result<u64> {
+    // Validate inputs before URL construction to prevent SSRF
+    validate_package_name(dependency_name)
+        .with_context(|| format!("Invalid package name: {}", dependency_name))?;
+    validate_version_string(resolved_version)
+        .with_context(|| format!("Invalid version: {}", resolved_version))?;
+
     let package_name = percent_encode_path_component(dependency_name);
     let version = percent_encode_path_component(resolved_version);
     let url = format!(
         "{TRUST_SCAN_DEPS_DEV_BASE_URL}/systems/npm/packages/{package_name}/versions/{version}:dependents"
     );
+
+    // Additional URL validation as defense-in-depth
+    validate_trust_scan_url(&url)
+        .with_context(|| format!("Constructed URL failed validation: {}", url))?;
+
     remote_cap.authorize_egress(&url)?;
     let body = trust_scan_http_get_body(
         &url,
@@ -11432,8 +11536,17 @@ fn fetch_trust_scan_npm_metadata(
     preferred_version: Option<&str>,
     remote_cap: &mut TrustScanRemoteCapContext,
 ) -> Result<TrustScanDeepMetadata> {
+    // Validate inputs before URL construction to prevent SSRF
+    validate_package_name(dependency_name)
+        .with_context(|| format!("Invalid package name: {}", dependency_name))?;
+
     let package_name = percent_encode_path_component(dependency_name);
     let url = format!("{TRUST_SCAN_NPM_REGISTRY_BASE_URL}/{package_name}");
+
+    // Additional URL validation as defense-in-depth
+    validate_trust_scan_url(&url)
+        .with_context(|| format!("Constructed URL failed validation: {}", url))?;
+
     remote_cap.authorize_egress(&url)?;
     let body = trust_scan_http_get_body(
         &url,
@@ -22019,6 +22132,95 @@ mod run_trust_gate_tests {
                 receipt.core.receipt_id, receipt2.core.receipt_id,
                 "Receipt IDs should be unique per call"
             );
+        }
+    }
+
+    /// Test SSRF protection validation functions.
+    #[cfg(feature = "http-client")]
+    mod ssrf_protection_tests {
+        use super::*;
+
+        #[test]
+        fn validate_package_name_rejects_invalid_names() {
+            // Invalid: too long
+            let long_name = "a".repeat(215);
+            assert!(validate_package_name(&long_name).is_err());
+
+            // Invalid: starts with dot
+            assert!(validate_package_name(".dotpackage").is_err());
+
+            // Invalid: starts with underscore
+            assert!(validate_package_name("_underscore").is_err());
+
+            // Invalid: uppercase
+            assert!(validate_package_name("UpperCase").is_err());
+
+            // Invalid: contains path traversal
+            assert!(validate_package_name("package/../evil").is_err());
+            assert!(validate_package_name("package//evil").is_err());
+
+            // Invalid: special characters
+            assert!(validate_package_name("package@evil").is_err());
+            assert!(validate_package_name("package$evil").is_err());
+        }
+
+        #[test]
+        fn validate_package_name_accepts_valid_names() {
+            // Valid npm package names
+            assert!(validate_package_name("express").is_ok());
+            assert!(validate_package_name("lodash").is_ok());
+            assert!(validate_package_name("some-package").is_ok());
+            assert!(validate_package_name("package.name").is_ok());
+            assert!(validate_package_name("package_name").is_ok());
+            assert!(validate_package_name("package123").is_ok());
+        }
+
+        #[test]
+        fn validate_version_string_rejects_invalid_versions() {
+            // Invalid: too long
+            let long_version = "1.".repeat(50);
+            assert!(validate_version_string(&long_version).is_err());
+
+            // Invalid: contains path traversal
+            assert!(validate_version_string("1.0.0/../evil").is_err());
+            assert!(validate_version_string("1.0.0//evil").is_err());
+
+            // Invalid: special characters
+            assert!(validate_version_string("1.0.0@evil").is_err());
+            assert!(validate_version_string("1.0.0$evil").is_err());
+        }
+
+        #[test]
+        fn validate_version_string_accepts_valid_versions() {
+            // Valid semantic versions
+            assert!(validate_version_string("1.0.0").is_ok());
+            assert!(validate_version_string("1.0.0-alpha").is_ok());
+            assert!(validate_version_string("1.0.0+build").is_ok());
+            assert!(validate_version_string("1.0.0-alpha.1").is_ok());
+        }
+
+        #[test]
+        fn validate_trust_scan_url_rejects_untrusted_domains() {
+            // Invalid: untrusted domain
+            assert!(validate_trust_scan_url("https://evil.com/api").is_err());
+            assert!(validate_trust_scan_url("https://api.evil.com/v1").is_err());
+
+            // Invalid: HTTP (not HTTPS)
+            assert!(validate_trust_scan_url("http://api.deps.dev/v3alpha").is_err());
+
+            // Invalid: contains credentials
+            assert!(validate_trust_scan_url("https://user:pass@api.deps.dev/v3alpha").is_err());
+
+            // Invalid: too long
+            let long_url = format!("https://api.deps.dev/{}", "a".repeat(2040));
+            assert!(validate_trust_scan_url(&long_url).is_err());
+        }
+
+        #[test]
+        fn validate_trust_scan_url_accepts_trusted_domains() {
+            // Valid: trusted domains
+            assert!(validate_trust_scan_url("https://api.deps.dev/v3alpha/systems/npm/packages/test").is_ok());
+            assert!(validate_trust_scan_url("https://registry.npmjs.org/test").is_ok());
         }
     }
 }

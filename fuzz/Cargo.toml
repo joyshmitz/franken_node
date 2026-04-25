@@ -18,6 +18,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_cbor = "0.11.2"
 toml = "0.8"
+chrono = "0.4.44"
 # Remove zeroize_derive to reduce proc-macro compilation overhead
 zeroize = { version = "1.8.2" }
 
@@ -271,5 +272,17 @@ doc = false
 [[bin]]
 name = "fuzz_evidence_ledger_jsonl_spill"
 path = "fuzz_targets/fuzz_evidence_ledger_jsonl_spill.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_network_allowlist_entry_toml_parse"
+path = "fuzz_targets/fuzz_network_allowlist_entry_toml_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_quarantine_audit_timestamp_rfc3339"
+path = "fuzz_targets/fuzz_quarantine_audit_timestamp_rfc3339.rs"
 test = false
 doc = false
