@@ -362,17 +362,314 @@ impl FleetTransportLayout {
     }
 }
 
+/// Transport abstraction for distributed fleet coordination state.
+///
+/// The `FleetTransport` trait provides a storage-agnostic interface for managing
+/// fleet actions and node status in distributed systems. Implementations can use
+/// file systems, databases, or networked storage to persist fleet state.
+///
+/// The trait manages two primary data types:
+/// - **Fleet Actions**: Records of operations performed across the fleet (quarantine, rollback, etc.)
+/// - **Node Status**: Health and metadata for individual nodes in the fleet
+///
+/// # Implementations
+///
+/// - [`FileFleetTransport`]: File-based implementation using JSONL action logs
+/// - [`AsupersyncFleetTransport`]: Network-based implementation using asupersync protocol
+///
+/// # Example: Implementing a Custom Transport
+///
+/// ```rust
+/// use std::collections::HashMap;
+/// use chrono::Utc;
+/// use crate::control_plane::fleet_transport::*;
+///
+/// struct MemoryFleetTransport {
+///     actions: Vec<FleetActionRecord>,
+///     nodes: HashMap<String, NodeStatus>,
+///     initialized: bool,
+/// }
+///
+/// impl MemoryFleetTransport {
+///     fn new() -> Self {
+///         Self {
+///             actions: Vec::new(),
+///             nodes: HashMap::new(),
+///             initialized: false,
+///         }
+///     }
+/// }
+///
+/// impl FleetTransport for MemoryFleetTransport {
+///     fn initialize(&mut self) -> Result<(), FleetTransportError> {
+///         self.initialized = true;
+///         Ok(())
+///     }
+///
+///     fn publish_action(&mut self, action: &FleetActionRecord) -> Result<(), FleetTransportError> {
+///         if !self.initialized {
+///             return Err(FleetTransportError::io("Transport not initialized".to_string()));
+///         }
+///         self.actions.push(action.clone());
+///         Ok(())
+///     }
+///
+///     fn list_actions(&self) -> Result<Vec<FleetActionRecord>, FleetTransportError> {
+///         Ok(self.actions.clone())
+///     }
+///
+///     fn upsert_node_status(&mut self, status: &NodeStatus) -> Result<(), FleetTransportError> {
+///         let key = format!("{}-{}", status.zone_id, status.node_id);
+///         self.nodes.insert(key, status.clone());
+///         Ok(())
+///     }
+///
+///     fn list_node_statuses(&self) -> Result<Vec<NodeStatus>, FleetTransportError> {
+///         Ok(self.nodes.values().cloned().collect())
+///     }
+/// }
+/// ```
+///
+/// # Example: Using a Transport
+///
+/// ```rust
+/// use chrono::Utc;
+/// use crate::control_plane::fleet_transport::*;
+///
+/// # fn example_usage() -> Result<(), FleetTransportError> {
+/// let mut transport = FileFleetTransport::new("/tmp/fleet-data".into())?;
+/// transport.initialize()?;
+///
+/// // Publish a fleet action
+/// let action = FleetActionRecord {
+///     action_id: "action-001".to_string(),
+///     emitted_at: Utc::now(),
+///     action: FleetAction::QuarantineNode {
+///         node_id: "node-1".to_string(),
+///         reason: "Suspicious behavior detected".to_string(),
+///     },
+/// };
+/// transport.publish_action(&action)?;
+///
+/// // Update node status
+/// let status = NodeStatus {
+///     zone_id: "zone-a".to_string(),
+///     node_id: "node-1".to_string(),
+///     last_seen: Utc::now(),
+///     quarantine_version: 1,
+///     health: NodeHealth::Quarantined,
+/// };
+/// transport.upsert_node_status(&status)?;
+///
+/// // Read consolidated fleet state
+/// let shared_state = transport.read_shared_state()?;
+/// println!("Fleet has {} actions and {} nodes",
+///          shared_state.actions.len(),
+///          shared_state.nodes.len());
+/// # Ok(())
+/// # }
+/// ```
 pub trait FleetTransport {
+    /// Initialize the transport layer and prepare for operations.
+    ///
+    /// This method sets up any required infrastructure (directories, connections, etc.)
+    /// and must be called before any other operations.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FleetTransportError::Io`] if initialization fails due to I/O issues.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use crate::control_plane::fleet_transport::*;
+    /// # fn setup() -> Result<(), FleetTransportError> {
+    /// let mut transport = FileFleetTransport::new("/tmp/fleet".into())?;
+    /// transport.initialize()?;
+    /// // Transport is now ready for operations
+    /// # Ok(())
+    /// # }
+    /// ```
     fn initialize(&mut self) -> Result<(), FleetTransportError>;
 
+    /// Publish a fleet action to the persistent log.
+    ///
+    /// Fleet actions represent operations performed across the distributed fleet,
+    /// such as quarantine requests, rollback commands, or configuration changes.
+    /// Actions are timestamped and stored in chronological order.
+    ///
+    /// # Parameters
+    ///
+    /// - `action`: The fleet action record to persist
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FleetTransportError::Io`] for storage failures or
+    /// [`FleetTransportError::Serialization`] for encoding issues.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use chrono::Utc;
+    /// # use crate::control_plane::fleet_transport::*;
+    /// # fn publish_example(transport: &mut impl FleetTransport) -> Result<(), FleetTransportError> {
+    /// let action = FleetActionRecord {
+    ///     action_id: uuid::Uuid::new_v4().to_string(),
+    ///     emitted_at: Utc::now(),
+    ///     action: FleetAction::RollbackNode {
+    ///         node_id: "node-42".to_string(),
+    ///         target_version: "v1.2.3".to_string(),
+    ///     },
+    /// };
+    /// transport.publish_action(&action)?;
+    /// # Ok(())
+    /// # }
+    /// ```
     fn publish_action(&mut self, action: &FleetActionRecord) -> Result<(), FleetTransportError>;
 
+    /// Retrieve all fleet actions in chronological order.
+    ///
+    /// Returns the complete action history for the fleet, sorted by emission timestamp
+    /// and action ID for consistent ordering across multiple reads.
+    ///
+    /// # Returns
+    ///
+    /// Vector of [`FleetActionRecord`]s sorted chronologically.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FleetTransportError::Io`] for storage access failures or
+    /// [`FleetTransportError::Serialization`] for corrupt data.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use crate::control_plane::fleet_transport::*;
+    /// # fn list_example(transport: &impl FleetTransport) -> Result<(), FleetTransportError> {
+    /// let actions = transport.list_actions()?;
+    /// for action in actions {
+    ///     println!("Action {}: {:?} at {}",
+    ///              action.action_id, action.action, action.emitted_at);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     fn list_actions(&self) -> Result<Vec<FleetActionRecord>, FleetTransportError>;
 
+    /// Update or insert node status information.
+    ///
+    /// Maintains the current health and metadata for fleet nodes. If a node status
+    /// already exists, it is updated. Otherwise, a new entry is created.
+    ///
+    /// Node status includes health state, quarantine version, and last-seen timestamp
+    /// for fleet monitoring and decision-making.
+    ///
+    /// # Parameters
+    ///
+    /// - `status`: Node status to persist, identified by zone_id + node_id
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FleetTransportError::Io`] for storage failures or
+    /// [`FleetTransportError::Validation`] for invalid node identifiers.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use chrono::Utc;
+    /// # use crate::control_plane::fleet_transport::*;
+    /// # fn upsert_example(transport: &mut impl FleetTransport) -> Result<(), FleetTransportError> {
+    /// let status = NodeStatus {
+    ///     zone_id: "us-west-1".to_string(),
+    ///     node_id: "worker-05".to_string(),
+    ///     last_seen: Utc::now(),
+    ///     quarantine_version: 0,  // Not quarantined
+    ///     health: NodeHealth::Healthy,
+    /// };
+    /// transport.upsert_node_status(&status)?;
+    /// # Ok(())
+    /// # }
+    /// ```
     fn upsert_node_status(&mut self, status: &NodeStatus) -> Result<(), FleetTransportError>;
 
+    /// Retrieve all node status records.
+    ///
+    /// Returns the current status of all nodes in the fleet, including health state,
+    /// quarantine information, and last-seen timestamps. Results are sorted by
+    /// zone_id then node_id for consistent ordering.
+    ///
+    /// # Returns
+    ///
+    /// Vector of [`NodeStatus`] records sorted by zone and node ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FleetTransportError::Io`] for storage access failures or
+    /// [`FleetTransportError::Serialization`] for corrupt data.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use crate::control_plane::fleet_transport::*;
+    /// # fn status_example(transport: &impl FleetTransport) -> Result<(), FleetTransportError> {
+    /// let statuses = transport.list_node_statuses()?;
+    /// let healthy_count = statuses.iter()
+    ///     .filter(|s| s.health == NodeHealth::Healthy)
+    ///     .count();
+    /// println!("Healthy nodes: {}/{}", healthy_count, statuses.len());
+    /// # Ok(())
+    /// # }
+    /// ```
     fn list_node_statuses(&self) -> Result<Vec<NodeStatus>, FleetTransportError>;
 
+    /// Retrieve the consolidated fleet state combining actions and node status.
+    ///
+    /// This method provides a unified view of the fleet by combining the complete
+    /// action history with current node status. The returned state includes:
+    /// - All fleet actions sorted chronologically
+    /// - All node statuses sorted by zone and node ID
+    /// - Schema version for compatibility checking
+    ///
+    /// This is the primary method used by fleet controllers to get a complete
+    /// picture of fleet state for decision-making.
+    ///
+    /// # Returns
+    ///
+    /// [`FleetSharedState`] containing sorted actions and node statuses.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`list_actions`] or [`list_node_statuses`] if data
+    /// retrieval fails.
+    ///
+    /// # Default Implementation
+    ///
+    /// The default implementation calls [`list_actions`] and [`list_node_statuses`],
+    /// sorts the results, and packages them into [`FleetSharedState`]. Most
+    /// implementations can rely on this default behavior.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use crate::control_plane::fleet_transport::*;
+    /// # fn state_example(transport: &impl FleetTransport) -> Result<(), FleetTransportError> {
+    /// let state = transport.read_shared_state()?;
+    ///
+    /// println!("Fleet State (schema: {})", state.schema_version);
+    /// println!("  Actions: {} records", state.actions.len());
+    /// println!("  Nodes: {} active", state.nodes.len());
+    ///
+    /// // Find recent quarantine actions
+    /// let quarantine_actions: Vec<_> = state.actions.iter()
+    ///     .filter(|a| matches!(a.action, FleetAction::QuarantineNode { .. }))
+    ///     .collect();
+    /// println!("  Quarantine actions: {}", quarantine_actions.len());
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// [`list_actions`]: FleetTransport::list_actions
+    /// [`list_node_statuses`]: FleetTransport::list_node_statuses
     fn read_shared_state(&self) -> Result<FleetSharedState, FleetTransportError> {
         let mut actions = self.list_actions()?;
         actions.sort_by(|left, right| {
