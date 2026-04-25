@@ -14,7 +14,7 @@
 //! - INV-LANE-HOT-RELOAD: policy changes take effect without restart
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
 /// Schema version for lane metrics exports.
@@ -615,7 +615,8 @@ pub struct LaneScheduler {
     policy: LaneMappingPolicy,
     counters: BTreeMap<String, LaneCounters>,
     active_tasks: BTreeMap<String, TaskAssignment>,
-    queued_tasks: BTreeMap<String, Vec<QueuedTaskAssignment>>,
+    /// Per-lane queued work stays FIFO, so front-pop promotion must remain O(1).
+    queued_tasks: BTreeMap<String, VecDeque<QueuedTaskAssignment>>,
     audit_log: Vec<LaneAuditRecord>,
     max_audit_log_entries: usize,
     max_queued_tasks_per_lane: usize,
@@ -644,7 +645,7 @@ impl LaneScheduler {
                 config.lane.as_str().to_string(),
                 LaneCounters::new(config.lane),
             );
-            queued_tasks.insert(config.lane.as_str().to_string(), Vec::new());
+            queued_tasks.insert(config.lane.as_str().to_string(), VecDeque::new());
         }
 
         Ok(Self {
@@ -687,7 +688,7 @@ impl LaneScheduler {
             })?;
             (
                 queue.len(),
-                queue.first().map(|queued_task| queued_task.queued_at_ms),
+                queue.front().map(|queued_task| queued_task.queued_at_ms),
             )
         };
         let counters = self.counters.get_mut(lane.as_str()).ok_or_else(|| {
@@ -731,7 +732,7 @@ impl LaneScheduler {
             .ok_or_else(|| LaneSchedulerError::UnknownLane {
                 lane: lane.to_string(),
             })?
-            .push(queued);
+            .push_back(queued);
         self.refresh_lane_queue_counters(lane)?;
         self.push_audit_record(LaneAuditRecord {
             event_code: event_codes::LANE_TASK_QUEUED.to_string(),
@@ -780,7 +781,10 @@ impl LaneScheduler {
                 if queue.is_empty() {
                     return Ok(());
                 }
-                queue.remove(0)
+                let Some(queued) = queue.pop_front() else {
+                    return Ok(());
+                };
+                queued
             };
             self.refresh_lane_queue_counters(lane)?;
 
@@ -954,9 +958,10 @@ impl LaneScheduler {
 
         for queue in self.queued_tasks.values_mut() {
             if let Some(position) = queue.iter().position(|queued| queued.task_id == task_id) {
-                let queued = queue.remove(position);
-                removed = Some(queued);
-                break;
+                if let Some(queued) = queue.remove(position) {
+                    removed = Some(queued);
+                    break;
+                }
             }
         }
 
@@ -1116,7 +1121,7 @@ impl LaneScheduler {
             let queued_tasks = self
                 .queued_tasks
                 .get(lane)
-                .map(Vec::len)
+                .map(|queue| queue.len())
                 .unwrap_or_default();
             if counter_active > 0 || counter_queued > 0 || active_tasks > 0 || queued_tasks > 0 {
                 return Err(LaneSchedulerError::InvalidPolicy {
@@ -1230,6 +1235,8 @@ impl LaneScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::hint::black_box;
+    use std::time::{Duration, Instant};
 
     fn make_scheduler() -> LaneScheduler {
         LaneScheduler::new(default_policy()).unwrap()
@@ -1251,6 +1258,60 @@ mod tests {
             "cap pressure should retain a queued task identity"
         );
         queued_task_id.unwrap_or_default()
+    }
+
+    fn benchmark_best_of(mut bench: impl FnMut() -> Duration) -> Duration {
+        let mut best: Option<Duration> = None;
+        for _ in 0..5 {
+            let elapsed = bench();
+            best = Some(best.map_or(elapsed, |current| current.min(elapsed)));
+        }
+        best.expect("benchmark should execute at least once")
+    }
+
+    fn lane_scheduler_promotion_duration(queued_count: usize) -> Duration {
+        benchmark_best_of(|| {
+            let mut policy = default_policy();
+            policy
+                .lane_configs
+                .get_mut(SchedulerLane::Background.as_str())
+                .expect("background lane config")
+                .concurrency_cap = queued_count.max(1);
+
+            let mut scheduler = LaneScheduler::new(policy).expect("scheduler");
+            for index in 0..queued_count {
+                scheduler
+                    .enqueue_task(
+                        &task_classes::telemetry_export(),
+                        SchedulerLane::Background,
+                        index as u64,
+                        &format!("trace-bench-{index}"),
+                    )
+                    .expect("enqueue")
+                    .expect("queue under benchmark cap");
+            }
+
+            let started = Instant::now();
+            scheduler
+                .promote_queued_tasks_for_lane(
+                    SchedulerLane::Background,
+                    black_box(queued_count as u64 + 10_000),
+                )
+                .expect("promote queued tasks");
+            let elapsed = started.elapsed();
+
+            assert_eq!(scheduler.active_tasks.len(), queued_count);
+            assert_eq!(
+                scheduler
+                    .queued_tasks
+                    .get(SchedulerLane::Background.as_str())
+                    .expect("background queue")
+                    .len(),
+                0
+            );
+
+            black_box(elapsed)
+        })
     }
 
     // ---- SchedulerLane ----
@@ -3158,5 +3219,20 @@ mod tests {
                 "Schema version should be consistent"
             );
         }
+    }
+
+    #[test]
+    fn benchmark_lane_scheduler_queue_promotion_scales_linearly() {
+        // Complexity contract: draining 4x queued tasks should remain well below
+        // quadratic growth. VecDeque front-pop keeps promotion O(n) in queue depth.
+        let smaller = lane_scheduler_promotion_duration(256);
+        let larger = lane_scheduler_promotion_duration(1024);
+        let smaller_nanos = smaller.as_nanos().max(1);
+        let larger_nanos = larger.as_nanos();
+
+        assert!(
+            larger_nanos <= smaller_nanos.saturating_mul(8),
+            "queue promotion regressed toward quadratic cost: 256={smaller:?} 1024={larger:?}"
+        );
     }
 }
