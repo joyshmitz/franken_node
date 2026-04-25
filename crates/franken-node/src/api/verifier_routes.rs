@@ -18,8 +18,8 @@ use sha2::{Digest, Sha256};
 
 use super::error::ApiError;
 use super::middleware::{
-    AuthIdentity, AuthMethod, EndpointGroup, EndpointLifecycle, PolicyHook, RouteMetadata,
-    TraceContext,
+    enforce_route_contract, AuthIdentity, AuthMethod, EndpointGroup, EndpointLifecycle,
+    PolicyHook, RouteMetadata, TraceContext,
 };
 use super::trust_card_routes::ApiResponse;
 use super::utf8_prefix;
@@ -704,6 +704,22 @@ pub fn route_metadata() -> Vec<RouteMetadata> {
     ]
 }
 
+fn enforce_handler_contract(
+    identity: &AuthIdentity,
+    trace: &TraceContext,
+    method: &str,
+    path: &str,
+) -> Result<(), ApiError> {
+    let route = route_metadata()
+        .into_iter()
+        .find(|route| route.method == method && route.path == path)
+        .ok_or_else(|| ApiError::Internal {
+            detail: format!("missing route metadata for {method} {path}"),
+            trace_id: trace.trace_id.clone(),
+        })?;
+    enforce_route_contract(identity, &route, &trace.trace_id)
+}
+
 // ── Handlers ───────────────────────────────────────────────────────────────
 
 /// Handle `POST /v1/verifier/conformance`.
@@ -712,6 +728,7 @@ pub fn trigger_conformance(
     trace: &TraceContext,
     request: &ConformanceTriggerRequest,
 ) -> Result<ApiResponse<ConformanceResult>, ApiError> {
+    enforce_handler_contract(identity, trace, "POST", "/v1/verifier/conformance")?;
     with_verifier_route_state(&trace.trace_id, |state| {
         let (check_id, audit_entry_id) = state.reserve_trigger_ids(&trace.trace_id)?;
         let findings = vec![
@@ -812,6 +829,7 @@ pub fn get_evidence(
     trace: &TraceContext,
     check_id: &str,
 ) -> Result<ApiResponse<EvidenceArtifact>, ApiError> {
+    enforce_handler_contract(identity, trace, "GET", "/v1/verifier/evidence/{check_id}")?;
     let check_id = normalize_required_field(check_id, "check_id", &trace.trace_id)?;
     with_verifier_route_state(&trace.trace_id, |state| {
         let Some(artifact) = state
@@ -850,10 +868,11 @@ pub fn get_evidence(
 
 /// Handle `GET /v1/verifier/audit-log`.
 pub fn query_audit_log(
-    _identity: &AuthIdentity,
+    identity: &AuthIdentity,
     trace: &TraceContext,
     query: &AuditLogQuery,
 ) -> Result<ApiResponse<Vec<AuditLogEntry>>, ApiError> {
+    enforce_handler_contract(identity, trace, "GET", "/v1/verifier/audit-log")?;
     let since = match query.since.as_deref() {
         Some(raw) => Some(
             chrono::DateTime::parse_from_rfc3339(raw)
@@ -918,6 +937,7 @@ pub fn get_atc_metric_snapshot(
     trace: &TraceContext,
     metric_id: &str,
 ) -> Result<ApiResponse<AtcMetricSnapshot>, ApiError> {
+    enforce_handler_contract(identity, trace, "GET", "/api/v1/atc/verifier/metrics/{metric_id}")?;
     let metric_id = normalize_required_field(metric_id, "metric_id", &trace.trace_id)?;
     let computation_id = "atc-comp-latest";
     let report = build_atc_report(&trace.trace_id, computation_id)?;
@@ -959,6 +979,12 @@ pub fn verify_atc_computation(
     computation_id: &str,
     request: &AtcVerificationRequest,
 ) -> Result<ApiResponse<AtcVerificationResult>, ApiError> {
+    enforce_handler_contract(
+        identity,
+        trace,
+        "POST",
+        "/api/v1/atc/verifier/computations/{computation_id}/verify",
+    )?;
     let computation_id =
         normalize_required_field(computation_id, "computation_id", &trace.trace_id)?;
     let report = build_atc_report(&trace.trace_id, &computation_id)?;
@@ -1034,6 +1060,12 @@ pub fn get_atc_proof_chain(
     trace: &TraceContext,
     computation_id: &str,
 ) -> Result<ApiResponse<AtcProofChain>, ApiError> {
+    enforce_handler_contract(
+        identity,
+        trace,
+        "GET",
+        "/api/v1/atc/verifier/computations/{computation_id}/proof-chain",
+    )?;
     let computation_id =
         normalize_required_field(computation_id, "computation_id", &trace.trace_id)?;
     let proof_chain = build_atc_proof_chain_for(&computation_id);
@@ -1059,6 +1091,12 @@ pub fn get_atc_report(
     trace: &TraceContext,
     computation_id: &str,
 ) -> Result<ApiResponse<AtcVerifierReport>, ApiError> {
+    enforce_handler_contract(
+        identity,
+        trace,
+        "GET",
+        "/api/v1/atc/verifier/reports/{computation_id}",
+    )?;
     let computation_id =
         normalize_required_field(computation_id, "computation_id", &trace.trace_id)?;
     let report = build_atc_report(&trace.trace_id, &computation_id)?;
@@ -1088,6 +1126,22 @@ mod tests {
         AuthIdentity {
             principal: "test-verifier".to_string(),
             method: AuthMethod::BearerToken,
+            roles: vec!["verifier".to_string()],
+        }
+    }
+
+    fn reader_identity() -> AuthIdentity {
+        AuthIdentity {
+            principal: "test-reader".to_string(),
+            method: AuthMethod::BearerToken,
+            roles: vec!["reader".to_string()],
+        }
+    }
+
+    fn apikey_verifier_identity() -> AuthIdentity {
+        AuthIdentity {
+            principal: "test-verifier".to_string(),
+            method: AuthMethod::ApiKey,
             roles: vec!["verifier".to_string()],
         }
     }
@@ -1164,6 +1218,41 @@ mod tests {
         reset_verifier_state();
         for route in route_metadata() {
             assert_eq!(route.auth_method, AuthMethod::BearerToken);
+        }
+    }
+
+    #[test]
+    fn query_audit_log_rejects_reader_identity_directly() {
+        let _guard = test_guard();
+        reset_verifier_state();
+        let err = query_audit_log(
+            &reader_identity(),
+            &test_trace(),
+            &AuditLogQuery {
+                action: None,
+                actor: None,
+                limit: None,
+                since: None,
+            },
+        )
+        .expect_err("audit log fails");
+        match err {
+            ApiError::PolicyDenied { policy_hook, .. } => {
+                assert_eq!(policy_hook, "verifier.audit.read");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn get_evidence_rejects_api_key_identity_directly() {
+        let _guard = test_guard();
+        reset_verifier_state();
+        let err = get_evidence(&apikey_verifier_identity(), &test_trace(), "check-1")
+            .expect_err("evidence fails");
+        match err {
+            ApiError::AuthFailed { detail, .. } => assert!(detail.contains("route contract")),
+            other => panic!("unexpected error: {other:?}"),
         }
     }
 

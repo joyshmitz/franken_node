@@ -21,8 +21,8 @@ use std::time::Instant;
 
 use super::error::ApiError;
 use super::middleware::{
-    AuthIdentity, AuthMethod, EndpointGroup, EndpointLifecycle, PolicyHook, RouteMetadata,
-    TraceContext,
+    enforce_route_contract, AuthIdentity, AuthMethod, EndpointGroup, EndpointLifecycle,
+    PolicyHook, RouteMetadata, TraceContext,
 };
 use super::trust_card_routes::ApiResponse;
 
@@ -473,13 +473,30 @@ pub fn route_metadata() -> Vec<RouteMetadata> {
     ]
 }
 
+fn enforce_handler_contract(
+    identity: &AuthIdentity,
+    trace: &TraceContext,
+    method: &str,
+    path: &str,
+) -> Result<(), ApiError> {
+    let route = route_metadata()
+        .into_iter()
+        .find(|route| route.method == method && route.path == path)
+        .ok_or_else(|| ApiError::Internal {
+            detail: format!("missing route metadata for {method} {path}"),
+            trace_id: trace.trace_id.clone(),
+        })?;
+    enforce_route_contract(identity, &route, &trace.trace_id)
+}
+
 // ── Handlers ───────────────────────────────────────────────────────────────
 
 /// Handle `GET /v1/operator/status`.
 pub fn get_status(
-    _identity: &AuthIdentity,
-    _trace: &TraceContext,
+    identity: &AuthIdentity,
+    trace: &TraceContext,
 ) -> Result<ApiResponse<NodeStatus>, ApiError> {
+    enforce_handler_contract(identity, trace, "GET", "/v1/operator/status")?;
     let config = operator_config_view();
     let status = NodeStatus {
         node_id: "franken-node-primary".to_string(),
@@ -500,9 +517,10 @@ pub fn get_status(
 
 /// Handle `GET /v1/operator/health`.
 pub fn get_health(
-    _identity: &AuthIdentity,
-    _trace: &TraceContext,
+    identity: &AuthIdentity,
+    trace: &TraceContext,
 ) -> Result<ApiResponse<HealthCheck>, ApiError> {
+    enforce_handler_contract(identity, trace, "GET", "/v1/operator/health")?;
     let health = HealthCheck {
         live: true,
         ready: true,
@@ -534,9 +552,10 @@ pub fn get_health(
 
 /// Handle `GET /v1/operator/config`.
 pub fn get_config(
-    _identity: &AuthIdentity,
-    _trace: &TraceContext,
+    identity: &AuthIdentity,
+    trace: &TraceContext,
 ) -> Result<ApiResponse<ConfigView>, ApiError> {
+    enforce_handler_contract(identity, trace, "GET", "/v1/operator/config")?;
     let config = operator_config_view();
 
     Ok(ApiResponse {
@@ -548,9 +567,10 @@ pub fn get_config(
 
 /// Handle `GET /v1/operator/rollout`.
 pub fn get_rollout(
-    _identity: &AuthIdentity,
-    _trace: &TraceContext,
+    identity: &AuthIdentity,
+    trace: &TraceContext,
 ) -> Result<ApiResponse<RolloutState>, ApiError> {
+    enforce_handler_contract(identity, trace, "GET", "/v1/operator/rollout")?;
     let rollout = RolloutState {
         current_phase: "stable".to_string(),
         target_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -578,6 +598,22 @@ mod tests {
             principal: "test-operator".to_string(),
             method: AuthMethod::ApiKey,
             roles: vec!["operator".to_string()],
+        }
+    }
+
+    fn reader_identity() -> AuthIdentity {
+        AuthIdentity {
+            principal: "test-reader".to_string(),
+            method: AuthMethod::ApiKey,
+            roles: vec!["reader".to_string()],
+        }
+    }
+
+    fn bearer_reader_identity() -> AuthIdentity {
+        AuthIdentity {
+            principal: "test-reader".to_string(),
+            method: AuthMethod::BearerToken,
+            roles: vec!["reader".to_string()],
         }
     }
 
@@ -617,6 +653,30 @@ mod tests {
         assert!(result.ok);
         assert!(!result.data.node_id.is_empty());
         assert_eq!(result.data.policy_profile, "balanced");
+    }
+
+    #[test]
+    fn get_status_rejects_non_apikey_identity_directly() {
+        let _lock = process_start_test_lock();
+        clear_process_start_override_for_tests();
+        let err = get_status(&bearer_reader_identity(), &test_trace()).expect_err("status fails");
+        match err {
+            ApiError::AuthFailed { detail, .. } => assert!(detail.contains("route contract")),
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn get_config_rejects_reader_without_operator_role() {
+        let _lock = process_start_test_lock();
+        clear_process_start_override_for_tests();
+        let err = get_config(&reader_identity(), &test_trace()).expect_err("config fails");
+        match err {
+            ApiError::PolicyDenied { policy_hook, .. } => {
+                assert_eq!(policy_hook, "operator.config.read");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[test]

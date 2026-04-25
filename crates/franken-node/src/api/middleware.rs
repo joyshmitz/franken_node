@@ -374,6 +374,42 @@ pub fn enforce_policy(
     }
 }
 
+#[cfg(any(test, feature = "control-plane"))]
+fn auth_method_name(method: &AuthMethod) -> &'static str {
+    match method {
+        AuthMethod::MtlsClientCert => "mTLS client certificate",
+        AuthMethod::ApiKey => "API key",
+        AuthMethod::BearerToken => "bearer token",
+        AuthMethod::None => "no authentication",
+    }
+}
+
+/// Enforce the declared route contract for a direct in-process handler call.
+///
+/// This keeps direct callers from reusing an identity under a weaker or
+/// different credential type than the route metadata requires.
+#[cfg(any(test, feature = "control-plane"))]
+pub fn enforce_route_contract(
+    identity: &AuthIdentity,
+    route: &RouteMetadata,
+    trace_id: &str,
+) -> Result<(), ApiError> {
+    let expected_method = &route.auth_method;
+    if !matches!(expected_method, AuthMethod::None) && &identity.method != expected_method {
+        return Err(ApiError::AuthFailed {
+            detail: format!(
+                "route contract requires {} authentication for {} {}",
+                auth_method_name(expected_method),
+                route.method,
+                route.path
+            ),
+            trace_id: trace_id.to_string(),
+        });
+    }
+
+    enforce_policy(identity, &route.policy_hook, trace_id)
+}
+
 // ── Rate Limiting ──────────────────────────────────────────────────────────
 
 /// Rate limiter configuration for an endpoint group.

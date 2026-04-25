@@ -41,7 +41,10 @@ const MAX_ZONE_STATUS: usize = 2048;
 use super::error::ApiError;
 use super::middleware::{AuthIdentity, TraceContext};
 #[cfg(any(test, feature = "control-plane"))]
-use super::middleware::{AuthMethod, EndpointGroup, EndpointLifecycle, PolicyHook, RouteMetadata};
+use super::middleware::{
+    enforce_route_contract, AuthMethod, EndpointGroup, EndpointLifecycle, PolicyHook,
+    RouteMetadata,
+};
 use super::trust_card_routes::ApiResponse;
 
 // ── Event Codes ───────────────────────────────────────────────────────────
@@ -2934,6 +2937,23 @@ pub fn quarantine_route_metadata() -> Vec<RouteMetadata> {
     ]
 }
 
+#[cfg(any(test, feature = "control-plane"))]
+fn enforce_handler_contract(
+    identity: &AuthIdentity,
+    trace: &TraceContext,
+    method: &str,
+    path: &str,
+) -> Result<(), ApiError> {
+    let route = quarantine_route_metadata()
+        .into_iter()
+        .find(|route| route.method == method && route.path == path)
+        .ok_or_else(|| ApiError::Internal {
+            detail: format!("missing route metadata for {method} {path}"),
+            trace_id: trace.trace_id.clone(),
+        })?;
+    enforce_route_contract(identity, &route, &trace.trace_id)
+}
+
 // ── API Handlers ──────────────────────────────────────────────────────────
 
 /// Processes fleet quarantine requests to isolate problematic extensions.
@@ -2960,6 +2980,7 @@ pub fn handle_quarantine(
     trace: &TraceContext,
     request: &QuarantineRequest,
 ) -> Result<ApiResponse<FleetActionResult>, ApiError> {
+    enforce_handler_contract(identity, trace, "POST", "/v1/fleet/quarantine")?;
     let result = shared_fleet_control_manager().quarantine(identity, trace, request)?;
     Ok(ApiResponse {
         ok: true,
@@ -2992,6 +3013,7 @@ pub fn handle_revoke(
     trace: &TraceContext,
     request: &RevokeRequest,
 ) -> Result<ApiResponse<FleetActionResult>, ApiError> {
+    enforce_handler_contract(identity, trace, "POST", "/v1/fleet/revoke")?;
     let result = shared_fleet_control_manager().revoke(identity, trace, request)?;
     Ok(ApiResponse {
         ok: true,
@@ -3018,6 +3040,8 @@ pub fn handle_release(
     trace: &TraceContext,
     request: &ReleaseRequest,
 ) -> Result<ApiResponse<FleetActionResult>, ApiError> {
+    #[cfg(any(test, feature = "control-plane"))]
+    enforce_handler_contract(identity, trace, "POST", "/v1/fleet/release")?;
     let incident_id = request.incident_id.trim();
     if incident_id.is_empty() {
         return Err(ApiError::BadRequest {
@@ -3045,10 +3069,12 @@ pub fn handle_release(
 /// # Ok::<(), ApiError>(())
 /// ```
 pub fn handle_status(
-    _identity: &AuthIdentity,
+    identity: &AuthIdentity,
     trace: &TraceContext,
     zone_id: &str,
 ) -> Result<ApiResponse<FleetStatus>, ApiError> {
+    #[cfg(any(test, feature = "control-plane"))]
+    enforce_handler_contract(identity, trace, "GET", "/v1/fleet/status")?;
     let status = shared_fleet_control_manager().status(trace, zone_id)?;
     Ok(ApiResponse {
         ok: true,
@@ -3071,6 +3097,8 @@ pub fn handle_reconcile(
     identity: &AuthIdentity,
     trace: &TraceContext,
 ) -> Result<ApiResponse<FleetActionResult>, ApiError> {
+    #[cfg(any(test, feature = "control-plane"))]
+    enforce_handler_contract(identity, trace, "POST", "/v1/fleet/reconcile")?;
     let result = shared_fleet_control_manager().reconcile(identity, trace)?;
     Ok(ApiResponse {
         ok: true,
@@ -3114,6 +3142,22 @@ mod tests {
             principal: "fleet-admin-1".to_string(),
             method: AuthMethod::MtlsClientCert,
             roles: vec!["fleet-admin".to_string()],
+        }
+    }
+
+    fn bearer_admin_identity() -> AuthIdentity {
+        AuthIdentity {
+            principal: "fleet-admin-1".to_string(),
+            method: AuthMethod::BearerToken,
+            roles: vec!["fleet-admin".to_string()],
+        }
+    }
+
+    fn reader_identity() -> AuthIdentity {
+        AuthIdentity {
+            principal: "fleet-reader-1".to_string(),
+            method: AuthMethod::BearerToken,
+            roles: vec!["reader".to_string()],
         }
     }
 
@@ -4396,8 +4440,8 @@ mod tests {
     #[test]
     fn handle_status_succeeds() {
         let _guard = lock_handler_test_state();
-        let result =
-            handle_status(&admin_identity(), &test_trace(), "zone-1").expect("handle status");
+        let result = handle_status(&bearer_admin_identity(), &test_trace(), "zone-1")
+            .expect("handle status");
         assert!(result.ok);
         assert_eq!(result.data.zone_id, "zone-1");
         assert!(!result.data.activated);
@@ -4406,7 +4450,8 @@ mod tests {
     #[test]
     fn handle_status_rejects_empty_zone() {
         let _guard = lock_handler_test_state();
-        let err = handle_status(&admin_identity(), &test_trace(), "").expect_err("empty zone");
+        let err =
+            handle_status(&bearer_admin_identity(), &test_trace(), "").expect_err("empty zone");
         let detail = match err {
             ApiError::BadRequest { detail, .. } => detail,
             other => unreachable!("unexpected error: {other:?}"),
@@ -4417,7 +4462,8 @@ mod tests {
     #[test]
     fn handle_status_rejects_whitespace_only_zone() {
         let _guard = lock_handler_test_state();
-        let err = handle_status(&admin_identity(), &test_trace(), "   ").expect_err("blank zone");
+        let err = handle_status(&bearer_admin_identity(), &test_trace(), "   ")
+            .expect_err("blank zone");
         let detail = match err {
             ApiError::BadRequest { detail, .. } => detail,
             other => unreachable!("unexpected error: {other:?}"),
@@ -4482,7 +4528,7 @@ mod tests {
         };
         handle_quarantine(&admin_identity(), &test_trace(), &request).expect("handle quarantine");
 
-        let status = handle_status(&admin_identity(), &test_trace(), "zone-us-east-1")
+        let status = handle_status(&bearer_admin_identity(), &test_trace(), "zone-us-east-1")
             .expect("handle status");
         assert_eq!(status.data.active_quarantines, 1);
         assert!(status.data.activated);
@@ -4506,10 +4552,39 @@ mod tests {
         };
         handle_quarantine(&admin_identity(), &test_trace(), &request).expect("handle quarantine");
 
-        let status = handle_status(&admin_identity(), &test_trace(), "zone-us-east-1")
+        let status = handle_status(&bearer_admin_identity(), &test_trace(), "zone-us-east-1")
             .expect("handle status");
         assert_eq!(status.data.zone_id, "zone-us-east-1");
         assert_eq!(status.data.active_quarantines, 1);
+    }
+
+    #[test]
+    fn handle_quarantine_rejects_direct_non_mtls_identity() {
+        let _guard = lock_handler_test_state();
+        activate_shared_fleet_control_manager_for_tests();
+        let request = QuarantineRequest {
+            extension_id: "ext-1".to_string(),
+            scope: test_quarantine_scope(),
+        };
+        let err = handle_quarantine(&bearer_admin_identity(), &test_trace(), &request)
+            .expect_err("quarantine should fail");
+        match err {
+            ApiError::AuthFailed { detail, .. } => assert!(detail.contains("route contract")),
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn handle_status_rejects_identity_without_read_role() {
+        let _guard = lock_handler_test_state();
+        let err = handle_status(&reader_identity(), &test_trace(), "zone-1")
+            .expect_err("status should fail");
+        match err {
+            ApiError::PolicyDenied { policy_hook, .. } => {
+                assert_eq!(policy_hook, "fleet.status.read");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[test]

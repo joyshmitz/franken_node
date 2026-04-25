@@ -14,8 +14,8 @@ use std::sync::{Mutex, OnceLock};
 
 use super::error::ApiError;
 use super::middleware::{
-    AuthIdentity, AuthMethod, EndpointGroup, EndpointLifecycle, PolicyHook, RouteMetadata,
-    TraceContext,
+    enforce_route_contract, AuthIdentity, AuthMethod, EndpointGroup, EndpointLifecycle,
+    PolicyHook, RouteMetadata, TraceContext,
 };
 use super::trust_card_routes::ApiResponse;
 use super::utf8_prefix;
@@ -337,13 +337,30 @@ pub fn route_metadata() -> Vec<RouteMetadata> {
     ]
 }
 
+fn enforce_handler_contract(
+    identity: &AuthIdentity,
+    trace: &TraceContext,
+    method: &str,
+    path: &str,
+) -> Result<(), ApiError> {
+    let route = route_metadata()
+        .into_iter()
+        .find(|route| route.method == method && route.path == path)
+        .ok_or_else(|| ApiError::Internal {
+            detail: format!("missing route metadata for {method} {path}"),
+            trace_id: trace.trace_id.clone(),
+        })?;
+    enforce_route_contract(identity, &route, &trace.trace_id)
+}
+
 // ── Handlers ───────────────────────────────────────────────────────────────
 
 /// Handle `GET /v1/fleet/leases`.
 pub fn list_leases(
-    _identity: &AuthIdentity,
+    identity: &AuthIdentity,
     trace: &TraceContext,
 ) -> Result<ApiResponse<Vec<Lease>>, ApiError> {
+    enforce_handler_contract(identity, trace, "GET", "/v1/fleet/leases")?;
     with_fleet_lease_state(&trace.trace_id, |state| {
         state.sweep_expired(chrono::Utc::now());
         Ok(ApiResponse {
@@ -360,6 +377,7 @@ pub fn acquire_lease(
     trace: &TraceContext,
     request: &LeaseAcquireRequest,
 ) -> Result<ApiResponse<Lease>, ApiError> {
+    enforce_handler_contract(identity, trace, "POST", "/v1/fleet/leases")?;
     let resource = normalize_required_field(&request.resource, "resource", &trace.trace_id)?;
     if request.ttl_seconds == 0 {
         return Err(ApiError::BadRequest {
@@ -422,10 +440,11 @@ pub fn acquire_lease(
 
 /// Handle `DELETE /v1/fleet/leases/{lease_id}`.
 pub fn release_lease(
-    _identity: &AuthIdentity,
+    identity: &AuthIdentity,
     trace: &TraceContext,
     lease_id: &str,
 ) -> Result<ApiResponse<bool>, ApiError> {
+    enforce_handler_contract(identity, trace, "DELETE", "/v1/fleet/leases/{lease_id}")?;
     let lease_id = normalize_required_field(lease_id, "lease_id", &trace.trace_id)?;
     with_fleet_lease_state(&trace.trace_id, |state| {
         state.sweep_expired(chrono::Utc::now());
@@ -447,10 +466,11 @@ pub fn release_lease(
 
 /// Handle `POST /v1/fleet/fence`.
 pub fn execute_fence(
-    _identity: &AuthIdentity,
+    identity: &AuthIdentity,
     trace: &TraceContext,
     request: &FencingRequest,
 ) -> Result<ApiResponse<FencingResult>, ApiError> {
+    enforce_handler_contract(identity, trace, "POST", "/v1/fleet/fence")?;
     let target_node =
         normalize_required_field(&request.target_node, "target_node", &trace.trace_id)?;
     let _reason = normalize_required_field(&request.reason, "reason", &trace.trace_id)?;
@@ -482,10 +502,11 @@ pub fn execute_fence(
 
 /// Handle `POST /v1/fleet/coordinate`.
 pub fn execute_coordination(
-    _identity: &AuthIdentity,
+    identity: &AuthIdentity,
     trace: &TraceContext,
     request: &CoordinationRequest,
 ) -> Result<ApiResponse<CoordinationResult>, ApiError> {
+    enforce_handler_contract(identity, trace, "POST", "/v1/fleet/coordinate")?;
     let command_type =
         normalize_required_field(&request.command_type, "command_type", &trace.trace_id)?;
     let target_nodes = validate_coordination_targets(&request.target_nodes, &trace.trace_id)?;
@@ -527,6 +548,14 @@ mod tests {
         AuthIdentity {
             principal: "fleet-admin-1".to_string(),
             method: AuthMethod::MtlsClientCert,
+            roles: vec!["fleet-admin".to_string()],
+        }
+    }
+
+    fn bearer_admin_identity() -> AuthIdentity {
+        AuthIdentity {
+            principal: "fleet-admin-1".to_string(),
+            method: AuthMethod::BearerToken,
             roles: vec!["fleet-admin".to_string()],
         }
     }
@@ -592,7 +621,7 @@ mod tests {
     fn list_leases_returns_empty() {
         let _guard = test_guard();
         reset_fleet_lease_state();
-        let identity = admin_identity();
+        let identity = bearer_admin_identity();
         let trace = test_trace();
         let result = list_leases(&identity, &trace).expect("list leases");
         assert!(result.ok);
@@ -603,7 +632,7 @@ mod tests {
     fn acquire_lease_returns_lease() {
         let _guard = test_guard();
         reset_fleet_lease_state();
-        let identity = admin_identity();
+        let identity = bearer_admin_identity();
         let trace = test_trace();
         let request = LeaseAcquireRequest {
             resource: "control-plane-lock".to_string(),
@@ -620,7 +649,7 @@ mod tests {
     fn acquire_lease_handles_unicode_trace_id() {
         let _guard = test_guard();
         reset_fleet_lease_state();
-        let identity = admin_identity();
+        let identity = bearer_admin_identity();
         let trace = TraceContext {
             trace_id: "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂".to_string(),
             span_id: "0000000000000003".to_string(),
@@ -640,7 +669,7 @@ mod tests {
     fn release_lease_succeeds() {
         let _guard = test_guard();
         reset_fleet_lease_state();
-        let identity = admin_identity();
+        let identity = bearer_admin_identity();
         let trace = test_trace();
         let request = LeaseAcquireRequest {
             resource: "control-plane-lock".to_string(),
@@ -667,6 +696,24 @@ mod tests {
         assert!(result.ok);
         assert_eq!(result.data.status, FencingStatus::Completed);
         assert_eq!(result.data.action, FencingAction::Isolate);
+    }
+
+    #[test]
+    fn execute_fence_rejects_bearer_identity_directly() {
+        let _guard = test_guard();
+        reset_fleet_lease_state();
+        let trace = test_trace();
+        let request = FencingRequest {
+            target_node: "node-2".to_string(),
+            action: FencingAction::Isolate,
+            reason: "suspected compromise".to_string(),
+        };
+
+        let err = execute_fence(&bearer_admin_identity(), &trace, &request).expect_err("fence");
+        match err {
+            ApiError::AuthFailed { detail, .. } => assert!(detail.contains("route contract")),
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[test]
