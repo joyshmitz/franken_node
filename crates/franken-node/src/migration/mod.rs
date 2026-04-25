@@ -25,6 +25,9 @@ pub mod bpet_migration_gate;
 #[allow(dead_code)]
 pub mod dgis_migration_gate;
 
+#[cfg(test)]
+pub mod migration_protocol_conformance_tests;
+
 const MAX_FINDINGS_PER_CATEGORY: usize = 16;
 const MAX_PROJECT_FILES: usize = 100_000;
 const MAX_PENDING_DIRS: usize = 10_000;
