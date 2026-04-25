@@ -545,9 +545,35 @@ pub fn mean(values: &[f64]) -> f64 {
     if values.is_empty() {
         return 0.0;
     }
-    let len_f64 = u32::try_from(values.len()).unwrap_or(u32::MAX) as f64;
-    let result = values.iter().sum::<f64>() / len_f64;
-    if result.is_finite() { result } else { 0.0 }
+
+    let mut positive_infinity = false;
+    let mut negative_infinity = false;
+    let mut running_mean = 0.0;
+    let mut finite_count = 0.0;
+
+    for &value in values {
+        if value.is_nan() {
+            return f64::NAN;
+        }
+        if value == f64::INFINITY {
+            positive_infinity = true;
+            continue;
+        }
+        if value == f64::NEG_INFINITY {
+            negative_infinity = true;
+            continue;
+        }
+
+        finite_count += 1.0;
+        running_mean += (value - running_mean) / finite_count;
+    }
+
+    match (positive_infinity, negative_infinity) {
+        (true, true) => f64::NAN,
+        (true, false) => f64::INFINITY,
+        (false, true) => f64::NEG_INFINITY,
+        (false, false) => running_mean,
+    }
 }
 
 /// Compute sample standard deviation.
@@ -555,11 +581,27 @@ pub fn std_dev(values: &[f64]) -> f64 {
     if values.len() < 2 {
         return 0.0;
     }
-    let m = mean(values);
-    let len_minus_one = u32::try_from(values.len().saturating_sub(1)).unwrap_or(u32::MAX) as f64;
-    let variance = values.iter().map(|v| (v - m).powi(2)).sum::<f64>() / len_minus_one;
-    let result = variance.sqrt();
-    if result.is_finite() { result } else { 0.0 }
+
+    let mut count = 0.0;
+    let mut running_mean = 0.0;
+    let mut m2 = 0.0;
+
+    for &value in values {
+        if value.is_nan() {
+            return f64::NAN;
+        }
+        if value.is_infinite() {
+            return f64::INFINITY;
+        }
+
+        count += 1.0;
+        let delta = value - running_mean;
+        running_mean += delta / count;
+        let delta2 = value - running_mean;
+        m2 += delta * delta2;
+    }
+
+    (m2 / (count - 1.0)).sqrt()
 }
 
 /// Compute coefficient of variation as a percentage.
@@ -568,8 +610,7 @@ pub fn coefficient_of_variation(values: &[f64]) -> f64 {
     if m.abs() < f64::EPSILON {
         return 0.0;
     }
-    let result = (std_dev(values) / m.abs()) * 100.0;
-    if result.is_finite() { result } else { 0.0 }
+    (std_dev(values) / m.abs()) * 100.0
 }
 
 /// Compute 95% confidence interval using t-distribution approximation.
@@ -607,13 +648,9 @@ pub fn confidence_interval_95(values: &[f64]) -> ConfidenceInterval {
     };
 
     let margin = t_value * sd / n.sqrt();
-    if margin.is_finite() {
-        ConfidenceInterval {
-            lower: m - margin,
-            upper: m + margin,
-        }
-    } else {
-        ConfidenceInterval { lower: m, upper: m }
+    ConfidenceInterval {
+        lower: m - margin,
+        upper: m + margin,
     }
 }
 

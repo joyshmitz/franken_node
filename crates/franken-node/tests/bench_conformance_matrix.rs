@@ -7,6 +7,9 @@
 //! Generated from /testing-conformance-harnesses skill.
 
 use assert_cmd::Command;
+use frankenengine_node::tools::benchmark_suite::{
+    coefficient_of_variation, confidence_interval_95, mean, std_dev,
+};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -415,4 +418,28 @@ fn bench_environment_variable_isolation() -> Result<(), Box<dyn Error>> {
     );
 
     Ok(())
+}
+
+#[test]
+fn bench_statistics_preserve_non_finite_measurements() {
+    assert!(mean(&[1.0, f64::NAN, 3.0]).is_nan());
+    assert!(std_dev(&[1.0, f64::NAN, 3.0]).is_nan());
+
+    let large_mean = mean(&[f64::MAX / 2.0, f64::MAX / 2.0]);
+    assert!(
+        large_mean.is_finite(),
+        "stable mean must not overflow identical large finite values"
+    );
+
+    let cv = coefficient_of_variation(&[f64::MIN_POSITIVE, f64::MAX / 2.0]);
+    assert!(
+        !cv.is_finite(),
+        "overflowed benchmark variation must stay visible to callers"
+    );
+
+    let ci = confidence_interval_95(&[1.0, f64::NAN, 3.0]);
+    assert!(
+        ci.lower.is_nan() && ci.upper.is_nan(),
+        "invalid confidence intervals must not be converted to finite defaults"
+    );
 }
