@@ -1480,7 +1480,7 @@ dependencies = [
 
 [[package]]
 name = "ftui"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ftui-core",
  "ftui-layout",
@@ -1492,7 +1492,7 @@ dependencies = [
 
 [[package]]
 name = "ftui-a11y"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ahash",
  "ftui-core",
@@ -1500,7 +1500,7 @@ dependencies = [
 
 [[package]]
 name = "ftui-backend"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ftui-core",
  "ftui-render",
@@ -1508,7 +1508,7 @@ dependencies = [
 
 [[package]]
 name = "ftui-core"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ahash",
  "arc-swap",
@@ -1523,11 +1523,11 @@ dependencies = [
 
 [[package]]
 name = "ftui-i18n"
-version = "0.3.1"
+version = "0.4.0"
 
 [[package]]
 name = "ftui-layout"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ftui-core",
  "rustc-hash",
@@ -1537,7 +1537,7 @@ dependencies = [
 
 [[package]]
 name = "ftui-render"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ahash",
  "bitflags",
@@ -1551,7 +1551,7 @@ dependencies = [
 
 [[package]]
 name = "ftui-runtime"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "arc-swap",
  "ftui-backend",
@@ -1569,7 +1569,7 @@ dependencies = [
 
 [[package]]
 name = "ftui-style"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ahash",
  "arc-swap",
@@ -1579,7 +1579,7 @@ dependencies = [
 
 [[package]]
 name = "ftui-text"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ftui-core",
  "ftui-layout",
@@ -1596,7 +1596,7 @@ dependencies = [
 
 [[package]]
 name = "ftui-widgets"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ahash",
  "bitflags",

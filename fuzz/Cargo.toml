@@ -17,6 +17,7 @@ hex = "0.4.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_cbor = "0.11.2"
+toml = "0.8"
 # Remove zeroize_derive to reduce proc-macro compilation overhead
 zeroize = { version = "1.8.2" }
 
@@ -252,5 +253,17 @@ doc = false
 [[bin]]
 name = "fuzz_doctor_input_parsing"
 path = "fuzz_targets/fuzz_doctor_input_parsing.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_config_toml_parse"
+path = "fuzz_targets/fuzz_config_toml_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_compromise_reduction_report_json"
+path = "fuzz_targets/fuzz_compromise_reduction_report_json.rs"
 test = false
 doc = false
