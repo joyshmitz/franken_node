@@ -372,10 +372,16 @@ pub fn authorize(
     if has_role {
         Ok(AuthzDecision::Allow)
     } else {
+        // SECURITY: Log hook_id internally but don't expose in client error
+        tracing::warn!(
+            hook_id = %hook.hook_id,
+            principal = %identity.principal,
+            "authorization denied: principal lacks required role"
+        );
         Ok(AuthzDecision::Deny {
             reason: format!(
-                "principal '{}' lacks required role (hook: {})",
-                identity.principal, hook.hook_id
+                "principal '{}' lacks required role",
+                identity.principal
             ),
         })
     }
@@ -420,13 +426,16 @@ pub fn enforce_route_contract(
 ) -> Result<(), ApiError> {
     let expected_method = &route.auth_method;
     if !matches!(expected_method, AuthMethod::None) && &identity.method != expected_method {
+        // SECURITY: Log route details internally but don't expose in client error
+        tracing::warn!(
+            required_method = ?expected_method,
+            actual_method = ?identity.method,
+            route_method = %route.method,
+            route_path = %route.path,
+            "authentication failed: wrong auth method for route"
+        );
         return Err(ApiError::AuthFailed {
-            detail: format!(
-                "route contract requires {} authentication for {} {}",
-                auth_method_name(expected_method),
-                route.method,
-                route.path
-            ),
+            detail: "authentication method not permitted for this endpoint".to_string(),
             trace_id: trace_id.to_string(),
         });
     }
@@ -526,15 +535,20 @@ impl RateLimiter {
 pub fn check_rate_limit(limiter: &mut RateLimiter, trace_id: &str) -> Result<(), ApiError> {
     match limiter.check() {
         Ok(()) => Ok(()),
-        Err(retry_after_ms) => Err(ApiError::RateLimited {
-            detail: format!(
-                "rate limit exceeded ({} rps sustained, {} burst)",
-                limiter.config().sustained_rps,
-                limiter.config().burst_size
-            ),
-            trace_id: trace_id.to_string(),
-            retry_after_ms,
-        }),
+        Err(retry_after_ms) => {
+            // SECURITY: Log config internally but don't expose in client error
+            tracing::warn!(
+                sustained_rps = %limiter.config().sustained_rps,
+                burst_size = %limiter.config().burst_size,
+                retry_after_ms = %retry_after_ms,
+                "rate limit exceeded"
+            );
+            Err(ApiError::RateLimited {
+                detail: "rate limit exceeded".to_string(),
+                trace_id: trace_id.to_string(),
+                retry_after_ms,
+            })
+        },
     }
 }
 
