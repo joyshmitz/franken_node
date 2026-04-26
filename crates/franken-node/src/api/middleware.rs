@@ -374,8 +374,8 @@ pub fn authorize(
     } else {
         Ok(AuthzDecision::Deny {
             reason: format!(
-                "principal '{}' lacks required role(s): {:?} (hook: {})",
-                identity.principal, hook.required_roles, hook.hook_id
+                "principal '{}' lacks required role (hook: {})",
+                identity.principal, hook.hook_id
             ),
         })
     }
@@ -765,9 +765,12 @@ pub fn auth_failure_limiter_cardinality_bound_loom_model() {
 
         // INVARIANT 2: High-volume offender (192.168.1.1) should be retained
         // It should appear in both the BTreeMap and the top failures list
-        assert!(stats.top_source_failures
-            .iter()
-            .any(|(ip, _count)| ip == "192.168.1.1"));
+        assert!(
+            stats
+                .top_source_failures
+                .iter()
+                .any(|(ip, _count)| ip == "192.168.1.1")
+        );
 
         // INVARIANT 3: Global failure count should equal sum of all recorded failures
         // 10 (thread1) + 20 (thread2) + 5 (thread3) = 35 total failures
@@ -775,7 +778,8 @@ pub fn auth_failure_limiter_cardinality_bound_loom_model() {
 
         // INVARIANT 4: High-volume offender should have accumulated count
         // 192.168.1.1 appears in thread1 (1 time) + thread3 (5 times) = 6 total
-        let high_volume_count = stats.top_source_failures
+        let high_volume_count = stats
+            .top_source_failures
             .iter()
             .find(|(ip, _count)| ip == "192.168.1.1")
             .map(|(_, count)| *count);
@@ -3204,9 +3208,18 @@ pub fn auth_failure_limiter_cardinality_loom_model() {
         let result_c = handle_c.join().expect("thread C should complete");
 
         // Verify results are sensible
-        assert!(!results_a.is_empty(), "High-volume attacker should have results");
-        assert!(!results_b.is_empty(), "Medium-volume attacker should have results");
-        assert!(result_c > 0, "Low-volume attacker should have positive count");
+        assert!(
+            !results_a.is_empty(),
+            "High-volume attacker should have results"
+        );
+        assert!(
+            !results_b.is_empty(),
+            "Medium-volume attacker should have results"
+        );
+        assert!(
+            result_c > 0,
+            "Low-volume attacker should have positive count"
+        );
 
         // Verify final state maintains invariants
         let final_guard = limiter.lock().unwrap();
