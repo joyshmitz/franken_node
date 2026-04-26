@@ -2,6 +2,11 @@ name: Coverage Report
 
 on:
   pull_request:
+    paths:
+      - "crates/franken-node/**"
+      - "sdk/verifier/**"
+      - "fuzz/**"
+      - ".github/workflows/coverage-report.yml"
 
 jobs:
   coverage-report:
@@ -27,7 +32,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov --locked
+        run: cargo install cargo-llvm-cov --version 0.8.5 --locked
 
       - name: Generate LCOV report
         run: |
