@@ -46,8 +46,8 @@ use std::path::Path;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::security::constant_time;
-use crate::supply_chain::artifact_signing::{sign_bytes, verify_signature};
-use ed25519_dalek::{SigningKey, VerifyingKey};
+use crate::supply_chain::artifact_signing::verify_signature;
+use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use hex;
 use sha2::{Digest, Sha256};
 use std::convert::TryInto;
@@ -191,21 +191,6 @@ impl Write for ByteCountingWriter {
     }
 }
 
-struct HashingWriter<'a> {
-    hasher: &'a mut Sha256,
-}
-
-impl Write for HashingWriter<'_> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.hasher.update(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
 fn serialized_json_size<T>(value: &T) -> Result<usize, serde_json::Error>
 where
     T: Serialize,
@@ -215,6 +200,13 @@ where
     Ok(writer.bytes_written())
 }
 
+fn serialized_json_bytes<T>(value: &T) -> Result<Vec<u8>, serde_json::Error>
+where
+    T: Serialize,
+{
+    serde_json::to_vec(value)
+}
+
 fn update_hash_serialized_json_len_prefixed<T>(
     hasher: &mut Sha256,
     value: &T,
@@ -222,10 +214,11 @@ fn update_hash_serialized_json_len_prefixed<T>(
 where
     T: Serialize,
 {
-    let len = u64::try_from(serialized_json_size(value)?).unwrap_or(u64::MAX);
+    let json_bytes = serialized_json_bytes(value)?;
+    let len = u64::try_from(json_bytes.len()).unwrap_or(u64::MAX);
     hasher.update(len.to_le_bytes());
-    let mut writer = HashingWriter { hasher };
-    serde_json::to_writer(&mut writer, value)
+    hasher.update(&json_bytes);
+    Ok(())
 }
 
 fn entry_with_server_computed_size(mut normalized: EvidenceEntry) -> (EvidenceEntry, usize) {
@@ -319,7 +312,7 @@ fn encode_entry_hash(hash: &EntryHash) -> String {
 /// ```
 pub fn sign_evidence_entry(entry: &mut EvidenceEntry, signing_key: &SigningKey) {
     let canonical_bytes = canonical_entry_bytes(entry);
-    let signature_bytes = sign_bytes(signing_key, &canonical_bytes);
+    let signature_bytes = signing_key.sign(&canonical_bytes).to_bytes();
     entry.signature = hex::encode(signature_bytes);
 }
 
@@ -5409,6 +5402,24 @@ mod tests {
     }
 
     #[test]
+    fn sign_evidence_entry_matches_legacy_sign_bytes_output() {
+        let (signing_key, _) = test_keys();
+        let mut entry = test_entry("TEST-SIGN-PARITY", 1);
+
+        let canonical_bytes = canonical_entry_bytes(&entry);
+        let expected_signature =
+            crate::supply_chain::artifact_signing::sign_bytes(&signing_key, &canonical_bytes);
+
+        sign_evidence_entry(&mut entry, &signing_key);
+
+        assert_eq!(
+            entry.signature,
+            hex::encode(expected_signature),
+            "sign_evidence_entry must preserve the legacy signature byte contract"
+        );
+    }
+
+    #[test]
     fn test_unsigned_entry_rejected() {
         let (_, verifying_key) = test_keys();
         let capacity = LedgerCapacity::new(10, 100_000);
@@ -5602,7 +5613,7 @@ mod tests {
     }
 
     #[test]
-    fn streamed_payload_hashing_matches_legacy_json_buffer_path() {
+    fn payload_hashing_matches_legacy_json_buffer_path() {
         let payload = serde_json::json!({
             "message": "trust-native runtime",
             "unicode": "🙂漢字",
@@ -5610,10 +5621,10 @@ mod tests {
             "items": [1, 2, 3, 4]
         });
 
-        let mut streamed = Sha256::new();
-        update_hash_serialized_json_len_prefixed(&mut streamed, &payload)
+        let mut buffered = Sha256::new();
+        update_hash_serialized_json_len_prefixed(&mut buffered, &payload)
             .expect("payload serialization should succeed");
-        let streamed_digest: [u8; SHA256_DIGEST_BYTES] = streamed.finalize().into();
+        let buffered_digest: [u8; SHA256_DIGEST_BYTES] = buffered.finalize().into();
 
         let payload_bytes =
             serde_json::to_vec(&payload).expect("payload serialization should succeed");
@@ -5627,8 +5638,8 @@ mod tests {
         let legacy_digest: [u8; SHA256_DIGEST_BYTES] = legacy.finalize().into();
 
         assert_eq!(
-            streamed_digest, legacy_digest,
-            "streaming payload hashing must preserve the legacy JSON byte contract"
+            buffered_digest, legacy_digest,
+            "payload hashing must preserve the legacy JSON byte contract"
         );
     }
 
