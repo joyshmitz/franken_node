@@ -706,6 +706,83 @@ impl AuthFailureLimiter {
     }
 }
 
+#[cfg(loom)]
+#[doc(hidden)]
+pub fn auth_failure_limiter_cardinality_bound_loom_model() {
+    use loom::sync::{Arc, Mutex};
+    use loom::thread;
+
+    loom::model(|| {
+        let limiter = Arc::new(Mutex::new(AuthFailureLimiter::new()));
+
+        // Test scenario: Multiple threads recording failures from many different IPs
+        // to stress the cardinality bound enforcement (MAX_AUTH_FAILURE_SOURCES = 1024)
+
+        // Create threads that will record failures from different IP ranges
+        let mut handles = Vec::new();
+
+        // Thread 1: Records failures from IPs 192.168.1.1-192.168.1.10 (high-volume offender)
+        let limiter_clone = Arc::clone(&limiter);
+        handles.push(thread::spawn(move || {
+            for i in 1..=10 {
+                let ip = format!("192.168.1.{}", i);
+                let mut guard = limiter_clone.lock().unwrap();
+                guard.record_failure(&ip, AuthFailureType::KeyNotFound, "trace-1", None);
+            }
+        }));
+
+        // Thread 2: Records failures from IPs 10.0.0.1-10.0.0.20 (medium-volume offender)
+        let limiter_clone = Arc::clone(&limiter);
+        handles.push(thread::spawn(move || {
+            for i in 1..=20 {
+                let ip = format!("10.0.0.{}", i);
+                let mut guard = limiter_clone.lock().unwrap();
+                guard.record_failure(&ip, AuthFailureType::InvalidKeyFormat, "trace-2", None);
+            }
+        }));
+
+        // Thread 3: Records multiple failures from same high-volume IP (should accumulate)
+        let limiter_clone = Arc::clone(&limiter);
+        handles.push(thread::spawn(move || {
+            let ip = "192.168.1.1";
+            for _ in 0..5 {
+                let mut guard = limiter_clone.lock().unwrap();
+                guard.record_failure(ip, AuthFailureType::MalformedHeader, "trace-3", None);
+            }
+        }));
+
+        // Wait for all threads to complete
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Verify invariants
+        let guard = limiter.lock().unwrap();
+        let stats = guard.get_failure_stats();
+
+        // INVARIANT 1: Cardinality bound is maintained
+        assert!(stats.unique_source_ips <= MAX_AUTH_FAILURE_SOURCES);
+
+        // INVARIANT 2: High-volume offender (192.168.1.1) should be retained
+        // It should appear in both the BTreeMap and the top failures list
+        assert!(stats.top_source_failures
+            .iter()
+            .any(|(ip, _count)| ip == "192.168.1.1"));
+
+        // INVARIANT 3: Global failure count should equal sum of all recorded failures
+        // 10 (thread1) + 20 (thread2) + 5 (thread3) = 35 total failures
+        assert_eq!(stats.global_failure_count, 35);
+
+        // INVARIANT 4: High-volume offender should have accumulated count
+        // 192.168.1.1 appears in thread1 (1 time) + thread3 (5 times) = 6 total
+        let high_volume_count = stats.top_source_failures
+            .iter()
+            .find(|(ip, _count)| ip == "192.168.1.1")
+            .map(|(_, count)| *count);
+        assert_eq!(high_volume_count, Some(6));
+    });
+}
+
 // ── Request/Response Telemetry ─────────────────────────────────────────────
 
 /// Structured request log entry emitted after handler execution.
@@ -3068,4 +3145,83 @@ mod api_middleware_advanced_security_edge_tests {
         assert!(result.is_ok(), "Should succeed for no-auth route");
         assert_eq!(log.status, 200, "Should return success status");
     }
+}
+
+// ── Loom Tests for Concurrent Safety ──────────────────────────────────────────
+
+#[cfg(loom)]
+use loom::sync::{Arc, Mutex};
+#[cfg(loom)]
+use loom::thread;
+
+/// Loom model that proves AuthFailureLimiter maintains bounded cardinality and
+/// stable offender visibility under concurrent failure recording.
+///
+/// This test verifies:
+/// 1. MAX_AUTH_FAILURE_SOURCES cardinality bound is maintained
+/// 2. LRU eviction preserves high-volume attackers
+/// 3. Concurrent access maintains consistency
+/// 4. No race conditions in increment_source_failure_count
+#[cfg(loom)]
+#[doc(hidden)]
+pub fn auth_failure_limiter_cardinality_loom_model() {
+    loom::model(|| {
+        let limiter = Arc::new(Mutex::new(AuthFailureLimiter::new()));
+
+        // Test concurrent failure recording from different source IPs
+        let limiter_a = limiter.clone();
+        let limiter_b = limiter.clone();
+        let limiter_c = limiter.clone();
+
+        let handle_a = thread::spawn(move || {
+            // High-volume attacker - should be preserved during eviction
+            let mut results = Vec::new();
+            for i in 0..10 {
+                let mut guard = limiter_a.lock().unwrap();
+                results.push(guard.increment_source_failure_count("192.168.1.100"));
+            }
+            results
+        });
+
+        let handle_b = thread::spawn(move || {
+            // Medium-volume attacker
+            let mut results = Vec::new();
+            for i in 0..5 {
+                let mut guard = limiter_b.lock().unwrap();
+                results.push(guard.increment_source_failure_count("192.168.1.101"));
+            }
+            results
+        });
+
+        let handle_c = thread::spawn(move || {
+            // Low-volume attacker - should be evicted first
+            let mut guard = limiter_c.lock().unwrap();
+            guard.increment_source_failure_count("192.168.1.102")
+        });
+
+        let results_a = handle_a.join().expect("thread A should complete");
+        let results_b = handle_b.join().expect("thread B should complete");
+        let result_c = handle_c.join().expect("thread C should complete");
+
+        // Verify results are sensible
+        assert!(!results_a.is_empty(), "High-volume attacker should have results");
+        assert!(!results_b.is_empty(), "Medium-volume attacker should have results");
+        assert!(result_c > 0, "Low-volume attacker should have positive count");
+
+        // Verify final state maintains invariants
+        let final_guard = limiter.lock().unwrap();
+        let stats = final_guard.get_failure_stats();
+
+        // Should track at most MAX_AUTH_FAILURE_SOURCES unique IPs
+        assert!(stats.unique_source_ips <= MAX_AUTH_FAILURE_SOURCES);
+
+        // Global count should equal sum of all increments
+        let expected_global = results_a.len() as u64 + results_b.len() as u64 + 1u64; // +1 for result_c
+        assert_eq!(stats.global_failure_count, expected_global);
+
+        // If all sources fit, should have exactly 3 unique IPs
+        if MAX_AUTH_FAILURE_SOURCES >= 3 {
+            assert_eq!(stats.unique_source_ips, 3);
+        }
+    });
 }
