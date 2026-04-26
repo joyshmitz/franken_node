@@ -658,6 +658,11 @@ impl EvidenceLedger {
         }
         hasher.update(&entry.decision_id.len().to_le_bytes());
         hasher.update(entry.decision_id.as_bytes());
+        let decision_kind = entry.decision_kind.label();
+        hasher.update(&decision_kind.len().to_le_bytes());
+        hasher.update(decision_kind.as_bytes());
+        hasher.update(&entry.decision_time.len().to_le_bytes());
+        hasher.update(entry.decision_time.as_bytes());
         hasher.update(&entry.timestamp_ms.to_le_bytes());
         hasher.update(&entry.trace_id.len().to_le_bytes());
         hasher.update(entry.trace_id.as_bytes());
@@ -2364,6 +2369,29 @@ mod tests {
             ledger.current_bytes(),
             serialized_total,
             "ledger byte accounting must match the finalized retained entries"
+        );
+    }
+
+    #[test]
+    fn entry_hash_changes_when_unsigned_decision_metadata_changes() {
+        let ledger = EvidenceLedger::new(LedgerCapacity::new(10, 100_000));
+        let base_entry = make_entry("DEC-001", 1);
+
+        let mut different_kind = base_entry.clone();
+        different_kind.decision_kind = DecisionKind::Deny;
+
+        let mut different_time = base_entry.clone();
+        different_time.decision_time = "2026-01-01T00:00:01Z".to_string();
+
+        assert_ne!(
+            ledger.compute_entry_hash(&base_entry),
+            ledger.compute_entry_hash(&different_kind),
+            "hash chain must distinguish decision kind changes even without signatures"
+        );
+        assert_ne!(
+            ledger.compute_entry_hash(&base_entry),
+            ledger.compute_entry_hash(&different_time),
+            "hash chain must distinguish decision timestamp changes even without signatures"
         );
     }
 
