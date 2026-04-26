@@ -877,8 +877,13 @@ pub fn error_from_bundle(err: ReplayBundleError) -> CounterfactualReplayError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::replay_bundle::{RawEvent, generate_replay_bundle};
+    use crate::tools::replay_bundle::{
+        RawEvent, generate_replay_bundle, sign_replay_bundle, ReplayBundleSigningMaterial,
+        write_bundle_to_path_with_trusted_key, read_bundle_from_path_with_trusted_key,
+    };
+    use tempfile::TempDir;
 
+    /// Create test bundle using real file I/O roundtrip to exercise serialization path
     fn fixture_bundle() -> ReplayBundle {
         let events = vec![
             RawEvent::new(
@@ -913,7 +918,35 @@ mod tests {
             )
             .with_causal_parent(2),
         ];
-        generate_replay_bundle("INC-CF-001", &events).expect("bundle")
+
+        // Generate bundle in memory
+        let mut bundle = generate_replay_bundle("INC-CF-001", &events).expect("bundle");
+
+        // Sign the bundle for file I/O operations
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[0x43; 32]);
+        let signing_material = ReplayBundleSigningMaterial {
+            signing_key: &signing_key,
+            key_source: "test-counterfactual-replay",
+            signing_identity: "counterfactual-replay-test",
+        };
+        sign_replay_bundle(&mut bundle, &signing_material).expect("sign bundle");
+
+        // Create temporary workspace for real file I/O
+        let workspace = TempDir::new().expect("create temp workspace");
+        let bundle_path = workspace.path().join("counterfactual_replay_bundle.json");
+
+        // Derive trusted key ID for file operations
+        let trusted_key_id = frankenengine_node::supply_chain::artifact_signing::KeyId::from_verifying_key(
+            &signing_key.verifying_key()
+        ).to_string();
+
+        // Write bundle to real file system
+        write_bundle_to_path_with_trusted_key(&bundle, &bundle_path, &trusted_key_id)
+            .expect("write bundle to file");
+
+        // Read bundle back from file system - this exercises the full serialization roundtrip
+        read_bundle_from_path_with_trusted_key(&bundle_path, Some(&trusted_key_id))
+            .expect("read bundle from file")
     }
 
     #[test]
