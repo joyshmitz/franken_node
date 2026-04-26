@@ -37,6 +37,25 @@ use crate::capacity_defaults::aliases::MAX_RECEIPT_CHAIN;
 /// or fail before creating new receipt temp files.
 static PERSIST_LOCK: Mutex<()> = Mutex::new(());
 
+fn sync_directory(path: &Path) -> Result<(), ReceiptError> {
+    std::fs::File::open(path)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|source| ReceiptError::WriteFailed {
+            path: path.display().to_string(),
+            source,
+            remediation_hint: "Check target directory permissions and filesystem consistency"
+                .to_string(),
+        })
+}
+
+fn normalized_directory(path: &Path) -> &Path {
+    if path.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        path
+    }
+}
+
 mod canonical_f64 {
     use serde::{Deserialize, Deserializer, Serializer, de};
 
@@ -226,21 +245,26 @@ impl Receipt {
     ///
     /// Ensures this receipt's timestamp is strictly after the previous receipt's timestamp
     /// to prevent chronological manipulation attacks via backdating or clock skew.
-    pub fn validate_timestamp_monotonicity(&self, previous_timestamp: &str) -> Result<(), ReceiptError> {
+    pub fn validate_timestamp_monotonicity(
+        &self,
+        previous_timestamp: &str,
+    ) -> Result<(), ReceiptError> {
         use chrono::DateTime;
 
         // Parse both timestamps
-        let prev_time = DateTime::parse_from_rfc3339(previous_timestamp)
-            .map_err(|source| ReceiptError::TimestampParse {
+        let prev_time = DateTime::parse_from_rfc3339(previous_timestamp).map_err(|source| {
+            ReceiptError::TimestampParse {
                 timestamp: previous_timestamp.to_string(),
                 source,
-            })?;
+            }
+        })?;
 
-        let current_time = DateTime::parse_from_rfc3339(&self.timestamp)
-            .map_err(|source| ReceiptError::TimestampParse {
+        let current_time = DateTime::parse_from_rfc3339(&self.timestamp).map_err(|source| {
+            ReceiptError::TimestampParse {
                 timestamp: self.timestamp.clone(),
                 source,
-            })?;
+            }
+        })?;
 
         // SECURITY: Require strict monotonic ordering to prevent chronological manipulation
         if current_time <= prev_time {
@@ -626,6 +650,7 @@ fn write_bytes_atomically(path: &Path, bytes: &[u8]) -> Result<(), ReceiptError>
         source: std::io::Error::other("receipt persist lock poisoned"),
         remediation_hint: "Check for concurrent receipt operations or restart process".to_string(),
     })?;
+    let parent = normalized_directory(path.parent().unwrap_or_else(|| Path::new(".")));
     let mut temp = TempFileGuard::new(path);
     {
         let mut file = OpenOptions::new()
@@ -635,7 +660,8 @@ fn write_bytes_atomically(path: &Path, bytes: &[u8]) -> Result<(), ReceiptError>
             .map_err(|source| ReceiptError::WriteFailed {
                 path: path.display().to_string(),
                 source,
-                remediation_hint: "Check directory permissions and available disk space".to_string(),
+                remediation_hint: "Check directory permissions and available disk space"
+                    .to_string(),
             })?;
         file.write_all(bytes)
             .and_then(|()| file.sync_all())
@@ -645,7 +671,15 @@ fn write_bytes_atomically(path: &Path, bytes: &[u8]) -> Result<(), ReceiptError>
                 remediation_hint: "Check available disk space and filesystem integrity".to_string(),
             })?;
     }
-    temp.persist(path)
+    temp.persist(path)?;
+    sync_directory(parent)?;
+    if let Some(ancestor) = parent.parent() {
+        let ancestor = normalized_directory(ancestor);
+        if ancestor != parent {
+            sync_directory(ancestor)?;
+        }
+    }
+    Ok(())
 }
 
 struct TempFileGuard {
@@ -683,7 +717,8 @@ impl TempFileGuard {
         std::fs::rename(&self.path, target).map_err(|source| ReceiptError::WriteFailed {
             path: target.display().to_string(),
             source,
-            remediation_hint: "Check target directory permissions and filesystem consistency".to_string(),
+            remediation_hint: "Check target directory permissions and filesystem consistency"
+                .to_string(),
         })?;
         self.persisted = true;
         Ok(())
@@ -850,6 +885,12 @@ mod tests {
     use super::*;
     use crate::security::constant_time;
     use serde_json::json;
+    use std::sync::{Mutex, OnceLock};
+
+    fn cwd_test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     fn make_receipt(action_name: &str, decision: Decision) -> Receipt {
         Receipt::new(
@@ -1487,6 +1528,26 @@ mod tests {
         write_receipts_markdown(&[signed], &output_path).expect("write markdown");
 
         let markdown = std::fs::read_to_string(&output_path).expect("read");
+        assert!(markdown.contains("Signed Decision Receipts"));
+        assert!(markdown.contains("revocation"));
+    }
+
+    #[test]
+    fn write_receipts_markdown_supports_relative_output_in_current_directory() {
+        let _guard = cwd_test_lock().lock().expect("cwd lock");
+        let key = demo_signing_key();
+        let signed =
+            sign_receipt(&make_receipt("revocation", Decision::Denied), &key).expect("sign");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let previous_cwd = std::env::current_dir().expect("cwd");
+
+        std::env::set_current_dir(dir.path()).expect("set cwd");
+        let write_result = write_receipts_markdown(&[signed], Path::new("receipts.md"));
+        let restore_result = std::env::set_current_dir(&previous_cwd);
+
+        write_result.expect("write relative markdown");
+        restore_result.expect("restore cwd");
+        let markdown = std::fs::read_to_string(dir.path().join("receipts.md")).expect("read");
         assert!(markdown.contains("Signed Decision Receipts"));
         assert!(markdown.contains("revocation"));
     }

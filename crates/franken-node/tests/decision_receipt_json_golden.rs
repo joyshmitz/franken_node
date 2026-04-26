@@ -4,9 +4,9 @@
 //! Decision receipts are cryptographically signed audit records and any format
 //! change would break signature validation and compliance tooling.
 
+use frankenengine_node::security::decision_receipt::{Decision, Receipt};
+use serde_json::{Value, json};
 use std::{fs, path::Path};
-use serde_json::{json, Value};
-use frankenengine_node::security::decision_receipt::{Receipt, Decision};
 
 /// Create a deterministic decision receipt for golden testing
 fn create_deterministic_receipt() -> Receipt {
@@ -31,16 +31,17 @@ fn create_deterministic_receipt() -> Receipt {
         vec![
             "evidence:network-anomaly-detector:2026-001".to_string(),
             "evidence:behavioral-analysis:ext-scan-001".to_string(),
-            "evidence:reputation-feed:threat-intel-db".to_string()
+            "evidence:reputation-feed:threat-intel-db".to_string(),
         ],
         vec![
             "policy:network-egress-monitoring".to_string(),
             "policy:behavioral-reputation-gate".to_string(),
-            "policy:quarantine-on-threat-match".to_string()
+            "policy:quarantine-on-threat-match".to_string(),
         ],
         0.85,
         "franken-node trust release --extension npm:@malware/data-stealer --audit-id AUD-2026-001",
-    ).expect("Receipt creation should succeed");
+    )
+    .expect("Receipt creation should succeed");
 
     // Override non-deterministic fields for golden test stability
     receipt.receipt_id = "01234567-89ab-cdef-0123-456789abcdef".to_string();
@@ -55,8 +56,8 @@ fn decision_receipt_json_export_format_golden() {
     let receipt = create_deterministic_receipt();
 
     // Serialize to pretty-printed JSON (this is the format that would be exported)
-    let json_output = serde_json::to_string_pretty(&receipt)
-        .expect("Decision receipt should serialize to JSON");
+    let json_output =
+        serde_json::to_string_pretty(&receipt).expect("Decision receipt should serialize to JSON");
 
     let golden_path = Path::new("artifacts/golden/decision_receipt.json");
 
@@ -87,7 +88,7 @@ fn decision_receipt_json_export_format_golden() {
             "GOLDEN MISMATCH: Decision receipt JSON format changed\n\n\
              This indicates a breaking change to decision receipt serialization\n\
              that could invalidate existing signatures and break audit compliance.\n\n\
-             To update: UPDATE_GOLDENS=1 cargo test decision_receipt_json_export_format_golden\n\
+             To update: UPDATE_GOLDENS=1 rch exec -- cargo test -p frankenengine-node decision_receipt_json_export_format_golden\n\
              To review: diff {} {}",
             golden_path.display(),
             actual_path.display(),
@@ -98,8 +99,8 @@ fn decision_receipt_json_export_format_golden() {
 #[test]
 fn decision_receipt_json_schema_stability() {
     let receipt = create_deterministic_receipt();
-    let json_value: Value = serde_json::to_value(&receipt)
-        .expect("Receipt should convert to JSON value");
+    let json_value: Value =
+        serde_json::to_value(&receipt).expect("Receipt should convert to JSON value");
 
     // Verify critical schema elements are present and correctly typed
     assert!(json_value.get("receipt_id").unwrap().is_string());
@@ -117,7 +118,10 @@ fn decision_receipt_json_schema_stability() {
     assert!(json_value.get("previous_receipt_hash").unwrap().is_string());
 
     // Verify decision enum serializes correctly
-    assert_eq!(json_value.get("decision").unwrap().as_str().unwrap(), "approved");
+    assert_eq!(
+        json_value.get("decision").unwrap().as_str().unwrap(),
+        "approved"
+    );
 
     // Verify confidence is serialized as integer (canonical_f64 serialization)
     assert!(json_value.get("confidence").unwrap().is_u64());
