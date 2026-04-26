@@ -39,7 +39,7 @@
 //! - `EVD-LEDGER-004`: capacity breach warning
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::fmt;
 use std::io::Write;
 use std::path::Path;
@@ -191,6 +191,21 @@ impl Write for ByteCountingWriter {
     }
 }
 
+struct HashingWriter<'a> {
+    hasher: &'a mut Sha256,
+}
+
+impl Write for HashingWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.hasher.update(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 fn serialized_json_size<T>(value: &T) -> Result<usize, serde_json::Error>
 where
     T: Serialize,
@@ -198,6 +213,19 @@ where
     let mut writer = ByteCountingWriter::new();
     serde_json::to_writer(&mut writer, value)?;
     Ok(writer.bytes_written())
+}
+
+fn update_hash_serialized_json_len_prefixed<T>(
+    hasher: &mut Sha256,
+    value: &T,
+) -> Result<(), serde_json::Error>
+where
+    T: Serialize,
+{
+    let len = u64::try_from(serialized_json_size(value)?).unwrap_or(u64::MAX);
+    hasher.update(len.to_le_bytes());
+    let mut writer = HashingWriter { hasher };
+    serde_json::to_writer(&mut writer, value)
 }
 
 fn entry_with_server_computed_size(mut normalized: EvidenceEntry) -> (EvidenceEntry, usize) {
@@ -259,10 +287,8 @@ fn canonical_entry_bytes(entry: &EvidenceEntry) -> [u8; SHA256_DIGEST_BYTES] {
     update_hash_len_prefixed(&mut hasher, entry.trace_id.as_bytes());
     hasher.update(entry.epoch_id.to_le_bytes());
 
-    // Serialize payload deterministically
-    if let Ok(payload_str) = serde_json::to_string(&entry.payload) {
-        update_hash_len_prefixed(&mut hasher, payload_str.as_bytes());
-    }
+    // Serialize payload deterministically without materializing a temporary JSON buffer.
+    let _ = update_hash_serialized_json_len_prefixed(&mut hasher, &entry.payload);
 
     hasher.finalize().into()
 }
@@ -604,10 +630,8 @@ pub struct EvidenceLedger {
     current_bytes: usize,
     /// Verifying key for signature verification of evidence entries
     verifying_key: Option<VerifyingKey>,
-    /// Track seen timestamp+signature combinations to prevent replay attacks
-    seen_signatures: HashSet<(u64, ReplaySignature)>,
-    /// Insertion order for the bounded replay-prevention window.
-    seen_signature_order: VecDeque<(u64, ReplaySignature)>,
+    /// Bounded replay-prevention window in append order.
+    seen_signatures: VecDeque<(u64, ReplaySignature)>,
     /// Hash of the last appended entry for hash chain integrity
     last_entry_hash: Option<EntryHash>,
 }
@@ -615,17 +639,17 @@ pub struct EvidenceLedger {
 impl EvidenceLedger {
     fn validate_append(
         &self,
-        entry: &EvidenceEntry,
+        mut entry: EvidenceEntry,
     ) -> Result<(EvidenceEntry, usize, Option<ReplaySignature>), LedgerError> {
         if self.capacity.max_entries == 0 {
-            eprintln!("{}", format_ledger_zero_capacity_event(entry));
+            eprintln!("{}", format_ledger_zero_capacity_event(&entry));
             return Err(LedgerError::ZeroEntryCapacity);
         }
 
         let mut replay_signature = None;
         if let Some(verifying_key) = &self.verifying_key {
             // SECURITY: Verify signature first to prevent injection attacks.
-            let signature_bytes = verify_evidence_entry_bytes(entry, verifying_key)?;
+            let signature_bytes = verify_evidence_entry_bytes(&entry, verifying_key)?;
 
             // SECURITY: Check for replay attacks - reject duplicate timestamp+signature combinations.
             // Use constant-time comparison to prevent timing side-channel attacks.
@@ -657,18 +681,14 @@ impl EvidenceLedger {
             }
         }
 
-        let mut normalized_entry = entry.clone();
-        normalized_entry.prev_entry_hash = expected_prev_hash;
-        let (normalized_entry, entry_size) = entry_with_server_computed_size(normalized_entry);
+        let epoch_id = entry.epoch_id;
+        entry.prev_entry_hash = expected_prev_hash;
+        let (normalized_entry, entry_size) = entry_with_server_computed_size(entry);
 
         if entry_size > self.capacity.max_bytes {
             eprintln!(
                 "{}",
-                format_ledger_entry_too_large_event(
-                    entry_size,
-                    self.capacity.max_bytes,
-                    entry.epoch_id,
-                )
+                format_ledger_entry_too_large_event(entry_size, self.capacity.max_bytes, epoch_id,)
             );
             return Err(LedgerError::EntryTooLarge {
                 entry_size,
@@ -772,9 +792,10 @@ impl EvidenceLedger {
         hasher.update(&entry.epoch_id.to_le_bytes());
 
         // Hash the serialized payload for deterministic content representation
-        let payload_bytes = serde_json::to_vec(&entry.payload).unwrap_or_default();
-        hasher.update(&payload_bytes.len().to_le_bytes());
-        hasher.update(&payload_bytes);
+        // without allocating a transient JSON buffer on the append hot path.
+        if update_hash_serialized_json_len_prefixed(&mut hasher, &entry.payload).is_err() {
+            hasher.update(0_u64.to_le_bytes());
+        }
 
         hasher.update(&entry.size_bytes.to_le_bytes());
         hasher.update(&entry.signature.len().to_le_bytes());
@@ -831,23 +852,16 @@ impl EvidenceLedger {
             total_evicted: 0,
             current_bytes: 0,
             verifying_key,
-            seen_signatures: HashSet::new(),
-            seen_signature_order: VecDeque::new(),
+            seen_signatures: VecDeque::new(),
             last_entry_hash: None,
         }
     }
 
     fn remember_seen_signature(&mut self, timestamp_ms: u64, signature: ReplaySignature) {
-        let replay_key = (timestamp_ms, signature);
-        if self.seen_signatures.insert(replay_key.clone()) {
-            self.seen_signature_order.push_back(replay_key);
-        }
-
         let replay_window = self.capacity.max_entries.max(MIN_SEEN_SIGNATURES);
-        while self.seen_signature_order.len() > replay_window {
-            if let Some(expired_key) = self.seen_signature_order.pop_front() {
-                self.seen_signatures.remove(&expired_key);
-            }
+        self.seen_signatures.push_back((timestamp_ms, signature));
+        while self.seen_signatures.len() > replay_window {
+            self.seen_signatures.pop_front();
         }
     }
 
@@ -978,7 +992,7 @@ impl EvidenceLedger {
     /// assert_eq!(entry_id, EntryId(1));
     /// ```
     pub fn append(&mut self, entry: EvidenceEntry) -> Result<EntryId, LedgerError> {
-        let (entry, entry_size, replay_signature) = self.validate_append(&entry)?;
+        let (entry, entry_size, replay_signature) = self.validate_append(entry)?;
         Ok(self.append_prevalidated(entry, entry_size, replay_signature))
     }
 
@@ -1490,7 +1504,7 @@ impl LabSpillMode {
     /// assert_eq!(spill.len(), 1);
     /// ```
     pub fn append(&mut self, entry: EvidenceEntry) -> Result<EntryId, LedgerError> {
-        let (entry, entry_size, replay_signature) = self.ledger.validate_append(&entry)?;
+        let (entry, entry_size, replay_signature) = self.ledger.validate_append(entry)?;
         // CIRCUIT BREAKER: Check manual halt state and any available disk monitoring
         let should_open = self.circuit_breaker.should_open().unwrap_or(false);
         let was_open = self.circuit_breaker.is_open;
@@ -2511,6 +2525,35 @@ mod tests {
             appended_entry.prev_entry_hash, expected_prev_hash,
             "external prev_entry_hash contract must stay hex-encoded even if the ledger stores raw hash bytes internally"
         );
+    }
+
+    #[test]
+    fn validate_append_finalizes_owned_entry_without_losing_payload() {
+        let mut ledger = EvidenceLedger::new(LedgerCapacity::new(10, 100_000));
+        ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("first append");
+
+        let expected_prev_hash = ledger
+            .last_entry_hash
+            .as_ref()
+            .map(encode_entry_hash)
+            .expect("first append should establish chain hash");
+        let mut entry = make_entry("DEC-002", 2);
+        entry.prev_entry_hash = expected_prev_hash.clone();
+        entry.payload = serde_json::json!({
+            "padding": "x".repeat(64),
+            "nested": { "epoch": 2, "decision": "DEC-002" }
+        });
+        let expected_payload = entry.payload.clone();
+
+        let (normalized_entry, _entry_size, replay_signature) = ledger
+            .validate_append(entry)
+            .expect("validation should succeed");
+
+        assert!(replay_signature.is_none());
+        assert_eq!(normalized_entry.prev_entry_hash, expected_prev_hash);
+        assert_eq!(normalized_entry.payload, expected_payload);
     }
 
     #[test]
@@ -5555,6 +5598,37 @@ mod tests {
             canonical_entry_bytes(&entry).len(),
             SHA256_DIGEST_BYTES,
             "canonical entry representation should stay a fixed-width SHA-256 digest"
+        );
+    }
+
+    #[test]
+    fn streamed_payload_hashing_matches_legacy_json_buffer_path() {
+        let payload = serde_json::json!({
+            "message": "trust-native runtime",
+            "unicode": "🙂漢字",
+            "nested": { "epoch": 7, "decision": "DEC-STREAM" },
+            "items": [1, 2, 3, 4]
+        });
+
+        let mut streamed = Sha256::new();
+        update_hash_serialized_json_len_prefixed(&mut streamed, &payload)
+            .expect("payload serialization should succeed");
+        let streamed_digest: [u8; SHA256_DIGEST_BYTES] = streamed.finalize().into();
+
+        let payload_bytes =
+            serde_json::to_vec(&payload).expect("payload serialization should succeed");
+        let mut legacy = Sha256::new();
+        legacy.update(
+            u64::try_from(payload_bytes.len())
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
+        legacy.update(&payload_bytes);
+        let legacy_digest: [u8; SHA256_DIGEST_BYTES] = legacy.finalize().into();
+
+        assert_eq!(
+            streamed_digest, legacy_digest,
+            "streaming payload hashing must preserve the legacy JSON byte contract"
         );
     }
 
