@@ -623,14 +623,14 @@ impl EvictionSaga {
     pub fn content_hash(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"eviction_saga_hash_v1:");
-        hasher.update((self.saga_id.len() as u64).to_le_bytes());
+        hasher.update(u64::try_from(self.saga_id.len()).unwrap_or(u64::MAX).to_le_bytes());
         hasher.update(self.saga_id.as_bytes());
-        hasher.update((self.artifact_id.len() as u64).to_le_bytes());
+        hasher.update(u64::try_from(self.artifact_id.len()).unwrap_or(u64::MAX).to_le_bytes());
         hasher.update(self.artifact_id.as_bytes());
         let phase = self.current_phase.as_str();
-        hasher.update((phase.len() as u64).to_le_bytes());
+        hasher.update(u64::try_from(phase.len()).unwrap_or(u64::MAX).to_le_bytes());
         hasher.update(phase.as_bytes());
-        hasher.update((self.transitions.len() as u64).to_le_bytes());
+        hasher.update(u64::try_from(self.transitions.len()).unwrap_or(u64::MAX).to_le_bytes());
         hex::encode(hasher.finalize())
     }
 }
