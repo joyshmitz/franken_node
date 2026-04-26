@@ -688,7 +688,16 @@ impl AuthFailureLimiter {
         }
 
         if self.source_failure_counts.len() >= MAX_AUTH_FAILURE_SOURCES {
-            return 1;
+            // LRU eviction: remove the IP with the lowest failure count to make room
+            // This preserves tracking of high-volume attackers while allowing new IPs
+            let min_entry = self.source_failure_counts
+                .iter()
+                .min_by_key(|(_, &count)| count)
+                .map(|(ip, _)| ip.clone());
+
+            if let Some(min_ip) = min_entry {
+                self.source_failure_counts.remove(&min_ip);
+            }
         }
 
         self.source_failure_counts.insert(source_ip.to_string(), 1);
@@ -2279,10 +2288,11 @@ mod api_middleware_edge_negative_tests {
     }
 
     #[test]
-    fn negative_auth_failure_limiter_bounds_tracked_source_cardinality() {
+    fn negative_auth_failure_limiter_bounds_tracked_source_cardinality_with_lru_eviction() {
         let mut limiter = AuthFailureLimiter::new();
 
-        for source_index in 0..(MAX_AUTH_FAILURE_SOURCES + 32) {
+        // First, add sources up to the limit - each gets 1 failure
+        for source_index in 0..MAX_AUTH_FAILURE_SOURCES {
             limiter.record_failure(
                 &format!("192.0.2.{source_index}"),
                 AuthFailureType::MissingHeader,
@@ -2291,10 +2301,30 @@ mod api_middleware_edge_negative_tests {
             );
         }
 
+        // Give the first source additional failures to make it high-priority
+        for _ in 0..5 {
+            limiter.record_failure(
+                "192.0.2.0",
+                AuthFailureType::MissingHeader,
+                "trace-source-bound-high-pri",
+                None,
+            );
+        }
+
+        // Now add sources beyond the limit - should trigger LRU eviction
+        for source_index in MAX_AUTH_FAILURE_SOURCES..(MAX_AUTH_FAILURE_SOURCES + 32) {
+            limiter.record_failure(
+                &format!("192.0.2.{source_index}"),
+                AuthFailureType::MissingHeader,
+                "trace-source-bound-overflow",
+                None,
+            );
+        }
+
         let stats = limiter.get_failure_stats();
         assert_eq!(
             stats.global_failure_count,
-            (MAX_AUTH_FAILURE_SOURCES + 32) as u64
+            (MAX_AUTH_FAILURE_SOURCES + 32 + 5) as u64  // +5 for the extra failures on 192.0.2.0
         );
         assert_eq!(stats.unique_source_ips, MAX_AUTH_FAILURE_SOURCES);
         assert_eq!(
@@ -2302,15 +2332,18 @@ mod api_middleware_edge_negative_tests {
             MAX_AUTH_FAILURE_SOURCES
         );
         assert!(stats.top_source_failures.len() <= TOP_AUTH_FAILURE_SOURCES);
+
+        // High-volume attacker should be preserved by LRU policy
         assert!(
             limiter.source_failure_counts.contains_key("192.0.2.0"),
-            "tracked sources should not be evicted when the limiter is full"
+            "High-volume sources should not be evicted by LRU policy"
         );
+
+        // At least some of the recent sources should be tracked (LRU allows new sources)
+        let last_source = format!("192.0.2.{}", MAX_AUTH_FAILURE_SOURCES + 31);
         assert!(
-            !limiter
-                .source_failure_counts
-                .contains_key(&format!("192.0.2.{}", MAX_AUTH_FAILURE_SOURCES + 31)),
-            "brand-new sources beyond the cap should not displace tracked offenders"
+            limiter.source_failure_counts.contains_key(&last_source),
+            "LRU policy should allow new sources by evicting low-count entries"
         );
     }
 
