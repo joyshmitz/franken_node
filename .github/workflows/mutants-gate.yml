@@ -24,7 +24,7 @@ on:
 jobs:
   cargo-mutants:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -44,14 +44,14 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - name: Cache cargo home and target
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/bin
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-mutants-${{ hashFiles('franken_node/Cargo.toml', 'franken_node/crates/franken-node/Cargo.toml', 'franken_node/sdk/verifier/Cargo.toml') }}
+          shared-key: cargo-mutants
+          key: ${{ hashFiles('franken_node/Cargo.lock', 'franken_node/.cargo-mutants.toml') }}
+          workspaces: |
+            franken_node -> target
+          cache-all-crates: "true"
 
       - name: Install rch
         run: |
