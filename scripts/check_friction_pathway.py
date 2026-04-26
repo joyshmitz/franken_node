@@ -225,21 +225,31 @@ def check_spec_sections() -> dict:
 
 
 def check_policy_pathway_steps() -> dict:
-    """Check that the policy defines the 4-step pathway."""
+    """Check that the policy defines the 3-step pathway and no stale configure command."""
     if not POLICY_PATH.is_file():
         return {
             "check": "policy_pathway_steps",
             "passed": False,
             "detail": "Policy file missing; cannot check pathway steps",
         }
-    content = POLICY_PATH.read_text().lower()
-    steps = ["install", "init", "configure", "run"]
-    missing = [s for s in steps if s not in content]
-    ok = len(missing) == 0
+    content = POLICY_PATH.read_text()
+    required_fragments = [
+        "https://get.frankennode.dev",
+        "franken-node init --profile balanced",
+        "franken-node run --policy balanced",
+    ]
+    missing = [fragment for fragment in required_fragments if fragment not in content]
+    has_stale_configure = "franken-node configure" in content
+    ok = len(missing) == 0 and not has_stale_configure
+    detail = "All 3 pathway steps defined in policy with no stale configure command"
+    if missing:
+        detail = f"Missing pathway fragments: {missing}"
+    elif has_stale_configure:
+        detail = "Policy still references stale franken-node configure command"
     return {
         "check": "policy_pathway_steps",
         "passed": ok,
-        "detail": "All 4 pathway steps defined in policy" if ok else f"Missing steps: {missing}",
+        "detail": detail,
     }
 
 

@@ -27,17 +27,15 @@ invariants hold across the ecosystem.
 ## Pathway Steps
 
 1. **Install** -- `curl -fsSL https://get.frankennode.dev | sh`
-2. **Init** -- `franken-node init` (auto-detects archetype)
-3. **Configure** -- `franken-node configure --profile balanced` (zero manual edits)
-4. **Run** -- `franken-node run --policy balanced` (first policy-governed operation)
+2. **Init** -- `franken-node init --profile balanced` (auto-detects archetype and applies balanced defaults)
+3. **Run** -- `franken-node run --policy balanced` (first policy-governed operation)
 
 ## Time Budget
 
 | Step      | Max Duration | Cumulative Max |
 |-----------|-------------|----------------|
 | Install   | 60 s        | 60 s           |
-| Init      | 30 s        | 90 s           |
-| Configure | 30 s        | 120 s          |
+| Init      | 60 s        | 120 s          |
 | Run       | 180 s       | 300 s (5 min)  |
 
 Total wall-clock budget: **300 seconds (5 minutes)**.

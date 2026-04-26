@@ -8,7 +8,7 @@
 
 ## 1. Pathway Definition
 
-The friction-minimized pathway is a four-step sequence that takes a user from
+The friction-minimized pathway is a three-step sequence that takes a user from
 having no franken_node installation to running their first policy-governed
 production operation.  The balanced profile is the default and must require
 **zero manual file edits**.
@@ -16,14 +16,13 @@ production operation.  The balanced profile is the default and must require
 ### Steps
 
 ```
-install --> init --> configure --> run --policy balanced
+install --> init --profile balanced --> run --policy balanced
 ```
 
 | Step        | Command                                          | Purpose                                  |
 |-------------|--------------------------------------------------|------------------------------------------|
 | **Install** | `curl -fsSL https://get.frankennode.dev \| sh`   | Download and place binary on PATH        |
-| **Init**    | `franken-node init`                              | Auto-detect archetype, scaffold config   |
-| **Configure** | `franken-node configure --profile balanced`   | Apply balanced policy without manual edits |
+| **Init**    | `franken-node init --profile balanced`           | Auto-detect archetype, scaffold config, and apply balanced defaults |
 | **Run**     | `franken-node run --policy balanced`             | Start first policy-governed operation    |
 
 ---
@@ -58,8 +57,7 @@ emits FMP-004 and aborts with a clear error.
 | Step      | Max Duration | Cumulative Max |
 |-----------|-------------|----------------|
 | Install   | 60 s        | 60 s           |
-| Init      | 30 s        | 90 s           |
-| Configure | 30 s        | 120 s          |
+| Init      | 60 s        | 120 s          |
 | Run       | 180 s       | 300 s          |
 
 **INV-FMP-TIME:** Total pathway wall-clock time MUST be < 300 seconds for every
@@ -72,8 +70,7 @@ archetype in CI testing.
 **INV-FMP-ZERO-EDIT:** The balanced-profile onboarding MUST require zero manual
 file edits.  This means:
 
-- `franken-node init` generates all necessary configuration files.
-- `franken-node configure --profile balanced` applies sensible defaults.
+- `franken-node init --profile balanced` generates all necessary configuration files and applies sensible defaults.
 - The user does not need to open an editor, modify JSON/YAML, or create any
   file by hand before `franken-node run --policy balanced` succeeds.
 
@@ -113,7 +110,7 @@ to the telemetry sink.
 ### Rules
 
 - FMP-001 is emitted exactly once per pathway execution.
-- FMP-002 is emitted once per successfully completed step (up to 4 times).
+- FMP-002 is emitted once per successfully completed step (up to 3 times).
 - FMP-003 is emitted exactly once on full success.
 - FMP-004 is emitted at most once; it terminates the pathway.
 - FMP-003 and FMP-004 are mutually exclusive within a single pathway run.
@@ -161,7 +158,7 @@ friction-pathway-gate:
       archetype: [express_api, react_spa, cli_tool, monorepo, serverless]
   steps:
     - scaffold archetype fixture
-    - run full pathway (install -> init -> configure -> run)
+    - run full pathway (install -> init -> run)
     - assert total elapsed < 300s
     - assert zero manual edits required
     - assert all telemetry events emitted
