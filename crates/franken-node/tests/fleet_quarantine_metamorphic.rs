@@ -8,7 +8,7 @@ use frankenengine_node::api::middleware::{AuthIdentity, AuthMethod, TraceContext
 use frankenengine_node::control_plane::fleet_transport::FileFleetTransport;
 use rand::{Rng, SeedableRng};
 use std::collections::HashMap;
-use tempfile::tempdir;
+use tempfile::{tempdir, TempDir};
 
 /// Capture fleet state for comparison
 #[derive(Debug, Clone, PartialEq)]
@@ -69,7 +69,7 @@ fn test_trace(operation: &str) -> TraceContext {
     }
 }
 
-fn activated_fleet_manager() -> FleetControlManager {
+fn activated_fleet_manager() -> (FleetControlManager, TempDir) {
     // Create temporary directory for file-based transport
     let temp_dir = tempdir().expect("create temp directory");
     let transport = FileFleetTransport::new(temp_dir.path().to_path_buf())
@@ -86,7 +86,7 @@ fn activated_fleet_manager() -> FleetControlManager {
     let mut manager = FleetControlManager::with_file_transport(transport, signing_material)
         .expect("create manager with file transport");
     manager.activate();
-    manager
+    (manager, temp_dir)
 }
 
 /// Generate test scope with controlled randomness
@@ -112,7 +112,7 @@ mod mr_fleet_quarantine_inversion {
     #[test]
     fn quarantine_release_restores_original_state_simple() {
         // Use fixed inputs for deterministic baseline test
-        let mut mgr = activated_fleet_manager();
+        let (mut mgr, _temp_dir) = activated_fleet_manager();
 
         let scope = QuarantineScope {
             zone_id: "zone-metamorphic".to_string(),
@@ -191,7 +191,7 @@ mod mr_fleet_quarantine_inversion {
             let identity = admin_identity();
 
             // Create fresh manager for each iteration
-            let mut mgr = activated_fleet_manager();
+            let (mut mgr, _temp_dir) = activated_fleet_manager();
 
             // Capture initial state
             let initial_state = FleetState::capture_from_manager(&mgr);
@@ -243,7 +243,7 @@ mod mr_fleet_quarantine_inversion {
     #[test]
     fn multiple_quarantine_release_cycles_property() {
         // Test multiple cycles: quarantine -> release -> quarantine -> release
-        let mut mgr = activated_fleet_manager();
+        let (mut mgr, _temp_dir) = activated_fleet_manager();
 
         let scope = QuarantineScope {
             zone_id: "zone-multi-cycle".to_string(),
@@ -301,7 +301,7 @@ mod mr_fleet_status_idempotence {
 
     #[test]
     fn status_query_idempotence() {
-        let mgr = activated_fleet_manager();
+        let (mgr, _temp_dir) = activated_fleet_manager();
 
         let zone_id = "zone-idempotent";
 
