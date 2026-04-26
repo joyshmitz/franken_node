@@ -1020,14 +1020,18 @@ mod tests {
     #[test]
     fn test_start_requires_remote_cap() {
         let mut mgr = EvictionSagaManager::new();
-        let err = mgr.start_saga("a", RemoteCapLookup::NotPresent, "t1").unwrap_err();
+        let err = mgr
+            .start_saga("a", RemoteCapLookup::NotPresent, "t1")
+            .unwrap_err();
         assert!(err.contains("RemoteCap"));
     }
 
     #[test]
     fn test_start_rejects_empty_artifact_id() {
         let mut mgr = EvictionSagaManager::new();
-        let err = mgr.start_saga("", RemoteCapLookup::Granted, "t1").unwrap_err();
+        let err = mgr
+            .start_saga("", RemoteCapLookup::Granted, "t1")
+            .unwrap_err();
         assert!(err.contains(ERR_INVALID_ARTIFACT_ID));
         assert!(err.contains("artifact_id must not be empty"));
     }
@@ -1036,7 +1040,11 @@ mod tests {
     fn test_start_rejects_reserved_artifact_id() {
         let mut mgr = EvictionSagaManager::new();
         let err = mgr
-            .start_saga(&format!(" {RESERVED_ARTIFACT_ID} "), RemoteCapLookup::Granted, "t1")
+            .start_saga(
+                &format!(" {RESERVED_ARTIFACT_ID} "),
+                RemoteCapLookup::Granted,
+                "t1",
+            )
             .unwrap_err();
         assert!(err.contains(ERR_INVALID_ARTIFACT_ID));
         assert!(err.contains("artifact_id is reserved"));
@@ -1045,7 +1053,9 @@ mod tests {
     #[test]
     fn test_start_rejects_artifact_id_whitespace() {
         let mut mgr = EvictionSagaManager::new();
-        let err = mgr.start_saga(" artifact-a ", RemoteCapLookup::Granted, "t1").unwrap_err();
+        let err = mgr
+            .start_saga(" artifact-a ", RemoteCapLookup::Granted, "t1")
+            .unwrap_err();
         assert!(err.contains(ERR_INVALID_ARTIFACT_ID));
         assert!(err.contains("leading or trailing whitespace"));
     }
@@ -1061,7 +1071,9 @@ mod tests {
 
         for (artifact_id, expected) in cases {
             let mut mgr = EvictionSagaManager::new();
-            let err = mgr.start_saga(artifact_id, RemoteCapLookup::Granted, "t1").unwrap_err();
+            let err = mgr
+                .start_saga(artifact_id, RemoteCapLookup::Granted, "t1")
+                .unwrap_err();
             assert!(err.contains(ERR_INVALID_ARTIFACT_ID), "{err}");
             assert!(err.contains(expected), "{err}");
         }
@@ -1070,9 +1082,13 @@ mod tests {
     #[test]
     fn test_remote_cap_recheck_blocks_begin_upload_until_restored() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
 
-        let err = mgr.recheck_remote_cap(&id, false, "t2").unwrap_err();
+        let err = mgr
+            .recheck_remote_cap(&id, RemoteCapLookup::NotPresent, "t2")
+            .unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
 
         let err = mgr.begin_upload(&id, 3_000, "t3").unwrap_err();
@@ -1086,10 +1102,14 @@ mod tests {
     #[test]
     fn test_remote_cap_recheck_blocks_complete_upload_until_restored() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
 
-        let err = mgr.recheck_remote_cap(&id, false, "t3").unwrap_err();
+        let err = mgr
+            .recheck_remote_cap(&id, RemoteCapLookup::NotPresent, "t3")
+            .unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
 
         let err = mgr.complete_upload(&id, 4_000, "t4").unwrap_err();
@@ -1104,12 +1124,16 @@ mod tests {
     #[test]
     fn test_remote_cap_recheck_blocks_complete_verify_until_restored() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.complete_upload(&id, 3_000, "t3")
             .expect("should succeed");
 
-        let err = mgr.recheck_remote_cap(&id, RemoteCapLookup::Denied, "t4").unwrap_err();
+        let err = mgr
+            .recheck_remote_cap(&id, RemoteCapLookup::Denied, "t4")
+            .unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
 
         let err = mgr.complete_verify(&id, 5_000, "t5").unwrap_err();
@@ -1124,14 +1148,18 @@ mod tests {
     #[test]
     fn test_remote_cap_recheck_blocks_complete_retire_until_restored() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.complete_upload(&id, 3_000, "t3")
             .expect("should succeed");
         mgr.complete_verify(&id, 4_000, "t4")
             .expect("should succeed");
 
-        let err = mgr.recheck_remote_cap(&id, RemoteCapLookup::Denied, "t5").unwrap_err();
+        let err = mgr
+            .recheck_remote_cap(&id, RemoteCapLookup::Denied, "t5")
+            .unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
 
         let err = mgr.complete_retire(&id, 6_000, "t6").unwrap_err();
@@ -1146,7 +1174,9 @@ mod tests {
     #[test]
     fn test_invalid_transition_rejected() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         // Can't go directly to verify without upload
         let err = mgr.complete_upload(&id, 2_000, "t2").unwrap_err();
         assert!(err.contains("invalid transition"));
@@ -1155,7 +1185,9 @@ mod tests {
     #[test]
     fn test_cancel_during_upload() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         let action = mgr.cancel_saga(&id, 3_000, "t3").expect("should succeed");
         assert!(matches!(action, CompensationAction::AbortUpload));
@@ -1168,7 +1200,9 @@ mod tests {
     #[test]
     fn test_cancel_during_verify() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.complete_upload(&id, 3_000, "t3")
             .expect("should succeed");
@@ -1183,7 +1217,9 @@ mod tests {
     #[test]
     fn test_cancel_during_retire() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.complete_upload(&id, 3_000, "t3")
             .expect("should succeed");
@@ -1199,7 +1235,9 @@ mod tests {
     #[test]
     fn test_cancel_terminal_complete_rejected() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.complete_upload(&id, 3_000, "t3")
             .expect("should succeed");
@@ -1215,7 +1253,9 @@ mod tests {
     #[test]
     fn test_cancel_terminal_compensated_rejected() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.cancel_saga(&id, 3_000, "t3").expect("should succeed");
 
@@ -1226,7 +1266,9 @@ mod tests {
     #[test]
     fn test_leak_check_passes_after_success() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.complete_upload(&id, 3_000, "t3")
             .expect("should succeed");
@@ -1243,7 +1285,9 @@ mod tests {
     #[test]
     fn test_leak_check_passes_after_compensation() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.cancel_saga(&id, 3_000, "t3").expect("should succeed");
 
@@ -1254,7 +1298,9 @@ mod tests {
     #[test]
     fn test_cancel_emits_compensation_start_before_complete() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
 
         let audit_len_before = mgr.audit_log.len();
@@ -1280,7 +1326,9 @@ mod tests {
     #[test]
     fn test_crash_recovery_identifies_action() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.complete_upload(&id, 3_000, "t3")
             .expect("should succeed");
@@ -1292,9 +1340,11 @@ mod tests {
     #[test]
     fn test_content_hash_deterministic() {
         let mut m1 = EvictionSagaManager::new();
-        m1.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        m1.start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         let mut m2 = EvictionSagaManager::new();
-        m2.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        m2.start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         assert_eq!(m1.content_hash(), m2.content_hash());
     }
 
@@ -1303,7 +1353,8 @@ mod tests {
         use sha2::{Digest, Sha256};
 
         let mut mgr = EvictionSagaManager::new();
-        mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        mgr.start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
 
         let content = serde_json::to_string(&mgr.sagas).expect("sagas should serialize");
         let mut expected_hasher = Sha256::new();
@@ -1326,7 +1377,8 @@ mod tests {
     #[test]
     fn test_audit_log_jsonl() {
         let mut mgr = EvictionSagaManager::init("t1");
-        mgr.start_saga("a", RemoteCapLookup::Granted, "t2").expect("should succeed");
+        mgr.start_saga("a", RemoteCapLookup::Granted, "t2")
+            .expect("should succeed");
         let jsonl = mgr.export_audit_log_jsonl();
         assert_eq!(jsonl.lines().count(), 2);
     }
@@ -1334,7 +1386,9 @@ mod tests {
     #[test]
     fn test_saga_trace_jsonl_preserves_transition_timestamps() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.complete_upload(&id, 3_000, "t3")
             .expect("should succeed");
@@ -1371,7 +1425,7 @@ mod tests {
         let mut mgr = EvictionSagaManager::new();
 
         let err = mgr
-            .recheck_remote_cap("missing", false, "t-missing")
+            .recheck_remote_cap("missing", RemoteCapLookup::NotPresent, "t-missing")
             .unwrap_err();
 
         assert!(err.contains("saga not found: missing"));
@@ -1401,7 +1455,9 @@ mod tests {
     #[test]
     fn test_failed_complete_upload_does_not_mutate_created_saga() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         let audit_len_before = mgr.audit_log.len();
 
         let err = mgr.complete_upload(&id, 2_000, "t2").unwrap_err();
@@ -1417,7 +1473,9 @@ mod tests {
     #[test]
     fn test_failed_complete_verify_does_not_mutate_uploading_saga() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         let audit_len_before = mgr.audit_log.len();
 
@@ -1435,7 +1493,9 @@ mod tests {
     #[test]
     fn test_failed_complete_retire_does_not_mutate_verifying_saga() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.complete_upload(&id, 3_000, "t3")
             .expect("should succeed");
@@ -1455,7 +1515,9 @@ mod tests {
     #[test]
     fn test_cancel_failed_terminal_saga_is_rejected_without_new_audit() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         {
             let saga = mgr.sagas.get_mut(&id).expect("saga should exist");
             saga.phase = SagaPhase::Failed;
@@ -1472,8 +1534,12 @@ mod tests {
     #[test]
     fn test_multiple_sagas() {
         let mut mgr = EvictionSagaManager::new();
-        let id1 = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
-        let id2 = mgr.start_saga("b", RemoteCapLookup::Granted, "t2").expect("should succeed");
+        let id1 = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
+        let id2 = mgr
+            .start_saga("b", RemoteCapLookup::Granted, "t2")
+            .expect("should succeed");
         assert_ne!(id1, id2);
         assert_eq!(mgr.saga_count(), 2);
     }
@@ -1573,7 +1639,9 @@ mod tests {
     #[test]
     fn test_crash_recovery_from_compensating_during_verify() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.complete_upload(&id, 3_000, "t3")
             .expect("should succeed");
@@ -1607,7 +1675,9 @@ mod tests {
     #[test]
     fn test_crash_recovery_from_compensating_during_upload() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
 
         {
@@ -1633,7 +1703,9 @@ mod tests {
     #[test]
     fn test_crash_recovery_from_compensating_during_created_cancel() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
 
         {
             let cap = mgr.transition_capacity();
@@ -1666,7 +1738,9 @@ mod tests {
     #[test]
     fn test_crash_recovery_from_compensating_during_retire() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.complete_upload(&id, 3_000, "t3")
             .expect("should succeed");
@@ -1695,7 +1769,9 @@ mod tests {
     #[test]
     fn test_crash_recovery_from_uploading() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
 
         let action = mgr.recover_saga(&id, 3_000, "t3").expect("should succeed");
@@ -1709,7 +1785,9 @@ mod tests {
     #[test]
     fn test_crash_recovery_from_retiring() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.complete_upload(&id, 3_000, "t3")
             .expect("should succeed");
@@ -1727,7 +1805,9 @@ mod tests {
     #[test]
     fn test_crash_recovery_noop_for_terminal_states() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.complete_upload(&id, 3_000, "t3")
             .expect("should succeed");
@@ -1748,7 +1828,9 @@ mod tests {
     #[test]
     fn test_leak_check_detects_stuck_compensating() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
         mgr.complete_upload(&id, 3_000, "t3")
             .expect("should succeed");
@@ -1774,7 +1856,9 @@ mod tests {
     #[test]
     fn test_crash_recovery_emits_compensation_complete_audit() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
 
         let audit_len_before = mgr.export_audit_log_jsonl().lines().count();
@@ -1791,7 +1875,9 @@ mod tests {
     #[test]
     fn test_crash_recovery_audit_includes_timestamp() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("a", RemoteCapLookup::Granted, "t1").expect("should succeed");
+        let id = mgr
+            .start_saga("a", RemoteCapLookup::Granted, "t1")
+            .expect("should succeed");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
 
         let audit_len_before = mgr.audit_log.len();
@@ -1846,10 +1932,12 @@ mod tests {
     #[test]
     fn test_complete_upload_after_remote_cap_revoked_preserves_upload_state() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("artifact-cap", RemoteCapLookup::Granted, "t1").expect("start");
+        let id = mgr
+            .start_saga("artifact-cap", RemoteCapLookup::Granted, "t1")
+            .expect("start");
         mgr.begin_upload(&id, 2_000, "t2").expect("begin upload");
         let transition_count = mgr.get_saga(&id).unwrap().transitions.len();
-        mgr.recheck_remote_cap(&id, false, "t3")
+        mgr.recheck_remote_cap(&id, RemoteCapLookup::NotPresent, "t3")
             .expect_err("revocation should be reported");
 
         let err = mgr.complete_upload(&id, 4_000, "t4").unwrap_err();
@@ -1945,12 +2033,14 @@ mod tests {
         let mut mgr = EvictionSagaManager::new();
 
         // Test that RemoteCapLookup::Denied prevents saga start
-        let err = mgr.start_saga("artifact-denied", RemoteCapLookup::Denied, "t1")
+        let err = mgr
+            .start_saga("artifact-denied", RemoteCapLookup::Denied, "t1")
             .expect_err("denied capability must fail closed");
         assert!(err.contains("remote capability denied"));
 
         // Test that RemoteCapLookup::NotPresent prevents saga start
-        let err = mgr.start_saga("artifact-missing", RemoteCapLookup::NotPresent, "t1")
+        let err = mgr
+            .start_saga("artifact-missing", RemoteCapLookup::NotPresent, "t1")
             .expect_err("absent capability must fail closed");
         assert!(err.contains("remote capability denied"));
     }
@@ -1958,18 +2048,22 @@ mod tests {
     #[test]
     fn test_security_remote_cap_recheck_denied_blocks_operations() {
         let mut mgr = EvictionSagaManager::new();
-        let id = mgr.start_saga("artifact", RemoteCapLookup::Granted, "t1")
+        let id = mgr
+            .start_saga("artifact", RemoteCapLookup::Granted, "t1")
             .expect("should succeed with granted capability");
         mgr.begin_upload(&id, 2_000, "t2").expect("should succeed");
-        mgr.complete_upload(&id, 3_000, "t3").expect("should succeed");
+        mgr.complete_upload(&id, 3_000, "t3")
+            .expect("should succeed");
 
         // Test that RemoteCapLookup::Denied blocks operations
-        let err = mgr.recheck_remote_cap(&id, RemoteCapLookup::Denied, "t4")
+        let err = mgr
+            .recheck_remote_cap(&id, RemoteCapLookup::Denied, "t4")
             .expect_err("denied capability recheck must fail closed");
         assert!(err.contains("RemoteCap recheck failed"));
 
         // Test that RemoteCapLookup::NotPresent blocks operations
-        let err = mgr.recheck_remote_cap(&id, RemoteCapLookup::NotPresent, "t5")
+        let err = mgr
+            .recheck_remote_cap(&id, RemoteCapLookup::NotPresent, "t5")
             .expect_err("absent capability recheck must fail closed");
         assert!(err.contains("RemoteCap recheck failed"));
     }
@@ -1996,7 +2090,11 @@ mod eviction_saga_boundary_negative_tests {
         let mut mgr = EvictionSagaManager::new();
 
         let err = mgr
-            .start_saga(RESERVED_ARTIFACT_ID, RemoteCapLookup::Granted, "trace-reserved")
+            .start_saga(
+                RESERVED_ARTIFACT_ID,
+                RemoteCapLookup::Granted,
+                "trace-reserved",
+            )
             .expect_err("reserved artifact ID should be rejected");
 
         assert!(err.contains(ERR_INVALID_ARTIFACT_ID));
@@ -2008,7 +2106,11 @@ mod eviction_saga_boundary_negative_tests {
         let mut mgr = EvictionSagaManager::new();
 
         let err = mgr
-            .start_saga("artifact\n\r\t", RemoteCapLookup::Granted, "trace-control-chars")
+            .start_saga(
+                "artifact\n\r\t",
+                RemoteCapLookup::Granted,
+                "trace-control-chars",
+            )
             .expect_err("artifact ID with control characters should be rejected");
 
         assert!(err.contains(ERR_INVALID_ARTIFACT_ID));
@@ -2020,7 +2122,11 @@ mod eviction_saga_boundary_negative_tests {
         let mut mgr = EvictionSagaManager::new();
 
         let err = mgr
-            .start_saga("  artifact-id  ", RemoteCapLookup::Granted, "trace-whitespace")
+            .start_saga(
+                "  artifact-id  ",
+                RemoteCapLookup::Granted,
+                "trace-whitespace",
+            )
             .expect_err("artifact ID with whitespace should be rejected");
 
         assert!(err.contains(ERR_INVALID_ARTIFACT_ID));
@@ -2044,7 +2150,11 @@ mod eviction_saga_boundary_negative_tests {
         let mut mgr = EvictionSagaManager::new();
 
         let err = mgr
-            .start_saga("artifact-valid", RemoteCapLookup::Granted, "trace\0injection")
+            .start_saga(
+                "artifact-valid",
+                RemoteCapLookup::Granted,
+                "trace\0injection",
+            )
             .expect_err("trace ID with nul bytes should be rejected");
 
         assert!(err.contains(ERR_INVALID_TRACE_ID));
@@ -2059,7 +2169,8 @@ mod eviction_saga_boundary_negative_tests {
             .expect("first saga should succeed");
 
         // Manually create collision by reusing ID
-        let collision_result = mgr.start_saga("artifact-second", RemoteCapLookup::Granted, "trace-2");
+        let collision_result =
+            mgr.start_saga("artifact-second", RemoteCapLookup::Granted, "trace-2");
 
         // Should either prevent collision or handle gracefully
         match collision_result {
@@ -2087,7 +2198,11 @@ mod eviction_saga_boundary_negative_tests {
     fn negative_transition_saga_rejects_invalid_state_transition() {
         let mut mgr = EvictionSagaManager::new();
         let saga_id = mgr
-            .start_saga("artifact-invalid-transition", RemoteCapLookup::Granted, "trace-start")
+            .start_saga(
+                "artifact-invalid-transition",
+                RemoteCapLookup::Granted,
+                "trace-start",
+            )
             .expect("saga start should succeed");
 
         // Try invalid transition: Created -> Complete (skipping intermediate states)
@@ -2102,7 +2217,11 @@ mod eviction_saga_boundary_negative_tests {
     fn negative_recover_saga_handles_corrupted_saga_state_gracefully() {
         let mut mgr = EvictionSagaManager::new();
         let saga_id = mgr
-            .start_saga("artifact-corrupted", RemoteCapLookup::Granted, "trace-start")
+            .start_saga(
+                "artifact-corrupted",
+                RemoteCapLookup::Granted,
+                "trace-start",
+            )
             .expect("saga start should succeed");
 
         // Manually corrupt saga state
@@ -2131,7 +2250,11 @@ mod eviction_saga_boundary_negative_tests {
         // Try to create more sagas than capacity allows
         for i in 0..MAX_SAGAS.saturating_add(10) {
             let artifact_id = format!("artifact-{i}");
-            let result = mgr.start_saga(&artifact_id, RemoteCapLookup::Granted, "trace-capacity-test");
+            let result = mgr.start_saga(
+                &artifact_id,
+                RemoteCapLookup::Granted,
+                "trace-capacity-test",
+            );
 
             if i >= MAX_SAGAS {
                 // Should either reject or handle capacity gracefully
@@ -2160,7 +2283,11 @@ mod eviction_saga_boundary_negative_tests {
     fn negative_saga_transition_with_extremely_old_timestamp_handles_gracefully() {
         let mut mgr = EvictionSagaManager::new();
         let saga_id = mgr
-            .start_saga("artifact-old-timestamp", RemoteCapLookup::Granted, "trace-start")
+            .start_saga(
+                "artifact-old-timestamp",
+                RemoteCapLookup::Granted,
+                "trace-start",
+            )
             .expect("saga start should succeed");
 
         let result = mgr.begin_upload(&saga_id, 0, "trace-old-timestamp");
@@ -2180,15 +2307,24 @@ mod eviction_saga_boundary_negative_tests {
     fn test_remote_cap_lookup_security_defaults() {
         // SECURITY TEST: Ensure absent capabilities default to denial
         let default_cap = RemoteCapLookup::NotPresent;
-        assert!(!default_cap.is_granted(), "Default capability must deny access");
+        assert!(
+            !default_cap.is_granted(),
+            "Default capability must deny access"
+        );
 
         // Explicit denial must deny access
         let denied_cap = RemoteCapLookup::Denied;
-        assert!(!denied_cap.is_granted(), "Explicitly denied capability must deny access");
+        assert!(
+            !denied_cap.is_granted(),
+            "Explicitly denied capability must deny access"
+        );
 
         // Only explicitly granted capabilities should allow access
         let granted_cap = RemoteCapLookup::Granted;
-        assert!(granted_cap.is_granted(), "Explicitly granted capability must allow access");
+        assert!(
+            granted_cap.is_granted(),
+            "Explicitly granted capability must allow access"
+        );
     }
 
     #[test]
@@ -2197,17 +2333,34 @@ mod eviction_saga_boundary_negative_tests {
 
         // Test with NotPresent capability - should fail
         let result = mgr.start_saga("test-artifact", RemoteCapLookup::NotPresent, "trace-1");
-        assert!(result.is_err(), "Should deny operation when capability is not present");
-        assert!(result.unwrap_err().contains("RemoteCap required for upload phase"));
+        assert!(
+            result.is_err(),
+            "Should deny operation when capability is not present"
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .contains("RemoteCap required for upload phase")
+        );
 
         // Test with Denied capability - should fail
         let result = mgr.start_saga("test-artifact", RemoteCapLookup::Denied, "trace-2");
-        assert!(result.is_err(), "Should deny operation when capability is explicitly denied");
-        assert!(result.unwrap_err().contains("RemoteCap required for upload phase"));
+        assert!(
+            result.is_err(),
+            "Should deny operation when capability is explicitly denied"
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .contains("RemoteCap required for upload phase")
+        );
 
         // Test with Granted capability - should succeed
         let result = mgr.start_saga("test-artifact", RemoteCapLookup::Granted, "trace-3");
-        assert!(result.is_ok(), "Should allow operation when capability is explicitly granted");
+        assert!(
+            result.is_ok(),
+            "Should allow operation when capability is explicitly granted"
+        );
     }
 
     #[test]
@@ -2218,27 +2371,34 @@ mod eviction_saga_boundary_negative_tests {
             .expect("Initial saga start should succeed");
 
         // Test recheck with NotPresent - should fail
-        let result = mgr.recheck_remote_cap(&saga_id, RemoteCapLookup::NotPresent, "trace-recheck-1");
-        assert!(result.is_err(), "Should deny recheck when capability is not present");
+        let result =
+            mgr.recheck_remote_cap(&saga_id, RemoteCapLookup::NotPresent, "trace-recheck-1");
+        assert!(
+            result.is_err(),
+            "Should deny recheck when capability is not present"
+        );
         assert!(result.unwrap_err().contains("RemoteCap recheck failed"));
 
         // Test recheck with Denied - should fail
         let result = mgr.recheck_remote_cap(&saga_id, RemoteCapLookup::Denied, "trace-recheck-2");
-        assert!(result.is_err(), "Should deny recheck when capability is explicitly denied");
+        assert!(
+            result.is_err(),
+            "Should deny recheck when capability is explicitly denied"
+        );
         assert!(result.unwrap_err().contains("RemoteCap recheck failed"));
 
         // Test recheck with Granted - should succeed
         let result = mgr.recheck_remote_cap(&saga_id, RemoteCapLookup::Granted, "trace-recheck-3");
-        assert!(result.is_ok(), "Should allow recheck when capability is explicitly granted");
+        assert!(
+            result.is_ok(),
+            "Should allow recheck when capability is explicitly granted"
+        );
     }
 
     #[test]
     fn test_malformed_capability_never_grants_access() {
         // This test ensures that any non-Granted variant denies access
-        let test_cases = [
-            RemoteCapLookup::NotPresent,
-            RemoteCapLookup::Denied,
-        ];
+        let test_cases = [RemoteCapLookup::NotPresent, RemoteCapLookup::Denied];
 
         for &cap_state in &test_cases {
             let mut mgr = EvictionSagaManager::new();

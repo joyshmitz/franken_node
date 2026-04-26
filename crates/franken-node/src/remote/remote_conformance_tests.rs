@@ -14,6 +14,7 @@ mod tests {
         computation_registry::*, eviction_saga::*, idempotency::*, idempotency_store::*,
         remote_bulkhead::*, virtual_transport_faults::*,
     };
+    use crate::security::constant_time;
     use crate::{
         capacity_defaults::aliases::MAX_SAGAS,
         config::RemoteConfig,
@@ -24,7 +25,6 @@ mod tests {
     };
     use serde_json::Value;
     use std::collections::{BTreeMap, BTreeSet};
-    use crate::security::constant_time;
 
     // ── Virtual Transport Faults Edge Cases ─────────────────────────────────────
 
@@ -298,12 +298,16 @@ mod tests {
         let mut saga_ids = Vec::new();
         for i in 0..MAX_SAGAS {
             let artifact_id = format!("artifact-{}", i);
-            let saga_id = mgr.start_saga(&artifact_id, true, "test").unwrap();
+            let saga_id = mgr
+                .start_saga(&artifact_id, RemoteCapLookup::Granted, "test")
+                .unwrap();
             saga_ids.push(saga_id);
         }
 
         // Next saga should trigger eviction (but all are non-terminal)
-        let err = mgr.start_saga("overflow", true, "test").unwrap_err();
+        let err = mgr
+            .start_saga("overflow", RemoteCapLookup::Granted, "test")
+            .unwrap_err();
         assert!(err.contains("registry full"));
 
         // Complete some sagas to make them terminal
@@ -315,7 +319,7 @@ mod tests {
         }
 
         // Now should be able to start new saga (evicts oldest terminal)
-        let new_saga = mgr.start_saga("new-artifact", true, "test");
+        let new_saga = mgr.start_saga("new-artifact", RemoteCapLookup::Granted, "test");
         assert!(new_saga.is_ok());
     }
 
@@ -323,7 +327,9 @@ mod tests {
     fn saga_crash_recovery_compensation_determinism() {
         let mut mgr = EvictionSagaManager::new();
 
-        let saga_id = mgr.start_saga("crash-test", true, "test").unwrap();
+        let saga_id = mgr
+            .start_saga("crash-test", RemoteCapLookup::Granted, "test")
+            .unwrap();
         mgr.begin_upload(&saga_id, 1000, "test").unwrap();
         mgr.complete_upload(&saga_id, 2000, "test").unwrap();
 
@@ -345,7 +351,9 @@ mod tests {
     fn saga_transition_capacity_boundary_enforcement() {
         let mgr = EvictionSagaManager::with_capacities(1000, 3); // Very small transition cap
 
-        let saga_id = mgr.start_saga("transition-test", true, "test").unwrap();
+        let saga_id = mgr
+            .start_saga("transition-test", RemoteCapLookup::Granted, "test")
+            .unwrap();
 
         // Perform many transitions
         mgr.begin_upload(&saga_id, 1000, "test").unwrap();
@@ -379,13 +387,18 @@ mod tests {
         ];
 
         for invalid_id in invalid_ids {
-            let err = mgr.start_saga(invalid_id, true, "test").unwrap_err();
+            let err = mgr
+                .start_saga(invalid_id, RemoteCapLookup::Granted, "test")
+                .unwrap_err();
             assert!(err.contains(ERR_INVALID_ARTIFACT_ID));
         }
 
         // Test valid artifact ID with Unicode
         let valid_id = "测试-artifact-🚀";
-        assert!(mgr.start_saga(valid_id, true, "test").is_ok());
+        assert!(
+            mgr.start_saga(valid_id, RemoteCapLookup::Granted, "test")
+                .is_ok()
+        );
     }
 
     // ── Idempotency Store Edge Cases ────────────────────────────────────────────
@@ -762,7 +775,7 @@ mod tests {
             // Saga entries (will trigger eviction)
             if i < MAX_SAGAS + 100 {
                 let artifact_id = format!("stress-artifact-{}", i);
-                let _ = saga_mgr.start_saga(&artifact_id, true, "stress");
+                let _ = saga_mgr.start_saga(&artifact_id, RemoteCapLookup::Granted, "stress");
             }
 
             // Idempotency store entries
@@ -867,7 +880,11 @@ mod tests {
         let mut mgr = EvictionSagaManager::new();
 
         let err = mgr
-            .start_saga("artifact-no-cap", false, "negative-saga")
+            .start_saga(
+                "artifact-no-cap",
+                RemoteCapLookup::NotPresent,
+                "negative-saga",
+            )
             .unwrap_err();
 
         assert!(err.contains("RemoteCap required"));
@@ -878,7 +895,11 @@ mod tests {
     fn negative_saga_invalid_transition_leaves_phase_created() {
         let mut mgr = EvictionSagaManager::new();
         let saga_id = mgr
-            .start_saga("artifact-invalid-transition", true, "negative-saga")
+            .start_saga(
+                "artifact-invalid-transition",
+                RemoteCapLookup::Granted,
+                "negative-saga",
+            )
             .unwrap();
 
         let err = mgr
@@ -893,11 +914,15 @@ mod tests {
     fn negative_saga_failed_cap_recheck_blocks_upload() {
         let mut mgr = EvictionSagaManager::new();
         let saga_id = mgr
-            .start_saga("artifact-cap-recheck", true, "negative-saga")
+            .start_saga(
+                "artifact-cap-recheck",
+                RemoteCapLookup::Granted,
+                "negative-saga",
+            )
             .unwrap();
 
         let err = mgr
-            .recheck_remote_cap(&saga_id, false, "negative-saga")
+            .recheck_remote_cap(&saga_id, RemoteCapLookup::NotPresent, "negative-saga")
             .unwrap_err();
         assert!(err.contains("RemoteCap recheck failed"));
 
