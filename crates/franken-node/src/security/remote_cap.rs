@@ -2350,6 +2350,11 @@ fn is_repeated_secret_pattern(secret: &str, pattern: &str) -> bool {
             .all(|chunk| chunk == pattern.as_bytes())
 }
 
+/// Calculate Shannon entropy for secret quality validation.
+///
+/// Note: This function performs statistical analysis (byte frequency counting)
+/// not cryptographic hashing, so domain separation is not applicable.
+/// All actual hash operations in this module already use proper domain separators.
 fn estimated_secret_entropy_bits(secret: &str) -> f64 {
     let total = secret.len() as f64;
     let mut counts = [0_usize; 256];
