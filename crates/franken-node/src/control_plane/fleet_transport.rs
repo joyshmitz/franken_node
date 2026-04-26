@@ -232,6 +232,22 @@ pub struct FleetSharedState {
     pub nodes: Vec<NodeStatus>,
 }
 
+impl FleetSharedState {
+    #[must_use]
+    pub fn matching_nodes<'a>(&'a self, node_id: &str, zone_id: Option<&str>) -> Vec<&'a NodeStatus> {
+        self.nodes
+            .iter()
+            .filter(|node| {
+                node.node_id == node_id
+                    && match zone_id {
+                        Some(zone_id) => node.zone_id == zone_id,
+                        None => true,
+                    }
+            })
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FleetTransportError {

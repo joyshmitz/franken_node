@@ -2108,6 +2108,44 @@ fn fleet_status_human_output_shape_is_stable() {
 }
 
 #[test]
+fn fleet_describe_json_reports_node_state_and_zone_context() {
+    let fleet_state = tempdir().expect("tempdir");
+    let fleet_state_dir = fleet_state.path().join("fleet-state");
+    let mut transport = seed_transport(&fleet_state_dir);
+    let now = Utc::now();
+    seed_fleet_quarantine(&mut transport, "zone-describe", "inc-describe", 3);
+    transport
+        .upsert_node_status(&NodeStatus {
+            zone_id: "zone-describe".to_string(),
+            node_id: "node-describe".to_string(),
+            last_seen: now,
+            quarantine_version: 3,
+            health: NodeHealth::Healthy,
+        })
+        .expect("write described node");
+
+    let output = run_cli_with_fleet_state(
+        &["fleet", "describe", "node-describe", "--json"],
+        &fleet_state_dir,
+    );
+    assert!(
+        output.status.success(),
+        "fleet describe --json failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("fleet describe json");
+    assert_eq!(payload["node"]["node_id"], "node-describe");
+    assert_eq!(payload["node"]["zone_id"], "zone-describe");
+    assert_eq!(payload["node"]["health"], "healthy");
+    assert_eq!(payload["stale"], false);
+    assert_eq!(payload["zone_status"]["zone_id"], "zone-describe");
+    assert_eq!(payload["zone_status"]["active_quarantines"], 1);
+    assert_eq!(payload["zone_active_incidents"][0]["incident_id"], "inc-describe");
+}
+
+#[test]
 fn fleet_release_human_output_shape_is_stable() {
     let fleet_state = tempdir().expect("tempdir");
     let fleet_state_dir = fleet_state.path().join("fleet-state");

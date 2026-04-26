@@ -15283,6 +15283,16 @@ struct FleetCliStatusReport {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct FleetCliNodeReport {
+    node: PersistedNodeStatus,
+    stale: bool,
+    zone_status: FleetStatus,
+    zone_active_incidents: Vec<FleetCliPendingIncident>,
+    state_dir: PathBuf,
+    convergence_timeout_seconds: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct FleetCliActionReport {
     action: FleetActionResult,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -15593,6 +15603,55 @@ fn fleet_status_report(project_root: &Path, requested_zone: &str) -> Result<Flee
     })
 }
 
+fn fleet_describe_report(
+    project_root: &Path,
+    node_id: &str,
+    requested_zone: Option<&str>,
+) -> Result<FleetCliNodeReport> {
+    let loaded = load_fleet_state(project_root)?;
+    let matching_nodes = loaded.state.matching_nodes(node_id, requested_zone);
+    let node = match matching_nodes.as_slice() {
+        [] => {
+            if let Some(zone_id) = requested_zone {
+                anyhow::bail!("node `{node_id}` not found in zone `{zone_id}`");
+            }
+            anyhow::bail!("node `{node_id}` not found");
+        }
+        [node] => (*node).clone(),
+        matches => {
+            let zones = matches
+                .iter()
+                .map(|node| node.zone_id.as_str())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>()
+                .join(", ");
+            anyhow::bail!(
+                "node `{node_id}` is ambiguous across zones: {zones}; rerun with --zone"
+            );
+        }
+    };
+    let stale = loaded
+        .stale_nodes
+        .iter()
+        .any(|candidate| candidate.zone_id == node.zone_id && candidate.node_id == node.node_id);
+    let zone_active_incidents = loaded
+        .active_incidents
+        .iter()
+        .filter(|incident| zone_matches_filter(&incident.zone_id, &node.zone_id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let zone_status = fleet_status_from_loaded_state(&loaded, &node.zone_id);
+    Ok(FleetCliNodeReport {
+        node,
+        stale,
+        zone_status,
+        zone_active_incidents,
+        state_dir: loaded.state_dir,
+        convergence_timeout_seconds: loaded.convergence_timeout_seconds,
+    })
+}
+
 fn aggregate_convergence(active_incidents: &[FleetCliPendingIncident]) -> Option<ConvergenceState> {
     if active_incidents.is_empty() {
         return None;
@@ -15845,6 +15904,15 @@ fn emit_fleet_status_report(
     Ok(())
 }
 
+fn emit_fleet_node_report(report: &FleetCliNodeReport, json: bool) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(report)?);
+    } else {
+        println!("{}", render_fleet_node_human(report));
+    }
+    Ok(())
+}
+
 fn emit_fleet_action_report(report: &FleetCliActionReport, json: bool) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(report)?);
@@ -15959,6 +16027,36 @@ fn render_fleet_status_human(status: &FleetStatus, verbose: bool) -> String {
                 convergence.eta_seconds
             ));
         }
+    }
+    lines.join("\n")
+}
+
+fn render_fleet_node_human(report: &FleetCliNodeReport) -> String {
+    let node = &report.node;
+    let mut lines = vec![
+        format!("fleet node: id={} zone={}", node.node_id, node.zone_id),
+        format!("  health={:?} stale={}", node.health, report.stale),
+        format!("  quarantine_version={}", node.quarantine_version),
+        format!("  last_seen={}", node.last_seen.to_rfc3339()),
+        format!(
+            "  zone_quarantines={} healthy_nodes={}/{}",
+            report.zone_status.active_quarantines,
+            report.zone_status.healthy_nodes,
+            report.zone_status.total_nodes
+        ),
+        format!(
+            "  zone_pending_convergences={}",
+            report.zone_status.pending_convergences.len()
+        ),
+    ];
+    if !report.zone_active_incidents.is_empty() {
+        let incidents = report
+            .zone_active_incidents
+            .iter()
+            .map(|incident| incident.incident_id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!("  active_incidents={incidents}"));
     }
     lines.join("\n")
 }
@@ -19877,6 +19975,11 @@ fn main() -> Result<()> {
                 let zone_id = args.zone.unwrap_or_else(|| "all".to_string());
                 let report = fleet_status_report(Path::new("."), &zone_id)?;
                 emit_fleet_status_report(&report, args.json, args.verbose)?;
+            }
+            FleetCommand::Describe(args) => {
+                let report =
+                    fleet_describe_report(Path::new("."), &args.node_id, args.zone.as_deref())?;
+                emit_fleet_node_report(&report, args.json)?;
             }
             FleetCommand::Release(args) => {
                 let identity = fleet_cli_identity();

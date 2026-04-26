@@ -939,6 +939,9 @@ pub enum FleetCommand {
     /// Show policy and quarantine state across nodes.
     Status(FleetStatusArgs),
 
+    /// Describe one fleet node with zone context and incident state.
+    Describe(FleetDescribeArgs),
+
     /// Lift quarantine/revocation controls with receipts.
     Release(FleetReleaseArgs),
 
@@ -958,6 +961,20 @@ pub struct FleetStatusArgs {
     /// Show verbose details.
     #[arg(long)]
     pub verbose: bool,
+
+    /// Emit JSON instead of human-readable output.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Parser)]
+pub struct FleetDescribeArgs {
+    /// Node identifier to inspect.
+    pub node_id: String,
+
+    /// Optional zone filter to disambiguate duplicate node IDs.
+    #[arg(long)]
+    pub zone: Option<String>,
 
     /// Emit JSON instead of human-readable output.
     #[arg(long)]
@@ -1473,6 +1490,27 @@ mod parser_contract_extra_tests {
         assert_eq!(args.node_id.as_deref(), Some("node-7"));
         assert_eq!(args.max_cycles, Some(3));
         assert!(args.once);
+    }
+
+    #[test]
+    fn fleet_describe_parses_optional_zone_and_json() {
+        let cli = parse(&[
+            "franken-node",
+            "fleet",
+            "describe",
+            "node-7",
+            "--zone",
+            "us-east",
+            "--json",
+        ])
+        .expect("fleet describe command should parse");
+
+        let Command::Fleet(FleetCommand::Describe(args)) = cli.command else {
+            panic!("expected fleet describe command");
+        };
+        assert_eq!(args.node_id, "node-7");
+        assert_eq!(args.zone.as_deref(), Some("us-east"));
+        assert!(args.json);
     }
 }
 
