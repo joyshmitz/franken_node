@@ -2,9 +2,55 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::Context;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
+
+/// Validate user-supplied path arguments against path traversal attacks.
+///
+/// Rejects paths containing:
+/// - `..` segments (directory traversal)
+/// - Leading `/` (absolute paths)
+/// - Backslashes (Windows-style separators)
+/// - Null bytes (path injection)
+fn validate_user_path(path: &str) -> Result<&Path> {
+    // Reject null bytes (path injection)
+    if path.contains('\0') {
+        anyhow::bail!("Path contains null bytes: {}", path);
+    }
+
+    // Reject absolute paths (leading /)
+    if path.starts_with('/') {
+        anyhow::bail!("Absolute paths not allowed: {}", path);
+    }
+
+    // Reject backslashes (Windows-style, potential confusion)
+    if path.contains('\\') {
+        anyhow::bail!("Backslashes not allowed in path: {}", path);
+    }
+
+    // Reject .. segments (directory traversal)
+    if path.split('/').any(|segment| segment == "..") {
+        anyhow::bail!("Path traversal (..) not allowed: {}", path);
+    }
+
+    Ok(Path::new(path))
+}
+
+/// Convert validated PathBuf to safe Path, applying validation.
+fn validate_user_pathbuf(pathbuf: &PathBuf) -> Result<&Path> {
+    let path_str = pathbuf.to_str().ok_or_else(|| {
+        anyhow::anyhow!("Path contains invalid UTF-8: {:?}", pathbuf)
+    })?;
+    validate_user_path(path_str)
+}
+
+/// Custom parser for safe PathBuf that validates against path traversal.
+fn parse_safe_pathbuf(s: &str) -> Result<PathBuf, String> {
+    validate_user_path(s)
+        .map(|p| p.to_path_buf())
+        .map_err(|e| format!("Invalid path: {}", e))
+}
 
 /// franken-node: trust-native JavaScript/TypeScript runtime platform.
 ///
@@ -85,11 +131,11 @@ pub struct InitArgs {
     pub profile: Option<String>,
 
     /// Config file override (default discovery is used when omitted).
-    #[arg(long)]
+    #[arg(long, value_parser = parse_safe_pathbuf)]
     pub config: Option<PathBuf>,
 
     /// Output directory for generated config files.
-    #[arg(long)]
+    #[arg(long, value_parser = parse_safe_pathbuf)]
     pub out_dir: Option<PathBuf>,
 
     /// Overwrite existing generated files in target directory.
@@ -117,7 +163,7 @@ pub struct InitArgs {
     pub trace_id: String,
 
     /// Override the state directory location (default: .franken-node/ relative to out-dir or cwd).
-    #[arg(long)]
+    #[arg(long, value_parser = parse_safe_pathbuf)]
     pub state_dir: Option<PathBuf>,
 
     /// Skip bootstrapping the state directory structure (config files only).
@@ -125,11 +171,34 @@ pub struct InitArgs {
     pub no_state: bool,
 }
 
+impl InitArgs {
+    /// Validate all user-supplied path arguments for security.
+    pub fn validate_paths(&self) -> Result<()> {
+        if let Some(ref config) = self.config {
+            validate_user_pathbuf(config)
+                .with_context(|| format!("Invalid --config path: {:?}", config))?;
+        }
+
+        if let Some(ref out_dir) = self.out_dir {
+            validate_user_pathbuf(out_dir)
+                .with_context(|| format!("Invalid --out-dir path: {:?}", out_dir))?;
+        }
+
+        if let Some(ref state_dir) = self.state_dir {
+            validate_user_pathbuf(state_dir)
+                .with_context(|| format!("Invalid --state-dir path: {:?}", state_dir))?;
+        }
+
+        Ok(())
+    }
+}
+
 // -- run --
 
 #[derive(Debug, Parser)]
 pub struct RunArgs {
     /// Path to the application entry point.
+    #[arg(value_parser = parse_safe_pathbuf)]
     pub app_path: PathBuf,
 
     /// Policy mode to enforce at runtime.
@@ -149,7 +218,7 @@ pub struct RunArgs {
     pub trace_id: String,
 
     /// Config file override.
-    #[arg(long)]
+    #[arg(long, value_parser = parse_safe_pathbuf)]
     pub config: Option<PathBuf>,
 
     /// Runtime selection: auto, node, bun, or franken-engine.
@@ -157,7 +226,7 @@ pub struct RunArgs {
     pub runtime: Option<String>,
 
     /// Explicit franken_engine binary path or command name.
-    #[arg(long)]
+    #[arg(long, value_parser = parse_safe_pathbuf)]
     pub engine_bin: Option<PathBuf>,
 
     /// Run lockstep comparison across runtimes before execution.
@@ -165,6 +234,27 @@ pub struct RunArgs {
     /// and results are compared. Divergence blocks execution.
     #[arg(long)]
     pub lockstep_preflight: bool,
+}
+
+impl RunArgs {
+    /// Validate all user-supplied path arguments for security.
+    pub fn validate_paths(&self) -> Result<()> {
+        // Validate app_path (required field)
+        validate_user_pathbuf(&self.app_path)
+            .with_context(|| format!("Invalid app_path: {:?}", self.app_path))?;
+
+        if let Some(ref config) = self.config {
+            validate_user_pathbuf(config)
+                .with_context(|| format!("Invalid --config path: {:?}", config))?;
+        }
+
+        if let Some(ref engine_bin) = self.engine_bin {
+            validate_user_pathbuf(engine_bin)
+                .with_context(|| format!("Invalid --engine-bin path: {:?}", engine_bin))?;
+        }
+
+        Ok(())
+    }
 }
 
 // -- runtime --
@@ -2278,5 +2368,44 @@ mod tests {
             boundary_stress_result.is_ok(),
             "Boundary stress test should not panic"
         );
+    }
+
+    #[test]
+    fn test_validate_user_path_rejects_traversal() {
+        // Should reject paths with .. segments
+        assert!(validate_user_path("../etc/passwd").is_err());
+        assert!(validate_user_path("config/../../../etc/passwd").is_err());
+        assert!(validate_user_path("data/../..").is_err());
+
+        // Should reject absolute paths
+        assert!(validate_user_path("/etc/passwd").is_err());
+        assert!(validate_user_path("/").is_err());
+
+        // Should reject paths with backslashes
+        assert!(validate_user_path("data\\file.txt").is_err());
+        assert!(validate_user_path("..\\windows\\system32").is_err());
+
+        // Should reject paths with null bytes
+        assert!(validate_user_path("file\0.txt").is_err());
+        assert!(validate_user_path("data/file\0/config").is_err());
+
+        // Should accept safe relative paths
+        assert!(validate_user_path("config.toml").is_ok());
+        assert!(validate_user_path("data/config.toml").is_ok());
+        assert!(validate_user_path("output/generated").is_ok());
+        assert!(validate_user_path("./config").is_ok());
+    }
+
+    #[test]
+    fn test_parse_safe_pathbuf_validation() {
+        // Should reject dangerous paths
+        assert!(parse_safe_pathbuf("../etc/passwd").is_err());
+        assert!(parse_safe_pathbuf("/root/.ssh/id_rsa").is_err());
+        assert!(parse_safe_pathbuf("file\0.txt").is_err());
+        assert!(parse_safe_pathbuf("data\\windows").is_err());
+
+        // Should accept safe paths
+        assert!(parse_safe_pathbuf("config.toml").is_ok());
+        assert!(parse_safe_pathbuf("output/file.txt").is_ok());
     }
 }
