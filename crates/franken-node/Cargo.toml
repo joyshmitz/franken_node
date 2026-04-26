@@ -642,6 +642,10 @@ path = "tests/e2e_evidence_ledger_lifecycle.rs"
 name = "e2e_fork_detection_lifecycle"
 path = "tests/e2e_fork_detection_lifecycle.rs"
 
+[[test]]
+name = "e2e_marker_stream_lifecycle"
+path = "tests/e2e_marker_stream_lifecycle.rs"
+
 [[bench]]
 name = "cuckoo_revocation_bench"
 harness = false
