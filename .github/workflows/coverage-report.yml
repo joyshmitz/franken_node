@@ -1,0 +1,56 @@
+name: Coverage Report
+
+on:
+  pull_request:
+
+jobs:
+  coverage-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install llvm-tools-preview
+        run: rustup component add llvm-tools-preview
+
+      - name: Install rch
+        run: |
+          YES=true \
+          RCH_NO_HOOK=1 \
+          RCH_SKIP_DOCTOR=1 \
+          RCH_SKIP_DAEMON_RESTART=1 \
+          RCH_SKIP_FLEET_SYNC=1 \
+          curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/remote_compilation_helper/main/install.sh?$(date +%s)" \
+            | bash -s -- --local --no-service
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+
+      - name: Generate LCOV report
+        run: |
+          mkdir -p coverage-artifacts
+          set +e
+          rch exec -- env CARGO_TARGET_DIR=/tmp/rch_target_pane4 cargo llvm-cov --workspace --lcov --output-path coverage.lcov \
+            2>&1 | tee coverage-artifacts/coverage-report.log
+          status=${PIPESTATUS[0]}
+          printf '%s\n' "$status" > coverage-artifacts/coverage-exit-code.txt
+          if [ -f coverage.lcov ]; then
+            echo "coverage.lcov generated" | tee coverage-artifacts/coverage-status.txt
+          else
+            echo "coverage.lcov not generated; see coverage-report.log" | tee coverage-artifacts/coverage-status.txt
+          fi
+          exit 0
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.lcov
+            coverage-artifacts/
+          if-no-files-found: warn
+          retention-days: 7
