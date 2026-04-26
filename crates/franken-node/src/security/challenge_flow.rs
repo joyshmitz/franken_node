@@ -75,6 +75,7 @@ pub const CHALLENGE_PROMOTED: &str = "CHALLENGE_PROMOTED";
 pub const ERR_INVALID_TRANSITION: &str = "ERR_INVALID_TRANSITION";
 pub const ERR_CHALLENGE_ACTIVE: &str = "ERR_CHALLENGE_ACTIVE";
 pub const ERR_NO_ACTIVE_CHALLENGE: &str = "ERR_NO_ACTIVE_CHALLENGE";
+pub const ERR_CHALLENGE_TIMED_OUT: &str = "ERR_CHALLENGE_TIMED_OUT";
 pub const ERR_INVALID_ARTIFACT_ID: &str = "ERR_INVALID_ARTIFACT_ID";
 pub const ERR_PROOF_INVALID: &str = "ERR_PROOF_INVALID";
 pub const ERR_LENGTH_OVERFLOW: &str = "ERR_LENGTH_OVERFLOW";
@@ -522,6 +523,13 @@ impl ChallengeFlowController {
         actor_id: &str,
         timestamp_ms: u64,
     ) -> Result<(), ChallengeError> {
+        self.reject_timed_out_transition(
+            challenge_id,
+            actor_id,
+            timestamp_ms,
+            ChallengeState::ProofReceived,
+        )?;
+
         let challenge = self
             .challenges
             .get_mut(challenge_id)
@@ -591,6 +599,18 @@ impl ChallengeFlowController {
                 "Submitter ID cannot be empty",
             ));
         }
+        if proof.submitted_at_ms < challenge.created_at_ms {
+            return Err(ChallengeError::new(
+                ERR_PROOF_INVALID,
+                "Proof timestamp cannot predate challenge creation",
+            ));
+        }
+        if proof.submitted_at_ms > timestamp_ms {
+            return Err(ChallengeError::new(
+                ERR_PROOF_INVALID,
+                "Proof timestamp cannot be in the future",
+            ));
+        }
 
         // SECURITY: Check for duplicate proof submissions of the same type
         let duplicate_exists = challenge.received_proofs.iter().any(|existing| {
@@ -648,6 +668,13 @@ impl ChallengeFlowController {
         actor_id: &str,
         timestamp_ms: u64,
     ) -> Result<(), ChallengeError> {
+        self.reject_timed_out_transition(
+            challenge_id,
+            actor_id,
+            timestamp_ms,
+            ChallengeState::ProofVerified,
+        )?;
+
         let (artifact_id, old_state) = {
             let challenge = self.challenges.get(challenge_id).ok_or_else(|| {
                 ChallengeError::new(ERR_NO_ACTIVE_CHALLENGE, "Challenge not found")
@@ -723,7 +750,25 @@ impl ChallengeFlowController {
                 }
 
                 // Verify proof timestamp is within acceptable bounds
-                let proof_age_ms = timestamp_ms.saturating_sub(proof.submitted_at_ms);
+                if proof.submitted_at_ms < challenge.created_at_ms {
+                    return Err(ChallengeError::new(
+                        ERR_PROOF_INVALID,
+                        format!(
+                            "Proof for type {} predates challenge creation",
+                            proof.proof_type.label()
+                        ),
+                    ));
+                }
+                if proof.submitted_at_ms > timestamp_ms {
+                    return Err(ChallengeError::new(
+                        ERR_PROOF_INVALID,
+                        format!(
+                            "Proof for type {} has a future timestamp",
+                            proof.proof_type.label()
+                        ),
+                    ));
+                }
+                let proof_age_ms = timestamp_ms - proof.submitted_at_ms;
                 if proof_age_ms >= 3600_000 {
                     // 1 hour max age
                     return Err(ChallengeError::new(
@@ -766,6 +811,13 @@ impl ChallengeFlowController {
         actor_id: &str,
         timestamp_ms: u64,
     ) -> Result<(), ChallengeError> {
+        self.reject_timed_out_transition(
+            challenge_id,
+            actor_id,
+            timestamp_ms,
+            ChallengeState::Promoted,
+        )?;
+
         let challenge = self
             .challenges
             .get_mut(challenge_id)
@@ -858,26 +910,7 @@ impl ChallengeFlowController {
 
         let mut denied_ids = Vec::with_capacity(timed_out.len());
         for (cid, aid, old_state) in timed_out {
-            if let Some(ch) = self.challenges.get_mut(&cid) {
-                ch.state = ChallengeState::Denied;
-                self.metrics.challenges_timed_out_total =
-                    self.metrics.challenges_timed_out_total.saturating_add(1);
-                self.metrics.challenges_resolved_total =
-                    self.metrics.challenges_resolved_total.saturating_add(1);
-                self.metrics.challenges_denied_total =
-                    self.metrics.challenges_denied_total.saturating_add(1);
-
-                self.log_transition(
-                    &cid,
-                    &aid,
-                    old_state,
-                    ChallengeState::Denied,
-                    CHALLENGE_TIMED_OUT,
-                    "system",
-                    current_time_ms,
-                    "Challenge timed out, denied by policy",
-                );
-
+            if self.apply_timeout_denial(&cid, &aid, old_state, "system", current_time_ms) {
                 denied_ids.push(cid);
             }
         }
@@ -960,6 +993,82 @@ impl ChallengeFlowController {
 
         let result = hasher.finalize();
         Ok(hex::encode(result))
+    }
+
+    fn timed_out_transition(
+        &self,
+        challenge_id: &ChallengeId,
+        current_time_ms: u64,
+    ) -> Option<(ArtifactId, ChallengeState)> {
+        if !self.config.deny_on_timeout {
+            return None;
+        }
+
+        self.challenges.get(challenge_id).and_then(|challenge| {
+            (!challenge.state.is_terminal() && challenge.is_timed_out(current_time_ms))
+                .then(|| (challenge.artifact_id.clone(), challenge.state))
+        })
+    }
+
+    fn apply_timeout_denial(
+        &mut self,
+        challenge_id: &ChallengeId,
+        artifact_id: &ArtifactId,
+        old_state: ChallengeState,
+        actor_id: &str,
+        timestamp_ms: u64,
+    ) -> bool {
+        let Some(challenge) = self.challenges.get_mut(challenge_id) else {
+            return false;
+        };
+        challenge.state = ChallengeState::Denied;
+        self.metrics.challenges_timed_out_total =
+            self.metrics.challenges_timed_out_total.saturating_add(1);
+        self.metrics.challenges_resolved_total =
+            self.metrics.challenges_resolved_total.saturating_add(1);
+        self.metrics.challenges_denied_total =
+            self.metrics.challenges_denied_total.saturating_add(1);
+
+        self.log_transition(
+            challenge_id,
+            artifact_id,
+            old_state,
+            ChallengeState::Denied,
+            CHALLENGE_TIMED_OUT,
+            actor_id,
+            timestamp_ms,
+            "Challenge timed out, denied by policy",
+        );
+        true
+    }
+
+    fn reject_timed_out_transition(
+        &mut self,
+        challenge_id: &ChallengeId,
+        actor_id: &str,
+        timestamp_ms: u64,
+        attempted_transition: ChallengeState,
+    ) -> Result<(), ChallengeError> {
+        let Some((artifact_id, old_state)) = self.timed_out_transition(challenge_id, timestamp_ms)
+        else {
+            return Ok(());
+        };
+
+        let _ = self.apply_timeout_denial(
+            challenge_id,
+            &artifact_id,
+            old_state,
+            actor_id,
+            timestamp_ms,
+        );
+
+        Err(ChallengeError::new(
+            ERR_CHALLENGE_TIMED_OUT,
+            format!(
+                "Challenge {} timed out before transition to {}",
+                challenge_id, attempted_transition
+            ),
+        ))
     }
 
     /// Evict oldest terminal-state challenges when the map exceeds capacity.
@@ -1062,10 +1171,28 @@ mod tests {
     }
 
     fn make_proof(ts: u64) -> ProofSubmission {
+        make_valid_proof(
+            &ArtifactId::new("art-1"),
+            RequiredProofType::ProvenanceAttestation,
+            "prover-1",
+            ts,
+        )
+    }
+
+    fn make_valid_proof(
+        artifact_id: &ArtifactId,
+        proof_type: RequiredProofType,
+        submitter_id: &str,
+        ts: u64,
+    ) -> ProofSubmission {
         ProofSubmission {
-            proof_type: RequiredProofType::ProvenanceAttestation,
-            data_hash: "abc123".to_string(),
-            submitter_id: "prover-1".to_string(),
+            data_hash: ChallengeFlowController::compute_expected_proof_hash(
+                artifact_id,
+                &proof_type,
+            )
+            .unwrap(),
+            proof_type,
+            submitter_id: submitter_id.to_string(),
             submitted_at_ms: ts,
         }
     }
@@ -1383,6 +1510,130 @@ mod tests {
         issue_basic(&mut ctrl, 1000);
         let denied = ctrl.enforce_timeouts(100_000);
         assert!(denied.is_empty());
+    }
+
+    #[test]
+    fn submit_after_deadline_auto_denies_without_sweep() {
+        let mut ctrl = make_controller();
+        let cid = issue_basic(&mut ctrl, 1000);
+        let audit_len = ctrl.audit_log().len();
+
+        let err = ctrl
+            .submit_proof(&cid, make_proof(31_000), "prover", 31_000)
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_CHALLENGE_TIMED_OUT);
+        assert_eq!(
+            ctrl.get_challenge(&cid).unwrap().state,
+            ChallengeState::Denied
+        );
+        assert_eq!(ctrl.audit_log().len(), audit_len + 1);
+        assert_eq!(
+            ctrl.audit_log().last().unwrap().event_code,
+            CHALLENGE_TIMED_OUT
+        );
+        assert_eq!(ctrl.metrics().challenges_timed_out_total, 1);
+        assert_eq!(ctrl.metrics().challenges_denied_total, 1);
+        assert_eq!(ctrl.metrics().challenges_resolved_total, 1);
+    }
+
+    #[test]
+    fn verify_after_deadline_auto_denies_without_sweep() {
+        let mut ctrl = make_controller();
+        let cid = issue_basic(&mut ctrl, 1000);
+        ctrl.submit_proof(&cid, make_proof(2000), "prover", 2000)
+            .unwrap();
+        let audit_len = ctrl.audit_log().len();
+
+        let err = ctrl.verify_proof(&cid, "verifier", 31_000).unwrap_err();
+
+        assert_eq!(err.code, ERR_CHALLENGE_TIMED_OUT);
+        assert_eq!(
+            ctrl.get_challenge(&cid).unwrap().state,
+            ChallengeState::Denied
+        );
+        assert_eq!(ctrl.audit_log().len(), audit_len + 1);
+        assert_eq!(
+            ctrl.audit_log().last().unwrap().event_code,
+            CHALLENGE_TIMED_OUT
+        );
+        assert_eq!(ctrl.metrics().challenges_timed_out_total, 1);
+    }
+
+    #[test]
+    fn promote_after_deadline_auto_denies_without_sweep() {
+        let mut ctrl = make_controller();
+        let cid = issue_basic(&mut ctrl, 1000);
+        ctrl.submit_proof(&cid, make_proof(2000), "prover", 2000)
+            .unwrap();
+        ctrl.verify_proof(&cid, "verifier", 3000).unwrap();
+        let audit_len = ctrl.audit_log().len();
+
+        let err = ctrl.promote(&cid, "operator", 31_000).unwrap_err();
+
+        assert_eq!(err.code, ERR_CHALLENGE_TIMED_OUT);
+        assert_eq!(
+            ctrl.get_challenge(&cid).unwrap().state,
+            ChallengeState::Denied
+        );
+        assert_eq!(ctrl.audit_log().len(), audit_len + 1);
+        assert_eq!(
+            ctrl.audit_log().last().unwrap().event_code,
+            CHALLENGE_TIMED_OUT
+        );
+        assert_eq!(ctrl.metrics().challenges_timed_out_total, 1);
+        assert_eq!(ctrl.metrics().challenges_promoted_total, 0);
+    }
+
+    #[test]
+    fn submit_proof_rejects_future_timestamp() {
+        let mut ctrl = make_controller();
+        let cid = issue_basic(&mut ctrl, 1000);
+        let err = ctrl
+            .submit_proof(&cid, make_proof(2001), "prover", 2000)
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_PROOF_INVALID);
+        assert!(err.message.contains("future"));
+        assert_eq!(
+            ctrl.get_challenge(&cid).unwrap().state,
+            ChallengeState::ChallengeIssued
+        );
+        assert_eq!(ctrl.audit_log().len(), 1);
+    }
+
+    #[test]
+    fn submit_proof_rejects_timestamp_before_challenge_creation() {
+        let mut ctrl = make_controller();
+        let cid = issue_basic(&mut ctrl, 1000);
+        let err = ctrl
+            .submit_proof(&cid, make_proof(999), "prover", 1000)
+            .unwrap_err();
+
+        assert_eq!(err.code, ERR_PROOF_INVALID);
+        assert!(err.message.contains("predate challenge creation"));
+        assert_eq!(
+            ctrl.get_challenge(&cid).unwrap().state,
+            ChallengeState::ChallengeIssued
+        );
+    }
+
+    #[test]
+    fn verify_proof_rejects_future_timestamp_in_stored_proof() {
+        let mut ctrl = make_controller();
+        let cid = issue_basic(&mut ctrl, 1000);
+        ctrl.submit_proof(&cid, make_proof(2000), "prover", 2000)
+            .unwrap();
+        ctrl.challenges.get_mut(&cid).unwrap().received_proofs[0].submitted_at_ms = 4000;
+
+        let err = ctrl.verify_proof(&cid, "verifier", 3000).unwrap_err();
+
+        assert_eq!(err.code, ERR_PROOF_INVALID);
+        assert!(err.message.contains("future timestamp"));
+        assert_eq!(
+            ctrl.get_challenge(&cid).unwrap().state,
+            ChallengeState::ProofReceived
+        );
     }
 
     // -- Audit log --
@@ -2409,7 +2660,12 @@ mod tests {
             .unwrap();
 
         // Simulate concurrent operations on same challenge
-        let proof = make_proof(3000);
+        let proof = make_valid_proof(
+            &ArtifactId::new("concurrent_test"),
+            RequiredProofType::ProvenanceAttestation,
+            "prover",
+            3000,
+        );
         ctrl.submit_proof(&cid2, proof, "prover", 3000).unwrap();
 
         // Try to submit another proof while in ProofReceived state (should fail)
@@ -2609,12 +2865,12 @@ mod tests {
             assert_eq!(challenge.created_at_ms, timestamp);
 
             // Test operations with extreme timestamps
-            let proof = ProofSubmission {
-                proof_type: RequiredProofType::IntegrityProof,
-                data_hash: format!("hash_{}", test_name),
-                submitter_id: format!("prover_{}", test_name),
-                submitted_at_ms: timestamp,
-            };
+            let proof = make_valid_proof(
+                &artifact_id,
+                RequiredProofType::IntegrityProof,
+                &format!("prover_{}", test_name),
+                timestamp,
+            );
 
             ctrl.submit_proof(&cid, proof, &format!("actor_{}", test_name), timestamp)
                 .unwrap();
@@ -2633,16 +2889,20 @@ mod tests {
             .unwrap();
 
         // Try to submit proof with timestamp before challenge creation
-        let regression_proof = ProofSubmission {
-            proof_type: RequiredProofType::OriginSignature,
-            data_hash: "regression_hash".to_string(),
-            submitter_id: "regression_prover".to_string(),
-            submitted_at_ms: 5_000, // Before challenge creation
-        };
+        let regression_proof = make_valid_proof(
+            &ArtifactId::new("regression_test"),
+            RequiredProofType::OriginSignature,
+            "regression_prover",
+            5_000, // Before challenge creation
+        );
 
-        // Should still succeed - no timestamp validation enforced
-        ctrl.submit_proof(&regression_cid, regression_proof, "regression_actor", 5_000)
-            .unwrap();
+        let regression_err = ctrl
+            .submit_proof(&regression_cid, regression_proof, "regression_actor", 5_000)
+            .unwrap_err();
+        assert_eq!(regression_err.code, ERR_PROOF_INVALID);
+        assert!(regression_err
+            .message
+            .contains("predate challenge creation"));
 
         // Test timeout calculation with overflow protection
         let overflow_challenge = Challenge {
