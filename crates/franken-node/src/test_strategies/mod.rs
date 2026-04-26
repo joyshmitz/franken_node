@@ -4,10 +4,6 @@
 //! they deliberately exercise an out-of-distribution input class that these
 //! canonical generators do not model.
 
-use crate::api::fleet_quarantine::{
-    DecisionReceipt, DecisionReceiptPayload, DecisionReceiptSignature, QuarantineScope,
-    RevocationScope, RevocationSeverity, canonical_decision_receipt_payload_hash,
-};
 use crate::observability::evidence_ledger::{DecisionKind, EvidenceEntry, test_entry};
 use crate::security::impossible_default::{CapabilityToken, ImpossibleCapability};
 use crate::supply_chain::certification::{DerivationMetadata, EvidenceType, VerifiedEvidenceRef};
@@ -20,6 +16,12 @@ use crate::tools::replay_bundle::{EventType, RawEvent};
 use proptest::prelude::*;
 use proptest::strategy::BoxedStrategy;
 use serde_json::json;
+
+#[cfg(any(test, feature = "test-support"))]
+use crate::api::fleet_quarantine::{
+    DecisionReceipt, DecisionReceiptPayload, DecisionReceiptSignature, QuarantineScope,
+    RevocationScope, RevocationSeverity, canonical_decision_receipt_payload_hash,
+};
 
 fn bounded_text(max_len: usize) -> BoxedStrategy<String> {
     prop::collection::vec(any::<u8>(), 0..=max_len)
@@ -154,6 +156,7 @@ fn event_types() -> BoxedStrategy<EventType> {
     .boxed()
 }
 
+#[cfg(any(test, feature = "test-support"))]
 fn revocation_severities() -> BoxedStrategy<RevocationSeverity> {
     prop_oneof![
         Just(RevocationSeverity::Advisory),
@@ -296,6 +299,7 @@ fn derivation_metadata() -> BoxedStrategy<DerivationMetadata> {
         .boxed()
 }
 
+#[cfg(any(test, feature = "test-support"))]
 fn quarantine_scopes() -> BoxedStrategy<QuarantineScope> {
     (
         ascii_identifier(32),
@@ -314,6 +318,7 @@ fn quarantine_scopes() -> BoxedStrategy<QuarantineScope> {
         .boxed()
 }
 
+#[cfg(any(test, feature = "test-support"))]
 fn revocation_scopes() -> BoxedStrategy<RevocationScope> {
     (
         ascii_identifier(32),
@@ -330,6 +335,7 @@ fn revocation_scopes() -> BoxedStrategy<RevocationScope> {
         .boxed()
 }
 
+#[cfg(any(test, feature = "test-support"))]
 fn decision_receipt_signatures() -> BoxedStrategy<DecisionReceiptSignature> {
     (
         ascii_identifier(16),
@@ -400,6 +406,7 @@ pub fn capability_tokens() -> BoxedStrategy<CapabilityToken> {
         .boxed()
 }
 
+#[cfg(any(test, feature = "test-support"))]
 pub fn decision_receipt_payloads() -> BoxedStrategy<DecisionReceiptPayload> {
     prop_oneof![
         (ascii_identifier(32), quarantine_scopes()).prop_map(|(extension_id, scope)| {
@@ -429,6 +436,7 @@ pub fn decision_receipt_payloads() -> BoxedStrategy<DecisionReceiptPayload> {
     .boxed()
 }
 
+#[cfg(any(test, feature = "test-support"))]
 pub fn decision_receipts() -> BoxedStrategy<DecisionReceipt> {
     (
         ascii_identifier(48),
