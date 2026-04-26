@@ -348,7 +348,7 @@ fn deterministic_hash(data: &str) -> String {
 }
 
 fn append_length_prefixed(bytes: &mut Vec<u8>, value: &str) {
-    bytes.extend_from_slice(&(value.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(&u64::try_from(value.len()).unwrap_or(u64::MAX).to_le_bytes());
     bytes.extend_from_slice(value.as_bytes());
 }
 
@@ -580,7 +580,7 @@ pub(crate) fn replay_capsule_signature_payload(
     ] {
         append_length_prefixed(&mut payload, field);
     }
-    payload.extend_from_slice(&(trace_chunk_hashes.len() as u64).to_le_bytes());
+    payload.extend_from_slice(&u64::try_from(trace_chunk_hashes.len()).unwrap_or(u64::MAX).to_le_bytes());
     for hash in trace_chunk_hashes {
         append_length_prefixed(&mut payload, hash);
     }
@@ -651,9 +651,9 @@ fn migration_artifact_binding_hash(
             .unwrap_or_else(|_| expected_signer_public_key.trim().to_string());
     let mut hasher = Sha256::new();
     hasher.update(b"connector_verifier_sdk_migration_binding_v2:");
-    hasher.update((canonical_payload.len() as u64).to_le_bytes());
+    hasher.update(u64::try_from(canonical_payload.len()).unwrap_or(u64::MAX).to_le_bytes());
     hasher.update(canonical_payload);
-    hasher.update((canonical_signer_public_key.len() as u64).to_le_bytes());
+    hasher.update(u64::try_from(canonical_signer_public_key.len()).unwrap_or(u64::MAX).to_le_bytes());
     hasher.update(canonical_signer_public_key.as_bytes());
     hex::encode(hasher.finalize())
 }
@@ -681,7 +681,7 @@ fn verification_result_signature_payload(view: &VerificationResultSignatureView<
         },
     );
     payload.extend_from_slice(&view.confidence_score.to_bits().to_le_bytes());
-    payload.extend_from_slice(&(view.checked_assertions.len() as u64).to_le_bytes());
+    payload.extend_from_slice(&u64::try_from(view.checked_assertions.len()).unwrap_or(u64::MAX).to_le_bytes());
     for assertion in view.checked_assertions {
         append_length_prefixed(&mut payload, &assertion.assertion);
         payload.push(u8::from(assertion.passed));
@@ -783,11 +783,11 @@ fn compute_binding_hash(claim: &Claim, evidence: &[Evidence]) -> String {
     ] {
         append_length_prefixed(&mut payload, field);
     }
-    payload.extend_from_slice(&(claim.evidence_refs.len() as u64).to_le_bytes());
+    payload.extend_from_slice(&u64::try_from(claim.evidence_refs.len()).unwrap_or(u64::MAX).to_le_bytes());
     for evidence_ref in &claim.evidence_refs {
         append_length_prefixed(&mut payload, evidence_ref);
     }
-    payload.extend_from_slice(&(evidence.len() as u64).to_le_bytes());
+    payload.extend_from_slice(&u64::try_from(evidence.len()).unwrap_or(u64::MAX).to_le_bytes());
     for ev in evidence {
         for field in [
             ev.evidence_id.as_str(),
@@ -796,7 +796,7 @@ fn compute_binding_hash(claim: &Claim, evidence: &[Evidence]) -> String {
         ] {
             append_length_prefixed(&mut payload, field);
         }
-        payload.extend_from_slice(&(ev.artifacts.len() as u64).to_le_bytes());
+        payload.extend_from_slice(&u64::try_from(ev.artifacts.len()).unwrap_or(u64::MAX).to_le_bytes());
         for (k, v) in &ev.artifacts {
             append_length_prefixed(&mut payload, k);
             append_length_prefixed(&mut payload, v);
@@ -1163,18 +1163,18 @@ pub fn verify_trust_state(
 
     let mut hasher = Sha256::new();
     hasher.update(b"connector_verifier_sdk_state_binding_v1:");
-    hasher.update((state.len() as u64).to_le_bytes());
+    hasher.update(u64::try_from(state.len()).unwrap_or(u64::MAX).to_le_bytes());
     for (k, v) in state {
-        hasher.update((k.len() as u64).to_le_bytes());
+        hasher.update(u64::try_from(k.len()).unwrap_or(u64::MAX).to_le_bytes());
         hasher.update(k.as_bytes());
-        hasher.update((v.len() as u64).to_le_bytes());
+        hasher.update(u64::try_from(v.len()).unwrap_or(u64::MAX).to_le_bytes());
         hasher.update(v.as_bytes());
     }
-    hasher.update((anchor.len() as u64).to_le_bytes());
+    hasher.update(u64::try_from(anchor.len()).unwrap_or(u64::MAX).to_le_bytes());
     for (k, v) in anchor {
-        hasher.update((k.len() as u64).to_le_bytes());
+        hasher.update(u64::try_from(k.len()).unwrap_or(u64::MAX).to_le_bytes());
         hasher.update(k.as_bytes());
-        hasher.update((v.len() as u64).to_le_bytes());
+        hasher.update(u64::try_from(v.len()).unwrap_or(u64::MAX).to_le_bytes());
         hasher.update(v.as_bytes());
     }
     let binding_hash = hex::encode(hasher.finalize());
