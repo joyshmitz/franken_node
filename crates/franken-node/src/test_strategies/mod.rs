@@ -448,8 +448,14 @@ pub fn decision_receipts() -> BoxedStrategy<DecisionReceipt> {
     )
         .prop_map(
             |(operation_id, receipt_id, issuer, issued_at, decision_payload, signature)| {
-                let payload_hash = canonical_decision_receipt_payload_hash(&decision_payload);
                 let zone_id = decision_payload.scope.zone_id.clone();
+                let payload_hash = canonical_decision_receipt_payload_hash(
+                    &operation_id,
+                    &issuer,
+                    &zone_id,
+                    &issued_at,
+                    &decision_payload,
+                );
                 DecisionReceipt {
                     operation_id,
                     receipt_id,
