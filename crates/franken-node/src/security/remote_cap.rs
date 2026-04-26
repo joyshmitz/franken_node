@@ -23,8 +23,24 @@ use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
 use crate::security::cuckoo_filter::CuckooFilter;
 
 const MAX_REPLAY_ENTRIES: usize = 4_096;
+const MIN_SECRET_MATERIAL_LEN: usize = 16;
+const MIN_SECRET_ENTROPY_BITS: usize = 56;
 const REMOTE_CAP_REPLAY_STORE_ENV: &str = "FRANKEN_NODE_REMOTECAP_REPLAY_STORE";
 const CUCKOO_REVOCATION_ENV: &str = "FRANKEN_NODE_CUCKOO_REVOCATION";
+const KNOWN_WEAK_SECRET_MATERIAL: &[&str] = &[
+    "admin",
+    "changeme",
+    "default",
+    "letmein",
+    "password",
+    "qwerty",
+    "secret",
+    "welcome",
+    "123456",
+    "12345678",
+    "123456789",
+    "1234567890",
+];
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
@@ -1944,6 +1960,28 @@ impl CapabilityGate {
             return Err(err);
         }
 
+        // SECURITY: Prevent dormant tokens by rejecting those issued too far in future
+        const MAX_FUTURE_WINDOW_SECS: u64 = 3600; // 1 hour maximum future window
+        if cap.issued_at_epoch_secs > now_epoch_secs.saturating_add(MAX_FUTURE_WINDOW_SECS) {
+            let err = RemoteCapError::NotYetValid {
+                now_epoch_secs,
+                issued_at_epoch_secs: cap.issued_at_epoch_secs,
+            };
+            self.push_audit(build_audit_event(
+                "REMOTECAP_DENIED",
+                "RC_CHECK_DENIED",
+                Some(cap.token_id.clone()),
+                Some(cap.issuer_identity.clone()),
+                Some(operation),
+                Some(endpoint.to_string()),
+                trace_id.to_string(),
+                now_epoch_secs,
+                false,
+                Some(err.code().to_string()),
+            ));
+            return Err(err);
+        }
+
         if now_epoch_secs < cap.issued_at_epoch_secs {
             let err = RemoteCapError::NotYetValid {
                 now_epoch_secs,
@@ -2258,12 +2296,75 @@ fn keyed_digest(secret: &str, payload: &str) -> Result<String, RemoteCapError> {
 }
 
 fn validate_secret_material(secret: &str, role: &str) -> Result<(), RemoteCapError> {
-    if secret.trim().is_empty() {
+    let trimmed = secret.trim();
+    if trimmed.is_empty() {
         return Err(RemoteCapError::CryptoEngineUnavailable {
             detail: format!("remote capability {role} material is unavailable"),
         });
     }
+    if trimmed.len() < MIN_SECRET_MATERIAL_LEN {
+        return Err(RemoteCapError::CryptoEngineUnavailable {
+            detail: format!(
+                "remote capability {role} material must be at least {MIN_SECRET_MATERIAL_LEN} characters"
+            ),
+        });
+    }
+    if uses_known_weak_secret_material(trimmed) {
+        return Err(RemoteCapError::CryptoEngineUnavailable {
+            detail: format!(
+                "remote capability {role} material must not use known weak secret material"
+            ),
+        });
+    }
+    if estimated_secret_entropy_bits(trimmed) < MIN_SECRET_ENTROPY_BITS as f64 {
+        return Err(RemoteCapError::CryptoEngineUnavailable {
+            detail: format!(
+                "remote capability {role} material must provide at least {MIN_SECRET_ENTROPY_BITS} bits of estimated entropy"
+            ),
+        });
+    }
     Ok(())
+}
+
+fn uses_known_weak_secret_material(secret: &str) -> bool {
+    let normalized: String = secret
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .map(|ch| ch.to_ascii_lowercase())
+        .collect();
+    if normalized.is_empty() {
+        return true;
+    }
+    KNOWN_WEAK_SECRET_MATERIAL.iter().any(|pattern| {
+        normalized == *pattern || is_repeated_secret_pattern(&normalized, pattern)
+    })
+}
+
+fn is_repeated_secret_pattern(secret: &str, pattern: &str) -> bool {
+    !pattern.is_empty()
+        && secret.len() > pattern.len()
+        && secret.len() % pattern.len() == 0
+        && secret
+            .as_bytes()
+            .chunks(pattern.len())
+            .all(|chunk| chunk == pattern.as_bytes())
+}
+
+fn estimated_secret_entropy_bits(secret: &str) -> f64 {
+    let total = secret.len() as f64;
+    let mut counts = [0_usize; 256];
+    for &byte in secret.as_bytes() {
+        counts[usize::from(byte)] += 1;
+    }
+    counts
+        .into_iter()
+        .filter(|count| *count > 0)
+        .map(|count| {
+            let probability = count as f64 / total;
+            -probability * probability.log2()
+        })
+        .sum::<f64>()
+        * total
 }
 
 fn replay_store_error(action: &str, path: &Path, source: std::io::Error) -> RemoteCapError {
@@ -5140,6 +5241,43 @@ mod remote_cap_comprehensive_negative_tests {
             err.to_string()
                 .contains("verification material is unavailable")
         );
+    }
+
+    #[test]
+    fn weak_secret_material_fails_closed_in_try_constructors() {
+        let weak_cases = [
+            ("admin", "at least 16 characters"),
+            ("password", "at least 16 characters"),
+            (
+                "passwordpassword",
+                "must not use known weak secret material",
+            ),
+            (
+                "aaaaaaaaaaaaaaaa",
+                "must provide at least 56 bits of estimated entropy",
+            ),
+        ];
+
+        for (candidate, expected_message) in weak_cases {
+            let provider_err = CapabilityProvider::try_new(candidate)
+                .expect_err("weak signing material must fail closed");
+            assert_eq!(provider_err.code(), "REMOTECAP_CRYPTO_UNAVAILABLE");
+            assert!(provider_err.to_string().contains(expected_message));
+
+            let gate_err = CapabilityGate::try_new(candidate)
+                .expect_err("weak verification material must fail closed");
+            assert_eq!(gate_err.code(), "REMOTECAP_CRYPTO_UNAVAILABLE");
+            assert!(gate_err.to_string().contains(expected_message));
+        }
+    }
+
+    #[test]
+    fn strong_secret_material_is_accepted() {
+        let strong_secret = "V4ult!8x-Hsm#Torus9@Cipher";
+        CapabilityProvider::try_new(strong_secret)
+            .expect("strong signing material should pass validation");
+        CapabilityGate::try_new(strong_secret)
+            .expect("strong verification material should pass validation");
     }
 
     #[test]
