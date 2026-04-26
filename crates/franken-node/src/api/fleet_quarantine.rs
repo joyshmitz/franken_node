@@ -27,7 +27,10 @@ use ed25519_dalek::{Signature, Signer, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::control_plane::fleet_transport::{FileFleetTransport, FleetAction as PersistedFleetAction, FleetActionRecord, FleetTargetKind, FleetTransport, FleetTransportError};
+use crate::control_plane::fleet_transport::{
+    FileFleetTransport, FleetAction as PersistedFleetAction, FleetActionRecord, FleetTargetKind,
+    FleetTransport, FleetTransportError,
+};
 
 /// Maximum fleet control events before oldest are evicted.
 const MAX_FLEET_EVENTS: usize = 4096;
@@ -44,8 +47,7 @@ use super::error::ApiError;
 use super::middleware::{AuthIdentity, TraceContext};
 #[cfg(any(test, feature = "control-plane"))]
 use super::middleware::{
-    enforce_route_contract, AuthMethod, EndpointGroup, EndpointLifecycle, PolicyHook,
-    RouteMetadata,
+    AuthMethod, EndpointGroup, EndpointLifecycle, PolicyHook, RouteMetadata, enforce_route_contract,
 };
 use super::trust_card_routes::ApiResponse;
 
@@ -2254,8 +2256,9 @@ impl FleetControlManager {
                     quarantine_version: 1,
                 },
             };
-            transport.publish_action(&action_record)
-                .map_err(|e| FleetControlError::internal(format!("Transport persistence failed: {}", e)))?;
+            transport.publish_action(&action_record).map_err(|e| {
+                FleetControlError::internal(format!("Transport persistence failed: {}", e))
+            })?;
         }
 
         Ok(FleetActionResult {
@@ -2456,8 +2459,9 @@ impl FleetControlManager {
                     reason: Some("Fleet quarantine release".to_string()),
                 },
             };
-            transport.publish_action(&action_record)
-                .map_err(|e| FleetControlError::internal(format!("Transport persistence failed: {}", e)))?;
+            transport.publish_action(&action_record).map_err(|e| {
+                FleetControlError::internal(format!("Transport persistence failed: {}", e))
+            })?;
         }
 
         Ok(FleetActionResult {
@@ -4540,8 +4544,8 @@ mod tests {
     #[test]
     fn handle_status_rejects_whitespace_only_zone() {
         let _guard = lock_handler_test_state();
-        let err = handle_status(&bearer_admin_identity(), &test_trace(), "   ")
-            .expect_err("blank zone");
+        let err =
+            handle_status(&bearer_admin_identity(), &test_trace(), "   ").expect_err("blank zone");
         let detail = match err {
             ApiError::BadRequest { detail, .. } => detail,
             other => unreachable!("unexpected error: {other:?}"),

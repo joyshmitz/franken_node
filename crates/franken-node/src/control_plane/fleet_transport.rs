@@ -353,6 +353,9 @@ impl FleetTransportLayout {
                     self.actions_path.display()
                 ))
             })?;
+        let parent = normalized_directory(self.root_dir.parent().unwrap_or_else(|| Path::new(".")));
+        sync_directory(parent)?;
+        sync_directory(&self.root_dir)?;
         Ok(())
     }
 
@@ -1067,8 +1070,7 @@ impl FileFleetTransport {
                     let mut temp_guard = TempFileGuard::new(temp_path.clone());
                     let mut temp_file = OpenOptions::new()
                         .write(true)
-                        .create(true)
-                        .truncate(true)
+                        .create_new(true)
                         .open(&temp_path)
                         .map_err(|err| {
                             FleetTransportError::io(format!(
@@ -1103,6 +1105,7 @@ impl FileFleetTransport {
                             temp_path.display()
                         ))
                     })?;
+                    drop(temp_file);
                     fs::rename(&temp_path, self.layout.actions_path()).map_err(|err| {
                         FleetTransportError::io(format!(
                             "failed promoting compacted fleet action log {} to {}: {err}",
@@ -1111,6 +1114,7 @@ impl FileFleetTransport {
                         ))
                     })?;
                     temp_guard.defuse();
+                    sync_directory(self.layout.root_dir())?;
                     Ok(())
                 })();
 
@@ -1227,8 +1231,7 @@ impl FileFleetTransport {
             })?;
             let mut temp_file = OpenOptions::new()
                 .write(true)
-                .create(true)
-                .truncate(true)
+                .create_new(true)
                 .open(&temp_path)
                 .map_err(|err| {
                     FleetTransportError::io(format!(
@@ -1248,6 +1251,7 @@ impl FileFleetTransport {
                     temp_path.display()
                 ))
             })?;
+            drop(temp_file);
             fs::rename(&temp_path, &path).map_err(|err| {
                 FleetTransportError::io(format!(
                     "failed promoting temp node status {} to {}: {err}",
@@ -1256,6 +1260,7 @@ impl FileFleetTransport {
                 ))
             })?;
             temp_guard.defuse();
+            sync_directory(self.layout.nodes_dir())?;
             Ok(())
         })();
 
@@ -1654,6 +1659,25 @@ fn unlock_file(file: &File, path: &Path) -> Result<(), FleetTransportError> {
             path.display()
         ))
     })
+}
+
+fn sync_directory(path: &Path) -> Result<(), FleetTransportError> {
+    File::open(path)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|err| {
+            FleetTransportError::io(format!(
+                "failed syncing fleet transport directory {}: {err}",
+                path.display()
+            ))
+        })
+}
+
+fn normalized_directory(path: &Path) -> &Path {
+    if path.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        path
+    }
 }
 
 fn parse_jsonl_records<T>(file: &File, path: &Path) -> Result<Vec<T>, FleetTransportError>

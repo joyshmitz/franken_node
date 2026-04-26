@@ -3,8 +3,7 @@
 //! Validates the fleet decision contract end-to-end against specification requirements.
 
 use frankenengine_node::api::fleet_quarantine::{
-    DecisionReceipt, DecisionReceiptPayload, QuarantineScope,
-    canonical_decision_receipt_payload_hash, verify_decision_receipt_signature,
+    DecisionReceiptPayload, QuarantineScope, canonical_decision_receipt_payload_hash,
 };
 
 #[test]
@@ -36,5 +35,8 @@ fn test_decision_receipt_different_inputs_different_hashes() {
     let hash1 = canonical_decision_receipt_payload_hash(&payload1);
     let hash2 = canonical_decision_receipt_payload_hash(&payload2);
 
-    assert_ne!(hash1, hash2, "Different payloads must produce different hashes");
+    assert_ne!(
+        hash1, hash2,
+        "Different payloads must produce different hashes"
+    );
 }
