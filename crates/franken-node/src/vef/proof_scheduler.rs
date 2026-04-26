@@ -427,6 +427,8 @@ impl VefProofScheduler {
     }
 
     pub fn dispatch_jobs(&mut self, now_millis: u64) -> Result<Vec<ProofJob>, SchedulerError> {
+        self.enforce_deadlines(now_millis);
+
         let active_dispatched = self
             .jobs
             .values()
@@ -451,14 +453,19 @@ impl VefProofScheduler {
         let mut dispatched = Vec::new();
         let mut compute_used = 0_u64;
         let mut memory_used = 0_u64;
-        for job in pending.into_iter().take(available_slots) {
-            if (compute_used.saturating_add(job.estimated_compute_millis)
-                > self.policy.max_compute_millis_per_tick
-                || memory_used.saturating_add(job.estimated_memory_mib)
-                    > self.policy.max_memory_mib_per_tick)
-                && (compute_used > 0 || memory_used > 0)
-            {
+        let mut budget_blocked = false;
+        for job in pending {
+            if dispatched.len() >= available_slots {
                 break;
+            }
+
+            let next_compute = compute_used.saturating_add(job.estimated_compute_millis);
+            let next_memory = memory_used.saturating_add(job.estimated_memory_mib);
+            if next_compute > self.policy.max_compute_millis_per_tick
+                || next_memory > self.policy.max_memory_mib_per_tick
+            {
+                budget_blocked = true;
+                continue;
             }
 
             let entry = self
@@ -479,29 +486,58 @@ impl VefProofScheduler {
             });
         }
 
+        if dispatched.is_empty() && budget_blocked {
+            return Err(SchedulerError::budget(
+                "no pending proof jobs fit within the configured tick budget",
+            ));
+        }
+
         Ok(dispatched)
     }
 
     pub fn mark_completed(&mut self, job_id: &str, now_millis: u64) -> Result<(), SchedulerError> {
-        let job = self
-            .jobs
-            .get_mut(job_id)
-            .ok_or_else(|| SchedulerError::window(format!("unknown job_id {job_id}")))?;
-        if job.status != ProofJobStatus::Dispatched {
-            return Err(SchedulerError::internal(format!(
-                "cannot complete job {job_id}: current status is {:?}, expected Dispatched",
-                job.status
-            )));
-        }
-        job.status = ProofJobStatus::Completed;
-        job.completed_at_millis = Some(now_millis);
-        let evt_trace = job.trace_id.clone();
+        let completion = {
+            let job = self
+                .jobs
+                .get_mut(job_id)
+                .ok_or_else(|| SchedulerError::window(format!("unknown job_id {job_id}")))?;
+            if job.status != ProofJobStatus::Dispatched {
+                return Err(SchedulerError::internal(format!(
+                    "cannot complete job {job_id}: current status is {:?}, expected Dispatched",
+                    job.status
+                )));
+            }
+
+            if now_millis >= job.deadline_millis {
+                job.status = ProofJobStatus::DeadlineExceeded;
+                (
+                    job.trace_id.clone(),
+                    event_codes::VEF_SCHED_ERR_001_DEADLINE.to_string(),
+                    format!("job={job_id} exceeded deadline"),
+                    Err(SchedulerError::deadline(format!(
+                        "cannot complete job {job_id}: deadline {} reached at {}",
+                        job.deadline_millis, now_millis
+                    ))),
+                )
+            } else {
+                job.status = ProofJobStatus::Completed;
+                job.completed_at_millis = Some(now_millis);
+                (
+                    job.trace_id.clone(),
+                    event_codes::VEF_SCHED_003_JOB_COMPLETED.to_string(),
+                    format!("job={job_id} completed"),
+                    Ok(()),
+                )
+            }
+        };
+
+        let (trace_id, event_code, detail, result) = completion;
         self.push_event(SchedulerEvent {
-            event_code: event_codes::VEF_SCHED_003_JOB_COMPLETED.to_string(),
-            trace_id: evt_trace,
-            detail: format!("job={job_id} completed"),
+            event_code,
+            trace_id,
+            detail,
         });
-        Ok(())
+        result
     }
 
     pub fn enforce_deadlines(&mut self, now_millis: u64) -> Vec<String> {
@@ -1209,6 +1245,47 @@ mod tests {
         }
 
         #[test]
+        fn dispatch_jobs_auto_expires_overdue_pending_jobs_before_dispatch() {
+            let mut expired = make_job(
+                "job-expired-before-dispatch",
+                ProofJobStatus::Pending,
+                1_701_400_003_000,
+                "trace-auto-expire",
+            );
+            expired.deadline_millis = 1_701_400_003_500;
+            let fresh = make_job(
+                "job-fresh-after-expiry",
+                ProofJobStatus::Pending,
+                1_701_400_003_100,
+                "trace-auto-expire",
+            );
+            let mut scheduler = scheduler_with_jobs(&[expired, fresh], 2);
+
+            let dispatched = scheduler
+                .dispatch_jobs(1_701_400_003_500)
+                .expect("fresh pending job should still dispatch");
+
+            assert_eq!(dispatched.len(), 1);
+            assert_eq!(dispatched[0].job_id, "job-fresh-after-expiry");
+            assert_eq!(
+                scheduler
+                    .jobs()
+                    .get("job-expired-before-dispatch")
+                    .expect("expired job should exist")
+                    .status,
+                ProofJobStatus::DeadlineExceeded
+            );
+            assert_eq!(
+                scheduler
+                    .jobs()
+                    .get("job-fresh-after-expiry")
+                    .expect("fresh job should exist")
+                    .status,
+                ProofJobStatus::Dispatched
+            );
+        }
+
+        #[test]
         fn completed_job_is_not_expired_after_deadline() {
             let job = make_job(
                 "job-complete",
@@ -1253,6 +1330,40 @@ mod tests {
                     .expect("job should exist")
                     .status,
                 ProofJobStatus::Pending
+            );
+        }
+
+        #[test]
+        fn mark_completed_at_deadline_fails_closed_and_marks_job_exceeded() {
+            let mut job = make_job(
+                "job-complete-at-deadline",
+                ProofJobStatus::Dispatched,
+                1_701_400_005_000,
+                "trace-complete-at-deadline",
+            );
+            job.deadline_millis = 1_701_400_005_100;
+            let mut scheduler = scheduler_with_jobs(&[job], 1);
+
+            let err = scheduler
+                .mark_completed("job-complete-at-deadline", 1_701_400_005_100)
+                .expect_err("completion at the deadline should fail closed");
+
+            assert_eq!(err.code, error_codes::ERR_VEF_SCHED_DEADLINE);
+            assert_eq!(
+                scheduler
+                    .jobs()
+                    .get("job-complete-at-deadline")
+                    .expect("job should exist")
+                    .status,
+                ProofJobStatus::DeadlineExceeded
+            );
+            assert_eq!(
+                scheduler
+                    .events()
+                    .last()
+                    .expect("deadline event should be recorded")
+                    .event_code,
+                event_codes::VEF_SCHED_ERR_001_DEADLINE
             );
         }
 
@@ -1573,6 +1684,57 @@ mod tests {
             assert_eq!(second_tick.len(), 1);
             assert_eq!(second_tick[0].job_id, "job-budget-second");
             assert_eq!(scheduler.jobs().len(), 2);
+        }
+
+        #[test]
+        fn oversized_pending_job_does_not_bypass_tick_budget_or_block_smaller_job() {
+            let mut oversized = make_job(
+                "job-budget-oversized",
+                ProofJobStatus::Pending,
+                1_701_400_012_500,
+                "trace-budget-oversized",
+            );
+            oversized.estimated_compute_millis = 150;
+            oversized.estimated_memory_mib = 8;
+            let mut smaller = make_job(
+                "job-budget-smaller",
+                ProofJobStatus::Pending,
+                1_701_400_012_600,
+                "trace-budget-oversized",
+            );
+            smaller.estimated_compute_millis = 80;
+            smaller.estimated_memory_mib = 8;
+            let mut scheduler = VefProofScheduler::new(SchedulerPolicy {
+                max_concurrent_jobs: 2,
+                max_compute_millis_per_tick: 100,
+                max_memory_mib_per_tick: 1_000,
+                ..SchedulerPolicy::default()
+            });
+            scheduler.jobs.insert(oversized.job_id.clone(), oversized);
+            scheduler.jobs.insert(smaller.job_id.clone(), smaller);
+
+            let dispatched = scheduler
+                .dispatch_jobs(1_701_400_012_700)
+                .expect("smaller job should dispatch within budget");
+
+            assert_eq!(dispatched.len(), 1);
+            assert_eq!(dispatched[0].job_id, "job-budget-smaller");
+            assert_eq!(
+                scheduler
+                    .jobs()
+                    .get("job-budget-oversized")
+                    .expect("oversized job should remain tracked")
+                    .status,
+                ProofJobStatus::Pending
+            );
+            assert_eq!(
+                scheduler
+                    .jobs()
+                    .get("job-budget-smaller")
+                    .expect("smaller job should remain tracked")
+                    .status,
+                ProofJobStatus::Dispatched
+            );
         }
     }
 
