@@ -24,6 +24,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+#[cfg(feature = "remote-ops")]
 use crate::remote::eviction_saga::RemoteCapLookup;
 
 /// Maximum phase transitions before oldest-first eviction.
@@ -385,6 +386,7 @@ impl EvictionSaga {
 
     /// Begin the upload phase. Requires a validated RemoteCap with
     /// ArtifactUpload scope.
+    #[cfg(feature = "remote-ops")]
     pub fn begin_upload(&mut self, remote_cap: RemoteCapLookup) -> Result<(), EvictionSagaError> {
         if !remote_cap.is_granted() {
             return Err(EvictionSagaError::new(
