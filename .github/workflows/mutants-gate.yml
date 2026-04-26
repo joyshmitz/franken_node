@@ -24,6 +24,7 @@ on:
 jobs:
   cargo-mutants:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
@@ -58,7 +59,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install cargo-mutants
-        run: cargo install cargo-mutants --locked
+        run: cargo install cargo-mutants --version 27.0.0 --locked
 
       - name: Run cargo-mutants
         id: mutants
@@ -74,6 +75,7 @@ jobs:
             --cargo-test-arg=--tests \
             --in-place=false \
             --no-shuffle \
+            --timeout 60 \
             --output mutants-output
           status=$?
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
