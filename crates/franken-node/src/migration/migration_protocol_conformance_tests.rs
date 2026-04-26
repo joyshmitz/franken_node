@@ -160,8 +160,8 @@ impl MigrationProtocolHarness {
 
         // Test direct admit threshold validation
         let within_limits = TrajectoryDelta {
-            instability_delta: 0.05, // < 0.08 threshold
-            drift_delta: 0.20, // < 0.30 threshold
+            instability_delta: 0.05,  // < 0.08 threshold
+            drift_delta: 0.20,        // < 0.30 threshold
             regime_shift_delta: 0.15, // < 0.22 threshold
         };
 
@@ -371,7 +371,10 @@ impl MigrationProtocolHarness {
 
         for (actual, expected) in expected_codes {
             self.assert_eq(
-                &format!("BPET-EVENTS-{}", expected.split('-').last().unwrap_or("000")),
+                &format!(
+                    "BPET-EVENTS-{}",
+                    expected.split('-').last().unwrap_or("000")
+                ),
                 "BPET Event Codes",
                 &format!("event code {}", expected),
                 expected,
@@ -396,7 +399,10 @@ impl MigrationProtocolHarness {
 
         for (actual, expected) in expected_codes {
             self.assert_eq(
-                &format!("DGIS-EVENTS-{}", expected.split('-').last().unwrap_or("000")),
+                &format!(
+                    "DGIS-EVENTS-{}",
+                    expected.split('-').last().unwrap_or("000")
+                ),
                 "DGIS Event Codes",
                 &format!("event code {}", expected),
                 expected,
@@ -468,8 +474,8 @@ impl MigrationProtocolHarness {
 
         // Test within limits
         let within_limits_delta = HealthDelta {
-            cascade_risk_delta: 0.05, // < 0.12 threshold
-            new_fragility_findings: 1, // < 2 threshold
+            cascade_risk_delta: 0.05,   // < 0.12 threshold
+            new_fragility_findings: 1,  // < 2 threshold
             new_articulation_points: 0, // < 1 threshold
         };
 
@@ -609,13 +615,20 @@ impl MigrationProtocolHarness {
             "EDGE-CASE-003",
             "Edge Case Handling",
             "BPET direct admit threshold < staged rollout threshold",
-            bpet_thresholds.max_instability_delta_for_direct_admit <
-            bpet_thresholds.max_instability_score_for_staged_rollout,
+            bpet_thresholds.max_instability_delta_for_direct_admit
+                < bpet_thresholds.max_instability_score_for_staged_rollout,
         );
     }
 
     /// Helper assertion methods
-    fn assert_f64_eq(&mut self, test_id: &str, protocol: &str, description: &str, expected: f64, actual: f64) {
+    fn assert_f64_eq(
+        &mut self,
+        test_id: &str,
+        protocol: &str,
+        description: &str,
+        expected: f64,
+        actual: f64,
+    ) {
         if !expected.is_finite() || !actual.is_finite() {
             panic!("assert_f64_eq: non-finite operand: expected={expected} actual={actual}");
         }
@@ -636,7 +649,14 @@ impl MigrationProtocolHarness {
         });
     }
 
-    fn assert_eq<T: std::fmt::Display + PartialEq>(&mut self, test_id: &str, protocol: &str, description: &str, expected: T, actual: T) {
+    fn assert_eq<T: std::fmt::Display + PartialEq>(
+        &mut self,
+        test_id: &str,
+        protocol: &str,
+        description: &str,
+        expected: T,
+        actual: T,
+    ) {
         let verdict = if expected == actual {
             ConformanceVerdict::Pass
         } else {
@@ -670,8 +690,15 @@ impl MigrationProtocolHarness {
         });
     }
 
-    fn assert_within_direct_admit_limits(&mut self, test_id: &str, delta: TrajectoryDelta, thresholds: &StabilityThresholds, expected: bool) {
-        let within_limits = delta.instability_delta <= thresholds.max_instability_delta_for_direct_admit
+    fn assert_within_direct_admit_limits(
+        &mut self,
+        test_id: &str,
+        delta: TrajectoryDelta,
+        thresholds: &StabilityThresholds,
+        expected: bool,
+    ) {
+        let within_limits = delta.instability_delta
+            <= thresholds.max_instability_delta_for_direct_admit
             && delta.drift_delta <= thresholds.max_drift_score_for_direct_admit
             && delta.regime_shift_delta <= thresholds.max_regime_shift_probability_for_direct_admit;
 
@@ -691,7 +718,13 @@ impl MigrationProtocolHarness {
         });
     }
 
-    fn assert_within_dgis_limits(&mut self, test_id: &str, delta: HealthDelta, thresholds: &MigrationGateThresholds, expected: bool) {
+    fn assert_within_dgis_limits(
+        &mut self,
+        test_id: &str,
+        delta: HealthDelta,
+        thresholds: &MigrationGateThresholds,
+        expected: bool,
+    ) {
         let within_limits = delta.cascade_risk_delta <= thresholds.max_cascade_risk_delta
             && delta.new_fragility_findings <= thresholds.max_new_fragility_findings as i64
             && delta.new_articulation_points <= thresholds.max_new_articulation_points as i64;
@@ -715,9 +748,21 @@ impl MigrationProtocolHarness {
     /// Generate conformance report
     fn generate_report(&self) -> ConformanceReport {
         let total = self.results.len();
-        let passed = self.results.iter().filter(|r| r.verdict == ConformanceVerdict::Pass).count();
-        let failed = self.results.iter().filter(|r| r.verdict == ConformanceVerdict::Fail).count();
-        let skipped = self.results.iter().filter(|r| r.verdict == ConformanceVerdict::Skip).count();
+        let passed = self
+            .results
+            .iter()
+            .filter(|r| r.verdict == ConformanceVerdict::Pass)
+            .count();
+        let failed = self
+            .results
+            .iter()
+            .filter(|r| r.verdict == ConformanceVerdict::Fail)
+            .count();
+        let skipped = self
+            .results
+            .iter()
+            .filter(|r| r.verdict == ConformanceVerdict::Skip)
+            .count();
 
         let overall_verdict = if failed == 0 {
             ConformanceVerdict::Pass
@@ -767,14 +812,23 @@ impl ConformanceReport {
         // Group results by protocol
         let mut by_protocol: BTreeMap<String, Vec<&ConformanceTestResult>> = BTreeMap::new();
         for result in &self.results {
-            by_protocol.entry(result.protocol.clone()).or_default().push(result);
+            by_protocol
+                .entry(result.protocol.clone())
+                .or_default()
+                .push(result);
         }
 
         for (protocol, results) in by_protocol {
-            let protocol_passed = results.iter().filter(|r| r.verdict == ConformanceVerdict::Pass).count();
+            let protocol_passed = results
+                .iter()
+                .filter(|r| r.verdict == ConformanceVerdict::Pass)
+                .count();
             let protocol_total = results.len();
 
-            report.push_str(&format!("--- {} ({}/{} passed) ---\n", protocol, protocol_passed, protocol_total));
+            report.push_str(&format!(
+                "--- {} ({}/{} passed) ---\n",
+                protocol, protocol_passed, protocol_total
+            ));
 
             for result in results {
                 let status = match result.verdict {
@@ -783,7 +837,10 @@ impl ConformanceReport {
                     ConformanceVerdict::Skip => "⚠",
                 };
 
-                report.push_str(&format!("{} {}: {}\n", status, result.test_id, result.message));
+                report.push_str(&format!(
+                    "{} {}: {}\n",
+                    status, result.test_id, result.message
+                ));
 
                 if result.verdict == ConformanceVerdict::Fail {
                     report.push_str(&format!("   Expected: {}\n", result.expected));
