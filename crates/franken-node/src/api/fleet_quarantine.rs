@@ -29,7 +29,8 @@ use sha2::{Digest, Sha256};
 
 use crate::control_plane::fleet_transport::{
     FileFleetTransport, FleetAction as PersistedFleetAction, FleetActionRecord, FleetTargetKind,
-    FleetTransport, FleetTransportError,
+    FleetTransport as PersistedFleetTransport,
+    FleetTransportError as PersistedFleetTransportError,
 };
 
 /// Maximum fleet control events before oldest are evicted.
@@ -85,6 +86,10 @@ pub const FLEET_RECEIPT_SIGNING_MATERIAL_MISSING: &str = "FLEET_RECEIPT_SIGNING_
 pub const FLEET_INCIDENT_CAPACITY_EXCEEDED: &str = "FLEET_INCIDENT_CAPACITY_EXCEEDED";
 #[cfg(any(test, feature = "control-plane"))]
 pub const FLEET_ZONE_STATUS_CAPACITY_EXCEEDED: &str = "FLEET_ZONE_STATUS_CAPACITY_EXCEEDED";
+
+/// Internal failure (e.g., durable transport persistence error) raised from the
+/// fleet control surface when a non-recoverable invariant is hit on the write path.
+pub const FLEET_INTERNAL: &str = "FLEET_INTERNAL";
 
 // ── Invariant Tags ────────────────────────────────────────────────────────
 
@@ -1422,6 +1427,8 @@ pub enum FleetControlError {
     /// Zone-status registry is full of live entries.
     #[cfg(any(test, feature = "control-plane"))]
     ZoneStatusCapacityExceeded { code: String },
+    /// Internal failure (durable transport, invariant violation) on the write path.
+    Internal { code: String, detail: String },
 }
 
 impl FleetControlError {
@@ -1546,6 +1553,16 @@ impl FleetControlError {
         }
     }
 
+    /// Construct an `Internal` failure for durable-transport persistence errors and
+    /// other write-path invariant violations that aren't covered by a more specific
+    /// variant.
+    pub fn internal(detail: impl Into<String>) -> Self {
+        Self::Internal {
+            code: FLEET_INTERNAL.to_string(),
+            detail: detail.into(),
+        }
+    }
+
     /// Return the stable error code for this error.
     ///
     /// # Examples
@@ -1569,6 +1586,7 @@ impl FleetControlError {
             Self::IncidentCapacityExceeded { code } => code,
             #[cfg(any(test, feature = "control-plane"))]
             Self::ZoneStatusCapacityExceeded { code } => code,
+            Self::Internal { code, .. } => code,
         }
     }
 }
@@ -2009,7 +2027,7 @@ impl FleetControlManager {
     pub fn with_file_transport(
         mut transport: FileFleetTransport,
         signing_material: Option<FleetDecisionSigningMaterial>,
-    ) -> Result<Self, FleetTransportError> {
+    ) -> Result<Self, PersistedFleetTransportError> {
         transport.initialize()?;
         let decision_trust_roots = signing_material
             .as_ref()

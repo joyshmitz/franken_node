@@ -101,12 +101,15 @@ fn mr_membership_is_commutative_under_reorder() {
 }
 
 /// MR3 (compound: order-sensitivity + composition under length-3 reorders):
-/// any non-trivial permutation of three distinct entries must produce a
-/// different chain head than the canonical order. Equality with the
-/// canonical chain head would mean ≥2 distinct orderings collide on the
-/// final prev binding — a hash chain weakness.
+/// the ordered tuple of `prev_entry_hash` values across all retained entries
+/// must be unique per append-order permutation. Note that `compute_entry_hash`
+/// intentionally excludes `prev_entry_hash` to avoid a circular dependency, so
+/// chain order-sensitivity surfaces in the *sequence* of prev bindings, not in
+/// any single tail hash. If two distinct permutations produced the same prev
+/// sequence, the chain would not distinguish those append histories — the
+/// tamper-detection guarantee would be lost.
 #[test]
-fn mr_three_entry_reorders_all_produce_distinct_tail_bindings() {
+fn mr_three_entry_reorders_all_produce_distinct_prev_hash_sequences() {
     let entries = [
         mk_entry("DEC-1", 1, DecisionKind::Admit),
         mk_entry("DEC-2", 2, DecisionKind::Deny),
@@ -123,7 +126,7 @@ fn mr_three_entry_reorders_all_produce_distinct_tail_bindings() {
         [2, 1, 0],
     ];
 
-    let mut tails: Vec<(String, [usize; 3])> = perms
+    let mut prev_sequences: Vec<(Vec<String>, [usize; 3])> = perms
         .iter()
         .map(|perm| {
             let ordered = [
@@ -132,24 +135,22 @@ fn mr_three_entry_reorders_all_produce_distinct_tail_bindings() {
                 entries[perm[2]].clone(),
             ];
             let snap = append_all(&ordered);
-            // The tail prev_entry_hash binds to the (n-1)-th appended entry's
-            // hash — distinct orderings yield distinct prefixes and so must
-            // yield distinct tail bindings.
-            (snap[2].prev_entry_hash.clone(), *perm)
+            let seq: Vec<String> = snap.iter().map(|e| e.prev_entry_hash.clone()).collect();
+            (seq, *perm)
         })
         .collect();
 
-    let total = tails.len();
-    tails.sort_by(|a, b| a.0.cmp(&b.0));
-    tails.dedup_by(|a, b| a.0 == b.0);
+    let total = prev_sequences.len();
+    prev_sequences.sort_by(|a, b| a.0.cmp(&b.0));
+    prev_sequences.dedup_by(|a, b| a.0 == b.0);
 
     assert_eq!(
-        tails.len(),
+        prev_sequences.len(),
         total,
-        "expected {total} distinct tail prev_entry_hashes across all 6 \
-         permutations of 3 distinct entries; got {} unique values — hash chain \
-         is collapsing distinct prefixes",
-        tails.len()
+        "expected {total} distinct prev_entry_hash sequences across all 6 \
+         permutations of 3 distinct entries; got {} unique sequences — chain \
+         is collapsing distinct append histories",
+        prev_sequences.len()
     );
 }
 
