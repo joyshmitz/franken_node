@@ -609,6 +609,19 @@ path = "tests/e2e_transparency_inclusion_real_pipeline.rs"
 name = "e2e_migration_pipeline_real_cohort"
 path = "tests/e2e_migration_pipeline_real_cohort.rs"
 
+[[test]]
+name = "e2e_revocation_registry_state_machine"
+path = "tests/e2e_revocation_registry_state_machine.rs"
+
+[[test]]
+name = "e2e_incident_bundle_lifecycle"
+path = "tests/e2e_incident_bundle_lifecycle.rs"
+required-features = ["control-plane"]
+
+[[test]]
+name = "e2e_trust_card_lifecycle"
+path = "tests/e2e_trust_card_lifecycle.rs"
+
 [[bench]]
 name = "cuckoo_revocation_bench"
 harness = false
