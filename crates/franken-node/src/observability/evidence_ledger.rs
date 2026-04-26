@@ -1342,7 +1342,7 @@ impl CircuitBreakerState {
 
         // Check disk usage
         match get_disk_usage(monitor_path) {
-            Ok(usage) if usage > self.disk_threshold => Ok(true),
+            Ok(usage) if usage >= self.disk_threshold => Ok(true),
             Ok(_) => Ok(false),
             Err(e) => {
                 // On monitoring error, stay conservative but don't fail
@@ -6677,17 +6677,14 @@ mod tests {
             let ledger_b = ledger.clone();
             let ledger_c = ledger.clone();
 
-            let handle_a = thread::spawn(move || {
-                ledger_a.append(make_entry("LOOM-A", 1)).expect("append A")
-            });
+            let handle_a =
+                thread::spawn(move || ledger_a.append(make_entry("LOOM-A", 1)).expect("append A"));
 
-            let handle_b = thread::spawn(move || {
-                ledger_b.append(make_entry("LOOM-B", 2)).expect("append B")
-            });
+            let handle_b =
+                thread::spawn(move || ledger_b.append(make_entry("LOOM-B", 2)).expect("append B"));
 
-            let handle_c = thread::spawn(move || {
-                ledger_c.append(make_entry("LOOM-C", 3)).expect("append C")
-            });
+            let handle_c =
+                thread::spawn(move || ledger_c.append(make_entry("LOOM-C", 3)).expect("append C"));
 
             let id_a = handle_a.join().expect("join A");
             let id_b = handle_b.join().expect("join B");
@@ -6720,13 +6717,11 @@ mod tests {
             let ledger_d = ledger.clone();
             let ledger_e = ledger.clone();
 
-            let handle_d = thread::spawn(move || {
-                ledger_d.append(make_entry("LOOM-D", 4)).expect("append D")
-            });
+            let handle_d =
+                thread::spawn(move || ledger_d.append(make_entry("LOOM-D", 4)).expect("append D"));
 
-            let handle_e = thread::spawn(move || {
-                ledger_e.append(make_entry("LOOM-E", 5)).expect("append E")
-            });
+            let handle_e =
+                thread::spawn(move || ledger_e.append(make_entry("LOOM-E", 5)).expect("append E"));
 
             handle_d.join().expect("join D");
             handle_e.join().expect("join E");
@@ -6734,12 +6729,18 @@ mod tests {
             let bounded_snapshot = ledger.snapshot();
 
             // Should still be within capacity bound
-            assert!(bounded_snapshot.entries.len() <= 3, "Capacity should be bounded");
+            assert!(
+                bounded_snapshot.entries.len() <= 3,
+                "Capacity should be bounded"
+            );
             assert_eq!(bounded_snapshot.total_appended, 5);
 
             // Some entries may have been evicted, but total_evicted + retained should equal total_appended
             let retained = bounded_snapshot.entries.len() as u64;
-            assert_eq!(retained + bounded_snapshot.total_evicted, bounded_snapshot.total_appended);
+            assert_eq!(
+                retained + bounded_snapshot.total_evicted,
+                bounded_snapshot.total_appended
+            );
         });
     }
 }
