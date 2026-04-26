@@ -176,12 +176,8 @@ fn insert_replay_token(inner: &mut ReplayTokenSetInner, token_id: String) -> boo
     true
 }
 
-#[cfg(all(test, loom))]
-mod replay_token_set_loom_tests {
-    //! Run with:
-    //! `RUSTFLAGS="--cfg loom" cargo test --release replay_token_set_duplicate_insert_is_atomic -- --exact`
-
-    use super::{ReplayTokenSetInner, insert_replay_token};
+#[cfg(loom)]
+pub fn replay_token_set_duplicate_insert_is_atomic_loom_model() {
     use loom::sync::{Arc, Mutex};
     use loom::thread;
 
@@ -213,46 +209,43 @@ mod replay_token_set_loom_tests {
         }
     }
 
-    #[test]
-    fn replay_token_set_duplicate_insert_is_atomic() {
-        loom::model(|| {
-            let replay_tokens = LoomReplayTokenSet::default();
+    loom::model(|| {
+        let replay_tokens = LoomReplayTokenSet::default();
 
-            let duplicate_a = replay_tokens.clone();
-            let duplicate_b = replay_tokens.clone();
-            let unique = replay_tokens.clone();
+        let duplicate_a = replay_tokens.clone();
+        let duplicate_b = replay_tokens.clone();
+        let unique = replay_tokens.clone();
 
-            let duplicate_a = thread::spawn(move || duplicate_a.insert_if_new("dup-token".into()));
-            let duplicate_b = thread::spawn(move || duplicate_b.insert_if_new("dup-token".into()));
-            let unique = thread::spawn(move || unique.insert_if_new("unique-token".into()));
+        let duplicate_a = thread::spawn(move || duplicate_a.insert_if_new("dup-token".into()));
+        let duplicate_b = thread::spawn(move || duplicate_b.insert_if_new("dup-token".into()));
+        let unique = thread::spawn(move || unique.insert_if_new("unique-token".into()));
 
-            let duplicate_successes = usize::from(duplicate_a.join().expect("join"))
-                + usize::from(duplicate_b.join().expect("join"));
+        let duplicate_successes = usize::from(duplicate_a.join().expect("join"))
+            + usize::from(duplicate_b.join().expect("join"));
 
-            assert_eq!(duplicate_successes, 1);
-            assert!(unique.join().expect("join"));
-            assert_eq!(replay_tokens.len(), 2);
-            assert!(replay_tokens.contains("dup-token"));
-            assert!(replay_tokens.contains("unique-token"));
+        assert_eq!(duplicate_successes, 1);
+        assert!(unique.join().expect("join"));
+        assert_eq!(replay_tokens.len(), 2);
+        assert!(replay_tokens.contains("dup-token"));
+        assert!(replay_tokens.contains("unique-token"));
 
-            let ordered_ids = replay_tokens.ordered_ids();
-            assert_eq!(ordered_ids.len(), 2);
-            assert_eq!(
-                ordered_ids
-                    .iter()
-                    .filter(|token_id| token_id.as_str() == "dup-token")
-                    .count(),
-                1
-            );
-            assert_eq!(
-                ordered_ids
-                    .iter()
-                    .filter(|token_id| token_id.as_str() == "unique-token")
-                    .count(),
-                1
-            );
-        });
-    }
+        let ordered_ids = replay_tokens.ordered_ids();
+        assert_eq!(ordered_ids.len(), 2);
+        assert_eq!(
+            ordered_ids
+                .iter()
+                .filter(|token_id| token_id.as_str() == "dup-token")
+                .count(),
+            1
+        );
+        assert_eq!(
+            ordered_ids
+                .iter()
+                .filter(|token_id| token_id.as_str() == "unique-token")
+                .count(),
+            1
+        );
+    });
 }
 
 /// Operating mode for hybrid revocation checker
