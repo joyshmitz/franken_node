@@ -3694,7 +3694,8 @@ mod tests {
                     used_fallback_runtime: report_inputs.used_fallback_runtime,
                     started_at_utc: report_inputs.started_at.to_rfc3339(),
                     finished_at_utc: (report_inputs.started_at
-                        + chrono::Duration::from_std(report_inputs.duration).unwrap())
+                        + chrono::Duration::from_std(report_inputs.duration)
+                            .unwrap_or_else(|_| chrono::Duration::max_value()))
                     .to_rfc3339(),
                     duration_ms: u64::try_from(report_inputs.duration.as_millis())
                         .unwrap_or(u64::MAX),
