@@ -379,6 +379,11 @@ pub enum VerifierSdkError {
         actual: String,
     },
     NonceCounterExhausted,
+    /// Inbound bundle bytes exceeded the configured DoS-prevention cap.
+    BundleTooLarge {
+        actual_bytes: usize,
+        max_bytes: usize,
+    },
     Json(String),
 }
 
@@ -455,6 +460,13 @@ impl fmt::Display for VerifierSdkError {
                 formatter,
                 "nonce counter exhausted - no more unique nonces available"
             ),
+            Self::BundleTooLarge {
+                actual_bytes,
+                max_bytes,
+            } => write!(
+                formatter,
+                "verifier SDK bundle exceeds DoS-prevention size cap: actual={actual_bytes} bytes, max={max_bytes} bytes"
+            ),
             Self::Json(message) => write!(formatter, "verifier SDK JSON error: {message}"),
         }
     }
@@ -489,6 +501,33 @@ const MAX_SESSION_ID_LEN: usize = 255;
 pub const MAX_VERIFICATION_SESSION_STEPS: usize = 1024;
 /// Maximum entries accepted in one in-memory verifier SDK transparency log.
 pub const MAX_TRANSPARENCY_LOG_ENTRIES: usize = 1024;
+/// Default upper bound on raw bundle bytes accepted by [`VerifierSdk::validate_bundle`].
+///
+/// External callers may submit attacker-controlled bytes; without an upper bound the
+/// downstream parser and signature pipeline are forced to walk arbitrarily large
+/// inputs, which is the primary DoS surface called out in bd-34svd.
+///
+/// The default is 256 KiB — large enough for every legitimate replay bundle exercised
+/// in the conformance suite (typical canonical bundles are ~8-64 KiB) and small enough
+/// that even a sustained attacker stream is bounded by hardware memory bandwidth, not
+/// by parser complexity. Operators can raise or lower this via the
+/// [`VERIFIER_SDK_MAX_BUNDLE_SIZE_BYTES_CONFIG_KEY`] entry on
+/// [`VerifierSdk::config`]; values above the absolute cap are rejected to keep a
+/// fail-closed ceiling on memory pressure even when the operator config is hostile.
+pub const DEFAULT_MAX_BUNDLE_SIZE_BYTES: usize = 256 * 1024;
+/// Absolute ceiling enforced on the configurable bundle size limit.
+///
+/// The configurable value (via [`VERIFIER_SDK_MAX_BUNDLE_SIZE_BYTES_CONFIG_KEY`]) is
+/// always clamped down to this cap, so a misconfigured or hostile operator config
+/// cannot widen the DoS surface beyond what the SDK is willing to accept.
+pub const ABSOLUTE_MAX_BUNDLE_SIZE_BYTES: usize = 16 * 1024 * 1024;
+/// Config-map key that overrides the bundle size cap on a [`VerifierSdk`] instance.
+///
+/// Setting this in [`VerifierSdk::config`] before calling
+/// [`VerifierSdk::validate_bundle`] applies that limit (clamped to
+/// [`ABSOLUTE_MAX_BUNDLE_SIZE_BYTES`]) for subsequent calls; absent or unparseable
+/// values fall back to [`DEFAULT_MAX_BUNDLE_SIZE_BYTES`].
+pub const VERIFIER_SDK_MAX_BUNDLE_SIZE_BYTES_CONFIG_KEY: &str = "max_bundle_size_bytes";
 static SESSION_NONCE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// Top-level facade for external verifier integrations.
@@ -646,9 +685,35 @@ impl VerifierSdk {
     pub fn validate_bundle(&self, bundle: &[u8]) -> VerifierSdkResult<()> {
         check_sdk_version(&self.sdk_version).map_err(VerifierSdkError::UnsupportedSdk)?;
         self.validate_current_verifier_identity()?;
+        let max_bytes = self.resolved_max_bundle_size_bytes();
+        if bundle.len() > max_bytes {
+            return Err(VerifierSdkError::BundleTooLarge {
+                actual_bytes: bundle.len(),
+                max_bytes,
+            });
+        }
         let verified = bundle::verify(bundle)?;
         self.verify_bundle_belongs_to_current_verifier(&verified)?;
         Ok(())
+    }
+
+    /// Resolve the active bundle size cap for this SDK instance.
+    ///
+    /// Reads [`VERIFIER_SDK_MAX_BUNDLE_SIZE_BYTES_CONFIG_KEY`] from
+    /// [`VerifierSdk::config`], parses it as a `usize`, clamps the result down to
+    /// [`ABSOLUTE_MAX_BUNDLE_SIZE_BYTES`], and falls back to
+    /// [`DEFAULT_MAX_BUNDLE_SIZE_BYTES`] for missing or unparseable values. A zero
+    /// override is honored as "reject every bundle" rather than promoted to the
+    /// default — that preserves the operator's ability to fail closed.
+    fn resolved_max_bundle_size_bytes(&self) -> usize {
+        match self
+            .config
+            .get(VERIFIER_SDK_MAX_BUNDLE_SIZE_BYTES_CONFIG_KEY)
+            .and_then(|raw| raw.parse::<usize>().ok())
+        {
+            Some(configured) => configured.min(ABSOLUTE_MAX_BUNDLE_SIZE_BYTES),
+            None => DEFAULT_MAX_BUNDLE_SIZE_BYTES,
+        }
     }
 
     /// Append a signed facade result to an in-memory transparency log.
@@ -2269,6 +2334,128 @@ mod tests {
 
         sdk.validate_bundle(&bundle)
             .expect("same-verifier bundle should validate");
+    }
+
+    #[test]
+    fn validate_bundle_rejects_oversized_bundle_with_default_cap() {
+        let sdk = create_verifier_sdk("verifier://alpha");
+        let oversized = vec![0u8; DEFAULT_MAX_BUNDLE_SIZE_BYTES + 1];
+
+        let err = sdk
+            .validate_bundle(&oversized)
+            .expect_err("bundles larger than DEFAULT_MAX_BUNDLE_SIZE_BYTES must fail closed");
+
+        match err {
+            VerifierSdkError::BundleTooLarge {
+                actual_bytes,
+                max_bytes,
+            } => {
+                assert_eq!(actual_bytes, DEFAULT_MAX_BUNDLE_SIZE_BYTES + 1);
+                assert_eq!(max_bytes, DEFAULT_MAX_BUNDLE_SIZE_BYTES);
+            }
+            other => panic!("expected BundleTooLarge, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_bundle_size_cap_runs_before_parser() {
+        // Confirms the cap short-circuits the parser pipeline: garbage bytes that
+        // would otherwise error inside bundle::verify must surface BundleTooLarge
+        // first when they exceed the cap. This is the DoS-prevention property —
+        // attacker-controlled bytes never reach the expensive parsing path.
+        let sdk = create_verifier_sdk("verifier://alpha");
+        let oversized_garbage = vec![0xffu8; DEFAULT_MAX_BUNDLE_SIZE_BYTES + 4096];
+
+        let err = sdk
+            .validate_bundle(&oversized_garbage)
+            .expect_err("oversized garbage must be rejected by the cap before parsing");
+
+        assert!(
+            matches!(err, VerifierSdkError::BundleTooLarge { .. }),
+            "expected BundleTooLarge before any parser error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_bundle_honors_lowered_config_override() {
+        let mut sdk = create_verifier_sdk("verifier://alpha");
+        let bundle = make_replay_bundle_bytes("verifier://alpha");
+        // Tighten the cap to one byte below the legitimate bundle's size.
+        let tight_cap = bundle.len().saturating_sub(1);
+        sdk.config.insert(
+            VERIFIER_SDK_MAX_BUNDLE_SIZE_BYTES_CONFIG_KEY.to_string(),
+            tight_cap.to_string(),
+        );
+
+        let err = sdk
+            .validate_bundle(&bundle)
+            .expect_err("bundle larger than configured cap must be rejected");
+
+        match err {
+            VerifierSdkError::BundleTooLarge {
+                actual_bytes,
+                max_bytes,
+            } => {
+                assert_eq!(actual_bytes, bundle.len());
+                assert_eq!(max_bytes, tight_cap);
+            }
+            other => panic!("expected BundleTooLarge under override, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_bundle_clamps_config_override_to_absolute_ceiling() {
+        // A hostile or fat-fingered operator config that asks for a cap above the
+        // absolute ceiling must be silently clamped down rather than honored —
+        // this is the fail-closed guarantee on the DoS surface.
+        let mut sdk = create_verifier_sdk("verifier://alpha");
+        sdk.config.insert(
+            VERIFIER_SDK_MAX_BUNDLE_SIZE_BYTES_CONFIG_KEY.to_string(),
+            (ABSOLUTE_MAX_BUNDLE_SIZE_BYTES.saturating_mul(2)).to_string(),
+        );
+
+        assert_eq!(
+            sdk.resolved_max_bundle_size_bytes(),
+            ABSOLUTE_MAX_BUNDLE_SIZE_BYTES,
+            "config override above the absolute ceiling must clamp down, not widen"
+        );
+    }
+
+    #[test]
+    fn validate_bundle_unparseable_config_falls_back_to_default() {
+        let mut sdk = create_verifier_sdk("verifier://alpha");
+        sdk.config.insert(
+            VERIFIER_SDK_MAX_BUNDLE_SIZE_BYTES_CONFIG_KEY.to_string(),
+            "not-a-number".to_string(),
+        );
+
+        assert_eq!(
+            sdk.resolved_max_bundle_size_bytes(),
+            DEFAULT_MAX_BUNDLE_SIZE_BYTES,
+            "unparseable config must fall back to the default cap, not disable the cap"
+        );
+    }
+
+    #[test]
+    fn validate_bundle_zero_config_rejects_all_bundles() {
+        // An operator who explicitly wants to fail closed (e.g., during a
+        // suspected attack) can set the cap to zero. Every non-empty bundle must
+        // then surface BundleTooLarge.
+        let mut sdk = create_verifier_sdk("verifier://alpha");
+        sdk.config.insert(
+            VERIFIER_SDK_MAX_BUNDLE_SIZE_BYTES_CONFIG_KEY.to_string(),
+            "0".to_string(),
+        );
+        let bundle = make_replay_bundle_bytes("verifier://alpha");
+
+        let err = sdk
+            .validate_bundle(&bundle)
+            .expect_err("zero-cap config must reject every non-empty bundle");
+
+        assert!(
+            matches!(err, VerifierSdkError::BundleTooLarge { max_bytes: 0, .. }),
+            "expected BundleTooLarge with max_bytes=0, got {err:?}"
+        );
     }
 
     #[test]

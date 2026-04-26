@@ -20,6 +20,9 @@ required-features = ["test-support"]
 path = "src/lib.rs"
 test = false
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+
 [features]
 asupersync-transport = ["dep:asupersync"]
 

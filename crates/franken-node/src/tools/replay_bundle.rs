@@ -24,6 +24,7 @@ use uuid::Uuid;
 use crate::security::constant_time;
 
 pub(crate) const MAX_BUNDLE_BYTES: usize = 10 * 1024 * 1024;
+const MAX_REPLAY_BUNDLE_BYTES: u64 = 64 * 1024 * 1024; // 64 MB limit for replay bundle JSON parsing
 pub(crate) const MAX_CHUNKS_PER_BUNDLE: usize = 1000; // Hardening: prevent unbounded chunk growth
 pub(crate) const MAX_EVENT_LOG: usize = 50000; // Hardening: prevent unbounded event log growth
 const MAX_PREPARED_EVENTS: usize = 50000; // Hardening: prevent unbounded prepared events
@@ -1127,6 +1128,16 @@ pub fn read_bundle_from_path_with_trusted_key(
     path: &Path,
     trusted_key_id: Option<&str>,
 ) -> Result<ReplayBundle, ReplayBundleError> {
+    // Check file size before reading to prevent memory exhaustion DoS attacks
+    let metadata = std::fs::metadata(path)?;
+    if metadata.len() > MAX_REPLAY_BUNDLE_BYTES {
+        return Err(ReplayBundleError::FormatError(format!(
+            "Replay bundle size {} bytes exceeds maximum {} bytes",
+            metadata.len(),
+            MAX_REPLAY_BUNDLE_BYTES
+        )));
+    }
+
     let file = std::fs::File::open(path)?;
     let reader = std::io::BufReader::new(file);
     let bundle: ReplayBundle = serde_json::from_reader(reader)?;
@@ -1142,6 +1153,16 @@ pub fn read_bundle_from_path_with_trusted_keys(
     path: &Path,
     trusted_key_ids: &[String],
 ) -> Result<ReplayBundle, ReplayBundleError> {
+    // Check file size before reading to prevent memory exhaustion DoS attacks
+    let metadata = std::fs::metadata(path)?;
+    if metadata.len() > MAX_REPLAY_BUNDLE_BYTES {
+        return Err(ReplayBundleError::FormatError(format!(
+            "Replay bundle size {} bytes exceeds maximum {} bytes",
+            metadata.len(),
+            MAX_REPLAY_BUNDLE_BYTES
+        )));
+    }
+
     let file = std::fs::File::open(path)?;
     let reader = std::io::BufReader::new(file);
     let bundle: ReplayBundle = serde_json::from_reader(reader)?;
@@ -3260,5 +3281,38 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn replay_bundle_rejects_oversized_files() {
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        // Create a temporary file larger than MAX_REPLAY_BUNDLE_BYTES
+        let mut temp_file = NamedTempFile::new().expect("create temp file");
+
+        // Write a JSON structure that exceeds the 64MB limit
+        let oversized_content = format!(
+            r#"{{"type": "replay_bundle", "data": "{}"}}"#,
+            "x".repeat((MAX_REPLAY_BUNDLE_BYTES as usize) + 1)
+        );
+        temp_file.write_all(oversized_content.as_bytes()).expect("write oversized content");
+        temp_file.flush().expect("flush temp file");
+
+        // Test that reading the oversized file is rejected
+        let result = read_bundle_from_path_with_trusted_key(temp_file.path(), None);
+        assert!(result.is_err(), "oversized bundle should be rejected");
+
+        if let Err(ReplayBundleError::FormatError(msg)) = result {
+            assert!(msg.contains("exceeds maximum"), "error should mention size limit: {}", msg);
+            assert!(msg.contains("67108865"), "error should show actual size");
+            assert!(msg.contains("67108864"), "error should show limit size");
+        } else {
+            panic!("expected FormatError with size limit message");
+        }
+
+        // Also test the trusted_keys variant
+        let result2 = read_bundle_from_path_with_trusted_keys(temp_file.path(), &[]);
+        assert!(result2.is_err(), "oversized bundle should be rejected by trusted_keys variant");
     }
 }
