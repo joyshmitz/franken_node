@@ -56,6 +56,8 @@ const MIN_SEEN_SIGNATURES: usize = 8192;
 const ED25519_SIGNATURE_BYTES: usize = 64;
 const SHA256_DIGEST_BYTES: usize = 32;
 type ReplaySignature = [u8; ED25519_SIGNATURE_BYTES];
+type ReplayTimestamp = [u8; 8];
+type ReplayKey = (ReplayTimestamp, ReplaySignature);
 type EntryHash = [u8; SHA256_DIGEST_BYTES];
 
 // ── Event codes ─────────────────────────────────────────────────────
@@ -188,6 +190,36 @@ impl Write for ByteCountingWriter {
 
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
+    }
+}
+
+struct CountingWrite<'a, W: Write + ?Sized> {
+    inner: &'a mut W,
+    bytes_written: usize,
+}
+
+impl<W: Write + ?Sized> CountingWrite<'_, W> {
+    fn new(inner: &mut W) -> CountingWrite<'_, W> {
+        CountingWrite {
+            inner,
+            bytes_written: 0,
+        }
+    }
+
+    const fn bytes_written(&self) -> usize {
+        self.bytes_written
+    }
+}
+
+impl<W: Write + ?Sized> Write for CountingWrite<'_, W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let written = self.inner.write(buf)?;
+        self.bytes_written = self.bytes_written.saturating_add(written);
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
     }
 }
 
@@ -623,8 +655,9 @@ pub struct EvidenceLedger {
     current_bytes: usize,
     /// Verifying key for signature verification of evidence entries
     verifying_key: Option<VerifyingKey>,
-    /// Bounded replay-prevention window in append order.
-    seen_signatures: VecDeque<(u64, ReplaySignature)>,
+    /// Bounded replay-prevention window in append order, with precomputed
+    /// timestamp bytes for the constant-time replay scan.
+    seen_signatures: VecDeque<ReplayKey>,
     /// Hash of the last appended entry for hash chain integrity
     last_entry_hash: Option<EntryHash>,
 }
@@ -708,12 +741,10 @@ impl EvidenceLedger {
         let mut found_replay = false;
 
         // Scan ALL entries without early return to prevent position/timestamp timing leaks
-        for (seen_timestamp, seen_signature) in &self.seen_signatures {
-            let seen_timestamp_bytes = seen_timestamp.to_le_bytes();
-
+        for (seen_timestamp_bytes, seen_signature) in &self.seen_signatures {
             // Constant-time timestamp comparison (no branching on timestamp match)
             let timestamp_match =
-                constant_time::ct_eq_bytes(&timestamp_bytes, &seen_timestamp_bytes);
+                constant_time::ct_eq_bytes(&timestamp_bytes, seen_timestamp_bytes);
 
             // Constant-time signature comparison
             let signature_match = constant_time::ct_eq_bytes(signature, seen_signature);
@@ -852,7 +883,8 @@ impl EvidenceLedger {
 
     fn remember_seen_signature(&mut self, timestamp_ms: u64, signature: ReplaySignature) {
         let replay_window = self.capacity.max_entries.max(MIN_SEEN_SIGNATURES);
-        self.seen_signatures.push_back((timestamp_ms, signature));
+        self.seen_signatures
+            .push_back((timestamp_ms.to_le_bytes(), signature));
         while self.seen_signatures.len() > replay_window {
             self.seen_signatures.pop_front();
         }
@@ -1340,23 +1372,46 @@ enum SpillWriter {
 }
 
 impl SpillWriter {
-    fn append_json_line(&mut self, json_line: &str) -> Result<(), LedgerError> {
+    fn append_json_entry<T>(&mut self, value: &T) -> Result<usize, LedgerError>
+    where
+        T: Serialize,
+    {
         match self {
             Self::Generic(writer) => {
-                writeln!(writer, "{json_line}").map_err(|e| LedgerError::SpillError {
-                    reason: format!("write: {e}"),
+                let mut counting = CountingWrite::new(writer.as_mut());
+                serde_json::to_writer(&mut counting, value).map_err(|e| {
+                    LedgerError::SpillError {
+                        reason: format!("JSON error: {e}"),
+                    }
                 })?;
-                writer.flush().map_err(|e| LedgerError::SpillError {
+                let json_bytes = counting.bytes_written();
+                counting
+                    .write_all(b"\n")
+                    .map_err(|e| LedgerError::SpillError {
+                        reason: format!("write: {e}"),
+                    })?;
+                counting.flush().map_err(|e| LedgerError::SpillError {
                     reason: format!("flush: {e}"),
-                })
+                })?;
+                Ok(json_bytes)
             }
             Self::File(file) => {
-                writeln!(file, "{json_line}").map_err(|e| LedgerError::SpillError {
-                    reason: format!("write: {e}"),
+                let mut counting = CountingWrite::new(file);
+                serde_json::to_writer(&mut counting, value).map_err(|e| {
+                    LedgerError::SpillError {
+                        reason: format!("JSON error: {e}"),
+                    }
                 })?;
-                file.flush().map_err(|e| LedgerError::SpillError {
+                let json_bytes = counting.bytes_written();
+                counting
+                    .write_all(b"\n")
+                    .map_err(|e| LedgerError::SpillError {
+                        reason: format!("write: {e}"),
+                    })?;
+                counting.flush().map_err(|e| LedgerError::SpillError {
                     reason: format!("flush: {e}"),
-                })
+                })?;
+                Ok(json_bytes)
                 // NOTE: Removed per-record sync_all - use sync_durability() for batch sync
             }
         }
@@ -1520,14 +1575,11 @@ impl LabSpillMode {
 
         // Only attempt spill write if circuit breaker is closed
         if !self.circuit_breaker.is_open {
-            let json_line = serde_json::to_string(&entry).map_err(|e| LedgerError::SpillError {
-                reason: format!("JSON error: {e}"),
-            })?;
-            self.spill_writer.append_json_line(&json_line)?;
+            let json_bytes = self.spill_writer.append_json_entry(&entry)?;
             let id = self
                 .ledger
                 .append_prevalidated(entry, entry_size, replay_signature);
-            eprintln!("{}", format_ledger_spill_event(id, json_line.len()));
+            eprintln!("{}", format_ledger_spill_event(id, json_bytes));
             Ok(id)
         } else {
             // Circuit breaker open - memory-only mode
@@ -2391,6 +2443,27 @@ mod tests {
             .append(make_entry("DEC-002", 2))
             .expect("should succeed");
         assert_eq!(spill.len(), 2);
+    }
+
+    #[test]
+    fn spill_writer_streams_jsonl_without_string_buffer() {
+        let (writer, buffer) = SharedBufferWriter::new();
+        let mut spill_writer = SpillWriter::Generic(Box::new(writer));
+        let entry = make_entry("DEC-SPILL-STREAM", 9);
+
+        let json_bytes = spill_writer
+            .append_json_entry(&entry)
+            .expect("spill writer should serialize directly");
+
+        let captured = captured_text(&buffer);
+        let line = captured
+            .strip_suffix('\n')
+            .expect("spill output should end with newline");
+        let expected_line =
+            serde_json::to_string(&entry).expect("entry serialization should succeed");
+
+        assert_eq!(json_bytes, expected_line.len());
+        assert_eq!(line, expected_line);
     }
 
     #[test]
@@ -5399,6 +5472,25 @@ mod tests {
         let result = ledger.append(entry);
         assert!(result.is_ok(), "Properly signed entry should be accepted");
         assert_eq!(ledger.len(), 1);
+    }
+
+    #[test]
+    fn replay_window_caches_timestamp_bytes_after_signed_append() {
+        let (signing_key, verifying_key) = test_keys();
+        let capacity = LedgerCapacity::new(10, 100_000);
+        let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
+
+        let mut entry = test_entry("TEST-REPLAY-BYTES", 7);
+        sign_evidence_entry(&mut entry, &signing_key);
+        let expected_timestamp_bytes = entry.timestamp_ms.to_le_bytes();
+
+        ledger.append(entry).expect("signed entry should append");
+
+        let stored = ledger
+            .seen_signatures
+            .front()
+            .expect("replay window should capture the signed append");
+        assert_eq!(stored.0, expected_timestamp_bytes);
     }
 
     #[test]
