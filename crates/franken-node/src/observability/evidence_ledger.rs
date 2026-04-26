@@ -549,7 +549,24 @@ impl EvidenceLedger {
             }
         }
 
-        let (normalized_entry, entry_size) = entry_with_server_computed_size(entry);
+        let (mut normalized_entry, _) = entry_with_server_computed_size(entry);
+
+        // SECURITY: Validate hash chain integrity if client provided prev_entry_hash
+        if !normalized_entry.prev_entry_hash.is_empty() {
+            let expected_hash = self.last_entry_hash.as_deref().unwrap_or("");
+            if !crate::security::constant_time::ct_eq(
+                expected_hash,
+                &normalized_entry.prev_entry_hash,
+            ) {
+                return Err(LedgerError::HashChainBroken {
+                    expected_hash: expected_hash.to_string(),
+                    provided_hash: normalized_entry.prev_entry_hash.clone(),
+                });
+            }
+        }
+
+        normalized_entry.prev_entry_hash = self.last_entry_hash.clone().unwrap_or_default();
+        let (normalized_entry, entry_size) = entry_with_server_computed_size(&normalized_entry);
 
         if entry_size > self.capacity.max_bytes {
             eprintln!(
@@ -564,20 +581,6 @@ impl EvidenceLedger {
                 entry_size,
                 max_bytes: self.capacity.max_bytes,
             });
-        }
-
-        // SECURITY: Validate hash chain integrity if client provided prev_entry_hash
-        if !normalized_entry.prev_entry_hash.is_empty() {
-            let expected_hash = self.last_entry_hash.as_deref().unwrap_or("");
-            if !crate::security::constant_time::ct_eq(
-                expected_hash,
-                &normalized_entry.prev_entry_hash,
-            ) {
-                return Err(LedgerError::HashChainBroken {
-                    expected_hash: expected_hash.to_string(),
-                    provided_hash: normalized_entry.prev_entry_hash.clone(),
-                });
-            }
         }
 
         Ok((normalized_entry, entry_size))
@@ -611,7 +614,6 @@ impl EvidenceLedger {
     }
 
     fn append_prevalidated(&mut self, mut entry: EvidenceEntry, entry_size: usize) -> EntryId {
-        entry.size_bytes = entry_size;
         // Evict oldest entries to make room
         while self.entries.len() >= self.capacity.max_entries && !self.entries.is_empty() {
             self.evict_oldest();
@@ -621,9 +623,6 @@ impl EvidenceLedger {
         {
             self.evict_oldest();
         }
-
-        // SECURITY: Set hash chain linkage to prevent ordering manipulation
-        entry.prev_entry_hash = self.last_entry_hash.clone().unwrap_or_default();
 
         let id = EntryId(self.next_id);
         self.next_id = self.next_id.saturating_add(1);
@@ -1384,10 +1383,6 @@ impl LabSpillMode {
     /// ```
     pub fn append(&mut self, entry: EvidenceEntry) -> Result<EntryId, LedgerError> {
         let (entry, entry_size) = self.ledger.validate_append(&entry)?;
-        let json_line = serde_json::to_string(&entry).map_err(|e| LedgerError::SpillError {
-            reason: format!("JSON error: {e}"),
-        })?;
-
         // CIRCUIT BREAKER: Check manual halt state and any available disk monitoring
         let should_open = self.circuit_breaker.should_open().unwrap_or(false);
         let was_open = self.circuit_breaker.is_open;
@@ -1408,23 +1403,25 @@ impl LabSpillMode {
             );
         }
 
-        // Always append to memory ledger regardless of circuit breaker state
-        let id = self.ledger.append_prevalidated(entry, entry_size);
-
         // Only attempt spill write if circuit breaker is closed
         if !self.circuit_breaker.is_open {
+            let json_line = serde_json::to_string(&entry).map_err(|e| LedgerError::SpillError {
+                reason: format!("JSON error: {e}"),
+            })?;
             self.spill_writer.append_json_line(&json_line)?;
+            let id = self.ledger.append_prevalidated(entry, entry_size);
             eprintln!("{}", format_ledger_spill_event(id, json_line.len()));
+            Ok(id)
         } else {
             // Circuit breaker open - memory-only mode
+            let id = self.ledger.append_prevalidated(entry, entry_size);
             eprintln!(
                 "{}: spill write skipped for entry={}, circuit breaker open (memory-only mode)",
                 event_codes::LEDGER_CIRCUIT_BREAKER_OPEN,
                 id
             );
+            Ok(id)
         }
-
-        Ok(id)
     }
 
     /// Emergency admin command: halt all evidence ledger spill writes
@@ -1447,7 +1444,10 @@ impl LabSpillMode {
         if self.circuit_breaker.emergency_halt {
             self.circuit_breaker.emergency_halt = false;
             // Note: circuit breaker state will be re-evaluated on next append()
-            eprintln!("{}: admin emergency halt cleared - spill writes will resume if disk space available", event_codes::LEDGER_EMERGENCY_HALT);
+            eprintln!(
+                "{}: admin emergency halt cleared - spill writes will resume if disk space available",
+                event_codes::LEDGER_EMERGENCY_HALT
+            );
         }
     }
 
@@ -2328,6 +2328,46 @@ mod tests {
     }
 
     #[test]
+    fn appended_entries_use_final_serialized_size_after_hash_chain_finalization() {
+        let mut ledger = EvidenceLedger::new(LedgerCapacity::new(10, 100_000));
+        ledger
+            .append(make_entry("DEC-001", 1))
+            .expect("first append");
+        ledger
+            .append(make_entry("DEC-002", 2))
+            .expect("second append");
+
+        let snapshot = ledger.snapshot();
+        let serialized_total: usize = snapshot
+            .entries
+            .iter()
+            .map(|(_, entry)| {
+                serde_json::to_string(entry)
+                    .expect("entry serialization")
+                    .len()
+            })
+            .sum();
+        let second_entry = &snapshot.entries[1].1;
+
+        assert!(
+            !second_entry.prev_entry_hash.is_empty(),
+            "hash-chained entries must carry the prior hash"
+        );
+        assert_eq!(
+            second_entry.size_bytes,
+            serde_json::to_string(second_entry)
+                .expect("entry serialization")
+                .len(),
+            "size_bytes must reflect the finalized entry including prev_entry_hash"
+        );
+        assert_eq!(
+            ledger.current_bytes(),
+            serialized_total,
+            "ledger byte accounting must match the finalized retained entries"
+        );
+    }
+
+    #[test]
     fn lab_spill_eviction_still_works() {
         let buffer: Vec<u8> = Vec::new();
         let mut spill = LabSpillMode::new(LedgerCapacity::new(2, 100_000), Box::new(buffer));
@@ -2856,6 +2896,31 @@ mod tests {
             assert_eq!(ids, vec!["DEC-001", "DEC-002", "DEC-003"]);
             assert!(parsed.iter().all(|entry| entry.schema_version == "1.0"));
             assert_eq!(spill.metrics().total_appended, 3);
+        }
+
+        #[test]
+        fn audit_log_spill_matches_finalized_snapshot_entries() {
+            let (writer, buffer) = SharedBufferWriter::new();
+            let mut spill = LabSpillMode::new(LedgerCapacity::new(10, 100_000), Box::new(writer));
+
+            for i in 1..=3u64 {
+                spill
+                    .append(make_entry(&format!("DEC-{i:03}"), i))
+                    .expect("spill append should succeed");
+            }
+
+            let parsed = parsed_spill_entries(&buffer);
+            let snapshot_entries: Vec<_> = spill
+                .snapshot()
+                .entries
+                .into_iter()
+                .map(|(_, entry)| entry)
+                .collect();
+
+            assert_eq!(
+                parsed, snapshot_entries,
+                "spill JSONL must match the finalized in-memory entries"
+            );
         }
 
         #[test]
@@ -4204,9 +4269,11 @@ mod tests {
                 nested
             },
             // Array with many elements
-            serde_json::json!((0..100_000)
-                .map(|i| format!("element_{}", i))
-                .collect::<Vec<_>>()),
+            serde_json::json!(
+                (0..100_000)
+                    .map(|i| format!("element_{}", i))
+                    .collect::<Vec<_>>()
+            ),
         ];
 
         for (i, large_payload) in exhaustion_attempts.iter().enumerate() {
