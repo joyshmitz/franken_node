@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
@@ -22,6 +23,14 @@ const SESSION_STEP_FIXTURE: &str =
     include_str!("../../../sdk/verifier/tests/fixtures/public_api/session_step.json");
 const TRANSPARENCY_ENTRY_FIXTURE: &str =
     include_str!("../../../sdk/verifier/tests/fixtures/public_api/transparency_entry.json");
+
+fn reference_signing_key() -> SigningKey {
+    SigningKey::from_bytes(&[7_u8; 32])
+}
+
+fn reference_verifying_key() -> VerifyingKey {
+    VerifyingKey::from(&reference_signing_key())
+}
 
 fn reference_capsule() -> capsule::ReplayCapsule {
     let mut inputs = BTreeMap::new();
@@ -63,7 +72,8 @@ fn reference_capsule() -> capsule::ReplayCapsule {
         inputs,
         signature: String::new(),
     };
-    capsule::sign_capsule(&mut capsule);
+    let signing_key = reference_signing_key();
+    capsule::sign_capsule(&signing_key, &mut capsule);
     capsule
 }
 
@@ -181,8 +191,9 @@ fn sdk_verifier_public_api_golden_conformance() {
 #[test]
 fn sdk_verifier_public_api_live_contract_invariants() {
     let sdk = create_verifier_sdk("verifier://shape-test");
+    let verifying_key = reference_verifying_key();
     let result = sdk
-        .verify_claim(&reference_capsule())
+        .verify_claim(&verifying_key, &reference_capsule())
         .expect("reference capsule verification should succeed");
 
     assert_eq!(result.operation, VerificationOperation::Claim);

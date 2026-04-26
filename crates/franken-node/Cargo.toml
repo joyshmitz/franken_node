@@ -572,6 +572,10 @@ name = "decision_receipt_json_golden"
 path = "tests/decision_receipt_json_golden.rs"
 
 [[test]]
+name = "decision_receipt_round_trip_metamorphic"
+path = "tests/decision_receipt_round_trip_metamorphic.rs"
+
+[[test]]
 name = "artifact_signing_metamorphic"
 path = "tests/artifact_signing_metamorphic.rs"
 
@@ -630,6 +634,10 @@ path = "tests/e2e_control_epoch_lifecycle.rs"
 name = "e2e_quarantine_registry_lifecycle"
 path = "tests/e2e_quarantine_registry_lifecycle.rs"
 
+[[test]]
+name = "e2e_evidence_ledger_lifecycle"
+path = "tests/e2e_evidence_ledger_lifecycle.rs"
+
 [[bench]]
 name = "cuckoo_revocation_bench"
 harness = false
@@ -649,4 +657,12 @@ harness = false
 
 [[bench]]
 name = "proof_verifier_gate_bench"
+harness = false
+
+[[bench]]
+name = "anti_entropy_insert_bench"
+harness = false
+
+[[bench]]
+name = "threshold_sig_verify_bench"
 harness = false

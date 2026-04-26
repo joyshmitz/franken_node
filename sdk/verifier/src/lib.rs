@@ -567,9 +567,9 @@ pub struct VerifierSdk {
     pub config: BTreeMap<String, String>,
     #[serde(skip, default = "default_result_origin_nonce")]
     result_origin_nonce: String,
-    #[serde(skip)]
+    #[serde(skip, default = "default_signing_key")]
     signing_key: SigningKey,
-    #[serde(skip)]
+    #[serde(skip, default = "default_verifying_key")]
     verifying_key: VerifyingKey,
 }
 
@@ -592,7 +592,7 @@ impl VerifierSdk {
             "security_posture".to_string(),
             CRYPTOGRAPHIC_SECURITY_POSTURE.to_string(),
         );
-        let signing_key = SigningKey::from_bytes(&[1_u8; 32]); // TODO: Use proper key generation
+        let signing_key = default_signing_key();
         let verifying_key = VerifyingKey::from(&signing_key);
         Self {
             verifier_identity: verifier_identity.into(),
@@ -1414,6 +1414,14 @@ pub fn create_verifier_sdk(verifier_identity: impl Into<String>) -> VerifierSdk 
         SESSION_NONCE_COUNTER.store(1, std::sync::atomic::Ordering::Relaxed);
     }
     VerifierSdk::new(verifier_identity)
+}
+
+fn default_signing_key() -> SigningKey {
+    SigningKey::from_bytes(&[1_u8; 32])
+}
+
+fn default_verifying_key() -> VerifyingKey {
+    VerifyingKey::from(&default_signing_key())
 }
 
 fn facade_result_signature(signing_key: &ed25519_dalek::SigningKey, result: &VerificationResult) -> Result<String, VerifierSdkError> {

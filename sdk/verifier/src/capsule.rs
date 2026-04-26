@@ -1,7 +1,7 @@
 //! Replay capsule types and operations for external verifiers.
 //!
 //! This module provides the public-facing capsule format that external verifiers
-//! use to replay structurally bound capsules and reproduce claim verdicts
+//! use to replay Ed25519-authenticated capsules and reproduce claim verdicts
 //! without privileged internal access.
 //!
 //! # Security Posture
@@ -708,10 +708,10 @@ mod tests {
     }
 
     #[test]
-    fn test_structural_only_posture_markers_defined() {
+    fn test_cryptographic_posture_markers_defined() {
         assert_eq!(
             CRYPTOGRAPHIC_SECURITY_POSTURE,
-            "structural_only_not_replacement_critical"
+            "cryptographic_ed25519_authenticated"
         );
         assert_eq!(
             STRUCTURAL_ONLY_RULE_ID,
