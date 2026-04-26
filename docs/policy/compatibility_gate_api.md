@@ -130,21 +130,22 @@ API's behavior:
 ### 4.1 CLI Usage
 
 ```bash
-# Check gate status for a package
-franken-node compat gate-check --package npm:@acme/auth --mode balanced --scope tenant-1
+# Verify a runtime profile target
+franken-node verify compatibility strict
 
-# Query current mode
-franken-node compat mode --scope tenant-1
+# Verify a concrete runtime and emit machine-readable output
+franken-node verify compatibility node --json
 
-# Request mode transition
-franken-node compat transition --scope tenant-1 --to legacy_risky --justification "Legacy migration phase"
-
-# Query divergence receipts
-franken-node compat receipts --scope tenant-1 --severity critical
-
-# List registered shims
-franken-node compat shims --scope tenant-1
+# Request a previous major contract version when needed by older tooling
+franken-node verify compatibility bun --json --compat-version 0
 ```
+
+The current shipped CLI surface is `franken-node verify compatibility <target>`,
+where `<target>` is either a runtime profile (`strict`, `balanced`,
+`legacy-risky`) or a concrete runtime (`node`, `bun`, `franken-node`). The
+mode-transition, receipts, and shim-registry operations described in this
+policy are library/API surfaces; there is not currently a top-level
+`franken-node compat ...` command family.
 
 ### 4.2 Programmatic SDK
 
@@ -174,11 +175,8 @@ before deployment:
 ```yaml
 - name: Check compatibility gate
   run: |
-    franken-node compat gate-check \
-      --package ${{ env.PACKAGE_ID }} \
-      --mode strict \
-      --scope ci-${{ github.run_id }} \
-      --json | jq -e '.decision == "allow"'
+    franken-node verify compatibility "${{ env.RUNTIME_TARGET }}" \
+      --json | jq -e '.status == "pass" and .verdict == "PASS"'
 ```
 
 ## 5. Security Considerations
