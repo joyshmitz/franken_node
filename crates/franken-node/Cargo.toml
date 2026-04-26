@@ -638,6 +638,10 @@ path = "tests/e2e_quarantine_registry_lifecycle.rs"
 name = "e2e_evidence_ledger_lifecycle"
 path = "tests/e2e_evidence_ledger_lifecycle.rs"
 
+[[test]]
+name = "e2e_fork_detection_lifecycle"
+path = "tests/e2e_fork_detection_lifecycle.rs"
+
 [[bench]]
 name = "cuckoo_revocation_bench"
 harness = false
