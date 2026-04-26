@@ -117,6 +117,8 @@ pub struct Receipt {
     pub timestamp: String,
     /// Signature algorithm/version committed into the canonical payload.
     pub signature_version: String,
+    /// Unique nonce for replay protection (prevents receipt reuse attacks).
+    pub nonce: String,
     pub input_hash: String,
     pub output_hash: String,
     pub decision: Decision,
@@ -146,6 +148,55 @@ pub struct ReceiptQuery {
     pub from_timestamp: Option<String>,
     pub to_timestamp: Option<String>,
     pub limit: Option<usize>,
+}
+
+/// Replay protection tracker for used receipt nonces.
+#[derive(Debug, Default)]
+pub struct ReplayTracker {
+    used_nonces: Mutex<BTreeSet<String>>,
+    max_tracked: usize,
+}
+
+impl ReplayTracker {
+    /// Create a new replay tracker with default capacity.
+    pub fn new() -> Self {
+        Self {
+            used_nonces: Mutex::new(BTreeSet::new()),
+            max_tracked: 10000, // Configurable capacity
+        }
+    }
+
+    /// Create a replay tracker with custom capacity.
+    pub fn with_capacity(max_tracked: usize) -> Self {
+        Self {
+            used_nonces: Mutex::new(BTreeSet::new()),
+            max_tracked,
+        }
+    }
+
+    /// Check if nonce was already used and mark it as used.
+    /// Returns Ok(()) if nonce is fresh, Err if replayed.
+    pub fn check_and_mark(&self, nonce: &str) -> Result<(), ReceiptError> {
+        let mut used = self.used_nonces.lock().unwrap();
+
+        if used.contains(nonce) {
+            return Err(ReceiptError::ReplayAttack {
+                nonce: nonce.to_string(),
+            });
+        }
+
+        // Add new nonce
+        used.insert(nonce.to_string());
+
+        // Bounded capacity: remove oldest nonces if over limit
+        while used.len() > self.max_tracked {
+            if let Some(oldest) = used.iter().next().cloned() {
+                used.remove(&oldest);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Runtime registry for actions that require receipts.
@@ -189,6 +240,8 @@ pub enum ReceiptError {
     HashChainMismatch { expected: String, actual: String },
     #[error("timestamp not monotonic: current '{current}' is not after previous '{previous}'")]
     TimestampNotMonotonic { current: String, previous: String },
+    #[error("receipt replay attack detected: nonce '{nonce}' already used")]
+    ReplayAttack { nonce: String },
     /// Failed to write receipt file to filesystem.
     ///
     /// This error occurs during atomic receipt persistence operations including:
@@ -233,6 +286,7 @@ impl Receipt {
             actor_identity: actor_identity.to_string(),
             timestamp: clock::wall_now().to_rfc3339(),
             signature_version: DECISION_RECEIPT_SIGNATURE_VERSION.to_string(),
+            nonce: Uuid::now_v7().simple().to_string(),
             input_hash: hash_canonical_json(input)?,
             output_hash: hash_canonical_json(output)?,
             decision,
@@ -413,8 +467,23 @@ pub fn verify_receipt(
     signed: &SignedReceipt,
     public_key: &Ed25519PublicKey,
 ) -> Result<bool, ReceiptError> {
+    verify_receipt_with_replay_protection(signed, public_key, None)
+}
+
+/// Verify signature and hash-chain material for a signed receipt with optional replay protection.
+pub fn verify_receipt_with_replay_protection(
+    signed: &SignedReceipt,
+    public_key: &Ed25519PublicKey,
+    replay_tracker: Option<&ReplayTracker>,
+) -> Result<bool, ReceiptError> {
     validate_confidence(signed.receipt.confidence)?;
     validate_signature_version(&signed.receipt.signature_version)?;
+
+    // Check replay protection first to fail fast on replays
+    if let Some(tracker) = replay_tracker {
+        tracker.check_and_mark(&signed.receipt.nonce)?;
+    }
+
     let expected_key_id = signing_key_id(public_key);
     if !crate::security::constant_time::ct_eq(&signed.signer_key_id, &expected_key_id) {
         return Ok(false);
