@@ -185,6 +185,31 @@ pub enum ControlTaskClass {
 }
 
 impl ControlTaskClass {
+    /// Convert task class to array index for O(1) lookups.
+    pub const fn as_index(self) -> usize {
+        match self {
+            Self::CancellationHandler => 0,
+            Self::DrainOperation => 1,
+            Self::RegionClose => 2,
+            Self::GracefulShutdown => 3,
+            Self::AbortCompensation => 4,
+            Self::HealthCheck => 5,
+            Self::LeaseRenewal => 6,
+            Self::EpochTransition => 7,
+            Self::EpochSeal => 8,
+            Self::TransitionBarrier => 9,
+            Self::DeadlineEnforcement => 10,
+            Self::ForkDetection => 11,
+            Self::BackgroundMaintenance => 12,
+            Self::TelemetryFlush => 13,
+            Self::EvidenceArchival => 14,
+            Self::MarkerCompaction => 15,
+            Self::AuditLogRotation => 16,
+            Self::MetricsExport => 17,
+            Self::StaleEntryCleanup => 18,
+        }
+    }
+
     /// Returns all known task classes.
     pub fn all() -> &'static [ControlTaskClass] {
         &[
@@ -242,7 +267,7 @@ impl fmt::Display for ControlTaskClass {
 }
 
 /// A single lane assignment entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct LaneAssignment {
     pub task_class: ControlTaskClass,
     pub lane: ControlLane,
@@ -344,7 +369,7 @@ pub struct DeadlineAwareTick {
 /// detects starvation, and tracks scheduling metrics.
 #[derive(Debug)]
 pub struct ControlLanePolicy {
-    assignments: BTreeMap<ControlTaskClass, LaneAssignment>,
+    assignments: [LaneAssignment; 19],
     budgets: BTreeMap<ControlLane, LaneBudget>,
     lane_consecutive_zero: BTreeMap<ControlLane, u32>,
     lane_run_counts: BTreeMap<ControlLane, u32>,
@@ -379,24 +404,25 @@ impl ControlLanePolicy {
         max_preemption_events: usize,
         max_audit_log_entries: usize,
     ) -> Self {
-        let mut assignments = BTreeMap::new();
         let mut budgets = BTreeMap::new();
 
-        // Wire canonical lane assignments
-        for tc in ControlTaskClass::all() {
-            let lane = Self::canonical_lane(*tc);
-            let timeout_ms = Self::canonical_timeout(*tc);
-            let preemptible = matches!(lane, ControlLane::Ready);
-            assignments.insert(
-                *tc,
-                LaneAssignment {
+        // Wire canonical lane assignments as array for O(1) lookups
+        let assignments = {
+            let mut temp = [None; 19];
+            for tc in ControlTaskClass::all() {
+                let lane = Self::canonical_lane(*tc);
+                let timeout_ms = Self::canonical_timeout(*tc);
+                let preemptible = matches!(lane, ControlLane::Ready);
+                temp[tc.as_index()] = Some(LaneAssignment {
                     task_class: *tc,
                     lane,
                     timeout_ms,
                     preemptible,
-                },
-            );
-        }
+                });
+            }
+            // Convert Option array to LaneAssignment array
+            temp.map(|opt| opt.expect("all task classes must be assigned"))
+        };
 
         // Wire budgets
         for lane in ControlLane::all() {
@@ -477,14 +503,13 @@ impl ControlLanePolicy {
 
     /// Look up the lane assignment for a task class.
     pub fn lookup(&self, tc: ControlTaskClass) -> Option<&LaneAssignment> {
-        self.assignments.get(&tc)
+        Some(&self.assignments[tc.as_index()])
     }
 
     /// Check that every task class has a lane assignment (INV-CLP-LANE-ASSIGNED).
     pub fn verify_all_assigned(&self) -> bool {
-        ControlTaskClass::all()
-            .iter()
-            .all(|tc| self.assignments.contains_key(tc))
+        // With array implementation, all task classes are always assigned
+        true
     }
 
     /// Check that budgets sum to 100% (INV-CLP-BUDGET-SUM).
@@ -509,13 +534,7 @@ impl ControlLanePolicy {
         trace_id: &str,
         timestamp_ms: u64,
     ) -> Result<ControlLane, String> {
-        let assignment = self.assignments.get(&tc).ok_or_else(|| {
-            format!(
-                "{}: unknown task class {:?}",
-                error_codes::ERR_CLP_UNKNOWN_TASK,
-                tc
-            )
-        })?;
+        let assignment = &self.assignments[tc.as_index()];
         let lane = assignment.lane;
 
         Self::push_bounded(
@@ -558,13 +577,7 @@ impl ControlLanePolicy {
             ));
         }
 
-        let assignment = self.assignments.get(&task_class).ok_or_else(|| {
-            format!(
-                "{}: unknown task class {:?}",
-                error_codes::ERR_CLP_UNKNOWN_TASK,
-                task_class
-            )
-        })?;
+        let assignment = &self.assignments[task_class.as_index()];
         let lane = assignment.lane;
         let timeout_ms = assignment.timeout_ms;
         let task = QueuedControlTask {
@@ -902,7 +915,7 @@ impl ControlLanePolicy {
         for lane in ControlLane::all() {
             counts.insert(*lane, 0_usize);
         }
-        for a in self.assignments.values() {
+        for a in &self.assignments {
             let count = counts.entry(a.lane).or_insert(0);
             *count = (*count).saturating_add(1_usize);
         }
@@ -996,7 +1009,7 @@ impl ControlLanePolicySnapshot {
     pub fn from_policy(policy: &ControlLanePolicy) -> Self {
         Self {
             schema_version: SCHEMA_VERSION.to_string(),
-            assignments: policy.assignments.values().cloned().collect(),
+            assignments: policy.assignments.to_vec(),
             budgets: policy.budgets.values().cloned().collect(),
             task_class_count: policy.total_task_classes(),
             lane_count: ControlLane::all().len(),
@@ -1054,25 +1067,24 @@ mod tests {
     }
 
     #[test]
-    fn test_assign_task_rejects_missing_assignment_without_audit_or_run_count() {
+    fn test_assign_task_succeeds_with_array_implementation() {
         let mut policy = ControlLanePolicy::new();
-        policy.assignments.remove(&ControlTaskClass::HealthCheck);
         let timed_before = *policy
             .lane_run_counts
             .get(&ControlLane::Timed)
             .expect("timed run count");
 
-        let err = policy
+        let lane = policy
             .assign_task(
                 ControlTaskClass::HealthCheck,
                 "task-1",
-                "trace-missing",
+                "trace-success",
                 1_000,
             )
-            .expect_err("missing assignment must fail closed");
+            .expect("assignment should succeed");
 
-        assert!(err.contains(error_codes::ERR_CLP_UNKNOWN_TASK));
-        assert!(policy.audit_log().is_empty());
+        assert_eq!(lane, ControlLane::Timed);
+        assert_eq!(policy.audit_log().len(), 1);
         assert_eq!(
             policy.lane_run_counts.get(&ControlLane::Timed).copied(),
             Some(timed_before)
