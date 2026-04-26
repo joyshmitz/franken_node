@@ -98,6 +98,9 @@ pub type Ed25519PrivateKey = SigningKey;
 pub type Ed25519PublicKey = VerifyingKey;
 /// Canonical signature algorithm/version bound into every decision receipt payload.
 pub const DECISION_RECEIPT_SIGNATURE_VERSION: &str = "ed25519-v1";
+/// Maximum age in seconds for receipt freshness validation (fail-closed).
+/// Receipts older than this are rejected to prevent replay attacks via clock skew.
+pub const MAX_RECEIPT_AGE_SECS: u64 = 3600; // 1 hour
 
 /// High-impact decision classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -246,6 +249,12 @@ pub enum ReceiptError {
     ReplayAttack { nonce: String },
     #[error("audience binding mismatch: expected '{expected}', got '{actual}'")]
     AudienceMismatch { expected: String, actual: String },
+    #[error("stale receipt: timestamp '{timestamp}' is older than {max_age_secs} seconds (age: {age_secs}s)")]
+    StaleReceipt {
+        timestamp: String,
+        max_age_secs: u64,
+        age_secs: u64,
+    },
     /// Failed to write receipt file to filesystem.
     ///
     /// This error occurs during atomic receipt persistence operations including:
@@ -496,6 +505,9 @@ pub fn verify_receipt_with_audience(
 ) -> Result<bool, ReceiptError> {
     validate_confidence(signed.receipt.confidence)?;
     validate_signature_version(&signed.receipt.signature_version)?;
+
+    // Check timestamp freshness to prevent replay via clock skew (fail-closed)
+    validate_timestamp_freshness(&signed.receipt.timestamp)?;
 
     // Check audience binding to prevent cross-context abuse (fail-closed)
     if let Some(expected_aud) = expected_audience {
@@ -892,6 +904,33 @@ fn validate_signature_version(signature_version: &str) -> Result<(), ReceiptErro
         expected: DECISION_RECEIPT_SIGNATURE_VERSION,
         found: signature_version.to_string(),
     })
+}
+
+fn validate_timestamp_freshness(timestamp: &str) -> Result<(), ReceiptError> {
+    let receipt_time = parse_timestamp(timestamp)?;
+    let now = clock::wall_now();
+
+    // SECURITY: Fail-closed comparison - reject if age >= max allowed
+    let age_secs = now.signed_duration_since(receipt_time).num_seconds();
+    if age_secs < 0 {
+        // Future timestamp - reject (clock skew or tampering)
+        return Err(ReceiptError::StaleReceipt {
+            timestamp: timestamp.to_string(),
+            max_age_secs: MAX_RECEIPT_AGE_SECS,
+            age_secs: age_secs.unsigned_abs(),
+        });
+    }
+
+    let age_secs_u64 = age_secs as u64;
+    if age_secs_u64 >= MAX_RECEIPT_AGE_SECS {
+        return Err(ReceiptError::StaleReceipt {
+            timestamp: timestamp.to_string(),
+            max_age_secs: MAX_RECEIPT_AGE_SECS,
+            age_secs: age_secs_u64,
+        });
+    }
+
+    Ok(())
 }
 
 fn hash_canonical_json(value: &impl Serialize) -> Result<String, ReceiptError> {
@@ -2044,6 +2083,58 @@ mod tests {
                 "malformed timestamp '{}' should be excluded",
                 malformed_ts
             );
+        }
+    }
+
+    /// Security test: timestamp freshness validation prevents stale receipt replay
+    #[test]
+    fn verify_receipt_rejects_stale_timestamps() {
+        let key = demo_signing_key();
+        let public_key = key.verifying_key();
+
+        // Create receipt with old timestamp (older than MAX_RECEIPT_AGE_SECS)
+        let mut receipt = make_receipt("test", Decision::Approved);
+        let stale_time = clock::wall_now()
+            - chrono::Duration::seconds((MAX_RECEIPT_AGE_SECS + 1) as i64);
+        receipt.timestamp = stale_time.to_rfc3339();
+
+        let signed = sign_receipt(&receipt, &key).expect("should sign stale receipt");
+
+        // Verification should reject stale receipt
+        let err = verify_receipt(&signed, &public_key).expect_err("stale receipt should be rejected");
+
+        match err {
+            ReceiptError::StaleReceipt { timestamp, max_age_secs, age_secs } => {
+                assert_eq!(timestamp, receipt.timestamp);
+                assert_eq!(max_age_secs, MAX_RECEIPT_AGE_SECS);
+                assert!(age_secs >= MAX_RECEIPT_AGE_SECS);
+            }
+            other => panic!("expected StaleReceipt error, got: {:?}", other),
+        }
+    }
+
+    /// Security test: timestamp freshness validation rejects future timestamps
+    #[test]
+    fn verify_receipt_rejects_future_timestamps() {
+        let key = demo_signing_key();
+        let public_key = key.verifying_key();
+
+        // Create receipt with future timestamp
+        let mut receipt = make_receipt("test", Decision::Approved);
+        let future_time = clock::wall_now() + chrono::Duration::hours(1);
+        receipt.timestamp = future_time.to_rfc3339();
+
+        let signed = sign_receipt(&receipt, &key).expect("should sign future receipt");
+
+        // Verification should reject future receipt
+        let err = verify_receipt(&signed, &public_key).expect_err("future receipt should be rejected");
+
+        match err {
+            ReceiptError::StaleReceipt { timestamp, max_age_secs, age_secs: _ } => {
+                assert_eq!(timestamp, receipt.timestamp);
+                assert_eq!(max_age_secs, MAX_RECEIPT_AGE_SECS);
+            }
+            other => panic!("expected StaleReceipt error, got: {:?}", other),
         }
     }
 }
