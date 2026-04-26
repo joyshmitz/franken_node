@@ -41,7 +41,7 @@ admin-tools = []        # Enterprise governance, migration tools, administrative
 verifier-tools = ["control-plane"]     # Verifier-specific tooling, economy, SDK
 advanced-features = ["verifier-tools"]  # Claims, conformance, encoding, extensions, federation, perf, repair
 
-test-support = []
+test-support = ["control-plane", "admin-tools"]
 # Heavy compilation dependencies - optional for fuzz builds
 http-client = ["dep:ureq", "dep:url"]
 external-commands = ["dep:which", "dep:ctrlc"]
@@ -95,6 +95,7 @@ assert2 = "0.4.0"
 fsqlite = { path = "/dp/frankensqlite/crates/fsqlite", default-features = false, features = ["native"] }
 frankenengine-verifier-sdk = { path = "../../sdk/verifier" }
 fastapi_rust = { package = "fastapi-rust", path = "/dp/fastapi_rust/crates/fastapi", default-features = false }
+tokio = { workspace = true, features = ["sync", "time"] }
 regex = "1.11.1"
 sqlmodel = { path = "/dp/sqlmodel_rust/crates/sqlmodel", default-features = false }
 sqlmodel-core = { path = "/dp/sqlmodel_rust/crates/sqlmodel-core" }
@@ -108,6 +109,7 @@ proptest = "1.6"
 [[test]]
 name = "migrate_cli_e2e"
 path = "tests/migrate_cli_e2e.rs"
+required-features = ["test-support"]
 
 [[test]]
 name = "verifier_economy_conformance"
@@ -164,6 +166,11 @@ required-features = ["control-plane"]
 name = "fleet_cli_e2e"
 path = "tests/fleet_cli_e2e.rs"
 required-features = ["test-support"]
+
+[[test]]
+name = "fleet_decision_contract_harness"
+path = "tests/fleet_decision_contract_harness.rs"
+required-features = ["control-plane"]
 
 [[test]]
 name = "frankentui_surface_migration"
@@ -240,6 +247,7 @@ path = "tests/replay_coverage_gate_conformance.rs"
 [[test]]
 name = "migration_report_conformance"
 path = "tests/migration_report_conformance.rs"
+required-features = ["test-support"]
 
 [[test]]
 name = "runtime_cli_e2e"
@@ -327,6 +335,7 @@ required-features = ["test-support"]
 [[test]]
 name = "session_auth_key_roles"
 path = "tests/session_auth_key_roles.rs"
+required-features = ["test-support"]
 
 [[test]]
 name = "proof_generator_timeout_race"
@@ -408,6 +417,10 @@ name = "observability_evidence_ledger_regressions"
 path = "tests/observability_evidence_ledger_regressions.rs"
 
 [[test]]
+name = "sync_durability_regression"
+path = "tests/sync_durability_regression.rs"
+
+[[test]]
 name = "rollout_state_obligation"
 path = "tests/rollout_state_obligation.rs"
 required-features = ["test-support"]
@@ -424,22 +437,27 @@ path = "tests/observability_witness_metamorphic.rs"
 [[test]]
 name = "fleet_quarantine_metamorphic"
 path = "tests/fleet_quarantine_metamorphic.rs"
+required-features = ["test-support"]
 
 [[test]]
 name = "fleet_quarantine_e2e_full"
 path = "tests/fleet_quarantine_e2e_full.rs"
+required-features = ["test-support"]
 
 [[test]]
 name = "fleet_quarantine_rollback_receipt"
 path = "tests/fleet_quarantine_rollback_receipt.rs"
+required-features = ["test-support"]
 
 [[test]]
 name = "fleet_quarantine_state_machine_conformance"
 path = "tests/fleet_quarantine_state_machine_conformance.rs"
+required-features = ["test-support"]
 
 [[test]]
 name = "fleet_quarantine_serde_fuzz_harness"
 path = "tests/fleet_quarantine_serde_fuzz_harness.rs"
+required-features = ["test-support"]
 
 [[test]]
 name = "replay_bundle_metamorphic"
@@ -492,12 +510,25 @@ path = "tests/session_auth_real_lifecycle_structured.rs"
 required-features = ["test-support"]
 
 [[test]]
+name = "security_perfect_e2e_enforcement"
+path = "tests/security_perfect_e2e_enforcement.rs"
+
+[[test]]
+name = "remote_api_conformance_harness"
+path = "tests/remote_api_conformance_harness.rs"
+required-features = ["control-plane"]
+
+[[test]]
 name = "trust_cli_e2e_real_node_runtime"
 path = "tests/trust_cli_e2e_real_node_runtime.rs"
 
 [[test]]
 name = "artifact_signing_golden_tests"
 path = "tests/artifact_signing_golden_tests.rs"
+
+[[test]]
+name = "decision_receipt_json_golden"
+path = "tests/decision_receipt_json_golden.rs"
 
 [[test]]
 name = "artifact_signing_metamorphic"
@@ -523,6 +554,7 @@ path = "tests/replay_bundle_event_reorder_metamorphic.rs"
 [[test]]
 name = "proof_carrying_decode"
 path = "tests/proof_carrying_decode.rs"
+required-features = ["advanced-features"]
 
 [[test]]
 name = "revocation_freshness_regressions"
