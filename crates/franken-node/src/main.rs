@@ -5129,6 +5129,7 @@ fn export_signed_receipts(
     let receipt = Receipt::new(
         action_name,
         actor_identity,
+        "franken-node",  // audience binding
         &serde_json::json!({
             "command": action_name,
             "actor": actor_identity,
@@ -13467,6 +13468,7 @@ fn build_run_preflight_receipt(
     Receipt::new(
         "run_preflight_trust_gate",
         "franken-node run",
+        "franken-node",  // audience binding
         &serde_json::json!({
             "app_path": app_path.display().to_string(),
             "project_root": project_root.display().to_string(),
@@ -14166,6 +14168,7 @@ fn sign_incident_counterfactual_contract_receipt(
         timestamp: timestamp.to_string(),
         signature_version: DECISION_RECEIPT_SIGNATURE_VERSION.to_string(),
         nonce: Uuid::now_v7().simple().to_string(),
+        audience: "franken-node".to_string(),  // audience binding
         input_hash: input_hash.to_string(),
         output_hash: output_hash.to_string(),
         decision: Decision::Approved,
