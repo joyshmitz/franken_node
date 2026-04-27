@@ -1046,7 +1046,6 @@ impl LaneRouter {
                     let op_id = promoted.operation_id;
                     lane_state.metrics.queued = lane_state.queue.len();
                     lane_state.metrics.in_flight = lane_state.metrics.in_flight.saturating_add(1);
-                    lane_state
                     push_bounded(
                         &mut lane_state.metrics.queue_wait_samples_ms,
                         now_ms.saturating_sub(queued.enqueued_at_ms),
