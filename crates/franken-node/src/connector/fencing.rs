@@ -234,13 +234,16 @@ impl FenceState {
             });
         }
 
-        // Security: Use constant-time comparison to prevent timing attacks on sequence numbers
+        // Security: Use constant-time comparison to prevent timing attacks on sequence numbers.
+        // Both ct_eq_bytes calls must execute before the `||` so the operator's short-circuit
+        // does not leak which sequence (lease vs current) mismatched.
         let fence_seq_bytes = fence_seq.to_le_bytes();
         let lease_seq_bytes = lease.lease_seq.to_le_bytes();
         let current_seq_bytes = self.current_seq.to_le_bytes();
+        let lease_seq_matches = constant_time::ct_eq_bytes(&fence_seq_bytes, &lease_seq_bytes);
+        let current_seq_matches = constant_time::ct_eq_bytes(&fence_seq_bytes, &current_seq_bytes);
 
-        if !constant_time::ct_eq_bytes(&fence_seq_bytes, &lease_seq_bytes)
-            || !constant_time::ct_eq_bytes(&fence_seq_bytes, &current_seq_bytes) {
+        if !lease_seq_matches || !current_seq_matches {
             return Err(FencingError::WriteFenceMismatch {
                 write_seq: fence_seq,
                 lease_seq: lease.lease_seq,
@@ -256,15 +259,18 @@ impl FenceState {
             });
         }
 
-        // Check object linkage using constant-time comparison to prevent timing attacks
-        if !constant_time::ct_eq(&self.object_id, &write.target_object_id) {
+        // Check object linkage using constant-time comparison to prevent timing attacks.
+        // Run both ct_eq calls before any branch so the timing of the rejection does not
+        // distinguish a self.object_id mismatch from a lease.object_id mismatch.
+        let self_object_matches = constant_time::ct_eq(&self.object_id, &write.target_object_id);
+        let lease_object_matches = constant_time::ct_eq(&lease.object_id, &write.target_object_id);
+        if !self_object_matches {
             return Err(FencingError::LeaseObjectMismatch {
                 lease_object: self.object_id.clone(),
                 target_object: write.target_object_id.clone(),
             });
         }
-
-        if !constant_time::ct_eq(&lease.object_id, &write.target_object_id) {
+        if !lease_object_matches {
             return Err(FencingError::LeaseObjectMismatch {
                 lease_object: lease.object_id.clone(),
                 target_object: write.target_object_id.clone(),

@@ -373,23 +373,40 @@ impl QuarantineController {
 
     #[must_use]
     pub fn verify_decision(&self, decision: &ControlDecision) -> bool {
-        if !constant_time::ct_eq(
+        // Force every constant-time comparison to evaluate before reducing them with `||`
+        // so the operator's short-circuit cannot leak which field mismatched.
+        let principal_matches = constant_time::ct_eq(
             &decision.principal_id,
             &decision.signed_evidence.principal_id,
-        ) || decision.action != decision.signed_evidence.action
-            || decision.posterior.to_bits() != decision.signed_evidence.posterior.to_bits()
-            || decision.threshold.to_bits() != decision.signed_evidence.threshold.to_bits()
-            || !constant_time::ct_eq(
-                &decision.policy_version,
-                &decision.signed_evidence.policy_version,
-            )
-            || !constant_time::ct_eq(&decision.policy_hash, &decision.signed_evidence.policy_hash)
-            || decision.evidence_count != decision.signed_evidence.evidence_count
-            || !constant_time::ct_eq(
-                &decision.evidence_hash,
-                &decision.signed_evidence.evidence_hash,
-            )
-            || !constant_time::ct_eq(&decision.scope, &decision.signed_evidence.scope)
+        );
+        let policy_version_matches = constant_time::ct_eq(
+            &decision.policy_version,
+            &decision.signed_evidence.policy_version,
+        );
+        let policy_hash_matches =
+            constant_time::ct_eq(&decision.policy_hash, &decision.signed_evidence.policy_hash);
+        let evidence_hash_matches = constant_time::ct_eq(
+            &decision.evidence_hash,
+            &decision.signed_evidence.evidence_hash,
+        );
+        let scope_matches =
+            constant_time::ct_eq(&decision.scope, &decision.signed_evidence.scope);
+        let action_matches = decision.action == decision.signed_evidence.action;
+        let posterior_matches =
+            decision.posterior.to_bits() == decision.signed_evidence.posterior.to_bits();
+        let threshold_matches =
+            decision.threshold.to_bits() == decision.signed_evidence.threshold.to_bits();
+        let evidence_count_matches =
+            decision.evidence_count == decision.signed_evidence.evidence_count;
+        if !principal_matches
+            || !action_matches
+            || !posterior_matches
+            || !threshold_matches
+            || !policy_version_matches
+            || !policy_hash_matches
+            || !evidence_count_matches
+            || !evidence_hash_matches
+            || !scope_matches
         {
             return false;
         }

@@ -267,9 +267,12 @@ pub fn mmr_inclusion_proof(
     let current_root_hash =
         merkle_root_from_leaf_hashes(&leaf_hashes).ok_or(ProofError::EmptyCheckpoint)?;
     let checkpoint_root = checkpoint_root_or_err(checkpoint)?;
-    if checkpoint_root.tree_size != stream_size
-        || !constant_time::ct_eq(&checkpoint_root.root_hash, &current_root_hash)
-    {
+    // Compute both predicates before reducing with `||` so the operator's short-circuit
+    // does not reveal whether the size or the root hash mismatched.
+    let size_matches = checkpoint_root.tree_size == stream_size;
+    let root_hash_matches =
+        constant_time::ct_eq(&checkpoint_root.root_hash, &current_root_hash);
+    if !size_matches || !root_hash_matches {
         return Err(ProofError::CheckpointStale {
             checkpoint_tree_size: checkpoint_root.tree_size,
             stream_tree_size: stream_size,
