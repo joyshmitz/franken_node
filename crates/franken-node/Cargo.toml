@@ -215,6 +215,10 @@ name = "sdk_verifier_public_api_golden_conformance"
 path = "tests/sdk_verifier_public_api_golden_conformance.rs"
 
 [[test]]
+name = "sdk_verifier_replay_bundle_frame_conformance"
+path = "tests/sdk_verifier_replay_bundle_frame_conformance.rs"
+
+[[test]]
 name = "idempotency_key_derivation"
 path = "../../tests/conformance/idempotency_key_derivation.rs"
 required-features = ["extended-surfaces"]
