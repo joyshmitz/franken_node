@@ -2,13 +2,23 @@
 
 ## Bead: bd-3kn | Section: 10.6
 
+## ⚠️ IMPLEMENTATION STATUS
+
+**This specification describes packaging profiles for FUTURE implementation.**
+**The current franken-node binary does NOT implement packaging profile selection.**
+
+- **Current reality**: Only runtime profiles work (`--profile strict|balanced|legacy-risky`)
+- **Future specification**: This document defines packaging profiles (`local|dev|enterprise`)
+- **Error codes PKG-001..004**: Reserved for future implementation, not currently emitted
+- **Configuration file**: `packaging/profiles.toml` exists for validation/planning only
+
 ## Purpose
 
-Defines three packaging profiles -- `local`, `dev`, and `enterprise` -- that
-tailor the franken-node build output, default configuration, and bundled assets
-to each deployment target. A single undifferentiated build cannot serve local
-development, CI pipelines, and enterprise production equally well. Profiles
-ensure the right trade-offs are applied automatically.
+This specification defines three packaging profiles -- `local`, `dev`, and `enterprise` -- for
+future franken-node build tooling. When implemented, these profiles will tailor the build output,
+default configuration, and bundled assets to each deployment target. A single undifferentiated
+build cannot serve local development, CI pipelines, and enterprise production equally well.
+Future packaging tooling will ensure the right trade-offs are applied automatically.
 
 ## Profiles Overview
 
@@ -72,6 +82,10 @@ Unknown packaging profile names produce a clear error listing valid options
 and exit non-zero with event code PKG-004 in the packaging/release selection
 path.
 
+The shipped `franken-node` binary does **not** currently expose that packaging
+selection path. Runtime `--profile` / `FRANKEN_NODE_PROFILE` parsing remains
+limited to `strict`, `balanced`, and `legacy-risky` in `crates/franken-node/src/config.rs`.
+
 ## Configuration File
 
 Profile definitions are stored in `packaging/profiles.toml` -- a checked-in,
@@ -85,49 +99,57 @@ determine what to include in the output artifact.
 | INV-PKG-PROFILES | Exactly three profiles are defined: `local`, `dev`, `enterprise`. No additional profiles are accepted without governance review. |
 | INV-PKG-SELECTION | Packaging profile selection is a packaging/release concern. The current runtime `--profile` / `FRANKEN_NODE_PROFILE` path continues to select runtime policy profiles `strict`, `balanced`, `legacy-risky`, while packaging defaults to `local` when tooling does not override it. |
 | INV-PKG-SIZE | The `local` profile binary is at least 30% smaller than the `enterprise` profile binary, measured after stripping debug symbols and excluding compliance bundles. |
-| INV-PKG-INTEGRITY | The `enterprise` profile performs a full startup integrity self-check: binary signature verification, configuration checksum, and policy schema validation. |
+| INV-PKG-INTEGRITY | The `enterprise` packaging metadata records `integrity_self_check = true`; no shipped CLI/startup path currently performs that packaging-specific integrity flow. |
 | INV-PKG-COMPONENTS | Each profile includes exactly the components listed in its definition; no extra components leak across profiles. |
-| INV-PKG-TELEMETRY | Telemetry levels are enforced per profile: `local` = off, `dev` = debug-local, `enterprise` = structured-export. |
-| INV-PKG-AUDIT | The `enterprise` profile mandates audit logging; `local` and `dev` disable it by default. |
-| INV-PKG-ERROR | Unknown packaging profile names produce event PKG-004, list valid options, and exit non-zero in the packaging/release selection path. |
+| INV-PKG-TELEMETRY | Packaging metadata declares telemetry levels per profile: `local` = off, `dev` = debug-local, `enterprise` = structured-export; the current runtime selector remains separate. |
+| INV-PKG-AUDIT | The `enterprise` packaging metadata enables audit logging by default; `local` and `dev` disable it by default. |
+| INV-PKG-ERROR | A future packaging/release selector must reject unknown packaging profile names with reserved code PKG-004; the shipped runtime does not currently implement that selector. |
 
-## Event Codes
+## Event Codes (Reserved for Future Implementation)
 
-| Code | Severity | Emitted When |
-|------|----------|-------------|
-| PKG-001 | info | Profile selected and activated at startup |
-| PKG-002 | info | Profile components loaded and defaults applied |
-| PKG-003 | info | Enterprise integrity self-check completed successfully |
-| PKG-004 | error | Unknown profile name rejected; valid options listed |
+| Code | Severity | Future Behavior | Current Status |
+|------|----------|-----------------|----------------|
+| PKG-001 | info | Future packaging selector: emitted when a packaging profile is chosen | **NOT EMITTED** - no packaging selector implemented |
+| PKG-002 | info | Future packaging selector: emitted when packaging components/defaults are applied | **NOT EMITTED** - no packaging selector implemented |
+| PKG-003 | info | Future packaging selector: emitted when enterprise integrity metadata is satisfied | **NOT EMITTED** - no packaging selector implemented |
+| PKG-004 | error | Future packaging selector: emitted when rejecting an unknown packaging profile | **NOT EMITTED** - current runtime profile parsing fails separately in `config.rs` |
 
-## Startup Behavior
+## Profile Metadata and Non-Shipped Startup Expectations
+
+The `startup` tables in `packaging/profiles.toml` are packaging metadata. They
+document intended packaged-artifact behavior for a future packaging/release
+selector, but the current `franken-node` CLI/startup code does not consume
+those tables and does not emit PKG-001, PKG-002, or PKG-003.
 
 ### `local` Startup Sequence
 
-1. Emit PKG-001 with profile=local.
-2. Skip integrity self-check.
-3. Lazy-load policy configuration (deferred until first policy evaluation).
-4. Emit PKG-002 with component list.
+1. `packaging/profiles.toml` records `mode = "lazy"` and
+   `integrity_self_check = false`.
+2. The packaging metadata implies deferred policy loading in a future packaging
+   selector.
+3. No shipped `franken-node` runtime path currently emits PKG-001 or PKG-002
+   for `local`.
 
 ### `dev` Startup Sequence
 
-1. Emit PKG-001 with profile=dev.
-2. Skip integrity self-check.
-3. Eager-load all modules for comprehensive error checking.
-4. Enable verbose logging output.
-5. Emit PKG-002 with component list.
+1. `packaging/profiles.toml` records `mode = "eager"` and
+   `integrity_self_check = false`.
+2. The packaging metadata implies eager module loading and verbose defaults for
+   a future packaging selector.
+3. No shipped `franken-node` runtime path currently emits PKG-001 or PKG-002
+   for `dev`.
 
 ### `enterprise` Startup Sequence
 
-1. Emit PKG-001 with profile=enterprise.
-2. Perform full integrity self-check:
+1. `packaging/profiles.toml` records `mode = "full-integrity"` and
+   `integrity_self_check = true`.
+2. The packaging metadata implies a future packaging selector should perform:
    a. Binary signature verification.
    b. Configuration checksum validation.
    c. Policy schema validation.
-3. Emit PKG-003 on self-check success; abort on failure.
-4. Eager-load all modules.
-5. Enable audit logging and structured telemetry export.
-6. Emit PKG-002 with component list.
+3. No shipped `franken-node` runtime path currently emits PKG-001, PKG-002, or
+   PKG-003 for `enterprise`.
+4. No current CLI/startup path consumes `packaging/profiles.toml`.
 
 These startup sequences describe behavior for a package assembled under the
 corresponding packaging profile. They do not redefine the current runtime
