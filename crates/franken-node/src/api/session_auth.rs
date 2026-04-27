@@ -425,10 +425,13 @@ pub struct AuthenticatedMessage {
     pub direction: MessageDirection,
     /// SHA-256 of payload.
     pub payload_hash: String,
-    /// Verified HMAC-SHA256 over the message transcript.
+    /// Transcript-bound HMAC-SHA256 over the message payload.
     ///
-    /// INV-SCC-MSG-VERIFY: this field is only populated after the MAC
-    /// has been verified against the session's root secret.
+    /// INV-SCC-MSG-VERIFY: `process_message` only returns this field after the
+    /// MAC has been verified against the session's root secret.
+    /// `SessionManager::prepare_message()` uses the same field to return a
+    /// manager-generated MAC after atomically reserving the next sequence for
+    /// concurrent/shared callers.
     #[serde(serialize_with = "serialize_mac", deserialize_with = "deserialize_mac")]
     pub verified_mac: [u8; SIGNATURE_LEN],
 }
@@ -791,6 +794,8 @@ fn compute_message_mac(
 /// Public API for callers to produce the correct MAC before calling
 /// `process_message`. The caller must provide the session's handshake_mac
 /// (obtained from `AuthenticatedSession::handshake_mac` after establishment).
+/// Shared callers should prefer `SessionManager::prepare_message()` so
+/// sequence reservation and MAC generation happen under one mutable borrow.
 #[allow(clippy::too_many_arguments)]
 pub fn sign_session_message(
     session_id: &str,
@@ -925,6 +930,133 @@ impl SessionManager {
     /// List all session IDs.
     pub fn session_ids(&self) -> Vec<String> {
         self.sessions.keys().cloned().collect()
+    }
+
+    fn ensure_active_session(
+        &mut self,
+        session_id: &str,
+        timestamp: u64,
+        trace_id: &str,
+    ) -> Result<(), SessionError> {
+        let Some(session) = self.sessions.get(session_id) else {
+            return Err(SessionError::NoSession {
+                session_id: session_id.to_string(),
+            });
+        };
+
+        let rejected = if session.state == SessionState::Terminated {
+            Some((
+                "session terminated".to_string(),
+                SessionError::SessionTerminated {
+                    session_id: session_id.to_string(),
+                },
+            ))
+        } else if session.state == SessionState::Terminating {
+            Some((
+                "session terminating".to_string(),
+                SessionError::SessionTerminated {
+                    session_id: session_id.to_string(),
+                },
+            ))
+        } else if session.state == SessionState::Expired {
+            Some((
+                "session expired".to_string(),
+                SessionError::SessionExpired {
+                    session_id: session_id.to_string(),
+                },
+            ))
+        } else if !session.state.is_active() {
+            Some((
+                format!("session not active: {}", session.state.label()),
+                SessionError::NoSession {
+                    session_id: session_id.to_string(),
+                },
+            ))
+        } else {
+            None
+        };
+
+        if let Some((detail, err)) = rejected {
+            self.push_event(SessionEvent {
+                event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
+                session_id: session_id.to_string(),
+                trace_id: trace_id.to_string(),
+                detail,
+                timestamp,
+            });
+            return Err(err);
+        }
+
+        Ok(())
+    }
+
+    /// Atomically reserve the next sequence number and MAC for a message.
+    ///
+    /// Shared callers that serialize access to the manager with a mutex or
+    /// RwLock can use this helper to avoid read-sign-write races on session
+    /// sequence state and handshake material.
+    pub fn prepare_message(
+        &mut self,
+        session_id: &str,
+        direction: MessageDirection,
+        payload_hash: &str,
+        timestamp: u64,
+        trace_id: &str,
+    ) -> Result<AuthenticatedMessage, SessionError> {
+        self.expire_stale_sessions(timestamp, trace_id);
+        self.ensure_active_session(session_id, timestamp, trace_id)?;
+
+        let (sequence, session_epoch, handshake_mac) = {
+            let session =
+                self.sessions
+                    .get_mut(session_id)
+                    .ok_or_else(|| SessionError::NoSession {
+                        session_id: session_id.to_string(),
+                    })?;
+
+            let sequence = match direction {
+                MessageDirection::Send => session.next_send_seq(),
+                MessageDirection::Receive => session.next_recv_seq(),
+            };
+
+            match sequence {
+                Ok(sequence) => {
+                    session.mark_activity(timestamp);
+                    (sequence, session.epoch, session.handshake_mac)
+                }
+                Err(err) => {
+                    self.push_event(SessionEvent {
+                        event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
+                        session_id: session_id.to_string(),
+                        trace_id: trace_id.to_string(),
+                        detail: format!(
+                            "sequence exhausted during prepare: dir={}",
+                            direction.label()
+                        ),
+                        timestamp,
+                    });
+                    return Err(err);
+                }
+            }
+        };
+
+        let verified_mac = sign_session_message(
+            session_id,
+            direction,
+            sequence,
+            payload_hash,
+            ControlEpoch::from(session_epoch),
+            &handshake_mac,
+            &self.root_secret,
+        );
+
+        Ok(AuthenticatedMessage {
+            session_id: session_id.to_string(),
+            sequence,
+            direction,
+            payload_hash: payload_hash.to_string(),
+            verified_mac,
+        })
     }
 
     fn expire_stale_sessions(&mut self, timestamp: u64, trace_id: &str) {
@@ -1202,6 +1334,7 @@ impl SessionManager {
         trace_id: &str,
     ) -> Result<AuthenticatedMessage, SessionError> {
         self.expire_stale_sessions(timestamp, trace_id);
+        self.ensure_active_session(session_id, timestamp, trace_id)?;
 
         // INV-SCC-SESSION-AUTH: session must exist
         let session = self
@@ -1210,59 +1343,6 @@ impl SessionManager {
             .ok_or_else(|| SessionError::NoSession {
                 session_id: session_id.to_string(),
             })?;
-
-        // INV-SCC-TERMINATED: terminated sessions reject all messages
-        if session.state == SessionState::Terminated {
-            self.push_event(SessionEvent {
-                event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
-                session_id: session_id.to_string(),
-                trace_id: trace_id.to_string(),
-                detail: "session terminated".to_string(),
-                timestamp,
-            });
-            return Err(SessionError::SessionTerminated {
-                session_id: session_id.to_string(),
-            });
-        }
-
-        if session.state == SessionState::Terminating {
-            self.push_event(SessionEvent {
-                event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
-                session_id: session_id.to_string(),
-                trace_id: trace_id.to_string(),
-                detail: "session terminating".to_string(),
-                timestamp,
-            });
-            return Err(SessionError::SessionTerminated {
-                session_id: session_id.to_string(),
-            });
-        }
-
-        if session.state == SessionState::Expired {
-            self.push_event(SessionEvent {
-                event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
-                session_id: session_id.to_string(),
-                trace_id: trace_id.to_string(),
-                detail: "session expired".to_string(),
-                timestamp,
-            });
-            return Err(SessionError::SessionExpired {
-                session_id: session_id.to_string(),
-            });
-        }
-
-        if !session.state.is_active() {
-            self.push_event(SessionEvent {
-                event_code: event_codes::SCC_MESSAGE_REJECTED.to_string(),
-                session_id: session_id.to_string(),
-                trace_id: trace_id.to_string(),
-                detail: format!("session not active: {}", session.state.label()),
-                timestamp,
-            });
-            return Err(SessionError::NoSession {
-                session_id: session_id.to_string(),
-            });
-        }
 
         // INV-SCC-MSG-VERIFY: verify transcript-bound MAC.
         // The MAC binds session_id, direction, sequence, payload_hash,
@@ -4615,6 +4695,56 @@ mod tests {
         let session = mgr.get_session("duplicate-id").unwrap();
         assert_eq!(session.client_id, "client-a"); // From the establish_test_session call
         assert_eq!(session.server_id, "server-1");
+    }
+    #[test]
+    fn prepare_message_reserves_unique_sequences_under_mutex_shared_manager() {
+        use std::sync::{Arc, Mutex};
+        use std::thread;
+
+        let manager = Arc::new(Mutex::new(default_manager()));
+        {
+            let mut guard = manager.lock().expect("manager lock");
+            establish_test_session(&mut guard, "prepared-concurrent");
+        }
+
+        let mut handles = Vec::new();
+        for idx in 0..8u64 {
+            let manager = Arc::clone(&manager);
+            handles.push(thread::spawn(move || {
+                let payload_hash = format!("prepared-hash-{idx}");
+                let trace_id = format!("prepared-trace-{idx}");
+                let prepared = manager
+                    .lock()
+                    .expect("manager lock")
+                    .prepare_message(
+                        "prepared-concurrent",
+                        MessageDirection::Send,
+                        &payload_hash,
+                        10_000 + idx,
+                        &trace_id,
+                    )
+                    .expect("prepare_message should reserve a unique sequence");
+
+                (prepared.sequence, prepared.verified_mac)
+            }));
+        }
+
+        let mut sequences = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("thread should complete").0)
+            .collect::<Vec<_>>();
+        sequences.sort_unstable();
+
+        assert_eq!(sequences, (0..8).collect::<Vec<_>>());
+        assert_eq!(
+            manager
+                .lock()
+                .expect("manager lock")
+                .get_session("prepared-concurrent")
+                .expect("session should exist")
+                .send_seq,
+            8
+        );
     }
 }
 
