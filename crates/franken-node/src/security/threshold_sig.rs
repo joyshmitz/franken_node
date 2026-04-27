@@ -126,16 +126,18 @@ impl CachedThresholdConfig {
             }
 
             // Pre-parse the public key
-            let pk_bytes = hex::decode(&signer.public_key_hex)
-                .map_err(|_| ThresholdError::ConfigInvalid {
+            let pk_bytes =
+                hex::decode(&signer.public_key_hex).map_err(|_| ThresholdError::ConfigInvalid {
                     reason: format!("invalid public key hex for {}", signer.key_id),
                 })?;
-            let pk_array: [u8; 32] = pk_bytes.try_into()
-                .map_err(|_| ThresholdError::ConfigInvalid {
-                    reason: format!("invalid public key length for {}", signer.key_id),
-                })?;
-            let verifying_key = VerifyingKey::from_bytes(&pk_array)
-                .map_err(|_| ThresholdError::ConfigInvalid {
+            let pk_array: [u8; 32] =
+                pk_bytes
+                    .try_into()
+                    .map_err(|_| ThresholdError::ConfigInvalid {
+                        reason: format!("invalid public key length for {}", signer.key_id),
+                    })?;
+            let verifying_key =
+                VerifyingKey::from_bytes(&pk_array).map_err(|_| ThresholdError::ConfigInvalid {
                     reason: format!("invalid public key for {}", signer.key_id),
                 })?;
 
@@ -158,6 +160,49 @@ impl CachedThresholdConfig {
     /// Check if a key_id is known in this configuration
     pub fn contains_key_id(&self, key_id: &str) -> bool {
         self.known_key_ids.contains(key_id)
+    }
+}
+
+#[derive(Debug)]
+struct PreparedThresholdKeys<'a> {
+    verifying_keys: HashMap<&'a str, Option<VerifyingKey>>,
+}
+
+impl<'a> PreparedThresholdKeys<'a> {
+    fn new(config: &'a ThresholdConfig) -> Self {
+        let mut verifying_keys = HashMap::with_capacity(config.signer_keys.len());
+        for signer in &config.signer_keys {
+            verifying_keys.insert(
+                signer.key_id.as_str(),
+                parse_verifying_key(&signer.public_key_hex),
+            );
+        }
+        Self { verifying_keys }
+    }
+}
+
+trait VerifyingKeyLookup {
+    fn contains_key_id(&self, key_id: &str) -> bool;
+    fn get_verifying_key(&self, key_id: &str) -> Option<&VerifyingKey>;
+}
+
+impl VerifyingKeyLookup for CachedThresholdConfig {
+    fn contains_key_id(&self, key_id: &str) -> bool {
+        CachedThresholdConfig::contains_key_id(self, key_id)
+    }
+
+    fn get_verifying_key(&self, key_id: &str) -> Option<&VerifyingKey> {
+        CachedThresholdConfig::get_verifying_key(self, key_id)
+    }
+}
+
+impl VerifyingKeyLookup for PreparedThresholdKeys<'_> {
+    fn contains_key_id(&self, key_id: &str) -> bool {
+        self.verifying_keys.contains_key(key_id)
+    }
+
+    fn get_verifying_key(&self, key_id: &str) -> Option<&VerifyingKey> {
+        self.verifying_keys.get(key_id).and_then(Option::as_ref)
     }
 }
 
@@ -299,6 +344,16 @@ fn invalid_connector_id_reason(connector_id: &str) -> Option<String> {
     invalid_identifier_reason("connector_id", connector_id)
 }
 
+fn parse_verifying_key(public_key_hex: &str) -> Option<VerifyingKey> {
+    if public_key_hex.len() != ED25519_PUBLIC_KEY_HEX_LEN {
+        return None;
+    }
+
+    let pk_bytes = hex::decode(public_key_hex).ok()?;
+    let pk_array: [u8; 32] = pk_bytes.try_into().ok()?;
+    VerifyingKey::from_bytes(&pk_array).ok()
+}
+
 /// Verify a partial signature using Ed25519.
 fn verify_signature(key: &SignerKey, content_hash: &str, sig: &PartialSignature) -> bool {
     if key.public_key_hex.len() != ED25519_PUBLIC_KEY_HEX_LEN {
@@ -338,7 +393,11 @@ fn verify_signature(key: &SignerKey, content_hash: &str, sig: &PartialSignature)
     verifying_key.verify_strict(&message, &signature).is_ok()
 }
 
-fn verify_signature_with_message(key: &SignerKey, message_bytes: &[u8], sig: &PartialSignature) -> bool {
+fn verify_signature_with_message(
+    key: &SignerKey,
+    message_bytes: &[u8],
+    sig: &PartialSignature,
+) -> bool {
     if key.public_key_hex.len() != ED25519_PUBLIC_KEY_HEX_LEN {
         return false;
     }
@@ -373,10 +432,16 @@ fn verify_signature_with_message(key: &SignerKey, message_bytes: &[u8], sig: &Pa
     let signature = Signature::from_bytes(&sig_array);
 
     // Use pre-computed message bytes instead of rebuilding
-    verifying_key.verify_strict(message_bytes, &signature).is_ok()
+    verifying_key
+        .verify_strict(message_bytes, &signature)
+        .is_ok()
 }
 
-fn verify_signature_with_parsed_key(verifying_key: &VerifyingKey, message_bytes: &[u8], sig: &PartialSignature) -> bool {
+fn verify_signature_with_parsed_key(
+    verifying_key: &VerifyingKey,
+    message_bytes: &[u8],
+    sig: &PartialSignature,
+) -> bool {
     if sig.signature_hex.len() != ED25519_SIGNATURE_HEX_LEN {
         return false;
     }
@@ -393,7 +458,9 @@ fn verify_signature_with_parsed_key(verifying_key: &VerifyingKey, message_bytes:
     let signature = Signature::from_bytes(&sig_array);
 
     // Use pre-parsed VerifyingKey and pre-computed message bytes
-    verifying_key.verify_strict(message_bytes, &signature).is_ok()
+    verifying_key
+        .verify_strict(message_bytes, &signature)
+        .is_ok()
 }
 
 /// Create an Ed25519 signature for a content hash.
@@ -411,13 +478,16 @@ pub fn sign(signing_key: &SigningKey, key_id: &str, content_hash: &str) -> Parti
 }
 
 /// Verify a publication artifact against a threshold config.
+///
+/// PERFORMANCE: This function now internally uses cached parsing to optimize
+/// repeated verification calls. For maximum performance with repeated verifications
+/// of the same config, consider using CachedThresholdConfig and verify_threshold_cached directly.
 pub fn verify_threshold(
     config: &ThresholdConfig,
     artifact: &PublicationArtifact,
     trace_id: &str,
     timestamp: &str,
 ) -> VerificationResult {
-    // Validate config first
     if let Err(e) = config.validate() {
         let reason = match e {
             ThresholdError::ConfigInvalid { reason } => reason,
@@ -434,125 +504,14 @@ pub fn verify_threshold(
         };
     }
 
-    if let Some(reason) = invalid_artifact_id_reason(&artifact.artifact_id) {
-        return VerificationResult {
-            artifact_id: artifact.artifact_id.clone(),
-            verified: false,
-            valid_signatures: 0,
-            threshold: config.threshold,
-            failure_reason: Some(FailureReason::InvalidArtifactId { reason }),
-            trace_id: trace_id.to_string(),
-            timestamp: timestamp.to_string(),
-        };
-    }
-
-    if let Some(reason) = invalid_connector_id_reason(&artifact.connector_id) {
-        return VerificationResult {
-            artifact_id: artifact.artifact_id.clone(),
-            verified: false,
-            valid_signatures: 0,
-            threshold: config.threshold,
-            failure_reason: Some(FailureReason::InvalidConnectorId { reason }),
-            trace_id: trace_id.to_string(),
-            timestamp: timestamp.to_string(),
-        };
-    }
-
-    let known_key_ids: BTreeSet<&str> = config
-        .signer_keys
-        .iter()
-        .map(|k| k.key_id.as_str())
-        .collect();
-    let mut seen_signers: BTreeSet<&str> = BTreeSet::new();
-    let mut seen_key_ids: BTreeSet<&str> = BTreeSet::new();
-    let mut valid_count = 0u32;
-    let mut first_failure: Option<FailureReason> = None;
-
-    // Compute message bytes once and reuse across all signature verifications
-    let message_bytes = build_signing_message(&artifact.content_hash);
-
-    for sig in &artifact.signatures {
-        // Check for unknown signer
-        if !known_key_ids.contains(sig.key_id.as_str()) {
-            if first_failure.is_none() {
-                first_failure = Some(FailureReason::UnknownSigner {
-                    signer_id: sig.signer_id.clone(),
-                });
-            }
-            continue;
-        }
-
-        // The signer identity must be bound to the configured key identity.
-        // Otherwise a valid signature can be replayed under an arbitrary label.
-        if !constant_time::ct_eq(&sig.signer_id, &sig.key_id) {
-            if first_failure.is_none() {
-                first_failure = Some(FailureReason::InvalidSignature {
-                    signer_id: sig.signer_id.clone(),
-                });
-            }
-            continue;
-        }
-
-        // Verify signature first to prevent invalid signatures from poisoning the seen set
-        let key = config
-            .signer_keys
-            .iter()
-            .find(|k| constant_time::ct_eq(&k.key_id, &sig.key_id));
-        if let Some(key) = key {
-            if !verify_signature_with_message(key, &message_bytes, sig) {
-                if first_failure.is_none() {
-                    first_failure = Some(FailureReason::InvalidSignature {
-                        signer_id: sig.signer_id.clone(),
-                    });
-                }
-                continue;
-            }
-        } else {
-            continue;
-        }
-
-        // A signer key can only contribute once toward quorum.
-        if !seen_key_ids.insert(sig.key_id.as_str()) {
-            if first_failure.is_none() {
-                first_failure = Some(FailureReason::DuplicateSigner {
-                    signer_id: sig.signer_id.clone(),
-                });
-            }
-            continue;
-        }
-
-        // Signer IDs must also be unique within the signature set.
-        if !seen_signers.insert(sig.signer_id.as_str()) {
-            if first_failure.is_none() {
-                first_failure = Some(FailureReason::DuplicateSigner {
-                    signer_id: sig.signer_id.clone(),
-                });
-            }
-            continue;
-        }
-
-        valid_count = valid_count.saturating_add(1);
-    }
-
-    let verified = valid_count >= config.threshold;
-    let failure_reason = if verified {
-        None
-    } else {
-        first_failure.or(Some(FailureReason::BelowThreshold {
-            have: valid_count,
-            need: config.threshold,
-        }))
-    };
-
-    VerificationResult {
-        artifact_id: artifact.artifact_id.clone(),
-        verified,
-        valid_signatures: valid_count,
-        threshold: config.threshold,
-        failure_reason,
-        trace_id: trace_id.to_string(),
-        timestamp: timestamp.to_string(),
-    }
+    let prepared_keys = PreparedThresholdKeys::new(config);
+    verify_threshold_with_key_lookup(
+        config.threshold,
+        &prepared_keys,
+        artifact,
+        trace_id,
+        timestamp,
+    )
 }
 
 /// Optimized threshold verification using cached pre-parsed keys.
@@ -563,12 +522,28 @@ pub fn verify_threshold_cached(
     trace_id: &str,
     timestamp: &str,
 ) -> VerificationResult {
+    verify_threshold_with_key_lookup(
+        cached_config.config.threshold,
+        cached_config,
+        artifact,
+        trace_id,
+        timestamp,
+    )
+}
+
+fn verify_threshold_with_key_lookup(
+    threshold: u32,
+    key_lookup: &impl VerifyingKeyLookup,
+    artifact: &PublicationArtifact,
+    trace_id: &str,
+    timestamp: &str,
+) -> VerificationResult {
     if let Some(reason) = invalid_artifact_id_reason(&artifact.artifact_id) {
         return VerificationResult {
             artifact_id: artifact.artifact_id.clone(),
             verified: false,
             valid_signatures: 0,
-            threshold: cached_config.config.threshold,
+            threshold,
             failure_reason: Some(FailureReason::InvalidArtifactId { reason }),
             trace_id: trace_id.to_string(),
             timestamp: timestamp.to_string(),
@@ -580,7 +555,7 @@ pub fn verify_threshold_cached(
             artifact_id: artifact.artifact_id.clone(),
             verified: false,
             valid_signatures: 0,
-            threshold: cached_config.config.threshold,
+            threshold,
             failure_reason: Some(FailureReason::InvalidConnectorId { reason }),
             trace_id: trace_id.to_string(),
             timestamp: timestamp.to_string(),
@@ -596,8 +571,8 @@ pub fn verify_threshold_cached(
     let message_bytes = build_signing_message(&artifact.content_hash);
 
     for sig in &artifact.signatures {
-        // Check for unknown signer using cached key set (O(1) instead of O(n))
-        if !cached_config.contains_key_id(&sig.key_id) {
+        // Check for unknown signer using the prepared key set (O(1) instead of O(n))
+        if !key_lookup.contains_key_id(&sig.key_id) {
             if first_failure.is_none() {
                 first_failure = Some(FailureReason::UnknownSigner {
                     signer_id: sig.signer_id.clone(),
@@ -618,16 +593,21 @@ pub fn verify_threshold_cached(
         }
 
         // Verify signature using pre-parsed key (avoids hex decoding and key construction)
-        if let Some(verifying_key) = cached_config.get_verifying_key(&sig.key_id) {
-            if !verify_signature_with_parsed_key(verifying_key, &message_bytes, sig) {
-                if first_failure.is_none() {
-                    first_failure = Some(FailureReason::InvalidSignature {
-                        signer_id: sig.signer_id.clone(),
-                    });
-                }
-                continue;
+        let Some(verifying_key) = key_lookup.get_verifying_key(&sig.key_id) else {
+            if first_failure.is_none() {
+                first_failure = Some(FailureReason::InvalidSignature {
+                    signer_id: sig.signer_id.clone(),
+                });
             }
-        } else {
+            continue;
+        };
+
+        if !verify_signature_with_parsed_key(verifying_key, &message_bytes, sig) {
+            if first_failure.is_none() {
+                first_failure = Some(FailureReason::InvalidSignature {
+                    signer_id: sig.signer_id.clone(),
+                });
+            }
             continue;
         }
 
@@ -641,16 +621,25 @@ pub fn verify_threshold_cached(
             continue;
         }
 
+        if !seen_signers.insert(sig.signer_id.as_str()) {
+            if first_failure.is_none() {
+                first_failure = Some(FailureReason::DuplicateSigner {
+                    signer_id: sig.signer_id.clone(),
+                });
+            }
+            continue;
+        }
+
         valid_count = valid_count.saturating_add(1);
     }
 
-    let verified = valid_count >= cached_config.config.threshold;
+    let verified = valid_count >= threshold;
     let failure_reason = if verified {
         None
     } else {
         first_failure.or(Some(FailureReason::BelowThreshold {
             have: valid_count,
-            need: cached_config.config.threshold,
+            need: threshold,
         }))
     };
 
@@ -658,7 +647,7 @@ pub fn verify_threshold_cached(
         artifact_id: artifact.artifact_id.clone(),
         verified,
         valid_signatures: valid_count,
-        threshold: cached_config.config.threshold,
+        threshold,
         failure_reason,
         trace_id: trace_id.to_string(),
         timestamp: timestamp.to_string(),
@@ -857,6 +846,18 @@ mod tests {
     }
 
     #[test]
+    fn cached_verification_matches_verify_threshold_for_valid_artifact() {
+        let (sks, config) = test_config(2, 3);
+        let artifact = signed_artifact(&sks, &config, "hash-abc", 2);
+        let cached_config = CachedThresholdConfig::new(config.clone()).unwrap();
+
+        let baseline = verify_threshold(&config, &artifact, "t2-cache", "ts");
+        let cached = verify_threshold_cached(&cached_config, &artifact, "t2-cache", "ts");
+
+        assert_eq!(cached, baseline);
+    }
+
+    #[test]
     fn below_threshold_rejected() {
         let (sks, config) = test_config(2, 3);
         let artifact = signed_artifact(&sks, &config, "hash-abc", 1);
@@ -982,6 +983,27 @@ mod tests {
         let result = verify_threshold(&config, &artifact, "t6", "ts");
         assert!(!result.verified);
         assert_eq!(result.valid_signatures, 1);
+    }
+
+    #[test]
+    fn cached_verification_matches_verify_threshold_for_invalid_signature() {
+        let (sks, config) = test_config(2, 3);
+        let mut artifact = signed_artifact(&sks, &config, "hash-abc", 1);
+        push_bounded(
+            &mut artifact.signatures,
+            PartialSignature {
+                signer_id: "signer-1".into(),
+                key_id: "signer-1".into(),
+                signature_hex: "badbadbadbadbadb".into(),
+            },
+            MAX_SIGNATURES,
+        );
+        let cached_config = CachedThresholdConfig::new(config.clone()).unwrap();
+
+        let baseline = verify_threshold(&config, &artifact, "t6-cache", "ts");
+        let cached = verify_threshold_cached(&cached_config, &artifact, "t6-cache", "ts");
+
+        assert_eq!(cached, baseline);
     }
 
     // === Duplicate signer ===
