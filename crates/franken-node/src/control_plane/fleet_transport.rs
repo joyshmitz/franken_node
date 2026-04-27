@@ -23,6 +23,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use ed25519_dalek::Signer;
+use tracing::warn;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -959,7 +960,15 @@ impl Drop for TempFileGuard {
         if let Some(path) = self.0.take()
             && path.is_file()
         {
-            let _ = fs::rename(&path, Self::abandoned_path(&path));
+            let orphaned_path = Self::abandoned_path(&path);
+            if let Err(err) = fs::rename(&path, &orphaned_path) {
+                warn!(
+                    original_path = %path.display(),
+                    orphaned_path = %orphaned_path.display(),
+                    error = %err,
+                    "failed to orphan temp file during cleanup - file may remain as temp debris"
+                );
+            }
         }
     }
 }
