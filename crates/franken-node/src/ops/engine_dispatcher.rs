@@ -1700,12 +1700,12 @@ impl EngineDispatcher {
         hasher.update(b"engine_dispatcher_policy_id_v1:");
 
         let profile_str = format!("{:?}", profile);
-        hasher.update((profile_str.len() as u64).to_le_bytes());
+        hasher.update(u64::try_from(profile_str.len()).unwrap_or(u64::MAX).to_le_bytes());
         hasher.update(profile_str.as_bytes());
 
         if let Some(mode) = policy_mode {
             hasher.update(b"mode:");
-            hasher.update((mode.len() as u64).to_le_bytes());
+            hasher.update(u64::try_from(mode.len()).unwrap_or(u64::MAX).to_le_bytes());
             hasher.update(mode.as_bytes());
         } else {
             hasher.update(b"no_mode");
