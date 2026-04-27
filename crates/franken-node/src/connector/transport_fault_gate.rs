@@ -678,7 +678,7 @@ impl TransportFaultGate {
 
         let total_tests = results.len();
         let passed_tests = results.iter().filter(|r| r.outcome.is_acceptable()).count();
-        let failed_tests = total_tests - passed_tests;
+        let failed_tests = total_tests.saturating_sub(passed_tests);
 
         // Content hash covering all verdict fields for reproducibility.
         let protocols_tested: Vec<String> =
@@ -707,9 +707,9 @@ impl TransportFaultGate {
             );
             h.update(SECTION.as_bytes());
             h.update([u8::from(passed)]);
-            h.update((total_tests as u64).to_le_bytes());
-            h.update((passed_tests as u64).to_le_bytes());
-            h.update((failed_tests as u64).to_le_bytes());
+            h.update(u64::try_from(total_tests).unwrap_or(u64::MAX).to_le_bytes());
+            h.update(u64::try_from(passed_tests).unwrap_or(u64::MAX).to_le_bytes());
+            h.update(u64::try_from(failed_tests).unwrap_or(u64::MAX).to_le_bytes());
             let results_json =
                 serde_json::to_string(&results).unwrap_or_else(|e| format!("__serde_err:{e}"));
             h.update(
