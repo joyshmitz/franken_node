@@ -591,10 +591,9 @@ fn sign_structured(secret: &str, domain: &[u8], fields: &[&[u8]]) -> String {
 }
 
 fn length_frame(len: usize) -> [u8; 8] {
-    let len_bytes = len.to_le_bytes();
-    let mut frame = [0u8; 8];
-    frame[..len_bytes.len()].copy_from_slice(&len_bytes);
-    frame
+    // Convert to u64 for consistent cross-platform hash results
+    let len_u64 = u64::try_from(len).unwrap_or(u64::MAX);
+    len_u64.to_le_bytes()
 }
 
 #[cfg(feature = "test-support")]
