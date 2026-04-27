@@ -6,9 +6,10 @@
 //! recovery replay.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::control_plane::control_epoch::{
     ControlEpoch, EpochArtifactEvent, EpochRejection, EpochRejectionReason, ValidityWindowPolicy,
@@ -334,19 +335,35 @@ pub fn persist_epoch_scoped(
     })
 }
 
-/// Serialize concurrent rollout `persist()` calls.
+fn persist_lock_registry() -> &'static Mutex<BTreeMap<PathBuf, Arc<Mutex<()>>>> {
+    static LOCKS: OnceLock<Mutex<BTreeMap<PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
+    LOCKS.get_or_init(|| Mutex::new(BTreeMap::new()))
+}
+
+/// Serialize concurrent rollout `persist()` calls targeting the same state file.
 ///
 /// Canonical lifecycle: callers acquire the rollout obligation tracker first
 /// (or pass an already-exclusive test tracker), then acquire this process-local
-/// lock before reading the current state, reserving the obligation, writing the
-/// temp file, renaming it into place, and committing the obligation. The guard
-/// releases on every return path after any temp-file orphaning attempt. No file
-/// flock or other module persist lock may be acquired before this lock. If it is
-/// left held or poisoned, rollout state version checks and obligation commits in
-/// this process stall or fail before a new temp file is written.
-fn persist_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+/// per-path lock before reading the current state, reserving the obligation,
+/// writing the temp file, renaming it into place, and committing the obligation.
+/// The guard releases on every return path after any temp-file orphaning attempt.
+/// No file flock or other module persist lock may be acquired before this lock.
+/// If it is left held or poisoned, rollout state version checks and obligation
+/// commits for that same persisted path stall or fail before a new temp file is
+/// written, but unrelated rollout files should keep making progress.
+fn persist_lock(path: &Path) -> Result<Arc<Mutex<()>>, PersistError> {
+    persist_lock_registry()
+        .lock()
+        .map_err(|_| PersistError::IoError {
+            message: "persist lock registry poisoned".to_string(),
+        })
+        .map(|mut locks| {
+            Arc::clone(
+                locks
+                    .entry(path.to_path_buf())
+                    .or_insert_with(|| Arc::new(Mutex::new(()))),
+            )
+        })
 }
 
 /// Shared obligation tracker for the legacy `persist()` entrypoint.
@@ -502,7 +519,8 @@ fn persist_with_obligation_tracker_and_rename_and_orphan(
     rename: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
     orphan_rename: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
 ) -> Result<(), PersistError> {
-    let _guard = persist_lock().lock().map_err(|_| PersistError::IoError {
+    let persist_lock = persist_lock(path)?;
+    let _guard = persist_lock.lock().map_err(|_| PersistError::IoError {
         message: "persist lock poisoned".to_string(),
     })?;
 
@@ -873,6 +891,91 @@ mod tests {
             .expect("persist thread should complete")
             .expect("persist should succeed after rename resumes");
         assert_eq!(load(&path).unwrap(), state);
+    }
+
+    #[test]
+    fn persist_on_different_paths_does_not_wait_for_unrelated_rename() {
+        let dir = TempDir::new().unwrap();
+        let path_a = dir.path().join("state-a.json");
+        let path_b = dir.path().join("state-b.json");
+        let state_a = sample_state();
+        let mut state_b = sample_state();
+        state_b.connector_id = "connector-b".to_string();
+        state_b.bump_version();
+
+        let (rename_entered_tx, rename_entered_rx) = std::sync::mpsc::channel();
+        let (allow_rename_tx, allow_rename_rx) = std::sync::mpsc::channel();
+
+        let handle_a = std::thread::spawn({
+            let path_a = path_a.clone();
+            let state_a = state_a.clone();
+            move || {
+                persist_with_shared_tracker_and_rename_and_orphan(
+                    &state_a,
+                    &path_a,
+                    "rollout-state-path-a-lock-regression",
+                    |from, to| {
+                        rename_entered_tx
+                            .send(())
+                            .expect("rename barrier should notify test thread");
+                        allow_rename_rx
+                            .recv()
+                            .expect("test thread should release rename barrier");
+                        std::fs::rename(from, to)
+                    },
+                    |from, to| std::fs::rename(from, to),
+                )
+            }
+        });
+
+        rename_entered_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("persist path A should stall inside rename");
+
+        let handle_b = std::thread::spawn({
+            let path_b = path_b.clone();
+            let state_b = state_b.clone();
+            move || {
+                persist_with_shared_tracker_and_rename_and_orphan(
+                    &state_b,
+                    &path_b,
+                    "rollout-state-path-b-lock-regression",
+                    |from, to| std::fs::rename(from, to),
+                    |from, to| std::fs::rename(from, to),
+                )
+            }
+        });
+
+        let wait_started = std::time::Instant::now();
+        while wait_started.elapsed() < std::time::Duration::from_secs(2) {
+            if handle_b.is_finished() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            handle_b.is_finished(),
+            "persist on an unrelated rollout path should not queue behind another path's rename"
+        );
+        assert!(
+            !handle_a.is_finished(),
+            "path A persist should remain blocked until its rename barrier is released"
+        );
+
+        handle_b
+            .join()
+            .expect("path B persist thread should complete")
+            .expect("persist for path B should succeed while path A is blocked");
+        assert_eq!(load(&path_b).unwrap(), state_b);
+
+        allow_rename_tx
+            .send(())
+            .expect("rename barrier should resume path A persist");
+        handle_a
+            .join()
+            .expect("path A persist thread should complete")
+            .expect("persist for path A should succeed after rename resumes");
+        assert_eq!(load(&path_a).unwrap(), state_a);
     }
 
     #[test]
