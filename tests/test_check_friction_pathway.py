@@ -112,6 +112,16 @@ class TestCheckFrictionPathway(unittest.TestCase):
         self.assertEqual(result["check"], "policy_pathway_steps")
         self.assertTrue(result["passed"], result["detail"])
 
+    def test_current_surface_reality(self):
+        result = cfp.check_current_surface_reality()
+        self.assertEqual(result["check"], "current_surface_reality")
+        self.assertTrue(result["passed"], result["detail"])
+
+    def test_current_reporting_surface(self):
+        result = cfp.check_current_reporting_surface()
+        self.assertEqual(result["check"], "current_reporting_surface")
+        self.assertTrue(result["passed"], result["detail"])
+
     # ------------------------------------------------------------------
     # Aggregate run
     # ------------------------------------------------------------------
@@ -202,6 +212,11 @@ class TestCheckFrictionPathway(unittest.TestCase):
     def test_telemetry_missing_policy_graceful(self):
         with patch.object(cfp, "POLICY_PATH", Path("/nonexistent/policy.md")):
             result = cfp.check_telemetry_in_policy()
+            self.assertFalse(result["passed"])
+
+    def test_current_reporting_missing_policy_graceful(self):
+        with patch.object(cfp, "POLICY_PATH", Path("/nonexistent/policy.md")):
+            result = cfp.check_current_reporting_surface()
             self.assertFalse(result["passed"])
 
     def test_error_handling_missing_policy_graceful(self):

@@ -2,32 +2,59 @@
 
 **Bead:** bd-34d5
 **Section:** 13 -- Friction-Minimized Install-to-Production Pathway
-**Status:** In Progress
+**Status:** Reality-Checked
 
 ---
 
-## 1. Pathway Definition
+## 1. Current Shipped Surface
 
-The friction-minimized pathway is a three-step sequence that takes a user from
-having no franken_node installation to running their first policy-governed
-production operation.  The balanced profile is the default and must require
-**zero manual file edits**.
-
-### Steps
+The repository does **not** currently ship the full friction-minimized pathway
+described in bd-34d5. What is live today is a narrower operator bootstrap
+surface:
 
 ```
-install --> init --profile balanced --> run --policy balanced
+raw GitHub install.sh --> init bootstrap/report --> run ./my-app --policy balanced
 ```
 
-| Step        | Command                                          | Purpose                                  |
-|-------------|--------------------------------------------------|------------------------------------------|
-| **Install** | `curl -fsSL https://get.frankennode.dev \| sh`   | Download and place binary on PATH        |
-| **Init**    | `franken-node init --profile balanced`           | Auto-detect archetype, scaffold config, and apply balanced defaults |
-| **Run**     | `franken-node run --policy balanced`             | Start first policy-governed operation    |
+| Step        | Command                                                                 | Repository Reality |
+|-------------|-------------------------------------------------------------------------|--------------------|
+| **Install** | `curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/franken_node/main/install.sh \| bash` | The shipped installer is the raw GitHub `install.sh` flow. There is no `get.frankennode.dev` installer alias in the checked-in product surface. |
+| **Init**    | `franken-node init --profile balanced`                                  | Bootstraps `.franken-node/` state, optionally runs `--scan`, and prints the resolved config TOML to stdout by default unless `--out-dir` is supplied. |
+| **Run**     | `franken-node run ./my-app --policy balanced`                           | Requires an explicit application path. The current CLI does not support a zero-argument `run --policy balanced` first-run path. |
+
+### Current Limitations
+
+- `franken-node init` does **not** auto-detect archetypes during onboarding.
+- The five archetypes documented below exist as migration-kit concepts, not as
+  live init-time detection behavior.
+- Current command-local reporting surfaces are `franken-node init --json`,
+  `franken-node init --structured-logs-jsonl`, `franken-node run --json`, and
+  `franken-node run --structured-logs-jsonl`.
+- FMP-001 through FMP-004 pathway telemetry events are **not** emitted by the
+  current CLI or test surface.
+- The balanced onboarding path does **not** currently guarantee zero manual
+  file edits because config is emitted to stdout unless the operator supplies
+  `--out-dir`.
+
+## 2. Planned Target Pathway
+
+The section-13 target remains a three-step install-to-first-policy path with
+no manual edits and stable step telemetry. That target is not yet shipped and
+must not be described as current behavior.
+
+```
+install --> init --profile balanced --> run ./my-app --policy balanced
+```
+
+| Step        | Target Command                                      | Intended Purpose |
+|-------------|-----------------------------------------------------|------------------|
+| **Install** | `curl -fsSL https://get.frankennode.dev \| sh`      | Stable vanity installer URL and PATH bootstrap |
+| **Init**    | `franken-node init --profile balanced`              | Future archetype-aware onboarding with generated config and defaults |
+| **Run**     | `franken-node run ./my-app --policy balanced`       | First policy-governed operation on an explicit application entrypoint |
 
 ---
 
-## 2. Archetypes
+## 3. Archetypes
 
 Five representative project archetypes cover the breadth of the Node.js
 ecosystem.  Each archetype has an expected minimum compatibility score that
@@ -41,15 +68,16 @@ the pathway must achieve.
 | A-4 | Monorepo          | `turbo.json` or `nx.json` at root          | >= 0.80              |
 | A-5 | Serverless        | `serverless.yml` or `vercel.json`          | >= 0.88              |
 
-### Archetype Detection
+### Archetype Detection Status
 
-`franken-node init` inspects the project root for marker files and selects the
-matching archetype.  If no archetype matches, the generic archetype is used
-with a compatibility score floor of 0.75.
+The migration kit defines these archetypes and their compatibility expectations,
+but `franken-node init` does **not** currently inspect marker files or bind the
+selected archetype into onboarding output. A future friction-minimized pathway
+may adopt archetype-aware init behavior, but that is not a shipped invariant.
 
 ---
 
-## 3. Time Budget Enforcement
+## 4. Time Budget Enforcement
 
 Each step has a hard wall-clock cap.  If a step exceeds its cap the pathway
 emits FMP-004 and aborts with a clear error.
@@ -61,29 +89,40 @@ emits FMP-004 and aborts with a clear error.
 | Run       | 180 s       | 300 s          |
 
 **INV-FMP-TIME:** Total pathway wall-clock time MUST be < 300 seconds for every
-archetype in CI testing.
+archetype in CI testing once the full target pathway is implemented. The
+current repository gate documents this target but does not prove it against a
+live end-to-end onboarding flow.
 
 ---
 
-## 4. Zero-Edit Requirement
+## 5. Zero-Edit Requirement
 
-**INV-FMP-ZERO-EDIT:** The balanced-profile onboarding MUST require zero manual
-file edits.  This means:
+**INV-FMP-ZERO-EDIT:** The target balanced-profile onboarding MUST require zero
+manual file edits.  This means:
 
 - `franken-node init --profile balanced` generates all necessary configuration files and applies sensible defaults.
 - The user does not need to open an editor, modify JSON/YAML, or create any
   file by hand before `franken-node run --policy balanced` succeeds.
 
-If a project's structure requires non-default settings, the init step must
-detect this and scaffold the correct configuration automatically.
+If a project's structure requires non-default settings, the future init step
+must detect this and scaffold the correct configuration automatically.
+
+Current reality: `franken-node init --profile balanced` prints resolved config
+to stdout by default and therefore does not yet satisfy the full zero-edit
+claim without additional operator choices such as `--out-dir`.
 
 ---
 
-## 5. Progress Telemetry Requirements
+## 6. Progress Telemetry Requirements
 
-**INV-FMP-TELEMETRY:** Every pathway step MUST emit a structured telemetry
-event.  Events are JSON objects written to stdout (when `--json` is active) or
-to the telemetry sink.
+**INV-FMP-TELEMETRY:** Every pathway step in the future friction-minimized path
+MUST emit a structured telemetry event. Events are JSON objects written to
+stdout (when `--json` is active) or to the telemetry sink.
+
+Current reality: repository search over `crates/franken-node/src/`,
+`crates/franken-node/tests/`, and `sdk/verifier/src/` shows no live FMP-001,
+FMP-002, FMP-003, or FMP-004 emission path today. The codes below are reserved
+target semantics and are not emitted by the current CLI.
 
 ### Event Schema
 
@@ -117,12 +156,12 @@ to the telemetry sink.
 
 ---
 
-## 6. Error Handling
+## 7. Error Handling
 
 ### Principles
 
-1. **No silent failures.** Every non-zero exit code MUST emit FMP-004 with a
-   descriptive message.
+1. **No silent failures.** Every non-zero exit code in the future pathway MUST
+   emit FMP-004 with a descriptive message.
 2. **Clear messages.** Error output MUST include:
    - Which step failed.
    - What went wrong (human-readable description).
@@ -142,9 +181,13 @@ to the telemetry sink.
 4. **Idempotency.** Re-running a failed pathway from the beginning MUST NOT
    corrupt state created by earlier successful steps.
 
+Current shipped `init` and `run` behavior already expose human-readable and
+JSON reports, but they do not currently wrap failures in the FMP telemetry
+contract above.
+
 ---
 
-## 7. CI Gate
+## 8. CI Gate
 
 **INV-FMP-ARCHETYPES:** All 5 archetypes MUST be tested in CI on every merge
 to main.
@@ -167,24 +210,29 @@ friction-pathway-gate:
 
 ### Gate Failure
 
-If any archetype fails the pathway gate, the merge is blocked.  The gate
-produces a JSON report compatible with `scripts/check_friction_pathway.py
---json`.
+If any archetype fails the pathway gate, the merge is blocked. The current gate
+is documentation- and contract-oriented: it verifies the docs distinguish the
+current shipped surface from the future target pathway instead of pretending
+the target flow is already live.
 
 ---
 
-## 8. Verification
+## 9. Verification
 
 The verification script `scripts/check_friction_pathway.py` checks:
 
 1. Spec file exists and contains required sections.
 2. Policy file exists and contains required sections.
-3. All 5 archetypes are defined with compatibility scores.
-4. Time budget is specified (< 300s total).
-5. Zero-edit requirement is documented.
-6. All 4 event codes (FMP-001 through FMP-004) are defined.
+3. Current shipped pathway steps are documented with the raw GitHub installer,
+   explicit `run ./my-app`, and `init` stdout behavior.
+4. All 5 archetypes are defined with compatibility scores.
+5. Time budget and zero-edit targets remain documented as future contract.
+6. All 4 event codes (FMP-001 through FMP-004) remain defined as reserved
+   target semantics.
 7. All 4 invariants (INV-FMP-*) are present.
-8. Error handling policy covers clear messages, recovery suggestions, no silent
-   failures.
+8. The docs explicitly state that archetype auto-detection and FMP telemetry
+   are not yet implemented in the shipped CLI.
+9. Error handling policy covers clear messages, recovery suggestions, and the
+   no-silent-failure rule for the future pathway contract.
 
 Evidence is recorded at `artifacts/section_13/bd-34d5/verification_evidence.json`.

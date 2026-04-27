@@ -1,9 +1,9 @@
 {
   "bead_id": "bd-34d5",
   "section": "section_13",
-  "timestamp_utc": "2026-04-26T23:01:08.345333+00:00",
-  "total_checks": 13,
-  "passed": 13,
+  "timestamp_utc": "2026-04-27T04:42:32.508811+00:00",
+  "total_checks": 15,
+  "passed": 15,
   "failed": 0,
   "all_passed": true,
   "checks": [
@@ -65,7 +65,17 @@
     {
       "check": "policy_pathway_steps",
       "passed": true,
-      "detail": "All 3 pathway steps defined in policy with no stale configure command"
+      "detail": "Current shipped install/init/run steps are documented with no stale configure command"
+    },
+    {
+      "check": "current_surface_reality",
+      "passed": true,
+      "detail": "Docs distinguish current shipped surface from future pathway targets"
+    },
+    {
+      "check": "current_reporting_surface",
+      "passed": true,
+      "detail": "Current docs enumerate the shipped init/run JSON and JSONL surfaces"
     },
     {
       "check": "archetype_scores",

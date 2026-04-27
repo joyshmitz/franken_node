@@ -2,9 +2,9 @@
 
 **Bead:** bd-34d5
 **Section:** 13 -- Friction-Minimized Install-to-Production Pathway
-**Date:** 2026-04-26 23:01:08 UTC
+**Date:** 2026-04-27 04:42:32 UTC
 
-## Results: 13/13 checks passed
+## Results: 15/15 checks passed
 
 | # | Check | Result | Detail |
 |---|-------|--------|--------|
@@ -19,7 +19,9 @@
 | 9 | error_handling_policy | PASS | Error handling policy complete |
 | 10 | ci_gate_policy | PASS | CI gate policy defined for all archetypes |
 | 11 | spec_sections | PASS | All required spec sections present |
-| 12 | policy_pathway_steps | PASS | All 3 pathway steps defined in policy with no stale configure command |
-| 13 | archetype_scores | PASS | Found 5/5 archetype compatibility scores |
+| 12 | policy_pathway_steps | PASS | Current shipped install/init/run steps are documented with no stale configure command |
+| 13 | current_surface_reality | PASS | Docs distinguish current shipped surface from future pathway targets |
+| 14 | current_reporting_surface | PASS | Current docs enumerate the shipped init/run JSON and JSONL surfaces |
+| 15 | archetype_scores | PASS | Found 5/5 archetype compatibility scores |
 
 All checks passed. Bead bd-34d5 is ready for closure.

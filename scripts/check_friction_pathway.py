@@ -43,6 +43,21 @@ INVARIANTS = [
 ]
 
 
+def section_slice(content: str, start_heading: str, end_heading: str | None) -> str | None:
+    """Return the markdown section between two headings."""
+    try:
+        start = content.index(start_heading)
+    except ValueError:
+        return None
+    if end_heading is None:
+        return content[start:]
+    try:
+        end = content.index(end_heading, start)
+    except ValueError:
+        return None
+    return content[start:end]
+
+
 def check_spec_exists() -> dict:
     """Check that the spec document exists."""
     ok = SPEC_PATH.is_file()
@@ -210,8 +225,9 @@ def check_spec_sections() -> dict:
         }
     content = SPEC_PATH.read_text()
     required = [
+        "Current Shipped Surface",
+        "Planned Target Pathway",
         "Archetypes",
-        "Pathway Steps",
         "Time Budget",
         "Event Codes",
         "Invariants",
@@ -225,7 +241,7 @@ def check_spec_sections() -> dict:
 
 
 def check_policy_pathway_steps() -> dict:
-    """Check that the policy defines the 3-step pathway and no stale configure command."""
+    """Check that the policy documents the shipped install/init/run surface."""
     if not POLICY_PATH.is_file():
         return {
             "check": "policy_pathway_steps",
@@ -234,14 +250,14 @@ def check_policy_pathway_steps() -> dict:
         }
     content = POLICY_PATH.read_text()
     required_fragments = [
-        "https://get.frankennode.dev",
+        "https://raw.githubusercontent.com/Dicklesworthstone/franken_node/main/install.sh",
         "franken-node init --profile balanced",
-        "franken-node run --policy balanced",
+        "franken-node run ./my-app --policy balanced",
     ]
     missing = [fragment for fragment in required_fragments if fragment not in content]
     has_stale_configure = "franken-node configure" in content
     ok = len(missing) == 0 and not has_stale_configure
-    detail = "All 3 pathway steps defined in policy with no stale configure command"
+    detail = "Current shipped install/init/run steps are documented with no stale configure command"
     if missing:
         detail = f"Missing pathway fragments: {missing}"
     elif has_stale_configure:
@@ -250,6 +266,111 @@ def check_policy_pathway_steps() -> dict:
         "check": "policy_pathway_steps",
         "passed": ok,
         "detail": detail,
+    }
+
+
+def check_current_surface_reality() -> dict:
+    """Check that docs explicitly separate current behavior from target behavior."""
+    if not SPEC_PATH.is_file() or not POLICY_PATH.is_file():
+        return {
+            "check": "current_surface_reality",
+            "passed": False,
+            "detail": "Spec or policy file missing; cannot check current-surface reality notes",
+        }
+    spec = SPEC_PATH.read_text()
+    policy = POLICY_PATH.read_text()
+    spec_current = section_slice(spec, "## Current Shipped Surface", "## Planned Target Pathway")
+    spec_target = section_slice(spec, "## Planned Target Pathway", "## Time Budget")
+    policy_current = section_slice(
+        policy, "## 1. Current Shipped Surface", "## 2. Planned Target Pathway"
+    )
+    policy_target = section_slice(policy, "## 2. Planned Target Pathway", "## 3. Archetypes")
+    if None in (spec_current, spec_target, policy_current, policy_target):
+        return {
+            "check": "current_surface_reality",
+            "passed": False,
+            "detail": "Could not isolate current vs target sections in spec/policy",
+        }
+    combined_current = f"{spec_current}\n{policy_current}"
+    required_current_groups = [
+        ["prints resolved config to stdout by default"],
+        ["raw GitHub `install.sh`"],
+        [
+            "does **not** currently inspect marker files",
+            "does **not** auto-detect archetypes during onboarding",
+            "does **not** auto-detect archetypes during `init`",
+        ],
+        [
+            "not emitted by the current CLI",
+            "does **not** emit FMP-001 through FMP-004 telemetry events",
+            "FMP-001 through FMP-004 pathway telemetry events are **not** emitted",
+        ],
+        ["franken-node run ./my-app --policy balanced"],
+    ]
+    missing_current = [
+        " / ".join(group)
+        for group in required_current_groups
+        if not any(fragment in combined_current for fragment in group)
+    ]
+    target_only_ok = (
+        "https://get.frankennode.dev" not in spec_current
+        and "https://get.frankennode.dev" not in policy_current
+        and "https://get.frankennode.dev" in spec_target
+        and "https://get.frankennode.dev" in policy_target
+    )
+    ok = len(missing_current) == 0 and target_only_ok
+    detail = "Docs distinguish current shipped surface from future pathway targets"
+    if missing_current:
+        detail = f"Missing current-surface reality notes: {missing_current}"
+    elif not target_only_ok:
+        detail = "Installer alias boundary drifted between current and planned pathway sections"
+    return {
+        "check": "current_surface_reality",
+        "passed": ok,
+        "detail": detail,
+    }
+
+
+def check_current_reporting_surface() -> dict:
+    """Check that current docs mention the shipped JSON/JSONL reporting flags."""
+    if not SPEC_PATH.is_file() or not POLICY_PATH.is_file():
+        return {
+            "check": "current_reporting_surface",
+            "passed": False,
+            "detail": "Spec or policy file missing; cannot check current reporting surface",
+        }
+    spec = SPEC_PATH.read_text()
+    policy = POLICY_PATH.read_text()
+    spec_current = section_slice(spec, "## Current Shipped Surface", "## Planned Target Pathway")
+    policy_current = section_slice(
+        policy, "## 1. Current Shipped Surface", "## 2. Planned Target Pathway"
+    )
+    if None in (spec_current, policy_current):
+        return {
+            "check": "current_reporting_surface",
+            "passed": False,
+            "detail": "Could not isolate current sections in spec/policy",
+        }
+    required = [
+        "franken-node init --json",
+        "franken-node init --structured-logs-jsonl",
+        "franken-node run --json",
+        "franken-node run --structured-logs-jsonl",
+    ]
+    missing = [
+        fragment
+        for fragment in required
+        if fragment not in spec_current and fragment not in policy_current
+    ]
+    ok = len(missing) == 0
+    return {
+        "check": "current_reporting_surface",
+        "passed": ok,
+        "detail": (
+            "Current docs enumerate the shipped init/run JSON and JSONL surfaces"
+            if ok
+            else f"Missing current reporting-surface fragments: {missing}"
+        ),
     }
 
 
@@ -285,6 +406,8 @@ ALL_CHECKS = [
     check_ci_gate_policy,
     check_spec_sections,
     check_policy_pathway_steps,
+    check_current_surface_reality,
+    check_current_reporting_surface,
     check_archetype_scores,
 ]
 
@@ -411,6 +534,8 @@ def self_test() -> None:
         "ci_gate_policy",
         "spec_sections",
         "policy_pathway_steps",
+        "current_surface_reality",
+        "current_reporting_surface",
         "archetype_scores",
     }
     assert check_names == expected_names, f"check names mismatch: {check_names ^ expected_names}"
