@@ -1575,8 +1575,14 @@ fn validate_action_record(action: &FleetActionRecord) -> Result<(), FleetTranspo
             validate_action_text_field("policy_version", policy_version)?;
         }
         #[cfg(feature = "control-plane")]
-        FleetAction::Revoke { extension_id, scope } => {
+        FleetAction::Revoke {
+            extension_id,
+            scope,
+        } => {
             validate_zone_id(&scope.zone_id)?;
+            if let Some(tenant_id) = scope.tenant_id.as_deref() {
+                validate_action_text_field("revoke tenant_id", tenant_id)?;
+            }
             validate_action_text_field("revoke extension_id", extension_id)?;
             validate_action_text_field("revoke reason", &scope.reason)?;
         }
@@ -2227,7 +2233,11 @@ mod tests {
         let actions = transport.list_actions().expect("list actions");
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0].action_id, "fleet-action-revoke-valid");
-        if let FleetAction::Revoke { extension_id, scope } = &actions[0].action {
+        if let FleetAction::Revoke {
+            extension_id,
+            scope,
+        } = &actions[0].action
+        {
             assert_eq!(extension_id, "ext-malicious");
             assert_eq!(scope.zone_id, "prod");
         } else {
@@ -2297,6 +2307,41 @@ mod tests {
         let error = transport
             .publish_action(&action)
             .expect_err("blank reason should be rejected");
+
+        assert!(matches!(
+            error,
+            FleetTransportError::SerializationError { .. }
+        ));
+        assert!(transport.list_actions().expect("list actions").is_empty());
+    }
+
+    #[test]
+    #[cfg(feature = "control-plane")]
+    fn publish_action_rejects_revoke_with_control_character_tenant_id() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+
+        let action = FleetActionRecord {
+            action_id: "fleet-action-bad-tenant".to_string(),
+            emitted_at: DateTime::parse_from_rfc3339("2026-04-06T00:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&Utc),
+            action: FleetAction::Revoke {
+                extension_id: "ext-test".to_string(),
+                scope: RevocationScope {
+                    zone_id: "prod".to_string(),
+                    tenant_id: Some("tenant-a\nshadow".to_string()),
+                    severity: RevocationSeverity::Emergency,
+                    reason: "valid reason".to_string(),
+                },
+            },
+        };
+
+        let error = transport
+            .publish_action(&action)
+            .expect_err("control-character tenant_id should be rejected");
 
         assert!(matches!(
             error,

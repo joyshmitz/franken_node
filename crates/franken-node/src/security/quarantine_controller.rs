@@ -35,6 +35,22 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     items.push(item);
 }
 
+fn decision_priority_cmp(left: &ControlDecision, right: &ControlDecision) -> Ordering {
+    right
+        .posterior
+        .partial_cmp(&left.posterior)
+        .unwrap_or(Ordering::Equal)
+        .then_with(|| left.principal_id.cmp(&right.principal_id))
+}
+
+fn push_highest_priority_bounded(decisions: &mut Vec<ControlDecision>, decision: ControlDecision) {
+    decisions.push(decision);
+    decisions.sort_by(decision_priority_cmp);
+    if decisions.len() > MAX_DECISIONS {
+        decisions.truncate(MAX_DECISIONS);
+    }
+}
+
 fn len_to_u64(len: usize) -> u64 {
     u64::try_from(len).unwrap_or(u64::MAX)
 }
@@ -314,18 +330,12 @@ impl QuarantineController {
                 DEFAULT_QUARANTINE_SCOPE,
                 &posterior.last_trace_id,
             ) {
-                push_bounded(&mut decisions, decision, MAX_DECISIONS);
+                push_highest_priority_bounded(&mut decisions, decision);
             }
         }
 
         // Deterministic output ordering for reproducible replay.
-        decisions.sort_by(|left, right| {
-            right
-                .posterior
-                .partial_cmp(&left.posterior)
-                .unwrap_or(Ordering::Equal)
-                .then_with(|| left.principal_id.cmp(&right.principal_id))
-        });
+        decisions.sort_by(decision_priority_cmp);
         let _event_code = EVD_QUAR_CTRL_002;
         decisions
     }
@@ -838,7 +848,7 @@ mod tests {
         // Should only keep MAX_DECISIONS entries
         assert_eq!(decisions.len(), MAX_DECISIONS);
 
-        // The decisions should be the highest posterior ones due to LRU eviction + sorting
+        // The decisions should retain the highest-priority set while staying bounded.
         // All should have posterior 0.8 since we generated them that way
         for decision in &decisions {
             assert!((decision.posterior - 0.8).abs() < f64::EPSILON);
@@ -855,6 +865,35 @@ mod tests {
                     || (prev.posterior == curr.posterior && prev.principal_id <= curr.principal_id)
             );
         }
+    }
+
+    #[test]
+    fn evaluate_posteriors_retains_highest_risk_decision_when_input_exceeds_cap() {
+        use super::MAX_DECISIONS;
+
+        let controller = QuarantineController::new(QuarantineThresholdPolicy::default(), "salt")
+            .expect("controller");
+        let mut posteriors = Vec::with_capacity(MAX_DECISIONS + 1);
+        posteriors.push(posterior("ext:revoke-keeper", 0.95, "trace-revoke"));
+        for i in 0..MAX_DECISIONS {
+            posteriors.push(posterior(
+                &format!("ext:throttle-{i:04}"),
+                0.45,
+                &format!("trace-throttle-{i:04}"),
+            ));
+        }
+
+        let decisions = controller.evaluate_posteriors(&posteriors);
+
+        assert_eq!(decisions.len(), MAX_DECISIONS);
+        assert!(decisions.iter().any(|decision| {
+            decision.principal_id == "ext:revoke-keeper" && decision.action == ControlAction::Revoke
+        }));
+        assert!(
+            !decisions
+                .iter()
+                .any(|decision| decision.principal_id == "ext:throttle-1023")
+        );
     }
 }
 

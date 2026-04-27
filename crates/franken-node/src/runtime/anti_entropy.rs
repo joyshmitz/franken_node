@@ -336,9 +336,10 @@ impl ReconciliationConfig {
         }
         // SECURITY: Prevent memory exhaustion DoS via excessive batch size
         if self.max_delta_batch > 100_000 {
-            return Err(ReconciliationError::InvalidConfig(
-                format!("max_delta_batch ({}) exceeds maximum allowed (100,000)", self.max_delta_batch),
-            ));
+            return Err(ReconciliationError::InvalidConfig(format!(
+                "max_delta_batch ({}) exceeds maximum allowed (100,000)",
+                self.max_delta_batch
+            )));
         }
         Ok(())
     }
@@ -575,6 +576,7 @@ impl TrustState {
         }
 
         while self.records.len() >= capacity
+            && !self.records.contains_key(&record.id)
             && let Some(lowest_record) = self.records.values().min_by(|a, b| a.precedence_cmp(b))
         {
             let lowest_key = lowest_record.id.clone();
@@ -924,12 +926,7 @@ impl AntiEntropyReconciler {
                 continue;
             }
 
-            push_accepted_bounded(
-                &mut accepted,
-                record,
-                replaced,
-                self.config.max_delta_batch,
-            )?;
+            push_accepted_bounded(&mut accepted, record, replaced, self.config.max_delta_batch)?;
         }
 
         // Phase 2: apply all validated records atomically.
@@ -1280,6 +1277,27 @@ mod tests {
             .get("same")
             .expect("higher-precedence record should replace");
         assert_eq!(retained.epoch, 2);
+        assert_eq!(retained.recorded_at_ms, 900);
+        assert_eq!(retained.origin_node_id, "node-z");
+    }
+
+    #[test]
+    fn test_insert_batch_same_id_update_at_capacity_keeps_unrelated_record() {
+        let mut state = TrustState::new(2);
+        let (first, _) = make_record_with_meta("first", 1, 1_000, "node-a");
+        let (second, _) = make_record_with_meta("second", 2, 2_000, "node-b");
+        let (first_update, _) = make_record_with_meta("first", 3, 900, "node-z");
+
+        assert!(state.insert_batch(first));
+        assert!(state.insert_batch(second));
+        assert!(state.insert_batch(first_update));
+
+        assert_eq!(state.len(), 2);
+        assert!(state.contains("first"));
+        assert!(state.contains("second"));
+
+        let retained = state.get("first").expect("updated record should remain");
+        assert_eq!(retained.epoch, 3);
         assert_eq!(retained.recorded_at_ms, 900);
         assert_eq!(retained.origin_node_id, "node-z");
     }
