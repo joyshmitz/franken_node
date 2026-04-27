@@ -234,7 +234,12 @@ impl FenceState {
             });
         }
 
-        if fence_seq != lease.lease_seq || fence_seq != self.current_seq {
+        // Security: Use constant-time comparison to prevent timing attacks on sequence numbers
+        let fence_seq_bytes = fence_seq.to_le_bytes();
+        let lease_seq_matches = constant_time::ct_eq_bytes(&fence_seq_bytes, &lease.lease_seq.to_le_bytes());
+        let current_seq_matches = constant_time::ct_eq_bytes(&fence_seq_bytes, &self.current_seq.to_le_bytes());
+
+        if !lease_seq_matches || !current_seq_matches {
             return Err(FencingError::WriteFenceMismatch {
                 write_seq: fence_seq,
                 lease_seq: lease.lease_seq,
