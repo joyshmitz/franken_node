@@ -45,7 +45,7 @@
 1. Confirm revocation list consistency across all fleet nodes.
 2. Validate that legitimate revocations are honored fleet-wide.
 3. Verify that incorrectly revoked entities have restored access.
-4. Run trust delegation audit: `franken-node trust audit --delegations`.
+4. Run trust state audit: `franken-node trust scan --deep --audit`.
 
 ## Rollback
 
@@ -63,7 +63,7 @@ and selective rollback restores test delegations correctly.
 ## Command References
 
 - `franken-node trust revoke --batch fixtures/revocations/test_batch.json`
-- `franken-node trust delegations restore --from-snapshot snapshots/pre_revocation.json`
+- `franken-node trust sync --restore-from snapshots/pre_revocation.json` (restore trust state from snapshot)
 - `POST /api/v1/trust/revocations/pause`
 
 ## Cross-References

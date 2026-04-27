@@ -63,8 +63,8 @@ Verify that detection fires, circuit breaker activates, requests are queued
 
 ## Command References
 
-- `franken-node proofs queue status`
-- `franken-node proofs workers restart --all`
+- `GET /api/v1/proofs/queue/status` (CLI proofs commands not yet implemented)
+- `POST /api/v1/proofs/workers/restart --data '{"scope": "all"}'`
 - `POST /api/v1/proofs/workers/restart`
 
 ## Cross-References
