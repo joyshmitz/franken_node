@@ -13,10 +13,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::runtime::clock;
 use crate::security::constant_time;
 use crate::tools::benchmark_suite::{BenchmarkDimension, run_default_suite};
-use crate::observability::evidence_ledger::{DecisionKind, EvidenceLedger};
+use crate::observability::evidence_ledger::{DecisionKind, EvidenceLedger, LedgerMetrics};
 
 const MAX_HISTORY_ENTRIES: usize = 4096;
 const MAX_BET_ENTRIES: usize = 4096;
@@ -1153,7 +1152,7 @@ pub fn demo_pipeline(
 /// Replaces demo_pipeline with actual metrics sourced from:
 /// - VerifierEconomyRegistry for adoption and attestation data
 /// - MigrationConfig for migration velocity metrics
-/// - Security systems for compromise surface data
+/// - Security audit ledger history for compromise surface data
 /// - Benchmark systems for compatibility metrics
 /// - Economic analysis for cost-benefit calculations
 #[cfg(feature = "advanced-features")]
@@ -1169,8 +1168,8 @@ pub fn real_pipeline(
     let benchmark_content = serde_json::to_string(&benchmark_data)?;
     let benchmark_hash = sha256_hex(benchmark_content.as_bytes());
 
-    // Source real security posture from threat analysis
-    let security_data = generate_security_metrics(now_secs)?;
+    // Source real security posture from the audited security decision history.
+    let security_data = generate_security_metrics(evidence_ledger)?;
     let security_content = serde_json::to_string(&security_data)?;
     let security_hash = sha256_hex(security_content.as_bytes());
 
@@ -1211,8 +1210,8 @@ pub fn real_pipeline(
         },
         CategoryShiftDimensionInput {
             dimension: ReportDimension::SecurityPosture,
-            source_name: "real-security-analyzer".to_string(),
-            source_bead: format!("bd-sec-{}", now_secs % 100000),
+            source_name: "security-audit-ledger".to_string(),
+            source_bead: format!("bd-sec-audit-{}", now_secs % 100000),
             claims: vec![ClaimInput {
                 summary: format!(
                     "franken_node achieves {:.1}x compromise surface reduction",
@@ -1221,7 +1220,8 @@ pub fn real_pipeline(
                 value: security_data.surface_reduction_factor,
                 unit: "factor".to_string(),
                 evidence: EvidenceInput {
-                    artifact_path: "artifacts/security/real_threat_analysis.json".to_string(),
+                    artifact_path: "artifacts/security/security_audit_ledger_metrics.json"
+                        .to_string(),
                     sha256_hash: security_hash,
                     generated_at_secs: now_secs.saturating_sub(7200), // 2 hours ago
                     content: Some(security_content),
@@ -1288,8 +1288,16 @@ pub fn real_pipeline(
         },
     ];
 
-    // Source real moonshot bet status from project tracking systems
-    let bet_status = generate_real_moonshot_bets(verifier_registry, migration_config, now_secs)?;
+    // Source moonshot bet status from the real metrics already collected by this pipeline.
+    let ledger_metrics = evidence_ledger.metrics();
+    let bet_status = generate_real_moonshot_bets(
+        &benchmark_data,
+        &security_data,
+        &migration_data,
+        &adoption_data,
+        &economics_data,
+        &ledger_metrics,
+    )?;
 
     build_category_shift_report(now_secs, trace_id, &dimensions, &bet_status)
 }
@@ -1565,25 +1573,73 @@ pub fn validate_benchmark_thresholds() -> Result<BenchmarkValidationResult, Cate
     })
 }
 
-/// Generate real security metrics from threat analysis and attack surface measurement
-fn generate_security_metrics(now_secs: u64) -> Result<RealSecurityMetrics, CategoryShiftError> {
-    // Calculate based on actual security posture
+/// Generate real security metrics from the signed security audit ledger.
+fn generate_security_metrics(
+    evidence_ledger: &EvidenceLedger,
+) -> Result<RealSecurityMetrics, CategoryShiftError> {
+    let ledger_metrics = evidence_ledger.metrics();
+    let mut total_decisions = 0u64;
+    let mut neutralized_attacks = 0u64;
+    let mut saw_deny = false;
+    let mut saw_quarantine = false;
+    let mut saw_rollback = false;
+    let mut saw_throttle = false;
+    let mut saw_escalate = false;
 
-    // Surface reduction factor from memory safety + sandboxing + privilege reduction
-    let base_reduction = 8.5; // Measured reduction from security analysis
-    let improvement_trend = ((now_secs % (86400 * 7)) as f64 / (86400.0 * 7.0)) * 2.0; // Weekly improvement
-    let surface_reduction_factor = base_reduction + improvement_trend;
+    for entry_tuple in evidence_ledger.iter_all() {
+        total_decisions = total_decisions.saturating_add(1);
+        match entry_tuple.1.decision_kind {
+            DecisionKind::Deny => {
+                neutralized_attacks = neutralized_attacks.saturating_add(1);
+                saw_deny = true;
+            }
+            DecisionKind::Quarantine => {
+                neutralized_attacks = neutralized_attacks.saturating_add(1);
+                saw_quarantine = true;
+            }
+            DecisionKind::Rollback => {
+                neutralized_attacks = neutralized_attacks.saturating_add(1);
+                saw_rollback = true;
+            }
+            DecisionKind::Throttle => {
+                neutralized_attacks = neutralized_attacks.saturating_add(1);
+                saw_throttle = true;
+            }
+            DecisionKind::Escalate => {
+                neutralized_attacks = neutralized_attacks.saturating_add(1);
+                saw_escalate = true;
+            }
+            DecisionKind::Admit | DecisionKind::Release => {}
+        }
+    }
 
-    // Attack neutralization from real security monitoring
-    let attacks_neutralized = 35 + ((now_secs / 86400) % 20) as u32; // Daily attack counts
-
-    // Coverage from real security test coverage
-    let coverage_percent = 97.2 + ((now_secs % 3600) as f64 / 3600.0) * 1.5; // Hourly coverage variance
+    let covered_categories = [
+        saw_deny,
+        saw_quarantine,
+        saw_rollback,
+        saw_throttle,
+        saw_escalate,
+    ]
+    .into_iter()
+    .filter(|covered| *covered)
+    .count() as f64;
+    let category_coverage_ratio = covered_categories / 5.0;
+    let retention_ratio = if ledger_metrics.total_appended > 0 {
+        (ledger_metrics.retained_entries as f64 / ledger_metrics.total_appended as f64).min(1.0)
+    } else {
+        0.0
+    };
+    let analyzed_decisions = total_decisions.max(1) as f64;
+    let intervention_ratio = neutralized_attacks as f64 / analyzed_decisions;
+    let audit_coverage_ratio = ((category_coverage_ratio + retention_ratio) / 2.0).clamp(0.0, 1.0);
+    let surface_reduction_factor =
+        (1.0 + (intervention_ratio * 8.0) + (category_coverage_ratio * 3.0) + (retention_ratio * 2.0))
+            .max(1.0);
 
     Ok(RealSecurityMetrics {
         surface_reduction_factor,
-        attacks_neutralized,
-        coverage_percent,
+        attacks_neutralized: neutralized_attacks.min(u32::MAX as u64) as u32,
+        coverage_percent: audit_coverage_ratio * 100.0,
     })
 }
 
@@ -1597,9 +1653,9 @@ fn analyze_migration_performance(
     let mut successful_decisions = 0u64;
     let mut failed_decisions = 0u64;
 
-    for (_entry_id, entry, _size) in evidence_ledger.iter_all() {
+    for entry_tuple in evidence_ledger.iter_all() {
         // Count decisions that indicate migration operations
-        match entry.decision_kind {
+        match entry_tuple.1.decision_kind {
             DecisionKind::Release | DecisionKind::Admit => {
                 total_decisions = total_decisions.saturating_add(1);
                 successful_decisions = successful_decisions.saturating_add(1);
@@ -1723,8 +1779,8 @@ fn analyze_evidence_economics(ledger: &EvidenceLedger) -> (f64, f64, f64) {
     let mut rollback_count = 0u64;
 
     // Iterate through available entries to count decision patterns
-    for (_entry_id, entry, _size) in ledger.iter_all() {
-        match entry.decision_kind {
+    for entry_tuple in ledger.iter_all() {
+        match entry_tuple.1.decision_kind {
             DecisionKind::Admit => admit_count = admit_count.saturating_add(1),
             DecisionKind::Deny => deny_count = deny_count.saturating_add(1),
             DecisionKind::Quarantine => quarantine_count = quarantine_count.saturating_add(1),
@@ -1800,89 +1856,197 @@ fn generate_economics_metrics(
     })
 }
 
-/// Generate real moonshot bet status from project tracking
+const MOONSHOT_ADOPTION_TARGET: f64 = 500.0;
+const MIGRATION_SUCCESS_TARGET: f64 = 0.95;
+const SECURITY_ROI_REDUCTION_TARGET: f64 = 0.50;
+
+fn progress_percent_from_target(actual: f64, target: f64, has_observability: bool) -> u8 {
+    if !has_observability || !actual.is_finite() || !target.is_finite() || target <= 0.0 {
+        return 0;
+    }
+    ((actual / target).clamp(0.0, 1.0) * 100.0).round() as u8
+}
+
+fn status_from_metric_target(actual: f64, target: f64, has_observability: bool) -> BetStatus {
+    if !has_observability || !actual.is_finite() || !target.is_finite() || target <= 0.0 {
+        return BetStatus::Blocked;
+    }
+
+    let ratio = actual / target;
+    if ratio >= 1.0 {
+        BetStatus::Completed
+    } else if ratio >= 0.85 {
+        BetStatus::OnTrack
+    } else {
+        BetStatus::AtRisk
+    }
+}
+
+/// Generate real moonshot bet status from collected pipeline observability metrics.
 #[cfg(feature = "advanced-features")]
 fn generate_real_moonshot_bets(
-    verifier_registry: &crate::verifier_economy::VerifierEconomyRegistry,
-    migration_config: &crate::config::MigrationConfig,
-    now_secs: u64,
+    benchmark_data: &RealBenchmarkMetrics,
+    security_data: &RealSecurityMetrics,
+    migration_data: &RealMigrationMetrics,
+    adoption_data: &RealAdoptionMetrics,
+    economics_data: &RealEconomicsMetrics,
+    ledger_metrics: &LedgerMetrics,
 ) -> Result<Vec<MoonshotBetEntry>, CategoryShiftError> {
-    let verifier_count = verifier_registry.verifier_count();
-    let attestation_count = verifier_registry.attestation_count();
+    let compat_has_observability = true;
+    let migration_has_observability = ledger_metrics.total_appended > 0;
+    let security_has_observability =
+        ledger_metrics.total_appended > 0 || adoption_data.attestation_volume > 0;
+    let adoption_has_observability =
+        adoption_data.verifier_count > 0 || adoption_data.attestation_volume > 0;
 
-    let mut bets = vec![
+    let compat_status = status_from_metric_target(
+        benchmark_data.compatibility_percent,
+        THRESHOLD_COMPAT_PERCENT,
+        compat_has_observability,
+    );
+    let compat_progress = progress_percent_from_target(
+        benchmark_data.compatibility_percent,
+        THRESHOLD_COMPAT_PERCENT,
+        compat_has_observability,
+    );
+    let compat_blockers = if matches!(compat_status, BetStatus::Completed) {
+        Vec::new()
+    } else {
+        vec![format!(
+            "Observed compatibility {:.1}% below {:.1}% target",
+            benchmark_data.compatibility_percent, THRESHOLD_COMPAT_PERCENT
+        )]
+    };
+
+    let mut migration_status = status_from_metric_target(
+        migration_data.velocity_factor,
+        THRESHOLD_MIGRATION_VELOCITY,
+        migration_has_observability,
+    );
+    let migration_progress = progress_percent_from_target(
+        migration_data.velocity_factor,
+        THRESHOLD_MIGRATION_VELOCITY,
+        migration_has_observability,
+    );
+    let mut migration_blockers = Vec::new();
+    if !migration_has_observability {
+        migration_status = BetStatus::Blocked;
+        migration_blockers.push(
+            "No migration evidence recorded in the observability ledger".to_string(),
+        );
+    } else {
+        if migration_data.velocity_factor < THRESHOLD_MIGRATION_VELOCITY {
+            migration_blockers.push(format!(
+                "Observed migration velocity {:.2}x below {:.1}x target",
+                migration_data.velocity_factor, THRESHOLD_MIGRATION_VELOCITY
+            ));
+        }
+        if migration_data.success_rate < MIGRATION_SUCCESS_TARGET {
+            if matches!(migration_status, BetStatus::Completed) {
+                migration_status = BetStatus::OnTrack;
+            }
+            migration_blockers.push(format!(
+                "Observed migration success rate {:.1}% below {:.1}% target",
+                migration_data.success_rate * 100.0,
+                MIGRATION_SUCCESS_TARGET * 100.0
+            ));
+        }
+    }
+
+    let mut security_status = status_from_metric_target(
+        security_data.surface_reduction_factor,
+        THRESHOLD_COMPROMISE_REDUCTION,
+        security_has_observability,
+    );
+    let security_progress = progress_percent_from_target(
+        security_data.surface_reduction_factor,
+        THRESHOLD_COMPROMISE_REDUCTION,
+        security_has_observability,
+    );
+    let mut security_blockers = Vec::new();
+    if !security_has_observability {
+        security_status = BetStatus::Blocked;
+        security_blockers
+            .push("No security observability metrics available for compromise tracking".to_string());
+    } else {
+        if security_data.surface_reduction_factor < THRESHOLD_COMPROMISE_REDUCTION {
+            security_blockers.push(format!(
+                "Observed compromise reduction {:.2}x below {:.1}x target",
+                security_data.surface_reduction_factor, THRESHOLD_COMPROMISE_REDUCTION
+            ));
+        }
+        let observed_roi_reduction = (-economics_data.attacker_roi_delta).max(0.0);
+        if observed_roi_reduction < SECURITY_ROI_REDUCTION_TARGET {
+            if matches!(security_status, BetStatus::Completed) {
+                security_status = BetStatus::OnTrack;
+            }
+            security_blockers.push(format!(
+                "Observed attacker ROI reduction {:.0}% below {:.0}% support target",
+                observed_roi_reduction * 100.0,
+                SECURITY_ROI_REDUCTION_TARGET * 100.0
+            ));
+        }
+    }
+
+    let adoption_status = status_from_metric_target(
+        adoption_data.verifier_count as f64,
+        MOONSHOT_ADOPTION_TARGET,
+        adoption_has_observability,
+    );
+    let adoption_progress = progress_percent_from_target(
+        adoption_data.verifier_count as f64,
+        MOONSHOT_ADOPTION_TARGET,
+        adoption_has_observability,
+    );
+    let adoption_blockers = if !adoption_has_observability {
+        vec!["No verifier network metrics available yet".to_string()]
+    } else if matches!(adoption_status, BetStatus::Completed) {
+        Vec::new()
+    } else {
+        vec![format!(
+            "Observed verifier network {} below {:.0} target",
+            adoption_data.verifier_count, MOONSHOT_ADOPTION_TARGET
+        )]
+    };
+
+    let bets = vec![
         // API Compatibility bet - based on benchmark metrics
         MoonshotBetEntry {
             initiative_id: "moonshot-compat".to_string(),
             title: "95% API Compatibility".to_string(),
-            status: if now_secs % (86400 * 30) < (86400 * 25) {
-                BetStatus::OnTrack
-            } else {
-                BetStatus::AtRisk
-            },
-            progress_percent: (94 + (now_secs % 100) / 10) as u8,
-            blockers: if now_secs % (86400 * 7) < (86400 * 5) {
-                vec![]
-            } else {
-                vec!["Edge case compatibility gaps in async/await patterns".to_string()]
-            },
+            status: compat_status,
+            progress_percent: compat_progress,
+            blockers: compat_blockers,
             projected_completion: "2026-Q2".to_string(),
         },
-        // Migration bet - based on migration config effectiveness
+        // Migration bet - based on real ledger-backed migration telemetry
         MoonshotBetEntry {
             initiative_id: "moonshot-migration".to_string(),
             title: "3x Migration Velocity".to_string(),
-            status: if migration_config.autofix {
-                BetStatus::Completed
-            } else {
-                BetStatus::OnTrack
-            },
-            progress_percent: if migration_config.autofix { 100 } else { 85 },
-            blockers: if migration_config.autofix {
-                vec![]
-            } else {
-                vec!["Manual validation bottleneck".to_string()]
-            },
+            status: migration_status,
+            progress_percent: migration_progress,
+            blockers: migration_blockers,
             projected_completion: "2026-Q1".to_string(),
         },
-        // Security bet - based on real security metrics
+        // Security bet - based on security and economics observability
         MoonshotBetEntry {
             initiative_id: "moonshot-security".to_string(),
             title: "10x Compromise Reduction".to_string(),
-            status: if attestation_count > 5000 {
-                BetStatus::OnTrack
-            } else {
-                BetStatus::AtRisk
-            },
-            progress_percent: (80 + (attestation_count / 100).min(15)) as u8,
-            blockers: if verifier_count < 50 {
-                vec!["Insufficient verifier network coverage".to_string()]
-            } else {
-                vec![]
-            },
+            status: security_status,
+            progress_percent: security_progress,
+            blockers: security_blockers,
             projected_completion: "2026-Q2".to_string(),
         },
-    ];
-
-    // Add adoption bet if verifier network is sufficiently mature
-    if verifier_count >= 25 {
-        bets.push(MoonshotBetEntry {
+        // Adoption bet - based on real verifier registry metrics
+        MoonshotBetEntry {
             initiative_id: "moonshot-adoption".to_string(),
             title: "500 Verifier Network".to_string(),
-            status: if verifier_count >= 100 {
-                BetStatus::OnTrack
-            } else {
-                BetStatus::AtRisk
-            },
-            progress_percent: ((verifier_count as f64 / 500.0) * 100.0).min(100.0) as u8,
-            blockers: if verifier_count < 50 {
-                vec!["Slow verifier onboarding rate".to_string()]
-            } else {
-                vec![]
-            },
+            status: adoption_status,
+            progress_percent: adoption_progress,
+            blockers: adoption_blockers,
             projected_completion: "2026-Q3".to_string(),
-        });
-    }
+        },
+    ];
 
     Ok(bets)
 }
@@ -1890,6 +2054,7 @@ fn generate_real_moonshot_bets(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::observability::evidence_ledger::{LedgerCapacity, test_entry};
 
     fn sample_evidence(now_secs: u64) -> EvidenceInput {
         let content = r#"{"test":"data"}"#;
@@ -1907,6 +2072,18 @@ mod tests {
             value: 42.0,
             unit: "percent".to_string(),
             evidence: sample_evidence(now_secs),
+        }
+    }
+
+    #[cfg(feature = "advanced-features")]
+    fn sample_ledger_metrics(total_appended: u64) -> LedgerMetrics {
+        LedgerMetrics {
+            retained_entries: total_appended as usize,
+            total_appended,
+            total_evicted: 0,
+            current_bytes: 0,
+            max_entries: 1024,
+            max_bytes: 1024 * 1024,
         }
     }
 
@@ -2454,6 +2631,57 @@ mod tests {
     }
 
     #[test]
+    fn security_metrics_use_audited_ledger_history() {
+        let mut admit_only = EvidenceLedger::new(LedgerCapacity::new(16, 16 * 1024));
+        for epoch in 1..=4 {
+            admit_only
+                .append(test_entry(&format!("ADMIT-{epoch}"), epoch))
+                .expect("admit audit entry");
+        }
+
+        let admit_only_metrics =
+            generate_security_metrics(&admit_only).expect("admit-only metrics");
+        assert_eq!(admit_only_metrics.attacks_neutralized, 0);
+        assert_eq!(admit_only_metrics.coverage_percent, 50.0);
+
+        let mut audited = EvidenceLedger::new(LedgerCapacity::new(16, 16 * 1024));
+        let entry = test_entry("SEC-ADMIT", 1);
+        audited.append(entry).expect("admit entry");
+
+        let mut entry = test_entry("SEC-DENY", 2);
+        entry.decision_kind = DecisionKind::Deny;
+        audited.append(entry).expect("deny entry");
+
+        let mut entry = test_entry("SEC-QUARANTINE", 3);
+        entry.decision_kind = DecisionKind::Quarantine;
+        audited.append(entry).expect("quarantine entry");
+
+        let mut entry = test_entry("SEC-ROLLBACK", 4);
+        entry.decision_kind = DecisionKind::Rollback;
+        audited.append(entry).expect("rollback entry");
+
+        let mut entry = test_entry("SEC-THROTTLE", 5);
+        entry.decision_kind = DecisionKind::Throttle;
+        audited.append(entry).expect("throttle entry");
+
+        let mut entry = test_entry("SEC-ESCALATE", 6);
+        entry.decision_kind = DecisionKind::Escalate;
+        audited.append(entry).expect("escalate entry");
+
+        let audited_metrics = generate_security_metrics(&audited).expect("audited metrics");
+        assert_eq!(audited_metrics.attacks_neutralized, 5);
+        assert_eq!(audited_metrics.coverage_percent, 100.0);
+        assert!(
+            audited_metrics.surface_reduction_factor
+                > admit_only_metrics.surface_reduction_factor
+        );
+        assert!(
+            audited_metrics.surface_reduction_factor >= THRESHOLD_COMPROMISE_REDUCTION,
+            "expected audited security posture to clear compromise reduction threshold"
+        );
+    }
+
+    #[test]
     fn bet_status_entries_present() {
         let now = 1_000_000;
         let (_, report) = demo_pipeline(now).expect("should succeed");
@@ -2885,6 +3113,100 @@ mod tests {
         assert!(md.contains("## Moonshot Bet Status"));
         assert!(md.contains("95% API Compatibility"));
         assert!(md.contains("3x Migration Velocity"));
+    }
+
+    #[cfg(feature = "advanced-features")]
+    #[test]
+    fn real_moonshot_bets_follow_metric_thresholds() {
+        let bets = generate_real_moonshot_bets(
+            &RealBenchmarkMetrics {
+                compatibility_percent: 97.5,
+                throughput_ops_per_sec: 150_000,
+                latency_p99_ms: 2.1,
+            },
+            &RealSecurityMetrics {
+                surface_reduction_factor: 10.4,
+                attacks_neutralized: 42,
+                coverage_percent: 98.0,
+            },
+            &RealMigrationMetrics {
+                velocity_factor: 3.4,
+                success_rate: 0.97,
+                median_time_hours: 0.8,
+            },
+            &RealAdoptionMetrics {
+                verifier_count: 540,
+                attestation_volume: 12_000,
+            },
+            &RealEconomicsMetrics {
+                cost_benefit_ratio: 2.8,
+                attacker_roi_delta: -0.62,
+            },
+            &sample_ledger_metrics(250),
+        )
+        .expect("metric-backed moonshot bets");
+
+        let statuses: BTreeMap<_, _> = bets
+            .iter()
+            .map(|bet| (bet.initiative_id.as_str(), bet.status))
+            .collect();
+
+        assert_eq!(statuses.get("moonshot-compat"), Some(&BetStatus::Completed));
+        assert_eq!(statuses.get("moonshot-migration"), Some(&BetStatus::Completed));
+        assert_eq!(statuses.get("moonshot-security"), Some(&BetStatus::Completed));
+        assert_eq!(statuses.get("moonshot-adoption"), Some(&BetStatus::Completed));
+        assert!(bets.iter().all(|bet| bet.blockers.is_empty()));
+    }
+
+    #[cfg(feature = "advanced-features")]
+    #[test]
+    fn real_moonshot_bets_fail_closed_without_observability() {
+        let bets = generate_real_moonshot_bets(
+            &RealBenchmarkMetrics {
+                compatibility_percent: 91.0,
+                throughput_ops_per_sec: 110_000,
+                latency_p99_ms: 3.0,
+            },
+            &RealSecurityMetrics {
+                surface_reduction_factor: 9.2,
+                attacks_neutralized: 0,
+                coverage_percent: 97.0,
+            },
+            &RealMigrationMetrics {
+                velocity_factor: 3.2,
+                success_rate: 0.99,
+                median_time_hours: 0.7,
+            },
+            &RealAdoptionMetrics {
+                verifier_count: 0,
+                attestation_volume: 0,
+            },
+            &RealEconomicsMetrics {
+                cost_benefit_ratio: 2.1,
+                attacker_roi_delta: -0.20,
+            },
+            &sample_ledger_metrics(0),
+        )
+        .expect("metric-backed moonshot bets");
+
+        let migration = bets
+            .iter()
+            .find(|bet| bet.initiative_id == "moonshot-migration")
+            .expect("migration bet present");
+        assert_eq!(migration.status, BetStatus::Blocked);
+        assert!(
+            migration
+                .blockers
+                .iter()
+                .any(|blocker| blocker.contains("observability ledger"))
+        );
+
+        let adoption = bets
+            .iter()
+            .find(|bet| bet.initiative_id == "moonshot-adoption")
+            .expect("adoption bet present");
+        assert_eq!(adoption.status, BetStatus::Blocked);
+        assert_eq!(adoption.progress_percent, 0);
     }
 
     #[test]
