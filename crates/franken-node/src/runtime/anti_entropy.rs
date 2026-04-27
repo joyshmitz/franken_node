@@ -551,13 +551,47 @@ impl TrustState {
     }
 
     /// Recompute root digest as SHA-256 over all record digests in deterministic order.
-    fn recompute_root_digest(&mut self) {
+    pub fn recompute_root_digest(&mut self) {
         let mut hasher = Sha256::new();
         hasher.update(ROOT_DIGEST_DOMAIN);
         for rec in self.records.values() {
             hasher.update(rec.digest());
         }
         self.root_digest = hasher.finalize().into();
+    }
+
+    /// Insert a record without recomputing the root digest.
+    /// This is for batch operations where multiple records are inserted.
+    /// Call `recompute_root_digest()` once after all inserts are complete.
+    fn insert_with_capacity_batch(&mut self, record: TrustRecord, capacity: usize) -> bool {
+        if capacity == 0 {
+            return false;
+        }
+
+        if let Some(existing) = self.records.get(&record.id)
+            && existing.precedence_cmp(&record) != Ordering::Less
+        {
+            return false;
+        }
+
+        while self.records.len() >= capacity
+            && let Some(lowest_record) = self.records.values().min_by(|a, b| a.precedence_cmp(b))
+        {
+            let lowest_key = lowest_record.id.clone();
+            if record.precedence_cmp(lowest_record) == Ordering::Less {
+                return false;
+            }
+            self.records.remove(&lowest_key);
+        }
+
+        self.records.insert(record.id.clone(), record);
+        // Note: NOT calling recompute_root_digest() here - deferred to batch completion
+        true
+    }
+
+    /// Insert a record for batch operations without immediate digest recomputation.
+    pub fn insert_batch(&mut self, record: TrustRecord) -> bool {
+        self.insert_with_capacity_batch(record, MAX_TRUST_RECORDS)
     }
 
     /// Get the MMR root digest.
@@ -901,7 +935,7 @@ impl AntiEntropyReconciler {
         // Phase 2: apply all validated records atomically.
         let mut applied = 0usize;
         for (record, replaced) in accepted {
-            if local.insert(record) {
+            if local.insert_batch(record) {
                 applied = applied.saturating_add(1);
                 self.push_event(ReconciliationEvent {
                     code: EVT_RECORD_ACCEPTED.to_string(),
@@ -925,6 +959,11 @@ impl AntiEntropyReconciler {
                 trace_id: trace_id.clone(),
                 epoch: local.current_epoch(),
             });
+        }
+
+        // Batch digest recomputation: compute once after all inserts instead of per-insert
+        if applied > 0 {
+            local.recompute_root_digest();
         }
 
         let elapsed = start.elapsed();
