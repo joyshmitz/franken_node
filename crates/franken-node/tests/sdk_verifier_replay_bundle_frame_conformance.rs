@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use frankenengine_verifier_sdk::bundle::{self, BundleError, ReplayBundle};
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 const FRAME_VECTORS_JSON: &str =
     include_str!("../../../artifacts/conformance/sdk_verifier_replay_bundle_frame_vectors.json");
@@ -61,7 +62,7 @@ struct BundleFrameVector {
     #[serde(default)]
     expected_error: Option<String>,
     #[serde(default)]
-    expected_canonical_bytes_hex: Option<String>,
+    expected_canonical_bytes_sha256: Option<String>,
     #[serde(default)]
     expected_byte_len: Option<usize>,
     #[serde(default)]
@@ -127,6 +128,12 @@ fn canonical_bytes_for_vector(vector: &BundleFrameVector) -> Result<Vec<u8>, Str
         .map_err(|err| format!("{} canonical serialization failed: {err}", vector.name))
 }
 
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
 #[test]
 fn sdk_verifier_replay_bundle_frame_vectors_cover_required_contract() -> TestResult {
     let vectors = conformance_vectors()?;
@@ -163,13 +170,14 @@ fn sdk_verifier_replay_bundle_frame_vectors_match_live_bundle_contract() -> Test
                 let canonical_bytes = canonical_bytes_for_vector(vector)?;
 
                 if vector.expected == ExpectedVerdict::Pass {
-                    let expected_hex = vector.expected_canonical_bytes_hex.as_ref().ok_or_else(|| {
-                        format!("{} must declare expected_canonical_bytes_hex", vector.name)
-                    })?;
+                    let expected_sha256 =
+                        vector.expected_canonical_bytes_sha256.as_ref().ok_or_else(|| {
+                            format!("{} must declare expected_canonical_bytes_sha256", vector.name)
+                        })?;
                     assert_eq!(
-                        hex::encode(&canonical_bytes),
-                        *expected_hex,
-                        "{} canonical bytes drifted from the checked-in golden vector",
+                        sha256_hex(&canonical_bytes),
+                        *expected_sha256,
+                        "{} canonical byte hash drifted from the checked-in golden vector",
                         vector.name
                     );
                     assert_eq!(
