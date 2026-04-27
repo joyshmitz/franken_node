@@ -84,16 +84,27 @@ impl PhenotypeTrajectory {
         let recent = &self.observations[n - 1];
         let earlier = &self.observations[0];
 
-        // Guard non-finite observation fields fail-closed before trend arithmetic.
-        let fin = |v: f64, fallback: f64| if v.is_finite() { v } else { fallback };
-        let earlier_activity = fin(earlier.maintainer_activity_score, 0.0);
-        let recent_activity = fin(recent.maintainer_activity_score, 0.0);
-        let earlier_velocity = fin(earlier.commit_velocity, 0.0);
-        let recent_velocity = fin(recent.commit_velocity, 0.0);
-        let earlier_response = fin(earlier.issue_response_time_hours, 720.0);
-        let recent_response = fin(recent.issue_response_time_hours, 720.0);
-        let earlier_diversity = fin(earlier.contributor_diversity_index, 0.0);
-        let recent_diversity = fin(recent.contributor_diversity_index, 0.0);
+        // Guard non-finite observation fields fail-closed: return max risk on corruption.
+        if !earlier.maintainer_activity_score.is_finite()
+            || !recent.maintainer_activity_score.is_finite()
+            || !earlier.commit_velocity.is_finite()
+            || !recent.commit_velocity.is_finite()
+            || !earlier.issue_response_time_hours.is_finite()
+            || !recent.issue_response_time_hours.is_finite()
+            || !earlier.contributor_diversity_index.is_finite()
+            || !recent.contributor_diversity_index.is_finite()
+        {
+            return 1.0; // Maximum risk for corrupt/adversarial inputs
+        }
+
+        let earlier_activity = earlier.maintainer_activity_score;
+        let recent_activity = recent.maintainer_activity_score;
+        let earlier_velocity = earlier.commit_velocity;
+        let recent_velocity = recent.commit_velocity;
+        let earlier_response = earlier.issue_response_time_hours;
+        let recent_response = recent.issue_response_time_hours;
+        let earlier_diversity = earlier.contributor_diversity_index;
+        let recent_diversity = recent.contributor_diversity_index;
 
         let activity_trend = earlier_activity - recent_activity;
         let velocity_trend = earlier_velocity - recent_velocity;
@@ -113,27 +124,19 @@ impl PhenotypeTrajectory {
     }
 
     fn single_observation_score(&self, obs: &PhenotypeObservation) -> f64 {
-        // Guard non-finite values fail-closed: NaN/Inf → worst-case risk.
-        let activity = if obs.maintainer_activity_score.is_finite() {
-            obs.maintainer_activity_score
-        } else {
-            0.0
-        };
-        let velocity = if obs.commit_velocity.is_finite() {
-            obs.commit_velocity
-        } else {
-            0.0
-        };
-        let response = if obs.issue_response_time_hours.is_finite() {
-            obs.issue_response_time_hours
-        } else {
-            720.0
-        };
-        let diversity = if obs.contributor_diversity_index.is_finite() {
-            obs.contributor_diversity_index
-        } else {
-            0.0
-        };
+        // Guard non-finite values fail-closed: return max risk on corruption.
+        if !obs.maintainer_activity_score.is_finite()
+            || !obs.commit_velocity.is_finite()
+            || !obs.issue_response_time_hours.is_finite()
+            || !obs.contributor_diversity_index.is_finite()
+        {
+            return 1.0; // Maximum risk for corrupt/adversarial inputs
+        }
+
+        let activity = obs.maintainer_activity_score;
+        let velocity = obs.commit_velocity;
+        let response = obs.issue_response_time_hours;
+        let diversity = obs.contributor_diversity_index;
 
         let activity_risk = (1.0 - activity).max(0.0);
         let velocity_risk = (1.0 - (velocity / 10.0).min(1.0)).max(0.0);
