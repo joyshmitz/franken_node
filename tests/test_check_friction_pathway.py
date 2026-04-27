@@ -1,21 +1,53 @@
 #!/usr/bin/env python3
 """Unit tests for scripts/check_friction_pathway.py (bd-34d5)."""
 
+import contextlib
+import importlib.util
+import io
 import json
-import subprocess
 import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "scripts"))
 
-import check_friction_pathway as cfp
+
+def load_check_friction_pathway():
+    spec = importlib.util.spec_from_file_location(
+        "check_friction_pathway",
+        ROOT / "scripts" / "check_friction_pathway.py",
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("failed to load check_friction_pathway.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+cfp = load_check_friction_pathway()
 
 
 class TestCheckFrictionPathway(unittest.TestCase):
     """Tests for each verification check."""
+
+    def parse_json_output(self, payload: str):
+        decoder = json.JSONDecoder()
+        try:
+            return decoder.decode(payload)
+        except json.JSONDecodeError as exc:
+            self.fail(f"Expected valid JSON output, got: {exc}: {payload!r}")
+
+    def run_cli(self, *args: str):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        argv = ["check_friction_pathway.py", *args]
+        with patch.object(sys, "argv", argv):
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as exit_info:
+                    cfp.main()
+        self.assertEqual(exit_info.exception.code, 0, f"Script failed: {stderr.getvalue()}")
+        return stdout.getvalue()
 
     # ------------------------------------------------------------------
     # Structural self-test
@@ -141,7 +173,7 @@ class TestCheckFrictionPathway(unittest.TestCase):
         results = cfp.run_all_checks()
         cfp.write_evidence(results)
         self.assertTrue(cfp.EVIDENCE_PATH.is_file(), "Evidence file should be written")
-        data = json.loads(cfp.EVIDENCE_PATH.read_text())
+        data = self.parse_json_output(cfp.EVIDENCE_PATH.read_text())
         self.assertEqual(data["bead_id"], "bd-34d5")
         self.assertEqual(data["total_checks"], len(results))
         self.assertIn("checks", data)
@@ -158,27 +190,14 @@ class TestCheckFrictionPathway(unittest.TestCase):
     # CLI --json output
     # ------------------------------------------------------------------
     def test_cli_json_output(self):
-        result = subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "check_friction_pathway.py"), "--json"],
-            capture_output=True,
-            text=True,
-            cwd=str(ROOT),
-        )
-        self.assertEqual(result.returncode, 0, f"Script failed: {result.stderr}")
-        data = json.loads(result.stdout)
+        data = self.parse_json_output(self.run_cli("--json"))
         self.assertEqual(data["bead_id"], "bd-34d5")
         self.assertTrue(data["all_passed"])
 
     def test_cli_human_output(self):
-        result = subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "check_friction_pathway.py")],
-            capture_output=True,
-            text=True,
-            cwd=str(ROOT),
-        )
-        self.assertEqual(result.returncode, 0, f"Script failed: {result.stderr}")
-        self.assertIn("bd-34d5", result.stdout)
-        self.assertIn("PASS", result.stdout)
+        output = self.run_cli()
+        self.assertIn("bd-34d5", output)
+        self.assertIn("PASS", output)
 
     # ------------------------------------------------------------------
     # Missing-file edge cases (mock Path.is_file to return False)

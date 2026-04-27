@@ -9,12 +9,11 @@ Usage:
 import argparse
 import json
 import sys
-from pathlib import Path
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 from datetime import datetime, timezone
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
 BEAD_ID = "bd-34d5"
 SECTION = "section_13"
@@ -464,7 +463,9 @@ def write_summary(results: list[dict]) -> None:
 
 
 def main() -> None:
-    logger = configure_test_logging("check_friction_pathway")
+    from scripts.lib.test_logger import configure_test_logging
+
+    configure_test_logging("check_friction_pathway")
     parser = argparse.ArgumentParser(
         description="Verify bd-34d5: Friction-Minimized Install-to-Production Pathway"
     )
@@ -506,18 +507,27 @@ def main() -> None:
 def self_test() -> None:
     """Self-test: run all checks and assert they return valid structure."""
     results = run_all_checks()
-    assert isinstance(results, list), "results must be a list"
-    assert len(results) == len(ALL_CHECKS), f"expected {len(ALL_CHECKS)} results, got {len(results)}"
+    if not isinstance(results, list):
+        raise AssertionError("results must be a list")
+    if len(results) != len(ALL_CHECKS):
+        raise AssertionError(f"expected {len(ALL_CHECKS)} results, got {len(results)}")
     for r in results:
-        assert "check" in r, "each result must have 'check'"
-        assert "passed" in r, "each result must have 'passed'"
-        assert "detail" in r, "each result must have 'detail'"
-        assert isinstance(r["passed"], bool), "'passed' must be bool"
-        assert isinstance(r["check"], str), "'check' must be str"
-        assert isinstance(r["detail"], str), "'detail' must be str"
+        if "check" not in r:
+            raise AssertionError("each result must have 'check'")
+        if "passed" not in r:
+            raise AssertionError("each result must have 'passed'")
+        if "detail" not in r:
+            raise AssertionError("each result must have 'detail'")
+        if not isinstance(r["passed"], bool):
+            raise AssertionError("'passed' must be bool")
+        if not isinstance(r["check"], str):
+            raise AssertionError("'check' must be str")
+        if not isinstance(r["detail"], str):
+            raise AssertionError("'detail' must be str")
 
     # Verify evidence and summary were written
-    assert EVIDENCE_PATH.parent.exists(), "evidence directory must exist after run"
+    if not EVIDENCE_PATH.parent.exists():
+        raise AssertionError("evidence directory must exist after run")
 
     # Verify specific check names are present
     check_names = {r["check"] for r in results}
@@ -538,7 +548,8 @@ def self_test() -> None:
         "current_reporting_surface",
         "archetype_scores",
     }
-    assert check_names == expected_names, f"check names mismatch: {check_names ^ expected_names}"
+    if check_names != expected_names:
+        raise AssertionError(f"check names mismatch: {check_names ^ expected_names}")
 
     print("self_test passed: all checks return valid structure")
 
