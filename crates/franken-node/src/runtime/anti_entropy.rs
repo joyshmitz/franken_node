@@ -687,7 +687,12 @@ pub fn verify_mmr_proof(record: &TrustRecord, root: &MmrRoot) -> Result<(), Reco
         .as_ref()
         .ok_or_else(|| ReconciliationError::ProofInvalid("missing inclusion proof".into()))?;
 
-    mmr_proofs::verify_inclusion(proof, root, &record.marker_hash).map_err(|e| {
+    // SECURITY: Compute marker hash from record envelope instead of trusting supplied value
+    // This prevents attackers from providing malicious marker_hash that doesn't correspond
+    // to the actual record content
+    let computed_marker_hash = hex::encode(record.digest());
+
+    mmr_proofs::verify_inclusion(proof, root, &computed_marker_hash).map_err(|e| {
         ReconciliationError::ProofInvalid(format!("record {} proof failed: {e}", record.id))
     })
 }
