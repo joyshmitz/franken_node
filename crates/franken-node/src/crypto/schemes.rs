@@ -100,18 +100,35 @@ impl SignatureScheme for Ed25519Scheme {
         domain: &[u8],
         message: &[u8],
     ) -> Result<Self::Signature, Self::Error> {
-        // Create domain-separated digest using blake3
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(b"ed25519_sign_v1:");
-        hasher.update(&(domain.len() as u64).to_le_bytes());
-        hasher.update(domain);
-        hasher.update(&(message.len() as u64).to_le_bytes());
-        hasher.update(message);
-        let digest = hasher.finalize();
+        // Create domain-separated digest using blake3 when available
+        #[cfg(feature = "blake3")]
+        let digest = {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(b"ed25519_sign_v1:");
+            hasher.update(&(domain.len() as u64).to_le_bytes());
+            hasher.update(domain);
+            hasher.update(&(message.len() as u64).to_le_bytes());
+            hasher.update(message);
+            hasher.finalize()
+        };
+
+        #[cfg(not(feature = "blake3"))]
+        let digest = {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(b"ed25519_sign_v1:");
+            hasher.update(&(domain.len() as u64).to_le_bytes());
+            hasher.update(domain);
+            hasher.update(&(message.len() as u64).to_le_bytes());
+            hasher.update(message);
+            hasher.finalize()
+        };
 
         // Sign the digest using ed25519-dalek
-        let signing_key = SigningKey::from_bytes(secret_key)
-            .map_err(|e| Ed25519Error::MalformedKey(e.to_string()))?;
+        let signing_key = match SigningKey::try_from(secret_key) {
+            Ok(key) => key,
+            Err(e) => return Err(Ed25519Error::MalformedKey(e.to_string())),
+        };
 
         let signature = signing_key.sign(digest.as_bytes());
         Ok(signature.to_bytes())
@@ -124,13 +141,28 @@ impl SignatureScheme for Ed25519Scheme {
         signature: &Self::Signature,
     ) -> bool {
         // Create the same domain-separated digest
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(b"ed25519_verify_v1:");
-        hasher.update(&(domain.len() as u64).to_le_bytes());
-        hasher.update(domain);
-        hasher.update(&(message.len() as u64).to_le_bytes());
-        hasher.update(message);
-        let digest = hasher.finalize();
+        #[cfg(feature = "blake3")]
+        let digest = {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(b"ed25519_verify_v1:");
+            hasher.update(&(domain.len() as u64).to_le_bytes());
+            hasher.update(domain);
+            hasher.update(&(message.len() as u64).to_le_bytes());
+            hasher.update(message);
+            hasher.finalize()
+        };
+
+        #[cfg(not(feature = "blake3"))]
+        let digest = {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(b"ed25519_verify_v1:");
+            hasher.update(&(domain.len() as u64).to_le_bytes());
+            hasher.update(domain);
+            hasher.update(&(message.len() as u64).to_le_bytes());
+            hasher.update(message);
+            hasher.finalize()
+        };
 
         // Parse keys and signature
         let verifying_key = match VerifyingKey::from_bytes(public_key) {
