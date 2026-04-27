@@ -787,12 +787,17 @@ pub fn generate_replay_bundle(
         .unwrap_or_else(|| DEFAULT_POLICY_VERSION.to_string());
 
     let bundle_id = deterministic_bundle_id(incident_id, &created_at, &timeline)?;
-    let chunks = chunk_timeline(bundle_id, &timeline)?;
-    let manifest = derive_bundle_manifest(
+
+    // Use optimized functions with reusable gzip scratch buffer to avoid repeated allocations
+    let mut gzip_scratch = GzipScratchBuffer::new();
+
+    let chunks = chunk_timeline_with_scratch(bundle_id, &timeline, &mut gzip_scratch)?;
+    let manifest = derive_bundle_manifest_with_scratch(
         &timeline,
         &initial_state_snapshot,
         &policy_version,
         chunks.len(),
+        &mut gzip_scratch,
     )?;
 
     let mut bundle = ReplayBundle {
@@ -1608,6 +1613,54 @@ fn derive_bundle_manifest(
     })
 }
 
+#[cfg(feature = "compression")]
+fn derive_bundle_manifest_with_scratch(
+    timeline: &[TimelineEvent],
+    initial_state_snapshot: &Value,
+    policy_version: &str,
+    chunk_count: usize,
+    scratch: &mut GzipScratchBuffer,
+) -> Result<BundleManifest, ReplayBundleError> {
+    let decision_sequence_hash =
+        compute_decision_sequence_hash(timeline, initial_state_snapshot, policy_version)?;
+    let timeline_value = canonicalize_value(&serde_json::to_value(timeline)?, "$.timeline")?;
+    let timeline_bytes = canonical_json_bytes(&timeline_value)?;
+    let compressed_size_bytes = scratch.gzip_size_bytes(&timeline_bytes)?;
+    let (first_timestamp, last_timestamp) = match (timeline.first(), timeline.last()) {
+        (Some(first), Some(last)) => (Some(first.timestamp.clone()), Some(last.timestamp.clone())),
+        _ => (None, None),
+    };
+    let time_span_micros = match (timeline.first(), timeline.last()) {
+        (Some(first), Some(last)) => {
+            let first_micros = normalize_timestamp(&first.timestamp)?.1;
+            let last_micros = normalize_timestamp(&last.timestamp)?.1;
+            u64::try_from(last_micros.saturating_sub(first_micros)).unwrap_or(0)
+        }
+        _ => 0,
+    };
+
+    Ok(BundleManifest {
+        event_count: timeline.len(),
+        first_timestamp,
+        last_timestamp,
+        time_span_micros,
+        compressed_size_bytes,
+        chunk_count: u32::try_from(chunk_count).unwrap_or(u32::MAX),
+        decision_sequence_hash,
+    })
+}
+
+#[cfg(not(feature = "compression"))]
+fn derive_bundle_manifest_with_scratch(
+    timeline: &[TimelineEvent],
+    initial_state_snapshot: &Value,
+    policy_version: &str,
+    chunk_count: usize,
+    _scratch: &mut GzipScratchBuffer,
+) -> Result<BundleManifest, ReplayBundleError> {
+    derive_bundle_manifest(timeline, initial_state_snapshot, policy_version, chunk_count)
+}
+
 fn chunk_timeline(
     bundle_id: Uuid,
     timeline: &[TimelineEvent],
@@ -1702,6 +1755,265 @@ fn chunk_timeline(
 }
 
 #[cfg(feature = "compression")]
+fn chunk_timeline_with_scratch(
+    bundle_id: Uuid,
+    timeline: &[TimelineEvent],
+    scratch: &mut GzipScratchBuffer,
+) -> Result<Vec<BundleChunk>, ReplayBundleError> {
+    if timeline.is_empty() {
+        return Ok(vec![BundleChunk {
+            bundle_id,
+            chunk_index: 0,
+            total_chunks: 1,
+            event_count: 0,
+            first_sequence_number: 0,
+            last_sequence_number: 0,
+            compressed_size_bytes: 0,
+            chunk_hash: sha256_hex(b"[]"),
+            events: Vec::new(),
+        }]);
+    }
+
+    let mut buckets: Vec<Vec<TimelineEvent>> = Vec::new();
+    let mut current_bucket: Vec<TimelineEvent> = Vec::new();
+    let mut current_size = 2_usize;
+    let max_event_size = MAX_BUNDLE_BYTES.saturating_sub(2);
+
+    for event in timeline {
+        let event_json = canonicalize_value(&serde_json::to_value(event)?, "$.timeline_event")?;
+        let event_size = canonical_json_len(&event_json)?;
+        if event_size >= max_event_size {
+            return Err(ReplayBundleError::OversizedEvent {
+                sequence_number: event.sequence_number,
+                size_bytes: event_size,
+                max_bytes: max_event_size,
+            });
+        }
+        let delimiter = usize::from(!current_bucket.is_empty());
+
+        if !current_bucket.is_empty()
+            && current_size
+                .saturating_add(delimiter)
+                .saturating_add(event_size)
+                > MAX_BUNDLE_BYTES
+        {
+            if buckets.len() >= MAX_CHUNKS_PER_BUNDLE {
+                return Err(ReplayBundleError::TooManyChunks {
+                    count: buckets.len().saturating_add(1),
+                    max: MAX_CHUNKS_PER_BUNDLE,
+                });
+            }
+            buckets.push(current_bucket);
+            current_bucket = Vec::new();
+            current_size = 2;
+        }
+
+        let delimiter = usize::from(!current_bucket.is_empty());
+        current_size = current_size
+            .saturating_add(delimiter)
+            .saturating_add(event_size);
+        current_bucket.push(event.clone());
+    }
+
+    if !current_bucket.is_empty() {
+        if buckets.len() >= MAX_CHUNKS_PER_BUNDLE {
+            return Err(ReplayBundleError::TooManyChunks {
+                count: buckets.len().saturating_add(1),
+                max: MAX_CHUNKS_PER_BUNDLE,
+            });
+        }
+        buckets.push(current_bucket);
+    }
+
+    let total_chunks = u32::try_from(buckets.len()).unwrap_or(u32::MAX);
+    let mut chunks = Vec::with_capacity(buckets.len());
+
+    for (idx, events) in buckets.into_iter().enumerate() {
+        let chunk_value = canonicalize_value(&serde_json::to_value(&events)?, "$.chunk_events")?;
+        let chunk_bytes = canonical_json_bytes(&chunk_value)?;
+        let first_sequence_number = events.first().map_or(0, |event| event.sequence_number);
+        let last_sequence_number = events.last().map_or(0, |event| event.sequence_number);
+        chunks.push(BundleChunk {
+            bundle_id,
+            chunk_index: u32::try_from(idx).unwrap_or(u32::MAX),
+            total_chunks,
+            event_count: events.len(),
+            first_sequence_number,
+            last_sequence_number,
+            compressed_size_bytes: scratch.gzip_size_bytes(&chunk_bytes)?,
+            chunk_hash: sha256_hex(&chunk_bytes),
+            events,
+        });
+    }
+
+    Ok(chunks)
+}
+
+/// Optimized chunk_timeline that caches canonical event bytes to avoid repeated serialization
+fn chunk_timeline_with_cached_events(
+    bundle_id: Uuid,
+    timeline: &[TimelineEvent],
+    scratch: &mut GzipScratchBuffer,
+) -> Result<Vec<BundleChunk>, ReplayBundleError> {
+    if timeline.is_empty() {
+        return Ok(vec![BundleChunk {
+            bundle_id,
+            chunk_index: 0,
+            total_chunks: 1,
+            event_count: 0,
+            first_sequence_number: 0,
+            last_sequence_number: 0,
+            compressed_size_bytes: 0,
+            chunk_hash: sha256_hex(b"[]"),
+            events: Vec::new(),
+        }]);
+    }
+
+    // Pre-compute canonical bytes for all events once to avoid repeated serialization
+    let mut cached_events = Vec::with_capacity(timeline.len());
+    for event in timeline {
+        let event_json = canonicalize_value(&serde_json::to_value(event)?, "$.timeline_event")?;
+        let canonical_bytes = canonical_json_bytes(&event_json)?;
+        let canonical_size = canonical_bytes.len();
+
+        cached_events.push(CachedEvent {
+            event: event.clone(),
+            canonical_bytes,
+            canonical_size,
+        });
+    }
+
+    let mut buckets: Vec<Vec<&CachedEvent>> = Vec::new();
+    let mut current_bucket: Vec<&CachedEvent> = Vec::new();
+    let mut current_size = 2_usize; // JSON array brackets
+    let max_event_size = MAX_BUNDLE_BYTES.saturating_sub(2);
+
+    for cached_event in &cached_events {
+        if cached_event.canonical_size >= max_event_size {
+            return Err(ReplayBundleError::OversizedEvent {
+                sequence_number: cached_event.event.sequence_number,
+                size_bytes: cached_event.canonical_size,
+                max_bytes: max_event_size,
+            });
+        }
+
+        let delimiter = usize::from(!current_bucket.is_empty());
+
+        if !current_bucket.is_empty()
+            && current_size
+                .saturating_add(delimiter)
+                .saturating_add(cached_event.canonical_size)
+                > MAX_BUNDLE_BYTES
+        {
+            if buckets.len() >= MAX_CHUNKS_PER_BUNDLE {
+                return Err(ReplayBundleError::TooManyChunks {
+                    count: buckets.len().saturating_add(1),
+                    max: MAX_CHUNKS_PER_BUNDLE,
+                });
+            }
+            buckets.push(current_bucket);
+            current_bucket = Vec::new();
+            current_size = 2;
+        }
+
+        current_size = current_size
+            .saturating_add(delimiter)
+            .saturating_add(cached_event.canonical_size);
+        current_bucket.push(cached_event);
+    }
+
+    if !current_bucket.is_empty() {
+        if buckets.len() >= MAX_CHUNKS_PER_BUNDLE {
+            return Err(ReplayBundleError::TooManyChunks {
+                count: buckets.len().saturating_add(1),
+                max: MAX_CHUNKS_PER_BUNDLE,
+            });
+        }
+        buckets.push(current_bucket);
+    }
+
+    let total_chunks = u32::try_from(buckets.len()).unwrap_or(u32::MAX);
+    let mut chunks = Vec::with_capacity(buckets.len());
+
+    for (idx, cached_events_bucket) in buckets.into_iter().enumerate() {
+        // Construct chunk bytes from pre-computed canonical event bytes
+        let mut chunk_bytes = Vec::new();
+        chunk_bytes.push(b'[');
+        for (i, cached_event) in cached_events_bucket.iter().enumerate() {
+            if i > 0 {
+                chunk_bytes.push(b',');
+            }
+            chunk_bytes.extend_from_slice(&cached_event.canonical_bytes);
+        }
+        chunk_bytes.push(b']');
+
+        let events: Vec<TimelineEvent> = cached_events_bucket
+            .iter()
+            .map(|cached| cached.event.clone())
+            .collect();
+        let first_sequence_number = events.first().map_or(0, |event| event.sequence_number);
+        let last_sequence_number = events.last().map_or(0, |event| event.sequence_number);
+
+        chunks.push(BundleChunk {
+            bundle_id,
+            chunk_index: u32::try_from(idx).unwrap_or(u32::MAX),
+            total_chunks,
+            event_count: events.len(),
+            first_sequence_number,
+            last_sequence_number,
+            compressed_size_bytes: scratch.gzip_size_bytes(&chunk_bytes)?,
+            chunk_hash: sha256_hex(&chunk_bytes),
+            events,
+        });
+    }
+
+    Ok(chunks)
+}
+
+#[cfg(not(feature = "compression"))]
+fn chunk_timeline_with_scratch(
+    bundle_id: Uuid,
+    timeline: &[TimelineEvent],
+    _scratch: &mut GzipScratchBuffer,
+) -> Result<Vec<BundleChunk>, ReplayBundleError> {
+    chunk_timeline(bundle_id, timeline)
+}
+
+#[cfg(feature = "compression")]
+/// Reusable gzip compression scratch buffer to avoid repeated allocations
+struct GzipScratchBuffer {
+    buffer: Vec<u8>,
+}
+
+/// Cached canonical event data to avoid repeated serialization
+#[derive(Debug)]
+struct CachedEvent {
+    /// Original timeline event
+    event: TimelineEvent,
+    /// Pre-computed canonical JSON bytes for this event
+    canonical_bytes: Vec<u8>,
+    /// Pre-computed canonical JSON length
+    canonical_size: usize,
+}
+
+#[cfg(feature = "compression")]
+impl GzipScratchBuffer {
+    fn new() -> Self {
+        Self {
+            buffer: Vec::new(),
+        }
+    }
+
+    fn gzip_size_bytes(&mut self, bytes: &[u8]) -> Result<u64, ReplayBundleError> {
+        self.buffer.clear();
+        let mut encoder = GzEncoder::new(&mut self.buffer, Compression::default());
+        std::io::Write::write_all(&mut encoder, bytes)?;
+        encoder.finish()?;
+        Ok(u64::try_from(self.buffer.len()).unwrap_or(u64::MAX))
+    }
+}
+
+#[cfg(feature = "compression")]
 fn gzip_size_bytes(bytes: &[u8]) -> Result<u64, ReplayBundleError> {
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     std::io::Write::write_all(&mut encoder, bytes)?;
@@ -1713,6 +2025,17 @@ fn gzip_size_bytes(bytes: &[u8]) -> Result<u64, ReplayBundleError> {
 fn gzip_size_bytes(bytes: &[u8]) -> Result<u64, ReplayBundleError> {
     // When compression is disabled, return original size
     Ok(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
+}
+
+#[cfg(not(feature = "compression"))]
+/// Dummy scratch buffer for non-compression builds
+struct GzipScratchBuffer;
+
+#[cfg(not(feature = "compression"))]
+impl GzipScratchBuffer {
+    fn new() -> Self {
+        Self
+    }
 }
 
 fn canonical_json_bytes(value: &Value) -> Result<Vec<u8>, ReplayBundleError> {
@@ -3309,11 +3632,4 @@ mod tests {
             assert!(msg.contains("67108865"), "error should show actual size");
             assert!(msg.contains("67108864"), "error should show limit size");
         } else {
-            panic!("expected FormatError with size limit message");
-        }
-
-        // Also test the trusted_keys variant
-        let result2 = read_bundle_from_path_with_trusted_keys(temp_file.path(), &[]);
-        assert!(result2.is_err(), "oversized bundle should be rejected by trusted_keys variant");
-    }
-}
+            panic!("expected Fo
