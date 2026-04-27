@@ -283,7 +283,9 @@ fn validate_override_receipt(
         }
     }
 
-    if receipt.action_id != check.action_id || receipt.trace_id != check.trace_id {
+    if !crate::security::constant_time::ct_eq(&receipt.action_id, &check.action_id)
+        || !crate::security::constant_time::ct_eq(&receipt.trace_id, &check.trace_id)
+    {
         return Err(FreshnessError::OverrideRequired {
             tier: check.tier.to_string(),
             age_secs: check.revocation_age_secs,
