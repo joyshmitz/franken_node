@@ -240,6 +240,12 @@ where
     serde_json::to_vec(value)
 }
 
+fn update_hash_json_bytes_len_prefixed(hasher: &mut Sha256, json_bytes: &[u8]) {
+    let len = u64::try_from(json_bytes.len()).unwrap_or(u64::MAX);
+    hasher.update(len.to_le_bytes());
+    hasher.update(json_bytes);
+}
+
 fn update_hash_serialized_json_len_prefixed<T>(
     hasher: &mut Sha256,
     value: &T,
@@ -248,9 +254,7 @@ where
     T: Serialize,
 {
     let json_bytes = serialized_json_bytes(value)?;
-    let len = u64::try_from(json_bytes.len()).unwrap_or(u64::MAX);
-    hasher.update(len.to_le_bytes());
-    hasher.update(&json_bytes);
+    update_hash_json_bytes_len_prefixed(hasher, &json_bytes);
     Ok(())
 }
 
@@ -299,6 +303,14 @@ fn serialized_entry_size(entry: &EvidenceEntry) -> usize {
 /// Create a canonical representation of an EvidenceEntry for signature verification.
 /// Excludes the signature and server-derived size fields to prevent circular dependency.
 fn canonical_entry_bytes(entry: &EvidenceEntry) -> [u8; SHA256_DIGEST_BYTES] {
+    let payload_json_bytes = serialized_json_bytes(&entry.payload).ok();
+    canonical_entry_bytes_with_payload_bytes(entry, payload_json_bytes.as_deref())
+}
+
+fn canonical_entry_bytes_with_payload_bytes(
+    entry: &EvidenceEntry,
+    payload_json_bytes: Option<&[u8]>,
+) -> [u8; SHA256_DIGEST_BYTES] {
     let mut hasher = Sha256::new();
 
     // Domain separator prevents attacks across different signing contexts
@@ -320,8 +332,11 @@ fn canonical_entry_bytes(entry: &EvidenceEntry) -> [u8; SHA256_DIGEST_BYTES] {
     update_hash_len_prefixed(&mut hasher, entry.trace_id.as_bytes());
     hasher.update(entry.epoch_id.to_le_bytes());
 
-    // Serialize payload deterministically without materializing a temporary JSON buffer.
-    let _ = update_hash_serialized_json_len_prefixed(&mut hasher, &entry.payload);
+    // Serialize payload deterministically without materializing a second temporary JSON buffer
+    // when the caller already has the canonical payload bytes available.
+    if let Some(payload_json_bytes) = payload_json_bytes {
+        update_hash_json_bytes_len_prefixed(&mut hasher, payload_json_bytes);
+    }
 
     hasher.finalize().into()
 }
@@ -333,6 +348,14 @@ fn update_hash_len_prefixed(hasher: &mut Sha256, bytes: &[u8]) {
 }
 
 fn compute_entry_hash_bytes(entry: &EvidenceEntry) -> EntryHash {
+    let payload_json_bytes = serialized_json_bytes(&entry.payload).ok();
+    compute_entry_hash_bytes_with_payload_bytes(entry, payload_json_bytes.as_deref())
+}
+
+fn compute_entry_hash_bytes_with_payload_bytes(
+    entry: &EvidenceEntry,
+    payload_json_bytes: Option<&[u8]>,
+) -> EntryHash {
     let mut hasher = Sha256::new();
     hasher.update(b"evidence_entry_v1:");
     hasher.update(
@@ -380,9 +403,12 @@ fn compute_entry_hash_bytes(entry: &EvidenceEntry) -> EntryHash {
     hasher.update(entry.trace_id.as_bytes());
     hasher.update(&entry.epoch_id.to_le_bytes());
 
-    // Hash the serialized payload for deterministic content representation
-    // without allocating a transient JSON buffer on the append hot path.
-    if update_hash_serialized_json_len_prefixed(&mut hasher, &entry.payload).is_err() {
+    // Hash the serialized payload for deterministic content representation.
+    // Reuse pre-serialized payload bytes when available to avoid duplicate payload serialization
+    // on the signed append hot path.
+    if let Some(payload_json_bytes) = payload_json_bytes {
+        update_hash_json_bytes_len_prefixed(&mut hasher, payload_json_bytes);
+    } else {
         hasher.update(0_u64.to_le_bytes());
     }
 
@@ -454,7 +480,20 @@ fn verify_evidence_entry_bytes(
     entry: &EvidenceEntry,
     verifying_key: &VerifyingKey,
 ) -> Result<ReplaySignature, LedgerError> {
-    let canonical_bytes = canonical_entry_bytes(entry);
+    let payload_json_bytes = serialized_json_bytes(&entry.payload).ok();
+    verify_evidence_entry_bytes_with_payload_bytes(
+        entry,
+        verifying_key,
+        payload_json_bytes.as_deref(),
+    )
+}
+
+fn verify_evidence_entry_bytes_with_payload_bytes(
+    entry: &EvidenceEntry,
+    verifying_key: &VerifyingKey,
+    payload_json_bytes: Option<&[u8]>,
+) -> Result<ReplaySignature, LedgerError> {
+    let canonical_bytes = canonical_entry_bytes_with_payload_bytes(entry, payload_json_bytes);
     let signature_bytes = decode_replay_signature(&entry.signature)?;
     let signature = Signature::from_bytes(&signature_bytes);
 
@@ -752,10 +791,16 @@ impl EvidenceLedger {
             return Err(LedgerError::ZeroEntryCapacity);
         }
 
+        let payload_json_bytes = serialized_json_bytes(&entry.payload).ok();
+
         let mut replay_signature = None;
         if let Some(verifying_key) = &self.verifying_key {
             // SECURITY: Verify signature first to prevent injection attacks.
-            let signature_bytes = verify_evidence_entry_bytes(&entry, verifying_key)?;
+            let signature_bytes = verify_evidence_entry_bytes_with_payload_bytes(
+                &entry,
+                verifying_key,
+                payload_json_bytes.as_deref(),
+            )?;
 
             // SECURITY: Check for replay attacks - reject duplicate timestamp+signature combinations.
             // Use constant-time comparison to prevent timing side-channel attacks.
@@ -802,7 +847,10 @@ impl EvidenceLedger {
             });
         }
 
-        let entry_hash = self.compute_entry_hash(&normalized_entry);
+        let entry_hash = compute_entry_hash_bytes_with_payload_bytes(
+            &normalized_entry,
+            payload_json_bytes.as_deref(),
+        );
 
         Ok((normalized_entry, entry_size, entry_hash, replay_signature))
     }
@@ -5884,6 +5932,31 @@ mod tests {
         assert_eq!(
             buffered_digest, legacy_digest,
             "payload hashing must preserve the legacy JSON byte contract"
+        );
+    }
+
+    #[test]
+    fn pre_serialized_payload_bytes_match_legacy_canonical_and_entry_hash_paths() {
+        let entry = make_signed_entry(
+            "DEC-PAYLOAD-CACHE",
+            17,
+            &SigningKey::from_bytes(&[5_u8; 32]),
+        );
+        let payload_json_bytes =
+            serde_json::to_vec(&entry.payload).expect("payload serialization should succeed");
+
+        assert_eq!(
+            canonical_entry_bytes(&entry),
+            canonical_entry_bytes_with_payload_bytes(&entry, Some(payload_json_bytes.as_slice())),
+            "pre-serialized payload bytes must preserve the canonical signing digest"
+        );
+        assert_eq!(
+            compute_entry_hash_bytes(&entry),
+            compute_entry_hash_bytes_with_payload_bytes(
+                &entry,
+                Some(payload_json_bytes.as_slice())
+            ),
+            "pre-serialized payload bytes must preserve the entry hash contract"
         );
     }
 
