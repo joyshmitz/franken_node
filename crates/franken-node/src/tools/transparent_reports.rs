@@ -272,12 +272,12 @@ fn compute_catalog_content_hash(
     update_hash_len_prefixed(&mut hasher, report_version.as_bytes());
     hasher.update((total_reports as u64).to_le_bytes());
     hasher.update((open_actions as u64).to_le_bytes());
-    hasher.update((by_category.len() as u64).to_le_bytes());
+    hasher.update((u64::try_from(by_category.len()).unwrap_or(u64::MAX)).to_le_bytes());
     for (category, count) in by_category {
         update_hash_len_prefixed(&mut hasher, category.as_bytes());
         hasher.update((*count as u64).to_le_bytes());
     }
-    hasher.update((by_severity.len() as u64).to_le_bytes());
+    hasher.update((u64::try_from(by_severity.len()).unwrap_or(u64::MAX)).to_le_bytes());
     for (severity, count) in by_severity {
         update_hash_len_prefixed(&mut hasher, severity.as_bytes());
         hasher.update((*count as u64).to_le_bytes());

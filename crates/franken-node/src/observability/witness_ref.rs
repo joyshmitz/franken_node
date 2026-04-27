@@ -2034,7 +2034,7 @@ mod tests {
             let audit = WitnessValidator::coverage_audit(&entries_with_witnesses);
 
             // Verify arithmetic correctness
-            assert_eq!(audit.total_entries, entries_with_witnesses.len() as u64);
+            assert_eq!(audit.total_entries, u64::try_from(entries_with_witnesses.len()).unwrap_or(u64::MAX));
 
             let expected_high_impact = entries_with_witnesses
                 .iter()
@@ -2053,7 +2053,7 @@ mod tests {
 
             let expected_total_witnesses: u64 = entries_with_witnesses
                 .iter()
-                .map(|(_, witnesses)| witnesses.len() as u64)
+                .map(|(_, witnesses)| u64::try_from(witnesses.len()).unwrap_or(u64::MAX))
                 .sum();
             assert_eq!(audit.total_witnesses, expected_total_witnesses);
 

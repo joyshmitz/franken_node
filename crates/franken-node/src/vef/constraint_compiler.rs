@@ -678,7 +678,7 @@ impl ConstraintCompiler {
         // Hash collision prevention: domain separator + length-prefixed fields
         hasher.update(b"constraint_compiler_hash_v1:");
         let input_bytes = input.as_bytes();
-        hasher.update((input_bytes.len() as u64).to_le_bytes());
+        hasher.update((u64::try_from(input_bytes.len()).unwrap_or(u64::MAX)).to_le_bytes());
         hasher.update(input_bytes);
 
         hex::encode(hasher.finalize())

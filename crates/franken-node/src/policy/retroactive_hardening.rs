@@ -147,7 +147,7 @@ impl CanonicalObject {
         let content_hash = {
             let mut hasher = Sha256::new();
             hasher.update(b"retroactive_hardening_content_v1:");
-            hasher.update((content.len() as u64).to_le_bytes());
+            hasher.update((u64::try_from(content.len()).unwrap_or(u64::MAX)).to_le_bytes());
             hasher.update(&content);
             let result = hasher.finalize();
             let mut hash = [0u8; 32];
@@ -363,7 +363,7 @@ impl RetroactiveHardeningPipeline {
                 let mut hasher = Sha256::new();
                 hasher.update(b"retroactive_hardening_hash_v1:");
                 hasher.update(b"RETROHARDEN-CHECKSUM\x00");
-                hasher.update((object.content.len() as u64).to_le_bytes());
+                hasher.update((u64::try_from(object.content.len()).unwrap_or(u64::MAX)).to_le_bytes());
                 hasher.update(&object.content);
                 hasher.update(self.epoch_id.to_le_bytes());
                 hasher.finalize().to_vec()

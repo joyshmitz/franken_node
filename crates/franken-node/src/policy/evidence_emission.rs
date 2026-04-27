@@ -1908,7 +1908,7 @@ mod tests {
             );
 
             assert_eq!(
-                local_checker.action_log().len() as u64,
+                u64::try_from(local_checker.action_log().len()).unwrap_or(u64::MAX),
                 final_total.min(MAX_ACTION_LOG_ENTRIES as u64),
                 "Action log should record all operations (up to capacity) in {}",
                 scenario_name
@@ -2411,7 +2411,7 @@ mod tests {
 
         // Verify ledger consistency
         assert!(
-            final_ledger.len() as u64 <= total_executed,
+            u64::try_from(final_ledger.len()).unwrap_or(u64::MAX) <= total_executed,
             "Ledger entries should not exceed executed count"
         );
         assert!(
@@ -2421,7 +2421,7 @@ mod tests {
 
         // Verify action log consistency
         assert!(
-            final_checker.action_log().len() as u64
+            u64::try_from(final_checker.action_log().len()).unwrap_or(u64::MAX)
                 <= total_operations.min(MAX_ACTION_LOG_ENTRIES as u64)
         );
     }

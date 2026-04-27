@@ -7886,8 +7886,8 @@ mod tests {
                 4 => {
                     // Runtime statistics
                     let stats = runtime.get_runtime_stats();
-                    assert!(stats.total_links_created >= links.len() as u64);
-                    assert!(stats.total_timers_created >= timers.len() as u64);
+                    assert!(stats.total_links_created >= u64::try_from(links.len()).unwrap_or(u64::MAX));
+                    assert!(stats.total_timers_created >= u64::try_from(timers.len()).unwrap_or(u64::MAX));
                 }
                 5 => {
                     // DPOR statistics
@@ -7900,8 +7900,8 @@ mod tests {
 
         // Final consistency check after simulated concurrent operations
         let final_stats = runtime.get_runtime_stats();
-        assert!(final_stats.total_links_created >= links.len() as u64);
-        assert!(final_stats.total_timers_created >= timers.len() as u64);
+        assert!(final_stats.total_links_created >= u64::try_from(links.len()).unwrap_or(u64::MAX));
+        assert!(final_stats.total_timers_created >= u64::try_from(timers.len()).unwrap_or(u64::MAX));
         assert!(final_stats.total_messages_sent < u64::MAX);
         assert!(final_stats.current_tick < u64::MAX);
 

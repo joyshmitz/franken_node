@@ -6788,7 +6788,7 @@ mod tests {
             assert_eq!(bounded_snapshot.total_appended, 5);
 
             // Some entries may have been evicted, but total_evicted + retained should equal total_appended
-            let retained = bounded_snapshot.entries.len() as u64;
+            let retained = u64::try_from(bounded_snapshot.entries.len()).unwrap_or(u64::MAX);
             assert_eq!(
                 retained + bounded_snapshot.total_evicted,
                 bounded_snapshot.total_appended

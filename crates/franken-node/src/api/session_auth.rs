@@ -6283,17 +6283,17 @@ mod session_auth_boundary_negative_tests {
         let derived_key = derive_epoch_key(&rs, epoch, SESSION_AUTH_DOMAIN);
         let mut hmac1 = HmacSha256::new_from_slice(derived_key.as_bytes()).unwrap();
         hmac1.update(b"test_prefix_v1:");
-        hmac1.update(&(input1.0.len() as u64).to_le_bytes());
+        hmac1.update(&(u64::try_from(input1.0.len()).unwrap_or(u64::MAX)).to_le_bytes());
         hmac1.update(input1.0.as_bytes());
-        hmac1.update(&(input1.1.len() as u64).to_le_bytes());
+        hmac1.update(&(u64::try_from(input1.1.len()).unwrap_or(u64::MAX)).to_le_bytes());
         hmac1.update(input1.1.as_bytes());
         let mac1 = hmac1.finalize().into_bytes();
 
         let mut hmac2 = HmacSha256::new_from_slice(derived_key.as_bytes()).unwrap();
         hmac2.update(b"test_prefix_v1:");
-        hmac2.update(&(input2.0.len() as u64).to_le_bytes());
+        hmac2.update(&(u64::try_from(input2.0.len()).unwrap_or(u64::MAX)).to_le_bytes());
         hmac2.update(input2.0.as_bytes());
-        hmac2.update(&(input2.1.len() as u64).to_le_bytes());
+        hmac2.update(&(u64::try_from(input2.1.len()).unwrap_or(u64::MAX)).to_le_bytes());
         hmac2.update(input2.1.as_bytes());
         let mac2 = hmac2.finalize().into_bytes();
 

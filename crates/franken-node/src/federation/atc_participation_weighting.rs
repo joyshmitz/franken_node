@@ -1625,7 +1625,7 @@ mod tests {
 
         let mut expected_hasher = Sha256::new();
         expected_hasher.update(b"atc_participation_hash_v1:");
-        expected_hasher.update((canonical.len() as u64).to_le_bytes());
+        expected_hasher.update((u64::try_from(canonical.len()).unwrap_or(u64::MAX)).to_le_bytes());
         expected_hasher.update(canonical.as_bytes());
         let expected = hex::encode(expected_hasher.finalize());
 

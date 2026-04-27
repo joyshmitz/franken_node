@@ -8,8 +8,11 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::thread;
+use std::time::Duration;
 
 use crate::control_plane::control_epoch::{
     ControlEpoch, EpochArtifactEvent, EpochRejection, EpochRejectionReason, ValidityWindowPolicy,
@@ -31,6 +34,7 @@ pub mod epoch_event_codes {
 
 const RESERVED_CONNECTOR_ID: &str = "<unknown>";
 const ROLLOUT_PERSIST_TRACE_ID: &str = "rollout-state-persist";
+const ROLLOUT_PERSIST_LOCK_RETRY_BACKOFF_MILLIS: [u64; 3] = [100, 200, 400];
 
 fn invalid_connector_id_reason(connector_id: &str) -> Option<String> {
     let trimmed = connector_id.trim();
@@ -342,16 +346,28 @@ fn persist_lock_registry() -> &'static Mutex<BTreeMap<PathBuf, Arc<Mutex<()>>>> 
 
 /// Serialize concurrent rollout `persist()` calls targeting the same state file.
 ///
-/// Canonical lifecycle: callers acquire the rollout obligation tracker first
-/// (or pass an already-exclusive test tracker), then acquire this process-local
-/// per-path lock before reading the current state, reserving the obligation,
-/// writing the temp file, renaming it into place, and committing the obligation.
-/// The guard releases on every return path after any temp-file orphaning attempt.
-/// No file flock or other module persist lock may be acquired before this lock.
-/// If it is left held or poisoned, rollout state version checks and obligation
+/// Canonical lifecycle: callers first acquire the path-scoped cross-process
+/// flock file, then acquire this process-local mutex keyed by the canonical lock
+/// path before reading the current state, reserving the obligation, writing the
+/// temp file, renaming it into place, and committing the obligation. The guard
+/// releases on every return path after any temp-file orphaning attempt. No
+/// other module persist lock may be acquired before this lock pair. If either
+/// lock is left held or poisoned, rollout state version checks and obligation
 /// commits for that same persisted path stall or fail before a new temp file is
 /// written, but unrelated rollout files should keep making progress.
+fn persist_lock_path(path: &Path) -> PathBuf {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("rollout-state.json");
+    parent.join(format!("{file_name}.lock"))
+}
+
 fn persist_lock(path: &Path) -> Result<Arc<Mutex<()>>, PersistError> {
+    let lock_key = persist_lock_path(path)
+        .canonicalize()
+        .unwrap_or_else(|_| persist_lock_path(path));
     persist_lock_registry()
         .lock()
         .map_err(|_| PersistError::IoError {
@@ -360,10 +376,95 @@ fn persist_lock(path: &Path) -> Result<Arc<Mutex<()>>, PersistError> {
         .map(|mut locks| {
             Arc::clone(
                 locks
-                    .entry(path.to_path_buf())
+                    .entry(lock_key)
                     .or_insert_with(|| Arc::new(Mutex::new(()))),
             )
         })
+}
+
+fn lock_persist_file(file: &File, lock_path: &Path, path: &Path) -> Result<(), PersistError> {
+    match file.try_lock() {
+        Ok(()) => return Ok(()),
+        Err(TryLockError::WouldBlock) => {}
+        Err(TryLockError::Error(err)) => {
+            return Err(PersistError::IoError {
+                message: format!(
+                    "failed acquiring rollout persist flock {} for {}: {err}",
+                    lock_path.display(),
+                    path.display()
+                ),
+            });
+        }
+    }
+
+    for delay_millis in ROLLOUT_PERSIST_LOCK_RETRY_BACKOFF_MILLIS {
+        thread::sleep(Duration::from_millis(delay_millis));
+        match file.try_lock() {
+            Ok(()) => return Ok(()),
+            Err(TryLockError::WouldBlock) => {}
+            Err(TryLockError::Error(err)) => {
+                return Err(PersistError::IoError {
+                    message: format!(
+                        "failed acquiring rollout persist flock {} for {}: {err}",
+                        lock_path.display(),
+                        path.display()
+                    ),
+                });
+            }
+        }
+    }
+
+    Err(PersistError::IoError {
+        message: format!(
+            "timed out acquiring rollout persist flock {} for {} after retries at 100ms/200ms/400ms",
+            lock_path.display(),
+            path.display()
+        ),
+    })
+}
+
+fn unlock_persist_file(file: &File, lock_path: &Path, path: &Path) -> Result<(), PersistError> {
+    file.unlock().map_err(|err| PersistError::IoError {
+        message: format!(
+            "failed releasing rollout persist flock {} for {}: {err}",
+            lock_path.display(),
+            path.display()
+        ),
+    })
+}
+
+fn with_persist_locks<T>(
+    path: &Path,
+    write_state: impl FnOnce() -> Result<T, PersistError>,
+) -> Result<T, PersistError> {
+    let lock_path = persist_lock_path(path);
+    let lock_file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|err| PersistError::IoError {
+            message: format!(
+                "failed opening rollout persist flock {} for {}: {err}",
+                lock_path.display(),
+                path.display()
+            ),
+        })?;
+    lock_persist_file(&lock_file, &lock_path, path)?;
+
+    let process_lock = persist_lock(path)?;
+    let _guard = process_lock.lock().map_err(|_| PersistError::IoError {
+        message: "persist lock poisoned".to_string(),
+    })?;
+
+    let write_result = write_state();
+    let unlock_result = unlock_persist_file(&lock_file, &lock_path, path);
+    match (write_result, unlock_result) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(err), _) => Err(err),
+        (Ok(_), Err(err)) => Err(err),
+    }
 }
 
 /// Shared obligation tracker for the legacy `persist()` entrypoint.
@@ -519,65 +620,61 @@ fn persist_with_obligation_tracker_and_rename_and_orphan(
     rename: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
     orphan_rename: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
 ) -> Result<(), PersistError> {
-    let persist_lock = persist_lock(path)?;
-    let _guard = persist_lock.lock().map_err(|_| PersistError::IoError {
-        message: "persist lock poisoned".to_string(),
-    })?;
-
-    // Check for stale version if file exists
-    if path.exists() {
-        let existing = load(path)?;
-        if existing.version >= state.version {
-            return Err(PersistError::StaleVersion {
-                current_version: existing.version,
-                attempted_version: state.version,
-            });
+    with_persist_locks(path, || {
+        if path.exists() {
+            let existing = load(path)?;
+            if existing.version >= state.version {
+                return Err(PersistError::StaleVersion {
+                    current_version: existing.version,
+                    attempted_version: state.version,
+                });
+            }
         }
-    }
 
-    let json = serde_json::to_string_pretty(state).map_err(|e| PersistError::IoError {
-        message: e.to_string(),
-    })?;
-    let now_ms = now_unix_ms();
-    let obligation_payload = rollout_obligation_payload(state, path)?;
-    let obligation_guard = tracker
-        .reserve_guard(
-            ObligationFlow::Migration,
-            obligation_payload,
-            now_ms,
-            trace_id,
-        )
-        .map_err(|message| PersistError::IoError { message })?;
+        let json = serde_json::to_string_pretty(state).map_err(|e| PersistError::IoError {
+            message: e.to_string(),
+        })?;
+        let now_ms = now_unix_ms();
+        let obligation_payload = rollout_obligation_payload(state, path)?;
+        let obligation_guard = tracker
+            .reserve_guard(
+                ObligationFlow::Migration,
+                obligation_payload,
+                now_ms,
+                trace_id,
+            )
+            .map_err(|message| PersistError::IoError { message })?;
 
-    // Write to temp file then rename for atomicity (UUID suffix avoids collisions).
-    // TempFileGuard ensures cleanup on rename failure.
-    let tmp_path = path.with_extension(format!("tmp.{}", uuid::Uuid::now_v7()));
-    let mut tmp_guard = TempFileGuard::new(tmp_path.clone());
-    if let Err(error) = std::fs::write(&tmp_path, &json) {
-        return Err(persist_error_with_orphan_result(
-            format!(
-                "failed to write rollout temp file {}: {error}",
-                tmp_path.display()
-            ),
-            tmp_guard.orphan_with(orphan_rename),
-        ));
-    }
-    if let Err(error) = rename(&tmp_path, path) {
-        return Err(persist_error_with_orphan_result(
-            format!(
-                "failed to rename rollout temp file {} to {}: {error}",
-                tmp_path.display(),
-                path.display()
-            ),
-            tmp_guard.orphan_with(orphan_rename),
-        ));
-    }
-    tmp_guard.defuse();
-    obligation_guard
-        .commit(now_unix_ms())
-        .map_err(|message| PersistError::IoError { message })?;
+        // Write to temp file then rename for atomicity (UUID suffix avoids collisions).
+        // TempFileGuard ensures cleanup on rename failure.
+        let tmp_path = path.with_extension(format!("tmp.{}", uuid::Uuid::now_v7()));
+        let mut tmp_guard = TempFileGuard::new(tmp_path.clone());
+        if let Err(error) = std::fs::write(&tmp_path, &json) {
+            return Err(persist_error_with_orphan_result(
+                format!(
+                    "failed to write rollout temp file {}: {error}",
+                    tmp_path.display()
+                ),
+                tmp_guard.orphan_with(orphan_rename),
+            ));
+        }
+        if let Err(error) = rename(&tmp_path, path) {
+            return Err(persist_error_with_orphan_result(
+                format!(
+                    "failed to rename rollout temp file {} to {}: {error}",
+                    tmp_path.display(),
+                    path.display()
+                ),
+                tmp_guard.orphan_with(orphan_rename),
+            ));
+        }
+        tmp_guard.defuse();
+        obligation_guard
+            .commit(now_unix_ms())
+            .map_err(|message| PersistError::IoError { message })?;
 
-    Ok(())
+        Ok(())
+    })
 }
 
 fn persist_error_with_orphan_result(
@@ -976,6 +1073,115 @@ mod tests {
             .expect("path A persist thread should complete")
             .expect("persist for path A should succeed after rename resumes");
         assert_eq!(load(&path_a).unwrap(), state_a);
+    }
+
+    #[test]
+    fn persist_waiting_on_cross_process_flock_does_not_hold_process_mutex() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("state.json");
+        let lock_path = persist_lock_path(&path);
+        let lock_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .expect("open rollout persist lock");
+        lock_file
+            .lock()
+            .expect("take external rollout persist lock");
+
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let state = sample_state();
+        let handle = std::thread::spawn({
+            let path = path.clone();
+            move || {
+                started_tx.send(()).expect("signal persist started");
+                persist(&state, &path)
+            }
+        });
+
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("persist thread should start");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let process_lock = persist_lock(&path).expect("path-scoped process mutex");
+        let process_guard = process_lock
+            .try_lock()
+            .expect("flock wait must not hold the process mutex");
+        drop(process_guard);
+
+        lock_file
+            .unlock()
+            .expect("release external rollout persist lock");
+        handle
+            .join()
+            .expect("persist thread join")
+            .expect("persist should succeed after flock release");
+        assert_eq!(load(&path).unwrap(), state);
+    }
+
+    #[test]
+    fn persist_rechecks_stale_version_after_cross_process_flock_release() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("state.json");
+        let initial = sample_state();
+        persist(&initial, &path).expect("seed initial state");
+
+        let lock_path = persist_lock_path(&path);
+        let lock_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .expect("open rollout persist lock");
+        lock_file
+            .lock()
+            .expect("take external rollout persist lock");
+
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let mut stale = sample_state();
+        stale.bump_version();
+        let handle = std::thread::spawn({
+            let path = path.clone();
+            move || {
+                started_tx.send(()).expect("signal persist started");
+                persist(&stale, &path)
+            }
+        });
+
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("persist thread should start");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert!(
+            !handle.is_finished(),
+            "persist thread must remain blocked behind externally-held flock"
+        );
+
+        let mut newer = sample_state();
+        newer.bump_version();
+        newer.bump_version();
+        std::fs::write(&path, serde_json::to_string_pretty(&newer).unwrap())
+            .expect("write newer state while holding external flock");
+
+        lock_file
+            .unlock()
+            .expect("release external rollout persist lock");
+        let err = handle
+            .join()
+            .expect("persist thread join")
+            .expect_err("stale writer must be rejected after re-checking version");
+        assert!(matches!(
+            err,
+            PersistError::StaleVersion {
+                current_version: 3,
+                attempted_version: 2
+            }
+        ));
+        assert_eq!(load(&path).unwrap(), newer);
     }
 
     #[test]

@@ -451,24 +451,24 @@ impl ReplayDeterminismMetrics {
         let content_hash = {
             let mut h = Sha256::new();
             h.update(b"replay_determinism_hash_v1:");
-            h.update((self.config.metric_version.len() as u64).to_le_bytes());
+            h.update((u64::try_from(self.config.metric_version.len()).unwrap_or(u64::MAX)).to_le_bytes());
             h.update(self.config.metric_version.as_bytes());
             h.update((total as u64).to_le_bytes());
             h.update((matches as u64).to_le_bytes());
             h.update((divergences as u64).to_le_bytes());
             hash_f64(&mut h, determinism_rate);
             hash_f64(&mut h, completeness_pct);
-            h.update((completeness.len() as u64).to_le_bytes());
+            h.update((u64::try_from(completeness.len()).unwrap_or(u64::MAX)).to_le_bytes());
             for entry in &completeness {
                 let category_label = entry.category.label();
-                h.update((category_label.len() as u64).to_le_bytes());
+                h.update((u64::try_from(category_label.len()).unwrap_or(u64::MAX)).to_le_bytes());
                 h.update(category_label.as_bytes());
                 h.update((entry.expected as u64).to_le_bytes());
                 h.update((entry.found as u64).to_le_bytes());
                 h.update([u8::from(entry.complete)]);
             }
             let verdict_label = format!("{gate_verdict:?}");
-            h.update((verdict_label.len() as u64).to_le_bytes());
+            h.update((u64::try_from(verdict_label.len()).unwrap_or(u64::MAX)).to_le_bytes());
             h.update(verdict_label.as_bytes());
             hex::encode(h.finalize())
         };

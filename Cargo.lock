@@ -1551,6 +1551,7 @@ dependencies = [
  "ftui-core",
  "rustc-hash",
  "serde",
+ "serde_json",
  "smallvec",
 ]
 

@@ -17,7 +17,7 @@ struct CoverageRow {
     vectors: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 struct PolicyLogExpectation {
     check_code: String,
     event_code: String,
@@ -93,19 +93,27 @@ fn run_vector(vector: &PolicyVector) -> (Value, Vec<Value>) {
 }
 
 fn policy_checks(report: &Value) -> Vec<Value> {
-    required_array(report, "checks")
+    let mut checks = required_array(report, "checks")
         .iter()
         .filter(|check| required_string(check, "code").starts_with("DR-POLICY-"))
         .cloned()
-        .collect()
+        .collect::<Vec<_>>();
+    for check in &mut checks {
+        normalize_policy_strings(check);
+    }
+    checks
 }
 
 fn policy_structured_logs(report: &Value) -> Vec<Value> {
-    required_array(report, "structured_logs")
+    let mut logs = required_array(report, "structured_logs")
         .iter()
         .filter(|log| required_string(log, "check_code").starts_with("DR-POLICY-"))
         .cloned()
-        .collect()
+        .collect::<Vec<_>>();
+    for log in &mut logs {
+        normalize_policy_strings(log);
+    }
+    logs
 }
 
 fn actual_policy_log_expectations(logs: &[Value]) -> Vec<PolicyLogExpectation> {
@@ -116,7 +124,7 @@ fn actual_policy_log_expectations(logs: &[Value]) -> Vec<PolicyLogExpectation> {
             event_code: required_string(log, "event_code").to_string(),
             status: required_string(log, "status").to_string(),
             level: required_string(log, "level").to_string(),
-            message: required_string(log, "message").to_string(),
+            message: normalize_policy_fixture_string(required_string(log, "message")),
             error_code: log
                 .get("error_code")
                 .and_then(Value::as_str)
@@ -125,6 +133,53 @@ fn actual_policy_log_expectations(logs: &[Value]) -> Vec<PolicyLogExpectation> {
                 .as_str()
                 .expect("policy stderr log recovery action")
                 .to_string(),
+        })
+        .collect()
+}
+
+fn normalize_policy_fixture_string(text: &str) -> String {
+    const POLICY_FIXTURE_PREFIX: &str = "fixtures/policy_activation/";
+    if let Some((_, suffix)) = text.split_once(POLICY_FIXTURE_PREFIX) {
+        format!("{POLICY_FIXTURE_PREFIX}{suffix}")
+    } else {
+        text.to_string()
+    }
+}
+
+fn normalize_policy_strings(value: &mut Value) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                normalize_policy_strings(item);
+            }
+        }
+        Value::Object(map) => {
+            for nested in map.values_mut() {
+                normalize_policy_strings(nested);
+            }
+        }
+        Value::String(text) => {
+            *text = normalize_policy_fixture_string(text);
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) => {}
+    }
+}
+
+fn normalized_policy_activation(report: &Value) -> Option<Value> {
+    report.get("policy_activation").cloned().map(|mut value| {
+        normalize_policy_strings(&mut value);
+        value
+    })
+}
+
+fn normalized_expected_policy_logs(vector: &PolicyVector) -> Vec<PolicyLogExpectation> {
+    vector
+        .expected_policy_logs
+        .iter()
+        .cloned()
+        .map(|mut log| {
+            log.message = normalize_policy_fixture_string(&log.message);
+            log
         })
         .collect()
 }
@@ -286,14 +341,14 @@ fn doctor_policy_activation_golden_vectors_match_live_policy_contract() {
             vector.name
         );
         assert_eq!(
-            report.get("policy_activation"),
-            golden_report.get("policy_activation"),
+            normalized_policy_activation(&report),
+            normalized_policy_activation(&golden_report),
             "policy activation object drifted from checked-in doctor golden for {}",
             vector.name
         );
         assert_eq!(
             actual_policy_log_expectations(&logs),
-            vector.expected_policy_logs,
+            normalized_expected_policy_logs(&vector),
             "policy stderr JSONL projection drifted for {}",
             vector.name
         );

@@ -356,7 +356,7 @@ impl SecurityOpsCaseStudyRegistry {
         let content_hash = {
             let mut h = Sha256::new();
             h.update(b"security_ops_hash_v1:");
-            h.update((SCHEMA_VERSION.len() as u64).to_le_bytes());
+            h.update((u64::try_from(SCHEMA_VERSION.len()).unwrap_or(u64::MAX)).to_le_bytes());
             h.update(SCHEMA_VERSION.as_bytes());
             h.update((total_case_studies as u64).to_le_bytes());
             h.update((security_improvement_case_studies as u64).to_le_bytes());
@@ -365,7 +365,7 @@ impl SecurityOpsCaseStudyRegistry {
             h.update((industry_submissions as u64).to_le_bytes());
             h.update([u8::from(overall_verdict)]);
             let unmet_str = format!("{unmet_criteria:?}");
-            h.update((unmet_str.len() as u64).to_le_bytes());
+            h.update((u64::try_from(unmet_str.len()).unwrap_or(u64::MAX)).to_le_bytes());
             h.update(unmet_str.as_bytes());
             hex::encode(h.finalize())
         };
