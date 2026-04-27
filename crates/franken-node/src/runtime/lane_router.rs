@@ -742,7 +742,7 @@ impl LaneRouter {
                         }
                     }
                     LaneOverflowPolicy::EnqueueWithTimeout => {
-                        while lane_state.queue.len() > lane_cfg.queue_limit {
+                        while lane_state.queue.len() >= lane_cfg.queue_limit {
                             let Some(evicted) = lane_state.queue.pop_back() else {
                                 break;
                             };
@@ -750,7 +750,7 @@ impl LaneRouter {
                         }
                     }
                     LaneOverflowPolicy::ShedOldest => {
-                        while lane_state.queue.len() > lane_cfg.queue_limit {
+                        while lane_state.queue.len() >= lane_cfg.queue_limit {
                             let Some(evicted) = lane_state.queue.pop_front() else {
                                 break;
                             };
