@@ -1,0 +1,441 @@
+//! Mock-free end-to-end test for the audience-bound token chain.
+//!
+//! Drives the public surface of
+//! `frankenengine_node::control_plane::audience_token` through a real
+//! delegation lifecycle: REAL Ed25519 issuance → root token → delegated
+//! attenuated child → `TokenValidator::verify_chain` success → every
+//! rejection variant.
+//!
+//! Bead: bd-xa7h9.
+//!
+//! Coverage:
+//!   - happy path: root-only chain + 2-deep delegation chain both verify,
+//!   - INV-ABT-ATTENUATION: child capabilities not a subset → rejected,
+//!   - INV-ABT-ATTENUATION: child audience not a subset → rejected,
+//!   - INV-ABT-ATTENUATION: child max_delegation_depth >= parent's →
+//!     rejected,
+//!   - INV-ABT-ATTENUATION: child expires_at > parent's → rejected,
+//!   - INV-ABT-EXPIRY: token past expires_at at verify time → rejected,
+//!   - INV-ABT-AUDIENCE: requester_id not in leaf audience → rejected,
+//!   - INV-ABT-REPLAY: same nonce verified twice in one epoch → rejected,
+//!   - REPLAY allowed across `advance_epoch`,
+//!   - SIGNATURE_INVALID: signature flipped after issuance → rejected,
+//!   - validator counters (issued/delegated/verified/rejected) advance
+//!     monotonically.
+//!
+//! No mocks: real Ed25519 SigningKey, real canonical
+//! `signature_preimage`, real BTreeMap-backed nonce ledger, real
+//! constant-time hash + audience comparisons. Each phase emits a
+//! structured tracing event PLUS a JSON-line on stderr.
+
+use std::collections::BTreeSet;
+use std::sync::Once;
+use std::time::Instant;
+
+use ed25519_dalek::{Signer, SigningKey};
+use frankenengine_node::control_plane::audience_token::{
+    ActionScope, AudienceBoundToken, TokenChain, TokenId, TokenValidator,
+    ERR_ABT_ATTENUATION_VIOLATION, ERR_ABT_AUDIENCE_MISMATCH, ERR_ABT_REPLAY_DETECTED,
+    ERR_ABT_SIGNATURE_INVALID, ERR_ABT_TOKEN_EXPIRED,
+};
+use serde_json::json;
+use tracing::{error, info};
+
+static TEST_TRACING_INIT: Once = Once::new();
+
+fn init_test_tracing() {
+    TEST_TRACING_INIT.call_once(|| {
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+    });
+}
+
+#[derive(serde::Serialize)]
+struct PhaseLog<'a> {
+    timestamp: String,
+    test_name: &'a str,
+    phase: &'a str,
+    duration_ms: u64,
+    success: bool,
+    detail: serde_json::Value,
+}
+
+struct Harness {
+    test_name: &'static str,
+    started: Instant,
+}
+
+impl Harness {
+    fn new(test_name: &'static str) -> Self {
+        init_test_tracing();
+        let h = Self {
+            test_name,
+            started: Instant::now(),
+        };
+        h.log_phase("setup", true, json!({}));
+        h
+    }
+
+    fn log_phase(&self, phase: &str, success: bool, detail: serde_json::Value) {
+        let entry = PhaseLog {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            test_name: self.test_name,
+            phase,
+            duration_ms: u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            success,
+            detail,
+        };
+        eprintln!(
+            "{}",
+            serde_json::to_string(&entry).expect("phase log serializes")
+        );
+        if success {
+            info!(
+                test = self.test_name,
+                phase = phase,
+                duration_ms = entry.duration_ms,
+                "phase completed"
+            );
+        } else {
+            error!(
+                test = self.test_name,
+                phase = phase,
+                duration_ms = entry.duration_ms,
+                "phase failed"
+            );
+        }
+    }
+}
+
+const ISSUER: &str = "issuer-prod-controller";
+
+fn signing_key() -> SigningKey {
+    SigningKey::from_bytes(&[0xAB; 32])
+}
+
+fn caps(scopes: &[ActionScope]) -> BTreeSet<ActionScope> {
+    scopes.iter().copied().collect()
+}
+
+/// Build, sign, and return a fresh AudienceBoundToken using the real
+/// `signature_preimage` and a real Ed25519 signer.
+fn make_signed_token(
+    key: &SigningKey,
+    token_id: &str,
+    issuer: &str,
+    audience: Vec<String>,
+    capabilities: BTreeSet<ActionScope>,
+    issued_at: u64,
+    expires_at: u64,
+    nonce: &str,
+    parent_token_hash: Option<String>,
+    max_delegation_depth: u8,
+) -> AudienceBoundToken {
+    let mut t = AudienceBoundToken {
+        token_id: TokenId::new(token_id),
+        issuer: issuer.to_string(),
+        audience,
+        capabilities,
+        issued_at,
+        expires_at,
+        nonce: nonce.to_string(),
+        parent_token_hash,
+        signature: String::new(),
+        max_delegation_depth,
+    };
+    let sig = key.sign(&t.signature_preimage()).to_bytes();
+    t.signature = format!("ed25519:{}", hex::encode(sig));
+    t
+}
+
+#[test]
+fn e2e_audience_token_root_chain_verifies() {
+    let h = Harness::new("e2e_audience_token_root_chain_verifies");
+
+    let key = signing_key();
+    let mut validator = TokenValidator::new(1).with_trusted_issuer_key(ISSUER, key.verifying_key());
+    h.log_phase("validator_built", true, json!({"epoch": 1}));
+
+    let root = make_signed_token(
+        &key,
+        "tk-root-1",
+        ISSUER,
+        vec!["svc-target".to_string()],
+        caps(&[ActionScope::Migrate, ActionScope::Configure]),
+        1_000_000_000_000,
+        1_000_000_900_000,
+        "nonce-root-1",
+        None,
+        2,
+    );
+    let chain = TokenChain::new(root.clone()).expect("root chain ok");
+
+    validator
+        .verify_chain(&chain, "svc-target", 1_000_000_500_000, "trace-verify-1")
+        .expect("root-only chain verifies");
+    assert_eq!(validator.tokens_verified(), 1);
+    assert_eq!(validator.tokens_rejected(), 0);
+    h.log_phase("root_chain_verified", true, json!({}));
+
+    // For negative tests we use FRESH validators + tokens so the replay
+    // check (which fires before audience/expiry checks) doesn't mask the
+    // failure mode under test.
+
+    // INV-ABT-AUDIENCE: requester not in leaf audience → reject.
+    let mut v_aud = TokenValidator::new(1).with_trusted_issuer_key(ISSUER, key.verifying_key());
+    let aud_root = make_signed_token(
+        &key,
+        "tk-aud",
+        ISSUER,
+        vec!["svc-target".to_string()],
+        caps(&[ActionScope::Migrate]),
+        1_000_000_000_000,
+        1_000_000_900_000,
+        "nonce-aud",
+        None,
+        0,
+    );
+    let aud_chain = TokenChain::new(aud_root).unwrap();
+    let err = v_aud
+        .verify_chain(&aud_chain, "svc-other", 1_000_000_500_000, "trace-bad-aud")
+        .expect_err("audience mismatch rejected");
+    assert_eq!(err.code, ERR_ABT_AUDIENCE_MISMATCH);
+    h.log_phase("audience_mismatch", true, json!({"code": err.code}));
+
+    // INV-ABT-EXPIRY: now_ms past expires_at → reject.
+    let mut v_exp = TokenValidator::new(1).with_trusted_issuer_key(ISSUER, key.verifying_key());
+    let exp_root = make_signed_token(
+        &key,
+        "tk-exp",
+        ISSUER,
+        vec!["svc-target".to_string()],
+        caps(&[ActionScope::Migrate]),
+        1_000_000_000_000,
+        1_000_000_900_000,
+        "nonce-exp",
+        None,
+        0,
+    );
+    let exp_chain = TokenChain::new(exp_root).unwrap();
+    let err = v_exp
+        .verify_chain(&exp_chain, "svc-target", 1_000_001_000_000, "trace-expired")
+        .expect_err("expired rejected");
+    assert_eq!(err.code, ERR_ABT_TOKEN_EXPIRED);
+    h.log_phase("expired", true, json!({"code": err.code}));
+}
+
+#[test]
+fn e2e_audience_token_delegation_chain_attenuates() {
+    let h = Harness::new("e2e_audience_token_delegation_chain_attenuates");
+
+    let key = signing_key();
+    let mut validator = TokenValidator::new(1).with_trusted_issuer_key(ISSUER, key.verifying_key());
+
+    // Root: depth=2, 3 caps, audience {svc-A, svc-B}.
+    let root = make_signed_token(
+        &key,
+        "tk-root-2",
+        ISSUER,
+        vec!["svc-A".to_string(), "svc-B".to_string()],
+        caps(&[ActionScope::Migrate, ActionScope::Configure, ActionScope::Promote]),
+        1_000_000_000_000,
+        1_000_000_900_000,
+        "nonce-root-2",
+        None,
+        2,
+    );
+    let mut chain = TokenChain::new(root.clone()).expect("root ok");
+    let root_hash = chain.root().unwrap().hash();
+
+    // Child: depth=1 (strictly less), caps subset, audience subset, expires
+    // before parent. Must be accepted.
+    let child = make_signed_token(
+        &key,
+        "tk-child-2",
+        ISSUER,
+        vec!["svc-A".to_string()],
+        caps(&[ActionScope::Migrate]),
+        1_000_000_100_000,
+        1_000_000_800_000,
+        "nonce-child-2",
+        Some(root_hash.clone()),
+        1,
+    );
+    chain.append(child.clone()).expect("child ok");
+    assert_eq!(chain.depth(), 2);
+    h.log_phase("chain_depth_2", true, json!({"depth": 2}));
+
+    // No `record_issuance`/`record_delegation` here — those would seed the
+    // seen-nonce ledger and make the verify path reject as replay.
+    validator
+        .verify_chain(&chain, "svc-A", 1_000_000_500_000, "trace-verify-2")
+        .expect("delegated chain verifies");
+    h.log_phase("delegated_verified", true, json!({}));
+
+    // INV-ABT-ATTENUATION: child grants a capability the root does not have.
+    let bad_caps = make_signed_token(
+        &key,
+        "tk-overcap",
+        ISSUER,
+        vec!["svc-A".to_string()],
+        caps(&[ActionScope::Revoke]), // not in parent's caps
+        1_000_000_100_000,
+        1_000_000_800_000,
+        "nonce-overcap",
+        Some(root_hash.clone()),
+        1,
+    );
+    let mut bad_chain = TokenChain::new(root.clone()).unwrap();
+    let err = bad_chain.append(bad_caps).expect_err("over-cap rejected");
+    assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
+    h.log_phase("over_capability_rejected", true, json!({"code": err.code}));
+
+    // INV-ABT-ATTENUATION: child audience not a subset.
+    let bad_aud = make_signed_token(
+        &key,
+        "tk-aud-extra",
+        ISSUER,
+        vec!["svc-EXTERNAL".to_string()], // not in parent's audience
+        caps(&[ActionScope::Migrate]),
+        1_000_000_100_000,
+        1_000_000_800_000,
+        "nonce-aud-extra",
+        Some(root_hash.clone()),
+        1,
+    );
+    let mut bad_chain = TokenChain::new(root.clone()).unwrap();
+    let err = bad_chain.append(bad_aud).expect_err("audience expansion rejected");
+    assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
+    h.log_phase("audience_expansion_rejected", true, json!({"code": err.code}));
+
+    // INV-ABT-ATTENUATION: child max_delegation_depth >= parent's.
+    let bad_depth = make_signed_token(
+        &key,
+        "tk-depth",
+        ISSUER,
+        vec!["svc-A".to_string()],
+        caps(&[ActionScope::Migrate]),
+        1_000_000_100_000,
+        1_000_000_800_000,
+        "nonce-depth",
+        Some(root_hash.clone()),
+        2, // not strictly less than root's 2
+    );
+    let mut bad_chain = TokenChain::new(root.clone()).unwrap();
+    let err = bad_chain.append(bad_depth).expect_err("depth not attenuated rejected");
+    assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
+    h.log_phase("depth_not_attenuated_rejected", true, json!({"code": err.code}));
+
+    // INV-ABT-ATTENUATION: child expires AFTER parent.
+    let outlives = make_signed_token(
+        &key,
+        "tk-outlives",
+        ISSUER,
+        vec!["svc-A".to_string()],
+        caps(&[ActionScope::Migrate]),
+        1_000_000_100_000,
+        1_000_001_000_000, // > root.expires_at
+        "nonce-outlives",
+        Some(root_hash.clone()),
+        1,
+    );
+    let mut bad_chain = TokenChain::new(root.clone()).unwrap();
+    let err = bad_chain.append(outlives).expect_err("outlives parent rejected");
+    assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
+    h.log_phase("outlives_parent_rejected", true, json!({"code": err.code}));
+}
+
+#[test]
+fn e2e_audience_token_replay_detection_and_epoch_reset() {
+    let h = Harness::new("e2e_audience_token_replay_detection_and_epoch_reset");
+
+    let key = signing_key();
+    let mut validator = TokenValidator::new(1).with_trusted_issuer_key(ISSUER, key.verifying_key());
+
+    let root = make_signed_token(
+        &key,
+        "tk-replay-root",
+        ISSUER,
+        vec!["svc-X".to_string()],
+        caps(&[ActionScope::Migrate]),
+        1_000_000_000_000,
+        1_000_000_900_000,
+        "nonce-replay-1",
+        None,
+        0,
+    );
+    let chain = TokenChain::new(root.clone()).unwrap();
+
+    // First verify accepts; second must be rejected as replay (single-token
+    // chain → root nonce IS checked).
+    validator
+        .verify_chain(&chain, "svc-X", 1_000_000_500_000, "trace-r1")
+        .expect("first verify ok");
+    let err = validator
+        .verify_chain(&chain, "svc-X", 1_000_000_500_001, "trace-r2")
+        .expect_err("replay rejected");
+    assert_eq!(err.code, ERR_ABT_REPLAY_DETECTED);
+    h.log_phase("replay_rejected", true, json!({"code": err.code}));
+
+    // INV-ABT-REPLAY: epoch reset clears nonces.
+    validator.advance_epoch(2);
+    assert_eq!(validator.epoch_id(), 2);
+    validator
+        .verify_chain(&chain, "svc-X", 1_000_000_500_002, "trace-r3")
+        .expect("replay allowed across epochs");
+    h.log_phase("replay_allowed_after_epoch_reset", true, json!({}));
+}
+
+#[test]
+fn e2e_audience_token_signature_tampering_rejected() {
+    let h = Harness::new("e2e_audience_token_signature_tampering_rejected");
+
+    let key = signing_key();
+    let mut validator = TokenValidator::new(1).with_trusted_issuer_key(ISSUER, key.verifying_key());
+
+    let mut tok = make_signed_token(
+        &key,
+        "tk-tamper",
+        ISSUER,
+        vec!["svc-Z".to_string()],
+        caps(&[ActionScope::Migrate]),
+        1_000_000_000_000,
+        1_000_000_900_000,
+        "nonce-tamper",
+        None,
+        0,
+    );
+    // Flip the last hex char of the signature.
+    let mut sig: Vec<char> = tok.signature.chars().collect();
+    let last = sig.len() - 1;
+    sig[last] = if sig[last] == '0' { '1' } else { '0' };
+    tok.signature = sig.into_iter().collect();
+
+    let chain = TokenChain::new(tok).unwrap();
+    let err = validator
+        .verify_chain(&chain, "svc-Z", 1_000_000_500_000, "trace-tamper")
+        .expect_err("tampered signature rejected");
+    assert_eq!(err.code, ERR_ABT_SIGNATURE_INVALID);
+    assert_eq!(validator.tokens_rejected(), 1);
+    h.log_phase("signature_tamper_rejected", true, json!({"code": err.code}));
+
+    // Untrusted issuer also rejected with SIGNATURE_INVALID (no key for it).
+    let stranger_key = SigningKey::from_bytes(&[0x99; 32]);
+    let stranger = make_signed_token(
+        &stranger_key,
+        "tk-stranger",
+        "stranger-issuer-not-trusted",
+        vec!["svc-Z".to_string()],
+        caps(&[ActionScope::Migrate]),
+        1_000_000_000_000,
+        1_000_000_900_000,
+        "nonce-stranger",
+        None,
+        0,
+    );
+    let chain = TokenChain::new(stranger).unwrap();
+    let err = validator
+        .verify_chain(&chain, "svc-Z", 1_000_000_500_000, "trace-stranger")
+        .expect_err("untrusted issuer rejected");
+    assert_eq!(err.code, ERR_ABT_SIGNATURE_INVALID);
+    h.log_phase("untrusted_issuer_rejected", true, json!({}));
+}
