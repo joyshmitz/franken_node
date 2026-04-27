@@ -666,6 +666,10 @@ path = "tests/e2e_evidence_replay_gate_lifecycle.rs"
 name = "e2e_divergence_gate_state_machine"
 path = "tests/e2e_divergence_gate_state_machine.rs"
 
+[[test]]
+name = "e2e_key_role_separation_registry"
+path = "tests/e2e_key_role_separation_registry.rs"
+
 [[bench]]
 name = "cuckoo_revocation_bench"
 harness = false
