@@ -34,6 +34,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
 
+/// Maximum number of sybil clusters that can be detected to prevent memory exhaustion.
+const MAX_SYBIL_CLUSTERS: usize = 1000;
+
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
         items.clear();
@@ -590,12 +593,16 @@ impl ParticipationWeightEngine {
         for (hint, members) in &hint_groups {
             if members.len() >= self.config.sybil_cluster_min_size {
                 cluster_counter = cluster_counter.saturating_add(1);
-                clusters.push(SybilCluster {
-                    cluster_id: format!("SYBIL-{cluster_counter:04}"),
-                    member_ids: members.clone(),
-                    detection_signal: format!("shared_cluster_hint:{hint}"),
-                    attenuation_factor: self.config.sybil_attenuation_factor,
-                });
+                push_bounded(
+                    &mut clusters,
+                    SybilCluster {
+                        cluster_id: format!("SYBIL-{cluster_counter:04}"),
+                        member_ids: members.clone(),
+                        detection_signal: format!("shared_cluster_hint:{hint}"),
+                        attenuation_factor: self.config.sybil_attenuation_factor,
+                    },
+                    MAX_SYBIL_CLUSTERS,
+                );
             }
         }
 
