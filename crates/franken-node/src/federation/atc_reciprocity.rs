@@ -28,6 +28,7 @@
 //! - **INV-ATC-GRACE-BOUNDED**: Grace period has finite, configurable duration.
 //! - **INV-ATC-ACCESS-LOGGED**: Every access decision (grant or deny) is logged.
 
+use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -44,6 +45,27 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
         items.drain(0..overflow.min(items.len()));
     }
     items.push(item);
+}
+
+fn parse_rfc3339(value: &str) -> Option<DateTime<FixedOffset>> {
+    DateTime::parse_from_rfc3339(value).ok()
+}
+
+fn exception_is_active(metrics: &ContributionMetrics, timestamp: &str) -> bool {
+    if !metrics.has_exception {
+        return false;
+    }
+    let Some(expires_at) = metrics
+        .exception_expires_at
+        .as_deref()
+        .and_then(parse_rfc3339)
+    else {
+        return false;
+    };
+    let Some(now) = parse_rfc3339(timestamp) else {
+        return false;
+    };
+    now < expires_at
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +168,7 @@ pub struct ContributionMetrics {
     pub has_exception: bool,
     /// Exception reason (if has_exception is true).
     pub exception_reason: Option<String>,
-    /// Exception expiry timestamp (RFC 3339).
+    /// Exception expiry timestamp (RFC 3339, required for an active exception).
     pub exception_expires_at: Option<String>,
 }
 
@@ -359,7 +381,7 @@ impl ReciprocityEngine {
         }
 
         // Check exception
-        if metrics.has_exception {
+        if exception_is_active(metrics, timestamp) {
             let tier = AccessTier::Standard;
             let decision = AccessDecision {
                 participant_id: metrics.participant_id.clone(),
@@ -1059,6 +1081,34 @@ mod tests {
                 .iter()
                 .any(|feed| feed.contains("raw_signals"))
         );
+    }
+
+    #[test]
+    fn expired_exception_fails_closed_and_logs_denial() {
+        let mut engine = ReciprocityEngine::default();
+        let mut metrics = make_excepted_participant("exception-expired");
+        metrics.exception_expires_at = Some("2026-02-19T23:59:59Z".to_string());
+
+        let decision = engine.evaluate_access(&metrics, "2026-02-20T00:00:00Z");
+
+        assert!(!decision.exception_applied);
+        assert_eq!(decision.tier, AccessTier::Blocked);
+        assert!(!decision.granted);
+        assert_eq!(engine.audit_log().len(), 1);
+        assert_eq!(engine.audit_log()[0].event_code, event_codes::ACCESS_DENIED);
+    }
+
+    #[test]
+    fn exception_without_expiry_fails_closed() {
+        let mut engine = ReciprocityEngine::default();
+        let mut metrics = make_excepted_participant("exception-missing-expiry");
+        metrics.exception_expires_at = None;
+
+        let decision = engine.evaluate_access(&metrics, "2026-02-20T00:00:00Z");
+
+        assert!(!decision.exception_applied);
+        assert_eq!(decision.tier, AccessTier::Blocked);
+        assert!(!decision.granted);
     }
 
     #[test]
@@ -1820,7 +1870,7 @@ mod atc_reciprocity_negative_path_tests {
                 }
                 nested
             }),
-            exception_expires_at: None,
+            exception_expires_at: Some("2027-01-01T00:00:00Z".to_string()),
         };
 
         // Should handle deeply nested content without stack overflow
@@ -1859,7 +1909,7 @@ mod atc_reciprocity_negative_path_tests {
     }
 
     #[test]
-    fn negative_exception_expiry_timestamp_manipulation_attacks() {
+    fn negative_exception_expiry_timestamp_manipulation_attacks_fail_closed() {
         let mut engine = ReciprocityEngine::default();
 
         let malicious_timestamps = [
@@ -1897,9 +1947,10 @@ mod atc_reciprocity_negative_path_tests {
             // Should handle malicious timestamps without corruption or crashes
             let decision = engine.evaluate_access(&metrics, "2026-04-17T00:00:00Z");
             assert!(
-                decision.exception_applied,
-                "Exception should still be applied"
+                !decision.exception_applied,
+                "Malformed exception expiry must not activate the exception path"
             );
+            assert_eq!(decision.tier, AccessTier::Blocked);
             assert_eq!(decision.participant_id, format!("timestamp_attack_{}", i));
 
             // JSON round-trip should preserve exact timestamp
@@ -2161,9 +2212,12 @@ mod atc_reciprocity_negative_path_tests {
             .filter(|p| p.has_exception)
             .count();
 
-        // Matrix might not count all exceptions if some are processed differently
-        // but should not exceed the number of participants with has_exception=true
+        // Only the unexpired exception should remain active.
         assert!(matrix.exceptions_active <= expected_exceptions);
+        assert_eq!(matrix.exceptions_active, 1);
+        assert!(!matrix.entries[0].exception_active);
+        assert!(matrix.entries[0].tier == AccessTier::Blocked);
+        assert!(matrix.entries[3].exception_active);
 
         // Content hash should be deterministic despite contradictory inputs
         assert_eq!(matrix.content_hash.len(), 64);
@@ -2326,5 +2380,68 @@ mod atc_reciprocity_negative_path_tests {
         assert_eq!(decision.quality_adjusted_ratio, 1.0);
         assert_eq!(decision.tier, AccessTier::Blocked);
         assert!(!decision.granted);
+    }
+
+    #[test]
+    fn exception_expiration_regression_bd_2vu01() {
+        // Regression test for bd-2vu01: ensure expired exceptions don't grant access
+        let mut engine = ReciprocityEngine::default();
+
+        // Test expired exception
+        let expired_metrics = ContributionMetrics {
+            participant_id: "expired_exception".to_string(),
+            contributions_made: 0,
+            intelligence_consumed: 100,
+            contribution_quality: 0.0,
+            membership_age_seconds: 86400 * 365, // Well past grace period
+            has_exception: true,
+            exception_reason: Some("expired research exception".to_string()),
+            exception_expires_at: Some("2020-01-01T00:00:00Z".to_string()), // Long expired
+        };
+
+        let decision = engine.evaluate_access(&expired_metrics, "2026-04-17T00:00:00Z");
+
+        // Expired exception should NOT grant access
+        assert!(!decision.exception_applied, "Expired exception should not be applied");
+        assert_eq!(decision.tier, AccessTier::Blocked, "Expired exception should result in blocked access");
+        assert!(!decision.granted, "Expired exception should not grant access");
+
+        // Test valid (unexpired) exception
+        let valid_metrics = ContributionMetrics {
+            participant_id: "valid_exception".to_string(),
+            contributions_made: 0,
+            intelligence_consumed: 100,
+            contribution_quality: 0.0,
+            membership_age_seconds: 86400 * 365, // Well past grace period
+            has_exception: true,
+            exception_reason: Some("valid research exception".to_string()),
+            exception_expires_at: Some("2030-01-01T00:00:00Z".to_string()), // Future expiry
+        };
+
+        let decision = engine.evaluate_access(&valid_metrics, "2026-04-17T00:00:00Z");
+
+        // Valid exception should grant access
+        assert!(decision.exception_applied, "Valid exception should be applied");
+        assert_eq!(decision.tier, AccessTier::Standard, "Valid exception should grant standard access");
+        assert!(decision.granted, "Valid exception should grant access");
+
+        // Test malformed expiration timestamp
+        let malformed_metrics = ContributionMetrics {
+            participant_id: "malformed_expiry".to_string(),
+            contributions_made: 0,
+            intelligence_consumed: 100,
+            contribution_quality: 0.0,
+            membership_age_seconds: 86400 * 365, // Well past grace period
+            has_exception: true,
+            exception_reason: Some("malformed expiry exception".to_string()),
+            exception_expires_at: Some("not-a-valid-timestamp".to_string()),
+        };
+
+        let decision = engine.evaluate_access(&malformed_metrics, "2026-04-17T00:00:00Z");
+
+        // Malformed expiration should fail closed and not grant access
+        assert!(!decision.exception_applied, "Malformed expiry should not grant access");
+        assert_eq!(decision.tier, AccessTier::Blocked, "Malformed expiry should result in blocked access");
+        assert!(!decision.granted, "Malformed expiry should not grant access");
     }
 }
