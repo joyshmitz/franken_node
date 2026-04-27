@@ -56,6 +56,7 @@ const ED25519_SIGNATURE_BYTES: usize = 64;
 const SHA256_DIGEST_BYTES: usize = 32;
 const REPLAY_TIMESTAMP_BYTES: usize = 8;
 const REPLAY_KEY_BYTES: usize = REPLAY_TIMESTAMP_BYTES + ED25519_SIGNATURE_BYTES;
+const SPILL_FILE_BUFFER_BYTES: usize = 64 * 1024;
 type ReplaySignature = [u8; ED25519_SIGNATURE_BYTES];
 type ReplayKey = [u8; REPLAY_KEY_BYTES];
 type EntryHash = [u8; SHA256_DIGEST_BYTES];
@@ -334,24 +335,48 @@ fn update_hash_len_prefixed(hasher: &mut Sha256, bytes: &[u8]) {
 fn compute_entry_hash_bytes(entry: &EvidenceEntry) -> EntryHash {
     let mut hasher = Sha256::new();
     hasher.update(b"evidence_entry_v1:");
-    hasher.update(&u64::try_from(entry.schema_version.len()).unwrap_or(u64::MAX).to_le_bytes());
+    hasher.update(
+        &u64::try_from(entry.schema_version.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
     hasher.update(entry.schema_version.as_bytes());
     if let Some(entry_id) = &entry.entry_id {
         hasher.update(&[1]);
-        hasher.update(&u64::try_from(entry_id.len()).unwrap_or(u64::MAX).to_le_bytes());
+        hasher.update(
+            &u64::try_from(entry_id.len())
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
         hasher.update(entry_id.as_bytes());
     } else {
         hasher.update(&[0]);
     }
-    hasher.update(&u64::try_from(entry.decision_id.len()).unwrap_or(u64::MAX).to_le_bytes());
+    hasher.update(
+        &u64::try_from(entry.decision_id.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
     hasher.update(entry.decision_id.as_bytes());
     let decision_kind = entry.decision_kind.label();
-    hasher.update(&u64::try_from(decision_kind.len()).unwrap_or(u64::MAX).to_le_bytes());
+    hasher.update(
+        &u64::try_from(decision_kind.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
     hasher.update(decision_kind.as_bytes());
-    hasher.update(&u64::try_from(entry.decision_time.len()).unwrap_or(u64::MAX).to_le_bytes());
+    hasher.update(
+        &u64::try_from(entry.decision_time.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
     hasher.update(entry.decision_time.as_bytes());
     hasher.update(&entry.timestamp_ms.to_le_bytes());
-    hasher.update(&u64::try_from(entry.trace_id.len()).unwrap_or(u64::MAX).to_le_bytes());
+    hasher.update(
+        &u64::try_from(entry.trace_id.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
     hasher.update(entry.trace_id.as_bytes());
     hasher.update(&entry.epoch_id.to_le_bytes());
 
@@ -362,7 +387,11 @@ fn compute_entry_hash_bytes(entry: &EvidenceEntry) -> EntryHash {
     }
 
     hasher.update(&entry.size_bytes.to_le_bytes());
-    hasher.update(&u64::try_from(entry.signature.len()).unwrap_or(u64::MAX).to_le_bytes());
+    hasher.update(
+        &u64::try_from(entry.signature.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
     hasher.update(entry.signature.as_bytes());
 
     // NOTE: prev_entry_hash is intentionally excluded to prevent circular dependency
@@ -616,8 +645,8 @@ impl LedgerCapacity {
 /// Type alias for configuration-style usage.
 pub type LedgerConfig = LedgerCapacity;
 
-fn format_ledger_init_event(capacity: &LedgerCapacity) -> String {
-    format!(
+fn format_ledger_init_event(capacity: &LedgerCapacity) -> impl fmt::Display + '_ {
+    format_args!(
         "{}: evidence ledger initialized: max_entries={}, max_bytes={}",
         event_codes::LEDGER_CAPACITY_WARN,
         capacity.max_entries,
@@ -625,8 +654,8 @@ fn format_ledger_init_event(capacity: &LedgerCapacity) -> String {
     )
 }
 
-fn format_ledger_zero_capacity_event(entry: &EvidenceEntry) -> String {
-    format!(
+fn format_ledger_zero_capacity_event(entry: &EvidenceEntry) -> impl fmt::Display + '_ {
+    format_args!(
         "{}: append rejected because max_entries=0, epoch={}",
         event_codes::LEDGER_CAPACITY_WARN,
         entry.epoch_id,
@@ -637,8 +666,8 @@ fn format_ledger_entry_too_large_event(
     entry_size: usize,
     max_bytes: usize,
     epoch_id: u64,
-) -> String {
-    format!(
+) -> impl fmt::Display {
+    format_args!(
         "{}: entry size {} exceeds max_bytes {}, epoch={}",
         event_codes::LEDGER_CAPACITY_WARN,
         entry_size,
@@ -647,8 +676,12 @@ fn format_ledger_entry_too_large_event(
     )
 }
 
-fn format_ledger_append_event(id: EntryId, entry: &EvidenceEntry, entry_size: usize) -> String {
-    format!(
+fn format_ledger_append_event(
+    id: EntryId,
+    entry: &EvidenceEntry,
+    entry_size: usize,
+) -> impl fmt::Display + '_ {
+    format_args!(
         "{}: entry={}, decision={}, epoch={}, size={}",
         event_codes::LEDGER_APPEND,
         id,
@@ -662,8 +695,8 @@ fn format_ledger_eviction_event(
     evicted_id: EntryId,
     evicted_entry: &EvidenceEntry,
     evicted_size: usize,
-) -> String {
-    format!(
+) -> impl fmt::Display + '_ {
+    format_args!(
         "{}: evicted entry={}, decision={}, epoch={}, freed_bytes={}",
         event_codes::LEDGER_EVICTION,
         evicted_id,
@@ -673,8 +706,8 @@ fn format_ledger_eviction_event(
     )
 }
 
-fn format_ledger_spill_event(id: EntryId, bytes: usize) -> String {
-    format!(
+fn format_ledger_spill_event(id: EntryId, bytes: usize) -> impl fmt::Display {
+    format_args!(
         "{}: spill wrote entry={}, bytes={}",
         event_codes::LEDGER_SPILL,
         id,
@@ -1378,6 +1411,10 @@ enum SpillWriter {
     File(BufWriter<std::fs::File>),
 }
 
+fn new_spill_file_writer(file: std::fs::File) -> BufWriter<std::fs::File> {
+    BufWriter::with_capacity(SPILL_FILE_BUFFER_BYTES, file)
+}
+
 impl SpillWriter {
     fn append_json_entry<T>(&mut self, value: &T) -> Result<usize, LedgerError>
     where
@@ -1511,7 +1548,7 @@ impl LabSpillMode {
             })?;
         Ok(Self {
             ledger: EvidenceLedger::new(capacity),
-            spill_writer: SpillWriter::File(BufWriter::new(file)),
+            spill_writer: SpillWriter::File(new_spill_file_writer(file)),
             circuit_breaker: CircuitBreakerState::new_with_path(path),
         })
     }
@@ -1547,7 +1584,7 @@ impl LabSpillMode {
             })?;
         Ok(Self {
             ledger: EvidenceLedger::with_verifying_key(capacity, verifying_key),
-            spill_writer: SpillWriter::File(BufWriter::new(file)),
+            spill_writer: SpillWriter::File(new_spill_file_writer(file)),
             circuit_breaker: CircuitBreakerState::new_with_path(path),
         })
     }
@@ -2488,7 +2525,7 @@ mod tests {
             .append(true)
             .open(&spill_path)
             .expect("spill file should open");
-        let mut spill_writer = SpillWriter::File(BufWriter::new(file));
+        let mut spill_writer = SpillWriter::File(new_spill_file_writer(file));
         let entry = make_entry("DEC-SPILL-FILE", 10);
 
         let json_bytes = spill_writer
@@ -2508,6 +2545,21 @@ mod tests {
 
         assert_eq!(json_bytes, expected_line.len());
         assert_eq!(line, expected_line);
+    }
+
+    #[test]
+    fn lab_spill_file_uses_large_buffer_capacity() {
+        let dir = tempfile::tempdir().expect("should succeed");
+        let spill_path = dir.path().join("spill-capacity.jsonl");
+        let spill = LabSpillMode::with_file(LedgerCapacity::new(4, 4096), &spill_path)
+            .expect("spill file should open");
+
+        match spill.spill_writer {
+            SpillWriter::File(file) => assert_eq!(file.capacity(), SPILL_FILE_BUFFER_BYTES),
+            SpillWriter::Generic(_) => {
+                assert!(false, "with_file should use a file-backed spill writer")
+            }
+        }
     }
 
     #[test]
