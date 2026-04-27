@@ -47,6 +47,35 @@ pub struct ThresholdConfig {
     pub signer_keys: Vec<SignerKey>,
 }
 
+/// SECURITY: Validates that an identifier contains only safe characters to prevent
+/// control characters, invisible Unicode, or bidirectional text override attacks
+/// that could confuse logs, metrics, or operator workflows.
+fn validate_safe_identifier(identifier: &str) -> Result<(), &'static str> {
+    if identifier.is_empty() {
+        return Err("identifier cannot be empty");
+    }
+
+    // Reject if too long (prevent DoS via extremely long identifiers)
+    if identifier.len() > 128 {
+        return Err("identifier exceeds maximum length of 128 characters");
+    }
+
+    // Allow only: alphanumeric ASCII, hyphen, underscore, and dot
+    // This prevents control chars, invisible Unicode, bidi overrides, etc.
+    for char in identifier.chars() {
+        match char {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' => {
+                // Safe character, continue
+            }
+            _ => {
+                return Err("identifier contains unsafe characters (only alphanumeric, hyphen, underscore, dot allowed)");
+            }
+        }
+    }
+
+    Ok(())
+}
+
 impl ThresholdConfig {
     pub fn validate(&self) -> Result<(), ThresholdError> {
         if self.threshold == 0 {
@@ -74,6 +103,14 @@ impl ThresholdConfig {
         let mut seen_key_ids = BTreeSet::new();
         let mut seen_public_keys = BTreeSet::new();
         for signer in &self.signer_keys {
+            // SECURITY: Validate key_id contains only safe characters to prevent
+            // control characters, invisible Unicode, or bidi tricks in logs/metrics
+            if let Err(reason) = validate_safe_identifier(&signer.key_id) {
+                return Err(ThresholdError::ConfigInvalid {
+                    reason: format!("invalid signer key_id '{}': {}", signer.key_id, reason),
+                });
+            }
+
             if !seen_key_ids.insert(signer.key_id.as_str()) {
                 return Err(ThresholdError::ConfigInvalid {
                     reason: format!("duplicate signer key_id {}", signer.key_id),
@@ -512,6 +549,17 @@ fn verify_threshold_with_key_lookup(
     let message_bytes = build_signing_message(&artifact.content_hash);
 
     for sig in &artifact.signatures {
+        // SECURITY: Validate signer_id contains only safe characters to prevent
+        // control characters, invisible Unicode, or bidi tricks in verification logs
+        if let Err(reason) = validate_safe_identifier(&sig.signer_id) {
+            if first_failure.is_none() {
+                first_failure = Some(FailureReason::InvalidSignature {
+                    signer_id: format!("unsafe signer_id: {}", reason),
+                });
+            }
+            continue;
+        }
+
         // Check for unknown signer using the prepared key set (O(1) instead of O(n))
         if !key_lookup.contains_key_id(&sig.key_id) {
             if first_failure.is_none() {
