@@ -18,16 +18,17 @@ use std::{
 #[cfg(feature = "asupersync-transport")]
 use crate::capacity_defaults::aliases::MAX_CONTROL_EVENTS;
 use crate::{
+    api::fleet_quarantine::{RevocationScope, RevocationSeverity},
     capacity_defaults::aliases::{MAX_ACTION_LOG_ENTRIES, MAX_NODES_CAP},
     config::timeouts,
 };
 use chrono::{DateTime, Utc};
 use ed25519_dalek::Signer;
-use tracing::warn;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::runtime::clock;
@@ -114,7 +115,8 @@ pub fn sign_fleet_convergence_receipt_payload<T: Serialize>(
     let verifying_key = signing_key.verifying_key();
     let mut payload_hasher = Sha256::new();
     payload_hasher.update(b"fleet_convergence_receipt_payload_v1:");
-    payload_hasher.update((u64::try_from(canonical_payload.len()).unwrap_or(u64::MAX)).to_le_bytes());
+    payload_hasher
+        .update((u64::try_from(canonical_payload.len()).unwrap_or(u64::MAX)).to_le_bytes());
     payload_hasher.update(&canonical_payload);
 
     Ok(FleetConvergenceReceiptSignature {
@@ -208,6 +210,10 @@ pub enum FleetAction {
         zone_id: String,
         policy_version: String,
         changed_fields: Vec<String>,
+    },
+    Revoke {
+        extension_id: String,
+        scope: RevocationScope,
     },
 }
 
@@ -1541,32 +1547,20 @@ fn validate_action_record(action: &FleetActionRecord) -> Result<(), FleetTranspo
             ..
         } => {
             validate_zone_id(zone_id)?;
-            if incident_id.trim().is_empty() {
-                return Err(FleetTransportError::serialization(
-                    "quarantine incident_id must not be empty",
-                ));
-            }
-            if target_id.trim().is_empty() {
-                return Err(FleetTransportError::serialization(
-                    "quarantine target_id must not be empty",
-                ));
-            }
-            if reason.trim().is_empty() {
-                return Err(FleetTransportError::serialization(
-                    "quarantine reason must not be empty",
-                ));
-            }
+            validate_action_text_field("quarantine incident_id", incident_id)?;
+            validate_action_text_field("quarantine target_id", target_id)?;
+            validate_action_text_field("quarantine reason", reason)?;
         }
         FleetAction::Release {
             zone_id,
             incident_id,
+            reason,
             ..
         } => {
             validate_zone_id(zone_id)?;
-            if incident_id.trim().is_empty() {
-                return Err(FleetTransportError::serialization(
-                    "release incident_id must not be empty",
-                ));
+            validate_action_text_field("release incident_id", incident_id)?;
+            if let Some(reason) = reason {
+                validate_action_text_field("release reason", reason)?;
             }
         }
         FleetAction::PolicyUpdate {
@@ -1575,12 +1569,38 @@ fn validate_action_record(action: &FleetActionRecord) -> Result<(), FleetTranspo
             ..
         } => {
             validate_zone_id(zone_id)?;
-            if policy_version.trim().is_empty() {
-                return Err(FleetTransportError::serialization(
-                    "policy_version must not be empty",
-                ));
-            }
+            validate_action_text_field("policy_version", policy_version)?;
         }
+        FleetAction::Revoke { extension_id, scope } => {
+            validate_zone_id(&scope.zone_id)?;
+            validate_action_text_field("revoke extension_id", extension_id)?;
+            validate_action_text_field("revoke reason", &scope.reason)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_action_text_field(field_name: &str, value: &str) -> Result<(), FleetTransportError> {
+    if value.trim().is_empty() {
+        return Err(FleetTransportError::serialization(format!(
+            "{field_name} must not be empty"
+        )));
+    }
+    if value.trim() != value {
+        return Err(FleetTransportError::serialization(format!(
+            "{field_name} must not include leading or trailing whitespace"
+        )));
+    }
+    if value.contains('\0') {
+        return Err(FleetTransportError::serialization(format!(
+            "{field_name} must not contain null bytes"
+        )));
+    }
+    if value.chars().any(char::is_control) {
+        return Err(FleetTransportError::serialization(format!(
+            "{field_name} must not contain control characters"
+        )));
     }
 
     Ok(())
@@ -1886,6 +1906,28 @@ mod tests {
         }
     }
 
+    fn revoke_action_record(
+        action_id: impl Into<String>,
+        emitted_at: &str,
+        extension_id: impl Into<String>,
+    ) -> FleetActionRecord {
+        FleetActionRecord {
+            action_id: action_id.into(),
+            emitted_at: DateTime::parse_from_rfc3339(emitted_at)
+                .expect("timestamp")
+                .with_timezone(&Utc),
+            action: FleetAction::Revoke {
+                extension_id: extension_id.into(),
+                scope: RevocationScope {
+                    zone_id: "prod".to_string(),
+                    tenant_id: None,
+                    severity: RevocationSeverity::Mandatory,
+                    reason: "test revocation".to_string(),
+                },
+            },
+        }
+    }
+
     fn node_status(
         zone_id: impl Into<String>,
         node_id: impl Into<String>,
@@ -2067,6 +2109,69 @@ mod tests {
     }
 
     #[test]
+    fn publish_action_rejects_quarantine_with_padded_target_id() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+
+        let action = FleetActionRecord {
+            action_id: "fleet-action-padded-target".to_string(),
+            emitted_at: DateTime::parse_from_rfc3339("2026-04-06T00:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&Utc),
+            action: FleetAction::Quarantine {
+                zone_id: "prod".to_string(),
+                incident_id: "inc-padded-target".to_string(),
+                target_id: " sha256:artifact ".to_string(),
+                target_kind: FleetTargetKind::Artifact,
+                reason: "audit reason".to_string(),
+                quarantine_version: 1,
+            },
+        };
+
+        let error = transport
+            .publish_action(&action)
+            .expect_err("padded quarantine target should be rejected");
+
+        assert!(matches!(
+            error,
+            FleetTransportError::SerializationError { .. }
+        ));
+        assert!(transport.list_actions().expect("list actions").is_empty());
+    }
+
+    #[test]
+    fn publish_action_rejects_release_with_control_character_reason() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+
+        let action = FleetActionRecord {
+            action_id: "fleet-action-release-control".to_string(),
+            emitted_at: DateTime::parse_from_rfc3339("2026-04-06T00:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&Utc),
+            action: FleetAction::Release {
+                zone_id: "prod".to_string(),
+                incident_id: "inc-release-control".to_string(),
+                reason: Some("review\npending".to_string()),
+            },
+        };
+
+        let error = transport
+            .publish_action(&action)
+            .expect_err("release reason with control text should be rejected");
+
+        assert!(matches!(
+            error,
+            FleetTransportError::SerializationError { .. }
+        ));
+        assert!(transport.list_actions().expect("list actions").is_empty());
+    }
+
+    #[test]
     fn publish_action_rejects_policy_update_with_blank_version() {
         let tempdir = tempdir().expect("tempdir");
         let root = tempdir.path().join("fleet-state");
@@ -2088,6 +2193,102 @@ mod tests {
         let error = transport
             .publish_action(&action)
             .expect_err("blank policy version should be rejected");
+
+        assert!(matches!(
+            error,
+            FleetTransportError::SerializationError { .. }
+        ));
+        assert!(transport.list_actions().expect("list actions").is_empty());
+    }
+
+    #[test]
+    fn publish_action_accepts_valid_revoke() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+
+        let action = revoke_action_record(
+            "fleet-action-revoke-valid",
+            "2026-04-06T00:00:00Z",
+            "ext-malicious",
+        );
+
+        transport
+            .publish_action(&action)
+            .expect("valid revoke should succeed");
+
+        let actions = transport.list_actions().expect("list actions");
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].action_id, "fleet-action-revoke-valid");
+        if let FleetAction::Revoke { extension_id, scope } = &actions[0].action {
+            assert_eq!(extension_id, "ext-malicious");
+            assert_eq!(scope.zone_id, "prod");
+        } else {
+            panic!("Expected Revoke action");
+        }
+    }
+
+    #[test]
+    fn publish_action_rejects_revoke_with_blank_extension_id() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+
+        let action = FleetActionRecord {
+            action_id: "fleet-action-blank-ext".to_string(),
+            emitted_at: DateTime::parse_from_rfc3339("2026-04-06T00:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&Utc),
+            action: FleetAction::Revoke {
+                extension_id: "  ".to_string(),
+                scope: RevocationScope {
+                    zone_id: "prod".to_string(),
+                    tenant_id: None,
+                    severity: RevocationSeverity::Mandatory,
+                    reason: "valid reason".to_string(),
+                },
+            },
+        };
+
+        let error = transport
+            .publish_action(&action)
+            .expect_err("blank extension_id should be rejected");
+
+        assert!(matches!(
+            error,
+            FleetTransportError::SerializationError { .. }
+        ));
+        assert!(transport.list_actions().expect("list actions").is_empty());
+    }
+
+    #[test]
+    fn publish_action_rejects_revoke_with_blank_reason() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+
+        let action = FleetActionRecord {
+            action_id: "fleet-action-blank-reason".to_string(),
+            emitted_at: DateTime::parse_from_rfc3339("2026-04-06T00:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&Utc),
+            action: FleetAction::Revoke {
+                extension_id: "ext-test".to_string(),
+                scope: RevocationScope {
+                    zone_id: "prod".to_string(),
+                    tenant_id: None,
+                    severity: RevocationSeverity::Emergency,
+                    reason: "\n".to_string(),
+                },
+            },
+        };
+
+        let error = transport
+            .publish_action(&action)
+            .expect_err("blank reason should be rejected");
 
         assert!(matches!(
             error,
@@ -3013,7 +3214,8 @@ mod tests {
         // Verify the new hash follows the expected domain-separated pattern
         let mut expected_hasher = Sha256::new();
         expected_hasher.update(b"fleet_convergence_receipt_payload_v1:");
-        expected_hasher.update((u64::try_from(canonical_payload.len()).unwrap_or(u64::MAX)).to_le_bytes());
+        expected_hasher
+            .update((u64::try_from(canonical_payload.len()).unwrap_or(u64::MAX)).to_le_bytes());
         expected_hasher.update(&canonical_payload);
         let expected_hash = hex::encode(expected_hasher.finalize());
 
@@ -3490,12 +3692,22 @@ mod tests {
                     },
                 });
 
-                // Should serialize safely without breaking JSON structure
-                assert!(
-                    action_result.is_ok(),
-                    "Should handle malicious string safely: {:?}",
-                    malicious_string
-                );
+                let expects_rejection = malicious_string.trim() != *malicious_string
+                    || malicious_string.chars().any(char::is_control);
+                if expects_rejection {
+                    assert!(
+                        action_result.is_err(),
+                        "Control-text input should now fail closed: {:?}",
+                        malicious_string
+                    );
+                } else {
+                    // Non-control JSON-looking text should still serialize safely.
+                    assert!(
+                        action_result.is_ok(),
+                        "Should handle literal JSON-looking string safely: {:?}",
+                        malicious_string
+                    );
+                }
 
                 let status_result = transport.upsert_node_status(&NodeStatus {
                     zone_id: "prod".to_string(),

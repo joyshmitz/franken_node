@@ -179,6 +179,7 @@ pub mod error_codes {
     pub const ERR_TTR_EMPTY_TRACE: &str = "ERR_TTR_EMPTY_TRACE";
     pub const ERR_TTR_SEQ_GAP: &str = "ERR_TTR_SEQ_GAP";
     pub const ERR_TTR_DIGEST_MISMATCH: &str = "ERR_TTR_DIGEST_MISMATCH";
+    pub const ERR_TTR_INVALID_IDENTIFIER: &str = "ERR_TTR_INVALID_IDENTIFIER";
     pub const ERR_TTR_ENV_MISSING: &str = "ERR_TTR_ENV_MISSING";
     pub const ERR_TTR_ENV_INVALID: &str = "ERR_TTR_ENV_INVALID";
     pub const ERR_TTR_REPLAY_FAILED: &str = "ERR_TTR_REPLAY_FAILED";
@@ -209,6 +210,8 @@ pub mod error_codes {
 /// Errors that can occur during time-travel capture or replay.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, arbitrary::Arbitrary)]
 pub enum TimeTravelError {
+    /// Trace metadata contains a non-canonical identifier.
+    InvalidIdentifier { field: String, reason: String },
     /// The trace has no steps.
     EmptyTrace { trace_id: String },
     /// A sequence gap was detected in the trace steps.
@@ -246,6 +249,13 @@ pub enum TimeTravelError {
 impl fmt::Display for TimeTravelError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidIdentifier { field, reason } => {
+                write!(
+                    f,
+                    "[{0}] invalid {field}: {reason}",
+                    error_codes::ERR_TTR_INVALID_IDENTIFIER
+                )
+            }
             Self::EmptyTrace { trace_id } => {
                 write!(
                     f,
@@ -450,6 +460,40 @@ fn validate_environment_field(
     Ok(())
 }
 
+fn validate_trace_identifier_field(field: &str, value: &str) -> Result<(), TimeTravelError> {
+    if value.trim().is_empty() {
+        return Err(TimeTravelError::InvalidIdentifier {
+            field: field.to_string(),
+            reason: "must not be blank".to_string(),
+        });
+    }
+    if value.trim() != value {
+        return Err(TimeTravelError::InvalidIdentifier {
+            field: field.to_string(),
+            reason: "must not include leading or trailing whitespace".to_string(),
+        });
+    }
+    if value.chars().any(char::is_control) {
+        return Err(TimeTravelError::InvalidIdentifier {
+            field: field.to_string(),
+            reason: "must not contain control characters".to_string(),
+        });
+    }
+    if value == "."
+        || value == ".."
+        || value.contains('/')
+        || value.contains('\\')
+        || value.contains("..")
+    {
+        return Err(TimeTravelError::InvalidIdentifier {
+            field: field.to_string(),
+            reason: "must not be path-like".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
 /// A single step in a workflow trace.
 /// INV-TTR-STEP-ORDER: steps are strictly ordered by `seq`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, arbitrary::Arbitrary)]
@@ -574,6 +618,9 @@ impl WorkflowTrace {
     }
 
     fn validate_structure(&self) -> Result<(), TimeTravelError> {
+        validate_trace_identifier_field("trace_id", &self.trace_id)?;
+        validate_trace_identifier_field("workflow_name", &self.workflow_name)?;
+
         // INV-TTR-TRACE-COMPLETE: must have at least one step
         if self.steps.is_empty() {
             return Err(TimeTravelError::EmptyTrace {
@@ -1455,6 +1502,44 @@ mod tests {
         trace.trace_digest = "0000000000000000".to_string();
         let err = trace.validate().unwrap_err();
         assert!(matches!(err, TimeTravelError::DigestMismatch { .. }));
+    }
+
+    #[test]
+    fn trace_with_path_like_identifier_fails_validation() {
+        let trace = WorkflowTrace {
+            trace_id: "../../../etc/passwd".to_string(),
+            workflow_name: "test".to_string(),
+            steps: vec![TraceStep::new(0, vec![], vec![1], vec![], 100)],
+            environment: demo_env(),
+            trace_digest: String::new(),
+            schema_version: SCHEMA_VERSION.to_string(),
+        }
+        .with_canonical_digest();
+
+        let err = trace.validate().unwrap_err();
+        assert!(matches!(
+            err,
+            TimeTravelError::InvalidIdentifier { field, .. } if field == "trace_id"
+        ));
+    }
+
+    #[test]
+    fn trace_with_control_text_workflow_name_fails_validation() {
+        let trace = WorkflowTrace {
+            trace_id: "trace-control".to_string(),
+            workflow_name: "workflow\ncontrol".to_string(),
+            steps: vec![TraceStep::new(0, vec![], vec![1], vec![], 100)],
+            environment: demo_env(),
+            trace_digest: String::new(),
+            schema_version: SCHEMA_VERSION.to_string(),
+        }
+        .with_canonical_digest();
+
+        let err = trace.validate().unwrap_err();
+        assert!(matches!(
+            err,
+            TimeTravelError::InvalidIdentifier { field, .. } if field == "workflow_name"
+        ));
     }
 
     // --- TraceBuilder ---
