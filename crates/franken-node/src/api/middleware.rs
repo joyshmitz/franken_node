@@ -33,6 +33,8 @@ const MAX_SAMPLES: usize = 4096;
 const MAX_AUTH_FAILURE_SOURCES: usize = 1024;
 #[cfg(any(test, feature = "control-plane"))]
 const TOP_AUTH_FAILURE_SOURCES: usize = 10;
+#[cfg(any(test, feature = "control-plane"))]
+const TRACEPARENT_HEADER_LEN: usize = 55;
 
 #[cfg(any(test, feature = "control-plane"))]
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
@@ -89,23 +91,17 @@ impl TraceContext {
     /// Format: `{version}-{trace_id}-{span_id}-{trace_flags}`
     #[cfg(any(test, feature = "control-plane"))]
     pub fn from_traceparent(header: &str) -> Option<Self> {
-        let parts: Vec<&str> = header.split('-').collect();
-        if parts.len() != 4 {
-            return None;
-        }
-        let version = parts[0];
-        let trace_id = parts[1];
-        let span_id = parts[2];
+        let (version, trace_id, span_id, trace_flags) = parse_traceparent_segments(header)?;
         if version.len() != 2
             || !is_lower_hex(version)
             || version == "ff"
             || !is_valid_trace_id(trace_id)
             || !is_valid_span_id(span_id)
-            || !is_valid_trace_flags(parts[3])
+            || !is_valid_trace_flags(trace_flags)
         {
             return None;
         }
-        let trace_flags = u8::from_str_radix(parts[3], 16).ok()?;
+        let trace_flags = u8::from_str_radix(trace_flags, 16).ok()?;
 
         Some(Self {
             trace_id: trace_id.to_string(),
@@ -134,6 +130,24 @@ impl TraceContext {
             self.trace_id, self.span_id, self.trace_flags
         )
     }
+}
+
+#[cfg(any(test, feature = "control-plane"))]
+fn parse_traceparent_segments(header: &str) -> Option<(&str, &str, &str, &str)> {
+    if header.len() != TRACEPARENT_HEADER_LEN {
+        return None;
+    }
+
+    let mut parts = header.splitn(5, '-');
+    let version = parts.next()?;
+    let trace_id = parts.next()?;
+    let span_id = parts.next()?;
+    let trace_flags = parts.next()?;
+    if parts.next().is_some() {
+        return None;
+    }
+
+    Some((version, trace_id, span_id, trace_flags))
 }
 
 /// Simple span ID generation using timestamp-based entropy.
@@ -398,10 +412,12 @@ pub fn authorize(
         return Ok(AuthzDecision::Allow);
     }
 
-    let has_role = identity
-        .roles
-        .iter()
-        .any(|r| hook.required_roles.contains(r));
+    // SECURITY: Use constant-time role checking to prevent timing side-channels
+    let has_role = identity.roles.iter().fold(false, |acc, identity_role| {
+        acc | hook.required_roles.iter().fold(false, |inner_acc, required_role| {
+            inner_acc | constant_time::ct_eq(identity_role, required_role)
+        })
+    });
 
     if has_role {
         Ok(AuthzDecision::Allow)
@@ -617,15 +633,32 @@ pub fn check_rate_limit(limiter: &mut RateLimiter, trace_id: &str) -> Result<(),
 /// attacks against credentials. Also provides structured telemetry for incident response.
 #[cfg(any(test, feature = "control-plane"))]
 #[derive(Debug)]
-pub struct AuthFailureLimiter {
+struct AuthFailureSourceState {
+    failure_count: u64,
     rate_limiter: RateLimiter,
+}
+
+#[cfg(any(test, feature = "control-plane"))]
+impl AuthFailureSourceState {
+    fn new(config: &RateLimitConfig) -> Self {
+        Self {
+            failure_count: 0,
+            rate_limiter: RateLimiter::new(config.clone()),
+        }
+    }
+}
+
+#[cfg(any(test, feature = "control-plane"))]
+#[derive(Debug)]
+pub struct AuthFailureLimiter {
+    config: RateLimitConfig,
     /// Per-source-IP failure counters for telemetry.
     ///
-    /// This map stays bounded to avoid attacker-controlled source-cardinality
-    /// growth. When the cap is reached, already-tracked sources continue to
-    /// accumulate counts but brand-new sources stop being retained so the
-    /// existing high-volume offenders remain visible.
-    source_failure_counts: BTreeMap<String, u64>,
+    /// Each tracked source carries its own pre-auth rate limiter so one abusive
+    /// source cannot exhaust the entire instance-wide authentication budget.
+    /// The map stays bounded to avoid attacker-controlled source-cardinality
+    /// growth, evicting the lowest-volume tracked source when the cap is hit.
+    source_states: BTreeMap<String, AuthFailureSourceState>,
     /// Global failure counter across all sources
     global_failure_count: u64,
 }
@@ -637,13 +670,14 @@ impl AuthFailureLimiter {
     /// Default configuration allows 10 auth attempts per second with burst of 20,
     /// fail-closed to prevent brute force attacks.
     pub fn new() -> Self {
+        let config = RateLimitConfig {
+            sustained_rps: 10,
+            burst_size: 20,
+            fail_closed: true,
+        };
         Self {
-            rate_limiter: RateLimiter::new(RateLimitConfig {
-                sustained_rps: 10,
-                burst_size: 20,
-                fail_closed: true,
-            }),
-            source_failure_counts: BTreeMap::new(),
+            config,
+            source_states: BTreeMap::new(),
             global_failure_count: 0,
         }
     }
@@ -651,8 +685,8 @@ impl AuthFailureLimiter {
     /// Create with custom configuration.
     pub fn with_config(config: RateLimitConfig) -> Self {
         Self {
-            rate_limiter: RateLimiter::new(config),
-            source_failure_counts: BTreeMap::new(),
+            config,
+            source_states: BTreeMap::new(),
             global_failure_count: 0,
         }
     }
@@ -660,7 +694,12 @@ impl AuthFailureLimiter {
     /// Check if an authentication attempt is allowed.
     /// Returns Err with retry_after_ms if rate limited.
     pub fn check_auth_attempt(&mut self, trace_id: &str, source_ip: &str) -> Result<(), ApiError> {
-        match self.rate_limiter.check() {
+        let rate_limit_result = {
+            let state = self.ensure_source_state(source_ip);
+            state.rate_limiter.check()
+        };
+
+        match rate_limit_result {
             Ok(()) => Ok(()),
             Err(retry_after_ms) => {
                 self.record_failure(
@@ -686,8 +725,6 @@ impl AuthFailureLimiter {
         trace_id: &str,
         retry_after_ms: Option<u64>,
     ) {
-        // Update counters
-        self.global_failure_count = self.global_failure_count.saturating_add(1);
         let source_count = self.increment_source_failure_count(source_ip);
 
         // Emit structured telemetry event for operator visibility
@@ -735,9 +772,11 @@ impl AuthFailureLimiter {
     /// Get current failure statistics for monitoring.
     pub fn get_failure_stats(&self) -> AuthFailureStats {
         let mut top_source_failures = self
-            .source_failure_counts
+            .source_states
             .iter()
-            .map(|(ip, count)| (ip.clone(), *count))
+            .filter_map(|(ip, state)| {
+                (state.failure_count > 0).then_some((ip.clone(), state.failure_count))
+            })
             .collect::<Vec<_>>();
         top_source_failures.sort_by(|(left_ip, left_count), (right_ip, right_count)| {
             right_count
@@ -748,33 +787,54 @@ impl AuthFailureLimiter {
 
         AuthFailureStats {
             global_failure_count: self.global_failure_count,
-            unique_source_ips: self.source_failure_counts.len(),
+            unique_source_ips: self
+                .source_states
+                .values()
+                .filter(|state| state.failure_count > 0)
+                .count(),
             top_source_failures,
         }
     }
 
     fn increment_source_failure_count(&mut self, source_ip: &str) -> u64 {
-        if let Some(source_count) = self.source_failure_counts.get_mut(source_ip) {
-            *source_count = source_count.saturating_add(1);
-            return *source_count;
-        }
+        self.global_failure_count = self.global_failure_count.saturating_add(1);
+        let state = self.ensure_source_state(source_ip);
+        state.failure_count = state.failure_count.saturating_add(1);
+        state.failure_count
+    }
 
-        if self.source_failure_counts.len() >= MAX_AUTH_FAILURE_SOURCES {
-            // LRU eviction: remove the IP with the lowest failure count to make room
-            // This preserves tracking of high-volume attackers while allowing new IPs
-            let min_entry = self
-                .source_failure_counts
-                .iter()
-                .min_by_key(|(_, &count)| count)
-                .map(|(ip, _)| ip.clone());
-
-            if let Some(min_ip) = min_entry {
-                self.source_failure_counts.remove(&min_ip);
+    fn ensure_source_state(&mut self, source_ip: &str) -> &mut AuthFailureSourceState {
+        if !self.source_states.contains_key(source_ip) {
+            if self.source_states.len() >= MAX_AUTH_FAILURE_SOURCES {
+                self.evict_lowest_priority_source();
             }
+
+            self.source_states.insert(
+                source_ip.to_string(),
+                AuthFailureSourceState::new(&self.config),
+            );
         }
 
-        self.source_failure_counts.insert(source_ip.to_string(), 1);
-        1
+        self.source_states
+            .get_mut(source_ip)
+            .expect("source state inserted above")
+    }
+
+    fn evict_lowest_priority_source(&mut self) {
+        let min_entry = self
+            .source_states
+            .iter()
+            .min_by(|(left_ip, left_state), (right_ip, right_state)| {
+                left_state
+                    .failure_count
+                    .cmp(&right_state.failure_count)
+                    .then_with(|| left_ip.cmp(right_ip))
+            })
+            .map(|(ip, _)| ip.clone());
+
+        if let Some(min_ip) = min_entry {
+            self.source_states.remove(&min_ip);
+        }
     }
 }
 
@@ -1308,6 +1368,15 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn trace_context_parse_rejects_extra_segments_without_collecting_all_parts() {
+        let extra_segment = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01-extra-segment";
+        assert!(TraceContext::from_traceparent(extra_segment).is_none());
+
+        let repeated_dash_flood = "00-".repeat(10_000);
+        assert!(TraceContext::from_traceparent(&repeated_dash_flood).is_none());
     }
 
     #[test]
@@ -2587,22 +2656,19 @@ mod api_middleware_edge_negative_tests {
             (MAX_AUTH_FAILURE_SOURCES + 32 + 5) as u64 // +5 for the extra failures on 192.0.2.0
         );
         assert_eq!(stats.unique_source_ips, MAX_AUTH_FAILURE_SOURCES);
-        assert_eq!(
-            limiter.source_failure_counts.len(),
-            MAX_AUTH_FAILURE_SOURCES
-        );
+        assert_eq!(limiter.source_states.len(), MAX_AUTH_FAILURE_SOURCES);
         assert!(stats.top_source_failures.len() <= TOP_AUTH_FAILURE_SOURCES);
 
         // High-volume attacker should be preserved by LRU policy
         assert!(
-            limiter.source_failure_counts.contains_key("192.0.2.0"),
+            limiter.source_states.contains_key("192.0.2.0"),
             "High-volume sources should not be evicted by LRU policy"
         );
 
         // At least some of the recent sources should be tracked (LRU allows new sources)
         let last_source = format!("192.0.2.{}", MAX_AUTH_FAILURE_SOURCES + 31);
         assert!(
-            limiter.source_failure_counts.contains_key(&last_source),
+            limiter.source_states.contains_key(&last_source),
             "LRU policy should allow new sources by evicting low-count entries"
         );
     }
@@ -3286,6 +3352,75 @@ mod api_middleware_advanced_security_edge_tests {
         // Should fail due to rate limiting before reaching auth
         assert!(result.is_err(), "Third attempt should fail");
         assert_eq!(log.status, 429, "Third attempt should be rate limited");
+    }
+
+    #[test]
+    fn auth_failure_rate_limiting_isolated_per_source_ip() {
+        let route = RouteMetadata {
+            method: "POST".to_string(),
+            path: "/v1/fleet/quarantine".to_string(),
+            group: EndpointGroup::FleetControl,
+            lifecycle: EndpointLifecycle::Stable,
+            auth_method: AuthMethod::BearerToken,
+            policy_hook: PolicyHook {
+                hook_id: "fleet.quarantine.execute".to_string(),
+                required_roles: vec!["fleet-admin".to_string()],
+            },
+            trace_propagation: true,
+        };
+
+        let mut auth_limiter = AuthFailureLimiter::with_config(RateLimitConfig {
+            sustained_rps: 1,
+            burst_size: 2,
+            fail_closed: true,
+        });
+        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
+        let keys = get_test_keys();
+
+        for _ in 0..2 {
+            let (result, log) = execute_middleware_chain(
+                &route,
+                Some("Bearer invalid-token"),
+                None,
+                "127.0.0.1",
+                &mut auth_limiter,
+                &mut limiter,
+                &keys,
+                |_identity, _ctx| Ok("should not reach"),
+            );
+            assert!(result.is_err());
+            assert_eq!(log.status, 401);
+        }
+
+        let (rate_limited, rate_limited_log) = execute_middleware_chain(
+            &route,
+            Some("Bearer invalid-token"),
+            None,
+            "127.0.0.1",
+            &mut auth_limiter,
+            &mut limiter,
+            &keys,
+            |_identity, _ctx| Ok("should not reach"),
+        );
+        assert!(rate_limited.is_err());
+        assert_eq!(rate_limited_log.status, 429);
+
+        let (other_source_result, other_source_log) = execute_middleware_chain(
+            &route,
+            Some("Bearer invalid-token"),
+            None,
+            "198.51.100.7",
+            &mut auth_limiter,
+            &mut limiter,
+            &keys,
+            |_identity, _ctx| Ok("should not reach"),
+        );
+
+        assert!(other_source_result.is_err());
+        assert_eq!(
+            other_source_log.status, 401,
+            "a different source IP should still reach authentication instead of inheriting another source's pre-auth bucket"
+        );
     }
 
     #[test]

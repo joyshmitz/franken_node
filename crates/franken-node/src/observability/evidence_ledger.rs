@@ -43,7 +43,10 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::io::{BufWriter, Write};
 use std::path::Path;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{
+    Arc, RwLock,
+    atomic::{AtomicBool, Ordering},
+};
 
 use crate::security::{
     constant_time,
@@ -653,6 +656,8 @@ pub enum LedgerError {
         expected_hash: String,
         provided_hash: String,
     },
+    /// Shared ledger access is permanently halted after a poisoned lock.
+    LockPoisoned,
     /// Entry contains control characters in metadata fields - prevents log injection.
     InvalidControlCharacters { field: String, reason: String },
 }
@@ -691,6 +696,9 @@ impl fmt::Display for LedgerError {
                     "hash chain broken: expected {} got {}",
                     expected_hash, provided_hash
                 )
+            }
+            Self::LockPoisoned => {
+                write!(f, "shared evidence ledger lock poisoned; refusing access")
             }
             Self::InvalidControlCharacters { field, reason } => {
                 write!(f, "control characters in {}: {}", field, reason)
@@ -822,8 +830,8 @@ fn format_ledger_spill_event(id: EntryId, bytes: usize) -> String {
     )
 }
 
-fn format_ledger_lock_poison_recovered_event() -> &'static str {
-    "EVD-LEDGER-005: recovering from poisoned evidence ledger lock"
+fn format_ledger_lock_poison_fail_closed_event() -> &'static str {
+    "EVD-LEDGER-005: evidence ledger lock poisoned; refusing shared access"
 }
 
 // ── EvidenceLedger ──────────────────────────────────────────────────
@@ -1350,6 +1358,8 @@ impl EvidenceLedger {
 #[derive(Clone)]
 pub struct SharedEvidenceLedger {
     inner: Arc<RwLock<EvidenceLedger>>,
+    capacity: LedgerCapacity,
+    poisoned: Arc<AtomicBool>,
 }
 
 impl SharedEvidenceLedger {
@@ -1367,8 +1377,11 @@ impl SharedEvidenceLedger {
     where
         C: Into<LedgerCapacity>,
     {
+        let capacity = capacity.into();
         Self {
-            inner: Arc::new(RwLock::new(EvidenceLedger::new(capacity))),
+            inner: Arc::new(RwLock::new(EvidenceLedger::new(capacity.clone()))),
+            capacity,
+            poisoned: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -1390,9 +1403,11 @@ impl SharedEvidenceLedger {
     pub fn with_verifying_key(capacity: LedgerCapacity, verifying_key: VerifyingKey) -> Self {
         Self {
             inner: Arc::new(RwLock::new(EvidenceLedger::with_verifying_key(
-                capacity,
+                capacity.clone(),
                 verifying_key,
             ))),
+            capacity,
+            poisoned: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -1408,8 +1423,16 @@ impl SharedEvidenceLedger {
     /// assert_eq!(ledger.len(), 1);
     /// ```
     pub fn append(&self, entry: EvidenceEntry) -> Result<EntryId, LedgerError> {
-        let mut ledger = self.write_recover();
-        ledger.append(entry)
+        if self.is_poisoned() {
+            return Err(LedgerError::LockPoisoned);
+        }
+        match self.inner.write() {
+            Ok(mut ledger) => ledger.append(entry),
+            Err(_) => {
+                self.mark_poisoned();
+                Err(LedgerError::LockPoisoned)
+            }
+        }
     }
 
     /// Return the number of retained entries in the shared ledger.
@@ -1424,7 +1447,7 @@ impl SharedEvidenceLedger {
     /// assert_eq!(ledger.len(), 1);
     /// ```
     pub fn len(&self) -> usize {
-        self.read_recover().len()
+        self.snapshot().entries.len()
     }
 
     /// Return whether the shared ledger has no retained entries.
@@ -1438,7 +1461,7 @@ impl SharedEvidenceLedger {
     /// assert!(ledger.is_empty());
     /// ```
     pub fn is_empty(&self) -> bool {
-        self.read_recover().is_empty()
+        self.len() == 0
     }
 
     /// Clone the current shared ledger state into an exportable snapshot.
@@ -1454,7 +1477,16 @@ impl SharedEvidenceLedger {
     /// assert_eq!(snapshot.entries.len(), 1);
     /// ```
     pub fn snapshot(&self) -> LedgerSnapshot {
-        self.read_recover().snapshot()
+        if self.is_poisoned() {
+            return self.fail_closed_snapshot();
+        }
+        match self.inner.read() {
+            Ok(ledger) => ledger.snapshot(),
+            Err(_) => {
+                self.mark_poisoned();
+                self.fail_closed_snapshot()
+            }
+        }
     }
 
     /// Return counters for the shared ledger state.
@@ -1470,26 +1502,46 @@ impl SharedEvidenceLedger {
     /// assert_eq!(metrics.retained_entries, 1);
     /// ```
     pub fn metrics(&self) -> LedgerMetrics {
-        self.read_recover().metrics()
-    }
-
-    fn read_recover(&self) -> RwLockReadGuard<'_, EvidenceLedger> {
+        if self.is_poisoned() {
+            return self.fail_closed_metrics();
+        }
         match self.inner.read() {
-            Ok(guard) => guard,
-            Err(poisoned) => {
-                eprintln!("{}", format_ledger_lock_poison_recovered_event());
-                poisoned.into_inner()
+            Ok(ledger) => ledger.metrics(),
+            Err(_) => {
+                self.mark_poisoned();
+                self.fail_closed_metrics()
             }
         }
     }
 
-    fn write_recover(&self) -> RwLockWriteGuard<'_, EvidenceLedger> {
-        match self.inner.write() {
-            Ok(guard) => guard,
-            Err(poisoned) => {
-                eprintln!("{}", format_ledger_lock_poison_recovered_event());
-                poisoned.into_inner()
-            }
+    fn is_poisoned(&self) -> bool {
+        self.poisoned.load(Ordering::Relaxed)
+    }
+
+    fn mark_poisoned(&self) {
+        if !self.poisoned.swap(true, Ordering::Relaxed) {
+            eprintln!("{}", format_ledger_lock_poison_fail_closed_event());
+        }
+    }
+
+    fn fail_closed_snapshot(&self) -> LedgerSnapshot {
+        LedgerSnapshot {
+            entries: Vec::new(),
+            total_appended: 0,
+            total_evicted: 0,
+            current_bytes: 0,
+            capacity: self.capacity.clone(),
+        }
+    }
+
+    fn fail_closed_metrics(&self) -> LedgerMetrics {
+        LedgerMetrics {
+            retained_entries: 0,
+            total_appended: 0,
+            total_evicted: 0,
+            current_bytes: 0,
+            max_entries: self.capacity.max_entries,
+            max_bytes: self.capacity.max_bytes,
         }
     }
 }
@@ -3224,7 +3276,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_ledger_recovers_from_poisoned_lock() {
+    fn shared_ledger_fails_closed_after_poisoned_lock() {
         let shared = SharedEvidenceLedger::new(LedgerCapacity::new(100, 100_000));
         let poison_target = shared.clone();
         let join = std::thread::spawn(move || {
@@ -3236,12 +3288,19 @@ mod tests {
         });
         assert!(join.join().is_err(), "poisoning thread should panic");
 
-        assert!(shared.is_empty());
-        shared
-            .append(make_entry("DEC-001", 1))
-            .expect("should succeed");
-        assert_eq!(shared.len(), 1);
-        assert_eq!(shared.snapshot().entries.len(), 1);
+        assert!(
+            shared.is_empty(),
+            "poisoned shared ledger must stop serving retained entries"
+        );
+        assert!(
+            matches!(
+                shared.append(make_entry("DEC-001", 1)),
+                Err(LedgerError::LockPoisoned)
+            ),
+            "poisoned shared ledger must stop accepting writes"
+        );
+        assert_eq!(shared.snapshot().entries.len(), 0);
+        assert_eq!(shared.metrics().retained_entries, 0);
     }
 
     // ── Steady-state load ──
@@ -3592,8 +3651,8 @@ mod tests {
                 "EVD-LEDGER-003: spill wrote entry=E-00000012, bytes=99"
             );
             assert_eq!(
-                format_ledger_lock_poison_recovered_event(),
-                "EVD-LEDGER-005: recovering from poisoned evidence ledger lock"
+                format_ledger_lock_poison_fail_closed_event(),
+                "EVD-LEDGER-005: evidence ledger lock poisoned; refusing shared access"
             );
         }
 
