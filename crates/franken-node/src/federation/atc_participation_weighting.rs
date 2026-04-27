@@ -36,6 +36,8 @@ use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
 
 /// Maximum number of sybil clusters that can be detected to prevent memory exhaustion.
 const MAX_SYBIL_CLUSTERS: usize = 1000;
+/// Maximum number of participants per cluster hint to prevent memory exhaustion attacks.
+const MAX_CLUSTER_MEMBERS: usize = 512;
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
@@ -580,10 +582,8 @@ impl ParticipationWeightEngine {
         let mut hint_groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for p in participants {
             if let Some(ref hint) = p.cluster_hint {
-                hint_groups
-                    .entry(hint.clone())
-                    .or_default()
-                    .push(p.participant_id.clone());
+                let members = hint_groups.entry(hint.clone()).or_default();
+                push_bounded(members, p.participant_id.clone(), MAX_CLUSTER_MEMBERS);
             }
         }
 
