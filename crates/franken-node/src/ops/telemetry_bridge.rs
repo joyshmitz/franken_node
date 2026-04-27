@@ -1375,7 +1375,7 @@ impl TelemetryBridge {
 
         Self::with_state(state, |metrics| {
             metrics.queue_depth = metrics.queue_depth.saturating_sub(dropped);
-            metrics.dropped_total = metrics.dropped_total.saturating_add(dropped as u64);
+            metrics.dropped_total = metrics.dropped_total.saturating_add(u64::try_from(dropped).unwrap_or(u64::MAX));
             metrics.record_event(
                 event_codes::PERSIST_FAILURE,
                 None,
