@@ -1,7 +1,7 @@
 #![cfg(loom)]
 
 //! Run with:
-//! `RUSTFLAGS="--cfg loom" cargo test --release --test operator_process_start_initialization_loom`
+//! `RUSTFLAGS="--cfg loom" rch exec -- cargo test --release --features control-plane --test operator_process_start_initialization_loom`
 
 #[test]
 fn process_start_initialization_has_one_winner_under_all_interleavings() {
