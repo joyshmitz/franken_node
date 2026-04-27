@@ -274,6 +274,44 @@ fn verify_signature(key: &SignerKey, content_hash: &str, sig: &PartialSignature)
     verifying_key.verify_strict(&message, &signature).is_ok()
 }
 
+fn verify_signature_with_message(key: &SignerKey, message_bytes: &[u8], sig: &PartialSignature) -> bool {
+    if key.public_key_hex.len() != ED25519_PUBLIC_KEY_HEX_LEN {
+        return false;
+    }
+
+    // Decode the public key from hex (32 bytes for Ed25519)
+    let pk_bytes = match hex::decode(&key.public_key_hex) {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    let pk_array: [u8; 32] = match pk_bytes.try_into() {
+        Ok(a) => a,
+        Err(_) => return false,
+    };
+    let verifying_key = match VerifyingKey::from_bytes(&pk_array) {
+        Ok(vk) => vk,
+        Err(_) => return false,
+    };
+
+    if sig.signature_hex.len() != ED25519_SIGNATURE_HEX_LEN {
+        return false;
+    }
+
+    // Decode the signature from hex (64 bytes for Ed25519)
+    let sig_bytes = match hex::decode(&sig.signature_hex) {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    let sig_array: [u8; 64] = match sig_bytes.try_into() {
+        Ok(a) => a,
+        Err(_) => return false,
+    };
+    let signature = Signature::from_bytes(&sig_array);
+
+    // Use pre-computed message bytes instead of rebuilding
+    verifying_key.verify_strict(message_bytes, &signature).is_ok()
+}
+
 /// Create an Ed25519 signature for a content hash.
 ///
 /// Requires the private signing key. The corresponding public key must be
@@ -346,6 +384,9 @@ pub fn verify_threshold(
     let mut valid_count = 0u32;
     let mut first_failure: Option<FailureReason> = None;
 
+    // Compute message bytes once and reuse across all signature verifications
+    let message_bytes = build_signing_message(&artifact.content_hash);
+
     for sig in &artifact.signatures {
         // Check for unknown signer
         if !known_key_ids.contains(sig.key_id.as_str()) {
@@ -374,7 +415,7 @@ pub fn verify_threshold(
             .iter()
             .find(|k| constant_time::ct_eq(&k.key_id, &sig.key_id));
         if let Some(key) = key {
-            if !verify_signature(key, &artifact.content_hash, sig) {
+            if !verify_signature_with_message(key, &message_bytes, sig) {
                 if first_failure.is_none() {
                     first_failure = Some(FailureReason::InvalidSignature {
                         signer_id: sig.signer_id.clone(),
