@@ -453,7 +453,7 @@ pub fn verify_prefix(
 pub fn marker_leaf_hash(marker_hash: &str) -> Hash {
     let mut hasher = Sha256::new();
     hasher.update(b"mmr_proofs_leaf_v1:");
-    hasher.update((marker_hash.len() as u64).to_le_bytes());
+    hasher.update((u64::try_from(marker_hash.len()).unwrap_or(u64::MAX)).to_le_bytes());
     hasher.update(marker_hash.as_bytes());
     hex::encode(hasher.finalize())
 }
@@ -535,9 +535,9 @@ fn merkle_root_from_leaf_hashes(leaf_hashes: &[Hash]) -> Option<Hash> {
 fn hash_pair(left: &str, right: &str) -> Hash {
     let mut hasher = Sha256::new();
     hasher.update(b"mmr_proofs_node_v1:");
-    hasher.update((left.len() as u64).to_le_bytes());
+    hasher.update((u64::try_from(left.len()).unwrap_or(u64::MAX)).to_le_bytes());
     hasher.update(left.as_bytes());
-    hasher.update((right.len() as u64).to_le_bytes());
+    hasher.update((u64::try_from(right.len()).unwrap_or(u64::MAX)).to_le_bytes());
     hasher.update(right.as_bytes());
     hex::encode(hasher.finalize())
 }
@@ -1364,7 +1364,7 @@ mod tests {
             assert!(hashes.len() <= MAX_LEAF_HASHES);
 
             // Verify no overflow in hash collection size
-            let len_as_u64 = hashes.len() as u64;
+            let len_as_u64 = u64::try_from(hashes.len()).unwrap_or(u64::MAX);
             assert!(len_as_u64 <= MAX_LEAF_HASHES as u64);
         }
 

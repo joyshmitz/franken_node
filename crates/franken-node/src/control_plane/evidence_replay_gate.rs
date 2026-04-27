@@ -103,7 +103,7 @@ impl CapturedEvidence {
         hasher.update(self.epoch_id.to_le_bytes());
         hasher.update((u64::try_from(self.input_entries.len()).unwrap_or(u64::MAX)).to_le_bytes());
         for entry in &self.input_entries {
-            hasher.update((entry.len() as u64).to_le_bytes());
+            hasher.update((u64::try_from(entry.len()).unwrap_or(u64::MAX)).to_le_bytes());
             hasher.update(entry.as_bytes());
         }
         hasher.update((u64::try_from(self.input_context.len()).unwrap_or(u64::MAX)).to_le_bytes());

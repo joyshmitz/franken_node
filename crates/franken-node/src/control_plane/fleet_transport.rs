@@ -113,7 +113,7 @@ pub fn sign_fleet_convergence_receipt_payload<T: Serialize>(
     let verifying_key = signing_key.verifying_key();
     let mut payload_hasher = Sha256::new();
     payload_hasher.update(b"fleet_convergence_receipt_payload_v1:");
-    payload_hasher.update((canonical_payload.len() as u64).to_le_bytes());
+    payload_hasher.update((u64::try_from(canonical_payload.len()).unwrap_or(u64::MAX)).to_le_bytes());
     payload_hasher.update(&canonical_payload);
 
     Ok(FleetConvergenceReceiptSignature {
@@ -3004,7 +3004,7 @@ mod tests {
         // Verify the new hash follows the expected domain-separated pattern
         let mut expected_hasher = Sha256::new();
         expected_hasher.update(b"fleet_convergence_receipt_payload_v1:");
-        expected_hasher.update((canonical_payload.len() as u64).to_le_bytes());
+        expected_hasher.update((u64::try_from(canonical_payload.len()).unwrap_or(u64::MAX)).to_le_bytes());
         expected_hasher.update(&canonical_payload);
         let expected_hash = hex::encode(expected_hasher.finalize());
 
