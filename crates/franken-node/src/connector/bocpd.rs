@@ -482,7 +482,14 @@ impl PoissonModel {
                 result
             }
         };
-        let k = x.round() as u64;
+        // SECURITY: Safe f64 to u64 conversion with bounds checking.
+        // x is pre-validated as finite, non-negative, integral, and < 2^53.
+        let k = if x.is_finite() && x >= 0.0 && x <= (u64::MAX as f64) {
+            x.round() as u64
+        } else {
+            // Defensive fallback - should not reach here due to earlier validation
+            return 1e-300;
+        };
 
         // Negative binomial: NB(alpha_n, beta_n / (beta_n + 1))
         let p = beta_n / (beta_n + 1.0);
