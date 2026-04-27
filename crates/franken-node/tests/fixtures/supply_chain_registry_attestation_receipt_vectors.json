@@ -1,0 +1,125 @@
+{
+  "schema_version": "franken-node/supply-chain-registry-attestation-receipt-conformance/v1",
+  "coverage": [
+    {
+      "requirement_id": "SCRA-001",
+      "level": "MUST",
+      "contract": "valid signed admission persists a stable positive receipt",
+      "tested": true
+    },
+    {
+      "requirement_id": "SCRA-002",
+      "level": "MUST",
+      "contract": "tampered signature emits SER_ERR_INVALID_SIGNATURE with a negative witness",
+      "tested": true
+    },
+    {
+      "requirement_id": "SCRA-003",
+      "level": "MUST",
+      "contract": "revoked attestation link emits SER_ERR_PROVENANCE_CHAIN_INVALID",
+      "tested": true
+    },
+    {
+      "requirement_id": "SCRA-004",
+      "level": "MUST",
+      "contract": "required transparency policy rejects registrations without a proof",
+      "tested": true
+    }
+  ],
+  "vectors": [
+    {
+      "name": "accepts_valid_publisher_signed_attestation",
+      "requirement_id": "SCRA-001",
+      "level": "MUST",
+      "mutation": "valid",
+      "transparency_required": false,
+      "expected": {
+        "admitted": true,
+        "error_code": null,
+        "detail": "Extension registered successfully",
+        "manifest_digest": "c391e0f38d5120861cb3886722f2c45b64f818342d39675116f90912868f9bac",
+        "provenance_level": "Level1PublisherSigned",
+        "checked_fields": [],
+        "remediation_contains": null,
+        "audit_events": [
+          "SER-011",
+          "SER-002",
+          "SER-003",
+          "SER-001"
+        ],
+        "extension_registered": true
+      }
+    },
+    {
+      "name": "rejects_tampered_ed25519_signature",
+      "requirement_id": "SCRA-002",
+      "level": "MUST",
+      "mutation": "tampered_signature",
+      "transparency_required": false,
+      "expected": {
+        "admitted": false,
+        "error_code": "SER-ERR-001",
+        "detail": "Ed25519 signature verification failed",
+        "manifest_digest": "c391e0f38d5120861cb3886722f2c45b64f818342d39675116f90912868f9bac",
+        "provenance_level": null,
+        "checked_fields": [
+          "signature.signature_bytes",
+          "manifest_bytes"
+        ],
+        "remediation_contains": "Sign the canonical manifest bytes",
+        "audit_events": [
+          "SER-011",
+          "SER-ERR-001"
+        ],
+        "extension_registered": false
+      }
+    },
+    {
+      "name": "rejects_revoked_attestation_link",
+      "requirement_id": "SCRA-003",
+      "level": "MUST",
+      "mutation": "revoked_publisher_link",
+      "transparency_required": false,
+      "expected": {
+        "admitted": false,
+        "error_code": "SER-ERR-006",
+        "detail": "provenance chain verification failed",
+        "manifest_digest": "c391e0f38d5120861cb3886722f2c45b64f818342d39675116f90912868f9bac",
+        "provenance_level": "Level0Unsigned",
+        "checked_fields": [
+          "provenance.links",
+          "provenance.output_hash"
+        ],
+        "remediation_contains": "Provide a complete, signed provenance attestation chain",
+        "audit_events": [
+          "SER-011",
+          "SER-ERR-006"
+        ],
+        "extension_registered": false
+      }
+    },
+    {
+      "name": "rejects_missing_required_transparency_proof",
+      "requirement_id": "SCRA-004",
+      "level": "MUST",
+      "mutation": "missing_transparency_proof",
+      "transparency_required": true,
+      "expected": {
+        "admitted": false,
+        "error_code": "SER-ERR-007",
+        "detail": "transparency verification failed",
+        "manifest_digest": "c391e0f38d5120861cb3886722f2c45b64f818342d39675116f90912868f9bac",
+        "provenance_level": "Level1PublisherSigned",
+        "checked_fields": [
+          "transparency_proof"
+        ],
+        "remediation_contains": "Submit a valid Merkle inclusion proof",
+        "audit_events": [
+          "SER-011",
+          "SER-ERR-007"
+        ],
+        "extension_registered": false
+      }
+    }
+  ]
+}
