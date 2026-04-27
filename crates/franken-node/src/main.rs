@@ -7362,27 +7362,36 @@ fn emit_ops_rotate_key_result(result: &OpsRotateKeyResult, json: bool) -> Result
         });
         println!("{}", serde_json::to_string_pretty(&output_with_warning)?);
     } else {
-        println!("⚠️  WARNING: PHASE 1 KEY ROTATION PREVIEW ONLY");
-        println!("⚠️  This command validates the key file but does NOT:");
-        println!("⚠️    - Update any signer configuration");
-        println!("⚠️    - Append to the evidence ledger");
-        println!("⚠️    - Fence the old key from further use");
-        println!("⚠️  THE OLD KEY REMAINS ACTIVE AND CAN STILL SIGN.");
-        println!("⚠️  See bd-2xya9 Phase 2 for actual rotation implementation.");
-        println!();
-        println!("Key rotation PREVIEW completed:");
-        println!("  rotation_event_id: {}", result.rotation_event_id);
-        println!("  new_key_fingerprint: {}", result.new_key_fingerprint);
-        println!(
-            "  old_key_fingerprint: {} (placeholder)",
-            result.old_key_fingerprint
-        );
-        println!("  reason: {}", result.reason);
-        println!();
-        println!("⚠️  SECURITY NOTICE: If you're responding to a key compromise,");
-        println!("⚠️  the compromised key is STILL ACTIVE after this command.");
+        print!("{}", render_ops_rotate_key_result_human(result));
     }
     Ok(())
+}
+
+fn render_ops_rotate_key_result_human(result: &OpsRotateKeyResult) -> String {
+    format!(
+        concat!(
+            "⚠️  WARNING: PHASE 1 KEY ROTATION PREVIEW ONLY\n",
+            "⚠️  This command validates the key file but does NOT:\n",
+            "⚠️    - Update any signer configuration\n",
+            "⚠️    - Append to the evidence ledger\n",
+            "⚠️    - Fence the old key from further use\n",
+            "⚠️  THE OLD KEY REMAINS ACTIVE AND CAN STILL SIGN.\n",
+            "⚠️  See bd-2xya9 Phase 2 for actual rotation implementation.\n",
+            "\n",
+            "Key rotation PREVIEW completed:\n",
+            "  rotation_event_id: {rotation_event_id}\n",
+            "  new_key_fingerprint: {new_key_fingerprint}\n",
+            "  old_key_fingerprint: {old_key_fingerprint}\n",
+            "  reason: {reason}\n",
+            "\n",
+            "⚠️  SECURITY NOTICE: If you're responding to a key compromise,\n",
+            "⚠️  the compromised key is STILL ACTIVE after this command.\n"
+        ),
+        rotation_event_id = result.rotation_event_id,
+        new_key_fingerprint = result.new_key_fingerprint,
+        old_key_fingerprint = result.old_key_fingerprint,
+        reason = result.reason,
+    )
 }
 
 fn write_prometheus_metric_prelude(
@@ -24511,6 +24520,27 @@ mod run_trust_gate_tests {
             assert_ne!(
                 receipt.core.receipt_id, receipt2.core.receipt_id,
                 "Receipt IDs should be unique per call"
+            );
+        }
+
+        #[test]
+        fn rotate_key_preview_human_output_uses_real_old_fingerprint() {
+            let result = OpsRotateKeyResult {
+                rotation_event_id: "rotate-123".to_string(),
+                new_key_fingerprint: "new-key-abc".to_string(),
+                old_key_fingerprint: "old-key-def".to_string(),
+                reason: "manual key rotation via ops rotate-key command".to_string(),
+            };
+
+            let rendered = render_ops_rotate_key_result_human(&result);
+
+            assert!(
+                rendered.contains("  old_key_fingerprint: old-key-def\n"),
+                "rendered output should include the real old fingerprint without a placeholder marker: {rendered}"
+            );
+            assert!(
+                !rendered.contains("old_key_fingerprint: old-key-def (placeholder)"),
+                "rendered output must not label a real old fingerprint as placeholder: {rendered}"
             );
         }
     }
