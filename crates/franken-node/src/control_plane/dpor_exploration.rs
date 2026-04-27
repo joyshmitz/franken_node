@@ -601,7 +601,7 @@ impl DporExplorer {
             let op_refs: Vec<&Operation> = schedule.iter().collect();
             if let Some((property, steps)) = check_fn(&op_refs) {
                 let ce = Counterexample::new(model_name, &property, steps);
-                violations.push(ce);
+                push_bounded(&mut violations, ce, MAX_RESULTS);
             }
         }
 
