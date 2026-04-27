@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
-use std::io::{self, Read};
+use std::io::{self, Read, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::mpsc::{self, Receiver};
@@ -702,12 +702,7 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
 
                 if apply {
                     write_migration_backup(project_path, &path, &raw)?;
-                    std::fs::write(&path, rewritten.as_bytes()).map_err(|err| {
-                        anyhow::anyhow!(
-                            "failed writing rewritten package manifest {}: {err}",
-                            path.display()
-                        )
-                    })?;
+                    write_migration_file_atomically(project_path, &path, &rewritten)?;
                     rewrites_applied = rewrites_applied.saturating_add(1);
                 }
 
@@ -834,9 +829,7 @@ pub fn run_rewrite(project_path: &Path, apply: bool) -> anyhow::Result<Migration
             rewrites_planned = rewrites_planned.saturating_add(1);
             if apply {
                 write_migration_backup(project_path, &path, &raw)?;
-                std::fs::write(&path, rewritten_content.as_bytes()).map_err(|err| {
-                    anyhow::anyhow!("failed writing rewritten source {}: {err}", path.display())
-                })?;
+                write_migration_file_atomically(project_path, &path, &rewritten_content)?;
                 rewrites_applied = rewrites_applied.saturating_add(1);
             }
 
@@ -1917,6 +1910,92 @@ fn write_migration_backup(
         )
     })?;
     Ok(backup_path)
+}
+
+fn write_migration_file_atomically(
+    project_path: &Path,
+    source_path: &Path,
+    rewritten_content: &str,
+) -> anyhow::Result<()> {
+    let project_root = std::fs::canonicalize(project_path).map_err(|err| {
+        anyhow::anyhow!(
+            "failed canonicalizing migration project root {}: {err}",
+            project_path.display()
+        )
+    })?;
+    let metadata = std::fs::symlink_metadata(source_path).map_err(|err| {
+        anyhow::anyhow!(
+            "failed reading rewrite target metadata {}: {err}",
+            source_path.display()
+        )
+    })?;
+    if metadata.file_type().is_symlink() {
+        anyhow::bail!(
+            "refusing to rewrite symlinked migration target {}",
+            source_path.display()
+        );
+    }
+    if !metadata.file_type().is_file() {
+        anyhow::bail!(
+            "refusing to rewrite non-file migration target {}",
+            source_path.display()
+        );
+    }
+
+    let parent = source_path.parent().ok_or_else(|| {
+        anyhow::anyhow!(
+            "migration rewrite target has no parent directory: {}",
+            source_path.display()
+        )
+    })?;
+    let canonical_parent = std::fs::canonicalize(parent).map_err(|err| {
+        anyhow::anyhow!(
+            "failed canonicalizing rewrite target directory {}: {err}",
+            parent.display()
+        )
+    })?;
+    if !canonical_parent.starts_with(&project_root) {
+        anyhow::bail!(
+            "refusing to rewrite migration target outside project root: {}",
+            source_path.display()
+        );
+    }
+
+    let file_name = source_path.file_name().ok_or_else(|| {
+        anyhow::anyhow!(
+            "migration rewrite target has no file name: {}",
+            source_path.display()
+        )
+    })?;
+    let target_path = canonical_parent.join(file_name);
+    let mut temp_file = tempfile::NamedTempFile::new_in(&canonical_parent).map_err(|err| {
+        anyhow::anyhow!(
+            "failed creating temporary rewrite file in {}: {err}",
+            canonical_parent.display()
+        )
+    })?;
+    temp_file
+        .write_all(rewritten_content.as_bytes())
+        .map_err(|err| {
+            anyhow::anyhow!(
+                "failed writing temporary rewrite file for {}: {err}",
+                source_path.display()
+            )
+        })?;
+    temp_file.as_file_mut().sync_all().map_err(|err| {
+        anyhow::anyhow!(
+            "failed syncing temporary rewrite file for {}: {err}",
+            source_path.display()
+        )
+    })?;
+    temp_file.persist(&target_path).map_err(|err| {
+        anyhow::anyhow!(
+            "failed atomically replacing rewritten migration target {}: {}",
+            target_path.display(),
+            err.error
+        )
+    })?;
+    Ok(())
 }
 
 struct CommonJsRewrite {
@@ -4818,6 +4897,52 @@ mod tests {
             std::fs::read_to_string(project.join(".migrate-backup/index.js"))
                 .expect("read source backup"),
             original_source
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn rewrite_target_swap_to_symlink_fails_closed_before_external_overwrite() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+        let source_path = project.join("index.js");
+        let outside_path = temp.path().join("outside.js");
+
+        write_hardened_manifest(project);
+        write_project_file(
+            project,
+            "index.js",
+            "const fs = require('fs');\nmodule.exports = fs;\n",
+        );
+        std::fs::write(&outside_path, "outside-original\n").expect("write outside target");
+
+        let raw = std::fs::read_to_string(&source_path).expect("read source");
+        let rewrite = rewrite_commonjs_requires(&raw);
+        assert!(
+            rewrite.rewrite_count > 0,
+            "rewrite should transform the source"
+        );
+
+        std::fs::remove_file(&source_path).expect("remove original source");
+        symlink(&outside_path, &source_path).expect("swap source path to symlink");
+
+        let err =
+            write_migration_file_atomically(project, &source_path, &rewrite.rewritten_content)
+                .expect_err("symlink swap should fail closed");
+        assert!(
+            err.to_string()
+                .contains("refusing to rewrite symlinked migration target"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&outside_path).expect("read outside target"),
+            "outside-original\n"
+        );
+        assert_eq!(
+            std::fs::read_link(&source_path).expect("read symlink target"),
+            outside_path
         );
     }
 

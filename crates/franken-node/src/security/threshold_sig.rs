@@ -259,22 +259,30 @@ impl fmt::Display for FailureReason {
                 write!(f, "THRESH_BELOW_QUORUM: have {have}, need {need}")
             }
             Self::UnknownSigner { signer_id } => {
-                write!(f, "THRESH_UNKNOWN_SIGNER: {signer_id}")
+                write!(f, "THRESH_UNKNOWN_SIGNER: {}", display_safe_text(signer_id))
             }
             Self::InvalidSignature { signer_id } => {
-                write!(f, "THRESH_INVALID_SIG: {signer_id}")
+                write!(f, "THRESH_INVALID_SIG: {}", display_safe_text(signer_id))
             }
             Self::DuplicateSigner { signer_id } => {
-                write!(f, "duplicate signer: {signer_id}")
+                write!(f, "duplicate signer: {}", display_safe_text(signer_id))
             }
             Self::ConfigInvalid { reason } => {
-                write!(f, "THRESH_CONFIG_INVALID: {reason}")
+                write!(f, "THRESH_CONFIG_INVALID: {}", display_safe_text(reason))
             }
             Self::InvalidArtifactId { reason } => {
-                write!(f, "THRESH_INVALID_ARTIFACT_ID: {reason}")
+                write!(
+                    f,
+                    "THRESH_INVALID_ARTIFACT_ID: {}",
+                    display_safe_text(reason)
+                )
             }
             Self::InvalidConnectorId { reason } => {
-                write!(f, "THRESH_INVALID_CONNECTOR_ID: {reason}")
+                write!(
+                    f,
+                    "THRESH_INVALID_CONNECTOR_ID: {}",
+                    display_safe_text(reason)
+                )
             }
         }
     }
@@ -299,6 +307,10 @@ fn build_signing_message(content_hash: &str) -> Vec<u8> {
     msg.extend_from_slice(&content_hash_len.to_le_bytes());
     msg.extend_from_slice(content_hash.as_bytes());
     msg
+}
+
+fn display_safe_text(value: &str) -> String {
+    value.escape_default().collect()
 }
 
 fn invalid_identifier_reason(field_name: &str, value: &str) -> Option<String> {
@@ -605,13 +617,13 @@ impl fmt::Display for ThresholdError {
                 write!(f, "THRESH_BELOW_QUORUM: have {have}, need {need}")
             }
             Self::UnknownSigner { signer_id } => {
-                write!(f, "THRESH_UNKNOWN_SIGNER: {signer_id}")
+                write!(f, "THRESH_UNKNOWN_SIGNER: {}", display_safe_text(signer_id))
             }
             Self::InvalidSignature { signer_id } => {
-                write!(f, "THRESH_INVALID_SIG: {signer_id}")
+                write!(f, "THRESH_INVALID_SIG: {}", display_safe_text(signer_id))
             }
             Self::ConfigInvalid { reason } => {
-                write!(f, "THRESH_CONFIG_INVALID: {reason}")
+                write!(f, "THRESH_CONFIG_INVALID: {}", display_safe_text(reason))
             }
         }
     }
@@ -2279,6 +2291,39 @@ mod tests {
         assert!(
             !failure_json.contains(r#""evil":"#),
             "Injection should be escaped"
+        );
+    }
+
+    #[test]
+    fn failure_reason_display_escapes_control_characters() {
+        let display = FailureReason::InvalidSignature {
+            signer_id: "signer\nbad\t\u{0000}".to_string(),
+        }
+        .to_string();
+
+        assert!(display.contains("\\n"));
+        assert!(display.contains("\\t"));
+        assert!(
+            !display
+                .chars()
+                .any(|ch| matches!(ch, '\n' | '\r' | '\t' | '\0')),
+            "display output must not contain raw control characters: {display:?}"
+        );
+    }
+
+    #[test]
+    fn threshold_error_display_escapes_control_characters() {
+        let display = ThresholdError::ConfigInvalid {
+            reason: "duplicate signer key_id signer\n0".to_string(),
+        }
+        .to_string();
+
+        assert!(display.contains("\\n"));
+        assert!(
+            !display
+                .chars()
+                .any(|ch| matches!(ch, '\n' | '\r' | '\t' | '\0')),
+            "display output must not contain raw control characters: {display:?}"
         );
     }
 
