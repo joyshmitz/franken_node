@@ -654,7 +654,7 @@ impl IncidentBundleStore {
                 bundle.last_tier_change_epoch = now;
                 bundle.integrity_hash = compute_integrity_hash(bundle);
                 push_bounded(&mut self.decisions, decision.clone(), MAX_DECISIONS);
-                transitions.push(decision);
+                push_bounded(&mut transitions, decision, MAX_DECISIONS);
             }
         }
 
@@ -735,7 +735,7 @@ impl IncidentBundleStore {
                 event_code: event_codes::IBR_004.into(),
             };
             push_bounded(&mut self.decisions, cleanup_decision.clone(), MAX_DECISIONS);
-            decisions.push(cleanup_decision);
+            push_bounded(&mut decisions, cleanup_decision, MAX_DECISIONS);
         }
 
         decisions
