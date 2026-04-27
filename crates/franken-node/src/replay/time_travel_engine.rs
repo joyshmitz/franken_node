@@ -460,6 +460,18 @@ fn validate_environment_field(
     Ok(())
 }
 
+fn is_invisible_or_bidi_format_char(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{061C}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{206F}'
+            | '\u{FEFF}'
+    )
+}
+
 fn validate_trace_identifier_field(field: &str, value: &str) -> Result<(), TimeTravelError> {
     // Check for empty or blank values (bd-165iq)
     if value.is_empty() || value.trim().is_empty() {
@@ -482,6 +494,13 @@ fn validate_trace_identifier_field(field: &str, value: &str) -> Result<(), TimeT
         return Err(TimeTravelError::InvalidIdentifier {
             field: field.to_string(),
             reason: "must not contain control characters (newlines, tabs, etc.)".to_string(),
+        });
+    }
+
+    if value.chars().any(is_invisible_or_bidi_format_char) {
+        return Err(TimeTravelError::InvalidIdentifier {
+            field: field.to_string(),
+            reason: "must not contain invisible or bidi Unicode format characters".to_string(),
         });
     }
 
@@ -1544,6 +1563,44 @@ mod tests {
         let trace = WorkflowTrace {
             trace_id: "trace-control".to_string(),
             workflow_name: "workflow\ncontrol".to_string(),
+            steps: vec![TraceStep::new(0, vec![], vec![1], vec![], 100)],
+            environment: demo_env(),
+            trace_digest: String::new(),
+            schema_version: SCHEMA_VERSION.to_string(),
+        }
+        .with_canonical_digest();
+
+        let err = trace.validate().unwrap_err();
+        assert!(matches!(
+            err,
+            TimeTravelError::InvalidIdentifier { field, .. } if field == "workflow_name"
+        ));
+    }
+
+    #[test]
+    fn trace_with_invisible_unicode_identifier_fails_validation() {
+        let trace = WorkflowTrace {
+            trace_id: "trace\u{200B}hidden".to_string(),
+            workflow_name: "test".to_string(),
+            steps: vec![TraceStep::new(0, vec![], vec![1], vec![], 100)],
+            environment: demo_env(),
+            trace_digest: String::new(),
+            schema_version: SCHEMA_VERSION.to_string(),
+        }
+        .with_canonical_digest();
+
+        let err = trace.validate().unwrap_err();
+        assert!(matches!(
+            err,
+            TimeTravelError::InvalidIdentifier { field, .. } if field == "trace_id"
+        ));
+    }
+
+    #[test]
+    fn trace_with_bidi_workflow_name_fails_validation() {
+        let trace = WorkflowTrace {
+            trace_id: "trace-bidi".to_string(),
+            workflow_name: "workflow\u{202E}spoof".to_string(),
             steps: vec![TraceStep::new(0, vec![], vec![1], vec![], 100)],
             environment: demo_env(),
             trace_digest: String::new(),
@@ -4702,16 +4759,25 @@ mod tests {
         // Test case 1: Path-like trace_id should fail validation
         let trace1 = build_demo_trace("../../../etc/passwd", "valid_workflow", 1);
         let result1 = trace1.validate();
-        assert!(result1.is_err(), "Path-like trace_id should fail validation");
+        assert!(
+            result1.is_err(),
+            "Path-like trace_id should fail validation"
+        );
 
         // Test case 2: Control characters in workflow_name should fail validation
         let trace2 = build_demo_trace("valid_trace", " workflow\n", 1);
         let result2 = trace2.validate();
-        assert!(result2.is_err(), "Control characters and padding in workflow_name should fail validation");
+        assert!(
+            result2.is_err(),
+            "Control characters and padding in workflow_name should fail validation"
+        );
 
         // Test case 3: Both issues combined should fail validation
         let trace3 = build_demo_trace("../../../etc/passwd", " workflow\n", 1);
         let result3 = trace3.validate();
-        assert!(result3.is_err(), "Both path-like and control char issues should fail validation");
+        assert!(
+            result3.is_err(),
+            "Both path-like and control char issues should fail validation"
+        );
     }
 }

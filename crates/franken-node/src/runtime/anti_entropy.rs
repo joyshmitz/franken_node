@@ -580,7 +580,7 @@ impl TrustState {
             && let Some(lowest_record) = self.records.values().min_by(|a, b| a.precedence_cmp(b))
         {
             let lowest_key = lowest_record.id.clone();
-            if record.precedence_cmp(lowest_record) == Ordering::Less {
+            if record.precedence_cmp(lowest_record) != Ordering::Greater {
                 return false;
             }
             self.records.remove(&lowest_key);
@@ -1317,6 +1317,22 @@ mod tests {
         assert!(!state.contains("a"));
         assert!(state.contains("b"));
         assert!(state.contains("c"));
+    }
+
+    #[test]
+    fn test_insert_batch_rejects_equal_precedence_candidate_at_capacity() {
+        let mut state = TrustState::new(2);
+        let (incumbent_a, _) = make_record_with_meta("a", 1, 1_000, "node-a");
+        let (incumbent_b, _) = make_record_with_meta("b", 1, 1_100, "node-b");
+        let (candidate, _) = make_record_with_meta("c", 1, 1_000, "node-a");
+
+        assert!(state.insert_with_capacity_batch(incumbent_a, 2));
+        assert!(state.insert_with_capacity_batch(incumbent_b, 2));
+        assert!(!state.insert_with_capacity_batch(candidate, 2));
+        assert_eq!(state.len(), 2);
+        assert!(state.contains("a"));
+        assert!(state.contains("b"));
+        assert!(!state.contains("c"));
     }
 
     // -- Record digest --
