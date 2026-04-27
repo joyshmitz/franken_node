@@ -21,7 +21,7 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::security::{constant_time, crypto::{Ed25519Verifier, SignatureVerifier, SignatureVerificationError}};
+use crate::security::{constant_time, crypto::{Ed25519Verifier, HexSignatureVerifier, SignatureVerificationError}};
 
 pub(crate) const MAX_BUNDLE_BYTES: usize = 10 * 1024 * 1024;
 const MAX_REPLAY_BUNDLE_BYTES: u64 = 64 * 1024 * 1024; // 64 MB limit for replay bundle JSON parsing

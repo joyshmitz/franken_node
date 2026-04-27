@@ -488,30 +488,25 @@ pub fn verify_threshold(
     trace_id: &str,
     timestamp: &str,
 ) -> VerificationResult {
-    if let Err(e) = config.validate() {
-        let reason = match e {
-            ThresholdError::ConfigInvalid { reason } => reason,
-            other => other.to_string(),
-        };
-        return VerificationResult {
-            artifact_id: artifact.artifact_id.clone(),
-            verified: false,
-            valid_signatures: 0,
-            threshold: config.threshold,
-            failure_reason: Some(FailureReason::ConfigInvalid { reason }),
-            trace_id: trace_id.to_string(),
-            timestamp: timestamp.to_string(),
-        };
+    // Use cached config for better performance - eliminates repeated key parsing
+    match CachedThresholdConfig::new(config.clone()) {
+        Ok(cached_config) => verify_threshold_cached(&cached_config, artifact, trace_id, timestamp),
+        Err(e) => {
+            let reason = match e {
+                ThresholdError::ConfigInvalid { reason } => reason,
+                other => other.to_string(),
+            };
+            VerificationResult {
+                artifact_id: artifact.artifact_id.clone(),
+                verified: false,
+                valid_signatures: 0,
+                threshold: config.threshold,
+                failure_reason: Some(FailureReason::ConfigInvalid { reason }),
+                trace_id: trace_id.to_string(),
+                timestamp: timestamp.to_string(),
+            }
+        }
     }
-
-    let prepared_keys = PreparedThresholdKeys::new(config);
-    verify_threshold_with_key_lookup(
-        config.threshold,
-        &prepared_keys,
-        artifact,
-        trace_id,
-        timestamp,
-    )
 }
 
 /// Optimized threshold verification using cached pre-parsed keys.
