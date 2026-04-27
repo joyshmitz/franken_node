@@ -927,7 +927,7 @@ fn contains_float_marker(payload: &[u8]) -> bool {
                 {
                     return true;
                 }
-                i += 1;
+                i = i.saturating_add(1);
             }
         }
     }

@@ -18,7 +18,8 @@
 //!
 //! - **INV-MA-SIGNED**: Every artifact carries a non-empty signature field.
 //! - **INV-MA-ROLLBACK-PRESENT**: Every artifact includes a rollback receipt.
-//! - **INV-MA-CONFIDENCE-CALIBRATED**: Confidence probability in [0.0, 1.0].
+//! - **INV-MA-CONFIDENCE-CALIBRATED**: All confidence interval metrics are finite
+//!   and remain in [0.0, 1.0].
 //! - **INV-MA-VERSIONED**: Every artifact carries a schema version string.
 //! - **INV-MA-VERIFIER-COMPLETE**: Verifier metadata includes at least one replay
 //!   capsule ref and one expected state hash.
@@ -229,7 +230,8 @@ pub struct VerifierMetadata {
 ///
 /// - INV-MA-SIGNED: `signature` is non-empty.
 /// - INV-MA-ROLLBACK-PRESENT: `rollback_receipt` is present.
-/// - INV-MA-CONFIDENCE-CALIBRATED: `confidence_interval.probability` in [0.0, 1.0].
+/// - INV-MA-CONFIDENCE-CALIBRATED: all `confidence_interval` metrics are finite
+///   and remain in [0.0, 1.0].
 /// - INV-MA-VERSIONED: `schema_version` matches a supported version string.
 /// - INV-MA-VERIFIER-COMPLETE: verifier metadata has >= 1 replay ref and >= 1 state hash.
 /// - INV-MA-DETERMINISTIC: deterministic serialization via BTreeMap + sorted fields.
@@ -290,7 +292,7 @@ pub struct ValidationResult {
 /// Returns a `ValidationResult` with details on any violations.
 pub fn validate_artifact(artifact: &MigrationArtifact) -> ValidationResult {
     let mut errors = Vec::new();
-    let mut warnings = Vec::new();
+    let warnings = Vec::new();
 
     // INV-MA-SIGNED
     if artifact.signature.is_empty() {
@@ -314,30 +316,18 @@ pub fn validate_artifact(artifact: &MigrationArtifact) -> ValidationResult {
 
     // INV-MA-CONFIDENCE-CALIBRATED
     let ci = &artifact.confidence_interval;
-    if !(0.0..=1.0).contains(&ci.probability) {
-        errors.push(format!(
-            "{}: probability {} out of [0.0, 1.0]",
-            error_codes::ERR_MA_CONFIDENCE_LOW,
-            ci.probability
-        ));
-    }
-    if !(0.0..=1.0).contains(&ci.dry_run_success_rate) {
-        warnings.push(format!(
-            "dry_run_success_rate {} out of [0.0, 1.0]",
-            ci.dry_run_success_rate
-        ));
-    }
-    if !(0.0..=1.0).contains(&ci.historical_similarity) {
-        warnings.push(format!(
-            "historical_similarity {} out of [0.0, 1.0]",
-            ci.historical_similarity
-        ));
-    }
-    if !(0.0..=1.0).contains(&ci.precondition_coverage) {
-        warnings.push(format!(
-            "precondition_coverage {} out of [0.0, 1.0]",
-            ci.precondition_coverage
-        ));
+    for (field, value) in [
+        ("probability", ci.probability),
+        ("dry_run_success_rate", ci.dry_run_success_rate),
+        ("historical_similarity", ci.historical_similarity),
+        ("precondition_coverage", ci.precondition_coverage),
+    ] {
+        if !(0.0..=1.0).contains(&value) {
+            errors.push(format!(
+                "{}: {field} {value} out of [0.0, 1.0]",
+                error_codes::ERR_MA_CONFIDENCE_LOW
+            ));
+        }
     }
 
     // INV-MA-VERSIONED
@@ -1244,7 +1234,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_confidence_warning_fields_do_not_hide_each_other() {
+    fn test_validate_confidence_fields_fail_closed() {
         let mut artifact = generate_reference_artifact();
         artifact.confidence_interval.dry_run_success_rate = -0.1;
         artifact.confidence_interval.historical_similarity = 1.1;
@@ -1252,27 +1242,21 @@ mod tests {
 
         let result = validate_artifact(&artifact);
 
-        assert!(result.valid);
-        assert!(result.errors.is_empty());
-        assert_eq!(result.warnings.len(), 3);
-        assert!(
-            result
-                .warnings
-                .iter()
-                .any(|warning| warning.contains("dry_run_success_rate"))
-        );
-        assert!(
-            result
-                .warnings
-                .iter()
-                .any(|warning| warning.contains("historical_similarity"))
-        );
-        assert!(
-            result
-                .warnings
-                .iter()
-                .any(|warning| warning.contains("precondition_coverage"))
-        );
+        assert!(!result.valid);
+        assert_eq!(result.errors.len(), 3);
+        assert!(result.warnings.is_empty());
+        assert!(result.errors.iter().any(|error| {
+            error.contains(error_codes::ERR_MA_CONFIDENCE_LOW)
+                && error.contains("dry_run_success_rate")
+        }));
+        assert!(result.errors.iter().any(|error| {
+            error.contains(error_codes::ERR_MA_CONFIDENCE_LOW)
+                && error.contains("historical_similarity")
+        }));
+        assert!(result.errors.iter().any(|error| {
+            error.contains(error_codes::ERR_MA_CONFIDENCE_LOW)
+                && error.contains("precondition_coverage")
+        }));
     }
 
     #[test]

@@ -1732,6 +1732,14 @@ pub fn render_validate_report(report: &MigrationValidateReport) -> String {
 }
 
 fn collect_project_files(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    collect_project_files_with_caps(root, MAX_PROJECT_FILES, MAX_PENDING_DIRS)
+}
+
+fn collect_project_files_with_caps(
+    root: &Path,
+    max_files: usize,
+    max_pending_dirs: usize,
+) -> anyhow::Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     let mut pending = vec![root.to_path_buf()];
 
@@ -1754,9 +1762,23 @@ fn collect_project_files(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
                 if should_skip_dir(&path) {
                     continue;
                 }
-                push_bounded(&mut pending, path, MAX_PENDING_DIRS);
+                if pending.len() >= max_pending_dirs {
+                    anyhow::bail!(
+                        "migration scan exceeded pending directory cap {} under {}",
+                        max_pending_dirs,
+                        root.display()
+                    );
+                }
+                pending.push(path);
             } else if file_type.is_file() {
-                push_bounded(&mut files, path, MAX_PROJECT_FILES);
+                if files.len() >= max_files {
+                    anyhow::bail!(
+                        "migration scan exceeded file cap {} under {}",
+                        max_files,
+                        root.display()
+                    );
+                }
+                files.push(path);
             }
         }
     }
@@ -5224,48 +5246,41 @@ mod tests {
     }
 
     #[test]
-    fn negative_collect_project_files_with_unbounded_vec_push() {
-        // Test potential memory exhaustion from unlimited Vec::push operations
-        // Lines 616, 617, 638, 640 use Vec::push without push_bounded bounds checking
+    fn negative_collect_project_files_fails_closed_on_file_cap() {
         let temp = tempfile::tempdir().expect("tempdir");
         let project = temp.path();
 
-        // Create a deeply nested directory structure that could stress Vec operations
-        let mut deep_path = project.to_path_buf();
-        for i in 0..100 {
-            deep_path = deep_path.join(format!("level-{:03}", i));
-            std::fs::create_dir_all(&deep_path).expect("create deep dirs");
-
-            // Add multiple files at each level to stress the files Vec
-            for j in 0..10 {
-                std::fs::write(
-                    deep_path.join(format!("file-{:03}.js", j)),
-                    "console.log('test');",
-                )
-                .expect("write deep file");
-                std::fs::write(deep_path.join(format!("file-{:03}.json", j)), "{}")
-                    .expect("write deep json");
-            }
+        for i in 0..3 {
+            std::fs::write(
+                project.join(format!("file-{i:03}.js")),
+                "console.log('test');",
+            )
+            .expect("write test file");
         }
 
-        // This should succeed but demonstrates unlimited Vec growth potential
-        let files = collect_project_files(project).expect("collect files");
-
-        // Verify files were collected (demonstrating the Vec growth)
+        let err = collect_project_files_with_caps(project, 2, MAX_PENDING_DIRS)
+            .expect_err("file-cap overflow must fail closed");
         assert!(
-            files.len() > 1000,
-            "Should collect many files from deep structure"
+            err.to_string()
+                .contains("migration scan exceeded file cap 2")
         );
+    }
 
-        // All files should be valid paths
-        for file_path in &files {
-            assert!(file_path.exists(), "Collected path should exist");
-            assert!(file_path.is_file(), "Collected path should be a file");
+    #[test]
+    fn negative_collect_project_files_fails_closed_on_pending_dir_cap() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path();
+
+        for i in 0..3 {
+            std::fs::create_dir_all(project.join(format!("dir-{i:03}"))).expect("create dir");
         }
 
-        // The current implementation has no bounds on Vec::push operations
-        // A hardened version might use push_bounded with MAX_FILES_PER_PROJECT
-        // or implement early termination for excessively large projects
+        let err = collect_project_files_with_caps(project, MAX_PROJECT_FILES, 2)
+            .expect_err("pending-dir overflow must fail closed");
+        assert!(
+            err.to_string()
+                .contains("migration scan exceeded pending directory cap 2")
+        );
     }
 
     #[test]
