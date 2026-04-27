@@ -65,8 +65,24 @@ fn request_header<'request>(req: &'request Request, name: &str) -> Option<&'requ
         .and_then(|value| std::str::from_utf8(value).ok())
 }
 
+/// Maximum byte length of a W3C traceparent header (`00-{32-hex}-{16-hex}-{2-hex}`).
+///
+/// bd-uxu46 hardening: reject the header before splitting so a malformed input
+/// cannot drive the parser through an arbitrary number of `-`-separated
+/// segments. Mirrors `crates/franken-node/src/api/middleware.rs::TRACEPARENT_HEADER_LEN`.
+const TRACEPARENT_HEADER_LEN: usize = 55;
+
 fn parse_traceparent(header: &str) -> Option<TraceContext> {
-    let mut parts = header.split('-');
+    // bd-uxu46: bound the parser at the byte level *and* the segment level
+    // before doing any allocation. `split('-')` returns a lazy iterator, but
+    // without these guards a malformed/oversized header still drives every
+    // call site through unbounded scanning. `splitn(5, '-')` caps the
+    // iteration at 5 calls; the exact-length check rejects anything that is
+    // not exactly the canonical W3C size up front.
+    if header.len() != TRACEPARENT_HEADER_LEN {
+        return None;
+    }
+    let mut parts = header.splitn(5, '-');
     let version = parts.next()?;
     let trace_id = parts.next()?;
     let span_id = parts.next()?;
@@ -87,6 +103,73 @@ fn parse_traceparent(header: &str) -> Option<TraceContext> {
         span_id: span_id.to_ascii_lowercase(),
         trace_flags: u8::from_str_radix(trace_flags, 16).ok()?,
     })
+}
+
+#[cfg(test)]
+mod traceparent_parser_hardening {
+    //! bd-uxu46 regression: the integration-test traceparent parser must
+    //! reject oversized + dash-flooded headers up front so it never walks an
+    //! attacker-controlled number of segments.
+
+    use super::{TraceContext, parse_traceparent, TRACEPARENT_HEADER_LEN};
+
+    /// Canonical 55-byte W3C traceparent shape: `00-32hex-16hex-2hex`.
+    const VALID: &str = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+
+    #[test]
+    fn accepts_canonical_header() {
+        assert_eq!(VALID.len(), TRACEPARENT_HEADER_LEN);
+        let parsed = parse_traceparent(VALID).expect("canonical header parses");
+        assert_eq!(parsed.trace_id, "0af7651916cd43dd8448eb211c80319c");
+        assert_eq!(parsed.span_id, "b7ad6b7169203331");
+        assert_eq!(parsed.trace_flags, 1);
+    }
+
+    #[test]
+    fn rejects_oversized_header_before_splitting() {
+        // 4 KiB of dashes should never scan the whole input.
+        let dash_flood = "-".repeat(4096);
+        assert!(parse_traceparent(&dash_flood).is_none());
+
+        // Canonical-looking but oversized: append junk after a valid prefix.
+        let mut oversized = String::from(VALID);
+        oversized.push_str(&"-extra".repeat(1024));
+        assert!(parse_traceparent(&oversized).is_none());
+    }
+
+    #[test]
+    fn rejects_undersized_header() {
+        assert!(parse_traceparent("").is_none());
+        assert!(parse_traceparent("00").is_none());
+        assert!(parse_traceparent("00-deadbeef-cafef00d-01").is_none());
+    }
+
+    #[test]
+    fn rejects_correct_length_but_extra_dash_segments() {
+        // 55-byte header where extra dashes inside fields create a 5th segment.
+        // Exactly 55 bytes total, but split into 5+ segments so the
+        // post-split is_some check trips and parser rejects.
+        let weird: String = "00-0af7651916cd43dd8448eb211c80319-b7ad6b71-9203331-01"
+            .to_string();
+        assert_eq!(weird.len(), TRACEPARENT_HEADER_LEN);
+        assert!(parse_traceparent(&weird).is_none());
+    }
+
+    #[test]
+    fn rejects_non_hex_in_fields() {
+        // Same length, valid layout, but non-hex characters in trace_id.
+        let bad_hex = "00-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-b7ad6b7169203331-01";
+        assert_eq!(bad_hex.len(), TRACEPARENT_HEADER_LEN);
+        assert!(parse_traceparent(bad_hex).is_none());
+    }
+
+    #[test]
+    fn type_is_traceparent_compatible() {
+        // Compile-time assertion that parse returns the expected type so
+        // refactors don't silently change the contract.
+        let parsed: Option<TraceContext> = parse_traceparent(VALID);
+        assert!(parsed.is_some());
+    }
 }
 
 fn problem_response(

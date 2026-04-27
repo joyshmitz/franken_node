@@ -687,6 +687,10 @@ path = "tests/e2e_cancellation_protocol_lifecycle.rs"
 name = "e2e_epoch_transition_barrier_lifecycle"
 path = "tests/e2e_epoch_transition_barrier_lifecycle.rs"
 
+[[test]]
+name = "e2e_provenance_gate_evaluation"
+path = "tests/e2e_provenance_gate_evaluation.rs"
+
 [[bench]]
 name = "cuckoo_revocation_bench"
 harness = false
