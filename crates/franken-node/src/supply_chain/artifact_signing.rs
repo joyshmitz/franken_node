@@ -97,10 +97,15 @@ impl fmt::Display for ArtifactSigningError {
                 artifact_name,
                 expected,
                 actual,
-            } => write!(
-                f,
-                "checksum mismatch for {artifact_name}: expected {expected}, got {actual}"
-            ),
+            } => {
+                tracing::warn!(
+                    artifact_name = %artifact_name,
+                    expected_checksum = %expected,
+                    actual_checksum = %actual,
+                    "artifact checksum verification failed"
+                );
+                write!(f, "checksum mismatch for {artifact_name}")
+            }
             Self::SignatureInvalid { artifact_name } => {
                 write!(f, "invalid signature for {artifact_name}")
             }
@@ -110,7 +115,13 @@ impl fmt::Display for ArtifactSigningError {
             Self::UnlistedArtifact { artifact_name } => {
                 write!(f, "unlisted artifact: {artifact_name}")
             }
-            Self::KeyNotFound { key_id } => write!(f, "key not found: {key_id}"),
+            Self::KeyNotFound { key_id } => {
+                tracing::warn!(
+                    requested_key_id = %key_id,
+                    "artifact signing key not found"
+                );
+                write!(f, "key not found")
+            }
             Self::ThresholdNotMet { required, provided } => {
                 write!(f, "threshold not met: need {required}, got {provided}")
             }
@@ -584,14 +595,17 @@ pub fn verify_release(
                     actual_hash.as_bytes(),
                     entry.sha256.as_bytes(),
                 ) {
+                    tracing::warn!(
+                        artifact_name = %name,
+                        expected_checksum = %entry.sha256,
+                        actual_checksum = %actual_hash,
+                        "artifact verification failed due to checksum mismatch"
+                    );
                     results.push(ArtifactVerificationResult {
                         artifact_name: name.clone(),
                         passed: false,
                         key_id: key_id_str,
-                        failure_reason: Some(format!(
-                            "checksum mismatch: expected {}, got {}",
-                            entry.sha256, actual_hash
-                        )),
+                        failure_reason: Some("checksum mismatch".to_string()),
                     });
                 } else {
                     // Every manifest-listed artifact must carry a detached
