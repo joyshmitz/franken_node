@@ -152,13 +152,15 @@ policy are library/API surfaces; there is not currently a top-level
 ```rust
 use franken_node::policy::compatibility_gate::{GateEngine, GateCheckRequest, CompatMode};
 
-let engine = GateEngine::new(policy_store, receipt_store);
-let decision = engine.gate_check(GateCheckRequest {
+let signing_key = load_signing_key()?; // Vec<u8>
+let mut engine = GateEngine::new(signing_key);
+let request = GateCheckRequest {
     package_id: "npm:@acme/auth".into(),
     requested_mode: CompatMode::Balanced,
     scope: "tenant-1".into(),
     policy_context: ctx,
-})?;
+};
+let decision = engine.gate_check(&request)?;
 
 match decision.verdict {
     Verdict::Allow => { /* proceed with shimmed behavior */ },
