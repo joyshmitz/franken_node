@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{File, OpenOptions};
+use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{ErrorKind, Read, Write};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
@@ -626,7 +626,10 @@ impl LockstepHarness {
     fn lock_divergence_fixture_file(file: &File, path: &Path) -> Result<()> {
         match file.try_lock() {
             Ok(()) => return Ok(()),
-            Err(err) if err.kind() != ErrorKind::WouldBlock => {
+            Err(TryLockError::WouldBlock) => {
+                // Will retry with backoff below
+            }
+            Err(TryLockError::Error(err)) => {
                 return Err(err).with_context(|| {
                     format!(
                         "failed locking lockstep divergence fixture lock {}",
@@ -634,14 +637,16 @@ impl LockstepHarness {
                     )
                 });
             }
-            Err(_) => {}
         }
 
         for delay_millis in DIVERGENCE_FIXTURE_LOCK_RETRY_BACKOFF_MILLIS {
             thread::sleep(Duration::from_millis(delay_millis));
             match file.try_lock() {
                 Ok(()) => return Ok(()),
-                Err(err) if err.kind() != ErrorKind::WouldBlock => {
+                Err(TryLockError::WouldBlock) => {
+                    // Continue retrying
+                }
+                Err(TryLockError::Error(err)) => {
                     return Err(err).with_context(|| {
                         format!(
                             "failed locking lockstep divergence fixture lock {}",
