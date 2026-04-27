@@ -147,6 +147,7 @@ fn validate_request(
     for (field, value) in [
         ("object_id", request.object_id.as_str()),
         ("requester_id", request.requester_id.as_str()),
+        ("schema_version", request.schema_version.as_str()),
         ("reason", request.reason.as_str()),
         ("validator_id", validator_id),
         ("trace_id", trace_id),
@@ -701,6 +702,17 @@ mod quarantine_promotion_additional_negative_tests {
     }
 
     #[test]
+    fn blank_schema_version_is_invalid_request() {
+        let mut req = request("object-a");
+        req.schema_version = " \n\t".to_string();
+
+        let err = evaluate_promotion(&req, &rule(), "validator-a", "trace-a", "ts-a")
+            .expect_err("blank schema version must fail closed");
+
+        expect_invalid_request(err, "schema_version");
+    }
+
+    #[test]
     fn blank_validator_id_is_invalid_request() {
         let err = evaluate_promotion(&request("object-a"), &rule(), " ", "trace-a", "ts-a")
             .expect_err("blank validator ID must fail closed");
@@ -732,6 +744,18 @@ mod quarantine_promotion_additional_negative_tests {
             .expect_err("batch should fail closed on invalid request metadata");
 
         expect_invalid_request(err, "object_id");
+    }
+
+    #[test]
+    fn batch_aborts_on_blank_schema_version_without_receipt() {
+        let mut invalid = request("valid-b");
+        invalid.schema_version = String::new();
+        let requests = vec![request("valid-a"), invalid];
+
+        let err = evaluate_batch(&requests, &rule(), "validator-a", "trace-a", "ts-a")
+            .expect_err("batch should fail closed on blank schema version metadata");
+
+        expect_invalid_request(err, "schema_version");
     }
 }
 

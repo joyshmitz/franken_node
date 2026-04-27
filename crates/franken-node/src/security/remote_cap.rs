@@ -2351,7 +2351,8 @@ impl CapabilityGate {
 
         // Convert to Ed25519 signature
         let signature = match Signature::from_bytes(&signature_bytes[..64].try_into().unwrap()) {
-            signature => signature,
+            Ok(signature) => signature,
+            Err(_) => return Ok(false), // Invalid signature format
         };
 
         // Verify signature against payload with domain separation
@@ -2512,7 +2513,7 @@ fn estimated_secret_entropy_bits(secret: &str) -> f64 {
     let total = secret.len() as f64;
     let mut counts = [0_usize; 256];
     for &byte in secret.as_bytes() {
-        counts[usize::from(byte)] += 1;
+        counts[usize::from(byte)] = counts[usize::from(byte)].saturating_add(1);
     }
     counts
         .into_iter()
