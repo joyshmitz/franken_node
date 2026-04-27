@@ -138,7 +138,7 @@ impl SignatureScheme for Ed25519Scheme {
             Err(_) => return false, // Constant-time failure
         };
 
-        let sig = match Signature::from_bytes(signature) {
+        let sig = match Signature::try_from(signature) {
             Ok(sig) => sig,
             Err(_) => return false, // Constant-time failure
         };
@@ -177,8 +177,10 @@ impl SignatureScheme for Ed25519Scheme {
         sig_array.copy_from_slice(bytes);
 
         // Validate the signature by attempting to parse it
-        Signature::from_bytes(&sig_array)
-            .map_err(|e| Ed25519Error::MalformedSignature(e.to_string()))?;
+        match Signature::try_from(&sig_array[..]) {
+            Ok(_) => {}, // Valid signature format
+            Err(e) => return Err(Ed25519Error::MalformedSignature(e.to_string())),
+        };
 
         Ok(sig_array)
     }

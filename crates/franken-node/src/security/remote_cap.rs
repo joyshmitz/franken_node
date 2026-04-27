@@ -2350,7 +2350,7 @@ impl CapabilityGate {
         }
 
         // Convert to Ed25519 signature
-        let signature = match Signature::from_bytes(&signature_bytes[..64].try_into().unwrap()) {
+        let signature = match Signature::try_from(&signature_bytes[..]) {
             Ok(signature) => signature,
             Err(_) => return Ok(false), // Invalid signature format
         };
