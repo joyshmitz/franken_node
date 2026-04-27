@@ -13,9 +13,13 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::security::constant_time;
+#[cfg(feature = "advanced-features")]
 use crate::tools::benchmark_suite::{BenchmarkDimension, run_default_suite};
-use crate::observability::evidence_ledger::{DecisionKind, EvidenceLedger, LedgerMetrics};
+use crate::security::constant_time;
+#[cfg(feature = "advanced-features")]
+use crate::observability::evidence_ledger::{DecisionKind, EvidenceLedger};
+#[cfg(feature = "advanced-features")]
+use crate::observability::evidence_ledger::LedgerMetrics;
 
 const MAX_HISTORY_ENTRIES: usize = 4096;
 const MAX_BET_ENTRIES: usize = 4096;
@@ -1303,6 +1307,7 @@ pub fn real_pipeline(
 }
 
 // Helper structures for real data generation
+#[cfg(feature = "advanced-features")]
 #[derive(serde::Serialize)]
 struct RealBenchmarkMetrics {
     compatibility_percent: f64,
@@ -1310,6 +1315,7 @@ struct RealBenchmarkMetrics {
     latency_p99_ms: f64,
 }
 
+#[cfg(feature = "advanced-features")]
 #[derive(serde::Serialize)]
 struct RealSecurityMetrics {
     surface_reduction_factor: f64,
@@ -1317,6 +1323,7 @@ struct RealSecurityMetrics {
     coverage_percent: f64,
 }
 
+#[cfg(feature = "advanced-features")]
 #[derive(serde::Serialize)]
 struct RealMigrationMetrics {
     velocity_factor: f64,
@@ -1324,12 +1331,14 @@ struct RealMigrationMetrics {
     median_time_hours: f64,
 }
 
+#[cfg(feature = "advanced-features")]
 #[derive(serde::Serialize)]
 struct RealAdoptionMetrics {
     verifier_count: usize,
     attestation_volume: usize,
 }
 
+#[cfg(feature = "advanced-features")]
 #[derive(serde::Serialize)]
 struct RealEconomicsMetrics {
     cost_benefit_ratio: f64,
@@ -1361,6 +1370,7 @@ struct BenchmarkThresholds {
 }
 
 /// Get configurable benchmark baseline defaults for fallback scenarios
+#[cfg(feature = "advanced-features")]
 fn get_benchmark_baseline_defaults() -> (f64, f64, f64) {
     (
         BASELINE_COMPAT_PERCENT,    // compatibility percentage fallback
@@ -1377,6 +1387,7 @@ pub struct BenchmarkValidationResult {
 }
 
 /// Generate real benchmark metrics from compatibility test results
+#[cfg(feature = "advanced-features")]
 fn generate_benchmark_metrics(now_secs: u64) -> Result<RealBenchmarkMetrics, CategoryShiftError> {
     // Run the actual benchmark suite to get real performance data
     let benchmark_report =
@@ -1422,6 +1433,7 @@ fn generate_benchmark_metrics(now_secs: u64) -> Result<RealBenchmarkMetrics, Cat
 }
 
 /// Load compatibility corpus pass rate from artifacts if available
+#[cfg(feature = "advanced-features")]
 fn load_compatibility_corpus_pass_rate() -> Option<f64> {
     let corpus_path = "artifacts/13/compatibility_corpus_results.json";
     if let Ok(content) = fs::read_to_string(corpus_path) {
@@ -1436,6 +1448,7 @@ fn load_compatibility_corpus_pass_rate() -> Option<f64> {
 }
 
 /// Save benchmark results to artifacts folder for CI gating and regression detection
+#[cfg(feature = "advanced-features")]
 fn save_benchmark_results(
     report: &crate::tools::benchmark_suite::BenchmarkReport,
     timestamp: u64,
@@ -1574,6 +1587,7 @@ pub fn validate_benchmark_thresholds() -> Result<BenchmarkValidationResult, Cate
 }
 
 /// Generate real security metrics from the signed security audit ledger.
+#[cfg(feature = "advanced-features")]
 fn generate_security_metrics(
     evidence_ledger: &EvidenceLedger,
 ) -> Result<RealSecurityMetrics, CategoryShiftError> {
@@ -1644,6 +1658,7 @@ fn generate_security_metrics(
 }
 
 /// Analyze real migration performance from evidence ledger and configuration
+#[cfg(feature = "advanced-features")]
 fn analyze_migration_performance(
     evidence_ledger: &EvidenceLedger,
     migration_config: &crate::config::MigrationConfig,
@@ -1735,6 +1750,7 @@ fn analyze_migration_performance(
 }
 
 /// Generate real migration metrics from migration config and historical data
+#[cfg(feature = "advanced-features")]
 fn generate_migration_metrics(
     migration_config: &crate::config::MigrationConfig,
     evidence_ledger: &EvidenceLedger,
@@ -1764,6 +1780,7 @@ fn generate_adoption_metrics(
 }
 
 /// Analyze evidence ledger for economic performance indicators
+#[cfg(feature = "advanced-features")]
 fn analyze_evidence_economics(ledger: &EvidenceLedger) -> (f64, f64, f64) {
     let metrics = ledger.metrics();
     let total_decisions = metrics.total_appended as f64;
@@ -1807,6 +1824,7 @@ fn analyze_evidence_economics(ledger: &EvidenceLedger) -> (f64, f64, f64) {
 }
 
 /// Calculate attacker cost analysis from evidence patterns
+#[cfg(feature = "advanced-features")]
 fn calculate_attacker_economics(ledger: &EvidenceLedger) -> f64 {
     let metrics = ledger.metrics();
     let total_decisions = metrics.total_appended as f64;
@@ -1856,10 +1874,14 @@ fn generate_economics_metrics(
     })
 }
 
+#[cfg(feature = "advanced-features")]
 const MOONSHOT_ADOPTION_TARGET: f64 = 500.0;
+#[cfg(feature = "advanced-features")]
 const MIGRATION_SUCCESS_TARGET: f64 = 0.95;
+#[cfg(feature = "advanced-features")]
 const SECURITY_ROI_REDUCTION_TARGET: f64 = 0.50;
 
+#[cfg(feature = "advanced-features")]
 fn progress_percent_from_target(actual: f64, target: f64, has_observability: bool) -> u8 {
     if !has_observability || !actual.is_finite() || !target.is_finite() || target <= 0.0 {
         return 0;
@@ -1867,6 +1889,7 @@ fn progress_percent_from_target(actual: f64, target: f64, has_observability: boo
     ((actual / target).clamp(0.0, 1.0) * 100.0).round() as u8
 }
 
+#[cfg(feature = "advanced-features")]
 fn status_from_metric_target(actual: f64, target: f64, has_observability: bool) -> BetStatus {
     if !has_observability || !actual.is_finite() || !target.is_finite() || target <= 0.0 {
         return BetStatus::Blocked;
@@ -2054,6 +2077,7 @@ fn generate_real_moonshot_bets(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "advanced-features")]
     use crate::observability::evidence_ledger::{LedgerCapacity, test_entry};
 
     fn sample_evidence(now_secs: u64) -> EvidenceInput {
@@ -2630,6 +2654,7 @@ mod tests {
         assert!(compromise.actual >= THRESHOLD_COMPROMISE_REDUCTION);
     }
 
+    #[cfg(feature = "advanced-features")]
     #[test]
     fn security_metrics_use_audited_ledger_history() {
         let mut admit_only = EvidenceLedger::new(LedgerCapacity::new(16, 16 * 1024));
