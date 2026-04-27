@@ -2039,6 +2039,10 @@ impl GzipScratchBuffer {
     fn new() -> Self {
         Self
     }
+
+    fn gzip_size_bytes(&mut self, bytes: &[u8]) -> Result<u64, ReplayBundleError> {
+        gzip_size_bytes(bytes)
+    }
 }
 
 fn canonical_json_bytes(value: &Value) -> Result<Vec<u8>, ReplayBundleError> {

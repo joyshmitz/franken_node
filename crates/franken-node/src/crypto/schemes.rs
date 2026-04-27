@@ -130,7 +130,12 @@ impl SignatureScheme for Ed25519Scheme {
             Err(e) => return Err(Ed25519Error::MalformedKey(e.to_string())),
         };
 
-        let signature = signing_key.sign(digest.as_bytes());
+        #[cfg(feature = "blake3")]
+        let digest_bytes = digest.as_bytes();
+        #[cfg(not(feature = "blake3"))]
+        let digest_bytes = &digest[..];
+
+        let signature = signing_key.sign(digest_bytes);
         Ok(signature.to_bytes())
     }
 
@@ -176,7 +181,12 @@ impl SignatureScheme for Ed25519Scheme {
         };
 
         // Perform constant-time verification
-        verifying_key.verify(digest.as_bytes(), &sig).is_ok()
+        #[cfg(feature = "blake3")]
+        let digest_bytes = digest.as_bytes();
+        #[cfg(not(feature = "blake3"))]
+        let digest_bytes = &digest[..];
+
+        verifying_key.verify(digest_bytes, &sig).is_ok()
     }
 
     fn public_key_from_bytes(bytes: &[u8]) -> Result<Self::PublicKey, Self::Error> {

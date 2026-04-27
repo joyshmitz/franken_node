@@ -354,43 +354,20 @@ fn parse_verifying_key(public_key_hex: &str) -> Option<VerifyingKey> {
     VerifyingKey::from_bytes(&pk_array).ok()
 }
 
+fn parse_signature(signature_hex: &str) -> Option<Signature> {
+    if signature_hex.len() != ED25519_SIGNATURE_HEX_LEN {
+        return None;
+    }
+
+    let sig_bytes = hex::decode(signature_hex).ok()?;
+    let sig_array: [u8; 64] = sig_bytes.try_into().ok()?;
+    Some(Signature::from_bytes(&sig_array))
+}
+
 /// Verify a partial signature using Ed25519.
 fn verify_signature(key: &SignerKey, content_hash: &str, sig: &PartialSignature) -> bool {
-    if key.public_key_hex.len() != ED25519_PUBLIC_KEY_HEX_LEN {
-        return false;
-    }
-
-    // Decode the public key from hex (32 bytes for Ed25519)
-    let pk_bytes = match hex::decode(&key.public_key_hex) {
-        Ok(b) => b,
-        Err(_) => return false,
-    };
-    let pk_array: [u8; 32] = match pk_bytes.try_into() {
-        Ok(a) => a,
-        Err(_) => return false,
-    };
-    let verifying_key = match VerifyingKey::from_bytes(&pk_array) {
-        Ok(vk) => vk,
-        Err(_) => return false,
-    };
-
-    if sig.signature_hex.len() != ED25519_SIGNATURE_HEX_LEN {
-        return false;
-    }
-
-    // Decode the signature from hex (64 bytes for Ed25519)
-    let sig_bytes = match hex::decode(&sig.signature_hex) {
-        Ok(b) => b,
-        Err(_) => return false,
-    };
-    let sig_array: [u8; 64] = match sig_bytes.try_into() {
-        Ok(a) => a,
-        Err(_) => return false,
-    };
-    let signature = Signature::from_bytes(&sig_array);
-
     let message = build_signing_message(content_hash);
-    verifying_key.verify_strict(&message, &signature).is_ok()
+    verify_signature_with_message(key, &message, sig)
 }
 
 fn verify_signature_with_message(
@@ -398,43 +375,11 @@ fn verify_signature_with_message(
     message_bytes: &[u8],
     sig: &PartialSignature,
 ) -> bool {
-    if key.public_key_hex.len() != ED25519_PUBLIC_KEY_HEX_LEN {
+    let Some(verifying_key) = parse_verifying_key(&key.public_key_hex) else {
         return false;
-    }
-
-    // Decode the public key from hex (32 bytes for Ed25519)
-    let pk_bytes = match hex::decode(&key.public_key_hex) {
-        Ok(b) => b,
-        Err(_) => return false,
-    };
-    let pk_array: [u8; 32] = match pk_bytes.try_into() {
-        Ok(a) => a,
-        Err(_) => return false,
-    };
-    let verifying_key = match VerifyingKey::from_bytes(&pk_array) {
-        Ok(vk) => vk,
-        Err(_) => return false,
     };
 
-    if sig.signature_hex.len() != ED25519_SIGNATURE_HEX_LEN {
-        return false;
-    }
-
-    // Decode the signature from hex (64 bytes for Ed25519)
-    let sig_bytes = match hex::decode(&sig.signature_hex) {
-        Ok(b) => b,
-        Err(_) => return false,
-    };
-    let sig_array: [u8; 64] = match sig_bytes.try_into() {
-        Ok(a) => a,
-        Err(_) => return false,
-    };
-    let signature = Signature::from_bytes(&sig_array);
-
-    // Use pre-computed message bytes instead of rebuilding
-    verifying_key
-        .verify_strict(message_bytes, &signature)
-        .is_ok()
+    verify_signature_with_parsed_key(&verifying_key, message_bytes, sig)
 }
 
 fn verify_signature_with_parsed_key(
@@ -442,20 +387,9 @@ fn verify_signature_with_parsed_key(
     message_bytes: &[u8],
     sig: &PartialSignature,
 ) -> bool {
-    if sig.signature_hex.len() != ED25519_SIGNATURE_HEX_LEN {
+    let Some(signature) = parse_signature(&sig.signature_hex) else {
         return false;
-    }
-
-    // Decode the signature from hex (64 bytes for Ed25519)
-    let sig_bytes = match hex::decode(&sig.signature_hex) {
-        Ok(b) => b,
-        Err(_) => return false,
     };
-    let sig_array: [u8; 64] = match sig_bytes.try_into() {
-        Ok(a) => a,
-        Err(_) => return false,
-    };
-    let signature = Signature::from_bytes(&sig_array);
 
     // Use pre-parsed VerifyingKey and pre-computed message bytes
     verifying_key
@@ -1082,6 +1016,45 @@ mod tests {
         let s1 = sign(&sk, "signer-0", "hash-a");
         let s2 = sign(&sk, "signer-0", "hash-b");
         assert_ne!(s1.signature_hex, s2.signature_hex);
+    }
+
+    #[test]
+    fn signature_verification_helpers_agree_on_valid_and_invalid_signatures() {
+        let (sks, config) = test_config(1, 1);
+        let key = &config.signer_keys[0];
+        let valid_signature = sign(&sks[0], &key.key_id, "hash-abc");
+        let message = build_signing_message("hash-abc");
+        let parsed_key = parse_verifying_key(&key.public_key_hex).unwrap();
+
+        assert!(verify_signature(key, "hash-abc", &valid_signature));
+        assert!(verify_signature_with_message(
+            key,
+            &message,
+            &valid_signature
+        ));
+        assert!(verify_signature_with_parsed_key(
+            &parsed_key,
+            &message,
+            &valid_signature
+        ));
+
+        let invalid_signature = PartialSignature {
+            signer_id: valid_signature.signer_id.clone(),
+            key_id: valid_signature.key_id.clone(),
+            signature_hex: "deadbeef".to_string(),
+        };
+
+        assert!(!verify_signature(key, "hash-abc", &invalid_signature));
+        assert!(!verify_signature_with_message(
+            key,
+            &message,
+            &invalid_signature
+        ));
+        assert!(!verify_signature_with_parsed_key(
+            &parsed_key,
+            &message,
+            &invalid_signature
+        ));
     }
 
     // === Serde ===
