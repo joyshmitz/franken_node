@@ -98,6 +98,7 @@ pub const ERR_TARGET_UNREACHABLE: &str = "ERR_TARGET_UNREACHABLE";
 pub const ERR_EVICTION_BLOCKED: &str = "ERR_EVICTION_BLOCKED";
 pub const ERR_INVALID_ARTIFACT_ID: &str = "ERR_INVALID_ARTIFACT_ID";
 pub const ERR_INVALID_SEGMENT_ID: &str = "ERR_INVALID_SEGMENT_ID";
+pub const ERR_INVALID_OBSERVED_HASH: &str = "ERR_INVALID_OBSERVED_HASH";
 
 const RESERVED_ARTIFACT_ID: &str = "<unknown>";
 
@@ -157,6 +158,7 @@ pub enum ProofFailureReason {
     TargetUnreachable { detail: String },
     InvalidArtifactId { detail: String },
     InvalidSegmentId { detail: String },
+    InvalidObservedHash { detail: String },
 }
 
 impl ProofFailureReason {
@@ -167,6 +169,7 @@ impl ProofFailureReason {
             Self::TargetUnreachable { .. } => ERR_TARGET_UNREACHABLE,
             Self::InvalidArtifactId { .. } => ERR_INVALID_ARTIFACT_ID,
             Self::InvalidSegmentId { .. } => ERR_INVALID_SEGMENT_ID,
+            Self::InvalidObservedHash { .. } => ERR_INVALID_OBSERVED_HASH,
         }
     }
 
@@ -177,6 +180,7 @@ impl ProofFailureReason {
             Self::TargetUnreachable { .. } => "target_unreachable",
             Self::InvalidArtifactId { .. } => "invalid_artifact_id",
             Self::InvalidSegmentId { .. } => "invalid_segment_id",
+            Self::InvalidObservedHash { .. } => "invalid_observed_hash",
         }
     }
 }
@@ -205,6 +209,9 @@ impl fmt::Display for ProofFailureReason {
             }
             Self::InvalidSegmentId { detail } => {
                 write!(f, "invalid segment id: {}", detail)
+            }
+            Self::InvalidObservedHash { detail } => {
+                write!(f, "invalid observed content hash: {}", detail)
             }
         }
     }
@@ -239,6 +246,27 @@ fn invalid_segment_id_reason(segment_id: &SegmentId) -> Option<String> {
     }
     if raw.chars().any(|c| c.is_control()) {
         return Some("segment_id must not contain control characters".to_string());
+    }
+    None
+}
+
+fn invalid_observed_content_hash_reason(content_hash: &str) -> Option<String> {
+    if content_hash.is_empty() {
+        return Some("observed content hash must not be empty".to_string());
+    }
+    if !content_hash.is_ascii() {
+        return Some("observed content hash must be ASCII".to_string());
+    }
+    if content_hash
+        .chars()
+        .any(|c| c.is_control() || c.is_whitespace())
+    {
+        return Some(
+            "observed content hash must not contain control characters or whitespace".to_string(),
+        );
+    }
+    if !is_canonical_sha256_hex_digest(content_hash) {
+        return Some("observed content hash must be canonical lowercase SHA-256 hex".to_string());
     }
     None
 }
@@ -516,6 +544,30 @@ impl RetrievabilityGate {
             }
             Some(s) => s,
         };
+
+        if let Some(detail) = invalid_observed_content_hash_reason(&state.content_hash) {
+            let observed_content_hash = state.content_hash.clone();
+            let observed_latency_ms = state.fetch_latency_ms;
+            let reason = ProofFailureReason::InvalidObservedHash { detail };
+            let err = RetrievabilityError {
+                code: ERR_INVALID_OBSERVED_HASH.to_string(),
+                reason: reason.clone(),
+                artifact_id: artifact_id.clone(),
+                segment_id: segment_id.clone(),
+                target_tier,
+            };
+            self.record_failure(
+                artifact_id,
+                segment_id,
+                source_tier,
+                target_tier,
+                Some(observed_content_hash.as_str()),
+                ts,
+                &reason,
+                observed_latency_ms,
+            );
+            return Err(err);
+        }
 
         // Check latency
         if state.fetch_latency_ms >= self.config.max_latency_ms {
@@ -915,11 +967,12 @@ mod tests {
             max_latency_ms: 5000,
             require_hash_match: false,
         });
+        let actual_hash = content_hash(b"relaxed-mode-actual-content");
         gate.register_target(
             &aid("a1"),
             &sid("s1"),
             StorageTier::L3Archive,
-            good_state("actual_hash_value"),
+            good_state(&actual_hash),
         );
 
         let proof = gate
@@ -932,8 +985,8 @@ mod tests {
             )
             .expect("relaxed mode should still produce a proof");
 
-        assert_eq!(proof.content_hash, "actual_hash_value");
-        assert_eq!(gate.receipts()[0].content_hash, "actual_hash_value");
+        assert_eq!(proof.content_hash, actual_hash);
+        assert_eq!(gate.receipts()[0].content_hash, actual_hash);
     }
 
     #[test]
@@ -942,11 +995,12 @@ mod tests {
             max_latency_ms: 5000,
             require_hash_match: false,
         });
+        let actual_hash = content_hash(b"relaxed-mode-event-content");
         gate.register_target(
             &aid("a1"),
             &sid("s1"),
             StorageTier::L3Archive,
-            good_state("actual_hash_value"),
+            good_state(&actual_hash),
         );
 
         gate.check_retrievability(
@@ -963,8 +1017,42 @@ mod tests {
             .iter()
             .find(|event| event.code == RG_PROOF_PASSED)
             .expect("proof-passed event must exist");
-        assert!(pass_event.detail.contains("actual_h"));
+        assert!(pass_event.detail.contains(&actual_hash[..8]));
         assert!(!pass_event.detail.contains("caller_su"));
+    }
+
+    #[test]
+    fn test_relaxed_mode_rejects_non_canonical_observed_hash() {
+        let mut gate = RetrievabilityGate::new(RetrievabilityConfig {
+            max_latency_ms: 5000,
+            require_hash_match: false,
+        });
+        gate.register_target(
+            &aid("a1"),
+            &sid("s1"),
+            StorageTier::L3Archive,
+            good_state("actual_hash_value"),
+        );
+
+        let err = gate
+            .check_retrievability(
+                &aid("a1"),
+                &sid("s1"),
+                StorageTier::L2Warm,
+                StorageTier::L3Archive,
+                "caller_supplied_hash",
+            )
+            .expect_err("relaxed mode must still reject malformed observed hashes");
+
+        assert_eq!(err.code, ERR_INVALID_OBSERVED_HASH);
+        assert_eq!(gate.receipts().len(), 1);
+        assert!(!gate.receipts()[0].passed);
+        assert!(
+            gate.receipts()[0]
+                .failure_reason
+                .as_deref()
+                .is_some_and(|reason| { reason.contains("canonical lowercase SHA-256 hex") })
+        );
     }
 
     // -- Hash mismatch --

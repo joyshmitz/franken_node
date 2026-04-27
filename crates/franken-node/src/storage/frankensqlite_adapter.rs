@@ -511,10 +511,12 @@ impl FrankensqliteAdapter {
         Self::new_unchecked(config)
     }
 
-    /// Create a new adapter without validation (for compatibility).
-    /// WARNING: Use new_validated for security-critical contexts.
-    pub fn new(config: AdapterConfig) -> Self {
-        Self::new_unchecked(config).expect("default config should be valid")
+    /// Create a new adapter.
+    ///
+    /// This constructor is fail-closed and validates the supplied configuration
+    /// before initializing the adapter.
+    pub fn new(config: AdapterConfig) -> Result<Self, AdapterError> {
+        Self::new_validated(config)
     }
 
     fn new_unchecked(config: AdapterConfig) -> Result<Self, AdapterError> {
@@ -866,7 +868,7 @@ impl FrankensqliteLegacySystemReadExt for FrankensqliteAdapter {
 
 impl Default for FrankensqliteAdapter {
     fn default() -> Self {
-        Self::new(AdapterConfig::default())
+        Self::new_validated(AdapterConfig::default()).expect("default config should be valid")
     }
 }
 
@@ -953,6 +955,21 @@ mod tests {
         let cfg = AdapterConfig::default();
         assert_eq!(cfg.pool_size, 4);
         assert!(cfg.wal_enabled);
+    }
+
+    #[test]
+    fn test_new_rejects_invalid_config() {
+        let err = FrankensqliteAdapter::new(AdapterConfig {
+            db_path: "/var/lib/franken_node.db".into(),
+            ..AdapterConfig::default()
+        })
+        .expect_err("invalid adapter config must fail closed");
+
+        assert!(matches!(
+            err,
+            AdapterError::ConfigValidationFailed { reason }
+            if reason.contains("absolute path outside allowed directories")
+        ));
     }
 
     #[test]

@@ -1071,26 +1071,16 @@ fn execute_migration_runtime_smoke_with_target(
 fn select_migration_runtime_smoke_target(
     project_path: &Path,
 ) -> anyhow::Result<MigrationRuntimeSmokeTarget> {
-    let manifest_path = select_smoke_package_manifest(project_path)?;
-    let manifest_dir = manifest_path.parent().unwrap_or(project_path);
     let project_root = std::fs::canonicalize(project_path).map_err(|err| {
         anyhow::anyhow!(
             "failed canonicalizing migration smoke project {}: {err}",
             project_path.display()
         )
     })?;
-    let manifest_dir = std::fs::canonicalize(manifest_dir).map_err(|err| {
-        anyhow::anyhow!(
-            "failed canonicalizing package manifest directory {}: {err}",
-            manifest_dir.display()
-        )
-    })?;
-    let manifest_path = std::fs::canonicalize(&manifest_path).map_err(|err| {
-        anyhow::anyhow!(
-            "failed canonicalizing package manifest {}: {err}",
-            manifest_path.display()
-        )
-    })?;
+    let manifest_path = select_smoke_package_manifest(project_path)?;
+    let manifest_path =
+        canonicalize_project_package_manifest_path(&project_root, &manifest_path, "runtime smoke")?;
+    let manifest_dir = manifest_path.parent().unwrap_or(project_root.as_path());
     let manifest_raw = std::fs::read_to_string(&manifest_path).map_err(|err| {
         anyhow::anyhow!(
             "failed reading package manifest {} for runtime smoke target: {err}",
@@ -1287,6 +1277,36 @@ fn resolve_runtime_smoke_entry_path(
     }
 
     None
+}
+
+fn canonicalize_project_package_manifest_path(
+    project_root: &Path,
+    manifest_path: &Path,
+    operation: &str,
+) -> anyhow::Result<PathBuf> {
+    let canonical_manifest = std::fs::canonicalize(manifest_path).map_err(|err| {
+        anyhow::anyhow!(
+            "failed canonicalizing {} package manifest {}: {err}",
+            operation,
+            manifest_path.display()
+        )
+    })?;
+    if !canonical_manifest.starts_with(project_root) {
+        anyhow::bail!(
+            "refusing to use {} package manifest outside project root {}: {}",
+            operation,
+            project_root.display(),
+            canonical_manifest.display()
+        );
+    }
+    if !canonical_manifest.is_file() {
+        anyhow::bail!(
+            "refusing to use non-file {} package manifest {}",
+            operation,
+            canonical_manifest.display()
+        );
+    }
+    Ok(canonical_manifest)
 }
 
 fn select_smoke_package_manifest(project_path: &Path) -> anyhow::Result<PathBuf> {
@@ -1834,7 +1854,7 @@ fn nearest_package_declares_module_type(project_path: &Path, source_path: &Path)
     let mut current = source_path.parent();
 
     while let Some(directory) = current {
-        if let Some(is_module) = package_manifest_declares_module_type(directory) {
+        if let Some(is_module) = package_manifest_declares_module_type(&project_root, directory) {
             return is_module;
         }
         if directory == project_root || !directory.starts_with(&project_root) {
@@ -1846,11 +1866,16 @@ fn nearest_package_declares_module_type(project_path: &Path, source_path: &Path)
     false
 }
 
-fn package_manifest_declares_module_type(directory: &Path) -> Option<bool> {
+fn package_manifest_declares_module_type(project_root: &Path, directory: &Path) -> Option<bool> {
     let manifest_path = directory.join("package.json");
     if !manifest_path.is_file() {
         return None;
     }
+    let Ok(manifest_path) =
+        canonicalize_project_package_manifest_path(project_root, &manifest_path, "module type")
+    else {
+        return Some(false);
+    };
     let Ok(raw) = std::fs::read_to_string(manifest_path) else {
         return Some(false);
     };
@@ -1868,10 +1893,7 @@ fn package_manifest_declares_module_type(directory: &Path) -> Option<bool> {
 /// SECURITY: Validates that no component in the backup path is a symlink to prevent
 /// directory traversal attacks. Checks the backup root directory and all parent
 /// directories up to the project root.
-fn validate_backup_path_no_symlinks(
-    project_path: &Path,
-    backup_path: &Path,
-) -> anyhow::Result<()> {
+fn validate_backup_path_no_symlinks(project_path: &Path, backup_path: &Path) -> anyhow::Result<()> {
     let backup_root = project_path.join(MIGRATION_BACKUP_DIR);
 
     // Check if backup root directory exists and is not a symlink
@@ -4999,6 +5021,69 @@ mod tests {
         assert_eq!(
             std::fs::read_link(&source_path).expect("read symlink target"),
             outside_path
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runtime_smoke_rejects_root_manifest_symlink_outside_project() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path().join("project");
+        let outside = temp.path().join("outside");
+        std::fs::create_dir_all(&project).expect("create project dir");
+        std::fs::create_dir_all(&outside).expect("create outside dir");
+
+        std::fs::write(project.join("index.js"), "console.log('hello');\n").expect("write source");
+        std::fs::write(project.join("package-lock.json"), "{}\n").expect("write lockfile");
+        std::fs::write(
+            outside.join("package.json"),
+            r#"{
+              "name":"outside-manifest",
+              "version":"1.0.0",
+              "engines":{"node":">=20 <23"},
+              "main":"../project/index.js"
+            }"#,
+        )
+        .expect("write outside manifest");
+        symlink(outside.join("package.json"), project.join("package.json"))
+            .expect("symlink manifest into project root");
+
+        let err = select_migration_runtime_smoke_target(&project)
+            .expect_err("outside-root manifest symlink must fail closed");
+        assert!(
+            err.to_string()
+                .contains("refusing to use runtime smoke package manifest outside project root"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn module_type_detection_ignores_symlinked_manifest_outside_project() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path().join("project");
+        let package_dir = project.join("pkg");
+        let outside = temp.path().join("outside");
+        std::fs::create_dir_all(&package_dir).expect("create package dir");
+        std::fs::create_dir_all(&outside).expect("create outside dir");
+
+        let source_path = package_dir.join("index.js");
+        std::fs::write(&source_path, "module.exports = 1;\n").expect("write source");
+        std::fs::write(outside.join("package.json"), r#"{"type":"module"}"#)
+            .expect("write outside manifest");
+        symlink(
+            outside.join("package.json"),
+            package_dir.join("package.json"),
+        )
+        .expect("symlink package manifest");
+
+        assert_eq!(
+            classify_source_module_format(&project, &source_path),
+            SourceModuleFormat::CommonJs
         );
     }
 
