@@ -59,6 +59,24 @@ pub const DEFAULT_MAX_AUDIT_LOG_ENTRIES: usize = 4096;
 
 /// Default maximum queued deadline-aware tasks retained.
 pub const DEFAULT_MAX_DEADLINE_QUEUE_ENTRIES: usize = 4096;
+const MAX_TASK_ID_BYTES: usize = 256;
+
+fn invalid_task_id_reason(task_id: &str) -> Option<String> {
+    let trimmed = task_id.trim();
+    if trimmed.is_empty() {
+        return Some("task id must not be empty".to_string());
+    }
+    if trimmed != task_id {
+        return Some("task id must not contain leading or trailing whitespace".to_string());
+    }
+    if task_id.chars().any(|ch| ch.is_control()) {
+        return Some("task id must not contain control characters".to_string());
+    }
+    if task_id.len() > MAX_TASK_ID_BYTES {
+        return Some(format!("task id must not exceed {MAX_TASK_ID_BYTES} bytes"));
+    }
+    None
+}
 
 // ---- Event codes ----
 
@@ -530,10 +548,13 @@ impl ControlLanePolicy {
     pub fn assign_task(
         &mut self,
         tc: ControlTaskClass,
-        _task_id: &str,
+        task_id: &str,
         trace_id: &str,
         timestamp_ms: u64,
     ) -> Result<ControlLane, String> {
+        if let Some(reason) = invalid_task_id_reason(task_id) {
+            return Err(format!("{}: {reason}", error_codes::ERR_CLP_INVALID_TASK_ID));
+        }
         let assignment = &self.assignments[tc.as_index()];
         let lane = assignment.lane;
 
@@ -564,11 +585,8 @@ impl ControlLanePolicy {
         enqueued_at_ms: u64,
         trace_id: &str,
     ) -> Result<QueuedControlTask, String> {
-        if task_id.is_empty() {
-            return Err(format!(
-                "{}: task id must not be empty",
-                error_codes::ERR_CLP_INVALID_TASK_ID
-            ));
+        if let Some(reason) = invalid_task_id_reason(task_id) {
+            return Err(format!("{}: {reason}", error_codes::ERR_CLP_INVALID_TASK_ID));
         }
         if self.deadline_queue.len() >= self.max_deadline_queue_entries {
             return Err(format!(
@@ -825,7 +843,10 @@ impl ControlLanePolicy {
         lane: ControlLane,
         budget_remaining_ms: u64,
         trace_id: &str,
-    ) -> PreemptionEvent {
+    ) -> Result<PreemptionEvent, String> {
+        if let Some(reason) = invalid_task_id_reason(task_id) {
+            return Err(format!("{}: {reason}", error_codes::ERR_CLP_INVALID_TASK_ID));
+        }
         let event = PreemptionEvent {
             task_id: task_id.to_string(),
             lane,
@@ -838,7 +859,7 @@ impl ControlLanePolicy {
             event.clone(),
             self.max_preemption_events,
         );
-        event
+        Ok(event)
     }
 
     /// Check if cancel lane was ever starved for more than 1 tick (INV-CLP-CANCEL-NO-STARVE).
@@ -1026,8 +1047,8 @@ mod tests {
     use super::{
         CANCEL_LANE_BUDGET_PCT, CANCEL_MAX_STARVE_TICKS, ControlLane, ControlLanePolicy,
         ControlLanePolicySnapshot, ControlTaskClass, DEFAULT_STARVATION_THRESHOLD_TICKS,
-        LaneBudget, READY_LANE_BUDGET_PCT, SCHEMA_VERSION, TIMED_LANE_BUDGET_PCT, error_codes,
-        event_codes,
+        LaneBudget, MAX_TASK_ID_BYTES, READY_LANE_BUDGET_PCT, SCHEMA_VERSION,
+        TIMED_LANE_BUDGET_PCT, error_codes, event_codes,
     };
 
     fn make_policy_with_capacities(
@@ -1425,7 +1446,9 @@ mod tests {
     #[test]
     fn test_preempt_event_recorded() {
         let mut policy = ControlLanePolicy::new();
-        let event = policy.preempt_task("task-42", ControlLane::Ready, 100, "trace-pre");
+        let event = policy
+            .preempt_task("task-42", ControlLane::Ready, 100, "trace-pre")
+            .expect("valid task id should preempt");
         assert_eq!(event.task_id, "task-42");
         assert_eq!(event.event_code, event_codes::LAN_005);
         assert_eq!(policy.preemption_events().len(), 1);
@@ -1471,9 +1494,15 @@ mod tests {
     #[test]
     fn test_preemption_and_audit_capacities_enforce_oldest_first_eviction() {
         let mut policy = make_policy_with_capacities(8, 8, 2, 2);
-        policy.preempt_task("task-1", ControlLane::Ready, 100, "trace-preempt-1");
-        policy.preempt_task("task-2", ControlLane::Ready, 90, "trace-preempt-2");
-        policy.preempt_task("task-3", ControlLane::Ready, 80, "trace-preempt-3");
+        policy
+            .preempt_task("task-1", ControlLane::Ready, 100, "trace-preempt-1")
+            .unwrap();
+        policy
+            .preempt_task("task-2", ControlLane::Ready, 90, "trace-preempt-2")
+            .unwrap();
+        policy
+            .preempt_task("task-3", ControlLane::Ready, 80, "trace-preempt-3")
+            .unwrap();
 
         let preempted_tasks: Vec<&str> = policy
             .preemption_events()
@@ -1540,15 +1569,59 @@ mod tests {
     }
 
     #[test]
-    fn test_class_counts_do_not_invent_removed_assignments() {
+    fn test_assign_task_rejects_invalid_task_id() {
+        let mut policy = ControlLanePolicy::new();
+        let err = policy
+            .assign_task(ControlTaskClass::HealthCheck, " task-bad", "trace-bad", 10)
+            .expect_err("surrounding whitespace must be rejected");
+        assert!(err.contains(error_codes::ERR_CLP_INVALID_TASK_ID));
+        assert!(err.contains("leading or trailing whitespace"));
+    }
+
+    #[test]
+    fn test_enqueue_deadline_task_rejects_control_characters_and_oversized_ids() {
+        let mut policy = ControlLanePolicy::new();
+        let oversized = "x".repeat(MAX_TASK_ID_BYTES + 1);
+
+        for (task_id, expected_detail) in [
+            ("task\nnewline".to_string(), "control characters"),
+            ("task\u{0}nul".to_string(), "control characters"),
+            (oversized, "must not exceed"),
+        ] {
+            let err = policy
+                .enqueue_deadline_task(
+                    ControlTaskClass::LeaseRenewal,
+                    &task_id,
+                    10,
+                    "trace-invalid-id",
+                )
+                .expect_err("invalid queued task ids must fail closed");
+            assert!(err.contains(error_codes::ERR_CLP_INVALID_TASK_ID));
+            assert!(err.contains(expected_detail), "unexpected error: {err}");
+        }
+    }
+
+    #[test]
+    fn test_preempt_task_rejects_invalid_task_id() {
+        let mut policy = ControlLanePolicy::new();
+        let err = policy
+            .preempt_task("task\rbad", ControlLane::Ready, 5, "trace-preempt")
+            .expect_err("control characters must be rejected");
+        assert!(err.contains(error_codes::ERR_CLP_INVALID_TASK_ID));
+        assert!(policy.preemption_events().is_empty());
+    }
+
+    #[test]
+    fn test_class_counts_reflect_reassigned_lane() {
         let mut policy = ControlLanePolicy::new();
         policy
-            .assignments
-            .remove(&ControlTaskClass::StaleEntryCleanup);
+            .assignments[ControlTaskClass::StaleEntryCleanup.as_index()]
+            .lane = ControlLane::Timed;
 
         let counts = policy.class_counts_per_lane();
 
         assert_eq!(*counts.get(&ControlLane::Ready).unwrap(), 6);
+        assert_eq!(*counts.get(&ControlLane::Timed).unwrap(), 8);
         assert_eq!(counts.values().sum::<usize>(), policy.total_task_classes());
     }
 
