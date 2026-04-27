@@ -737,13 +737,14 @@ fn canonicalize_schema_value(
         if index > 0 {
             canonical.push(b',');
         }
-        canonical.extend_from_slice(canonical_string(field)?.as_bytes());
+        write_canonical_string(&mut canonical, field)?;
         canonical.push(b':');
+        let field_path = CanonicalFieldPath::root(field);
         write_canonical_value(
             &mut canonical,
             field_value,
             schema.object_type,
-            field.as_str(),
+            &field_path,
             schema.no_float,
         )?;
     }
@@ -751,11 +752,61 @@ fn canonicalize_schema_value(
     Ok(canonical)
 }
 
+#[derive(Clone, Copy)]
+enum CanonicalFieldPath<'a> {
+    Root(&'a str),
+    Key {
+        parent: &'a CanonicalFieldPath<'a>,
+        key: &'a str,
+    },
+    Index {
+        parent: &'a CanonicalFieldPath<'a>,
+        index: usize,
+    },
+}
+
+impl<'a> CanonicalFieldPath<'a> {
+    fn root(field: &'a str) -> Self {
+        Self::Root(field)
+    }
+
+    fn key(parent: &'a Self, key: &'a str) -> Self {
+        Self::Key { parent, key }
+    }
+
+    fn index(parent: &'a Self, index: usize) -> Self {
+        Self::Index { parent, index }
+    }
+
+    fn render(&self) -> String {
+        let mut path = String::new();
+        self.write_into(&mut path);
+        path
+    }
+
+    fn write_into(&self, path: &mut String) {
+        match self {
+            Self::Root(field) => path.push_str(field),
+            Self::Key { parent, key } => {
+                parent.write_into(path);
+                path.push('.');
+                path.push_str(key);
+            }
+            Self::Index { parent, index } => {
+                parent.write_into(path);
+                path.push('[');
+                path.push_str(&index.to_string());
+                path.push(']');
+            }
+        }
+    }
+}
+
 fn write_canonical_value(
     out: &mut Vec<u8>,
     value: &Value,
     object_type: TrustObjectType,
-    field_path: &str,
+    field_path: &CanonicalFieldPath<'_>,
     no_float: bool,
 ) -> Result<(), SerializerError> {
     match value {
@@ -770,23 +821,26 @@ fn write_canonical_value(
             } else if no_float {
                 return Err(SerializerError::FloatingPointRejected {
                     object_type: object_type.label().to_string(),
-                    field: field_path.to_string(),
+                    field: field_path.render(),
                 });
             } else {
                 return Err(SerializerError::NonCanonicalInput {
                     object_type: object_type.label().to_string(),
-                    reason: format!("non-integer number at `{field_path}` is not canonical"),
+                    reason: format!(
+                        "non-integer number at `{}` is not canonical",
+                        field_path.render()
+                    ),
                 });
             }
         }
-        Value::String(value) => out.extend_from_slice(canonical_string(value)?.as_bytes()),
+        Value::String(value) => write_canonical_string(out, value)?,
         Value::Array(values) => {
             out.push(b'[');
             for (index, item) in values.iter().enumerate() {
                 if index > 0 {
                     out.push(b',');
                 }
-                let child_path = format!("{field_path}[{index}]");
+                let child_path = CanonicalFieldPath::index(field_path, index);
                 write_canonical_value(out, item, object_type, &child_path, no_float)?;
             }
             out.push(b']');
@@ -799,9 +853,9 @@ fn write_canonical_value(
                 if index > 0 {
                     out.push(b',');
                 }
-                out.extend_from_slice(canonical_string(key)?.as_bytes());
+                write_canonical_string(out, key)?;
                 out.push(b':');
-                let child_path = format!("{field_path}.{key}");
+                let child_path = CanonicalFieldPath::key(field_path, key);
                 write_canonical_value(out, nested_value, object_type, &child_path, no_float)?;
             }
             out.push(b'}');
@@ -810,8 +864,8 @@ fn write_canonical_value(
     Ok(())
 }
 
-fn canonical_string(value: &str) -> Result<String, SerializerError> {
-    serde_json::to_string(value).map_err(|error| SerializerError::PreimageConstructionFailed {
+fn write_canonical_string(out: &mut Vec<u8>, value: &str) -> Result<(), SerializerError> {
+    serde_json::to_writer(out, value).map_err(|error| SerializerError::PreimageConstructionFailed {
         reason: format!("failed to encode canonical string: {error}"),
     })
 }
@@ -1421,6 +1475,63 @@ mod tests {
             SerializerError::FloatingPointRejected { .. } => {}
             other => unreachable!("expected FloatingPointRejected, got {other}"),
         }
+    }
+
+    #[test]
+    fn test_serialize_value_preserves_nested_float_field_path() {
+        let mut serializer = CanonicalSerializer::new();
+        serializer.register_schema(CanonicalSchema {
+            object_type: TrustObjectType::PolicyCheckpoint,
+            field_order: vec!["root".to_string()],
+            domain_tag: TrustObjectType::PolicyCheckpoint.domain_tag(),
+            version: 1,
+            no_float: true,
+        });
+        let value = serde_json::json!({
+            "root": [
+                {
+                    "nested": 3.14
+                }
+            ]
+        });
+
+        let error = serializer
+            .serialize_value(TrustObjectType::PolicyCheckpoint, &value, "t1")
+            .expect_err("nested float should be rejected");
+
+        assert_eq!(
+            error,
+            SerializerError::FloatingPointRejected {
+                object_type: "policy_checkpoint".to_string(),
+                field: "root[0].nested".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_serialize_value_preserves_escaped_string_output() {
+        let mut serializer = CanonicalSerializer::new();
+        serializer.register_schema(CanonicalSchema {
+            object_type: TrustObjectType::PolicyCheckpoint,
+            field_order: vec!["root".to_string()],
+            domain_tag: TrustObjectType::PolicyCheckpoint.domain_tag(),
+            version: 1,
+            no_float: true,
+        });
+        let text = "line1\n\"quoted\"\t\\slash";
+        let value = serde_json::json!({ "root": text });
+
+        let canonical = serializer
+            .serialize_value(TrustObjectType::PolicyCheckpoint, &value, "t1")
+            .expect("string payload should serialize");
+
+        let expected_payload = format!(r#"{{"root":{}}}"#, serde_json::to_string(text).unwrap());
+        let expected_len = u32::try_from(expected_payload.len()).unwrap();
+        let mut expected = Vec::with_capacity(4 + expected_payload.len());
+        expected.extend_from_slice(&expected_len.to_be_bytes());
+        expected.extend_from_slice(expected_payload.as_bytes());
+
+        assert_eq!(canonical, expected);
     }
 
     #[test]
