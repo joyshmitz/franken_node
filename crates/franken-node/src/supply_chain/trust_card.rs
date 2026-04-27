@@ -762,9 +762,7 @@ impl TrustCardRegistry {
                     detail: err.error.to_string(),
                 }
             })?;
-            if let Ok(dir) = File::open(parent) {
-                let _ = dir.sync_all();
-            }
+            sync_parent_directory(parent, path)?;
             Ok(())
         })
     }
@@ -1605,6 +1603,23 @@ fn authoritative_snapshot_high_water_path(path: &Path) -> PathBuf {
     parent.join(format!("{file_name}.high-water.json"))
 }
 
+fn sync_parent_directory(parent: &Path, path: &Path) -> Result<(), TrustCardError> {
+    let dir = File::open(parent).map_err(|err| TrustCardError::SnapshotWrite {
+        path: path.to_path_buf(),
+        detail: format!(
+            "failed opening parent directory {} for sync: {err}",
+            parent.display()
+        ),
+    })?;
+    dir.sync_all().map_err(|err| TrustCardError::SnapshotWrite {
+        path: path.to_path_buf(),
+        detail: format!(
+            "failed syncing parent directory {}: {err}",
+            parent.display()
+        ),
+    })
+}
+
 fn lock_authoritative_snapshot_file(
     file: &File,
     lock_path: &Path,
@@ -2387,9 +2402,7 @@ fn write_snapshot_high_water(
             path: high_water_path.clone(),
             detail: err.error.to_string(),
         })?;
-    if let Ok(dir) = File::open(parent) {
-        let _ = dir.sync_all();
-    }
+    sync_parent_directory(parent, &high_water_path)?;
     Ok(())
 }
 
@@ -3553,6 +3566,23 @@ mod tests {
             !path.exists(),
             "snapshot must not be published while another writer holds the flock"
         );
+    }
+
+    #[test]
+    fn parent_directory_sync_fails_closed_when_parent_cannot_be_opened() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing_parent = dir.path().join("missing-parent");
+        let snapshot_path = missing_parent.join("trust-card-registry.v1.json");
+
+        let err = sync_parent_directory(&missing_parent, &snapshot_path)
+            .expect_err("missing parent directory must fail closed");
+
+        assert!(matches!(
+            err,
+            TrustCardError::SnapshotWrite { path, detail }
+                if path == snapshot_path
+                    && detail.contains("failed opening parent directory")
+        ));
     }
 
     #[test]
