@@ -11,6 +11,7 @@ use crate::control_plane::control_epoch::{
     ControlEpoch, EpochArtifactEvent, EpochRejection, EpochRejectionReason, ValidityWindowPolicy,
     check_artifact_epoch,
 };
+use crate::security::constant_time;
 
 /// Stable event codes for epoch-scoped validity checks.
 pub mod epoch_event_codes {
@@ -249,15 +250,15 @@ impl FenceState {
             });
         }
 
-        // Check object linkage
-        if self.object_id != write.target_object_id {
+        // Check object linkage using constant-time comparison to prevent timing attacks
+        if !constant_time::ct_eq(&self.object_id, &write.target_object_id) {
             return Err(FencingError::LeaseObjectMismatch {
                 lease_object: self.object_id.clone(),
                 target_object: write.target_object_id.clone(),
             });
         }
 
-        if lease.object_id != write.target_object_id {
+        if !constant_time::ct_eq(&lease.object_id, &write.target_object_id) {
             return Err(FencingError::LeaseObjectMismatch {
                 lease_object: lease.object_id.clone(),
                 target_object: write.target_object_id.clone(),
