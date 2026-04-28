@@ -7,7 +7,7 @@
 use crate::security::constant_time;
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 
 // Maximum bounds for Vec collections to prevent memory exhaustion
@@ -544,7 +544,7 @@ fn verify_threshold_with_key_lookup(
         };
     }
 
-    let mut seen_key_ids: BTreeSet<&str> = BTreeSet::new();
+    let mut seen_key_ids: HashSet<&str> = HashSet::new();
     let mut valid_count = 0u32;
     let mut first_failure: Option<FailureReason> = None;
 
