@@ -546,7 +546,6 @@ fn verify_threshold_with_key_lookup(
         };
     }
 
-    let mut seen_signers: BTreeSet<&str> = BTreeSet::new();
     let mut seen_key_ids: BTreeSet<&str> = BTreeSet::new();
     let mut valid_count = 0u32;
     let mut first_failure: Option<FailureReason> = None;
@@ -608,15 +607,6 @@ fn verify_threshold_with_key_lookup(
 
         // A signer key can only contribute once toward quorum.
         if !seen_key_ids.insert(sig.key_id.as_str()) {
-            if first_failure.is_none() {
-                first_failure = Some(FailureReason::DuplicateSigner {
-                    signer_id: sig.signer_id.clone(),
-                });
-            }
-            continue;
-        }
-
-        if !seen_signers.insert(sig.signer_id.as_str()) {
             if first_failure.is_none() {
                 first_failure = Some(FailureReason::DuplicateSigner {
                     signer_id: sig.signer_id.clone(),
@@ -1054,6 +1044,12 @@ mod tests {
         let result = verify_threshold(&config, &artifact, "t7", "ts");
         assert!(!result.verified);
         assert_eq!(result.valid_signatures, 1);
+        assert_eq!(
+            result.failure_reason,
+            Some(FailureReason::DuplicateSigner {
+                signer_id: "signer-0".to_string(),
+            })
+        );
     }
 
     #[test]
