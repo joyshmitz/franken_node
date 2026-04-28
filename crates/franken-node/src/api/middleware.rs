@@ -21,7 +21,11 @@ use serde::{Deserialize, Serialize};
 #[cfg(any(test, feature = "control-plane"))]
 use sha2::{Digest, Sha256};
 #[cfg(any(test, feature = "control-plane"))]
-use std::collections::BTreeMap;
+use std::cmp::Ordering;
+#[cfg(any(test, feature = "control-plane"))]
+use std::collections::{BTreeMap, btree_map::Entry};
+#[cfg(any(test, feature = "control-plane"))]
+use std::io::{self, Write};
 #[cfg(any(test, feature = "control-plane"))]
 use std::time::Instant;
 
@@ -51,6 +55,32 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
 }
 
 #[cfg(any(test, feature = "control-plane"))]
+fn push_hex_byte(output: &mut String, byte: u8) {
+    const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+    output.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+    output.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+}
+
+#[cfg(any(test, feature = "control-plane"))]
+fn auth_failure_rank_cmp(
+    left_ip: &str,
+    left_count: u64,
+    right_ip: &str,
+    right_count: u64,
+) -> Ordering {
+    right_count
+        .cmp(&left_count)
+        .then_with(|| left_ip.cmp(right_ip))
+}
+
+#[cfg(any(test, feature = "control-plane"))]
+fn write_auth_failure_event<W: Write>(writer: &mut W, event: &AuthFailureEvent) -> io::Result<()> {
+    writer.write_all(b"AUTH_FAILURE_EVENT: ")?;
+    serde_json::to_writer(writer, event).map_err(io::Error::other)?;
+    writer.write_all(b"\n")
+}
+
+#[cfg(any(test, feature = "control-plane"))]
 fn credential_principal(label: &str, secret: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"control_plane_auth_principal_v1:");
@@ -68,8 +98,14 @@ fn credential_principal(label: &str, secret: &str) -> String {
             .to_le_bytes(),
     );
     hasher.update(secret_bytes);
-    let fingerprint = hex::encode(hasher.finalize());
-    format!("{label}:{}", &fingerprint[..16])
+    let digest = hasher.finalize();
+    let mut principal = String::with_capacity(label.len() + 1 + 16);
+    principal.push_str(label);
+    principal.push(':');
+    for byte in digest.iter().take(8) {
+        push_hex_byte(&mut principal, *byte);
+    }
+    principal
 }
 
 // ── Trace Context ──────────────────────────────────────────────────────────
@@ -226,9 +262,24 @@ fn contains_authorized_key_constant_time(
     authorized_keys: &std::collections::BTreeSet<String>,
     candidate: &str,
 ) -> bool {
-    authorized_keys.iter().fold(false, |acc, authorized| {
-        acc | constant_time::ct_eq(authorized, candidate)
-    })
+    let mut found = false;
+    for authorized in authorized_keys {
+        found |= constant_time::ct_eq(authorized, candidate);
+    }
+    found
+}
+
+#[cfg(any(test, feature = "control-plane"))]
+fn has_required_role_constant_time(identity_roles: &[String], required_roles: &[String]) -> bool {
+    let mut has_role = false;
+    for identity_role in identity_roles {
+        let mut role_match = false;
+        for required_role in required_roles {
+            role_match |= constant_time::ct_eq(identity_role, required_role);
+        }
+        has_role |= role_match;
+    }
+    has_role
 }
 
 // ── Authentication ─────────────────────────────────────────────────────────
@@ -413,11 +464,7 @@ pub fn authorize(
     }
 
     // SECURITY: Use constant-time role checking to prevent timing side-channels
-    let has_role = identity.roles.iter().fold(false, |acc, identity_role| {
-        acc | hook.required_roles.iter().fold(false, |inner_acc, required_role| {
-            inner_acc | constant_time::ct_eq(identity_role, required_role)
-        })
-    });
+    let has_role = has_required_role_constant_time(&identity.roles, &hook.required_roles);
 
     if has_role {
         Ok(AuthzDecision::Allow)
@@ -574,7 +621,11 @@ impl RateLimiter {
             self.tokens += refill_amount;
         }
         if !self.tokens.is_finite() {
-            self.tokens = 0.0; // fail-closed: deny until next refill
+            self.tokens = if self.config.fail_closed {
+                0.0
+            } else {
+                f64::from(self.config.burst_size)
+            };
         }
         if self.tokens > f64::from(self.config.burst_size) {
             self.tokens = f64::from(self.config.burst_size);
@@ -694,19 +745,20 @@ impl AuthFailureLimiter {
     /// Check if an authentication attempt is allowed.
     /// Returns Err with retry_after_ms if rate limited.
     pub fn check_auth_attempt(&mut self, trace_id: &str, source_ip: &str) -> Result<(), ApiError> {
-        let rate_limit_result = {
-            let state = self.ensure_source_state(source_ip);
-            state.rate_limiter.check()
-        };
-
-        match rate_limit_result {
+        match Self::check_source_auth_attempt(
+            &self.config,
+            &mut self.source_states,
+            &mut self.global_failure_count,
+            source_ip,
+        ) {
             Ok(()) => Ok(()),
-            Err(retry_after_ms) => {
-                self.record_failure(
+            Err((retry_after_ms, source_count)) => {
+                self.emit_failure_event(
                     source_ip,
                     AuthFailureType::RateLimited,
                     trace_id,
                     Some(retry_after_ms),
+                    source_count,
                 );
                 Err(ApiError::RateLimited {
                     detail: "Too many authentication attempts. Please try again later.".to_string(),
@@ -726,7 +778,23 @@ impl AuthFailureLimiter {
         retry_after_ms: Option<u64>,
     ) {
         let source_count = self.increment_source_failure_count(source_ip);
+        self.emit_failure_event(
+            source_ip,
+            failure_type,
+            trace_id,
+            retry_after_ms,
+            source_count,
+        );
+    }
 
+    fn emit_failure_event(
+        &self,
+        source_ip: &str,
+        failure_type: AuthFailureType,
+        trace_id: &str,
+        retry_after_ms: Option<u64>,
+        source_count: u64,
+    ) {
         // Emit structured telemetry event for operator visibility
         let event = AuthFailureEvent {
             timestamp_ms: std::time::SystemTime::now()
@@ -741,12 +809,9 @@ impl AuthFailureLimiter {
             retry_after_ms,
         };
 
-        // Emit via observability surface (structured logging for now)
-        // In production, this would be routed to metrics/alerting systems
-        eprintln!(
-            "AUTH_FAILURE_EVENT: {}",
-            serde_json::to_string(&event).unwrap_or_default()
-        );
+        // Emit via observability surface (structured logging for now).
+        // In production, this would be routed to metrics/alerting systems.
+        let _ = write_auth_failure_event(&mut io::stderr().lock(), &event);
     }
 
     /// Record authentication failure for an invalid or empty credential.
@@ -771,58 +836,81 @@ impl AuthFailureLimiter {
 
     /// Get current failure statistics for monitoring.
     pub fn get_failure_stats(&self) -> AuthFailureStats {
-        let mut top_source_failures = self
-            .source_states
-            .iter()
-            .filter_map(|(ip, state)| {
-                (state.failure_count > 0).then_some((ip.clone(), state.failure_count))
-            })
-            .collect::<Vec<_>>();
-        top_source_failures.sort_by(|(left_ip, left_count), (right_ip, right_count)| {
-            right_count
-                .cmp(left_count)
-                .then_with(|| left_ip.cmp(right_ip))
-        });
-        top_source_failures.truncate(TOP_AUTH_FAILURE_SOURCES);
+        let mut unique_source_ips = 0usize;
+        let mut top_source_failures = Vec::with_capacity(TOP_AUTH_FAILURE_SOURCES);
+
+        for (ip, state) in &self.source_states {
+            if state.failure_count == 0 {
+                continue;
+            }
+            unique_source_ips = unique_source_ips.saturating_add(1);
+
+            let insert_at = top_source_failures
+                .iter()
+                .position(|(existing_ip, existing_count)| {
+                    auth_failure_rank_cmp(ip, state.failure_count, existing_ip, *existing_count)
+                        == Ordering::Less
+                });
+
+            match insert_at {
+                Some(index) => {
+                    top_source_failures.insert(index, (ip.clone(), state.failure_count));
+                    if top_source_failures.len() > TOP_AUTH_FAILURE_SOURCES {
+                        top_source_failures.pop();
+                    }
+                }
+                None if top_source_failures.len() < TOP_AUTH_FAILURE_SOURCES => {
+                    top_source_failures.push((ip.clone(), state.failure_count));
+                }
+                None => {}
+            }
+        }
 
         AuthFailureStats {
             global_failure_count: self.global_failure_count,
-            unique_source_ips: self
-                .source_states
-                .values()
-                .filter(|state| state.failure_count > 0)
-                .count(),
+            unique_source_ips,
             top_source_failures,
         }
     }
 
     fn increment_source_failure_count(&mut self, source_ip: &str) -> u64 {
         self.global_failure_count = self.global_failure_count.saturating_add(1);
-        let state = self.ensure_source_state(source_ip);
+        let state = Self::ensure_source_state_in(&mut self.source_states, &self.config, source_ip);
         state.failure_count = state.failure_count.saturating_add(1);
         state.failure_count
     }
 
     fn ensure_source_state(&mut self, source_ip: &str) -> &mut AuthFailureSourceState {
-        if !self.source_states.contains_key(source_ip) {
-            if self.source_states.len() >= MAX_AUTH_FAILURE_SOURCES {
-                self.evict_lowest_priority_source();
-            }
+        Self::ensure_source_state_in(&mut self.source_states, &self.config, source_ip)
+    }
 
-            self.source_states.insert(
-                source_ip.to_string(),
-                AuthFailureSourceState::new(&self.config),
-            );
+    fn ensure_source_state_in<'a>(
+        source_states: &'a mut BTreeMap<String, AuthFailureSourceState>,
+        config: &RateLimitConfig,
+        source_ip: &str,
+    ) -> &'a mut AuthFailureSourceState {
+        if let Some(state) = source_states.get_mut(source_ip) {
+            return state;
         }
 
-        self.source_states
-            .get_mut(source_ip)
-            .expect("source state inserted above")
+        if source_states.len() >= MAX_AUTH_FAILURE_SOURCES {
+            Self::evict_lowest_priority_source_from(source_states);
+        }
+
+        match source_states.entry(source_ip.to_string()) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(AuthFailureSourceState::new(config)),
+        }
     }
 
     fn evict_lowest_priority_source(&mut self) {
-        let min_entry = self
-            .source_states
+        Self::evict_lowest_priority_source_from(&mut self.source_states);
+    }
+
+    fn evict_lowest_priority_source_from(
+        source_states: &mut BTreeMap<String, AuthFailureSourceState>,
+    ) {
+        let min_entry = source_states
             .iter()
             .min_by(|(left_ip, left_state), (right_ip, right_state)| {
                 left_state
@@ -833,7 +921,24 @@ impl AuthFailureLimiter {
             .map(|(ip, _)| ip.clone());
 
         if let Some(min_ip) = min_entry {
-            self.source_states.remove(&min_ip);
+            source_states.remove(&min_ip);
+        }
+    }
+
+    fn check_source_auth_attempt(
+        config: &RateLimitConfig,
+        source_states: &mut BTreeMap<String, AuthFailureSourceState>,
+        global_failure_count: &mut u64,
+        source_ip: &str,
+    ) -> Result<(), (u64, u64)> {
+        let state = Self::ensure_source_state_in(source_states, config, source_ip);
+        match state.rate_limiter.check() {
+            Ok(()) => Ok(()),
+            Err(retry_after_ms) => {
+                *global_failure_count = global_failure_count.saturating_add(1);
+                state.failure_count = state.failure_count.saturating_add(1);
+                Err((retry_after_ms, state.failure_count))
+            }
         }
     }
 }
@@ -1118,9 +1223,13 @@ where
     let start = Instant::now();
 
     // Step 1: Trace context
-    let trace_ctx = traceparent
-        .and_then(TraceContext::from_traceparent)
-        .unwrap_or_else(TraceContext::generate);
+    let trace_ctx = if route.trace_propagation {
+        traceparent
+            .and_then(TraceContext::from_traceparent)
+            .unwrap_or_else(TraceContext::generate)
+    } else {
+        TraceContext::generate()
+    };
 
     let trace_id = trace_ctx.trace_id.clone();
 
@@ -1641,6 +1750,74 @@ mod tests {
     }
 
     #[test]
+    fn authorize_allows_when_matching_role_is_not_first() {
+        let identity = AuthIdentity {
+            principal: "late-match".to_string(),
+            method: AuthMethod::ApiKey,
+            roles: vec!["reader".to_string(), "operator".to_string()],
+        };
+        let hook = PolicyHook {
+            hook_id: "operator.read".to_string(),
+            required_roles: vec!["fleet-admin".to_string(), "operator".to_string()],
+        };
+
+        let decision = authorize(&identity, &hook, "trace-late-role").expect("authz");
+
+        assert_eq!(decision, AuthzDecision::Allow);
+    }
+
+    #[test]
+    fn credential_principal_matches_legacy_sha256_prefix_hex() {
+        let label = "apikey";
+        let sample_input = "sample-credential-123";
+
+        let actual = credential_principal(label, sample_input);
+
+        let mut hasher = Sha256::new();
+        hasher.update(b"control_plane_auth_principal_v1:");
+        let label_bytes = label.as_bytes();
+        hasher.update(
+            u64::try_from(label_bytes.len())
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
+        hasher.update(label_bytes);
+        let secret_bytes = sample_input.as_bytes();
+        hasher.update(
+            u64::try_from(secret_bytes.len())
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
+        hasher.update(secret_bytes);
+        let fingerprint = hex::encode(hasher.finalize());
+        let expected = format!("{label}:{}", &fingerprint[..16]);
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn write_auth_failure_event_matches_legacy_json_line_output() {
+        let event = AuthFailureEvent {
+            timestamp_ms: 123,
+            trace_id: "trace-auth-failure".to_string(),
+            source_ip: "192.0.2.10".to_string(),
+            failure_type: AuthFailureType::RateLimited,
+            source_failure_count: 7,
+            global_failure_count: 19,
+            retry_after_ms: Some(250),
+        };
+        let mut output = Vec::new();
+
+        write_auth_failure_event(&mut output, &event).expect("event write");
+
+        let expected = format!(
+            "AUTH_FAILURE_EVENT: {}\n",
+            serde_json::to_string(&event).expect("legacy json")
+        );
+        assert_eq!(String::from_utf8(output).expect("utf8 log line"), expected);
+    }
+
+    #[test]
     fn rate_limiter_allows_within_burst() {
         let config = RateLimitConfig {
             sustained_rps: 10,
@@ -1666,6 +1843,68 @@ mod tests {
         limiter.check().expect("2nd");
         let result = limiter.check();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn rate_limiter_fail_closed_denies_when_internal_state_is_invalid() {
+        let config = RateLimitConfig {
+            sustained_rps: 10,
+            burst_size: 3,
+            fail_closed: true,
+        };
+        let mut limiter = RateLimiter::new(config);
+        limiter.tokens = f64::NAN;
+
+        let result = limiter.check();
+
+        assert_eq!(result, Err(100));
+        assert_eq!(limiter.tokens, 0.0);
+    }
+
+    #[test]
+    fn rate_limiter_fail_open_recovers_when_internal_state_is_invalid() {
+        let config = RateLimitConfig {
+            sustained_rps: 10,
+            burst_size: 3,
+            fail_closed: false,
+        };
+        let mut limiter = RateLimiter::new(config);
+        limiter.tokens = f64::NAN;
+
+        let result = limiter.check();
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(limiter.tokens, 2.0);
+    }
+
+    #[test]
+    fn auth_failure_limiter_rate_limited_attempt_updates_stats() {
+        let mut limiter = AuthFailureLimiter::with_config(RateLimitConfig {
+            sustained_rps: 1,
+            burst_size: 0,
+            fail_closed: true,
+        });
+
+        let err = limiter
+            .check_auth_attempt("trace-auth-rate-limit", "192.0.2.10")
+            .expect_err("zero-burst auth limiter must deny immediately");
+
+        assert!(matches!(
+            err,
+            ApiError::RateLimited {
+                trace_id,
+                retry_after_ms,
+                ..
+            } if trace_id == "trace-auth-rate-limit" && retry_after_ms >= 1
+        ));
+
+        let stats = limiter.get_failure_stats();
+        assert_eq!(stats.global_failure_count, 1);
+        assert_eq!(stats.unique_source_ips, 1);
+        assert_eq!(
+            stats.top_source_failures,
+            vec![("192.0.2.10".to_string(), 1)]
+        );
     }
 
     #[test]
@@ -1806,6 +2045,41 @@ mod tests {
 
         let trace_ctx = result.expect("generated trace context");
         assert_ne!(trace_ctx.trace_id, "00000000000000000000000000000000");
+        assert_eq!(trace_ctx.trace_id, log.trace_id);
+    }
+
+    #[test]
+    fn execute_middleware_chain_ignores_traceparent_when_propagation_disabled() {
+        let route = RouteMetadata {
+            method: "GET".to_string(),
+            path: "/v1/operator/status".to_string(),
+            group: EndpointGroup::Operator,
+            lifecycle: EndpointLifecycle::Stable,
+            auth_method: AuthMethod::None,
+            policy_hook: PolicyHook {
+                hook_id: "operator.status.read".to_string(),
+                required_roles: vec![],
+            },
+            trace_propagation: false,
+        };
+        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
+        let keys = get_test_keys();
+        let incoming_traceparent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+
+        let mut auth_limiter = AuthFailureLimiter::new();
+        let (result, log) = execute_middleware_chain(
+            &route,
+            None,
+            Some(incoming_traceparent),
+            "127.0.0.1",
+            &mut auth_limiter,
+            &mut limiter,
+            &keys,
+            |_identity, ctx| Ok(ctx.clone()),
+        );
+
+        let trace_ctx = result.expect("generated trace context");
+        assert_ne!(trace_ctx.trace_id, "0af7651916cd43dd8448eb211c80319c");
         assert_eq!(trace_ctx.trace_id, log.trace_id);
     }
 
@@ -2617,7 +2891,56 @@ mod api_middleware_edge_negative_tests {
     }
 
     #[test]
-    fn negative_auth_failure_limiter_bounds_tracked_source_cardinality_with_lru_eviction() {
+    fn negative_auth_failure_stats_truncate_top_sources_with_stable_tie_ordering() {
+        let mut limiter = AuthFailureLimiter::new();
+        let ranked_sources = [
+            ("10.0.0.12", 12u64),
+            ("10.0.0.11", 11),
+            ("10.0.0.10", 10),
+            ("10.0.0.09", 9),
+            ("10.0.0.08", 8),
+            ("10.0.0.07", 7),
+            ("10.0.0.06", 6),
+            ("10.0.0.05", 5),
+            ("10.0.0.04", 4),
+            ("10.0.0.3a", 3),
+            ("10.0.0.3b", 3),
+            ("10.0.0.02", 2),
+        ];
+
+        for (source_ip, failure_count) in ranked_sources {
+            for _ in 0..failure_count {
+                limiter.record_failure(
+                    source_ip,
+                    AuthFailureType::MissingHeader,
+                    "trace-rank-truncate",
+                    None,
+                );
+            }
+        }
+
+        let stats = limiter.get_failure_stats();
+
+        assert_eq!(
+            stats.top_source_failures,
+            vec![
+                ("10.0.0.12".to_string(), 12),
+                ("10.0.0.11".to_string(), 11),
+                ("10.0.0.10".to_string(), 10),
+                ("10.0.0.09".to_string(), 9),
+                ("10.0.0.08".to_string(), 8),
+                ("10.0.0.07".to_string(), 7),
+                ("10.0.0.06".to_string(), 6),
+                ("10.0.0.05".to_string(), 5),
+                ("10.0.0.04".to_string(), 4),
+                ("10.0.0.3a".to_string(), 3),
+            ]
+        );
+    }
+
+    #[test]
+    fn negative_auth_failure_limiter_bounds_tracked_source_cardinality_with_lowest_volume_eviction()
+    {
         let mut limiter = AuthFailureLimiter::new();
 
         // First, add sources up to the limit - each gets 1 failure
@@ -2640,7 +2963,7 @@ mod api_middleware_edge_negative_tests {
             );
         }
 
-        // Now add sources beyond the limit - should trigger LRU eviction
+        // Now add sources beyond the limit - should evict the lowest-volume tracked entries.
         for source_index in MAX_AUTH_FAILURE_SOURCES..(MAX_AUTH_FAILURE_SOURCES + 32) {
             limiter.record_failure(
                 &format!("192.0.2.{source_index}"),
@@ -2659,17 +2982,17 @@ mod api_middleware_edge_negative_tests {
         assert_eq!(limiter.source_states.len(), MAX_AUTH_FAILURE_SOURCES);
         assert!(stats.top_source_failures.len() <= TOP_AUTH_FAILURE_SOURCES);
 
-        // High-volume attacker should be preserved by LRU policy
+        // High-volume attacker should be preserved by the lowest-volume eviction policy.
         assert!(
             limiter.source_states.contains_key("192.0.2.0"),
-            "High-volume sources should not be evicted by LRU policy"
+            "High-volume sources should not be evicted by lowest-volume policy"
         );
 
-        // At least some of the recent sources should be tracked (LRU allows new sources)
+        // At least some recent sources should be tracked once low-volume entries are evicted.
         let last_source = format!("192.0.2.{}", MAX_AUTH_FAILURE_SOURCES + 31);
         assert!(
             limiter.source_states.contains_key(&last_source),
-            "LRU policy should allow new sources by evicting low-count entries"
+            "lowest-volume policy should allow new sources by evicting low-count entries"
         );
     }
 
@@ -3476,7 +3799,7 @@ use loom::thread;
 ///
 /// This test verifies:
 /// 1. MAX_AUTH_FAILURE_SOURCES cardinality bound is maintained
-/// 2. LRU eviction preserves high-volume attackers
+/// 2. Lowest-volume eviction preserves high-volume attackers
 /// 3. Concurrent access maintains consistency
 /// 4. No race conditions in increment_source_failure_count
 #[cfg(loom)]
