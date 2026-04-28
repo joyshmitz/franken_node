@@ -68,7 +68,9 @@ fn validate_safe_identifier(identifier: &str) -> Result<(), &'static str> {
                 // Safe character, continue
             }
             _ => {
-                return Err("identifier contains unsafe characters (only alphanumeric, hyphen, underscore, dot allowed)");
+                return Err(
+                    "identifier contains unsafe characters (only alphanumeric, hyphen, underscore, dot allowed)",
+                );
             }
         }
     }
@@ -163,16 +165,12 @@ impl CachedThresholdConfig {
             }
 
             // Pre-parse the public key
-            let pk_bytes =
-                hex::decode(&signer.public_key_hex).map_err(|_| ThresholdError::ConfigInvalid {
+            let mut pk_array = [0_u8; 32];
+            hex::decode_to_slice(&signer.public_key_hex, &mut pk_array).map_err(|_| {
+                ThresholdError::ConfigInvalid {
                     reason: format!("invalid public key hex for {}", signer.key_id),
-                })?;
-            let pk_array: [u8; 32] =
-                pk_bytes
-                    .try_into()
-                    .map_err(|_| ThresholdError::ConfigInvalid {
-                        reason: format!("invalid public key length for {}", signer.key_id),
-                    })?;
+                }
+            })?;
             let verifying_key =
                 VerifyingKey::from_bytes(&pk_array).map_err(|_| ThresholdError::ConfigInvalid {
                     reason: format!("invalid public key for {}", signer.key_id),
@@ -398,8 +396,8 @@ fn parse_verifying_key(public_key_hex: &str) -> Option<VerifyingKey> {
         return None;
     }
 
-    let pk_bytes = hex::decode(public_key_hex).ok()?;
-    let pk_array: [u8; 32] = pk_bytes.try_into().ok()?;
+    let mut pk_array = [0_u8; 32];
+    hex::decode_to_slice(public_key_hex, &mut pk_array).ok()?;
     VerifyingKey::from_bytes(&pk_array).ok()
 }
 
@@ -408,9 +406,9 @@ fn parse_signature(signature_hex: &str) -> Option<Signature> {
         return None;
     }
 
-    let sig_bytes = hex::decode(signature_hex).ok()?;
-    let sig_array: [u8; 64] = sig_bytes.try_into().ok()?;
-    Some(Signature::from_bytes(&sig_array))
+    let mut sig_bytes = [0_u8; 64];
+    hex::decode_to_slice(signature_hex, &mut sig_bytes).ok()?;
+    Some(Signature::from_bytes(&sig_bytes))
 }
 
 /// Verify a partial signature using Ed25519.
@@ -462,18 +460,26 @@ pub fn sign(signing_key: &SigningKey, key_id: &str, content_hash: &str) -> Parti
 
 /// Verify a publication artifact against a threshold config.
 ///
-/// PERFORMANCE: This function now internally uses cached parsing to optimize
-/// repeated verification calls. For maximum performance with repeated verifications
-/// of the same config, consider using CachedThresholdConfig and verify_threshold_cached directly.
+/// PERFORMANCE: This path validates the config once and prepares a borrowed
+/// key lookup table for the current call. For repeated verifications of the
+/// same config, `CachedThresholdConfig` still avoids the per-call key parse.
 pub fn verify_threshold(
     config: &ThresholdConfig,
     artifact: &PublicationArtifact,
     trace_id: &str,
     timestamp: &str,
 ) -> VerificationResult {
-    // Use cached config for better performance - eliminates repeated key parsing
-    match CachedThresholdConfig::new(config.clone()) {
-        Ok(cached_config) => verify_threshold_cached(&cached_config, artifact, trace_id, timestamp),
+    match config.validate() {
+        Ok(()) => {
+            let prepared_keys = PreparedThresholdKeys::new(config);
+            verify_threshold_with_key_lookup(
+                config.threshold,
+                &prepared_keys,
+                artifact,
+                trace_id,
+                timestamp,
+            )
+        }
         Err(e) => {
             let reason = match e {
                 ThresholdError::ConfigInvalid { reason } => reason,
@@ -844,6 +850,44 @@ mod tests {
         let cached = verify_threshold_cached(&cached_config, &artifact, "t2-cache", "ts");
 
         assert_eq!(cached, baseline);
+    }
+
+    #[test]
+    fn fixed_buffer_hex_decoders_match_legacy_decode_paths() {
+        let signing_key = test_signing_key(7);
+        let public_key_hex = hex::encode(signing_key.verifying_key().to_bytes());
+        let Some(parsed_key) = parse_verifying_key(&public_key_hex) else {
+            assert!(false, "public key should parse");
+            return;
+        };
+
+        assert_eq!(
+            parsed_key.to_bytes(),
+            signing_key.verifying_key().to_bytes()
+        );
+
+        let signature = sign(&signing_key, "signer-7", "hash-abc");
+        let Some(parsed_signature) = parse_signature(&signature.signature_hex) else {
+            assert!(false, "signature should parse");
+            return;
+        };
+        let Ok(legacy_signature_vec) = hex::decode(&signature.signature_hex) else {
+            assert!(false, "legacy decode should parse");
+            return;
+        };
+        let Ok(legacy_signature_bytes) = <[u8; 64]>::try_from(legacy_signature_vec) else {
+            assert!(false, "legacy signature length should be fixed");
+            return;
+        };
+
+        assert_eq!(parsed_signature.to_bytes(), legacy_signature_bytes);
+
+        let message = build_signing_message("hash-abc");
+        assert!(
+            parsed_key
+                .verify_strict(&message, &parsed_signature)
+                .is_ok()
+        );
     }
 
     #[test]
