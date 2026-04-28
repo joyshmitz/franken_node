@@ -120,7 +120,7 @@ impl ThresholdConfig {
                     reason: format!("duplicate signer key_id {}", signer.key_id),
                 });
             }
-            let canonical_public_key_hex = signer.public_key_hex.to_ascii_lowercase();
+            let canonical_public_key_hex = CanonicalPublicKeyHex::new(&signer.public_key_hex);
             if !seen_public_keys.insert(canonical_public_key_hex) {
                 return Err(ThresholdError::ConfigInvalid {
                     reason: format!("duplicate signer public_key_hex {}", signer.public_key_hex),
@@ -128,6 +128,26 @@ impl ThresholdConfig {
             }
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Hash, PartialEq, Eq)]
+enum CanonicalPublicKeyHex {
+    Fixed([u8; ED25519_PUBLIC_KEY_HEX_LEN]),
+    Other(String),
+}
+
+impl CanonicalPublicKeyHex {
+    fn new(public_key_hex: &str) -> Self {
+        if public_key_hex.len() != ED25519_PUBLIC_KEY_HEX_LEN {
+            return Self::Other(public_key_hex.to_ascii_lowercase());
+        }
+
+        let mut fixed = [0_u8; ED25519_PUBLIC_KEY_HEX_LEN];
+        for (dst, src) in fixed.iter_mut().zip(public_key_hex.bytes()) {
+            *dst = src.to_ascii_lowercase();
+        }
+        Self::Fixed(fixed)
     }
 }
 
@@ -827,6 +847,19 @@ mod tests {
                     "duplicate signer public_key_hex {}",
                     config.signer_keys[1].public_key_hex
                 ),
+            })
+        );
+    }
+
+    #[test]
+    fn config_duplicate_malformed_public_keys_still_use_ascii_case_fold() {
+        let (_sks, mut config) = test_config(2, 3);
+        config.signer_keys[0].public_key_hex = "ABC".to_string();
+        config.signer_keys[1].public_key_hex = "abc".to_string();
+        assert_eq!(
+            config.validate(),
+            Err(ThresholdError::ConfigInvalid {
+                reason: "duplicate signer public_key_hex abc".to_string(),
             })
         );
     }
