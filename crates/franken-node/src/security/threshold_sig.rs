@@ -39,7 +39,11 @@ const ED25519_PUBLIC_KEY_HEX_LEN: usize = 64;
 const ED25519_SIGNATURE_HEX_LEN: usize = 128;
 const MAX_THRESHOLD_IDENTIFIER_BYTES: usize = 4096;
 const MAX_SEEN_KEY_PREALLOC: usize = 64;
-const SIGNING_MESSAGE_DOMAIN: &[u8] = b"threshold_sig_verify_v1:";
+const SIGNING_MESSAGE_DOMAIN_LEN: usize = 24;
+const SIGNING_MESSAGE_DOMAIN: &[u8; SIGNING_MESSAGE_DOMAIN_LEN] = b"threshold_sig_verify_v1:";
+const INLINE_SIGNING_MESSAGE_CONTENT_HASH_BYTES: usize = 64;
+const INLINE_SIGNING_MESSAGE_BYTES: usize =
+    SIGNING_MESSAGE_DOMAIN_LEN + 8 + INLINE_SIGNING_MESSAGE_CONTENT_HASH_BYTES;
 
 /// Threshold configuration: k-of-n quorum.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -364,6 +368,43 @@ fn build_signing_message(content_hash: &str) -> Vec<u8> {
     msg
 }
 
+enum SigningMessage {
+    Inline {
+        bytes: [u8; INLINE_SIGNING_MESSAGE_BYTES],
+        len: usize,
+    },
+    Heap(Vec<u8>),
+}
+
+impl SigningMessage {
+    fn new(content_hash: &str) -> Self {
+        if content_hash.len() > INLINE_SIGNING_MESSAGE_CONTENT_HASH_BYTES {
+            return Self::Heap(build_signing_message(content_hash));
+        }
+
+        let mut bytes = [0_u8; INLINE_SIGNING_MESSAGE_BYTES];
+        let mut len = 0;
+        bytes[len..len + SIGNING_MESSAGE_DOMAIN_LEN].copy_from_slice(SIGNING_MESSAGE_DOMAIN);
+        len += SIGNING_MESSAGE_DOMAIN_LEN;
+
+        let content_hash_len = u64::try_from(content_hash.len()).unwrap_or(u64::MAX);
+        bytes[len..len + 8].copy_from_slice(&content_hash_len.to_le_bytes());
+        len += 8;
+
+        bytes[len..len + content_hash.len()].copy_from_slice(content_hash.as_bytes());
+        len += content_hash.len();
+
+        Self::Inline { bytes, len }
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Inline { bytes, len } => &bytes[..*len],
+            Self::Heap(bytes) => bytes,
+        }
+    }
+}
+
 fn display_safe_text(value: &str) -> String {
     value.escape_default().collect()
 }
@@ -477,8 +518,8 @@ fn verify_parsed_signature_with_key(
 /// Requires the private signing key. The corresponding public key must be
 /// registered in the threshold config for the signature to verify.
 pub fn sign(signing_key: &SigningKey, key_id: &str, content_hash: &str) -> PartialSignature {
-    let message = build_signing_message(content_hash);
-    let signature = signing_key.sign(&message);
+    let message = SigningMessage::new(content_hash);
+    let signature = signing_key.sign(message.as_slice());
     PartialSignature {
         signer_id: key_id.to_string(),
         key_id: key_id.to_string(),
@@ -580,7 +621,7 @@ fn verify_threshold_with_key_lookup(
     let mut first_failure: Option<FailureReason> = None;
 
     // Build message bytes only if a signature reaches cryptographic verification.
-    let mut message_bytes: Option<Vec<u8>> = None;
+    let mut message_bytes: Option<SigningMessage> = None;
 
     for sig in &artifact.signatures {
         // SECURITY: Validate signer_id contains only safe characters to prevent
@@ -634,8 +675,8 @@ fn verify_threshold_with_key_lookup(
         };
 
         let message_bytes =
-            message_bytes.get_or_insert_with(|| build_signing_message(&artifact.content_hash));
-        if !verify_parsed_signature_with_key(verifying_key, message_bytes, &signature) {
+            message_bytes.get_or_insert_with(|| SigningMessage::new(&artifact.content_hash));
+        if !verify_parsed_signature_with_key(verifying_key, message_bytes.as_slice(), &signature) {
             if first_failure.is_none() {
                 first_failure = Some(FailureReason::InvalidSignature {
                     signer_id: sig.signer_id.clone(),
@@ -1204,6 +1245,32 @@ mod tests {
         expected.extend_from_slice(b"hash");
 
         assert_eq!(message, expected);
+    }
+
+    #[test]
+    fn inline_signing_message_matches_vec_layout_for_digest_sized_hashes() {
+        let content_hash = "a".repeat(INLINE_SIGNING_MESSAGE_CONTENT_HASH_BYTES);
+        let inline_message = SigningMessage::new(&content_hash);
+        let expected = build_signing_message(&content_hash);
+
+        assert!(matches!(
+            inline_message,
+            SigningMessage::Inline {
+                len: INLINE_SIGNING_MESSAGE_BYTES,
+                ..
+            }
+        ));
+        assert_eq!(inline_message.as_slice(), expected.as_slice());
+    }
+
+    #[test]
+    fn oversized_signing_message_uses_heap_layout_without_changing_bytes() {
+        let content_hash = "a".repeat(INLINE_SIGNING_MESSAGE_CONTENT_HASH_BYTES + 1);
+        let heap_message = SigningMessage::new(&content_hash);
+        let expected = build_signing_message(&content_hash);
+
+        assert!(matches!(heap_message, SigningMessage::Heap(_)));
+        assert_eq!(heap_message.as_slice(), expected.as_slice());
     }
 
     #[test]
