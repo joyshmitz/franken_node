@@ -39,6 +39,7 @@ const ED25519_PUBLIC_KEY_HEX_LEN: usize = 64;
 const ED25519_SIGNATURE_HEX_LEN: usize = 128;
 const MAX_THRESHOLD_IDENTIFIER_BYTES: usize = 4096;
 const MAX_SEEN_KEY_PREALLOC: usize = 64;
+const SIGNING_MESSAGE_DOMAIN: &[u8] = b"threshold_sig_verify_v1:";
 
 /// Threshold configuration: k-of-n quorum.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -335,8 +336,8 @@ fn digest_prefix_u64(digest: &[u8]) -> u64 {
 
 /// Build the domain-separated message for signing/verification.
 fn build_signing_message(content_hash: &str) -> Vec<u8> {
-    let mut msg = Vec::new();
-    msg.extend_from_slice(b"threshold_sig_verify_v1:");
+    let mut msg = Vec::with_capacity(SIGNING_MESSAGE_DOMAIN.len() + 8 + content_hash.len());
+    msg.extend_from_slice(SIGNING_MESSAGE_DOMAIN);
     let content_hash_len = u64::try_from(content_hash.len()).unwrap_or(u64::MAX);
     msg.extend_from_slice(&content_hash_len.to_le_bytes());
     msg.extend_from_slice(content_hash.as_bytes());
@@ -1141,6 +1142,17 @@ mod tests {
     }
 
     // === sign helper ===
+
+    #[test]
+    fn signing_message_layout_is_domain_separated_and_length_prefixed() {
+        let message = build_signing_message("hash");
+        let mut expected = Vec::new();
+        expected.extend_from_slice(SIGNING_MESSAGE_DOMAIN);
+        expected.extend_from_slice(&4_u64.to_le_bytes());
+        expected.extend_from_slice(b"hash");
+
+        assert_eq!(message, expected);
+    }
 
     #[test]
     fn sign_deterministic() {
