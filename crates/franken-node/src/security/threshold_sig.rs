@@ -571,8 +571,8 @@ fn verify_threshold_with_key_lookup(
     let mut valid_count = 0u32;
     let mut first_failure: Option<FailureReason> = None;
 
-    // Compute message bytes once and reuse across all signature verifications
-    let message_bytes = build_signing_message(&artifact.content_hash);
+    // Build message bytes only if a signature reaches cryptographic verification.
+    let mut message_bytes: Option<Vec<u8>> = None;
 
     for sig in &artifact.signatures {
         // SECURITY: Validate signer_id contains only safe characters to prevent
@@ -616,7 +616,9 @@ fn verify_threshold_with_key_lookup(
             continue;
         };
 
-        if !verify_signature_with_parsed_key(verifying_key, &message_bytes, sig) {
+        let message_bytes =
+            message_bytes.get_or_insert_with(|| build_signing_message(&artifact.content_hash));
+        if !verify_signature_with_parsed_key(verifying_key, message_bytes, sig) {
             if first_failure.is_none() {
                 first_failure = Some(FailureReason::InvalidSignature {
                     signer_id: sig.signer_id.clone(),
