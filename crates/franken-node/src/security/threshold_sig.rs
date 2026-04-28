@@ -63,9 +63,9 @@ fn validate_safe_identifier(identifier: &str) -> Result<(), &'static str> {
 
     // Allow only: alphanumeric ASCII, hyphen, underscore, and dot
     // This prevents control chars, invisible Unicode, bidi overrides, etc.
-    for char in identifier.chars() {
-        match char {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' => {
+    for byte in identifier.bytes() {
+        match byte {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' => {
                 // Safe character, continue
             }
             _ => {
@@ -746,6 +746,27 @@ mod tests {
     fn config_valid() {
         let (_sks, config) = test_config(2, 3);
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn safe_identifier_validation_accepts_only_ascii_identifier_bytes() {
+        assert!(validate_safe_identifier("signer-0_ok.v1").is_ok());
+        assert_eq!(
+            validate_safe_identifier(""),
+            Err("identifier cannot be empty")
+        );
+        assert_eq!(
+            validate_safe_identifier("signer-🙂"),
+            Err(
+                "identifier contains unsafe characters (only alphanumeric, hyphen, underscore, dot allowed)"
+            )
+        );
+        assert_eq!(
+            validate_safe_identifier("signer\u{202e}0"),
+            Err(
+                "identifier contains unsafe characters (only alphanumeric, hyphen, underscore, dot allowed)"
+            )
+        );
     }
 
     #[test]
