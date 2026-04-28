@@ -7,7 +7,7 @@
 use crate::security::constant_time;
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 // Maximum bounds for Vec collections to prevent memory exhaustion
@@ -104,8 +104,8 @@ impl ThresholdConfig {
                 ),
             });
         }
-        let mut seen_key_ids = BTreeSet::new();
-        let mut seen_public_keys = BTreeSet::new();
+        let mut seen_key_ids = HashSet::with_capacity(self.signer_keys.len());
+        let mut seen_public_keys = HashSet::with_capacity(self.signer_keys.len());
         for signer in &self.signer_keys {
             // SECURITY: Validate key_id contains only safe characters to prevent
             // control characters, invisible Unicode, or bidi tricks in logs/metrics
@@ -154,7 +154,7 @@ impl CachedThresholdConfig {
         // Validate config first
         config.validate()?;
 
-        let mut verifying_keys = HashMap::new();
+        let mut verifying_keys = HashMap::with_capacity(config.signer_keys.len());
         for signer in &config.signer_keys {
             if signer.public_key_hex.len() != ED25519_PUBLIC_KEY_HEX_LEN {
                 return Err(ThresholdError::ConfigInvalid {
