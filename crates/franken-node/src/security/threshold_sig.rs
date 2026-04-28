@@ -452,6 +452,36 @@ fn invalid_connector_id_reason(connector_id: &str) -> Option<String> {
     invalid_identifier_reason("connector_id", connector_id)
 }
 
+fn artifact_identifier_failure(artifact: &PublicationArtifact) -> Option<FailureReason> {
+    if let Some(reason) = invalid_artifact_id_reason(&artifact.artifact_id) {
+        return Some(FailureReason::InvalidArtifactId { reason });
+    }
+
+    if let Some(reason) = invalid_connector_id_reason(&artifact.connector_id) {
+        return Some(FailureReason::InvalidConnectorId { reason });
+    }
+
+    None
+}
+
+fn failed_verification_result(
+    threshold: u32,
+    artifact: &PublicationArtifact,
+    trace_id: &str,
+    timestamp: &str,
+    failure_reason: FailureReason,
+) -> VerificationResult {
+    VerificationResult {
+        artifact_id: artifact.artifact_id.clone(),
+        verified: false,
+        valid_signatures: 0,
+        threshold,
+        failure_reason: Some(failure_reason),
+        trace_id: trace_id.to_string(),
+        timestamp: timestamp.to_string(),
+    }
+}
+
 fn parse_verifying_key(public_key_hex: &str) -> Option<VerifyingKey> {
     if public_key_hex.len() != ED25519_PUBLIC_KEY_HEX_LEN {
         return None;
@@ -540,6 +570,16 @@ pub fn verify_threshold(
 ) -> VerificationResult {
     match config.validate() {
         Ok(()) => {
+            if let Some(failure_reason) = artifact_identifier_failure(artifact) {
+                return failed_verification_result(
+                    config.threshold,
+                    artifact,
+                    trace_id,
+                    timestamp,
+                    failure_reason,
+                );
+            }
+
             let prepared_keys = PreparedThresholdKeys::new(config);
             verify_threshold_with_key_lookup(
                 config.threshold,
@@ -591,28 +631,14 @@ fn verify_threshold_with_key_lookup(
     trace_id: &str,
     timestamp: &str,
 ) -> VerificationResult {
-    if let Some(reason) = invalid_artifact_id_reason(&artifact.artifact_id) {
-        return VerificationResult {
-            artifact_id: artifact.artifact_id.clone(),
-            verified: false,
-            valid_signatures: 0,
+    if let Some(failure_reason) = artifact_identifier_failure(artifact) {
+        return failed_verification_result(
             threshold,
-            failure_reason: Some(FailureReason::InvalidArtifactId { reason }),
-            trace_id: trace_id.to_string(),
-            timestamp: timestamp.to_string(),
-        };
-    }
-
-    if let Some(reason) = invalid_connector_id_reason(&artifact.connector_id) {
-        return VerificationResult {
-            artifact_id: artifact.artifact_id.clone(),
-            verified: false,
-            valid_signatures: 0,
-            threshold,
-            failure_reason: Some(FailureReason::InvalidConnectorId { reason }),
-            trace_id: trace_id.to_string(),
-            timestamp: timestamp.to_string(),
-        };
+            artifact,
+            trace_id,
+            timestamp,
+            failure_reason,
+        );
     }
 
     let mut seen_key_ids: HashSet<&str> =
@@ -1054,6 +1080,25 @@ mod tests {
         artifact.artifact_id = String::new();
         let result = verify_threshold(&config, &artifact, "t4-bad-art", "ts");
         assert!(!result.verified);
+        assert_eq!(
+            result.failure_reason,
+            Some(FailureReason::InvalidArtifactId {
+                reason: "artifact_id must not be empty".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn invalid_artifact_id_rejected_before_malformed_public_key_preparation() {
+        let (sks, mut config) = test_config(2, 3);
+        config.signer_keys[1].public_key_hex = "abc".to_string();
+        let mut artifact = signed_artifact(&sks, &config, "hash-abc", 2);
+        artifact.artifact_id = String::new();
+
+        let result = verify_threshold(&config, &artifact, "t4-bad-art-before-keys", "ts");
+
+        assert!(!result.verified);
+        assert_eq!(result.valid_signatures, 0);
         assert_eq!(
             result.failure_reason,
             Some(FailureReason::InvalidArtifactId {
