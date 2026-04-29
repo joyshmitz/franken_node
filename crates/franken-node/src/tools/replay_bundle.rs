@@ -791,7 +791,7 @@ pub fn generate_replay_bundle(
     // Use optimized functions with reusable gzip scratch buffer to avoid repeated allocations
     let mut gzip_scratch = GzipScratchBuffer::new();
 
-    let chunks = chunk_timeline_with_scratch(bundle_id, &timeline, &mut gzip_scratch)?;
+    let chunks = chunk_timeline_with_cached_events(bundle_id, &timeline, &mut gzip_scratch)?;
     let manifest = derive_bundle_manifest_with_scratch(
         &timeline,
         &initial_state_snapshot,
