@@ -482,6 +482,25 @@ fn failed_verification_result(
     }
 }
 
+fn below_threshold_result(
+    threshold: u32,
+    artifact: &PublicationArtifact,
+    trace_id: &str,
+    timestamp: &str,
+    have: u32,
+) -> VerificationResult {
+    failed_verification_result(
+        threshold,
+        artifact,
+        trace_id,
+        timestamp,
+        FailureReason::BelowThreshold {
+            have,
+            need: threshold,
+        },
+    )
+}
+
 fn parse_verifying_key(public_key_hex: &str) -> Option<VerifyingKey> {
     if public_key_hex.len() != ED25519_PUBLIC_KEY_HEX_LEN {
         return None;
@@ -606,6 +625,10 @@ pub fn verify_threshold(
                 );
             }
 
+            if artifact.signatures.is_empty() {
+                return below_threshold_result(config.threshold, artifact, trace_id, timestamp, 0);
+            }
+
             let prepared_keys = PreparedThresholdKeys::new(config);
             verify_threshold_with_validated_artifact(
                 config.threshold,
@@ -648,6 +671,16 @@ pub fn verify_threshold_cached(
             trace_id,
             timestamp,
             failure_reason,
+        );
+    }
+
+    if artifact.signatures.is_empty() {
+        return below_threshold_result(
+            cached_config.config.threshold,
+            artifact,
+            trace_id,
+            timestamp,
+            0,
         );
     }
 
