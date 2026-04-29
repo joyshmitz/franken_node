@@ -1644,6 +1644,12 @@ fn derive_bundle_manifest_with_cached_timeline(
         policy_version,
         canonical_timeline_bytes,
     )?;
+    #[cfg(debug_assertions)]
+    {
+        let expected =
+            compute_decision_sequence_hash(timeline, initial_state_snapshot, policy_version)?;
+        debug_assert_eq!(decision_sequence_hash, expected);
+    }
     let compressed_size_bytes = scratch.gzip_size_bytes(canonical_timeline_bytes)?;
     let (first_timestamp, last_timestamp) = match (timeline.first(), timeline.last()) {
         (Some(first), Some(last)) => (Some(first.timestamp.clone()), Some(last.timestamp.clone())),
