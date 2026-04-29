@@ -786,7 +786,15 @@ pub fn generate_replay_bundle(
         .filter(|version| !version.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_POLICY_VERSION.to_string());
 
-    let cached_timeline = prepare_cached_timeline(&timeline)?;
+    let cached_timeline = prepare_cached_canonical_timeline(&timeline)?;
+    #[cfg(debug_assertions)]
+    {
+        let expected_cached_timeline = prepare_cached_timeline(&timeline)?;
+        debug_assert_eq!(
+            cached_timeline.canonical_timeline_bytes,
+            expected_cached_timeline.canonical_timeline_bytes
+        );
+    }
     let bundle_id = deterministic_bundle_id_from_canonical_timeline(
         incident_id,
         &created_at,
@@ -1903,6 +1911,82 @@ fn prepare_cached_timeline(
         events: cached_events,
         canonical_timeline_bytes,
     })
+}
+
+fn prepare_cached_canonical_timeline(
+    timeline: &[TimelineEvent],
+) -> Result<CachedTimeline, ReplayBundleError> {
+    let mut cached_events = Vec::with_capacity(timeline.len());
+    let mut canonical_timeline_size = 2_usize; // JSON array brackets
+    let max_event_size = MAX_BUNDLE_BYTES.saturating_sub(2);
+
+    for (idx, event) in timeline.iter().enumerate() {
+        let canonical_bytes = canonical_timeline_event_bytes(event)?;
+        let canonical_size = canonical_bytes.len();
+        if canonical_size >= max_event_size {
+            return Err(ReplayBundleError::OversizedEvent {
+                sequence_number: event.sequence_number,
+                size_bytes: canonical_size,
+                max_bytes: max_event_size,
+            });
+        }
+        canonical_timeline_size = canonical_timeline_size
+            .saturating_add(usize::from(idx > 0))
+            .saturating_add(canonical_size);
+
+        cached_events.push(CachedEvent {
+            event: event.clone(),
+            canonical_bytes,
+            canonical_size,
+        });
+    }
+
+    let mut canonical_timeline_bytes = Vec::with_capacity(canonical_timeline_size);
+    canonical_timeline_bytes.push(b'[');
+    for (idx, cached_event) in cached_events.iter().enumerate() {
+        if idx > 0 {
+            canonical_timeline_bytes.push(b',');
+        }
+        canonical_timeline_bytes.extend_from_slice(&cached_event.canonical_bytes);
+    }
+    canonical_timeline_bytes.push(b']');
+    debug_assert_eq!(canonical_timeline_bytes.len(), canonical_timeline_size);
+
+    Ok(CachedTimeline {
+        events: cached_events,
+        canonical_timeline_bytes,
+    })
+}
+
+fn canonical_timeline_event_bytes(event: &TimelineEvent) -> Result<Vec<u8>, ReplayBundleError> {
+    let causal_parent_bytes = serde_json::to_vec(&event.causal_parent)?;
+    let event_type_bytes = serde_json::to_vec(event.event_type.as_str())?;
+    let payload_bytes = canonical_json_bytes(&event.payload)?;
+    let sequence_number_bytes = serde_json::to_vec(&event.sequence_number)?;
+    let timestamp_bytes = serde_json::to_vec(&event.timestamp)?;
+
+    let mut canonical = Vec::with_capacity(
+        br#"{"causal_parent":,"event_type":,"payload":,"sequence_number":,"timestamp":}"#
+            .len()
+            .saturating_add(causal_parent_bytes.len())
+            .saturating_add(event_type_bytes.len())
+            .saturating_add(payload_bytes.len())
+            .saturating_add(sequence_number_bytes.len())
+            .saturating_add(timestamp_bytes.len()),
+    );
+    canonical.extend_from_slice(br#"{"causal_parent":"#);
+    canonical.extend_from_slice(&causal_parent_bytes);
+    canonical.extend_from_slice(br#","event_type":"#);
+    canonical.extend_from_slice(&event_type_bytes);
+    canonical.extend_from_slice(br#","payload":"#);
+    canonical.extend_from_slice(&payload_bytes);
+    canonical.extend_from_slice(br#","sequence_number":"#);
+    canonical.extend_from_slice(&sequence_number_bytes);
+    canonical.extend_from_slice(br#","timestamp":"#);
+    canonical.extend_from_slice(&timestamp_bytes);
+    canonical.push(b'}');
+
+    Ok(canonical)
 }
 
 /// Optimized chunk_timeline that uses cached canonical event bytes to avoid repeated serialization
