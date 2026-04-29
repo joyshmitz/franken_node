@@ -425,7 +425,6 @@ struct PreparedEvent {
     timestamp_micros: i64,
     event_type: EventType,
     payload: Value,
-    _payload_hash: String,
     causal_parent: Option<u64>,
     state_snapshot: Option<Value>,
     policy_version: Option<String>,
@@ -718,7 +717,6 @@ pub fn generate_replay_bundle(
     for (idx, event) in event_log.iter().enumerate() {
         let (normalized_timestamp, timestamp_micros) = normalize_timestamp(&event.timestamp)?;
         let payload = canonicalize_value(&event.payload, "$.payload")?;
-        let payload_hash = sha256_hex(&canonical_json_bytes(&payload)?);
         let state_snapshot = match &event.state_snapshot {
             Some(snapshot) => Some(canonicalize_value(snapshot, "$.state_snapshot")?),
             None => None,
@@ -728,7 +726,6 @@ pub fn generate_replay_bundle(
             timestamp_micros,
             event_type: event.event_type,
             payload,
-            _payload_hash: payload_hash,
             causal_parent: event.causal_parent,
             state_snapshot,
             policy_version: event.policy_version.clone(),
