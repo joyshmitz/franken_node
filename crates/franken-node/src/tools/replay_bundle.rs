@@ -13,7 +13,7 @@ use std::io::Write;
 use std::path::Path;
 
 use chrono::{DateTime, SecondsFormat, Utc};
-use ed25519_dalek::{Signer, Verifier};
+use ed25519_dalek::Signer;
 #[cfg(feature = "compression")]
 use flate2::{Compression, write::GzEncoder};
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,7 @@ use uuid::Uuid;
 
 use crate::security::{
     constant_time,
-    crypto::{Ed25519Verifier, HexSignatureVerifier, SignatureVerificationError},
+    crypto::{Ed25519Verifier, HexSignatureVerifier},
 };
 
 pub(crate) const MAX_BUNDLE_BYTES: usize = 10 * 1024 * 1024;
