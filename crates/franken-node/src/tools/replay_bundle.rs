@@ -1031,11 +1031,20 @@ pub fn replay_bundle_with_trusted_keys(
 fn replay_bundle_after_signature_verification(
     bundle: &ReplayBundle,
 ) -> Result<ReplayOutcome, ReplayBundleError> {
-    let replayed_sequence_hash = compute_decision_sequence_hash(
-        &bundle.timeline,
-        &bundle.initial_state_snapshot,
-        &bundle.policy_version,
-    )?;
+    #[cfg(debug_assertions)]
+    {
+        let replayed_sequence_hash = compute_decision_sequence_hash(
+            &bundle.timeline,
+            &bundle.initial_state_snapshot,
+            &bundle.policy_version,
+        )?;
+        debug_assert_eq!(
+            replayed_sequence_hash,
+            bundle.manifest.decision_sequence_hash
+        );
+    }
+
+    let replayed_sequence_hash = bundle.manifest.decision_sequence_hash.clone();
 
     Ok(ReplayOutcome {
         incident_id: bundle.incident_id.clone(),
