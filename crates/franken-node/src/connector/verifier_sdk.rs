@@ -455,7 +455,7 @@ pub(crate) fn build_trace_commitment_proof(
     let mut index = leaf_index;
 
     while level.len() > 1 {
-        let sibling_index = if index.is_multiple_of(2) {
+        let sibling_index = if index % 2 == 0 {
             (index + 1).min(level.len() - 1)
         } else {
             index - 1

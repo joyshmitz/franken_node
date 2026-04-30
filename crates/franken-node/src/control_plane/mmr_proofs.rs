@@ -346,7 +346,7 @@ pub fn verify_inclusion(
     let mut current = proof.leaf_hash.clone();
     let mut index = u64_to_usize(proof.leaf_index);
     for sibling in &proof.audit_path {
-        current = if index.is_multiple_of(2) {
+        current = if index % 2 == 0 {
             hash_pair(&current, sibling)
         } else {
             hash_pair(sibling, &current)

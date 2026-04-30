@@ -938,7 +938,7 @@ mod tests {
     fn negative_interleaved_blank_and_nonblank_help_urls_stay_bounded() {
         let mut err = ActionableError::new("mixed help", "run doctor");
         for i in 0..(MAX_HELP_URLS * 2) {
-            let help_url = if i.is_multiple_of(2) {
+            let help_url = if i % 2 == 0 {
                 String::new()
             } else {
                 format!("https://example.invalid/mixed-{i}")
