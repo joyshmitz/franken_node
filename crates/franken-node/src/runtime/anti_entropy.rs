@@ -931,7 +931,7 @@ impl AntiEntropyReconciler {
                 continue;
             }
 
-            push_accepted_bounded(&mut accepted, record, replaced, self.config.max_delta_batch)?;
+            push_accepted_bounded(&mut accepted, record.clone(), replaced, self.config.max_delta_batch)?;
         }
 
         // Phase 2: apply all validated records atomically.
