@@ -783,20 +783,24 @@ fn validate_engine_dependency_path(cargo_file: &Path, path_str: &str) -> bool {
     // First, validate that the path doesn't contain any traversal attempts
     let path = Path::new(path_str);
 
+    let mut past_initial_dots = false;
+
     // Check each path component for traversal attempts
     for component in path.components() {
         match component {
             Component::ParentDir => {
-                // Reject any ".." components - never allow traversal
-                return false;
+                if past_initial_dots {
+                    // Reject ".." components after normal directories to prevent internal traversal
+                    return false;
+                }
             }
             Component::CurDir => {
-                // "." is suspicious but not necessarily dangerous, allow for now
-                continue;
+                if past_initial_dots {
+                    return false;
+                }
             }
             Component::Normal(_) => {
-                // Normal path components are fine
-                continue;
+                past_initial_dots = true;
             }
             Component::Prefix(_) | Component::RootDir => {
                 // Absolute paths or Windows prefixes are not allowed for dependencies
