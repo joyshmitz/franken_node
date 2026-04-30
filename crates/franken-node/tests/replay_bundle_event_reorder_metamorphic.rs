@@ -6,7 +6,7 @@
 
 use frankenengine_node::test_strategies;
 use frankenengine_node::tools::replay_bundle::{
-    RawEvent, generate_replay_bundle, to_canonical_json,
+    EventType, RawEvent, generate_replay_bundle, to_canonical_json,
 };
 use proptest::prelude::*;
 use serde_json::{Value, json};
@@ -35,7 +35,8 @@ fn reorder_concurrent_events(mut events: Vec<RawEvent>, seed: u64) -> Vec<RawEve
         // Only reorder if there are multiple events with same timestamp
         if group.len() > 1 {
             // Deterministic shuffle based on seed
-            let mut rng_state = seed.wrapping_mul(u64::try_from(timestamp.len()).unwrap_or(u64::MAX));
+            let mut rng_state =
+                seed.wrapping_mul(u64::try_from(timestamp.len()).unwrap_or(u64::MAX));
             for i in (1..group.len()).rev() {
                 rng_state = rng_state.wrapping_mul(1103515245).wrapping_add(12345);
                 let j = (rng_state as usize) % (i + 1);
@@ -50,6 +51,43 @@ fn reorder_concurrent_events(mut events: Vec<RawEvent>, seed: u64) -> Vec<RawEve
     }
 
     result
+}
+
+#[test]
+fn mr_replay_bundle_same_timestamp_independent_group_is_input_order_invariant() {
+    let timestamp = "2026-04-30T12:00:00.000123Z";
+    let events = vec![
+        RawEvent::new(
+            timestamp,
+            EventType::ExternalSignal,
+            json!({"node": "alpha", "score": 7}),
+        )
+        .with_state_snapshot(json!({"epoch": 11, "mode": "strict"}))
+        .with_policy_version("policy-v3"),
+        RawEvent::new(
+            timestamp,
+            EventType::PolicyEval,
+            json!({"node": "bravo", "decision": "isolate"}),
+        ),
+        RawEvent::new(
+            timestamp,
+            EventType::OperatorAction,
+            json!({"node": "charlie", "action": "ack"}),
+        ),
+    ];
+    let reordered_events = vec![events[2].clone(), events[0].clone(), events[1].clone()];
+
+    let original_bundle = generate_replay_bundle("same-timestamp-independent-mr", &events)
+        .expect("original independent event group should generate");
+    let reordered_bundle =
+        generate_replay_bundle("same-timestamp-independent-mr", &reordered_events)
+            .expect("reordered independent event group should generate");
+
+    assert_eq!(
+        to_canonical_json(&original_bundle).expect("canonicalize original bundle"),
+        to_canonical_json(&reordered_bundle).expect("canonicalize reordered bundle"),
+        "same-timestamp independent events should not depend on input order"
+    );
 }
 
 proptest! {

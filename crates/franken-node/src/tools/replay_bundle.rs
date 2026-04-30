@@ -428,7 +428,17 @@ struct PreparedEvent {
     causal_parent: Option<u64>,
     state_snapshot: Option<Value>,
     policy_version: Option<String>,
+    sort_key: Vec<u8>,
+    causal_depth: u64,
     original_index: usize,
+}
+
+#[derive(Serialize)]
+struct PreparedEventSortKey<'a> {
+    event_type: EventType,
+    payload: &'a Value,
+    state_snapshot: &'a Option<Value>,
+    policy_version: &'a Option<String>,
 }
 
 #[derive(Serialize)]
@@ -703,6 +713,67 @@ fn validate_nonempty_field(field: &str, value: &str) -> Result<(), ReplayBundleE
     Ok(())
 }
 
+fn prepared_event_sort_key(
+    event_type: EventType,
+    payload: &Value,
+    state_snapshot: &Option<Value>,
+    policy_version: &Option<String>,
+) -> Result<Vec<u8>, ReplayBundleError> {
+    let key = PreparedEventSortKey {
+        event_type,
+        payload,
+        state_snapshot,
+        policy_version,
+    };
+    let value = serde_json::to_value(key)?;
+    let canonical = canonicalize_value(&value, "$.event_sort_key")?;
+    canonical_json_bytes(&canonical)
+}
+
+fn compute_same_timestamp_causal_depths(prepared: &[PreparedEvent]) -> Vec<u64> {
+    let mut depths = vec![None; prepared.len()];
+    for index in 0..prepared.len() {
+        let mut visiting = vec![false; prepared.len()];
+        let _ = same_timestamp_causal_depth(index, prepared, &mut depths, &mut visiting);
+    }
+    depths.into_iter().map(|depth| depth.unwrap_or(0)).collect()
+}
+
+fn same_timestamp_causal_depth(
+    index: usize,
+    prepared: &[PreparedEvent],
+    depths: &mut [Option<u64>],
+    visiting: &mut [bool],
+) -> u64 {
+    if let Some(depth) = depths[index] {
+        return depth;
+    }
+    if visiting[index] {
+        depths[index] = Some(0);
+        return 0;
+    }
+    visiting[index] = true;
+    let depth = prepared[index]
+        .causal_parent
+        .and_then(|parent| {
+            let parent_index = usize::try_from(parent.checked_sub(1)?).ok()?;
+            if parent_index >= prepared.len()
+                || parent_index == index
+                || prepared[parent_index].timestamp_micros != prepared[index].timestamp_micros
+            {
+                return None;
+            }
+            Some(
+                same_timestamp_causal_depth(parent_index, prepared, depths, visiting)
+                    .saturating_add(1),
+            )
+        })
+        .unwrap_or(0);
+    visiting[index] = false;
+    depths[index] = Some(depth);
+    depth
+}
+
 pub fn generate_replay_bundle(
     incident_id: &str,
     event_log: &[RawEvent],
@@ -725,6 +796,12 @@ pub fn generate_replay_bundle(
             Some(snapshot) => Some(canonicalize_value(snapshot, "$.state_snapshot")?),
             None => None,
         };
+        let sort_key = prepared_event_sort_key(
+            event.event_type,
+            &payload,
+            &state_snapshot,
+            &event.policy_version,
+        )?;
         prepared.push(PreparedEvent {
             normalized_timestamp,
             timestamp_micros,
@@ -733,13 +810,22 @@ pub fn generate_replay_bundle(
             causal_parent: event.causal_parent,
             state_snapshot,
             policy_version: event.policy_version.clone(),
+            sort_key,
+            causal_depth: 0,
             original_index: idx,
         });
+    }
+
+    let causal_depths = compute_same_timestamp_causal_depths(&prepared);
+    for (event, causal_depth) in prepared.iter_mut().zip(causal_depths) {
+        event.causal_depth = causal_depth;
     }
 
     prepared.sort_by(|left, right| {
         left.timestamp_micros
             .cmp(&right.timestamp_micros)
+            .then_with(|| left.causal_depth.cmp(&right.causal_depth))
+            .then_with(|| left.sort_key.cmp(&right.sort_key))
             .then_with(|| left.original_index.cmp(&right.original_index))
     });
 
