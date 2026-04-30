@@ -381,63 +381,79 @@ impl ProofVerifier {
                 push_bounded(
                     &mut deny_reasons,
                     format!(
-                    "{}: proof generated in the future ({} > {})",
-                    error_codes::ERR_PVF_PROOF_EXPIRED,
-                    proof.generated_at_millis,
-                    now_millis
-                ));
+                        "{}: proof generated in the future ({} > {})",
+                        error_codes::ERR_PVF_PROOF_EXPIRED,
+                        proof.generated_at_millis,
+                        now_millis
+                    ),
+                    PREDICATE_EVIDENCE_CAPACITY,
+                );
             } else {
                 push_bounded(
                     &mut deny_reasons,
                     format!(
-                    "{}: proof age {}ms exceeds limit {}ms",
-                    error_codes::ERR_PVF_PROOF_EXPIRED,
-                    age_millis,
-                    age_limit
-                ));
+                        "{}: proof age {}ms exceeds limit {}ms",
+                        error_codes::ERR_PVF_PROOF_EXPIRED,
+                        age_millis,
+                        age_limit
+                    ),
+                    PREDICATE_EVIDENCE_CAPACITY,
+                );
             }
             all_satisfied = false;
         }
-        evidence.push(PredicateEvidence {
-            predicate_id: predicate.predicate_id.clone(),
-            action_class: proof.action_class.clone(),
-            satisfied: freshness_satisfied,
-            reason: if freshness_satisfied {
-                format!("proof age {}ms within limit {}ms", age_millis, age_limit)
-            } else if is_from_future {
-                format!(
-                    "proof generated in the future ({} > {})",
-                    proof.generated_at_millis, now_millis
-                )
-            } else {
-                format!("proof age {}ms exceeds limit {}ms", age_millis, age_limit)
+        push_bounded(
+            &mut evidence,
+            PredicateEvidence {
+                predicate_id: predicate.predicate_id.clone(),
+                action_class: proof.action_class.clone(),
+                satisfied: freshness_satisfied,
+                reason: if freshness_satisfied {
+                    format!("proof age {}ms within limit {}ms", age_millis, age_limit)
+                } else if is_from_future {
+                    format!(
+                        "proof generated in the future ({} > {})",
+                        proof.generated_at_millis, now_millis
+                    )
+                } else {
+                    format!("proof age {}ms exceeds limit {}ms", age_millis, age_limit)
+                },
             },
-        });
+            PREDICATE_EVIDENCE_CAPACITY,
+        );
 
         // Check 3: Action class match
         let class_match = proof.action_class == predicate.action_class;
         if !class_match {
-            deny_reasons.push(format!(
-                "{}: proof action_class '{}' does not match predicate '{}'",
-                error_codes::ERR_PVF_POLICY_MISSING,
-                proof.action_class,
-                predicate.action_class
-            ));
+            push_bounded(
+                &mut deny_reasons,
+                format!(
+                    "{}: proof action_class '{}' does not match predicate '{}'",
+                    error_codes::ERR_PVF_POLICY_MISSING,
+                    proof.action_class,
+                    predicate.action_class
+                ),
+                PREDICATE_EVIDENCE_CAPACITY,
+            );
             all_satisfied = false;
         }
-        evidence.push(PredicateEvidence {
-            predicate_id: predicate.predicate_id.clone(),
-            action_class: proof.action_class.clone(),
-            satisfied: class_match,
-            reason: if class_match {
-                "action class matches predicate".to_string()
-            } else {
-                format!(
-                    "action class '{}' does not match predicate '{}'",
-                    proof.action_class, predicate.action_class
-                )
+        push_bounded(
+            &mut evidence,
+            PredicateEvidence {
+                predicate_id: predicate.predicate_id.clone(),
+                action_class: proof.action_class.clone(),
+                satisfied: class_match,
+                reason: if class_match {
+                    "action class matches predicate".to_string()
+                } else {
+                    format!(
+                        "action class '{}' does not match predicate '{}'",
+                        proof.action_class, predicate.action_class
+                    )
+                },
             },
-        });
+            PREDICATE_EVIDENCE_CAPACITY,
+        );
 
         // Check 4: Confidence score
         let confidence_satisfied = proof.confidence >= predicate.min_confidence;
@@ -456,7 +472,9 @@ impl ProofVerifier {
             }
             all_satisfied = false;
         }
-        evidence.push(PredicateEvidence {
+        push_bounded(
+            &mut evidence,
+            PredicateEvidence {
             predicate_id: predicate.predicate_id.clone(),
             action_class: proof.action_class.clone(),
             satisfied: confidence_satisfied,
@@ -471,7 +489,8 @@ impl ProofVerifier {
                     proof.confidence, predicate.min_confidence
                 )
             },
-        });
+            PREDICATE_EVIDENCE_CAPACITY,
+        );
 
         // Check 5: Witness references
         let witness_satisfied = if predicate.require_witnesses {
@@ -480,14 +499,20 @@ impl ProofVerifier {
             true
         };
         if !witness_satisfied {
-            deny_reasons.push(format!(
-                "witness count {} below required {}",
-                proof.witness_references.len(),
-                predicate.min_witness_count
-            ));
+            push_bounded(
+                &mut deny_reasons,
+                format!(
+                    "witness count {} below required {}",
+                    proof.witness_references.len(),
+                    predicate.min_witness_count
+                ),
+                PREDICATE_EVIDENCE_CAPACITY,
+            );
             all_satisfied = false;
         }
-        evidence.push(PredicateEvidence {
+        push_bounded(
+            &mut evidence,
+            PredicateEvidence {
             predicate_id: predicate.predicate_id.clone(),
             action_class: proof.action_class.clone(),
             satisfied: witness_satisfied,
@@ -512,13 +537,20 @@ impl ProofVerifier {
             true
         };
         if !policy_version_satisfied {
-            deny_reasons.push(format!(
-                "policy version hash mismatch: proof='{}' predicate='{}'",
-                proof.policy_version_hash, predicate.policy_version_hash
-            ));
+            push_bounded(
+                &mut deny_reasons,
+                format!(
+                    "policy version hash mismatch: proof='{}' predicate='{}'",
+                    proof.policy_version_hash,
+                    predicate.policy_version_hash
+                ),
+                PREDICATE_EVIDENCE_CAPACITY,
+            );
             all_satisfied = false;
         }
-        evidence.push(PredicateEvidence {
+        push_bounded(
+            &mut evidence,
+            PredicateEvidence {
             predicate_id: predicate.predicate_id.clone(),
             action_class: proof.action_class.clone(),
             satisfied: policy_version_satisfied,
