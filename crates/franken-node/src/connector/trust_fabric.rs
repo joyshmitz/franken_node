@@ -448,19 +448,19 @@ impl TrustFabricNode {
         &mut self,
         remote: &TrustStateVector,
     ) -> Result<TrustStateDelta, TrustFabricError> {
-        if remote.version < self.state.version {
-            return Err(TrustFabricError::StaleState {
-                remote_ver: remote.version,
-                local_ver: self.state.version,
-            });
-        }
-
         if crate::security::constant_time::ct_eq_bytes(&self.state.digest, &remote.digest) {
             return Ok(TrustStateDelta {
                 new_cards: BTreeSet::new(),
                 new_extensions: BTreeSet::new(),
                 new_revocations: BTreeSet::new(),
                 new_revocation_ver: None,
+            });
+        }
+
+        if remote.version < self.state.version {
+            return Err(TrustFabricError::StaleState {
+                remote_ver: remote.version,
+                local_ver: self.state.version,
             });
         }
 
