@@ -304,6 +304,10 @@ name = "runtime_lane_scheduler_queue_identity"
 path = "tests/runtime_lane_scheduler_queue_identity.rs"
 
 [[test]]
+name = "runtime_checkpoint_envelopes_fuzz_harness"
+path = "tests/runtime_checkpoint_envelopes_fuzz_harness.rs"
+
+[[test]]
 name = "storage_metamorphic"
 path = "tests/storage_metamorphic.rs"
 
