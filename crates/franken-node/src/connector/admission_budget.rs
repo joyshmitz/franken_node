@@ -361,7 +361,7 @@ impl AdmissionBudgetTracker {
         }
 
         // Dimension 3: failed_auth (current count, no increment from request)
-        let auth_ok = usage.failed_auth_count < self.budget.max_failed_auth;
+        let auth_ok = usage.failed_auth_count <= self.budget.max_failed_auth;
         push_bounded(
             &mut records,
             BudgetCheckRecord {
@@ -380,7 +380,7 @@ impl AdmissionBudgetTracker {
         }
 
         // Dimension 4: inflight_decode (current count)
-        let inflight_ok = usage.inflight_decode_count < self.budget.max_inflight_decode;
+        let inflight_ok = usage.inflight_decode_count <= self.budget.max_inflight_decode;
         push_bounded(
             &mut records,
             BudgetCheckRecord {
