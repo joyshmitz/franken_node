@@ -446,20 +446,6 @@ fn try_lock_process_start_override_with_timeout(
             }
         }
     }
-
-    PROCESS_START_OFFSET_NANOS.store(0, Ordering::Relaxed);
-    PROCESS_START_STATE.store(0, Ordering::Release);
-
-    let mut wall_clock = PROCESS_START_WALL_CLOCK
-        .write()
-        .unwrap_or_else(|poison| poison.into_inner());
-    wall_clock.clear();
-
-    OPERATOR_CONFIG_STATE.store(0, Ordering::Release);
-    let mut config_view = OPERATOR_CONFIG_VIEW
-        .write()
-        .unwrap_or_else(|poison| poison.into_inner());
-    *config_view = ConfigView::from_runtime_config(&RuntimeConfig::default());
 }
 
 #[cfg(test)]
