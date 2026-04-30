@@ -97,7 +97,9 @@ impl CuckooFilter {
     /// Insert a token ID into the filter.
     ///
     /// Returns true if insertion succeeded, false if filter is full.
-    /// If the token is already present, returns true without modification.
+    /// Note: This filter does not prevent duplicate insertions. Inserting the
+    /// same token multiple times will consume multiple slots. This is required
+    /// to support deletion without false negatives on hash collisions.
     pub fn insert(&mut self, token_id: &str) -> bool {
         if self.num_items >= self.max_items {
             return false; // Filter full
@@ -105,11 +107,6 @@ impl CuckooFilter {
 
         let (hash, fingerprint) = self.hash_and_fingerprint(token_id);
         let (i1, i2) = self.bucket_indices(hash, fingerprint);
-
-        // Check if already exists
-        if self.buckets[i1].contains(&fingerprint) || self.buckets[i2].contains(&fingerprint) {
-            return true; // Already in filter
-        }
 
         // Try to insert in primary bucket
         if let Some(pos) = self.buckets[i1].iter().position(|&x| x == 0) {
