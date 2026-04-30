@@ -55,7 +55,7 @@ enum ConformanceTestResult {
 }
 
 /// Comprehensive conformance case for trust card admission
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct AdmissionConformanceCase {
     id: &'static str,
     spec_section: &'static str,
@@ -66,7 +66,7 @@ struct AdmissionConformanceCase {
     expected: AdmissionExpectation,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum AdmissionTestInput {
     ValidCard(TrustCardInput),
     InvalidCard { input: Value, violation: &'static str },
@@ -105,7 +105,30 @@ fn valid_baseline_input() -> TrustCardInput {
             subprocess_access: false,
             profile_summary: "Minimal file reading for configuration".to_string(),
         },
-        evidence_refs: vec![],
+        revocation_status: RevocationStatus::Active,
+        provenance_summary: ProvenanceSummary {
+            verified_sources: vec!["test-source".to_string()],
+            verification_timestamp: "2026-04-23T06:30:00Z".to_string(),
+            chain_integrity_score: 95,
+        },
+        reputation_score_basis_points: 8500, // 85.00%
+        reputation_trend: ReputationTrend::Stable,
+        active_quarantine: false,
+        dependency_trust_summary: vec![],
+        last_verified_timestamp: "2026-04-23T06:30:00Z".to_string(),
+        user_facing_risk_assessment: RiskAssessment {
+            overall_risk: RiskLevel::Low,
+            risk_factors: vec!["filesystem access".to_string()],
+            mitigation_suggestions: vec!["Review file access patterns".to_string()],
+        },
+        evidence_refs: vec![
+            VerifiedEvidenceRef {
+                evidence_id: "conformance-test-evidence-001".to_string(),
+                evidence_type: EvidenceType::StaticAnalysis,
+                verified_at_epoch: BASE_TIMESTAMP,
+                verification_receipt_hash: "sha256:".to_string() + &"a".repeat(64),
+            }
+        ],
     }
 }
 
@@ -401,7 +424,7 @@ fn run_admission_conformance_case(
 }
 
 /// Generate admission conformance matrix report
-fn generate_conformance_report(results: &[(AdmissionConformanceCase, ConformanceTestResult)]) -> String {
+fn generate_conformance_report(results: &[(&AdmissionConformanceCase, ConformanceTestResult)]) -> String {
     let mut coverage_by_level: BTreeMap<RequirementLevel, (usize, usize)> = BTreeMap::new();
     let mut coverage_by_category: BTreeMap<AdmissionTestCategory, (usize, usize)> = BTreeMap::new();
 
@@ -487,7 +510,7 @@ fn trust_card_admission_full_conformance_suite() {
             }
         }
 
-        results.push((case.clone(), result));
+        results.push((case, result));
     }
 
     // Generate and print conformance report
