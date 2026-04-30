@@ -2157,7 +2157,7 @@ fn canonical_card_without_hash_and_signature(card: &TrustCard) -> Result<Value, 
         "registry_signature".to_string(),
         Value::String(String::new()),
     );
-    Ok(canonicalize_value(Value::Object(map.clone())))
+    Ok(canonicalize_value(value))
 }
 
 fn sign_card_in_place(card: &mut TrustCard, registry_key: &[u8]) -> Result<(), TrustCardError> {
@@ -2182,7 +2182,7 @@ fn canonical_snapshot_without_hash_and_signature(
         "registry_signature".to_string(),
         Value::String(String::new()),
     );
-    Ok(canonicalize_value(Value::Object(map.clone())))
+    Ok(canonicalize_value(value))
 }
 
 fn compute_snapshot_hash(snapshot: &TrustCardRegistrySnapshot) -> Result<String, TrustCardError> {
@@ -2247,7 +2247,7 @@ fn canonical_high_water_without_signature(
         "high_water_signature".to_string(),
         Value::String(String::new()),
     );
-    Ok(canonicalize_value(Value::Object(map.clone())))
+    Ok(canonicalize_value(value))
 }
 
 fn high_water_signature(
