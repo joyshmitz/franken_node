@@ -7519,8 +7519,18 @@ fn persist_run_execution_receipt(
     let mut temp_guard = TempFileGuard::new(temp_path.clone());
     let rendered = serde_json::to_vec_pretty(receipt)
         .context("failed serializing run execution receipt for persistence")?;
-    std::fs::write(&temp_path, rendered)
-        .with_context(|| format!("failed writing {}", temp_path.display()))?;
+    {
+        let mut temp_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp_path)
+            .with_context(|| format!("failed opening {}", temp_path.display()))?;
+        use std::io::Write as _;
+        temp_file
+            .write_all(&rendered)
+            .and_then(|()| temp_file.sync_all())
+            .with_context(|| format!("failed writing {}", temp_path.display()))?;
+    }
     std::fs::rename(&temp_path, &final_path).with_context(|| {
         format!(
             "failed promoting run execution receipt {} -> {}",
@@ -7529,6 +7539,7 @@ fn persist_run_execution_receipt(
         )
     })?;
     temp_guard.defuse();
+    sync_directory(&day_dir)?;
 
     archive_excess_run_receipts(&receipts_root, max_receipts)?;
     Ok(final_path)
