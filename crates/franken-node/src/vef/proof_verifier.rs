@@ -17,6 +17,8 @@ use sha2::{Digest, Sha256};
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
 const MAX_REPORTS: usize = 2048;
+const PREDICATE_EVIDENCE_CAPACITY: usize = 6;
+const REPORT_EVENT_CAPACITY: usize = 4;
 
 use crate::security::constant_time;
 use std::collections::BTreeMap;
@@ -318,9 +320,9 @@ impl ProofVerifier {
             return Err(VerifierError::invalid_format("action_class is empty"));
         }
 
-        let mut evidence = Vec::new();
+        let mut evidence = Vec::with_capacity(PREDICATE_EVIDENCE_CAPACITY);
         let mut all_satisfied = true;
-        let mut deny_reasons: Vec<String> = Vec::new();
+        let mut deny_reasons: Vec<String> = Vec::with_capacity(PREDICATE_EVIDENCE_CAPACITY);
         let mut degrade_level: u8 = 0;
 
         // Check 1: Proof expiration (fail-closed: < ensures expiry at exact boundary)
@@ -603,7 +605,7 @@ impl VerificationGate {
         request: &VerificationRequest,
     ) -> Result<VerificationReport, VerifierError> {
         let trace_id = &request.trace_id;
-        let mut report_events = Vec::new();
+        let mut report_events = Vec::with_capacity(REPORT_EVENT_CAPACITY);
 
         // Emit request-received event
         let request_received_event = VerifierEvent {
@@ -732,7 +734,11 @@ impl VerificationGate {
         &mut self,
         requests: &[VerificationRequest],
     ) -> Vec<Result<VerificationReport, VerifierError>> {
-        requests.iter().map(|req| self.verify(req)).collect()
+        let mut reports = Vec::with_capacity(requests.len());
+        for request in requests {
+            reports.push(self.verify(request));
+        }
+        reports
     }
 
     /// Return a summary of decisions made so far.
