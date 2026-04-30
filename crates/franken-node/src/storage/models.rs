@@ -22,6 +22,7 @@
 //! - `SQLMODEL_VERSION_COMPAT_FAIL`: Version compatibility check failed
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 // ---------------------------------------------------------------------------
 // Model version constant
@@ -288,6 +289,77 @@ impl ControlChannelStateRecord {
             "epoch",
             "updated_at",
         ]
+    }
+
+    /// Validates one control-channel sequence replay window before WAL replay.
+    pub fn validate_replay_window(&self) -> Result<(), String> {
+        if self.channel_id.is_empty() {
+            return Err("channel_id cannot be empty".to_string());
+        }
+        if self.window_high < self.window_low {
+            return Err(format!(
+                "window_high {} is below window_low {}",
+                self.window_high, self.window_low
+            ));
+        }
+        if self.last_seq < self.window_low {
+            return Err(format!(
+                "last_seq {} is below window_low {}",
+                self.last_seq, self.window_low
+            ));
+        }
+        if self.last_seq > self.window_high {
+            return Err(format!(
+                "last_seq {} is above window_high {}",
+                self.last_seq, self.window_high
+            ));
+        }
+        Ok(())
+    }
+
+    /// Validates WAL-ordered control-channel records for monotonic replay.
+    pub fn validate_sequence_monotonicity_replay(records: &[Self]) -> Result<(), String> {
+        let mut last_by_channel: BTreeMap<&str, (u64, u64, u64)> = BTreeMap::new();
+
+        for record in records {
+            record.validate_replay_window()?;
+
+            if let Some((previous_seq, previous_low, previous_high)) =
+                last_by_channel.get(record.channel_id.as_str()).copied()
+            {
+                if record.last_seq <= previous_seq {
+                    return Err(format!(
+                        "channel {} last_seq {} is not greater than previous {}",
+                        record.channel_id.as_str(),
+                        record.last_seq,
+                        previous_seq
+                    ));
+                }
+                if record.window_low < previous_low {
+                    return Err(format!(
+                        "channel {} window_low {} is below previous {}",
+                        record.channel_id.as_str(),
+                        record.window_low,
+                        previous_low
+                    ));
+                }
+                if record.window_high < previous_high {
+                    return Err(format!(
+                        "channel {} window_high {} is below previous {}",
+                        record.channel_id.as_str(),
+                        record.window_high,
+                        previous_high
+                    ));
+                }
+            }
+
+            last_by_channel.insert(
+                record.channel_id.as_str(),
+                (record.last_seq, record.window_low, record.window_high),
+            );
+        }
+
+        Ok(())
     }
 }
 
@@ -1133,6 +1205,22 @@ pub fn all_model_metadata() -> Vec<ModelMeta> {
 mod tests {
     use super::*;
 
+    fn control_channel_record(
+        channel_id: &str,
+        last_seq: u64,
+        window_low: u64,
+        window_high: u64,
+    ) -> ControlChannelStateRecord {
+        ControlChannelStateRecord {
+            channel_id: channel_id.to_string(),
+            last_seq,
+            window_low,
+            window_high,
+            epoch: 7,
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        }
+    }
+
     #[test]
     fn all_model_metadata_returns_21_entries() {
         assert_eq!(all_model_metadata().len(), 21);
@@ -1449,6 +1537,45 @@ mod tests {
             .expect_err("negative window_low must fail deserialization");
 
         assert!(err.to_string().contains("window_low"));
+    }
+
+    #[test]
+    fn control_channel_sequence_monotonicity_replay_accepts_strictly_increasing_windows() {
+        let records = vec![
+            control_channel_record("chan-a", 10, 1, 10),
+            control_channel_record("chan-b", 1, 1, 1),
+            control_channel_record("chan-a", 11, 2, 11),
+            control_channel_record("chan-b", 3, 1, 3),
+        ];
+
+        ControlChannelStateRecord::validate_sequence_monotonicity_replay(&records)
+            .expect("strictly increasing per-channel windows must validate");
+    }
+
+    #[test]
+    fn control_channel_sequence_monotonicity_replay_rejects_duplicate_last_seq() {
+        let records = vec![
+            control_channel_record("chan-a", 10, 1, 10),
+            control_channel_record("chan-a", 10, 1, 10),
+        ];
+
+        let err = ControlChannelStateRecord::validate_sequence_monotonicity_replay(&records)
+            .expect_err("duplicate sequence number must fail replay validation");
+
+        assert!(err.contains("not greater than previous"));
+    }
+
+    #[test]
+    fn control_channel_sequence_monotonicity_replay_rejects_window_regression() {
+        let records = vec![
+            control_channel_record("chan-a", 10, 5, 10),
+            control_channel_record("chan-a", 11, 4, 11),
+        ];
+
+        let err = ControlChannelStateRecord::validate_sequence_monotonicity_replay(&records)
+            .expect_err("replay window regression must fail validation");
+
+        assert!(err.contains("window_low"));
     }
 
     #[test]
@@ -2046,30 +2173,13 @@ mod tests {
 
     #[test]
     fn negative_control_channel_state_with_sequence_window_boundary_violations() {
-        // Test sequence window boundary conditions
-        let boundary_test_cases = vec![
-            // window_high < window_low (invalid)
-            (100, 50, 75),
-            // All values at u64::MAX
-            (u64::MAX, u64::MAX, u64::MAX),
-            // Zero values
-            (0, 0, 0),
-            // last_seq outside window
-            (10, 20, 5),  // last_seq < window_low
-            (10, 20, 25), // last_seq > window_high
-        ];
+        let boundary_test_cases = vec![(100, 50, 75), (10, 20, 5), (10, 20, 25)];
 
         for (window_low, window_high, last_seq) in boundary_test_cases {
-            let record = ControlChannelStateRecord {
-                channel_id: format!("chan-{}-{}-{}", window_low, window_high, last_seq),
-                last_seq,
-                window_low,
-                window_high,
-                epoch: 1,
-                updated_at: "2026-01-01T00:00:00Z".into(),
-            };
+            let channel_id = format!("chan-{}-{}-{}", window_low, window_high, last_seq);
+            let record =
+                control_channel_record(channel_id.as_str(), last_seq, window_low, window_high);
 
-            // Should serialize even with boundary violations (validation is business logic)
             let json_result = serde_json::to_string(&record);
             assert!(json_result.is_ok());
 
@@ -2081,7 +2191,18 @@ mod tests {
             assert_eq!(parsed.window_low, window_low);
             assert_eq!(parsed.window_high, window_high);
             assert_eq!(parsed.last_seq, last_seq);
+            assert!(
+                parsed.validate_replay_window().is_err(),
+                "invalid replay window should fail storage conformance validation: {parsed:?}"
+            );
         }
+
+        assert!(
+            control_channel_record("chan-max", u64::MAX, u64::MAX, u64::MAX)
+                .validate_replay_window()
+                .is_ok(),
+            "maximal closed replay window remains valid"
+        );
     }
 
     #[test]
