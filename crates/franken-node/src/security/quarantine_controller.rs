@@ -342,33 +342,29 @@ impl QuarantineController {
 
     #[must_use]
     pub fn verify_signature(&self, entry: &SignedEvidenceEntry) -> bool {
-        if entry.event_code != EVD_QUAR_CTRL_001 {
-            return false;
-        }
-        if entry.policy_version != QUARANTINE_POLICY_VERSION {
-            return false;
-        }
-        if !constant_time::ct_eq(&entry.policy_hash, &self.policy_hash()) {
-            return false;
-        }
-        if !entry.posterior.is_finite() || !entry.threshold.is_finite() {
-            return false;
-        }
-        if self.action_for_posterior(entry.posterior) != Some(entry.action) {
-            return false;
-        }
+        let mut is_valid = true;
+
+        is_valid &= constant_time::ct_eq(entry.event_code.as_bytes(), EVD_QUAR_CTRL_001.as_bytes());
+        is_valid &= constant_time::ct_eq(entry.policy_version.as_bytes(), QUARANTINE_POLICY_VERSION.as_bytes());
+        is_valid &= constant_time::ct_eq(&entry.policy_hash, &self.policy_hash());
+        
+        is_valid &= entry.posterior.is_finite();
+        is_valid &= entry.threshold.is_finite();
+
+        is_valid &= self.action_for_posterior(entry.posterior) == Some(entry.action);
+
         let expected_threshold = match entry.action {
             ControlAction::Throttle => self.policy.throttle,
             ControlAction::Isolate => self.policy.isolate,
             ControlAction::Quarantine => self.policy.quarantine,
             ControlAction::Revoke => self.policy.revoke,
         };
-        if entry.threshold.to_bits() != expected_threshold.to_bits() {
-            return false;
-        }
+        is_valid &= entry.threshold.to_bits() == expected_threshold.to_bits();
 
         let expected = self.sign_evidence(entry);
-        constant_time::ct_eq(&entry.signature, &expected)
+        is_valid &= constant_time::ct_eq(&entry.signature, &expected);
+
+        is_valid
     }
 
     #[must_use]
