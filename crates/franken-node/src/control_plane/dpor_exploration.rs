@@ -1160,7 +1160,10 @@ mod tests {
                 &format!("operation {idx}"),
             ));
         }
-        model.add_safety_property(SafetyProperty::new("safe", "placeholder"));
+        model.add_safety_property(SafetyProperty::new(
+            "actor_operation_ordering",
+            "operations from same actor maintain sequential consistency"
+        ));
 
         let schedules = e.generate_linearizations(&model);
 
