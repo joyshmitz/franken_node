@@ -521,11 +521,6 @@ pub fn verify_receipt_with_audience(
         }
     }
 
-    // Check replay protection first to fail fast on replays
-    if let Some(tracker) = replay_tracker {
-        tracker.check_and_mark(&signed.receipt.nonce)?;
-    }
-
     let expected_key_id = signing_key_id(public_key);
     if !crate::security::constant_time::ct_eq(&signed.signer_key_id, &expected_key_id) {
         return Ok(false);
@@ -543,10 +538,17 @@ pub fn verify_receipt_with_audience(
 
     let expected_chain_hash =
         compute_chain_hash(signed.receipt.previous_receipt_hash.as_deref(), &payload);
-    Ok(crate::security::constant_time::ct_eq(
-        &expected_chain_hash,
-        &signed.chain_hash,
-    ))
+    if !crate::security::constant_time::ct_eq(&expected_chain_hash, &signed.chain_hash) {
+        return Ok(false);
+    }
+
+    // SECURITY: State modification (replay tracking) must only occur after cryptographic verification
+    // to prevent unauthenticated attackers from burning legitimate nonces or exhausting tracker capacity.
+    if let Some(tracker) = replay_tracker {
+        tracker.check_and_mark(&signed.receipt.nonce)?;
+    }
+
+    Ok(true)
 }
 
 /// Deterministic key ID shared with release-verification trust roots.
