@@ -141,11 +141,10 @@ pub struct EphemeralSecretTracker {
 
 impl EphemeralSecretTracker {
     pub fn mount(&mut self, secret_ref: &str) -> Result<(), String> {
-        push_bounded(
-            &mut self.mounted,
-            secret_ref.to_string(),
-            MAX_MOUNTED_SECRETS,
-        );
+        if self.mounted.len() >= MAX_MOUNTED_SECRETS {
+            return Err(format!("tracker exhausted: exceeded max secrets {}", MAX_MOUNTED_SECRETS));
+        }
+        self.mounted.push(secret_ref.to_string());
         self.cleaned = false;
         Ok(())
     }
