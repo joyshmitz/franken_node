@@ -605,13 +605,15 @@ pub fn generate_replay_bundle_from_evidence(
     let mut sorted_events = package
         .events
         .iter()
-        .cloned()
-        .map(|event| {
+        .enumerate()
+        .map(|(idx, event)| {
             let (_, micros) = normalize_timestamp(&event.timestamp)?;
-            Ok((micros, event))
+            Ok((micros, idx))
         })
         .collect::<Result<Vec<_>, ReplayBundleError>>()?;
-    sorted_events.sort_by(|(left_micros, left), (right_micros, right)| {
+    sorted_events.sort_by(|(left_micros, left_idx), (right_micros, right_idx)| {
+        let left = &package.events[*left_idx];
+        let right = &package.events[*right_idx];
         left_micros
             .cmp(right_micros)
             .then_with(|| left.event_id.cmp(&right.event_id))
@@ -620,28 +622,30 @@ pub fn generate_replay_bundle_from_evidence(
     let id_to_index = sorted_events
         .iter()
         .enumerate()
-        .map(|(idx, (_, event))| {
+        .map(|(idx, (_, event_idx))| {
             (
-                event.event_id.clone(),
+                package.events[*event_idx].event_id.as_str(),
                 u64::try_from(idx.saturating_add(1)).unwrap_or(u64::MAX),
             )
         })
         .collect::<BTreeMap<_, _>>();
     let selected_policy_version = sorted_events
         .iter()
-        .find_map(|(_, event)| event.policy_version.clone())
+        .find_map(|(_, event_idx)| package.events[*event_idx].policy_version.clone())
         .unwrap_or_else(|| package.policy_version.clone());
 
     let mut event_log = Vec::with_capacity(sorted_events.len());
-    for (_, event) in sorted_events {
+    for (_, event_idx) in sorted_events {
+        let event = &package.events[event_idx];
         let causal_parent = match &event.parent_event_id {
             Some(parent_event_id) => {
-                let causal_parent = id_to_index.get(parent_event_id).copied().ok_or_else(|| {
-                    ReplayBundleError::EvidenceMissingParentRef {
+                let causal_parent = id_to_index
+                    .get(parent_event_id.as_str())
+                    .copied()
+                    .ok_or_else(|| ReplayBundleError::EvidenceMissingParentRef {
                         event_id: event.event_id.clone(),
                         parent_event_id: parent_event_id.clone(),
-                    }
-                })?;
+                    })?;
                 let current_index =
                     u64::try_from(event_log.len().saturating_add(1)).unwrap_or(u64::MAX);
                 if causal_parent >= current_index {
@@ -655,11 +659,11 @@ pub fn generate_replay_bundle_from_evidence(
             None => None,
         };
         event_log.push(RawEvent {
-            timestamp: event.timestamp,
+            timestamp: event.timestamp.clone(),
             event_type: event.event_type,
-            payload: event.payload,
+            payload: event.payload.clone(),
             causal_parent,
-            state_snapshot: event.state_snapshot,
+            state_snapshot: event.state_snapshot.clone(),
             policy_version: None,
         });
     }
@@ -3136,9 +3140,15 @@ mod tests {
         ];
 
         let bundle = generate_replay_bundle("INC-CAUSAL-LAST-PARENT", &events).expect("bundle");
-        assert_eq!(bundle.timeline[0].payload, serde_json::json!({"signal":"anomaly"}));
+        assert_eq!(
+            bundle.timeline[0].payload,
+            serde_json::json!({"signal":"anomaly"})
+        );
         assert_eq!(bundle.timeline[0].causal_parent, None);
-        assert_eq!(bundle.timeline[1].payload, serde_json::json!({"decision":"quarantine"}));
+        assert_eq!(
+            bundle.timeline[1].payload,
+            serde_json::json!({"decision":"quarantine"})
+        );
         assert_eq!(bundle.timeline[1].causal_parent, Some(1));
         assert!(validate_bundle_integrity(&bundle).expect("integrity"));
     }
