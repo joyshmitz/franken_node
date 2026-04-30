@@ -2403,6 +2403,16 @@ mod contract_tests {
             artifact.middleware_coverage.tracing_coverage,
             "tracing_coverage mismatch"
         );
+        assert_eq!(
+            runtime.middleware_coverage.error_formatting_coverage,
+            artifact.middleware_coverage.error_formatting_coverage,
+            "error_formatting_coverage mismatch"
+        );
+        assert_eq!(
+            runtime.middleware_coverage.rate_limiting_coverage,
+            artifact.middleware_coverage.rate_limiting_coverage,
+            "rate_limiting_coverage mismatch"
+        );
     }
 
     #[test]
