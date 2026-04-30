@@ -1474,6 +1474,7 @@ impl SessionManager {
                             if let Some(next) = sequence.checked_add(1) {
                                 session_mut.send_seq = next;
                             } else {
+                                session_mut.send_seq = sequence;
                                 session_mut.send_seq_exhausted = true;
                             }
                             Ok(())
@@ -1493,6 +1494,7 @@ impl SessionManager {
                             if let Some(next) = sequence.checked_add(1) {
                                 session_mut.recv_seq = next;
                             } else {
+                                session_mut.recv_seq = sequence;
                                 session_mut.recv_seq_exhausted = true;
                             }
                             Ok(())
