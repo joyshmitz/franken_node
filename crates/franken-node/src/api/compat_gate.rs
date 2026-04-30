@@ -3050,6 +3050,7 @@ mod compat_gate_malformed_payload_tests {
         let operation_errors = [
             CompatGateOperationError::TraceIdSpaceExhausted,
             CompatGateOperationError::ReceiptIdSpaceExhausted,
+            CompatGateOperationError::ScopeCapacityExceeded { capacity: 42 },
         ];
 
         for error in &operation_errors {
@@ -3057,14 +3058,14 @@ mod compat_gate_malformed_payload_tests {
             let code = error.code();
 
             // Should be descriptive but not leak internals
-            assert!(error_string.contains("exhausted"));
+            assert!(error_string.contains("exhausted") || error_string.contains("capacity"));
             assert!(!error_string.contains("/"));
             assert!(!error_string.contains("\\"));
             assert!(!error_string.contains("0x"));
 
             // Error codes should follow pattern
             assert!(code.starts_with("ERR_COMPAT_"));
-            assert!(code.ends_with("_EXHAUSTED"));
+            assert!(code.ends_with("_EXHAUSTED") || code.ends_with("_CAPACITY"));
         }
 
         // Test that error types implement Error trait properly
