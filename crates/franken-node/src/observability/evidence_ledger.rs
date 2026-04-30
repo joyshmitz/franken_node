@@ -1752,19 +1752,24 @@ impl CircuitBreakerState {
 }
 
 /// Best-effort disk usage hook for the filesystem containing the given path.
-///
-/// This currently returns a conservative placeholder until a safe filesystem
-/// usage provider is wired in. Manual `emergency_halt()` remains the
-/// authoritative way to force memory-only mode.
 fn get_disk_usage(path: &Path) -> Result<f64, String> {
-    // SAFETY: This codebase forbids unsafe code, so we can't use libc::statvfs.
-    // For production use, consider using a safe wrapper crate like `fs2` or `sysinfo`
-    // that provides disk space information without unsafe code.
-    //
-    // For now, return conservative low usage to prevent false circuit breaker triggers.
-    // The emergency halt functionality still works for manual incident response.
-    let _ = path; // Acknowledge parameter
-    Ok(0.1) // Always report 10% usage - circuit breaker will only trigger on emergency halt
+    let total = fs2::total_space(path)
+        .map_err(|error| format!("failed to read total space for {}: {error}", path.display()))?;
+    if total == 0 {
+        return Err(format!(
+            "filesystem containing {} reported zero total space",
+            path.display()
+        ));
+    }
+
+    let available = fs2::available_space(path).map_err(|error| {
+        format!(
+            "failed to read available space for {}: {error}",
+            path.display()
+        )
+    })?;
+    let used = total.saturating_sub(available.min(total));
+    Ok(used as f64 / total as f64)
 }
 
 enum SpillWriter {
@@ -2985,6 +2990,57 @@ mod tests {
                 assert!(false, "with_file should use a file-backed spill writer")
             }
         }
+    }
+
+    #[test]
+    fn disk_usage_matches_filesystem_space_provider() {
+        let dir = tempfile::tempdir().expect("should succeed");
+        let total = fs2::total_space(dir.path()).expect("total space should be readable");
+        let available =
+            fs2::available_space(dir.path()).expect("available space should be readable");
+        assert!(
+            total > 0,
+            "test filesystem should report nonzero total space"
+        );
+
+        let expected = total.saturating_sub(available.min(total)) as f64 / total as f64;
+        let observed = get_disk_usage(dir.path()).expect("disk usage should be readable");
+
+        assert_eq!(observed, expected);
+        assert!((0.0..=1.0).contains(&observed));
+    }
+
+    #[test]
+    fn lab_spill_file_zero_threshold_opens_circuit_before_spill_write() {
+        let dir = tempfile::tempdir().expect("should succeed");
+        let spill_path = dir.path().join("spill-circuit-breaker.jsonl");
+        let mut spill = LabSpillMode::with_file(LedgerCapacity::new(4, 4096), &spill_path)
+            .expect("spill file should open");
+
+        spill
+            .set_disk_threshold(0.0)
+            .expect("zero threshold should be accepted");
+        let id = spill
+            .append(make_entry("DEC-SPILL-CIRCUIT", 17))
+            .expect("memory append should continue when spill circuit is open");
+        let status = spill.circuit_breaker_status();
+
+        assert_eq!(id, EntryId(1));
+        assert!(status.is_open);
+        assert!(!status.emergency_halt);
+        assert!(status.disk_usage.is_some());
+        assert_eq!(spill.len(), 1);
+
+        spill
+            .sync_evidence_durability()
+            .expect("sync should succeed with no file spill writes");
+        drop(spill);
+
+        let content = std::fs::read_to_string(&spill_path).expect("spill file should be readable");
+        assert!(
+            content.is_empty(),
+            "open circuit breaker should skip JSONL spill writes"
+        );
     }
 
     #[test]
@@ -7481,22 +7537,38 @@ mod tests {
 
         // Test each text field individually
         let test_cases = vec![
-            ("schema_version", |entry: &mut EvidenceEntry| entry.schema_version = "v1\r".to_string()),
-            ("decision_id", |entry: &mut EvidenceEntry| entry.decision_id = "DEC\n001".to_string()),
-            ("decision_time", |entry: &mut EvidenceEntry| entry.decision_time = "2024\x1b".to_string()),
-            ("trace_id", |entry: &mut EvidenceEntry| entry.trace_id = "trace\0".to_string()),
-            ("signature", |entry: &mut EvidenceEntry| entry.signature = "sig\x02".to_string()),
-            ("prev_entry_hash", |entry: &mut EvidenceEntry| entry.prev_entry_hash = "hash\x1f".to_string()),
+            ("schema_version", |entry: &mut EvidenceEntry| {
+                entry.schema_version = "v1\r".to_string()
+            }),
+            ("decision_id", |entry: &mut EvidenceEntry| {
+                entry.decision_id = "DEC\n001".to_string()
+            }),
+            ("decision_time", |entry: &mut EvidenceEntry| {
+                entry.decision_time = "2024\x1b".to_string()
+            }),
+            ("trace_id", |entry: &mut EvidenceEntry| {
+                entry.trace_id = "trace\0".to_string()
+            }),
+            ("signature", |entry: &mut EvidenceEntry| {
+                entry.signature = "sig\x02".to_string()
+            }),
+            ("prev_entry_hash", |entry: &mut EvidenceEntry| {
+                entry.prev_entry_hash = "hash\x1f".to_string()
+            }),
         ];
 
         for (field_name, mutate_fn) in test_cases {
             let mut entry = test_entry("DEC-001", 1);
             mutate_fn(&mut entry);
 
-            assert!(matches!(
-                ledger.append_unsigned_entry(entry),
-                Err(LedgerError::InvalidControlCharacters { field, .. }) if field == field_name
-            ), "Expected InvalidControlCharacters for field {}", field_name);
+            assert!(
+                matches!(
+                    ledger.append_unsigned_entry(entry),
+                    Err(LedgerError::InvalidControlCharacters { field, .. }) if field == field_name
+                ),
+                "Expected InvalidControlCharacters for field {}",
+                field_name
+            );
         }
     }
 

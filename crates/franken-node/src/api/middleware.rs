@@ -943,6 +943,148 @@ impl AuthFailureLimiter {
     }
 }
 
+/// Per-source performance rate limiter to prevent individual sources from overwhelming
+/// the instance while maintaining isolation between different client sources.
+///
+/// SECURITY: Each source IP gets its own rate limiting bucket to prevent one malicious
+/// source from denying service to all other legitimate clients.
+#[cfg(any(test, feature = "control-plane"))]
+#[derive(Debug)]
+pub struct PerformanceRateLimiter {
+    config: RateLimitConfig,
+    /// Per-source-IP rate limiting state for performance protection.
+    ///
+    /// Each tracked source carries its own post-auth rate limiter so one abusive
+    /// source cannot exhaust the entire instance-wide performance budget.
+    /// The map stays bounded to avoid attacker-controlled source-cardinality
+    /// growth, evicting the lowest-volume tracked source when the cap is hit.
+    source_states: BTreeMap<String, PerformanceSourceState>,
+    /// Global request counter across all sources for monitoring
+    global_request_count: u64,
+}
+
+#[cfg(any(test, feature = "control-plane"))]
+#[derive(Debug)]
+struct PerformanceSourceState {
+    request_count: u64,
+    rate_limiter: RateLimiter,
+}
+
+#[cfg(any(test, feature = "control-plane"))]
+impl PerformanceSourceState {
+    fn new(config: &RateLimitConfig) -> Self {
+        Self {
+            request_count: 0,
+            rate_limiter: RateLimiter::new(config.clone()),
+        }
+    }
+}
+
+#[cfg(any(test, feature = "control-plane"))]
+impl PerformanceRateLimiter {
+    /// Create a new performance rate limiter.
+    ///
+    /// Default configuration allows 100 requests per second with burst of 200,
+    /// fail-closed to prevent instance overload.
+    pub fn new() -> Self {
+        let config = RateLimitConfig {
+            sustained_rps: 100,
+            burst_size: 200,
+            fail_closed: true,
+        };
+        Self {
+            config,
+            source_states: BTreeMap::new(),
+            global_request_count: 0,
+        }
+    }
+
+    /// Create with custom configuration.
+    pub fn with_config(config: RateLimitConfig) -> Self {
+        Self {
+            config,
+            source_states: BTreeMap::new(),
+            global_request_count: 0,
+        }
+    }
+
+    /// Check if a request is allowed from the given source.
+    /// Returns Err with retry_after_ms if rate limited.
+    pub fn check_request(&mut self, trace_id: &str, source_ip: &str) -> Result<(), ApiError> {
+        match Self::check_source_request(
+            &self.config,
+            &mut self.source_states,
+            &mut self.global_request_count,
+            source_ip,
+        ) {
+            Ok(()) => Ok(()),
+            Err(retry_after_ms) => Err(ApiError::RateLimited {
+                detail: "Too many requests. Please try again later.".to_string(),
+                trace_id: trace_id.to_string(),
+                retry_after_ms,
+            }),
+        }
+    }
+
+    fn ensure_source_state(&mut self, source_ip: &str) -> &mut PerformanceSourceState {
+        Self::ensure_source_state_in(&mut self.source_states, &self.config, source_ip)
+    }
+
+    fn ensure_source_state_in<'a>(
+        source_states: &'a mut BTreeMap<String, PerformanceSourceState>,
+        config: &RateLimitConfig,
+        source_ip: &str,
+    ) -> &'a mut PerformanceSourceState {
+        if let Some(state) = source_states.get_mut(source_ip) {
+            return state;
+        }
+
+        if source_states.len() >= MAX_AUTH_FAILURE_SOURCES {
+            Self::evict_lowest_priority_source_from(source_states);
+        }
+
+        match source_states.entry(source_ip.to_string()) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(PerformanceSourceState::new(config)),
+        }
+    }
+
+    fn evict_lowest_priority_source_from(
+        source_states: &mut BTreeMap<String, PerformanceSourceState>,
+    ) {
+        let min_entry = source_states
+            .iter()
+            .min_by(|(left_ip, left_state), (right_ip, right_state)| {
+                left_state
+                    .request_count
+                    .cmp(&right_state.request_count)
+                    .then_with(|| left_ip.cmp(right_ip))
+            })
+            .map(|(ip, _)| ip.clone());
+
+        if let Some(ip) = min_entry {
+            source_states.remove(&ip);
+        }
+    }
+
+    fn check_source_request(
+        config: &RateLimitConfig,
+        source_states: &mut BTreeMap<String, PerformanceSourceState>,
+        global_request_count: &mut u64,
+        source_ip: &str,
+    ) -> Result<(), u64> {
+        let state = Self::ensure_source_state_in(source_states, config, source_ip);
+        match state.rate_limiter.check() {
+            Ok(()) => {
+                *global_request_count = global_request_count.saturating_add(1);
+                state.request_count = state.request_count.saturating_add(1);
+                Ok(())
+            }
+            Err(retry_after_ms) => Err(retry_after_ms),
+        }
+    }
+}
+
 #[cfg(loom)]
 #[doc(hidden)]
 pub fn auth_failure_limiter_cardinality_bound_loom_model() {
@@ -1213,7 +1355,7 @@ pub fn execute_middleware_chain<F, T>(
     traceparent: Option<&str>,
     source_ip: &str,
     auth_failure_limiter: &mut AuthFailureLimiter,
-    rate_limiter: &mut RateLimiter,
+    performance_limiter: &mut PerformanceRateLimiter,
     authorized_keys: &std::collections::BTreeSet<String>,
     handler: F,
 ) -> (MiddlewareResult<T>, RequestLog)
@@ -1262,10 +1404,11 @@ where
         return (Err(err), log);
     }
 
-    // Step 5: Rate limiting (PERFORMANCE PROTECTION)
+    // Step 5: Performance rate limiting (PERFORMANCE PROTECTION)
     // Applied after auth/authz - protects handler from overload on this instance.
+    // Per-source rate limiting prevents one client from denying service to others.
     // Separate from security rate limiting in step 2.
-    if let Err(err) = check_rate_limit(rate_limiter, &trace_id) {
+    if let Err(err) = performance_limiter.check_request(&trace_id, source_ip) {
         let log = build_request_log(route, 429, start, &trace_id, &identity.principal);
         return (Err(err), log);
     }
@@ -1993,7 +2136,7 @@ mod tests {
             },
             trace_propagation: true,
         };
-        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
+        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
         let keys = get_test_keys();
 
         let mut auth_limiter = AuthFailureLimiter::new();
@@ -2003,7 +2146,7 @@ mod tests {
             Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"),
             "127.0.0.1",
             &mut auth_limiter,
-            &mut limiter,
+            &mut perf_limiter,
             &keys,
             |_identity, _ctx| Ok("ok".to_string()),
         );
@@ -2027,7 +2170,7 @@ mod tests {
             },
             trace_propagation: true,
         };
-        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
+        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
         let keys = get_test_keys();
         let invalid_traceparent = "00-00000000000000000000000000000000-b7ad6b7169203331-01";
 
@@ -2038,7 +2181,7 @@ mod tests {
             Some(invalid_traceparent),
             "127.0.0.1",
             &mut auth_limiter,
-            &mut limiter,
+            &mut perf_limiter,
             &keys,
             |_identity, ctx| Ok(ctx.clone()),
         );
@@ -2062,7 +2205,7 @@ mod tests {
             },
             trace_propagation: false,
         };
-        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
+        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
         let keys = get_test_keys();
         let incoming_traceparent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
 
@@ -2073,7 +2216,7 @@ mod tests {
             Some(incoming_traceparent),
             "127.0.0.1",
             &mut auth_limiter,
-            &mut limiter,
+            &mut perf_limiter,
             &keys,
             |_identity, ctx| Ok(ctx.clone()),
         );
@@ -2097,7 +2240,7 @@ mod tests {
             },
             trace_propagation: true,
         };
-        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
+        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::FleetControl));
         let keys = get_test_keys();
 
         let mut auth_limiter = AuthFailureLimiter::new();
@@ -2108,7 +2251,7 @@ mod tests {
             None,
             "127.0.0.1",
             &mut auth_limiter,
-            &mut limiter,
+            &mut perf_limiter,
             &keys,
             |_identity, _ctx| Ok("should not reach"),
         );
@@ -2132,7 +2275,7 @@ mod tests {
             },
             trace_propagation: true,
         };
-        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
+        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::FleetControl));
         let keys = get_test_keys();
 
         let mut auth_limiter = AuthFailureLimiter::new();
@@ -2142,7 +2285,7 @@ mod tests {
             None,
             "127.0.0.1",
             &mut auth_limiter,
-            &mut limiter,
+            &mut perf_limiter,
             &keys,
             |_identity, _ctx| Ok("should not reach"),
         );
@@ -2364,7 +2507,7 @@ mod tests {
             },
             trace_propagation: true,
         };
-        let mut limiter = RateLimiter::new(RateLimitConfig {
+        let mut perf_limiter = PerformanceRateLimiter::with_config(RateLimitConfig {
             sustained_rps: 1,
             burst_size: 0,
             fail_closed: true,
@@ -2379,7 +2522,7 @@ mod tests {
             None,
             "127.0.0.1",
             &mut auth_limiter,
-            &mut limiter,
+            &mut perf_limiter,
             &keys,
             |_identity, _ctx| {
                 handler_called = true;
@@ -2523,7 +2666,7 @@ mod api_middleware_additional_negative_tests {
 
     #[test]
     fn negative_middleware_auth_failure_skips_handler() {
-        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
+        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
         let mut handler_called = false;
 
         let mut auth_limiter = AuthFailureLimiter::new();
@@ -2533,7 +2676,7 @@ mod api_middleware_additional_negative_tests {
             Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"),
             "127.0.0.1",
             &mut auth_limiter,
-            &mut limiter,
+            &mut perf_limiter,
             &authorized_keys(),
             |_identity, _ctx| {
                 handler_called = true;
@@ -2550,7 +2693,7 @@ mod api_middleware_additional_negative_tests {
 
     #[test]
     fn negative_middleware_policy_denial_precedes_rate_limit_and_handler() {
-        let mut limiter = RateLimiter::new(RateLimitConfig {
+        let mut perf_limiter = PerformanceRateLimiter::with_config(RateLimitConfig {
             sustained_rps: 1,
             burst_size: 0,
             fail_closed: true,
@@ -2564,7 +2707,7 @@ mod api_middleware_additional_negative_tests {
             None,
             "127.0.0.1",
             &mut auth_limiter,
-            &mut limiter,
+            &mut perf_limiter,
             &authorized_keys(),
             |_identity, _ctx| {
                 handler_called = true;
@@ -2794,7 +2937,7 @@ mod api_middleware_edge_negative_tests {
 
     #[test]
     fn negative_middleware_handler_error_logs_endpoint_error() {
-        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
+        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
         let keys = std::collections::BTreeSet::new();
 
         let mut auth_limiter = AuthFailureLimiter::new();
@@ -2804,7 +2947,7 @@ mod api_middleware_edge_negative_tests {
             Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"),
             "127.0.0.1",
             &mut auth_limiter,
-            &mut limiter,
+            &mut perf_limiter,
             &keys,
             |_identity, ctx| {
                 Err::<(), _>(ApiError::Internal {
@@ -3409,7 +3552,7 @@ mod api_middleware_advanced_security_edge_tests {
             trace_propagation: true,
         };
 
-        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
+        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
         let keys = setup_keys();
         let mut handler_call_count = 0;
 
@@ -3439,7 +3582,7 @@ mod api_middleware_advanced_security_edge_tests {
                 *traceparent,
                 "127.0.0.1",
                 &mut auth_limiter,
-                &mut limiter,
+                &mut perf_limiter,
                 &keys,
                 |_identity, ctx| {
                     handler_call_count = handler_call_count.saturating_add(1);
@@ -3635,7 +3778,7 @@ mod api_middleware_advanced_security_edge_tests {
             burst_size: 2,
             fail_closed: true,
         });
-        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
+        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::FleetControl));
         let keys = get_test_keys();
 
         // First two attempts should be allowed (burst_size = 2)
@@ -3646,7 +3789,7 @@ mod api_middleware_advanced_security_edge_tests {
                 None,
                 "127.0.0.1",
                 &mut auth_limiter,
-                &mut limiter,
+                &mut perf_limiter,
                 &keys,
                 |_identity, _ctx| Ok("should not reach"),
             );
@@ -3667,7 +3810,7 @@ mod api_middleware_advanced_security_edge_tests {
             None,
             "127.0.0.1",
             &mut auth_limiter,
-            &mut limiter,
+            &mut perf_limiter,
             &keys,
             |_identity, _ctx| Ok("should not reach"),
         );
@@ -3697,7 +3840,7 @@ mod api_middleware_advanced_security_edge_tests {
             burst_size: 2,
             fail_closed: true,
         });
-        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::FleetControl));
+        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::FleetControl));
         let keys = get_test_keys();
 
         for _ in 0..2 {
@@ -3707,7 +3850,7 @@ mod api_middleware_advanced_security_edge_tests {
                 None,
                 "127.0.0.1",
                 &mut auth_limiter,
-                &mut limiter,
+                &mut perf_limiter,
                 &keys,
                 |_identity, _ctx| Ok("should not reach"),
             );
@@ -3721,7 +3864,7 @@ mod api_middleware_advanced_security_edge_tests {
             None,
             "127.0.0.1",
             &mut auth_limiter,
-            &mut limiter,
+            &mut perf_limiter,
             &keys,
             |_identity, _ctx| Ok("should not reach"),
         );
@@ -3734,7 +3877,7 @@ mod api_middleware_advanced_security_edge_tests {
             None,
             "198.51.100.7",
             &mut auth_limiter,
-            &mut limiter,
+            &mut perf_limiter,
             &keys,
             |_identity, _ctx| Ok("should not reach"),
         );
@@ -3767,7 +3910,7 @@ mod api_middleware_advanced_security_edge_tests {
             burst_size: 0,
             fail_closed: true,
         });
-        let mut limiter = RateLimiter::new(default_rate_limit(EndpointGroup::Operator));
+        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
         let keys = get_test_keys();
 
         // Should succeed because auth failure limiting is skipped for AuthMethod::None
@@ -3777,7 +3920,7 @@ mod api_middleware_advanced_security_edge_tests {
             None,
             "127.0.0.1",
             &mut auth_limiter,
-            &mut limiter,
+            &mut perf_limiter,
             &keys,
             |_identity, _ctx| Ok("success".to_string()),
         );

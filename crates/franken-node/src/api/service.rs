@@ -147,8 +147,16 @@ pub fn check_middleware_coverage() -> MiddlewareCoverage {
         policy_hook_coverage,
         error_formatting_coverage: true, // ProblemDetail always available
         tracing_coverage,
-        rate_limiting_coverage: true, // Rate limiters always configured per group
+        rate_limiting_coverage: rate_limiting_coverage_for_routes(&routes),
     }
+}
+
+fn rate_limiting_coverage_for_routes(routes: &[RouteMetadata]) -> bool {
+    !routes.is_empty()
+        && routes.iter().all(|route| {
+            let limit = default_rate_limit(route.group);
+            limit.fail_closed && limit.sustained_rps > 0 && limit.burst_size > 0
+        })
 }
 
 // ── Performance Baselines ──────────────────────────────────────────────────
@@ -473,6 +481,40 @@ mod tests {
         assert!(coverage.error_formatting_coverage);
         assert!(coverage.tracing_coverage);
         assert!(coverage.rate_limiting_coverage);
+    }
+
+    #[test]
+    fn rate_limiting_coverage_is_derived_from_route_groups() {
+        let routes = all_route_metadata();
+
+        assert!(rate_limiting_coverage_for_routes(&routes));
+        for group in [
+            EndpointGroup::Operator,
+            EndpointGroup::Verifier,
+            EndpointGroup::FleetControl,
+        ] {
+            let limit = default_rate_limit(group);
+            assert!(
+                limit.fail_closed,
+                "{:?} route group must fail closed under rate limiting",
+                group
+            );
+            assert!(
+                limit.sustained_rps > 0,
+                "{:?} route group must have sustained rate limiting",
+                group
+            );
+            assert!(
+                limit.burst_size > 0,
+                "{:?} route group must have burst rate limiting",
+                group
+            );
+        }
+    }
+
+    #[test]
+    fn rate_limiting_coverage_fails_closed_for_empty_route_set() {
+        assert!(!rate_limiting_coverage_for_routes(&[]));
     }
 
     #[test]

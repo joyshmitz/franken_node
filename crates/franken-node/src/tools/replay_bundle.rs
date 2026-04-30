@@ -752,7 +752,7 @@ pub fn generate_replay_bundle(
             let sequence_number = u64::try_from(index.saturating_add(1)).unwrap_or(u64::MAX);
             let mapped_parent = event.causal_parent.and_then(|p| {
                 let p_usize = usize::try_from(p).ok()?;
-                if p > 0 && p_usize < event_log.len() {
+                if p > 0 && p_usize <= event_log.len() {
                     let index = usize::try_from(p.saturating_sub(1)).ok()?;
                     original_to_new.get(index).copied()
                 } else {
@@ -3117,6 +3117,30 @@ mod tests {
         let zero_result = usize::try_from(zero_parent.saturating_sub(1));
         // saturating_sub(1) on 0 should give u64::MAX, which won't fit in usize
         assert!(zero_result.is_err());
+    }
+
+    #[test]
+    fn causal_parent_remap_preserves_last_original_event_when_sorted_first() {
+        let events = vec![
+            RawEvent::new(
+                "2026-02-20T10:00:00.000200Z",
+                EventType::PolicyEval,
+                serde_json::json!({"decision":"quarantine"}),
+            )
+            .with_causal_parent(2),
+            RawEvent::new(
+                "2026-02-20T10:00:00.000100Z",
+                EventType::ExternalSignal,
+                serde_json::json!({"signal":"anomaly"}),
+            ),
+        ];
+
+        let bundle = generate_replay_bundle("INC-CAUSAL-LAST-PARENT", &events).expect("bundle");
+        assert_eq!(bundle.timeline[0].payload, serde_json::json!({"signal":"anomaly"}));
+        assert_eq!(bundle.timeline[0].causal_parent, None);
+        assert_eq!(bundle.timeline[1].payload, serde_json::json!({"decision":"quarantine"}));
+        assert_eq!(bundle.timeline[1].causal_parent, Some(1));
+        assert!(validate_bundle_integrity(&bundle).expect("integrity"));
     }
 
     /// Test that push_bounded handles edge case where items.len() equals cap

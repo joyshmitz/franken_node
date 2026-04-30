@@ -207,6 +207,57 @@ fn observability_ledger_uses_server_computed_size_for_snapshot_and_spill() {
 }
 
 #[test]
+fn file_spill_reports_real_filesystem_usage_in_status() {
+    let dir = tempfile::tempdir().expect("tempdir should be created");
+    let spill_path = dir.path().join("evidence-spill-status.jsonl");
+    let spill = LabSpillMode::with_file(LedgerCapacity::new(10, 10_000), &spill_path)
+        .expect("file-backed spill should open");
+
+    let total = fs2::total_space(dir.path()).expect("total space should be readable");
+    let available = fs2::available_space(dir.path()).expect("available space should be readable");
+    assert!(total > 0, "test filesystem should report total space");
+    let expected_usage = total.saturating_sub(available.min(total)) as f64 / total as f64;
+
+    let status = spill.circuit_breaker_status();
+    assert_eq!(status.monitor_path.as_deref(), Some(dir.path()));
+    assert_eq!(status.disk_usage, Some(expected_usage));
+    assert!((0.0..=1.0).contains(&expected_usage));
+}
+
+#[test]
+fn file_spill_zero_threshold_opens_circuit_before_jsonl_write() {
+    let dir = tempfile::tempdir().expect("tempdir should be created");
+    let spill_path = dir.path().join("evidence-spill-threshold.jsonl");
+    let mut spill = LabSpillMode::with_file(LedgerCapacity::new(10, 10_000), &spill_path)
+        .expect("file-backed spill should open");
+
+    spill
+        .set_disk_threshold(0.0)
+        .expect("zero threshold should be accepted");
+    let id = spill
+        .append(misleading_size_entry("spill-circuit-open", 0))
+        .expect("memory append should still succeed");
+    let status = spill.circuit_breaker_status();
+
+    assert_eq!(id.0, 1);
+    assert!(status.is_open);
+    assert!(!status.emergency_halt);
+    assert!(status.disk_usage.is_some());
+    assert_eq!(spill.len(), 1);
+
+    spill
+        .sync_evidence_durability()
+        .expect("sync should succeed without a spill write");
+    drop(spill);
+
+    let content = std::fs::read_to_string(&spill_path).expect("spill file should be readable");
+    assert!(
+        content.is_empty(),
+        "open circuit breaker should skip JSONL spill writes"
+    );
+}
+
+#[test]
 fn signed_ledger_snapshot_remains_verifiable_after_size_normalization() {
     let signing_key = SigningKey::from_bytes(&[11; 32]);
     let verifying_key = signing_key.verifying_key();

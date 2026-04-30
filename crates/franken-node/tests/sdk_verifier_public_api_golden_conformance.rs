@@ -9,12 +9,13 @@
 use std::collections::BTreeMap;
 
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
+use sha2::Digest;
 
 use frankenengine_verifier_sdk::{
-    SDK_VERSION, SessionStep, TransparencyLogEntry, VerificationOperation, VerificationResult,
-    VerificationVerdict, bundle, capsule, create_verifier_sdk,
+    capsule, create_verifier_sdk, SessionStep, TransparencyLogEntry, VerificationOperation,
+    VerificationResult, VerificationVerdict, SDK_VERSION,
 };
 
 const FACADE_RESULT_FIXTURE: &str =
@@ -32,27 +33,36 @@ fn reference_verifying_key() -> VerifyingKey {
     VerifyingKey::from(&reference_signing_key())
 }
 
+fn expected_replay_hash(payload: &str, inputs: &BTreeMap<String, String>) -> String {
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(b"verifier_sdk_capsule_replay_v1:");
+    hasher.update(
+        u64::try_from(payload.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
+    hasher.update(payload.as_bytes());
+    hasher.update(
+        u64::try_from(inputs.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
+    for (key, value) in inputs {
+        hasher.update(u64::try_from(key.len()).unwrap_or(u64::MAX).to_le_bytes());
+        hasher.update(key.as_bytes());
+        hasher.update(u64::try_from(value.len()).unwrap_or(u64::MAX).to_le_bytes());
+        hasher.update(value.as_bytes());
+    }
+    hex::encode(hasher.finalize())
+}
+
 fn reference_capsule() -> capsule::ReplayCapsule {
     let mut inputs = BTreeMap::new();
     inputs.insert("artifact_a".to_string(), "content_of_a".to_string());
     inputs.insert("artifact_b".to_string(), "content_of_b".to_string());
 
     let payload = "reference_payload_data".to_string();
-    let expected_output_hash = {
-        let mut payload_bytes = Vec::new();
-        payload_bytes.extend_from_slice(&u64::try_from(payload.len()).unwrap_or(u64::MAX).to_le_bytes());
-        payload_bytes.extend_from_slice(payload.as_bytes());
-
-        let mut input_bytes = Vec::new();
-        for (key, value) in &inputs {
-            input_bytes.extend_from_slice(&u64::try_from(key.len()).unwrap_or(u64::MAX).to_le_bytes());
-            input_bytes.extend_from_slice(key.as_bytes());
-            input_bytes.extend_from_slice(&u64::try_from(value.len()).unwrap_or(u64::MAX).to_le_bytes());
-            input_bytes.extend_from_slice(value.as_bytes());
-        }
-
-        bundle::hash(&[payload_bytes, input_bytes].concat())
-    };
+    let expected_output_hash = expected_replay_hash(&payload, &inputs);
 
     let manifest = capsule::CapsuleManifest {
         schema_version: SDK_VERSION.to_string(),
