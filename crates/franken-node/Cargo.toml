@@ -275,6 +275,10 @@ name = "replay_bundle_integrity_conformance"
 path = "tests/replay_bundle_integrity_conformance.rs"
 
 [[test]]
+name = "replay_bundle_golden_artifacts"
+path = "tests/replay_bundle_golden_artifacts.rs"
+
+[[test]]
 name = "incident_bundle_integrity_conformance"
 path = "tests/incident_bundle_integrity_conformance.rs"
 
