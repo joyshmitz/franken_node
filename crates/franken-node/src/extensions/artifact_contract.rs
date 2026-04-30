@@ -599,11 +599,9 @@ impl EnforcementEngine {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn digest_bytes(input: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(b"artifact_contract_digest_v1:");
-    hasher.update(input);
-    hex::encode(hasher.finalize())
+fn update_len_prefixed(hasher: &mut Sha256, field: &str) {
+    hasher.update(len_to_u64(field.len()).to_le_bytes());
+    hasher.update(field.as_bytes());
 }
 
 fn is_hex_sha256(value: &str) -> bool {
@@ -622,29 +620,29 @@ fn verify_contract_signature(contract: &CapabilityContract) -> bool {
 
 /// Compute the expected signature for a capability contract.
 pub fn compute_contract_signature(contract: &CapabilityContract) -> String {
-    let signer = &contract.signer_id;
+    let mut hasher = Sha256::new();
+    hasher.update(b"artifact_contract_digest_v1:");
+
     // Length-prefix each field individually to prevent delimiter collisions.
-    let mut buf = Vec::new();
     for field in [
         contract.contract_id.as_str(),
         contract.extension_id.as_str(),
-        signer.as_str(),
+        contract.signer_id.as_str(),
         contract.schema_version.as_str(),
     ] {
-        buf.extend_from_slice(&len_to_u64(field.len()).to_le_bytes());
-        buf.extend_from_slice(field.as_bytes());
+        update_len_prefixed(&mut hasher, field);
     }
+
     // Bind the full capability envelope so post-sign tampering is rejected.
-    buf.extend_from_slice(&len_to_u64(contract.capabilities.len()).to_le_bytes());
+    hasher.update(len_to_u64(contract.capabilities.len()).to_le_bytes());
     for cap in &contract.capabilities {
-        buf.extend_from_slice(&len_to_u64(cap.capability_id.len()).to_le_bytes());
-        buf.extend_from_slice(cap.capability_id.as_bytes());
-        buf.extend_from_slice(&len_to_u64(cap.scope.len()).to_le_bytes());
-        buf.extend_from_slice(cap.scope.as_bytes());
-        buf.extend_from_slice(&cap.max_calls_per_epoch.to_le_bytes());
+        update_len_prefixed(&mut hasher, &cap.capability_id);
+        update_len_prefixed(&mut hasher, &cap.scope);
+        hasher.update(cap.max_calls_per_epoch.to_le_bytes());
     }
-    buf.extend_from_slice(&contract.issued_epoch_ms.to_le_bytes());
-    digest_bytes(&buf)
+    hasher.update(contract.issued_epoch_ms.to_le_bytes());
+
+    hex::encode(hasher.finalize())
 }
 
 /// Create a valid, signed capability contract for testing.
