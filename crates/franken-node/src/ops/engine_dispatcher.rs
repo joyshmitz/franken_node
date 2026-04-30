@@ -2477,9 +2477,17 @@ mod tests {
         let entry = app_dir.join("index.js");
         std::fs::write(&entry, "console.log('hello');").expect("write entry");
 
-        let runtime_dir = temp_dir.path().join("bin");
-        std::fs::create_dir(&runtime_dir).expect("runtime dir");
-        write_fake_executable(&runtime_dir.join("node"));
+        let path_env = std::env::var_os("PATH");
+        let Some(node_path) =
+            resolve_command_path_with("node", path_env.as_ref(), &|path| path.exists())
+        else {
+            eprintln!("skipping real node fallback test because node is not on PATH");
+            return;
+        };
+        let runtime_dir = node_path
+            .parent()
+            .expect("node runtime should have parent directory")
+            .to_path_buf();
 
         let plan = resolve_dispatch_plan_with(
             &app_dir,
@@ -2500,7 +2508,7 @@ mod tests {
             plan,
             DispatchPlan::RuntimeFallback(RuntimeFallbackPlan {
                 runtime: "node".to_string(),
-                runtime_path: runtime_dir.join("node"),
+                runtime_path: node_path,
                 target: entry,
                 working_dir: app_dir,
                 mode: RuntimeExecutionMode::FallbackFrankenEngineUnavailable,
