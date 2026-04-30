@@ -24,6 +24,19 @@ use crate::security::constant_time;
 use std::collections::BTreeMap;
 use std::fmt;
 
+// Security-hardened vector operations
+fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if cap == 0 {
+        items.clear();
+        return;
+    }
+    if items.len() >= cap {
+        let overflow = items.len().saturating_sub(cap).saturating_add(1);
+        items.drain(0..overflow.min(items.len()));
+    }
+    items.push(item);
+}
+
 // ── Schema version ──────────────────────────────────────────────────────────
 
 /// Schema version for the proof-verifier output format.
@@ -328,24 +341,32 @@ impl ProofVerifier {
         // Check 1: Proof expiration (fail-closed: < ensures expiry at exact boundary)
         let expiry_satisfied = now_millis < proof.expires_at_millis;
         if !expiry_satisfied {
-            deny_reasons.push(format!(
-                "{}: proof expired at {} but now is {}",
-                error_codes::ERR_PVF_PROOF_EXPIRED,
-                proof.expires_at_millis,
-                now_millis
-            ));
+            push_bounded(
+                &mut deny_reasons,
+                format!(
+                    "{}: proof expired at {} but now is {}",
+                    error_codes::ERR_PVF_PROOF_EXPIRED,
+                    proof.expires_at_millis,
+                    now_millis
+                ),
+                PREDICATE_EVIDENCE_CAPACITY,
+            );
             all_satisfied = false;
         }
-        evidence.push(PredicateEvidence {
-            predicate_id: predicate.predicate_id.clone(),
-            action_class: proof.action_class.clone(),
-            satisfied: expiry_satisfied,
-            reason: if expiry_satisfied {
-                "proof within expiry window".to_string()
-            } else {
-                format!("proof expired at {}", proof.expires_at_millis)
+        push_bounded(
+            &mut evidence,
+            PredicateEvidence {
+                predicate_id: predicate.predicate_id.clone(),
+                action_class: proof.action_class.clone(),
+                satisfied: expiry_satisfied,
+                reason: if expiry_satisfied {
+                    "proof within expiry window".to_string()
+                } else {
+                    format!("proof expired at {}", proof.expires_at_millis)
+                },
             },
-        });
+            PREDICATE_EVIDENCE_CAPACITY,
+        );
 
         // Check 2: Proof age (freshness)
         let age_millis = now_millis.saturating_sub(proof.generated_at_millis);
@@ -357,14 +378,18 @@ impl ProofVerifier {
 
         if !freshness_satisfied {
             if is_from_future {
-                deny_reasons.push(format!(
+                push_bounded(
+                    &mut deny_reasons,
+                    format!(
                     "{}: proof generated in the future ({} > {})",
                     error_codes::ERR_PVF_PROOF_EXPIRED,
                     proof.generated_at_millis,
                     now_millis
                 ));
             } else {
-                deny_reasons.push(format!(
+                push_bounded(
+                    &mut deny_reasons,
+                    format!(
                     "{}: proof age {}ms exceeds limit {}ms",
                     error_codes::ERR_PVF_PROOF_EXPIRED,
                     age_millis,
@@ -422,7 +447,9 @@ impl ProofVerifier {
                 let gap = predicate.min_confidence.saturating_sub(proof.confidence);
                 degrade_level = degrade_level.max((gap / 10).clamp(1, 5));
             } else {
-                deny_reasons.push(format!(
+                push_bounded(
+                    &mut deny_reasons,
+                    format!(
                     "confidence {} below minimum {}",
                     proof.confidence, predicate.min_confidence
                 ));
