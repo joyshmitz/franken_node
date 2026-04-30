@@ -223,7 +223,7 @@ mod tests {
         let mut low = 0usize;
         let mut high = CANONICAL_ROW_MAX_BYTES;
         while low < high {
-            let mid = low + (high - low).div_ceil(2);
+            let mid = low + ((high - low) + 1) / 2;
             if encoded_len_for(domain, class, case, mid) <= CANONICAL_ROW_MAX_BYTES {
                 low = mid;
             } else {

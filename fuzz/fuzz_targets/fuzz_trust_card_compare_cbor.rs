@@ -64,7 +64,7 @@ fn fuzz_fixture_compare(now_secs: u64, selector: u8) {
     TrustCardRegistry::from_snapshot(decoded, TRUST_CARD_REGISTRY_KEY, now_secs)
         .expect("fixture snapshot must reload with trusted key");
 
-    let (left, right) = if selector.is_multiple_of(2) {
+    let (left, right) = if selector % 2 == 0 {
         ("npm:@acme/auth-guard", "npm:@beta/telemetry-bridge")
     } else {
         ("npm:@beta/telemetry-bridge", "npm:@acme/auth-guard")

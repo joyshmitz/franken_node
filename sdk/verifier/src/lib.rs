@@ -1574,7 +1574,7 @@ fn transparency_merkle_proof(leaf_hashes: &[String], target_index: usize) -> Vec
     let mut proof = Vec::new();
 
     while level.len() > 1 {
-        let sibling_index = if index.is_multiple_of(2) {
+        let sibling_index = if index % 2 == 0 {
             if index + 1 < level.len() {
                 index + 1
             } else {
@@ -1590,7 +1590,7 @@ fn transparency_merkle_proof(leaf_hashes: &[String], target_index: usize) -> Vec
         };
         proof.push(format!("{sibling_direction}:{}", level[sibling_index]));
 
-        let mut next_level = Vec::with_capacity(level.len().div_ceil(2));
+        let mut next_level = Vec::with_capacity((level.len() + 1) / 2);
         for pair_start in (0..level.len()).step_by(2) {
             let left = &level[pair_start];
             let right = level.get(pair_start + 1).unwrap_or(left);

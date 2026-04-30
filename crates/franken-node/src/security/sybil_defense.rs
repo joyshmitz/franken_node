@@ -323,7 +323,7 @@ impl TrustAggregator {
         sorted.sort_by(|a, b| a.total_cmp(b));
 
         let n = sorted.len();
-        let median = if n.is_multiple_of(2) {
+        let median = if n % 2 == 0 {
             let lower = sorted[(n / 2).saturating_sub(1)];
             let upper = sorted[n / 2];
             lower / 2.0 + upper / 2.0

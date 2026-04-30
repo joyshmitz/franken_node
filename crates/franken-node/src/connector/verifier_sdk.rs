@@ -424,7 +424,7 @@ pub(crate) fn compute_trace_commitment_root(trace_chunk_hashes: &[String]) -> Op
         .collect::<Option<Vec<_>>>()?;
 
     while level.len() > 1 {
-        let mut next_level = Vec::with_capacity(level.len().div_ceil(2));
+        let mut next_level = Vec::with_capacity((level.len() + 1) / 2);
         let mut index = 0;
         while index < level.len() {
             let left = &level[index];
@@ -465,7 +465,7 @@ pub(crate) fn build_trace_commitment_proof(
             sibling_on_left: sibling_index < index,
         });
 
-        let mut next_level = Vec::with_capacity(level.len().div_ceil(2));
+        let mut next_level = Vec::with_capacity((level.len() + 1) / 2);
         let mut pair_index = 0;
         while pair_index < level.len() {
             let left = &level[pair_index];

@@ -979,7 +979,7 @@ mod tests {
         assert_eq!(quorum_required_for(usize::MAX, 100).unwrap(), usize::MAX);
 
         let total = u128::try_from(usize::MAX).unwrap();
-        let expected = total.saturating_mul(66).div_ceil(100);
+        let expected = total.saturating_mul(66).saturating_add(99) / 100;
         assert_eq!(
             quorum_required_for(usize::MAX, 66).unwrap(),
             usize::try_from(expected).unwrap()

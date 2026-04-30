@@ -397,7 +397,7 @@ fn validate_signature(signature: &ManifestSignature) -> Result<(), ManifestSchem
 }
 
 fn looks_like_base64(value: &str) -> bool {
-    if value.len() < 4 || !value.len().is_multiple_of(4) {
+    if value.len() < 4 || value.len() % 4 != 0 {
         return false;
     }
     value
