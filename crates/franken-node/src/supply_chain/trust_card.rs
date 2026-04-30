@@ -2449,16 +2449,12 @@ fn timestamp_from_secs(timestamp_secs: u64) -> String {
 fn canonicalize_value(value: Value) -> Value {
     match value {
         Value::Object(map) => {
-            // OPTIMIZATION: Use Vec + sort_unstable instead of BTreeSet to reduce allocation overhead
-            let mut keys: Vec<String> = map.keys().cloned().collect();
-            keys.sort_unstable(); // More efficient than BTreeSet for this use case
+            let mut entries: Vec<_> = map.into_iter().collect();
+            entries.sort_unstable_by(|(left_key, _), (right_key, _)| left_key.cmp(right_key));
 
-            // OPTIMIZATION: Pre-allocate capacity for the output map
-            let mut out = serde_json::Map::with_capacity(keys.len());
-            for key in keys {
-                if let Some(val) = map.get(&key) {
-                    out.insert(key, canonicalize_value(val.clone()));
-                }
+            let mut out = serde_json::Map::with_capacity(entries.len());
+            for (key, nested_value) in entries {
+                out.insert(key, canonicalize_value(nested_value));
             }
             Value::Object(out)
         }
