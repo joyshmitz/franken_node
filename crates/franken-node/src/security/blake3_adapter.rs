@@ -22,6 +22,10 @@ fn update_length_prefixed_bytes_hmac(mac: &mut HmacSha256, value: &[u8]) {
     mac.update(value);
 }
 
+fn domain_key_material_len(domain: &str, key: &[u8]) -> usize {
+    domain.len() + key.len() + 16
+}
+
 #[cfg(feature = "blake3")]
 fn update_length_prefixed_bytes_blake3(hasher: &mut blake3::Hasher, value: &[u8]) {
     hasher.update(&u64::try_from(value.len()).unwrap_or(u64::MAX).to_le_bytes());
@@ -43,6 +47,20 @@ pub trait HashProvider: Send + Sync + 'static {
 
     /// Compute domain-separated keyed hash (replaces HMAC-SHA256 patterns)
     fn keyed_hash(&self, key: &[u8], data: &[u8]) -> [u8; 32];
+
+    /// Hash the length-prefixed `(domain, key)` material used to derive domain keys.
+    fn hash_domain_key_material(&self, domain: &str, key: &[u8]) -> [u8; 32] {
+        let mut combined = Vec::with_capacity(domain_key_material_len(domain, key));
+        combined.extend_from_slice(
+            &u64::try_from(domain.len())
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
+        combined.extend_from_slice(domain.as_bytes());
+        combined.extend_from_slice(&u64::try_from(key.len()).unwrap_or(u64::MAX).to_le_bytes());
+        combined.extend_from_slice(key);
+        self.hash(&combined)
+    }
 
     /// Provider name for telemetry and debugging
     fn name(&self) -> &'static str;
@@ -72,6 +90,19 @@ impl HashProvider for Blake3Provider {
         hasher.finalize().into()
     }
 
+    fn hash_domain_key_material(&self, domain: &str, key: &[u8]) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(HASH_DOMAIN_TAG);
+        hasher.update(
+            &u64::try_from(domain_key_material_len(domain, key))
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
+        update_length_prefixed_bytes_blake3(&mut hasher, domain.as_bytes());
+        update_length_prefixed_bytes_blake3(&mut hasher, key);
+        hasher.finalize().into()
+    }
+
     fn name(&self) -> &'static str {
         "BLAKE3"
     }
@@ -93,6 +124,19 @@ impl HashProvider for Sha2HmacProvider {
         mac.update(KEYED_HASH_DOMAIN_TAG);
         update_length_prefixed_bytes_hmac(&mut mac, data);
         mac.finalize().into_bytes().into()
+    }
+
+    fn hash_domain_key_material(&self, domain: &str, key: &[u8]) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(HASH_DOMAIN_TAG);
+        hasher.update(
+            u64::try_from(domain_key_material_len(domain, key))
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
+        update_length_prefixed_bytes_sha2(&mut hasher, domain.as_bytes());
+        update_length_prefixed_bytes_sha2(&mut hasher, key);
+        hasher.finalize().into()
     }
 
     fn name(&self) -> &'static str {
@@ -150,18 +194,7 @@ impl Default for FastHashContext {
 /// Domain-separated keyed hashing for different use cases
 pub fn domain_keyed_hash(domain: &str, key: &[u8], data: &[u8]) -> [u8; 32] {
     let ctx = FastHashContext::new();
-    let domain_key = {
-        let mut combined = Vec::with_capacity(domain.len() + key.len() + 16);
-        combined.extend_from_slice(
-            &u64::try_from(domain.len())
-                .unwrap_or(u64::MAX)
-                .to_le_bytes(),
-        );
-        combined.extend_from_slice(domain.as_bytes());
-        combined.extend_from_slice(&u64::try_from(key.len()).unwrap_or(u64::MAX).to_le_bytes());
-        combined.extend_from_slice(key);
-        ctx.hash(&combined)
-    };
+    let domain_key = ctx.provider.hash_domain_key_material(domain, key);
     ctx.keyed_hash(&domain_key, data)
 }
 
@@ -278,5 +311,26 @@ mod tests {
         let right = domain_keyed_hash("a", b"bc", data);
 
         assert_ne!(left, right);
+    }
+
+    #[test]
+    fn streamed_domain_key_material_matches_buffered_layout() {
+        let provider = Sha2HmacProvider;
+        let domain = "bench-domain";
+        let key = b"bench-key";
+        let mut combined = Vec::with_capacity(super::domain_key_material_len(domain, key));
+        combined.extend_from_slice(
+            &u64::try_from(domain.len())
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
+        combined.extend_from_slice(domain.as_bytes());
+        combined.extend_from_slice(&u64::try_from(key.len()).unwrap_or(u64::MAX).to_le_bytes());
+        combined.extend_from_slice(key);
+
+        assert_eq!(
+            provider.hash_domain_key_material(domain, key),
+            provider.hash(&combined)
+        );
     }
 }
