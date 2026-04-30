@@ -270,11 +270,12 @@ impl ReceiptChain {
         };
         push_bounded(&mut self.entries, entry.clone(), MAX_CHAIN_ENTRIES);
 
-        let mut events = vec![ChainEvent {
+        let mut events = Vec::with_capacity(2);
+        events.push(ChainEvent {
             event_code: event_codes::VEF_CHAIN_001_APPENDED.to_string(),
             trace_id: trace_id.clone(),
             detail: format!("entry={} appended", entry.index),
-        }];
+        });
 
         let checkpoint = if self.should_checkpoint(appended_at_millis) {
             let checkpoint = self.build_checkpoint(appended_at_millis, trace_id.clone())?;
@@ -634,10 +635,10 @@ fn compute_checkpoint_commitment(
     let range = entries
         .get(start..=end)
         .ok_or_else(|| ChainError::checkpoint("checkpoint range out of bounds"))?;
-    let entry_hashes = range
-        .iter()
-        .map(|entry| entry.chain_hash.as_str())
-        .collect::<Vec<_>>();
+    let mut entry_hashes = Vec::with_capacity(range.len());
+    for entry in range {
+        entry_hashes.push(entry.chain_hash.as_str());
+    }
 
     #[derive(Serialize)]
     struct CheckpointMaterial<'a> {
