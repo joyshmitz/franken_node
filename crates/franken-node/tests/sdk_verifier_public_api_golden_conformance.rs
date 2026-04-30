@@ -9,13 +9,13 @@
 use std::collections::BTreeMap;
 
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use sha2::Digest;
 
 use frankenengine_verifier_sdk::{
-    capsule, create_verifier_sdk, SessionStep, TransparencyLogEntry, VerificationOperation,
-    VerificationResult, VerificationVerdict, SDK_VERSION,
+    SDK_VERSION, SessionStep, TransparencyLogEntry, VerificationOperation, VerificationResult,
+    VerificationVerdict, capsule, create_verifier_sdk,
 };
 
 const FACADE_RESULT_FIXTURE: &str =
@@ -84,6 +84,38 @@ fn reference_capsule() -> capsule::ReplayCapsule {
     };
     let signing_key = reference_signing_key();
     capsule::sign_capsule(&signing_key, &mut capsule);
+    capsule
+}
+
+fn replay_capsule_from_ordered_inputs(
+    input_pairs: &[(&str, &str)],
+    input_refs: Vec<String>,
+) -> capsule::ReplayCapsule {
+    let inputs = input_pairs
+        .iter()
+        .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+        .collect::<BTreeMap<_, _>>();
+
+    let payload = "reference_payload_data".to_string();
+    let manifest = capsule::CapsuleManifest {
+        schema_version: SDK_VERSION.to_string(),
+        capsule_id: "capsule-metamorphic-input-order".to_string(),
+        description: "Metamorphic replay input ordering capsule".to_string(),
+        claim_type: "migration_safety".to_string(),
+        input_refs,
+        expected_output_hash: expected_replay_hash(&payload, &inputs),
+        created_at: "2026-02-21T00:00:00Z".to_string(),
+        creator_identity: "creator://test@example.com".to_string(),
+        metadata: BTreeMap::new(),
+    };
+
+    let mut capsule = capsule::ReplayCapsule {
+        manifest,
+        payload,
+        inputs,
+        signature: String::new(),
+    };
+    capsule::sign_capsule(&reference_signing_key(), &mut capsule);
     capsule
 }
 
@@ -262,4 +294,64 @@ fn sdk_verifier_public_api_live_contract_invariants() {
     assert_eq!(verdict, VerificationVerdict::Pass);
     assert!(session.sealed);
     assert_eq!(session.final_verdict, Some(VerificationVerdict::Pass));
+}
+
+#[test]
+fn sdk_verifier_replay_capsule_input_order_metamorphic_relation() {
+    let verifying_key = reference_verifying_key();
+    let forward = replay_capsule_from_ordered_inputs(
+        &[
+            ("artifact_a", "content_of_a"),
+            ("artifact_b", "content_of_b"),
+            ("artifact_c", "content_of_c"),
+        ],
+        vec![
+            "artifact_a".to_string(),
+            "artifact_b".to_string(),
+            "artifact_c".to_string(),
+        ],
+    );
+    let reversed = replay_capsule_from_ordered_inputs(
+        &[
+            ("artifact_c", "content_of_c"),
+            ("artifact_b", "content_of_b"),
+            ("artifact_a", "content_of_a"),
+        ],
+        vec![
+            "artifact_c".to_string(),
+            "artifact_b".to_string(),
+            "artifact_a".to_string(),
+        ],
+    );
+
+    let forward_result = capsule::replay(&verifying_key, &forward, "verifier://metamorphic")
+        .expect("forward capsule should replay");
+    let reversed_result = capsule::replay(&verifying_key, &reversed, "verifier://metamorphic")
+        .expect("reversed capsule should replay");
+
+    assert_eq!(forward_result.verdict, capsule::CapsuleVerdict::Pass);
+    assert_eq!(reversed_result.verdict, capsule::CapsuleVerdict::Pass);
+    assert_eq!(
+        forward_result.actual_hash, reversed_result.actual_hash,
+        "equivalent input maps must have an insertion-order-invariant replay hash"
+    );
+    assert_eq!(
+        forward_result.expected_hash, reversed_result.expected_hash,
+        "expected replay hash must canonicalize equivalent input maps"
+    );
+
+    let mut perturbed = forward.clone();
+    perturbed
+        .inputs
+        .insert("artifact_b".to_string(), "content_of_b_changed".to_string());
+    capsule::sign_capsule(&reference_signing_key(), &mut perturbed);
+    let perturbed_result = capsule::replay(&verifying_key, &perturbed, "verifier://metamorphic")
+        .expect("value-perturbed capsule should still produce a replay verdict");
+
+    assert_eq!(perturbed_result.verdict, capsule::CapsuleVerdict::Fail);
+    assert_eq!(perturbed_result.expected_hash, forward_result.expected_hash);
+    assert_ne!(
+        perturbed_result.actual_hash, forward_result.actual_hash,
+        "changing an input value must perturb the replay hash"
+    );
 }
