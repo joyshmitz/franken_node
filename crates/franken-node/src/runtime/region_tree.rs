@@ -551,7 +551,7 @@ impl RegionTree {
             }
         })?;
 
-        if node.state != RegionState::Active {
+        if node.state == RegionState::Closed {
             return Err(RegionTreeError::RegionAlreadyClosed {
                 region_id: region_id.as_str().to_string(),
             });
