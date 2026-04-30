@@ -95,6 +95,8 @@ pub mod error_codes {
     pub const ERR_TTR_SNAPSHOT_CORRUPT: &str = "ERR_TTR_SNAPSHOT_CORRUPT";
     /// Replay seed does not match capture seed.
     pub const ERR_TTR_SEED_MISMATCH: &str = "ERR_TTR_SEED_MISMATCH";
+    /// Capture trace exceeded maximum capacity.
+    pub const ERR_TTR_CAPACITY_EXCEEDED: &str = "ERR_TTR_CAPACITY_EXCEEDED";
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +368,8 @@ pub enum TimeTravelError {
     SnapshotCorrupt { detail: String },
     /// Replay seed does not match capture seed.
     SeedMismatch { capture_seed: u64, replay_seed: u64 },
+    /// Capture trace exceeded maximum capacity.
+    CapacityExceeded { limit: usize },
 }
 
 impl TimeTravelError {
@@ -378,6 +382,7 @@ impl TimeTravelError {
             Self::StepOutOfBounds { .. } => error_codes::ERR_TTR_STEP_OUT_OF_BOUNDS,
             Self::SnapshotCorrupt { .. } => error_codes::ERR_TTR_SNAPSHOT_CORRUPT,
             Self::SeedMismatch { .. } => error_codes::ERR_TTR_SEED_MISMATCH,
+            Self::CapacityExceeded { .. } => error_codes::ERR_TTR_CAPACITY_EXCEEDED,
         }
     }
 }
@@ -429,6 +434,13 @@ impl fmt::Display for TimeTravelError {
                     error_codes::ERR_TTR_SEED_MISMATCH,
                 )
             }
+            Self::CapacityExceeded { limit } => {
+                write!(
+                    f,
+                    "[{}] capture trace exceeded maximum capacity of {limit} frames",
+                    error_codes::ERR_TTR_CAPACITY_EXCEEDED,
+                )
+            }
         }
     }
 }
@@ -477,6 +489,9 @@ impl CaptureSession {
         input: &[u8],
         decision: ControlDecision,
     ) -> Result<&CaptureFrame, TimeTravelError> {
+        if self.frames.len() >= MAX_FRAMES {
+            return Err(TimeTravelError::CapacityExceeded { limit: MAX_FRAMES });
+        }
         self.clock.advance_to(tick)?;
         let input_hash = hash_bytes(input);
         let idx = self.next_frame_index;
@@ -488,7 +503,7 @@ impl CaptureSession {
             decision,
             event_code: event_codes::TTR_002.to_string(),
         };
-        push_bounded(&mut self.frames, frame, MAX_FRAMES);
+        self.frames.push(frame);
         self.emit_event(event_codes::TTR_002.to_string());
         self.frames
             .last()
