@@ -1103,7 +1103,7 @@ fn emit_event(
     });
     if events.len() > MAX_EVENTS {
         let overflow = events.len().saturating_sub(MAX_EVENTS);
-        events.drain(0..overflow);
+        events.drain(0..overflow.min(events.len()));
     }
 
     // Inline negative-path tests for bounded event emission

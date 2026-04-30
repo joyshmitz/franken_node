@@ -29,7 +29,7 @@ const MAX_VIRTUAL_LINKS: usize = 4096;
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if items.len() >= cap {
         let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow);
+        items.drain(0..overflow.min(items.len()));
     }
     items.push(item);
 }
@@ -1245,7 +1245,7 @@ mod tests {
         // Arithmetic overflow protection test
         let mut overflow_vec = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         let cap = 5;
-        let overflow = overflow_vec.len() - cap + 1; // = 6
+        let overflow = overflow_vec.len().saturating_sub(cap).saturating_add(1); // = 6
         push_bounded(&mut overflow_vec, 999, cap);
         assert_eq!(overflow_vec.len(), cap);
         assert_eq!(overflow_vec[cap - 1], 999);

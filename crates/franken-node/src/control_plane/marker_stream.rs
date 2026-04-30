@@ -449,7 +449,7 @@ impl MarkerStream {
                 .saturating_add(1);
             self.chain_anchor_hash =
                 Some(self.markers[overflow.saturating_sub(1)].marker_hash.clone());
-            self.markers.drain(0..overflow);
+            self.markers.drain(0..overflow.min(self.markers.len()));
         }
         self.markers.push(marker);
         self.total_appended = self.total_appended.saturating_add(1);

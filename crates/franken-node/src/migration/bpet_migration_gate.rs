@@ -272,7 +272,7 @@ pub fn evaluate_admission(
         ));
         if events.len() > MAX_EVENTS {
             let overflow = events.len() - MAX_EVENTS;
-            events.drain(0..overflow);
+            events.drain(0..overflow.min(events.len()));
         }
         events.push(gate_event(
             event_codes::FALLBACK_PLAN_GENERATED,
@@ -285,7 +285,7 @@ pub fn evaluate_admission(
         ));
         if events.len() > MAX_EVENTS {
             let overflow = events.len() - MAX_EVENTS;
-            events.drain(0..overflow);
+            events.drain(0..overflow.min(events.len()));
         }
         return AdmissionDecision {
             verdict: GateVerdict::StagedRolloutRequired,
@@ -310,7 +310,7 @@ pub fn evaluate_admission(
         ));
         if events.len() > MAX_EVENTS {
             let overflow = events.len() - MAX_EVENTS;
-            events.drain(0..overflow);
+            events.drain(0..overflow.min(events.len()));
         }
         return AdmissionDecision {
             verdict: GateVerdict::Allow,
@@ -1995,7 +1995,7 @@ mod tests {
                         .len()
                         .saturating_sub(MAX_TOTAL_REQUIREMENTS)
                         .saturating_add(1);
-                    all_requirements.drain(0..overflow);
+                    all_requirements.drain(0..overflow.min(all_requirements.len()));
                 }
                 all_requirements.push(req);
             }

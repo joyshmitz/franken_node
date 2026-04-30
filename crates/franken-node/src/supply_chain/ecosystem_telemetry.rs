@@ -607,7 +607,7 @@ impl TelemetryPipeline {
             // If still over budget, drop oldest entries regardless of aggregation level.
             let overflow = self.data_points.len().saturating_sub(cap - 1);
             if overflow > 0 {
-                self.data_points.drain(0..overflow);
+                self.data_points.drain(0..overflow.min(self.data_points.len()));
             }
         }
 

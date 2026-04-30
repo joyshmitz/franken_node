@@ -286,7 +286,14 @@ impl ArtifactStore {
 
         self.artifacts.insert(artifact_id.to_string(), artifact);
         let seq_list = self.sequences.entry(artifact_type).or_default();
-        push_bounded(seq_list, artifact_id.to_string(), MAX_SEQUENCE_PER_TYPE);
+        if seq_list.len() >= MAX_SEQUENCE_PER_TYPE {
+            let overflow = seq_list.len().saturating_sub(MAX_SEQUENCE_PER_TYPE).saturating_add(1);
+            for id in seq_list.drain(0..overflow) {
+                self.artifacts.remove(&id);
+            }
+        }
+        seq_list.push(artifact_id.to_string());
+
         // Evict oldest artifacts when total exceeds capacity
         if self.artifacts.len() > MAX_TOTAL_ARTIFACTS
             && let Some((_, evict_list)) = self.sequences.iter_mut().max_by_key(|(_, v)| v.len())

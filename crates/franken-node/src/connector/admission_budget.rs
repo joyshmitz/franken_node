@@ -379,8 +379,8 @@ impl AdmissionBudgetTracker {
             push_bounded(&mut violations, BudgetDimension::FailedAuth, MAX_VIOLATIONS);
         }
 
-        // Dimension 4: inflight_decode (current count)
-        let inflight_ok = usage.inflight_decode_count <= self.budget.max_inflight_decode;
+        // Dimension 4: inflight_decode (current count + 1 for this request)
+        let inflight_ok = usage.inflight_decode_count < self.budget.max_inflight_decode;
         push_bounded(
             &mut records,
             BudgetCheckRecord {

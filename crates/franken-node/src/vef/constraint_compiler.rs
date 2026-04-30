@@ -33,7 +33,7 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     }
     if items.len() >= cap {
         let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow);
+        items.drain(0..overflow.min(items.len()));
     }
     items.push(item);
 }
@@ -403,7 +403,7 @@ impl ConstraintCompiler {
         });
         if events.len() > MAX_EVENTS {
             let overflow = events.len().saturating_sub(MAX_EVENTS);
-            events.drain(0..overflow);
+            events.drain(0..overflow.min(events.len()));
         }
 
         if let Some(reason) = invalid_policy_id_reason(&policy.policy_id) {
@@ -580,7 +580,7 @@ impl ConstraintCompiler {
                 });
                 if events.len() > MAX_EVENTS {
                     let overflow = events.len().saturating_sub(MAX_EVENTS);
-                    events.drain(0..overflow);
+                    events.drain(0..overflow.min(events.len()));
                 }
             }
         }
@@ -609,7 +609,7 @@ impl ConstraintCompiler {
         });
         if events.len() > MAX_EVENTS {
             let overflow = events.len().saturating_sub(MAX_EVENTS);
-            events.drain(0..overflow);
+            events.drain(0..overflow.min(events.len()));
         }
 
         CompileResult {

@@ -69,7 +69,7 @@ fn extend_bounded(items: &mut Vec<u8>, new_data: &[u8], max_total_bytes: usize) 
             items.extend_from_slice(&new_data[..take_len]);
         } else {
             // Remove overflow from beginning, then add new data
-            items.drain(0..overflow);
+            items.drain(0..overflow.min(items.len()));
             items.extend_from_slice(new_data);
         }
     } else {

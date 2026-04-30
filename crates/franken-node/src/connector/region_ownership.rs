@@ -278,6 +278,12 @@ pub enum RegionError {
         region_id: RegionId,
         task_id: String,
     },
+    #[serde(rename = "RGN_CAPACITY_EXCEEDED")]
+    CapacityExceeded {
+        region_id: RegionId,
+        resource: String,
+        capacity: usize,
+    },
     #[serde(rename = "RGN_SEQUENCE_EXHAUSTED")]
     SequenceExhausted { counter: String, last_value: u64 },
 }
@@ -309,6 +315,14 @@ impl fmt::Display for RegionError {
             Self::TaskNotFound { region_id, task_id } => write!(
                 f,
                 "RGN_TASK_NOT_FOUND: task {task_id} not found in region {region_id}"
+            ),
+            Self::CapacityExceeded {
+                region_id,
+                resource,
+                capacity,
+            } => write!(
+                f,
+                "RGN_CAPACITY_EXCEEDED: region {region_id} exceeded capacity {capacity} for {resource}"
             ),
             Self::SequenceExhausted {
                 counter,
@@ -381,6 +395,13 @@ impl Region {
         kind: RegionKind,
         quiescence_budget_ms: u64,
     ) -> Result<Region, RegionError> {
+        if self.child_region_ids.len() >= MAX_CHILD_REGION_IDS {
+            return Err(RegionError::CapacityExceeded {
+                region_id: self.id,
+                resource: "child_regions".to_string(),
+                capacity: MAX_CHILD_REGION_IDS,
+            });
+        }
         let child_cx = self.cx.child()?;
         let child = Region {
             id: next_region_id()?,
@@ -395,7 +416,7 @@ impl Region {
             quiescence_budget_ms,
         };
         let child_id = child.id;
-        push_bounded(&mut self.child_region_ids, child_id, MAX_CHILD_REGION_IDS);
+        self.child_region_ids.push(child_id);
         Ok(child)
     }
 
@@ -411,15 +432,18 @@ impl Region {
                 reason: reason.to_string(),
             });
         }
-        push_bounded(
-            &mut self.tasks,
-            RegionTask {
-                task_id: task_id.to_string(),
-                state: TaskState::Running,
-                registered_at_ms: 0,
-            },
-            MAX_TASKS,
-        );
+        if self.tasks.len() >= MAX_TASKS {
+            return Err(RegionError::CapacityExceeded {
+                region_id: self.id,
+                resource: "tasks".to_string(),
+                capacity: MAX_TASKS,
+            });
+        }
+        self.tasks.push(RegionTask {
+            task_id: task_id.to_string(),
+            state: TaskState::Running,
+            registered_at_ms: 0,
+        });
         Ok(())
     }
 
@@ -1029,12 +1053,23 @@ mod tests {
     }
 
     #[test]
-    fn push_bounded_over_capacity_discards_oldest_child_ids() {
-        let mut ids = vec![RegionId(1), RegionId(2), RegionId(3)];
+    fn register_task_fails_closed_when_capacity_exceeded() {
+        let mut region = Region::new_root(test_cx(), 5000).unwrap();
+        // Fill up to MAX_TASKS
+        for i in 0..MAX_TASKS {
+            region.register_task(&format!("task-{}", i)).unwrap();
+        }
 
-        push_bounded(&mut ids, RegionId(4), 2);
+        let err = region.register_task("task-overflow").unwrap_err();
 
-        assert_eq!(ids, vec![RegionId(3), RegionId(4)]);
+        assert_eq!(
+            err,
+            RegionError::CapacityExceeded {
+                region_id: region.id,
+                resource: "tasks".to_string(),
+                capacity: MAX_TASKS
+            }
+        );
     }
 
     #[test]

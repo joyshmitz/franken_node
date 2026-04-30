@@ -870,7 +870,7 @@ impl CertificationRegistry {
             if overflow > 0 {
                 self.chain_anchor_hash = Some(self.audit_trail[overflow - 1].entry_hash.clone());
             }
-            self.audit_trail.drain(0..overflow);
+            self.audit_trail.drain(0..overflow.min(self.audit_trail.len()));
         }
         self.audit_trail.push(entry);
     }
