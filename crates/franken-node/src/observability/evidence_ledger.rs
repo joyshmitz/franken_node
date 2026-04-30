@@ -917,7 +917,7 @@ fn format_ledger_eviction_event(
     evicted_size: usize,
 ) -> String {
     format!(
-        "{}: evicted entry={}, decision={}, epoch={}, freed_bytes={}",
+        "{}: evicted entry_id={}, decision={}, epoch={}, freed_bytes={}",
         event_codes::LEDGER_EVICTION,
         evicted_id,
         evicted_entry.decision_id.as_str(),
@@ -3783,7 +3783,7 @@ mod tests {
             );
             assert_eq!(
                 format!("{}", format_ledger_eviction_event(EntryId(8), &entry, 456)),
-                "EVD-LEDGER-002: evicted entry=E-00000008, decision=DEC-STRUCT, epoch=7, freed_bytes=456"
+                "EVD-LEDGER-002: evicted entry_id=E-00000008, decision=DEC-STRUCT, epoch=7, freed_bytes=456"
             );
         }
 

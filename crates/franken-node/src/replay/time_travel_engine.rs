@@ -48,6 +48,10 @@ use crate::capacity_defaults::aliases::{
 
 const MAX_SIDE_EFFECTS_PER_STEP: usize = crate::capacity_defaults::base::TRACE;
 
+/// Maximum allowed clock drift tolerance in nanoseconds (1 second).
+/// Replays with timestamp drifts beyond this threshold trigger ERR_REPLAY_CLOCK_DRIFT.
+const CLOCK_DRIFT_TOLERANCE_NS: u64 = 1_000_000_000;
+
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
         items.clear();
@@ -914,6 +918,17 @@ pub enum DivergenceKind {
     SideEffectMismatch,
     /// Both output and side-effects differ.
     FullMismatch,
+    /// Timestamp drift beyond tolerance detected.
+    ClockDrift {
+        /// Expected timestamp in nanoseconds.
+        expected_ns: u64,
+        /// Actual timestamp in nanoseconds.
+        actual_ns: u64,
+        /// Drift amount in nanoseconds.
+        drift_ns: u64,
+        /// Maximum allowed drift tolerance in nanoseconds.
+        tolerance_ns: u64,
+    },
 }
 
 impl fmt::Display for DivergenceKind {
@@ -922,6 +937,16 @@ impl fmt::Display for DivergenceKind {
             Self::OutputMismatch => write!(f, "output_mismatch"),
             Self::SideEffectMismatch => write!(f, "side_effect_mismatch"),
             Self::FullMismatch => write!(f, "full_mismatch"),
+            Self::ClockDrift {
+                expected_ns,
+                actual_ns,
+                drift_ns,
+                tolerance_ns,
+            } => write!(
+                f,
+                "clock_drift(expected={}ns, actual={}ns, drift={}ns, tolerance={}ns)",
+                expected_ns, actual_ns, drift_ns, tolerance_ns
+            ),
         }
     }
 }
@@ -1101,7 +1126,64 @@ impl ReplayEngine {
             let effects_match =
                 constant_time::ct_eq(&original_effects_digest, &replayed_effects_digest);
 
-            if output_match && effects_match {
+            // Check for clock drift in timestamps (ERR_REPLAY_CLOCK_DRIFT)
+            let mut clock_drift_detected = false;
+            let mut clock_drift_divergence: Option<Divergence> = None;
+
+            // Extract timestamp from side effects if present
+            if let Some(original_clock_effect) = step.side_effects.iter().find(|e| e.kind == "clock_read") {
+                if let Some(replayed_clock_effect) = replayed_effects.iter().find(|e| e.kind == "clock_read") {
+                    if original_clock_effect.payload.len() >= 8 && replayed_clock_effect.payload.len() >= 8 {
+                        let original_timestamp = u64::from_le_bytes(
+                            original_clock_effect.payload[0..8].try_into().unwrap_or([0; 8])
+                        );
+                        let replayed_timestamp = u64::from_le_bytes(
+                            replayed_clock_effect.payload[0..8].try_into().unwrap_or([0; 8])
+                        );
+
+                        let drift_ns = if replayed_timestamp >= original_timestamp {
+                            replayed_timestamp.saturating_sub(original_timestamp)
+                        } else {
+                            original_timestamp.saturating_sub(replayed_timestamp)
+                        };
+
+                        if drift_ns > CLOCK_DRIFT_TOLERANCE_NS {
+                            clock_drift_detected = true;
+                            let explanation = format!(
+                                "Clock drift detected: {}ns exceeds tolerance {}ns",
+                                drift_ns, CLOCK_DRIFT_TOLERANCE_NS
+                            );
+
+                            // TTR-007: Clock drift detected
+                            push_bounded(
+                                &mut self.audit_log,
+                                AuditEntry::new(
+                                    "TTR-007",
+                                    trace_id,
+                                    &explanation,
+                                    step.timestamp_ns,
+                                ),
+                                MAX_AUDIT_LOG_ENTRIES,
+                            );
+
+                            clock_drift_divergence = Some(Divergence {
+                                step_seq: step.seq,
+                                kind: DivergenceKind::ClockDrift {
+                                    expected_ns: original_timestamp,
+                                    actual_ns: replayed_timestamp,
+                                    drift_ns,
+                                    tolerance_ns: CLOCK_DRIFT_TOLERANCE_NS,
+                                },
+                                expected_digest: format!("timestamp_{}", original_timestamp),
+                                actual_digest: format!("timestamp_{}", replayed_timestamp),
+                                explanation,
+                            });
+                        }
+                    }
+                }
+            }
+
+            if output_match && effects_match && !clock_drift_detected {
                 // TTR-005: step identical
                 push_bounded(
                     &mut self.audit_log,
@@ -1115,36 +1197,49 @@ impl ReplayEngine {
                 );
             } else {
                 divergence_count = divergence_count.saturating_add(1);
-                let kind = match (output_match, effects_match) {
-                    (false, true) => DivergenceKind::OutputMismatch,
-                    (true, false) => DivergenceKind::SideEffectMismatch,
-                    _ => DivergenceKind::FullMismatch,
-                };
-                let explanation = format!(
-                    "Step {} diverged: kind={}, output_match={}, effects_match={}",
-                    step.seq, kind, output_match, effects_match
-                );
-                // TTR-006: step diverged
-                push_bounded(
-                    &mut self.audit_log,
-                    AuditEntry::new(
-                        event_codes::TTR_006,
-                        trace_id,
-                        &explanation,
-                        step.timestamp_ns,
-                    ),
-                    MAX_AUDIT_LOG_ENTRIES,
-                );
-                // Preserve the earliest divergences so replay diagnostics keep the
-                // first point of failure instead of silently evicting it.
-                if divergences.len() < MAX_DIVERGENCES {
-                    divergences.push(Divergence {
-                        step_seq: step.seq,
-                        kind,
-                        expected_digest: original_output_digest,
-                        actual_digest: replayed_output_digest,
-                        explanation,
-                    });
+
+                // Handle clock drift divergence separately
+                if clock_drift_detected {
+                    if let Some(drift_divergence) = clock_drift_divergence {
+                        if divergences.len() < MAX_DIVERGENCES {
+                            divergences.push(drift_divergence);
+                        }
+                    }
+                } else {
+                    // Handle output/effects mismatches
+                    let kind = match (output_match, effects_match) {
+                        (false, true) => DivergenceKind::OutputMismatch,
+                        (true, false) => DivergenceKind::SideEffectMismatch,
+                        _ => DivergenceKind::FullMismatch,
+                    };
+                    let explanation = format!(
+                        "Step {} diverged: kind={}, output_match={}, effects_match={}",
+                        step.seq, kind, output_match, effects_match
+                    );
+
+                    // TTR-006: step diverged
+                    push_bounded(
+                        &mut self.audit_log,
+                        AuditEntry::new(
+                            event_codes::TTR_006,
+                            trace_id,
+                            &explanation,
+                            step.timestamp_ns,
+                        ),
+                        MAX_AUDIT_LOG_ENTRIES,
+                    );
+
+                    // Preserve the earliest divergences so replay diagnostics keep the
+                    // first point of failure instead of silently evicting it.
+                    if divergences.len() < MAX_DIVERGENCES {
+                        divergences.push(Divergence {
+                            step_seq: step.seq,
+                            kind,
+                            expected_digest: original_output_digest,
+                            actual_digest: replayed_output_digest,
+                            explanation,
+                        });
+                    }
                 }
             }
 
