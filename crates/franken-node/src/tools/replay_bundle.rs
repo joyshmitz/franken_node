@@ -1462,11 +1462,11 @@ fn reject_duplicate_chunk_offsets(bundle: &ReplayBundle) -> Result<(), ReplayBun
 }
 
 fn reject_non_monotonic_chunk_timestamps(bundle: &ReplayBundle) -> Result<(), ReplayBundleError> {
+    let mut global_previous: Option<(String, i64)> = None;
     for chunk in &bundle.chunks {
-        let mut previous_timestamp: Option<(String, i64)> = None;
         for event in &chunk.events {
             let (_, next_micros) = normalize_timestamp(&event.timestamp)?;
-            if let Some((previous, previous_micros)) = &previous_timestamp
+            if let Some((previous, previous_micros)) = &global_previous
                 && next_micros < *previous_micros
             {
                 return Err(ReplayBundleError::NonMonotonicChunkTimestamp {
@@ -1475,9 +1475,26 @@ fn reject_non_monotonic_chunk_timestamps(bundle: &ReplayBundle) -> Result<(), Re
                     next: event.timestamp.clone(),
                 });
             }
-            previous_timestamp = Some((event.timestamp.clone(), next_micros));
+            global_previous = Some((event.timestamp.clone(), next_micros));
         }
     }
+    
+    // Also verify the global timeline is monotonic
+    let mut timeline_previous: Option<(String, i64)> = None;
+    for event in &bundle.timeline {
+        let (_, next_micros) = normalize_timestamp(&event.timestamp)?;
+        if let Some((previous, previous_micros)) = &timeline_previous
+            && next_micros < *previous_micros
+        {
+            return Err(ReplayBundleError::NonMonotonicChunkTimestamp {
+                chunk_index: 0, // Using 0 for global timeline
+                previous: previous.clone(),
+                next: event.timestamp.clone(),
+            });
+        }
+        timeline_previous = Some((event.timestamp.clone(), next_micros));
+    }
+    
     Ok(())
 }
 
