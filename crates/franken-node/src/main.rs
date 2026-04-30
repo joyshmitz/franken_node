@@ -136,7 +136,7 @@ use frankenengine_node::{
             DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary, PublisherIdentity,
             ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard,
             TrustCardError, TrustCardInput, TrustCardListFilter, TrustCardMutation,
-            TrustCardRegistry, TrustCardSyncReport, render_comparison_human,
+            TrustCardRegistry, TrustCardSyncReport, SnapshotSourceContext, render_comparison_human,
             render_trust_card_human, to_canonical_json as trust_card_to_json,
         },
     },
@@ -7573,7 +7573,7 @@ fn maybe_auto_quarantine_run_dependencies(
         .card_cache_ttl_secs
         .unwrap_or(config::timeouts::TRUST_CARD_CACHE_TTL_SECS);
     let mut registry =
-        TrustCardRegistry::load_authoritative_state(&registry_path, cache_ttl, now_secs)
+        TrustCardRegistry::load_authoritative_state(&registry_path, cache_ttl, now_secs, SnapshotSourceContext::TrustedFile)
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
     let now_rfc3339 = rfc3339_timestamp_from_secs(now_secs);
     let mut quarantined = Vec::new();
@@ -12314,7 +12314,7 @@ fn trust_card_cli_registry(now_secs: u64) -> Result<TrustCardCliRegistryState> {
         .trust
         .card_cache_ttl_secs
         .unwrap_or(config::timeouts::TRUST_CARD_CACHE_TTL_SECS);
-    let registry = TrustCardRegistry::load_authoritative_state(&path, cache_ttl, now_secs)
+    let registry = TrustCardRegistry::load_authoritative_state(&path, cache_ttl, now_secs, SnapshotSourceContext::TrustedFile)
         .map_err(|err| anyhow::anyhow!(err.to_string()))?;
     Ok(TrustCardCliRegistryState {
         path,
@@ -12616,7 +12616,7 @@ fn trust_scan_registry_state(
     ensure_state_dir(project_root)?;
     let path = project_root.join(TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH);
     let registry = if path.is_file() {
-        TrustCardRegistry::load_authoritative_state(&path, 60, now_secs)
+        TrustCardRegistry::load_authoritative_state(&path, 60, now_secs, SnapshotSourceContext::TrustedFile)
             .map_err(|err| anyhow::anyhow!(err.to_string()))?
     } else {
         let registry = TrustCardRegistry::default();
@@ -13605,6 +13605,7 @@ fn evaluate_run_trust_preflight(
                     &authoritative_registry,
                     cache_ttl,
                     now_secs,
+                    SnapshotSourceContext::TrustedFile,
                 ) {
                     Ok(mut registry) => {
                         let mut warnings = Vec::new();
@@ -22812,7 +22813,7 @@ mod run_trust_gate_tests {
 
         let registry_path = tmp.path().join(TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH);
         let mut registry =
-            TrustCardRegistry::load_authoritative_state(&registry_path, 60, 2_000).expect("load");
+            TrustCardRegistry::load_authoritative_state(&registry_path, 60, 2_000, SnapshotSourceContext::TrustedFile).expect("load");
         registry
             .update(
                 "npm:@acme/auth-guard",
@@ -23171,7 +23172,7 @@ mod run_trust_gate_tests {
 
         let registry_path = tmp.path().join(TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH);
         let mut registry =
-            TrustCardRegistry::load_authoritative_state(&registry_path, 60, 3_000).expect("load");
+            TrustCardRegistry::load_authoritative_state(&registry_path, 60, 3_000, SnapshotSourceContext::TrustedFile).expect("load");
         let card = registry
             .read("npm:@acme/auth-guard", 3_000, "trace-test-auto-quarantine")
             .expect("read")

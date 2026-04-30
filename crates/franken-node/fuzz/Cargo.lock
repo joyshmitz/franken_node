@@ -685,6 +685,7 @@ version = "0.0.0"
 dependencies = [
  "frankenengine-node",
  "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
