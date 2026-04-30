@@ -272,6 +272,22 @@ pub fn run_harness(
         };
     }
 
+    // Build receipt index
+    let receipt_index: BTreeMap<&str, &PolicyReceipt> = receipts
+        .iter()
+        .map(|r| (r.divergence_id.as_str(), r))
+        .collect();
+
+    let mut block_reasons: Vec<ReleaseBlockReason> = Vec::new();
+    let mut high_risk_unresolved = Vec::new();
+    let mut missing_receipt = Vec::new();
+    let mut broken_l1 = Vec::new();
+
+    let mut high = 0usize;
+    let mut medium = 0usize;
+    let mut low = 0usize;
+    let mut receipted = 0usize;
+
     for sample in samples {
         let fe_digest = digest_bytes(&sample.franken_engine_output);
 
@@ -322,93 +338,75 @@ pub fn run_harness(
                         sample.boundary_name, rt.runtime_id
                     ),
                 };
-                push_bounded(
-                    &mut divergences,
-                    BoundaryDivergence {
-                        divergence_id: format!("div-{div_counter:04}"),
-                        boundary_name: sample.boundary_name.clone(),
-                        franken_engine_output_digest: fe_digest.clone(),
-                        reference_output_digest: ref_digest,
-                        reference_runtime: rt.clone(),
-                        risk_tier,
-                        classification_reason: reason,
-                        l1_oracle_link: None,
-                    },
-                    MAX_DIVERGENCES,
-                );
-            }
-        }
-    }
+                
+                let div = BoundaryDivergence {
+                    divergence_id: format!("div-{div_counter:04}"),
+                    boundary_name: sample.boundary_name.clone(),
+                    franken_engine_output_digest: fe_digest.clone(),
+                    reference_output_digest: ref_digest,
+                    reference_runtime: rt.clone(),
+                    risk_tier,
+                    classification_reason: reason,
+                    l1_oracle_link: None,
+                };
 
-    // Build receipt index
-    let receipt_index: BTreeMap<&str, &PolicyReceipt> = receipts
-        .iter()
-        .map(|r| (r.divergence_id.as_str(), r))
-        .collect();
-
-    let mut block_reasons: Vec<ReleaseBlockReason> = Vec::new();
-    let mut high_risk_unresolved = Vec::new();
-    let mut missing_receipt = Vec::new();
-    let mut broken_l1 = Vec::new();
-
-    let mut high = 0usize;
-    let mut medium = 0usize;
-    let mut low = 0usize;
-    let mut receipted = 0usize;
-
-    for div in &divergences {
-        match div.risk_tier {
-            RiskTier::High => {
-                high = high.saturating_add(1);
-                // INV-ORACLE-HIGH-RISK-BLOCKS: high risk always blocks.
-                push_bounded(
-                    &mut high_risk_unresolved,
-                    div.divergence_id.clone(),
-                    MAX_DIVERGENCES,
-                );
-            }
-            RiskTier::Medium | RiskTier::Low => {
                 match div.risk_tier {
-                    RiskTier::Medium => medium = medium.saturating_add(1),
-                    RiskTier::Low => low = low.saturating_add(1),
-                    _ => unreachable!("outer arm constrains to Medium|Low"),
-                }
-                match receipt_index.get(div.divergence_id.as_str()) {
-                    Some(receipt) => {
-                        if receipt_invalid_for_divergence(receipt, div) {
-                            push_bounded(
-                                &mut block_reasons,
-                                ReleaseBlockReason::ClassificationAmbiguous {
-                                    divergence_id: div.divergence_id.clone(),
-                                },
-                                MAX_BLOCK_REASONS,
-                            );
-                            continue;
-                        }
-                        // INV-ORACLE-L1-LINKAGE: receipt must have valid L1 link.
-                        if config.require_l1_links
-                            && receipt.l1_oracle_result_link.trim().is_empty()
-                        {
-                            push_bounded(
-                                &mut broken_l1,
-                                div.divergence_id.clone(),
-                                MAX_DIVERGENCES,
-                            );
-                        } else {
-                            // ORACLE_POLICY_RECEIPT_ISSUED
-                            let _ = event_codes::ORACLE_POLICY_RECEIPT_ISSUED;
-                            receipted = receipted.saturating_add(1);
-                        }
-                    }
-                    None => {
-                        // INV-ORACLE-LOW-RISK-RECEIPTED
+                    RiskTier::High => {
+                        high = high.saturating_add(1);
+                        // INV-ORACLE-HIGH-RISK-BLOCKS: high risk always blocks.
                         push_bounded(
-                            &mut missing_receipt,
+                            &mut high_risk_unresolved,
                             div.divergence_id.clone(),
                             MAX_DIVERGENCES,
                         );
                     }
+                    RiskTier::Medium | RiskTier::Low => {
+                        match div.risk_tier {
+                            RiskTier::Medium => medium = medium.saturating_add(1),
+                            RiskTier::Low => low = low.saturating_add(1),
+                            _ => unreachable!("outer arm constrains to Medium|Low"),
+                        }
+                        match receipt_index.get(div.divergence_id.as_str()) {
+                            Some(&receipt) => {
+                                if receipt_invalid_for_divergence(receipt, &div) {
+                                    push_bounded(
+                                        &mut block_reasons,
+                                        ReleaseBlockReason::ClassificationAmbiguous {
+                                            divergence_id: div.divergence_id.clone(),
+                                        },
+                                        MAX_BLOCK_REASONS,
+                                    );
+                                } else if config.require_l1_links
+                                    && receipt.l1_oracle_result_link.trim().is_empty()
+                                {
+                                    push_bounded(
+                                        &mut broken_l1,
+                                        div.divergence_id.clone(),
+                                        MAX_DIVERGENCES,
+                                    );
+                                } else {
+                                    // ORACLE_POLICY_RECEIPT_ISSUED
+                                    let _ = event_codes::ORACLE_POLICY_RECEIPT_ISSUED;
+                                    receipted = receipted.saturating_add(1);
+                                }
+                            }
+                            None => {
+                                // INV-ORACLE-LOW-RISK-RECEIPTED
+                                push_bounded(
+                                    &mut missing_receipt,
+                                    div.divergence_id.clone(),
+                                    MAX_DIVERGENCES,
+                                );
+                            }
+                        }
+                    }
                 }
+
+                push_bounded(
+                    &mut divergences,
+                    div,
+                    MAX_DIVERGENCES,
+                );
             }
         }
     }
