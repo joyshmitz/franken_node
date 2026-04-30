@@ -20,6 +20,7 @@ pub const CR_LOOKUP_UNKNOWN: &str = "CR_LOOKUP_UNKNOWN";
 pub const CR_LOOKUP_MALFORMED: &str = "CR_LOOKUP_MALFORMED";
 pub const CR_VERSION_UPGRADED: &str = "CR_VERSION_UPGRADED";
 pub const CR_DISPATCH_GATED: &str = "CR_DISPATCH_GATED";
+pub const CR_REGISTRY_REJECTED: &str = "CR_REGISTRY_REJECTED";
 
 /// Maximum number of audit events before oldest-first eviction.
 const MAX_AUDIT_EVENTS: usize = 4096;
@@ -217,6 +218,15 @@ impl ComputationRegistry {
         trace_id: &str,
     ) -> Result<(), ComputationRegistryError> {
         if new_version <= self.registry_version {
+            self.record_event(
+                CR_REGISTRY_REJECTED,
+                trace_id,
+                None,
+                format!(
+                    "version bump rejected current={} requested={new_version}",
+                    self.registry_version
+                ),
+            );
             return Err(ComputationRegistryError::VersionRegression {
                 current: self.registry_version,
                 requested: new_version,
@@ -251,21 +261,49 @@ impl ComputationRegistry {
             return Err(ComputationRegistryError::MalformedComputationName { name: entry.name });
         }
         if entry.description.is_empty() {
+            self.record_event(
+                CR_REGISTRY_REJECTED,
+                trace_id,
+                Some(entry.name.clone()),
+                "registration rejected reason=description cannot be empty".to_string(),
+            );
             return Err(ComputationRegistryError::InvalidComputationEntry {
                 name: entry.name,
                 reason: "description cannot be empty".to_string(),
             });
         }
         if entry.input_schema.is_empty() || entry.output_schema.is_empty() {
+            self.record_event(
+                CR_REGISTRY_REJECTED,
+                trace_id,
+                Some(entry.name.clone()),
+                "registration rejected reason=input_schema and output_schema are required"
+                    .to_string(),
+            );
             return Err(ComputationRegistryError::InvalidComputationEntry {
                 name: entry.name,
                 reason: "input_schema and output_schema are required".to_string(),
             });
         }
         if self.entries.contains_key(&entry.name) {
+            self.record_event(
+                CR_REGISTRY_REJECTED,
+                trace_id,
+                Some(entry.name.clone()),
+                "registration rejected reason=duplicate computation".to_string(),
+            );
             return Err(ComputationRegistryError::DuplicateComputation { name: entry.name });
         }
         if self.entries.len() >= MAX_COMPUTATION_ENTRIES {
+            self.record_event(
+                CR_REGISTRY_REJECTED,
+                trace_id,
+                Some(entry.name.clone()),
+                format!(
+                    "registration rejected reason=registry at capacity current={} max={MAX_COMPUTATION_ENTRIES}",
+                    self.entries.len()
+                ),
+            );
             return Err(ComputationRegistryError::InvalidComputationEntry {
                 name: entry.name,
                 reason: format!(
@@ -894,6 +932,16 @@ mod tests {
             .register_computation(entry, "trace-register-b")
             .expect_err("duplicate must fail");
         assert_eq!(err.code(), ERR_DUPLICATE_COMPUTATION);
+        let event = registry
+            .audit_events()
+            .last()
+            .expect("duplicate registration must emit a rejection event");
+        assert_eq!(event.event_code, CR_REGISTRY_REJECTED);
+        assert_eq!(event.trace_id, "trace-register-b");
+        assert_eq!(
+            event.computation_name.as_deref(),
+            Some("trust.verify_manifest.v1")
+        );
     }
 
     #[test]
@@ -1332,7 +1380,7 @@ mod tests {
     }
 
     #[test]
-    fn same_version_bump_is_rejected_without_audit_or_version_change() {
+    fn same_version_bump_records_rejection_audit_without_version_change() {
         let mut registry = ComputationRegistry::new(7, "trace-load");
         let audit_len = registry.audit_events().len();
 
@@ -1342,11 +1390,17 @@ mod tests {
 
         assert_eq!(err.code(), ERR_REGISTRY_VERSION_REGRESSION);
         assert_eq!(registry.registry_version(), 7);
-        assert_eq!(registry.audit_events().len(), audit_len);
+        assert_eq!(registry.audit_events().len(), audit_len + 1);
+        let event = registry
+            .audit_events()
+            .last()
+            .expect("same-version rejection must be audited");
+        assert_eq!(event.event_code, CR_REGISTRY_REJECTED);
+        assert_eq!(event.trace_id, "trace-same-version");
     }
 
     #[test]
-    fn lower_version_bump_is_rejected_without_audit_or_version_change() {
+    fn lower_version_bump_records_rejection_audit_without_version_change() {
         let mut registry = ComputationRegistry::new(7, "trace-load");
         let audit_len = registry.audit_events().len();
 
@@ -1356,7 +1410,13 @@ mod tests {
 
         assert_eq!(err.code(), ERR_REGISTRY_VERSION_REGRESSION);
         assert_eq!(registry.registry_version(), 7);
-        assert_eq!(registry.audit_events().len(), audit_len);
+        assert_eq!(registry.audit_events().len(), audit_len + 1);
+        let event = registry
+            .audit_events()
+            .last()
+            .expect("lower-version rejection must be audited");
+        assert_eq!(event.event_code, CR_REGISTRY_REJECTED);
+        assert_eq!(event.trace_id, "trace-lower-version");
     }
 
     #[test]
@@ -1456,7 +1516,7 @@ mod tests {
     }
 
     #[test]
-    fn registration_capacity_rejection_does_not_record_success_event() {
+    fn registration_capacity_rejection_records_rejection_event_not_success() {
         let mut registry = ComputationRegistry::new(1, "trace-load");
         for idx in 0..MAX_COMPUTATION_ENTRIES {
             let entry = sample_entry(&format!("d{idx}.action.v1"));
@@ -1470,7 +1530,14 @@ mod tests {
 
         assert_eq!(err.code(), ERR_INVALID_COMPUTATION_ENTRY);
         assert!(err.to_string().contains("registry at capacity"));
-        assert_eq!(registry.audit_events().len(), audit_len_before);
+        assert_eq!(registry.audit_events().len(), audit_len_before + 1);
+        let event = registry
+            .audit_events()
+            .last()
+            .expect("capacity rejection must be audited");
+        assert_eq!(event.event_code, CR_REGISTRY_REJECTED);
+        assert_eq!(event.trace_id, "trace-overflow");
+        assert_eq!(event.computation_name.as_deref(), Some("overflow.action.v1"));
         assert!(!registry.entries.contains_key("overflow.action.v1"));
     }
 
@@ -1585,7 +1652,7 @@ mod tests {
     }
 
     #[test]
-    fn version_regression_error_does_not_record_trace_id() {
+    fn version_regression_error_records_trace_id() {
         let mut registry = ComputationRegistry::new(4, "trace-load");
         let audit_len_before = registry.audit_events().len();
 
@@ -1595,13 +1662,13 @@ mod tests {
 
         assert_eq!(err.code(), ERR_REGISTRY_VERSION_REGRESSION);
         assert_eq!(registry.registry_version(), 4);
-        assert_eq!(registry.audit_events().len(), audit_len_before);
-        assert!(
-            !registry
-                .audit_events()
-                .iter()
-                .any(|event| event.trace_id == "trace-regression-ignored")
-        );
+        assert_eq!(registry.audit_events().len(), audit_len_before + 1);
+        let event = registry
+            .audit_events()
+            .last()
+            .expect("version regression must be audited");
+        assert_eq!(event.event_code, CR_REGISTRY_REJECTED);
+        assert_eq!(event.trace_id, "trace-regression-ignored");
     }
 
     #[test]
@@ -1696,7 +1763,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_version_registry_rejects_zero_version_bump_without_audit() {
+    fn zero_version_registry_rejects_zero_version_bump_with_audit() {
         let mut registry = ComputationRegistry::new(0, "trace-load-zero");
         let audit_len_before = registry.audit_events().len();
 
@@ -1706,7 +1773,13 @@ mod tests {
 
         assert_eq!(err.code(), ERR_REGISTRY_VERSION_REGRESSION);
         assert_eq!(registry.registry_version(), 0);
-        assert_eq!(registry.audit_events().len(), audit_len_before);
+        assert_eq!(registry.audit_events().len(), audit_len_before + 1);
+        let event = registry
+            .audit_events()
+            .last()
+            .expect("zero-version rejection must be audited");
+        assert_eq!(event.event_code, CR_REGISTRY_REJECTED);
+        assert_eq!(event.trace_id, "trace-zero-bump");
     }
 
     #[test]
