@@ -1144,8 +1144,8 @@ impl ReplayEngine {
 
                         // Handle wraparound-aware drift calculation
                         // Consider both forward and backward differences to handle u64 wraparound
-                        let forward_diff = replayed_timestamp.saturating_sub(original_timestamp);
-                        let backward_diff = original_timestamp.saturating_sub(replayed_timestamp);
+                        let forward_diff = replayed_timestamp.wrapping_sub(original_timestamp);
+                        let backward_diff = original_timestamp.wrapping_sub(replayed_timestamp);
                         let drift_ns = forward_diff.min(backward_diff);
 
                         if drift_ns > CLOCK_DRIFT_TOLERANCE_NS {
