@@ -545,6 +545,20 @@ impl RuntimeOracle {
 
         self.active_checks.insert(check_id.to_string(), true);
 
+        let quorum_required = quorum_required_for(self.runtimes.len(), self.quorum_threshold_percent)?;
+        if runtime_outputs.len() < quorum_required {
+            self.active_checks.remove(check_id);
+            return Err(OracleError {
+                code: error_codes::ERR_NVO_QUORUM_FAILED,
+                message: format!(
+                    "not enough runtime outputs provided for check '{}': {} < quorum {}",
+                    check_id,
+                    runtime_outputs.len(),
+                    quorum_required
+                ),
+            });
+        }
+
         let mut details = BTreeMap::new();
         details.insert("check_id".to_string(), check_id.to_string());
         details.insert(
