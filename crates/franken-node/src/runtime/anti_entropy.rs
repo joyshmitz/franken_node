@@ -937,7 +937,7 @@ impl AntiEntropyReconciler {
         // Phase 2: apply all validated records atomically.
         let mut applied = 0usize;
         for (record, replaced) in accepted {
-            if local.insert_batch(record) {
+            if local.insert_batch(record.clone()) {
                 applied = applied.saturating_add(1);
                 self.push_event(ReconciliationEvent {
                     code: EVT_RECORD_ACCEPTED.to_string(),

@@ -8346,14 +8346,48 @@ fn build_doctor_report_with_cwd_and_policy_input(
             move || {
                 if key_path_clone.exists() {
                     match std::fs::metadata(&key_path_clone) {
-                        Ok(meta) if meta.is_file() => (
-                            DoctorStatus::Pass,
-                            format!(
-                                "Receipt signing key file exists: {}",
-                                key_path_clone.display()
-                            ),
-                            "No action required.".to_string(),
-                        ),
+                        Ok(meta) if meta.is_file() => {
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                if meta.permissions().mode() & 0o444 == 0 {
+                                    return (
+                                        DoctorStatus::Fail,
+                                        format!(
+                                            "Receipt signing key file is not readable: {}",
+                                            key_path_clone.display()
+                                        ),
+                                        format!(
+                                            "Fix read permissions on {}.",
+                                            key_path_clone.display()
+                                        ),
+                                    );
+                                }
+                            }
+
+                            match std::fs::File::open(&key_path_clone) {
+                                Ok(_) => (
+                                    DoctorStatus::Pass,
+                                    format!(
+                                        "Receipt signing key file exists and is readable: {}",
+                                        key_path_clone.display()
+                                    ),
+                                    "No action required.".to_string(),
+                                ),
+                                Err(err) => (
+                                    DoctorStatus::Fail,
+                                    format!(
+                                        "Receipt signing key file is not readable: {}",
+                                        key_path_clone.display()
+                                    ),
+                                    format!(
+                                        "Fix read permissions on {} ({}).",
+                                        key_path_clone.display(),
+                                        err
+                                    ),
+                                ),
+                            }
+                        }
                         Ok(_) => (
                             DoctorStatus::Fail,
                             format!(
@@ -9850,6 +9884,37 @@ mod doctor_tests {
             security_check.message
         );
         assert!(security_check.message.contains("does not exist"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn doctor_fails_when_signing_key_file_is_not_readable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let unreadable_key = dir.path().join("unreadable.key");
+        std::fs::write(&unreadable_key, "test-key-material").expect("write signing key");
+        std::fs::set_permissions(&unreadable_key, std::fs::Permissions::from_mode(0o000))
+            .expect("remove read permissions");
+
+        let report = build_doctor_report_with_cwd(
+            &resolved_fixture_with_paths(Profile::Balanced, None, Some(unreadable_key), None),
+            "trace-unreadable-key",
+            Ok(PathBuf::from(".")),
+        );
+
+        let security_check = report
+            .checks
+            .iter()
+            .find(|c| c.code == "DR-SECURITY-013")
+            .expect("security check");
+        assert_eq!(
+            security_check.status,
+            DoctorStatus::Fail,
+            "security check should fail for unreadable key: {}",
+            security_check.message
+        );
+        assert!(security_check.message.contains("not readable"));
     }
 
     #[test]
