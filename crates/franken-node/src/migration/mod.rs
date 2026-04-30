@@ -2977,7 +2977,7 @@ fn contains_js_call_outside_literals(line: &str, function_name: &str) -> bool {
             let before = line[..index].chars().next_back();
             let after_name = &rest[function_name.len()..];
             let after = after_name.chars().next();
-            if before.is_none_or(|candidate| !is_js_identifier_continue(candidate))
+            if before.map_or(true, |candidate| !is_js_identifier_continue(candidate))
                 && after.is_some_and(|candidate| candidate == '(' || candidate.is_whitespace())
                 && after_name.trim_start().starts_with('(')
             {

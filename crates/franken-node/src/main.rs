@@ -15924,7 +15924,7 @@ fn search_registry_entries<'a>(
         .into_iter()
         .filter(|extension| extension_matches_query(extension, query))
         .map(|extension| (extension_assurance_level(extension), extension))
-        .filter(|(assurance, _)| min_assurance.is_none_or(|minimum| *assurance >= minimum))
+        .filter(|(assurance, _)| min_assurance.map_or(true, |minimum| *assurance >= minimum))
         .collect::<Vec<_>>();
 
     results.sort_by(|left, right| {

@@ -316,6 +316,9 @@ impl PerformanceBudgetGuard {
         }
 
         let mut path_results = Vec::new();
+        let mut total_paths = 0usize;
+        let mut paths_within_budget = 0usize;
+        let mut paths_over_budget = 0usize;
 
         for m in measurements {
             self.emit(
@@ -373,6 +376,12 @@ impl PerformanceBudgetGuard {
             }
 
             let within_budget = violations.is_empty();
+            total_paths = total_paths.saturating_add(1);
+            if within_budget {
+                paths_within_budget = paths_within_budget.saturating_add(1);
+            } else {
+                paths_over_budget = paths_over_budget.saturating_add(1);
+            }
 
             let flamegraph_path = if !within_budget {
                 // INV-PBG-FLAMEGRAPH-ON-FAIL: attempt capture
@@ -433,16 +442,12 @@ impl PerformanceBudgetGuard {
             );
         }
 
-        let total = path_results.len();
-        let passing = path_results.iter().filter(|r| r.within_budget).count();
-        let failing = total.saturating_sub(passing);
-
         Ok(GateResult {
-            overall_pass: failing == 0,
+            overall_pass: paths_over_budget == 0,
             path_results,
-            total_paths: total,
-            paths_within_budget: passing,
-            paths_over_budget: failing,
+            total_paths,
+            paths_within_budget,
+            paths_over_budget,
         })
     }
 

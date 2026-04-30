@@ -441,7 +441,7 @@ fn quorum_required_for(total_runtimes: usize, threshold_percent: u8) -> Result<u
         message: "invalid quorum calculation: runtime count conversion failed".to_string(),
     })?;
     let percent = u128::from(threshold_percent.clamp(1, 100));
-    let required = total.saturating_mul(percent).div_ceil(100);
+    let required = total.saturating_mul(percent).saturating_add(99) / 100;
     usize::try_from(required).map_err(|_| OracleError {
         code: error_codes::ERR_NVO_QUORUM_FAILED,
         message: "invalid quorum calculation: threshold exceeds platform capacity".to_string(),

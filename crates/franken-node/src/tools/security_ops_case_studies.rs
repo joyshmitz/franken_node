@@ -496,7 +496,7 @@ fn validate_case_study(case_study: &CaseStudy) -> Result<(), String> {
             .publication
             .industry_publication_name
             .as_ref()
-            .is_none_or(|name| name.trim().is_empty())
+            .map_or(true, |name| name.trim().is_empty())
     {
         return Err(
             "industry_publication_name required when submitted_to_industry_publication=true"

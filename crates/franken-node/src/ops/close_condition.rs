@@ -844,7 +844,7 @@ fn validate_engine_dependency_path(cargo_file: &Path, path_str: &str) -> bool {
         if let Some(prefix_len) = normalized.len().checked_sub(allowed.len()) {
             let suffix = &normalized[prefix_len..];
             if suffix == *allowed
-                && (prefix_len == 0 || normalized.chars().nth(prefix_len - 1) == Some('/'))
+                && (prefix_len == 0 || normalized.as_bytes()[prefix_len - 1] == b'/')
             {
                 return true;
             }

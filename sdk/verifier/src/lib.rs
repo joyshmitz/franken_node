@@ -1590,7 +1590,7 @@ fn transparency_merkle_proof(leaf_hashes: &[String], target_index: usize) -> Vec
         } else {
             index - 1
         };
-        let sibling_direction = if index.is_multiple_of(2) {
+        let sibling_direction = if index % 2 == 0 {
             "right"
         } else {
             "left"

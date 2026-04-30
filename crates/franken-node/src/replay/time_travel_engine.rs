@@ -1417,7 +1417,7 @@ mod tests {
         step: &TraceStep,
         _env: &EnvironmentSnapshot,
     ) -> (Vec<u8>, Vec<SideEffect>) {
-        if !step.seq.is_multiple_of(2) {
+        if step.seq % 2 != 0 {
             let mut output = step.output.clone();
             output.extend_from_slice(b":odd-divergence");
             (output, step.side_effects.clone())

@@ -496,7 +496,7 @@ fn merkle_audit_path(leaf_hashes: &[Hash], leaf_index: usize) -> Option<Vec<Hash
             level.push(level.last()?.clone());
         }
 
-        let sibling_idx = if idx.is_multiple_of(2) {
+        let sibling_idx = if idx % 2 == 0 {
             idx + 1
         } else {
             idx - 1

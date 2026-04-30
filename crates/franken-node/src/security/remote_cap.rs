@@ -822,7 +822,7 @@ fn validate_endpoint_prefix(prefix: &str) -> Result<(), String> {
     let _scheme = validate_endpoint_prefix_lexical(prefix)?;
     let parsed = Url::parse(prefix)
         .map_err(|source| format!("endpoint prefix '{}' is not a valid URL: {source}", prefix))?;
-    if parsed.host_str().is_none_or(str::is_empty) {
+    if parsed.host_str().map_or(true, str::is_empty) {
         return Err(format!(
             "endpoint prefix '{}' has no domain after scheme",
             prefix

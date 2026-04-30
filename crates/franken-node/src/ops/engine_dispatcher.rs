@@ -1125,7 +1125,7 @@ impl EngineDispatcher {
 
             command
                 .env(
-                    "FRANKEN_NODE_NETWORK_SSRF_PROTECTION_ENABLED",
+                    "FRANKEN_ENGINE_NETWORK_SSRF_PROTECTION_ENABLED",
                     if network_policy.ssrf_protection_enabled {
                         "1"
                     } else {
@@ -1133,7 +1133,7 @@ impl EngineDispatcher {
                     },
                 )
                 .env(
-                    "FRANKEN_NODE_NETWORK_BLOCK_CLOUD_METADATA",
+                    "FRANKEN_ENGINE_NETWORK_BLOCK_CLOUD_METADATA",
                     if network_policy.block_cloud_metadata {
                         "1"
                     } else {
@@ -1141,7 +1141,7 @@ impl EngineDispatcher {
                     },
                 )
                 .env(
-                    "FRANKEN_NODE_NETWORK_AUDIT_BLOCKED",
+                    "FRANKEN_ENGINE_NETWORK_AUDIT_BLOCKED",
                     if network_policy.audit_blocked_requests {
                         "1"
                     } else {
