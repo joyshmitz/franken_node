@@ -29,6 +29,7 @@ use std::collections::BTreeMap;
 
 use crate::capacity_defaults::aliases::{MAX_EVENTS, MAX_RESULTS};
 const MAX_REGISTERED_PROGRAMS: usize = 4096;
+const FRONTIER_DEMO_HASH_DOMAIN: &[u8] = b"frontier_demo_hash_v1:";
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
@@ -40,6 +41,13 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
         items.drain(0..overflow.min(items.len()));
     }
     items.push(item);
+}
+
+fn frontier_demo_hash(data: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(FRONTIER_DEMO_HASH_DOMAIN);
+    hasher.update(data);
+    hex::encode(hasher.finalize())
 }
 
 // ---------------------------------------------------------------------------
@@ -233,9 +241,7 @@ impl ReproducibilityManifest {
         });
         let bytes = serde_json::to_vec(&canonical)
             .unwrap_or_else(|e| format!("__serde_err:{e}").into_bytes());
-        hex::encode(Sha256::digest(
-            [b"frontier_demo_hash_v1:" as &[u8], &bytes[..]].concat(),
-        ))
+        frontier_demo_hash(&bytes)
     }
 
     /// Validate that the stored fingerprint matches the computed one.
@@ -266,9 +272,7 @@ impl ExternalVerifierBootstrap {
     pub fn new(manifest: ReproducibilityManifest, gate_results: Vec<DemoGateResult>) -> Self {
         let hash_input =
             serde_json::to_string(&gate_results).unwrap_or_else(|e| format!("__serde_err:{e}"));
-        let expected_hash = hex::encode(Sha256::digest(
-            [b"frontier_demo_hash_v1:" as &[u8], hash_input.as_bytes()].concat(),
-        ));
+        let expected_hash = frontier_demo_hash(hash_input.as_bytes());
         Self {
             schema_version: SCHEMA_VERSION.to_string(),
             manifest,
@@ -288,9 +292,7 @@ impl ExternalVerifierBootstrap {
     pub fn verify_results(&self, results: &[DemoGateResult]) -> bool {
         let hash_input =
             serde_json::to_string(results).unwrap_or_else(|e| format!("__serde_err:{e}"));
-        let computed = hex::encode(Sha256::digest(
-            [b"frontier_demo_hash_v1:" as &[u8], hash_input.as_bytes()].concat(),
-        ));
+        let computed = frontier_demo_hash(hash_input.as_bytes());
         crate::security::constant_time::ct_eq(&computed, &self.expected_output_hash)
     }
 }
@@ -398,9 +400,7 @@ impl DemoGateRunner {
             // Compute input fingerprint from corpus
             let corpus_json =
                 serde_json::to_string(&corpus).unwrap_or_else(|e| format!("__serde_err:{e}"));
-            let input_fp = hex::encode(Sha256::digest(
-                [b"frontier_demo_hash_v1:" as &[u8], corpus_json.as_bytes()].concat(),
-            ));
+            let input_fp = frontier_demo_hash(corpus_json.as_bytes());
             input_fps.insert(label.clone(), input_fp);
             output_fps.insert(label.clone(), result.output_fingerprint.clone());
             timing.insert(label, result.timing_ms);
@@ -498,9 +498,7 @@ impl FrontierDemoGate for DefaultDemoGate {
     fn execute(&self) -> DemoGateResult {
         let corpus_json =
             serde_json::to_string(&self.corpus).unwrap_or_else(|e| format!("__serde_err:{e}"));
-        let output_fp = hex::encode(Sha256::digest(
-            [b"frontier_demo_hash_v1:" as &[u8], corpus_json.as_bytes()].concat(),
-        ));
+        let output_fp = frontier_demo_hash(corpus_json.as_bytes());
         let detail = if self.should_pass {
             format!("{} gate passed", self.program.display_name())
         } else {
@@ -525,9 +523,7 @@ impl FrontierDemoGate for DefaultDemoGate {
 
     fn attestation(&self) -> String {
         let input = format!("{}:{}", self.program.label(), SCHEMA_VERSION);
-        hex::encode(Sha256::digest(
-            [b"frontier_demo_hash_v1:" as &[u8], input.as_bytes()].concat(),
-        ))
+        frontier_demo_hash(input.as_bytes())
     }
 }
 
@@ -573,9 +569,7 @@ fn derive_demo_gate_execution_metrics(
 
 /// Compute SHA-256 fingerprint of an arbitrary byte slice.
 pub fn sha256_fingerprint(data: &[u8]) -> String {
-    hex::encode(Sha256::digest(
-        [b"frontier_demo_hash_v1:" as &[u8], data].concat(),
-    ))
+    frontier_demo_hash(data)
 }
 
 // ---------------------------------------------------------------------------
