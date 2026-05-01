@@ -64,6 +64,26 @@ fn ensure_parent_dir(path: &Path) {
     }
 }
 
+fn write_text_fixture(path: &Path, contents: &str) {
+    ensure_parent_dir(path);
+    std::fs::write(path, contents)
+        .unwrap_or_else(|err| panic!("failed writing {}: {err}", path.display()));
+}
+
+fn write_authoritative_migration_record(
+    project_root: &Path,
+    migration_id: &str,
+    record: serde_json::Value,
+) {
+    let state_dir = project_root.join(".franken-node/state/migrations");
+    std::fs::create_dir_all(&state_dir).expect("create migration state dir");
+    std::fs::write(
+        state_dir.join(format!("{migration_id}.json")),
+        record.to_string(),
+    )
+    .expect("write migration record");
+}
+
 fn write_signed_release_fixture(release_dir: &Path, artifacts: &[(&str, &[u8])]) {
     let signing_key = fixture_artifact_signing_key(b"current");
     let manifest = build_and_sign_manifest(artifacts, &signing_key);
@@ -324,20 +344,25 @@ fn verify_module_rejects_unsupported_compat_version() {
 }
 
 #[test]
-fn verify_migration_passes_for_known_verify_lane() {
+fn verify_migration_source_present_without_state_is_unproven() {
     let output = run_cli(&["verify", "migration", "rewrite", "--json"]);
     assert!(
-        output.status.success(),
-        "verify migration should pass for known lane; stderr:\n{}",
+        !output.status.success(),
+        "verify migration source-only lane should not be authoritative; stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
 
     let payload = parse_json_stdout(&output);
     assert_eq!(payload["command"], "verify migration");
-    assert_eq!(payload["verdict"], "PASS");
-    assert_eq!(payload["status"], "pass");
-    assert_eq!(payload["exit_code"], 0);
+    assert_eq!(payload["verdict"], "UNPROVEN");
+    assert_eq!(payload["status"], "unproven");
+    assert_eq!(payload["exit_code"], 1);
     assert_eq!(payload["details"]["status"], "source_present");
+    assert_eq!(payload["details"]["authority"], "diagnostic_only");
+    assert_eq!(
+        payload["details"]["invariant_failures"][0]["invariant_id"],
+        "MIGRATION_EVIDENCE_RECORD_MISSING"
+    );
 }
 
 #[test]
@@ -403,16 +428,20 @@ fn verify_compatibility_accepts_previous_major_compat_version() {
 #[test]
 fn verify_migration_reads_state_record_and_checks_post_conditions() {
     let temp = TempDir::new().expect("temp dir");
-    let state_dir = temp.path().join(".franken-node/state/migrations");
-    std::fs::create_dir_all(&state_dir).expect("create migration state dir");
     let artifact_path = temp.path().join("dist/server.js");
-    ensure_parent_dir(&artifact_path);
-    std::fs::write(&artifact_path, "console.log('ok');").expect("write migration artifact");
-    std::fs::write(
-        state_dir.join("rewrite.json"),
+    let validation_path = temp.path().join("evidence/rewrite-validation.json");
+    write_text_fixture(&artifact_path, "console.log('ok');");
+    write_text_fixture(&validation_path, "{\"validated\":true}\n");
+    write_authoritative_migration_record(
+        temp.path(),
+        "rewrite",
         serde_json::json!({
+            "schema_version": "franken-node/migration-evidence/v1",
             "migration_id": "rewrite",
+            "project_root": temp.path().display().to_string(),
             "status": "applied",
+            "post_conditions_met": true,
+            "validation_record_path": "evidence/rewrite-validation.json",
             "post_conditions": [
                 "dist/server.js",
                 {
@@ -421,10 +450,8 @@ fn verify_migration_reads_state_record_and_checks_post_conditions() {
                     "contains": "console.log"
                 }
             ]
-        })
-        .to_string(),
-    )
-    .expect("write migration record");
+        }),
+    );
 
     let output = run_cli_in_dir(temp.path(), &["verify", "migration", "rewrite", "--json"]);
     assert!(
@@ -436,7 +463,15 @@ fn verify_migration_reads_state_record_and_checks_post_conditions() {
     let payload = parse_json_stdout(&output);
     assert_eq!(payload["verdict"], "PASS");
     assert_eq!(payload["details"]["status"], "applied");
+    assert_eq!(payload["details"]["authority"], "authoritative");
     assert_eq!(payload["details"]["post_conditions_met"], true);
+    assert_eq!(
+        payload["details"]["invariant_failures"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
     assert!(
         payload["details"]["record_path"]
             .as_str()
@@ -448,20 +483,25 @@ fn verify_migration_reads_state_record_and_checks_post_conditions() {
 #[test]
 fn verify_migration_fails_when_post_condition_is_missing() {
     let temp = TempDir::new().expect("temp dir");
-    let state_dir = temp.path().join(".franken-node/state/migrations");
-    std::fs::create_dir_all(&state_dir).expect("create migration state dir");
-    std::fs::write(
-        state_dir.join("rewrite.json"),
+    write_text_fixture(
+        &temp.path().join("evidence/rewrite-validation.json"),
+        "{\"validated\":false}\n",
+    );
+    write_authoritative_migration_record(
+        temp.path(),
+        "rewrite",
         serde_json::json!({
+            "schema_version": "franken-node/migration-evidence/v1",
             "migration_id": "rewrite",
+            "project_root": temp.path().display().to_string(),
             "status": "applied",
+            "post_conditions_met": true,
+            "validation_record_path": "evidence/rewrite-validation.json",
             "post_conditions": [
                 "dist/missing.js"
             ]
-        })
-        .to_string(),
-    )
-    .expect("write migration record");
+        }),
+    );
 
     let output = run_cli_in_dir(temp.path(), &["verify", "migration", "rewrite", "--json"]);
     assert!(
@@ -473,11 +513,123 @@ fn verify_migration_fails_when_post_condition_is_missing() {
     assert_eq!(payload["verdict"], "FAIL");
     assert_eq!(payload["details"]["status"], "applied");
     assert_eq!(payload["details"]["post_conditions_met"], false);
+    assert_eq!(
+        payload["details"]["invariant_failures"][0]["invariant_id"],
+        "MIGRATION_EVIDENCE_POST_CONDITIONS_FAILED"
+    );
     assert!(
         payload["details"]["diff_summary"]
             .as_str()
             .unwrap_or_default()
             .contains("dist/missing.js")
+    );
+}
+
+#[test]
+fn verify_migration_fails_when_record_schema_is_missing() {
+    let temp = TempDir::new().expect("temp dir");
+    write_text_fixture(
+        &temp.path().join("evidence/rewrite-validation.json"),
+        "{\"validated\":true}\n",
+    );
+    write_authoritative_migration_record(
+        temp.path(),
+        "rewrite",
+        serde_json::json!({
+            "migration_id": "rewrite",
+            "project_root": temp.path().display().to_string(),
+            "status": "applied",
+            "post_conditions_met": true,
+            "validation_record_path": "evidence/rewrite-validation.json"
+        }),
+    );
+
+    let output = run_cli_in_dir(temp.path(), &["verify", "migration", "rewrite", "--json"]);
+    assert!(
+        !output.status.success(),
+        "verify migration should fail when schema_version is missing"
+    );
+
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["verdict"], "FAIL");
+    assert_eq!(
+        payload["details"]["invariant_failures"][0]["invariant_id"],
+        "MIGRATION_EVIDENCE_SCHEMA_MISSING"
+    );
+    assert!(
+        payload["details"]["missing_fields"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::Value::String("schema_version".to_string()))
+    );
+}
+
+#[test]
+fn verify_migration_fails_when_record_scope_mismatches_project_root() {
+    let temp = TempDir::new().expect("temp dir");
+    let other_root = TempDir::new().expect("other root");
+    write_text_fixture(
+        &temp.path().join("evidence/rewrite-validation.json"),
+        "{\"validated\":true}\n",
+    );
+    write_authoritative_migration_record(
+        temp.path(),
+        "rewrite",
+        serde_json::json!({
+            "schema_version": "franken-node/migration-evidence/v1",
+            "migration_id": "rewrite",
+            "project_root": other_root.path().display().to_string(),
+            "status": "applied",
+            "post_conditions_met": true,
+            "validation_record_path": "evidence/rewrite-validation.json"
+        }),
+    );
+
+    let output = run_cli_in_dir(temp.path(), &["verify", "migration", "rewrite", "--json"]);
+    assert!(
+        !output.status.success(),
+        "verify migration should fail when project_root is from another workspace"
+    );
+
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["verdict"], "FAIL");
+    assert_eq!(
+        payload["details"]["invariant_failures"][0]["invariant_id"],
+        "MIGRATION_EVIDENCE_PROJECT_ROOT_MISMATCH"
+    );
+}
+
+#[test]
+fn verify_migration_fails_when_record_id_mismatches_request() {
+    let temp = TempDir::new().expect("temp dir");
+    write_text_fixture(
+        &temp.path().join("evidence/rewrite-validation.json"),
+        "{\"validated\":true}\n",
+    );
+    write_authoritative_migration_record(
+        temp.path(),
+        "rewrite",
+        serde_json::json!({
+            "schema_version": "franken-node/migration-evidence/v1",
+            "migration_id": "audit",
+            "project_root": temp.path().display().to_string(),
+            "status": "applied",
+            "post_conditions_met": true,
+            "validation_record_path": "evidence/rewrite-validation.json"
+        }),
+    );
+
+    let output = run_cli_in_dir(temp.path(), &["verify", "migration", "rewrite", "--json"]);
+    assert!(
+        !output.status.success(),
+        "verify migration should fail when record id does not match requested id"
+    );
+
+    let payload = parse_json_stdout(&output);
+    assert_eq!(payload["verdict"], "FAIL");
+    assert_eq!(
+        payload["details"]["invariant_failures"][0]["invariant_id"],
+        "MIGRATION_EVIDENCE_ID_MISMATCH"
     );
 }
 

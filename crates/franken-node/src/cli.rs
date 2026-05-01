@@ -1288,6 +1288,13 @@ pub struct BenchRunArgs {
     /// Benchmark scenario to run.
     #[arg(long)]
     pub scenario: Option<String>,
+    /// Use deterministic fixture-only measurements. Fixture reports are not
+    /// authoritative release/headline benchmark evidence.
+    #[arg(long)]
+    pub fixture_mode: bool,
+    /// Write the benchmark JSON report to a file in addition to stdout.
+    #[arg(long)]
+    pub output: Option<PathBuf>,
 }
 
 // -- debug --

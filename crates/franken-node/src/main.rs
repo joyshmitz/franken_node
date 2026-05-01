@@ -147,7 +147,7 @@ use frankenengine_node::{
         self,
         benchmark_suite::{
             render_human_summary as benchmark_suite_render_human_summary,
-            run_default_suite as benchmark_suite_run_default_suite,
+            run_default_suite_for_cli as benchmark_suite_run_default_suite_for_cli,
             to_canonical_json as benchmark_suite_to_json,
         },
         counterfactual_replay::{
@@ -5775,10 +5775,18 @@ fn emit_migration_audit_report(rendered: &str, out_path: Option<&Path>) -> Resul
 }
 
 fn handle_bench_run(args: &cli::BenchRunArgs) -> Result<()> {
-    let report = benchmark_suite_run_default_suite(args.scenario.as_deref())
+    let report = benchmark_suite_run_default_suite_for_cli(args.scenario.as_deref(), args.fixture_mode)
         .map_err(|err| anyhow::anyhow!("benchmark suite run failed: {err}"))?;
     let rendered =
         benchmark_suite_to_json(&report).context("failed serializing benchmark suite report")?;
+    if let Some(output) = &args.output {
+        std::fs::write(output, &rendered).with_context(|| {
+            format!(
+                "failed writing benchmark suite report to {}",
+                output.display()
+            )
+        })?;
+    }
     println!("{rendered}");
     eprintln!("{}", benchmark_suite_render_human_summary(&report));
     Ok(())
@@ -21258,6 +21266,744 @@ fn collect_corpus_matches(
     }
 
     Ok(())
+}
+
+fn parse_verify_corpus_kind(raw: &str) -> Option<VerifyCorpusKindRequest> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(VerifyCorpusKindRequest::Auto),
+        "corpus-manifest" | "manifest" => Some(VerifyCorpusKindRequest::CorpusManifest),
+        "compatibility-report" | "report" => Some(VerifyCorpusKindRequest::CompatibilityReport),
+        _ => None,
+    }
+}
+
+fn verify_corpus_invariant(
+    id: &str,
+    passed: bool,
+    message: impl Into<String>,
+    remediation_hint: impl Into<String>,
+) -> VerifyCorpusInvariant {
+    VerifyCorpusInvariant {
+        id: id.to_string(),
+        severity: if passed { "info" } else { "error" }.to_string(),
+        passed,
+        message: message.into(),
+        remediation_hint: remediation_hint.into(),
+    }
+}
+
+fn verify_corpus_string<'a>(value: &'a serde_json::Value, field: &str) -> Option<&'a str> {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+}
+
+fn verify_corpus_array_len(value: &serde_json::Value, field: &str) -> Option<usize> {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_array)
+        .map(Vec::len)
+}
+
+fn verify_corpus_usize(value: &serde_json::Value, field: &str) -> Option<usize> {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|raw| usize::try_from(raw).ok())
+}
+
+fn verify_corpus_f64(value: &serde_json::Value, field: &str) -> Option<f64> {
+    value.get(field).and_then(serde_json::Value::as_f64)
+}
+
+fn verify_corpus_set(values: &[&str]) -> BTreeSet<String> {
+    values.iter().map(|value| (*value).to_string()).collect()
+}
+
+fn verify_corpus_json_strings(values: &BTreeSet<String>) -> Vec<String> {
+    values.iter().cloned().collect()
+}
+
+fn verify_corpus_pass_rate(passed: usize, total: usize) -> f64 {
+    if total == 0 {
+        return 0.0;
+    }
+    let passed = f64::from(u32::try_from(passed).unwrap_or(u32::MAX));
+    let total = f64::from(u32::try_from(total).unwrap_or(u32::MAX));
+    ((passed / total) * 10_000.0).round() / 100.0
+}
+
+fn verify_corpus_timestamp_fresh(timestamp: Option<&str>) -> (bool, String) {
+    let Some(timestamp) = timestamp else {
+        return (false, "timestamp is missing".to_string());
+    };
+    let parsed = match DateTime::parse_from_rfc3339(timestamp) {
+        Ok(parsed) => parsed.with_timezone(&Utc),
+        Err(err) => return (false, format!("timestamp is not RFC3339: {err}")),
+    };
+    let age = Utc::now().signed_duration_since(parsed);
+    if age.num_seconds() < -86_400 {
+        return (false, "timestamp is more than one day in the future".to_string());
+    }
+    if age.num_days() > VERIFY_CORPUS_MAX_EVIDENCE_AGE_DAYS {
+        return (
+            false,
+            format!(
+                "timestamp is {} days old; maximum is {}",
+                age.num_days(),
+                VERIFY_CORPUS_MAX_EVIDENCE_AGE_DAYS
+            ),
+        );
+    }
+    (true, format!("timestamp age {} days", age.num_days().max(0)))
+}
+
+fn detect_verify_corpus_kind(
+    data: &serde_json::Value,
+    mode: VerifyCorpusKindRequest,
+) -> Option<VerifyCorpusArtifactKind> {
+    match mode {
+        VerifyCorpusKindRequest::CorpusManifest => Some(VerifyCorpusArtifactKind::CorpusManifest),
+        VerifyCorpusKindRequest::CompatibilityReport => {
+            Some(VerifyCorpusArtifactKind::CompatibilityReport)
+        }
+        VerifyCorpusKindRequest::Auto => {
+            if data.get("per_test_results").is_some() && data.get("totals").is_some() {
+                Some(VerifyCorpusArtifactKind::CompatibilityReport)
+            } else if data.get("fixtures").is_some() && data.get("summary").is_some() {
+                Some(VerifyCorpusArtifactKind::CorpusManifest)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn validate_corpus_manifest(
+    path: &Path,
+    data: &serde_json::Value,
+) -> VerifyCorpusValidationReport {
+    let fixtures = data
+        .get("fixtures")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let summary = data
+        .get("summary")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let mut invariants = Vec::new();
+
+    let schema_version = verify_corpus_string(data, "schema_version");
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-MANIFEST-SCHEMA",
+        schema_version == Some("corpus-v1.0"),
+        format!(
+            "schema_version={}",
+            schema_version.unwrap_or("<missing>")
+        ),
+        "set schema_version to corpus-v1.0",
+    ));
+
+    let count = fixtures.len();
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-MANIFEST-MIN-CASES",
+        count >= VERIFY_CORPUS_MIN_FIXTURE_CASES,
+        format!("fixture_count={count}"),
+        format!(
+            "include at least {} fixture cases",
+            VERIFY_CORPUS_MIN_FIXTURE_CASES
+        ),
+    ));
+
+    let summary_total = verify_corpus_usize(&summary, "total_fixtures");
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-MANIFEST-SUMMARY-TOTAL",
+        summary_total == Some(count),
+        format!("summary_total={summary_total:?} fixture_count={count}"),
+        "keep summary.total_fixtures equal to fixtures.length",
+    ));
+
+    let required_bands = verify_corpus_set(VERIFY_CORPUS_REQUIRED_MANIFEST_BANDS);
+    let mut observed_bands = BTreeSet::new();
+    let mut duplicate_ids = BTreeSet::new();
+    let mut seen_ids = BTreeSet::new();
+    let mut malformed_rows = 0usize;
+    let mut by_band = BTreeMap::<String, usize>::new();
+
+    for fixture in &fixtures {
+        let Some(id) = verify_corpus_string(fixture, "fixture_id") else {
+            malformed_rows += 1;
+            continue;
+        };
+        if !seen_ids.insert(id.to_string()) {
+            duplicate_ids.insert(id.to_string());
+        }
+
+        let row_valid = verify_corpus_string(fixture, "api_surface").is_some()
+            && verify_corpus_string(fixture, "expected_behavior").is_some()
+            && verify_corpus_string(fixture, "node_version").is_some()
+            && verify_corpus_string(fixture, "spec_section").is_some()
+            && fixture
+                .get("deterministic")
+                .and_then(serde_json::Value::as_bool)
+                .is_some();
+        if !row_valid {
+            malformed_rows += 1;
+        }
+
+        if let Some(band) = verify_corpus_string(fixture, "band") {
+            observed_bands.insert(band.to_string());
+            *by_band.entry(band.to_string()).or_insert(0) += 1;
+        } else {
+            malformed_rows += 1;
+        }
+    }
+
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-MANIFEST-UNIQUE-IDS",
+        duplicate_ids.is_empty(),
+        if duplicate_ids.is_empty() {
+            "fixture IDs are unique".to_string()
+        } else {
+            format!("duplicate fixture IDs: {:?}", duplicate_ids)
+        },
+        "deduplicate fixture_id values",
+    ));
+
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-MANIFEST-ROW-SHAPE",
+        malformed_rows == 0,
+        format!("malformed_rows={malformed_rows}"),
+        "each fixture needs fixture_id, api_surface, band, expected_behavior, node_version, deterministic, and spec_section",
+    ));
+
+    let unknown_bands = observed_bands
+        .difference(&required_bands)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-MANIFEST-BAND-ENUM",
+        unknown_bands.is_empty(),
+        if unknown_bands.is_empty() {
+            "all fixture bands are recognized".to_string()
+        } else {
+            format!("unknown bands: {:?}", unknown_bands)
+        },
+        "use only core, high_value, edge, and unsafe fixture bands",
+    ));
+
+    let missing_bands = required_bands
+        .difference(&observed_bands)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-MANIFEST-BAND-COVERAGE",
+        missing_bands.is_empty(),
+        if missing_bands.is_empty() {
+            "required fixture bands are covered".to_string()
+        } else {
+            format!("missing bands: {:?}", missing_bands)
+        },
+        "add at least one fixture for every required band",
+    ));
+
+    let summary_by_band = summary
+        .get("by_band")
+        .and_then(serde_json::Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let band_counts_match = by_band.iter().all(|(band, observed)| {
+        summary_by_band
+            .get(band)
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|raw| usize::try_from(raw).ok())
+            == Some(*observed)
+    });
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-MANIFEST-BAND-SUMMARY",
+        band_counts_match,
+        format!("observed_by_band={by_band:?}"),
+        "keep summary.by_band counts synchronized with fixture rows",
+    ));
+
+    let (fresh, freshness_message) =
+        verify_corpus_timestamp_fresh(verify_corpus_string(data, "timestamp"));
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-MANIFEST-FRESHNESS",
+        fresh,
+        freshness_message,
+        "refresh the corpus manifest timestamp from current execution evidence",
+    ));
+
+    let passed = invariants.iter().all(|invariant| invariant.passed);
+    VerifyCorpusValidationReport {
+        manifest_path: path.display().to_string(),
+        validation_kind: VerifyCorpusArtifactKind::CorpusManifest,
+        corpus_id: verify_corpus_string(data, "bead_id").map(ToString::to_string),
+        case_count: count,
+        coverage_summary: serde_json::json!({
+            "required_bands": VERIFY_CORPUS_REQUIRED_MANIFEST_BANDS,
+            "observed_bands": verify_corpus_json_strings(&observed_bands),
+            "by_band": by_band,
+        }),
+        invariants,
+        passed,
+    }
+}
+
+fn validate_compatibility_report(
+    path: &Path,
+    data: &serde_json::Value,
+) -> VerifyCorpusValidationReport {
+    let per_tests = data
+        .get("per_test_results")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let totals = data
+        .get("totals")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let thresholds = data
+        .get("thresholds")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let previous_release = data
+        .get("previous_release")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let corpus = data
+        .get("corpus")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let mut invariants = Vec::new();
+
+    let corpus_version = verify_corpus_string(&corpus, "corpus_version");
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-CORPUS-VERSION",
+        corpus_version.is_some(),
+        format!("corpus_version={}", corpus_version.unwrap_or("<missing>")),
+        "include corpus.corpus_version",
+    ));
+
+    let result_digest = verify_corpus_string(&corpus, "result_digest");
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-RESULT-DIGEST",
+        result_digest.is_some_and(|digest| digest.starts_with("sha256:")),
+        format!("result_digest={}", result_digest.unwrap_or("<missing>")),
+        "include corpus.result_digest with a sha256: prefix",
+    ));
+
+    let (fresh, freshness_message) =
+        verify_corpus_timestamp_fresh(verify_corpus_string(&corpus, "generated_at_utc"));
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-FRESHNESS",
+        fresh,
+        freshness_message,
+        "regenerate the compatibility corpus report from recent execution evidence",
+    ));
+
+    let case_count = per_tests.len();
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-MIN-CASES",
+        case_count >= VERIFY_CORPUS_MIN_COMPAT_REPORT_CASES,
+        format!("per_test_results={case_count}"),
+        format!(
+            "include at least {} compatibility test cases",
+            VERIFY_CORPUS_MIN_COMPAT_REPORT_CASES
+        ),
+    ));
+
+    let total = verify_corpus_usize(&totals, "total_test_cases");
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-TOTAL-MATCH",
+        total == Some(case_count),
+        format!("total_test_cases={total:?} per_test_results={case_count}"),
+        "keep totals.total_test_cases equal to per_test_results.length",
+    ));
+
+    let passed_total = verify_corpus_usize(&totals, "passed_test_cases").unwrap_or(0);
+    let failed_total = verify_corpus_usize(&totals, "failed_test_cases").unwrap_or(0);
+    let errored_total = verify_corpus_usize(&totals, "errored_test_cases").unwrap_or(0);
+    let skipped_total = verify_corpus_usize(&totals, "skipped_test_cases").unwrap_or(0);
+    let partition_total = passed_total
+        .saturating_add(failed_total)
+        .saturating_add(errored_total)
+        .saturating_add(skipped_total);
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-TOTAL-PARTITION",
+        total == Some(partition_total),
+        format!("total_test_cases={total:?} partition_total={partition_total}"),
+        "keep passed/failed/errored/skipped counts partitioned exactly",
+    ));
+
+    let required_families = verify_corpus_set(VERIFY_CORPUS_REQUIRED_API_FAMILIES);
+    let required_bands = verify_corpus_set(VERIFY_CORPUS_REQUIRED_REPORT_BANDS);
+    let required_risk_bands = verify_corpus_set(VERIFY_CORPUS_REQUIRED_RISK_BANDS);
+    let valid_statuses = verify_corpus_set(&["pass", "fail", "error", "skip"]);
+    let mut observed_families = BTreeSet::new();
+    let mut observed_bands = BTreeSet::new();
+    let mut observed_risk_bands = BTreeSet::new();
+    let mut duplicate_ids = BTreeSet::new();
+    let mut seen_ids = BTreeSet::new();
+    let mut row_shape_errors = 0usize;
+    let mut passed_rows = 0usize;
+    let mut failed_or_error_ids = BTreeSet::new();
+    let mut family_breakdown = BTreeMap::<String, (usize, usize)>::new();
+    let mut band_breakdown = BTreeMap::<String, (usize, usize)>::new();
+
+    for row in &per_tests {
+        let id = verify_corpus_string(row, "test_id");
+        let family = verify_corpus_string(row, "api_family");
+        let band = verify_corpus_string(row, "band");
+        let risk_band = verify_corpus_string(row, "risk_band");
+        let status = verify_corpus_string(row, "status");
+        if id.is_none() || family.is_none() || band.is_none() || risk_band.is_none() || status.is_none() {
+            row_shape_errors += 1;
+            continue;
+        }
+
+        let id = id.unwrap_or_default();
+        if !seen_ids.insert(id.to_string()) {
+            duplicate_ids.insert(id.to_string());
+        }
+
+        let family = family.unwrap_or_default();
+        let band = band.unwrap_or_default();
+        let risk_band = risk_band.unwrap_or_default();
+        let status = status.unwrap_or_default();
+
+        if !required_families.contains(family)
+            || !required_bands.contains(band)
+            || !required_risk_bands.contains(risk_band)
+            || !valid_statuses.contains(status)
+        {
+            row_shape_errors += 1;
+        }
+
+        observed_families.insert(family.to_string());
+        observed_bands.insert(band.to_string());
+        observed_risk_bands.insert(risk_band.to_string());
+        if status == "pass" {
+            passed_rows += 1;
+        }
+        if status == "fail" || status == "error" {
+            failed_or_error_ids.insert(id.to_string());
+        }
+
+        let family_entry = family_breakdown.entry(family.to_string()).or_insert((0, 0));
+        family_entry.0 += 1;
+        if status == "pass" {
+            family_entry.1 += 1;
+        }
+        let band_entry = band_breakdown.entry(band.to_string()).or_insert((0, 0));
+        band_entry.0 += 1;
+        if status == "pass" {
+            band_entry.1 += 1;
+        }
+    }
+
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-UNIQUE-IDS",
+        duplicate_ids.is_empty(),
+        if duplicate_ids.is_empty() {
+            "test IDs are unique".to_string()
+        } else {
+            format!("duplicate test IDs: {:?}", duplicate_ids)
+        },
+        "deduplicate per_test_results.test_id values",
+    ));
+
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-ROW-SHAPE",
+        row_shape_errors == 0,
+        format!("invalid_rows={row_shape_errors}"),
+        "each per-test row needs valid test_id, api_family, band, risk_band, and status",
+    ));
+
+    let missing_families = required_families
+        .difference(&observed_families)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-FAMILY-COVERAGE",
+        missing_families.is_empty(),
+        if missing_families.is_empty() {
+            "required API families are covered".to_string()
+        } else {
+            format!("missing API families: {:?}", missing_families)
+        },
+        "add compatibility cases for every required API family",
+    ));
+
+    let missing_bands = required_bands
+        .difference(&observed_bands)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-BAND-COVERAGE",
+        missing_bands.is_empty(),
+        if missing_bands.is_empty() {
+            "required bands are covered".to_string()
+        } else {
+            format!("missing bands: {:?}", missing_bands)
+        },
+        "add compatibility cases for every required band",
+    ));
+
+    let missing_risk_bands = required_risk_bands
+        .difference(&observed_risk_bands)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-RISK-BAND-COVERAGE",
+        missing_risk_bands.is_empty(),
+        if missing_risk_bands.is_empty() {
+            "required risk bands are covered".to_string()
+        } else {
+            format!("missing risk bands: {:?}", missing_risk_bands)
+        },
+        "add compatibility cases for every required risk band",
+    ));
+
+    let reported_overall = verify_corpus_f64(&totals, "overall_pass_rate_pct");
+    let recomputed_overall = verify_corpus_pass_rate(passed_rows, case_count);
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-PASS-RATE-MATCH",
+        reported_overall.is_some_and(|reported| (reported - recomputed_overall).abs() < 0.01),
+        format!("reported={reported_overall:?} recomputed={recomputed_overall}"),
+        "keep totals.overall_pass_rate_pct synchronized with per-test rows",
+    ));
+
+    let overall_threshold = verify_corpus_f64(&thresholds, "overall_pass_rate_min_pct").unwrap_or(95.0);
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-OVERALL-THRESHOLD",
+        recomputed_overall >= overall_threshold,
+        format!("overall={recomputed_overall} threshold={overall_threshold}"),
+        "raise pass rate above the configured overall threshold before release",
+    ));
+
+    let family_floor = verify_corpus_f64(&thresholds, "per_family_pass_rate_min_pct").unwrap_or(80.0);
+    let low_families = family_breakdown
+        .iter()
+        .filter_map(|(family, (total, passed))| {
+            let rate = verify_corpus_pass_rate(*passed, *total);
+            (rate < family_floor).then(|| format!("{family}:{rate}"))
+        })
+        .collect::<Vec<_>>();
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-FAMILY-THRESHOLDS",
+        low_families.is_empty(),
+        if low_families.is_empty() {
+            "all family floors are satisfied".to_string()
+        } else {
+            format!("below floor: {low_families:?}")
+        },
+        "fix or track failing cases until every API family meets the configured floor",
+    ));
+
+    let band_thresholds = thresholds
+        .get("band_pass_rate_min_pct")
+        .and_then(serde_json::Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let low_bands = band_thresholds
+        .iter()
+        .filter_map(|(band, threshold)| {
+            let threshold = threshold.as_f64().unwrap_or(100.0);
+            let (total, passed) = band_breakdown.get(band).copied().unwrap_or((0, 0));
+            let rate = verify_corpus_pass_rate(passed, total);
+            (rate < threshold).then(|| format!("{band}:{rate}<{threshold}"))
+        })
+        .collect::<Vec<_>>();
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-BAND-THRESHOLDS",
+        low_bands.is_empty(),
+        if low_bands.is_empty() {
+            "all band thresholds are satisfied".to_string()
+        } else {
+            format!("below threshold: {low_bands:?}")
+        },
+        "fix or track failing cases until every band meets its configured threshold",
+    ));
+
+    let previous_rate = verify_corpus_f64(&previous_release, "overall_pass_rate_pct").unwrap_or(0.0);
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-NO-REGRESSION",
+        recomputed_overall >= previous_rate,
+        format!("current={recomputed_overall} previous={previous_rate}"),
+        "do not release a corpus report with a pass-rate regression",
+    ));
+
+    let tracking_ids = data
+        .get("failing_tests_tracking")
+        .and_then(serde_json::Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| verify_corpus_string(row, "test_id").map(ToString::to_string))
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+    let missing_tracking = failed_or_error_ids
+        .difference(&tracking_ids)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-FAILURE-TRACKING",
+        missing_tracking.is_empty(),
+        if missing_tracking.is_empty() {
+            "failing/error cases have tracking entries".to_string()
+        } else {
+            format!("untracked failing/error cases: {:?}", missing_tracking)
+        },
+        "add failing_tests_tracking entries for every fail/error test_id",
+    ));
+
+    let ci_gate = data
+        .get("ci_gate")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let ci_passed = ci_gate
+        .get("threshold_met")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+        && !ci_gate
+            .get("release_blocked")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true)
+        && !ci_gate
+            .get("regression_detected")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true);
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-CI-GATE",
+        ci_passed,
+        format!("ci_gate={ci_gate}"),
+        "make ci_gate threshold_met=true, release_blocked=false, and regression_detected=false",
+    ));
+
+    let reproducibility = data
+        .get("reproducibility")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let reproducibility_complete = verify_corpus_string(&reproducibility, "deterministic_seed").is_some()
+        && reproducibility
+            .get("same_inputs_same_digest")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+        && verify_corpus_string(&reproducibility, "external_repro_command").is_some();
+    invariants.push(verify_corpus_invariant(
+        "VCORPUS-REPORT-REPRODUCIBILITY",
+        reproducibility_complete,
+        "reproducibility metadata checked",
+        "include deterministic_seed, same_inputs_same_digest=true, and external_repro_command",
+    ));
+
+    let passed = invariants.iter().all(|invariant| invariant.passed);
+    let family_rates = family_breakdown
+        .iter()
+        .map(|(family, (total, passed))| {
+            (
+                family.clone(),
+                serde_json::json!({
+                    "total": total,
+                    "passed": passed,
+                    "pass_rate_pct": verify_corpus_pass_rate(*passed, *total),
+                }),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    let band_rates = band_breakdown
+        .iter()
+        .map(|(band, (total, passed))| {
+            (
+                band.clone(),
+                serde_json::json!({
+                    "total": total,
+                    "passed": passed,
+                    "pass_rate_pct": verify_corpus_pass_rate(*passed, *total),
+                }),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+
+    VerifyCorpusValidationReport {
+        manifest_path: path.display().to_string(),
+        validation_kind: VerifyCorpusArtifactKind::CompatibilityReport,
+        corpus_id: corpus_version.map(ToString::to_string),
+        case_count,
+        coverage_summary: serde_json::json!({
+            "required_api_families": VERIFY_CORPUS_REQUIRED_API_FAMILIES,
+            "observed_api_families": verify_corpus_json_strings(&observed_families),
+            "required_bands": VERIFY_CORPUS_REQUIRED_REPORT_BANDS,
+            "observed_bands": verify_corpus_json_strings(&observed_bands),
+            "required_risk_bands": VERIFY_CORPUS_REQUIRED_RISK_BANDS,
+            "observed_risk_bands": verify_corpus_json_strings(&observed_risk_bands),
+            "overall_pass_rate_pct": recomputed_overall,
+            "family_breakdown": family_rates,
+            "band_breakdown": band_rates,
+        }),
+        invariants,
+        passed,
+    }
+}
+
+fn unsupported_corpus_validation_report(
+    path: &Path,
+    message: impl Into<String>,
+) -> VerifyCorpusValidationReport {
+    let invariants = vec![verify_corpus_invariant(
+        "VCORPUS-KIND-SUPPORTED",
+        false,
+        message,
+        "use a corpus manifest with fixtures/summary or a compatibility report with totals/per_test_results",
+    )];
+    VerifyCorpusValidationReport {
+        manifest_path: path.display().to_string(),
+        validation_kind: VerifyCorpusArtifactKind::CorpusManifest,
+        corpus_id: None,
+        case_count: 0,
+        coverage_summary: serde_json::json!({}),
+        invariants,
+        passed: false,
+    }
+}
+
+fn validate_corpus_artifact(
+    path: &Path,
+    mode: VerifyCorpusKindRequest,
+) -> VerifyCorpusValidationReport {
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(err) => {
+            return unsupported_corpus_validation_report(
+                path,
+                format!("failed reading corpus artifact: {err}"),
+            );
+        }
+    };
+    let data = match serde_json::from_str::<serde_json::Value>(&raw) {
+        Ok(data) => data,
+        Err(err) => {
+            return unsupported_corpus_validation_report(
+                path,
+                format!("corpus artifact is not valid JSON: {err}"),
+            );
+        }
+    };
+    match detect_verify_corpus_kind(&data, mode) {
+        Some(VerifyCorpusArtifactKind::CorpusManifest) => validate_corpus_manifest(path, &data),
+        Some(VerifyCorpusArtifactKind::CompatibilityReport) => {
+            validate_compatibility_report(path, &data)
+        }
+        None => unsupported_corpus_validation_report(
+            path,
+            "corpus artifact does not match any supported validation schema",
+        ),
+    }
 }
 
 fn emit_verify_corpus(args: &VerifyCorpusArgs) -> i32 {
