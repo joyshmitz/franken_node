@@ -1590,11 +1590,7 @@ fn transparency_merkle_proof(leaf_hashes: &[String], target_index: usize) -> Vec
         } else {
             index - 1
         };
-        let sibling_direction = if index % 2 == 0 {
-            "right"
-        } else {
-            "left"
-        };
+        let sibling_direction = if index % 2 == 0 { "right" } else { "left" };
         proof.push(format!("{sibling_direction}:{}", level[sibling_index]));
 
         let mut next_level = Vec::with_capacity((level.len() + 1) / 2);

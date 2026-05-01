@@ -2,8 +2,7 @@ use std::collections::BTreeMap;
 
 use frankenengine_node::control_plane::control_lane_mapping::{
     ControlLane, ControlLanePolicyError, ControlLaneScheduler, LaneBudget,
-    default_control_lane_policy,
-    error_codes, task_classes,
+    default_control_lane_policy, error_codes, task_classes,
 };
 
 fn assert_canonical_lane_error(error: ControlLanePolicyError, task_class: &str) {

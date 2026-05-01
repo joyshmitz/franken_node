@@ -1,6 +1,6 @@
 //! Structure-aware fuzzing for the verifier SDK public facade.
 
-use frankenengine_verifier_sdk::{create_verifier_sdk, VerificationVerdict, VerifierSdkError};
+use frankenengine_verifier_sdk::{VerificationVerdict, VerifierSdkError, create_verifier_sdk};
 use proptest::prelude::*;
 
 fn bounded_text() -> impl Strategy<Value = String> {

@@ -137,12 +137,7 @@ fn e2e_divergence_detector_converged_path() {
     );
 
     // Reconciliation suggestion: NoAction.
-    let suggestion = DivergenceDetector::suggest_reconciliation(
-        &local,
-        &remote,
-        &result,
-        proof,
-    );
+    let suggestion = DivergenceDetector::suggest_reconciliation(&local, &remote, &result, proof);
     assert!(matches!(suggestion, ReconciliationSuggestion::NoAction));
     h.log_phase("suggestion_no_action", true, json!({}));
 }
@@ -168,12 +163,8 @@ fn e2e_divergence_detector_forked_path_halts() {
     );
 
     // Reconciliation suggestion: ResolveConflict carries both hashes.
-    let suggestion = DivergenceDetector::suggest_reconciliation(
-        &local,
-        &remote,
-        &result,
-        Some(proof),
-    );
+    let suggestion =
+        DivergenceDetector::suggest_reconciliation(&local, &remote, &result, Some(proof));
     match suggestion {
         ReconciliationSuggestion::ResolveConflict {
             epoch,
@@ -182,11 +173,7 @@ fn e2e_divergence_detector_forked_path_halts() {
         } => {
             assert_eq!(epoch, 7);
             assert_ne!(local_hash, remote_hash);
-            h.log_phase(
-                "suggestion_resolve_conflict",
-                true,
-                json!({"epoch": epoch}),
-            );
+            h.log_phase("suggestion_resolve_conflict", true, json!({"epoch": epoch}));
         }
         other => panic!("expected ResolveConflict, got {other:?}"),
     }
@@ -326,8 +313,12 @@ fn e2e_rollback_detector_feed_chain_lifecycle() {
     h.log_phase("gap_detected", true, json!({"new_epoch": 5}));
 
     // ── ASSERT: parent-hash chain break detected ────────────────────
-    let mut wrong_parent =
-        sv("node-A", 6, "payload-6", "deadbeef-not-the-real-parent-hash");
+    let mut wrong_parent = sv(
+        "node-A",
+        6,
+        "payload-6",
+        "deadbeef-not-the-real-parent-hash",
+    );
     // Force adjacent so we test the parent-hash branch (not the gap branch).
     wrong_parent.epoch = 6;
     let chain_err = rd
@@ -347,9 +338,14 @@ fn e2e_rollback_detector_feed_chain_lifecycle() {
     }
     // The proofs vec accumulates: first same-epoch + this chain break.
     assert_eq!(rd.proof_count(), 2);
-    assert!(rd.proofs().iter().all(|p| matches!(
-        p.detection_result,
-        DetectionResult::RollbackDetected
-    )));
-    h.log_phase("proofs_serializable", true, json!({"count": rd.proof_count()}));
+    assert!(
+        rd.proofs()
+            .iter()
+            .all(|p| matches!(p.detection_result, DetectionResult::RollbackDetected))
+    );
+    h.log_phase(
+        "proofs_serializable",
+        true,
+        json!({"count": rd.proof_count()}),
+    );
 }

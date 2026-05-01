@@ -34,9 +34,9 @@ use std::time::Instant;
 
 use ed25519_dalek::{Signer, SigningKey};
 use frankenengine_node::control_plane::audience_token::{
-    ActionScope, AudienceBoundToken, TokenChain, TokenId, TokenValidator,
-    ERR_ABT_ATTENUATION_VIOLATION, ERR_ABT_AUDIENCE_MISMATCH, ERR_ABT_REPLAY_DETECTED,
-    ERR_ABT_SIGNATURE_INVALID, ERR_ABT_TOKEN_EXPIRED,
+    ActionScope, AudienceBoundToken, ERR_ABT_ATTENUATION_VIOLATION, ERR_ABT_AUDIENCE_MISMATCH,
+    ERR_ABT_REPLAY_DETECTED, ERR_ABT_SIGNATURE_INVALID, ERR_ABT_TOKEN_EXPIRED, TokenChain, TokenId,
+    TokenValidator,
 };
 use serde_json::json;
 use tracing::{error, info};
@@ -236,7 +236,11 @@ fn e2e_audience_token_delegation_chain_attenuates() {
         "tk-root-2",
         ISSUER,
         vec!["svc-A".to_string(), "svc-B".to_string()],
-        caps(&[ActionScope::Migrate, ActionScope::Configure, ActionScope::Promote]),
+        caps(&[
+            ActionScope::Migrate,
+            ActionScope::Configure,
+            ActionScope::Promote,
+        ]),
         1_000_000_000_000,
         1_000_000_900_000,
         "nonce-root-2",
@@ -303,9 +307,15 @@ fn e2e_audience_token_delegation_chain_attenuates() {
         1,
     );
     let mut bad_chain = TokenChain::new(root.clone()).unwrap();
-    let err = bad_chain.append(bad_aud).expect_err("audience expansion rejected");
+    let err = bad_chain
+        .append(bad_aud)
+        .expect_err("audience expansion rejected");
     assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
-    h.log_phase("audience_expansion_rejected", true, json!({"code": err.code}));
+    h.log_phase(
+        "audience_expansion_rejected",
+        true,
+        json!({"code": err.code}),
+    );
 
     // INV-ABT-ATTENUATION: child max_delegation_depth >= parent's.
     let bad_depth = make_signed_token(
@@ -321,9 +331,15 @@ fn e2e_audience_token_delegation_chain_attenuates() {
         2, // not strictly less than root's 2
     );
     let mut bad_chain = TokenChain::new(root.clone()).unwrap();
-    let err = bad_chain.append(bad_depth).expect_err("depth not attenuated rejected");
+    let err = bad_chain
+        .append(bad_depth)
+        .expect_err("depth not attenuated rejected");
     assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
-    h.log_phase("depth_not_attenuated_rejected", true, json!({"code": err.code}));
+    h.log_phase(
+        "depth_not_attenuated_rejected",
+        true,
+        json!({"code": err.code}),
+    );
 
     // INV-ABT-ATTENUATION: child expires AFTER parent.
     let outlives = make_signed_token(
@@ -339,7 +355,9 @@ fn e2e_audience_token_delegation_chain_attenuates() {
         1,
     );
     let mut bad_chain = TokenChain::new(root.clone()).unwrap();
-    let err = bad_chain.append(outlives).expect_err("outlives parent rejected");
+    let err = bad_chain
+        .append(outlives)
+        .expect_err("outlives parent rejected");
     assert_eq!(err.code, ERR_ABT_ATTENUATION_VIOLATION);
     h.log_phase("outlives_parent_rejected", true, json!({"code": err.code}));
 }

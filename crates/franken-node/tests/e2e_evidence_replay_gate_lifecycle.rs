@@ -27,9 +27,8 @@ use std::sync::Once;
 use std::time::Instant;
 
 use frankenengine_node::control_plane::evidence_replay_gate::{
-    CapturedEvidence, DecisionType, EvidenceReplayGate, GateDecision, ReplayVerdict,
-    RPL_001_REPLAY_INITIATED, RPL_002_REPRODUCED, RPL_003_DIVERGED, RPL_004_ERROR,
-    RPL_005_GATE_DECISION,
+    CapturedEvidence, DecisionType, EvidenceReplayGate, GateDecision, RPL_001_REPLAY_INITIATED,
+    RPL_002_REPRODUCED, RPL_003_DIVERGED, RPL_004_ERROR, RPL_005_GATE_DECISION, ReplayVerdict,
 };
 use serde_json::json;
 use tracing::{error, info};
@@ -117,10 +116,7 @@ fn make_evidence(
         epoch_id,
         timestamp: "2026-04-27T00:00:00Z".to_string(),
         chosen_action: chosen_action.to_string(),
-        input_entries: vec![
-            "evidence-line-1".to_string(),
-            "evidence-line-2".to_string(),
-        ],
+        input_entries: vec!["evidence-line-1".to_string(), "evidence-line-2".to_string()],
         input_context: ctx,
         input_hash: String::new(),
         trace_id: format!("trace-{decision_id}"),
@@ -136,12 +132,7 @@ fn e2e_replay_gate_reproduced_path() {
     let mut gate = EvidenceReplayGate::new();
     assert_eq!(gate.evidence_count(), 0);
     assert_eq!(gate.total_replays(), 0);
-    let evidence = make_evidence(
-        "DEC-REP-001",
-        DecisionType::HealthGate,
-        7,
-        "action:promote",
-    );
+    let evidence = make_evidence("DEC-REP-001", DecisionType::HealthGate, 7, "action:promote");
     gate.capture_evidence(evidence.clone());
     assert_eq!(gate.evidence_count(), 1);
     h.log_phase("captured", true, json!({"count": 1}));
@@ -178,8 +169,7 @@ fn e2e_replay_gate_diverged_path_carries_diff() {
         "action:rollout-canary",
     );
 
-    let result =
-        gate.replay_decision(&evidence, "action:rollback-now", "2026-04-27T00:02:00Z");
+    let result = gate.replay_decision(&evidence, "action:rollback-now", "2026-04-27T00:02:00Z");
     match &result.verdict {
         ReplayVerdict::Diverged {
             original_action,
@@ -204,10 +194,7 @@ fn e2e_replay_gate_diverged_path_carries_diff() {
     assert_eq!(gate.total_reproduced(), 0);
 
     // Last log entry should be RPL-003 with diff_size_bytes populated.
-    let last = gate
-        .replay_log()
-        .last()
-        .expect("at least one log entry");
+    let last = gate.replay_log().last().expect("at least one log entry");
     assert_eq!(last.event_code, RPL_003_DIVERGED);
     assert!(last.diff_size_bytes.is_some());
     assert_eq!(last.verdict.as_deref(), Some("diverged"));
@@ -230,19 +217,11 @@ fn e2e_replay_gate_input_hash_tamper_yields_error() {
     chars[0] = if chars[0] == '0' { '1' } else { '0' };
     evidence.input_hash = chars.into_iter().collect();
 
-    let result = gate.replay_decision(
-        &evidence,
-        "action:quarantine-issue",
-        "2026-04-27T00:03:00Z",
-    );
+    let result = gate.replay_decision(&evidence, "action:quarantine-issue", "2026-04-27T00:03:00Z");
     match &result.verdict {
         ReplayVerdict::Error { reason } => {
             assert!(reason.contains("Input hash mismatch"));
-            h.log_phase(
-                "error_input_hash_mismatch",
-                true,
-                json!({"reason": reason}),
-            );
+            h.log_phase("error_input_hash_mismatch", true, json!({"reason": reason}));
         }
         other => panic!("expected Error, got {other:?}"),
     }
@@ -275,10 +254,7 @@ fn e2e_replay_gate_evaluate_gate_pass_when_all_reproduced() {
     }
 
     // The last log entry is the gate decision (RPL-005).
-    let last = gate
-        .replay_log()
-        .last()
-        .expect("at least one log entry");
+    let last = gate.replay_log().last().expect("at least one log entry");
     assert_eq!(last.event_code, RPL_005_GATE_DECISION);
     h.log_phase(
         "gate_pass",
@@ -298,12 +274,7 @@ fn e2e_replay_gate_evaluate_gate_fails_when_any_diverged_or_errored() {
     // always reproduce (since it replays original chosen_action against
     // itself).
     let mut gate = EvidenceReplayGate::new();
-    let mut tampered = make_evidence(
-        "DEC-FAIL-001",
-        DecisionType::Fencing,
-        7,
-        "action:fence-now",
-    );
+    let mut tampered = make_evidence("DEC-FAIL-001", DecisionType::Fencing, 7, "action:fence-now");
     let mut chars: Vec<char> = tampered.input_hash.chars().collect();
     chars[0] = if chars[0] == '0' { '1' } else { '0' };
     tampered.input_hash = chars.into_iter().collect();

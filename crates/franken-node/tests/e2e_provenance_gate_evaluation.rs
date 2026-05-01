@@ -183,12 +183,7 @@ fn e2e_provenance_gate_assurance_boundary() {
 
     // Below boundary: have=Basic, need=Verified → InsufficientAssurance.
     prov.build_assurance = BuildAssurance::Basic;
-    let decision = evaluate_gate(
-        &strict_policy(),
-        &prov,
-        "trace-low",
-        "2026-04-27T00:00:03Z",
-    );
+    let decision = evaluate_gate(&strict_policy(), &prov, "trace-low", "2026-04-27T00:00:03Z");
     assert!(!decision.passed);
     match &decision.failure_reason {
         Some(GateFailure::InsufficientAssurance { have, need }) => {
@@ -221,7 +216,11 @@ fn e2e_provenance_gate_untrusted_builder() {
     match &decision.failure_reason {
         Some(GateFailure::UntrustedBuilder { builder_id }) => {
             assert_eq!(builder_id, "rogue-builder");
-            h.log_phase("untrusted_builder", true, json!({"builder": "rogue-builder"}));
+            h.log_phase(
+                "untrusted_builder",
+                true,
+                json!({"builder": "rogue-builder"}),
+            );
         }
         other => panic!("expected UntrustedBuilder, got {other:?}"),
     }

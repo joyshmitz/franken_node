@@ -142,7 +142,7 @@ fn make_bundle(
 
 fn small_config() -> RetentionConfig {
     RetentionConfig {
-        hot_days: 1,    // tight horizons so we can actually trip rotation
+        hot_days: 1, // tight horizons so we can actually trip rotation
         cold_days: 1,
         archive_days: 365,
         cleanup_interval_hours: 1,
@@ -183,11 +183,17 @@ fn e2e_incident_bundle_lifecycle_full_happy_path() {
     );
 
     // ── ACT: store accepts the bundle ───────────────────────────────
-    store.store(bundle.clone(), now).expect("store accepts bundle");
+    store
+        .store(bundle.clone(), now)
+        .expect("store accepts bundle");
     assert_eq!(store.bundle_count(), 1);
     assert_eq!(store.total_bytes(), 4_096);
     assert!(store.contains("bundle-real-001"));
-    h.log_phase("stored", true, json!({"bundle_count": 1, "total_bytes": 4_096}));
+    h.log_phase(
+        "stored",
+        true,
+        json!({"bundle_count": 1, "total_bytes": 4_096}),
+    );
 
     // ── ASSERT: every export format succeeds and embeds the hash ────
     for format in [ExportFormat::Json, ExportFormat::Csv, ExportFormat::Sarif] {
@@ -346,8 +352,7 @@ fn e2e_incident_bundle_invalid_config_rejected() {
         storage_critical_percent: 85,
         ..cfg
     };
-    let err = IncidentBundleStore::new(bad_cfg, 1_000)
-        .expect_err("warn==critical rejected");
+    let err = IncidentBundleStore::new(bad_cfg, 1_000).expect_err("warn==critical rejected");
     assert!(matches!(err, IncidentBundleError::InvalidConfig { .. }));
     h.log_phase("warn_critical_collision_rejected", true, json!({}));
 }
@@ -381,10 +386,7 @@ fn e2e_incident_bundle_export_helpers_match_store_export() {
     // SARIF map carries the integrity hash and the canonical version.
     let sarif = export_sarif(&bundle);
     assert_eq!(sarif.get("version"), Some(&"2.1.0".to_string()));
-    assert_eq!(
-        sarif.get("integrity_hash"),
-        Some(&bundle.integrity_hash)
-    );
+    assert_eq!(sarif.get("integrity_hash"), Some(&bundle.integrity_hash));
     h.log_phase(
         "sarif_helpers",
         true,

@@ -120,7 +120,11 @@ fn e2e_evidence_ledger_sign_append_chain_replay_full_matrix() {
     assert!(ledger.is_empty());
     assert_eq!(ledger.total_appended(), 0);
     assert_eq!(ledger.total_evicted(), 0);
-    h.log_phase("ledger_built", true, json!({"max_entries": 8, "max_bytes": 4096}));
+    h.log_phase(
+        "ledger_built",
+        true,
+        json!({"max_entries": 8, "max_bytes": 4096}),
+    );
 
     // ── ACT: sign + append three entries; chain advances each time ──
     let mut ids = Vec::new();
@@ -142,7 +146,11 @@ fn e2e_evidence_ledger_sign_append_chain_replay_full_matrix() {
     assert_eq!(recent.len(), 2);
     assert_eq!(recent[0].1.decision_id, "DEC-002");
     assert_eq!(recent[1].1.decision_id, "DEC-003");
-    h.log_phase("recent_order", true, json!({"oldest": "DEC-002", "newest": "DEC-003"}));
+    h.log_phase(
+        "recent_order",
+        true,
+        json!({"oldest": "DEC-002", "newest": "DEC-003"}),
+    );
 
     // ── ASSERT: replay attack rejected (re-append identical entry) ─
     let mut replay = test_entry("DEC-001", 1);
@@ -156,7 +164,11 @@ fn e2e_evidence_ledger_sign_append_chain_replay_full_matrix() {
         } => {
             assert_eq!(timestamp_ms, 100);
             assert!(!signature.is_empty());
-            h.log_phase("replay_rejected", true, json!({"timestamp_ms": timestamp_ms}));
+            h.log_phase(
+                "replay_rejected",
+                true,
+                json!({"timestamp_ms": timestamp_ms}),
+            );
         }
         other => panic!("expected ReplayAttack, got {other:?}"),
     }
@@ -173,7 +185,9 @@ fn e2e_evidence_ledger_sign_append_chain_replay_full_matrix() {
     chain_break.prev_entry_hash =
         "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef".to_string();
     sign_evidence_entry(&mut chain_break, &key);
-    let chain_err = ledger.append(chain_break).expect_err("chain mismatch rejected");
+    let chain_err = ledger
+        .append(chain_break)
+        .expect_err("chain mismatch rejected");
     match chain_err {
         LedgerError::HashChainBroken {
             expected_hash,
@@ -181,7 +195,11 @@ fn e2e_evidence_ledger_sign_append_chain_replay_full_matrix() {
         } => {
             assert!(!expected_hash.is_empty(), "expected hash must be set");
             assert_eq!(provided_hash.len(), 64, "provided hash must be sha256-hex");
-            h.log_phase("chain_break_rejected", true, json!({"expected_len": expected_hash.len()}));
+            h.log_phase(
+                "chain_break_rejected",
+                true,
+                json!({"expected_len": expected_hash.len()}),
+            );
         }
         other => panic!("expected HashChainBroken, got {other:?}"),
     }
@@ -194,7 +212,9 @@ fn e2e_evidence_ledger_sign_append_chain_replay_full_matrix() {
     // Mutate the decision_id AFTER signing so the signature no longer covers
     // the canonical bytes.
     tampered.decision_id = "DEC-TAMPER-MODIFIED".to_string();
-    let sig_err = ledger.append(tampered).expect_err("tampered payload rejected");
+    let sig_err = ledger
+        .append(tampered)
+        .expect_err("tampered payload rejected");
     assert!(
         matches!(sig_err, LedgerError::SignatureInvalid { .. }),
         "expected SignatureInvalid, got {sig_err:?}"
@@ -206,7 +226,11 @@ fn e2e_evidence_ledger_sign_append_chain_replay_full_matrix() {
     assert_eq!(snap.entries.len(), 3);
     assert_eq!(snap.total_appended, 3);
     assert_eq!(snap.total_evicted, 0);
-    h.log_phase("snapshot_consistent", true, json!({"entries": snap.entries.len()}));
+    h.log_phase(
+        "snapshot_consistent",
+        true,
+        json!({"entries": snap.entries.len()}),
+    );
 }
 
 #[test]
@@ -273,7 +297,10 @@ fn e2e_evidence_ledger_capacity_rejection_paths() {
         }
         other => panic!("expected EntryTooLarge, got {other:?}"),
     }
-    assert!(tiny_bytes.is_empty(), "rejected entry must not occupy a slot");
+    assert!(
+        tiny_bytes.is_empty(),
+        "rejected entry must not occupy a slot"
+    );
 }
 
 #[test]

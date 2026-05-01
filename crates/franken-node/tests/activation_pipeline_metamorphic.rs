@@ -62,9 +62,7 @@ impl StageExecutor for ConfigurableExecutor {
                 reordered.reverse(); // Simple reordering
                 Ok(reordered)
             }
-            SecretMountBehavior::Partial(count) => {
-                Ok(refs.iter().take(*count).cloned().collect())
-            }
+            SecretMountBehavior::Partial(count) => Ok(refs.iter().take(*count).cloned().collect()),
             SecretMountBehavior::Extra(extras) => {
                 let mut mounted = refs.to_vec();
                 mounted.extend_from_slice(extras);
@@ -106,16 +104,19 @@ impl Default for ConfigurableExecutor {
 fn generate_test_input(seed: u64) -> ActivationInput {
     let connector_id = format!("connector-{:04}", seed % 1000);
     let trace_id = format!("trace-{:08x}", seed);
-    let timestamp = format!("2026-04-23T{:02}:{:02}:{:02}Z",
-                           (seed % 24) as u8,
-                           ((seed / 24) % 60) as u8,
-                           ((seed / (24 * 60)) % 60) as u8);
+    let timestamp = format!(
+        "2026-04-23T{:02}:{:02}:{:02}Z",
+        (seed % 24) as u8,
+        ((seed / 24) % 60) as u8,
+        ((seed / (24 * 60)) % 60) as u8
+    );
 
     let sandbox_config = serde_json::json!({
         "container_image": format!("app:v{}", seed % 10),
         "memory_limit": format!("{}MB", 64 + (seed % 512)),
         "cpu_limit": format!("{}m", 100 + (seed % 900)),
-    }).to_string();
+    })
+    .to_string();
 
     let secret_count = (seed % 5) + 1; // 1-5 secrets
     let secret_refs = (0..secret_count)
@@ -148,29 +149,60 @@ fn mr_duplicate_inputs_identical_transcripts() {
         let transcript2 = activate(&input, &executor);
 
         // Transcripts should be byte-for-byte identical
-        assert_eq!(transcript1.connector_id, transcript2.connector_id,
-                   "Connector IDs differ for seed {}", seed);
-        assert_eq!(transcript1.trace_id, transcript2.trace_id,
-                   "Trace IDs differ for seed {}", seed);
-        assert_eq!(transcript1.completed, transcript2.completed,
-                   "Completion status differs for seed {}", seed);
-        assert_eq!(transcript1.stages.len(), transcript2.stages.len(),
-                   "Stage count differs for seed {}", seed);
+        assert_eq!(
+            transcript1.connector_id, transcript2.connector_id,
+            "Connector IDs differ for seed {}",
+            seed
+        );
+        assert_eq!(
+            transcript1.trace_id, transcript2.trace_id,
+            "Trace IDs differ for seed {}",
+            seed
+        );
+        assert_eq!(
+            transcript1.completed, transcript2.completed,
+            "Completion status differs for seed {}",
+            seed
+        );
+        assert_eq!(
+            transcript1.stages.len(),
+            transcript2.stages.len(),
+            "Stage count differs for seed {}",
+            seed
+        );
 
-        for (i, (stage1, stage2)) in transcript1.stages.iter()
-            .zip(transcript2.stages.iter()).enumerate() {
-            assert_eq!(stage1.stage, stage2.stage,
-                       "Stage type differs at index {} for seed {}", i, seed);
-            assert_eq!(stage1.success, stage2.success,
-                       "Stage success differs at index {} for seed {}", i, seed);
-            assert_eq!(stage1.timestamp, stage2.timestamp,
-                       "Stage timestamp differs at index {} for seed {}", i, seed);
+        for (i, (stage1, stage2)) in transcript1
+            .stages
+            .iter()
+            .zip(transcript2.stages.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                stage1.stage, stage2.stage,
+                "Stage type differs at index {} for seed {}",
+                i, seed
+            );
+            assert_eq!(
+                stage1.success, stage2.success,
+                "Stage success differs at index {} for seed {}",
+                i, seed
+            );
+            assert_eq!(
+                stage1.timestamp, stage2.timestamp,
+                "Stage timestamp differs at index {} for seed {}",
+                i, seed
+            );
 
             match (&stage1.error, &stage2.error) {
-                (None, None) => {},
+                (None, None) => {}
                 (Some(e1), Some(e2)) => {
-                    assert_eq!(e1.code(), e2.code(),
-                               "Error codes differ at index {} for seed {}", i, seed);
+                    assert_eq!(
+                        e1.code(),
+                        e2.code(),
+                        "Error codes differ at index {} for seed {}",
+                        i,
+                        seed
+                    );
                 }
                 _ => panic!("Error presence differs at index {} for seed {}", i, seed),
             }
@@ -204,17 +236,34 @@ fn mr_secret_reordering_preserves_progression() {
         let transcript_reordered = activate(&input, &executor_reordered);
 
         // Stage progression should be identical (same stages reached)
-        assert_eq!(transcript_exact.stages.len(), transcript_reordered.stages.len(),
-                   "Stage count differs after reordering for seed {}", seed);
-        assert_eq!(transcript_exact.completed, transcript_reordered.completed,
-                   "Completion status differs after reordering for seed {}", seed);
+        assert_eq!(
+            transcript_exact.stages.len(),
+            transcript_reordered.stages.len(),
+            "Stage count differs after reordering for seed {}",
+            seed
+        );
+        assert_eq!(
+            transcript_exact.completed, transcript_reordered.completed,
+            "Completion status differs after reordering for seed {}",
+            seed
+        );
 
-        for (i, (stage1, stage2)) in transcript_exact.stages.iter()
-            .zip(transcript_reordered.stages.iter()).enumerate() {
-            assert_eq!(stage1.stage, stage2.stage,
-                       "Stage type differs at index {} after reordering for seed {}", i, seed);
-            assert_eq!(stage1.success, stage2.success,
-                       "Stage success differs at index {} after reordering for seed {}", i, seed);
+        for (i, (stage1, stage2)) in transcript_exact
+            .stages
+            .iter()
+            .zip(transcript_reordered.stages.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                stage1.stage, stage2.stage,
+                "Stage type differs at index {} after reordering for seed {}",
+                i, seed
+            );
+            assert_eq!(
+                stage1.success, stage2.success,
+                "Stage success differs at index {} after reordering for seed {}",
+                i, seed
+            );
         }
     }
 }
@@ -233,7 +282,9 @@ fn mr_capability_subset_stage_inclusion() {
         // Create subset by taking first half of capabilities
         let mut input_subset = input_full.clone();
         let subset_size = input_full.capabilities.len() / 2;
-        input_subset.capabilities = input_full.capabilities.iter()
+        input_subset.capabilities = input_full
+            .capabilities
+            .iter()
             .take(subset_size)
             .cloned()
             .collect();
@@ -245,19 +296,31 @@ fn mr_capability_subset_stage_inclusion() {
 
         // If subset completes successfully, full set should too (monotonic)
         if transcript_subset.completed {
-            assert!(transcript_full.completed,
-                   "Full capability set failed while subset succeeded for seed {}", seed);
+            assert!(
+                transcript_full.completed,
+                "Full capability set failed while subset succeeded for seed {}",
+                seed
+            );
 
             // Should reach at least as many stages
-            assert!(transcript_subset.stages.len() <= transcript_full.stages.len(),
-                   "Subset reached more stages than full set for seed {}", seed);
+            assert!(
+                transcript_subset.stages.len() <= transcript_full.stages.len(),
+                "Subset reached more stages than full set for seed {}",
+                seed
+            );
         }
 
         // Both should have same stage types in same order (prefix relation)
-        let min_stages = transcript_subset.stages.len().min(transcript_full.stages.len());
+        let min_stages = transcript_subset
+            .stages
+            .len()
+            .min(transcript_full.stages.len());
         for i in 0..min_stages {
-            assert_eq!(transcript_subset.stages[i].stage, transcript_full.stages[i].stage,
-                       "Stage order differs at index {} for seed {}", i, seed);
+            assert_eq!(
+                transcript_subset.stages[i].stage, transcript_full.stages[i].stage,
+                "Stage order differs at index {} for seed {}",
+                i, seed
+            );
         }
     }
 }
@@ -270,10 +333,22 @@ fn mr_failure_cleanup_idempotent() {
 
         // Test each failure mode
         let failure_configs = vec![
-            ConfigurableExecutor { fail_sandbox: true, ..Default::default() },
-            ConfigurableExecutor { fail_secret_mount: true, ..Default::default() },
-            ConfigurableExecutor { fail_capability: true, ..Default::default() },
-            ConfigurableExecutor { fail_health: true, ..Default::default() },
+            ConfigurableExecutor {
+                fail_sandbox: true,
+                ..Default::default()
+            },
+            ConfigurableExecutor {
+                fail_secret_mount: true,
+                ..Default::default()
+            },
+            ConfigurableExecutor {
+                fail_capability: true,
+                ..Default::default()
+            },
+            ConfigurableExecutor {
+                fail_health: true,
+                ..Default::default()
+            },
         ];
 
         for (failure_idx, executor) in failure_configs.iter().enumerate() {
@@ -281,21 +356,40 @@ fn mr_failure_cleanup_idempotent() {
             let transcript2 = activate(&input, executor);
 
             // Failed activations should be identical (idempotent cleanup)
-            assert!(!transcript1.completed,
-                   "Expected failure for config {} seed {}", failure_idx, seed);
-            assert_eq!(transcript1.completed, transcript2.completed,
-                       "Completion status differs for failure config {} seed {}", failure_idx, seed);
-            assert_eq!(transcript1.stages.len(), transcript2.stages.len(),
-                       "Stage count differs for failure config {} seed {}", failure_idx, seed);
+            assert!(
+                !transcript1.completed,
+                "Expected failure for config {} seed {}",
+                failure_idx, seed
+            );
+            assert_eq!(
+                transcript1.completed, transcript2.completed,
+                "Completion status differs for failure config {} seed {}",
+                failure_idx, seed
+            );
+            assert_eq!(
+                transcript1.stages.len(),
+                transcript2.stages.len(),
+                "Stage count differs for failure config {} seed {}",
+                failure_idx,
+                seed
+            );
 
             // Last stage should have failed consistently
             let last1 = transcript1.stages.last().unwrap();
             let last2 = transcript2.stages.last().unwrap();
-            assert!(!last1.success && !last2.success,
-                   "Last stages should both fail for config {} seed {}", failure_idx, seed);
-            assert_eq!(last1.error.as_ref().unwrap().code(),
-                      last2.error.as_ref().unwrap().code(),
-                      "Error codes differ for failure config {} seed {}", failure_idx, seed);
+            assert!(
+                !last1.success && !last2.success,
+                "Last stages should both fail for config {} seed {}",
+                failure_idx,
+                seed
+            );
+            assert_eq!(
+                last1.error.as_ref().unwrap().code(),
+                last2.error.as_ref().unwrap().code(),
+                "Error codes differ for failure config {} seed {}",
+                failure_idx,
+                seed
+            );
         }
     }
 }
@@ -321,24 +415,39 @@ fn mr_capability_addition_preserves_stages() {
 
         // If base succeeds, extended should succeed (capability addition is monotonic)
         if transcript_base.completed {
-            assert!(transcript_extended.completed,
-                   "Extended capability set failed while base succeeded for seed {}", seed);
+            assert!(
+                transcript_extended.completed,
+                "Extended capability set failed while base succeeded for seed {}",
+                seed
+            );
         }
 
         // Extended should reach at least as many stages as base
-        assert!(transcript_base.stages.len() <= transcript_extended.stages.len(),
-               "Base reached more stages than extended for seed {}", seed);
+        assert!(
+            transcript_base.stages.len() <= transcript_extended.stages.len(),
+            "Base reached more stages than extended for seed {}",
+            seed
+        );
 
         // Stages that both reached should have same success patterns
-        let min_stages = transcript_base.stages.len().min(transcript_extended.stages.len());
+        let min_stages = transcript_base
+            .stages
+            .len()
+            .min(transcript_extended.stages.len());
         for i in 0..min_stages {
-            assert_eq!(transcript_base.stages[i].stage, transcript_extended.stages[i].stage,
-                       "Stage type differs at index {} for seed {}", i, seed);
+            assert_eq!(
+                transcript_base.stages[i].stage, transcript_extended.stages[i].stage,
+                "Stage type differs at index {} for seed {}",
+                i, seed
+            );
 
             // If base stage succeeded, extended should too (monotonic success)
             if transcript_base.stages[i].success {
-                assert!(transcript_extended.stages[i].success,
-                       "Extended stage failed while base succeeded at index {} for seed {}", i, seed);
+                assert!(
+                    transcript_extended.stages[i].success,
+                    "Extended stage failed while base succeeded at index {} for seed {}",
+                    i, seed
+                );
             }
         }
     }
@@ -362,24 +471,34 @@ fn mr_stage_order_invariant() {
         ];
 
         for (i, stage_result) in transcript.stages.iter().enumerate() {
-            assert_eq!(stage_result.stage, expected_order[i],
-                       "Stage order violation at index {} for seed {}: expected {:?}, got {:?}",
-                       i, seed, expected_order[i], stage_result.stage);
+            assert_eq!(
+                stage_result.stage, expected_order[i],
+                "Stage order violation at index {} for seed {}: expected {:?}, got {:?}",
+                i, seed, expected_order[i], stage_result.stage
+            );
 
-            assert_eq!(stage_result.stage.order(), i as u8,
-                       "Stage order value mismatch at index {} for seed {}", i, seed);
+            assert_eq!(
+                stage_result.stage.order(),
+                i as u8,
+                "Stage order value mismatch at index {} for seed {}",
+                i,
+                seed
+            );
         }
 
         // If we reached stage N, we must have reached all stages 0..N-1
-        let reached_stages: BTreeSet<_> = transcript.stages.iter()
-            .map(|s| s.stage.order())
-            .collect();
+        let reached_stages: BTreeSet<_> =
+            transcript.stages.iter().map(|s| s.stage.order()).collect();
 
         if let Some(&max_reached) = reached_stages.iter().max() {
             for stage_order in 0..=max_reached {
-                assert!(reached_stages.contains(&stage_order),
-                       "Missing intermediate stage {} when max reached {} for seed {}",
-                       stage_order, max_reached, seed);
+                assert!(
+                    reached_stages.contains(&stage_order),
+                    "Missing intermediate stage {} when max reached {} for seed {}",
+                    stage_order,
+                    max_reached,
+                    seed
+                );
             }
         }
     }
@@ -394,7 +513,10 @@ fn mr_composite_state_machine_invariants() {
         // Test multiple executor configurations
         let executors = vec![
             ConfigurableExecutor::default(),
-            ConfigurableExecutor { fail_capability: true, ..Default::default() },
+            ConfigurableExecutor {
+                fail_capability: true,
+                ..Default::default()
+            },
             ConfigurableExecutor {
                 secret_mount_behavior: SecretMountBehavior::Reordered,
                 ..Default::default()
@@ -406,30 +528,48 @@ fn mr_composite_state_machine_invariants() {
             let transcript1 = activate(&input, executor);
             let transcript2 = activate(&input, executor);
 
-            assert_eq!(transcript1.completed, transcript2.completed,
-                       "Determinism violated for executor {} seed {}", exec_idx, seed);
-            assert_eq!(transcript1.stages.len(), transcript2.stages.len(),
-                       "Determinism violated for executor {} seed {}", exec_idx, seed);
+            assert_eq!(
+                transcript1.completed, transcript2.completed,
+                "Determinism violated for executor {} seed {}",
+                exec_idx, seed
+            );
+            assert_eq!(
+                transcript1.stages.len(),
+                transcript2.stages.len(),
+                "Determinism violated for executor {} seed {}",
+                exec_idx,
+                seed
+            );
 
             // MR6: Stage ordering - must follow canonical sequence
             for (i, stage_result) in transcript1.stages.iter().enumerate() {
-                assert_eq!(stage_result.stage.order(), i as u8,
-                           "Stage ordering violated at index {} for executor {} seed {}",
-                           i, exec_idx, seed);
+                assert_eq!(
+                    stage_result.stage.order(),
+                    i as u8,
+                    "Stage ordering violated at index {} for executor {} seed {}",
+                    i,
+                    exec_idx,
+                    seed
+                );
             }
 
             // MR4: Cleanup consistency - failure state should be clean
             if !transcript1.completed {
                 // Verify failure occurred at expected stage progression point
                 let failed_stage = transcript1.stages.last().unwrap();
-                assert!(!failed_stage.success,
-                       "Incomplete activation should end with failed stage for executor {} seed {}",
-                       exec_idx, seed);
+                assert!(
+                    !failed_stage.success,
+                    "Incomplete activation should end with failed stage for executor {} seed {}",
+                    exec_idx, seed
+                );
 
                 // Should have error details
-                assert!(failed_stage.error.is_some(),
-                       "Failed stage missing error details for executor {} seed {}",
-                       exec_idx, seed);
+                assert!(
+                    failed_stage.error.is_some(),
+                    "Failed stage missing error details for executor {} seed {}",
+                    exec_idx,
+                    seed
+                );
             }
         }
     }

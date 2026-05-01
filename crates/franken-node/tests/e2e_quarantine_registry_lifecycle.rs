@@ -187,9 +187,15 @@ fn e2e_quarantine_lift_path_full_lifecycle() {
 
     // ── ASSERT: lift requires non-empty justification ───────────────
     let bad = clearance("QO-LIFT-001", "   ", "2026-04-26T22:00:06Z");
-    let bad_err = reg.lift_quarantine(bad).expect_err("empty justification rejected");
+    let bad_err = reg
+        .lift_quarantine(bad)
+        .expect_err("empty justification rejected");
     assert!(bad_err.code.contains("LIFT_REQUIRES_CLEARANCE"));
-    h.log_phase("empty_clearance_rejected", true, json!({"code": bad_err.code}));
+    h.log_phase(
+        "empty_clearance_rejected",
+        true,
+        json!({"code": bad_err.code}),
+    );
 
     // ── ACT: lift with valid clearance ──────────────────────────────
     let good = clearance(
@@ -215,11 +221,7 @@ fn e2e_quarantine_lift_path_full_lifecycle() {
         "expected at least 6 audit entries (init+2 props+enforce+drain+complete+lift), got {}",
         audits.len()
     );
-    h.log_phase(
-        "audit_integrity",
-        true,
-        json!({"entries": audits.len()}),
-    );
+    h.log_phase("audit_integrity", true, json!({"entries": audits.len()}));
 }
 
 #[test]
@@ -377,7 +379,11 @@ fn e2e_quarantine_rejects_duplicate_order_and_invalid_transition() {
         dup_err.code.contains("DUPLICATE_ORDER_ID"),
         "expected DUPLICATE_ORDER_ID, got {dup_err:?}"
     );
-    h.log_phase("duplicate_order_rejected", true, json!({"code": dup_err.code}));
+    h.log_phase(
+        "duplicate_order_rejected",
+        true,
+        json!({"code": dup_err.code}),
+    );
 
     // ── start_drain before enforce → INVALID_TRANSITION ─────────────
     reg.initiate_quarantine(order(

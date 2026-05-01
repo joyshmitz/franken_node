@@ -48,7 +48,14 @@ fn evidence_ledger_supports_batched_sync() {
 
     // Append multiple entries without individual syncs
     let entries = (0..5)
-        .map(|i| test_entry(&format!("test-evidence-{i}"), &format!("hash-{i}"), 1000 + i as u64, i as u64))
+        .map(|i| {
+            test_entry(
+                &format!("test-evidence-{i}"),
+                &format!("hash-{i}"),
+                1000 + i as u64,
+                i as u64,
+            )
+        })
         .collect::<Vec<_>>();
 
     let mut entry_ids = Vec::new();

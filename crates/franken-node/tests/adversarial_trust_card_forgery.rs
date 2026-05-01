@@ -260,7 +260,9 @@ fn registry_ingestion_rejects_forged_card_in_snapshot() {
         .cards_by_extension
         .get_mut(&card.extension.extension_id)
         .expect("extension bucket must exist after create");
-    let latest = history.last_mut().expect("snapshot bucket has at least one card");
+    let latest = history
+        .last_mut()
+        .expect("snapshot bucket has at least one card");
     latest.reputation_score_basis_points = 9_999;
 
     // Ingestion under the legitimate key must reject the snapshot. The exact
@@ -302,18 +304,18 @@ fn legitimate_card_does_not_verify_under_attacker_key() {
 /// empty snapshot bypasses signature checks.
 #[test]
 fn empty_snapshot_signed_by_attacker_key_is_rejected() {
-    let attacker_snapshot = TrustCardRegistrySnapshot::signed(
-        CACHE_TTL_SECS,
-        BTreeMap::new(),
-        ATTACKER_KEY,
-    )
-    .expect("attacker can self-sign empty snapshot under their own key");
+    let attacker_snapshot =
+        TrustCardRegistrySnapshot::signed(CACHE_TTL_SECS, BTreeMap::new(), ATTACKER_KEY)
+            .expect("attacker can self-sign empty snapshot under their own key");
 
     let err = TrustCardRegistry::from_snapshot(attacker_snapshot, LEGITIMATE_KEY, NOW_SECS)
         .err()
         .expect("attacker-signed empty snapshot must be rejected by legitimate ingestion");
     assert!(
-        matches!(err, TrustCardError::SignatureInvalid(_) | TrustCardError::InvalidSnapshot(_)),
+        matches!(
+            err,
+            TrustCardError::SignatureInvalid(_) | TrustCardError::InvalidSnapshot(_)
+        ),
         "expected SignatureInvalid or InvalidSnapshot for attacker-signed empty snapshot, got {err:?}"
     );
 }

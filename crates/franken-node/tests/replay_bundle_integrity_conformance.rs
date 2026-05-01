@@ -1,9 +1,9 @@
 use frankenengine_node::tools::replay_bundle::{
-    generate_replay_bundle, to_canonical_json, validate_bundle_integrity, EventType, RawEvent,
-    ReplayBundle,
+    EventType, RawEvent, ReplayBundle, generate_replay_bundle, to_canonical_json,
+    validate_bundle_integrity,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -400,28 +400,40 @@ impl TestLogger {
     }
 
     fn log_file_operation(&self, operation: &str, path: &Path, size_bytes: u64) {
-        self.log_phase("file_io", operation, json!({
-            "path": path.display().to_string(),
-            "size_bytes": size_bytes
-        }));
+        self.log_phase(
+            "file_io",
+            operation,
+            json!({
+                "path": path.display().to_string(),
+                "size_bytes": size_bytes
+            }),
+        );
     }
 
     fn log_assertion(&self, field: &str, expected: Value, actual: Value, matches: bool) {
-        self.log_phase("assert", "assertion", json!({
-            "field": field,
-            "expected": expected,
-            "actual": actual,
-            "match": matches
-        }));
+        self.log_phase(
+            "assert",
+            "assertion",
+            json!({
+                "field": field,
+                "expected": expected,
+                "actual": actual,
+                "match": matches
+            }),
+        );
     }
 
     fn log_test_complete(&self, result: &str, files_created: usize) {
         let duration = self.start_time.elapsed().unwrap_or(Duration::ZERO);
-        self.log_phase("teardown", "test_complete", json!({
-            "result": result,
-            "duration_ms": duration.as_millis(),
-            "files_created": files_created
-        }));
+        self.log_phase(
+            "teardown",
+            "test_complete",
+            json!({
+                "result": result,
+                "duration_ms": duration.as_millis(),
+                "files_created": files_created
+            }),
+        );
     }
 }
 
@@ -448,9 +460,9 @@ fn create_test_event_log() -> Vec<RawEvent> {
                 "component": "replay_engine",
                 "action": "start",
                 "sequence": 1
-            })
-        ).with_policy_version("1.0.0"),
-
+            }),
+        )
+        .with_policy_version("1.0.0"),
         RawEvent::new(
             "2026-04-25T10:00:01Z",
             EventType::PolicyEval,
@@ -458,9 +470,9 @@ fn create_test_event_log() -> Vec<RawEvent> {
                 "policy_id": "test_policy",
                 "decision": "allow",
                 "confidence": 0.95
-            })
-        ).with_causal_parent(1),
-
+            }),
+        )
+        .with_causal_parent(1),
         RawEvent::new(
             "2026-04-25T10:00:02Z",
             EventType::ExternalSignal,
@@ -471,12 +483,12 @@ fn create_test_event_log() -> Vec<RawEvent> {
                     "checkpoint_id": "cp_001",
                     "verified": true
                 }
-            })
-        ).with_state_snapshot(json!({
+            }),
+        )
+        .with_state_snapshot(json!({
             "active_sessions": 3,
             "pending_operations": 0
         })),
-
         RawEvent::new(
             "2026-04-25T10:00:03Z",
             EventType::OperatorAction,
@@ -484,8 +496,9 @@ fn create_test_event_log() -> Vec<RawEvent> {
                 "operator_id": "admin_001",
                 "action": "validate_bundle",
                 "target": "incident_replay_001"
-            })
-        ).with_causal_parent(2)
+            }),
+        )
+        .with_causal_parent(2),
     ]
 }
 
@@ -495,26 +508,37 @@ fn test_replay_bundle_file_io_roundtrip_preserves_integrity() {
     validate_test_environment();
     let logger = TestLogger::new("file_io_roundtrip_integrity");
 
-    logger.log_phase("setup", "test_start", json!({
-        "test_type": "file_io_roundtrip",
-        "mock_free": true
-    }));
+    logger.log_phase(
+        "setup",
+        "test_start",
+        json!({
+            "test_type": "file_io_roundtrip",
+            "mock_free": true
+        }),
+    );
 
     // Create temporary workspace for real file operations
-    let workspace = tempfile::tempdir()
-        .expect("create temporary workspace");
-    logger.log_phase("setup", "workspace_created", json!({
-        "workspace_path": workspace.path().display().to_string()
-    }));
+    let workspace = tempfile::tempdir().expect("create temporary workspace");
+    logger.log_phase(
+        "setup",
+        "workspace_created",
+        json!({
+            "workspace_path": workspace.path().display().to_string()
+        }),
+    );
 
     // Generate replay bundle from deterministic event log
     let incident_id = "incident_roundtrip_test_001";
     let event_log = create_test_event_log();
 
-    logger.log_phase("generate", "bundle_creation_start", json!({
-        "incident_id": incident_id,
-        "event_count": event_log.len()
-    }));
+    logger.log_phase(
+        "generate",
+        "bundle_creation_start",
+        json!({
+            "incident_id": incident_id,
+            "event_count": event_log.len()
+        }),
+    );
 
     let original_bundle = generate_replay_bundle(incident_id, &event_log)
         .expect("generate_replay_bundle should succeed with valid input");
@@ -522,42 +546,56 @@ fn test_replay_bundle_file_io_roundtrip_preserves_integrity() {
     // Validate original bundle integrity
     let integrity_valid = validate_bundle_integrity(&original_bundle)
         .expect("validate_bundle_integrity should succeed");
-    assert!(integrity_valid, "Original bundle must pass integrity validation");
+    assert!(
+        integrity_valid,
+        "Original bundle must pass integrity validation"
+    );
 
-    logger.log_phase("generate", "bundle_created", json!({
-        "bundle_id": original_bundle.bundle_id,
-        "event_count": original_bundle.timeline.len(),
-        "chunk_count": original_bundle.chunks.len()
-    }));
+    logger.log_phase(
+        "generate",
+        "bundle_created",
+        json!({
+            "bundle_id": original_bundle.bundle_id,
+            "event_count": original_bundle.timeline.len(),
+            "chunk_count": original_bundle.chunks.len()
+        }),
+    );
 
     // Export bundle to real file system
     let bundle_file_path = workspace.path().join("replay_bundle.json");
-    let canonical_json = to_canonical_json(&original_bundle)
-        .expect("to_canonical_json should succeed");
+    let canonical_json =
+        to_canonical_json(&original_bundle).expect("to_canonical_json should succeed");
 
     let json_size = u64::try_from(canonical_json.len()).unwrap_or(u64::MAX);
-    fs::write(&bundle_file_path, &canonical_json)
-        .expect("writing bundle to file should succeed");
+    fs::write(&bundle_file_path, &canonical_json).expect("writing bundle to file should succeed");
 
     logger.log_file_operation("write", &bundle_file_path, json_size);
 
     // Verify file actually exists and has expected size
-    let file_metadata = fs::metadata(&bundle_file_path)
-        .expect("bundle file should exist after write");
+    let file_metadata =
+        fs::metadata(&bundle_file_path).expect("bundle file should exist after write");
 
     logger.log_assertion(
         "file_size_matches",
         json!(json_size),
         json!(file_metadata.len()),
-        file_metadata.len() == json_size
+        file_metadata.len() == json_size,
     );
-    assert_eq!(file_metadata.len(), json_size, "Written file size must match JSON size");
+    assert_eq!(
+        file_metadata.len(),
+        json_size,
+        "Written file size must match JSON size"
+    );
 
     // Import bundle from real file system
-    let file_contents = fs::read_to_string(&bundle_file_path)
-        .expect("reading bundle from file should succeed");
+    let file_contents =
+        fs::read_to_string(&bundle_file_path).expect("reading bundle from file should succeed");
 
-    logger.log_file_operation("read", &bundle_file_path, u64::try_from(file_contents.len()).unwrap_or(u64::MAX));
+    logger.log_file_operation(
+        "read",
+        &bundle_file_path,
+        u64::try_from(file_contents.len()).unwrap_or(u64::MAX),
+    );
 
     let imported_bundle: ReplayBundle = serde_json::from_str(&file_contents)
         .expect("deserializing bundle from file should succeed");
@@ -565,72 +603,91 @@ fn test_replay_bundle_file_io_roundtrip_preserves_integrity() {
     // Validate imported bundle integrity
     let imported_integrity_valid = validate_bundle_integrity(&imported_bundle)
         .expect("validate_bundle_integrity should succeed on imported bundle");
-    assert!(imported_integrity_valid, "Imported bundle must pass integrity validation");
+    assert!(
+        imported_integrity_valid,
+        "Imported bundle must pass integrity validation"
+    );
 
-    logger.log_phase("import", "bundle_imported", json!({
-        "bundle_id": imported_bundle.bundle_id,
-        "event_count": imported_bundle.timeline.len(),
-        "chunk_count": imported_bundle.chunks.len()
-    }));
+    logger.log_phase(
+        "import",
+        "bundle_imported",
+        json!({
+            "bundle_id": imported_bundle.bundle_id,
+            "event_count": imported_bundle.timeline.len(),
+            "chunk_count": imported_bundle.chunks.len()
+        }),
+    );
 
     // Verify roundtrip preserves exact data
     logger.log_assertion(
         "bundle_id_preserved",
         json!(original_bundle.bundle_id),
         json!(imported_bundle.bundle_id),
-        original_bundle.bundle_id == imported_bundle.bundle_id
+        original_bundle.bundle_id == imported_bundle.bundle_id,
     );
-    assert_eq!(original_bundle.bundle_id, imported_bundle.bundle_id,
-               "Bundle ID must be preserved across roundtrip");
+    assert_eq!(
+        original_bundle.bundle_id, imported_bundle.bundle_id,
+        "Bundle ID must be preserved across roundtrip"
+    );
 
     logger.log_assertion(
         "incident_id_preserved",
         json!(original_bundle.incident_id),
         json!(imported_bundle.incident_id),
-        original_bundle.incident_id == imported_bundle.incident_id
+        original_bundle.incident_id == imported_bundle.incident_id,
     );
-    assert_eq!(original_bundle.incident_id, imported_bundle.incident_id,
-               "Incident ID must be preserved across roundtrip");
+    assert_eq!(
+        original_bundle.incident_id, imported_bundle.incident_id,
+        "Incident ID must be preserved across roundtrip"
+    );
 
     logger.log_assertion(
         "timeline_preserved",
         json!(original_bundle.timeline.len()),
         json!(imported_bundle.timeline.len()),
-        original_bundle.timeline.len() == imported_bundle.timeline.len()
+        original_bundle.timeline.len() == imported_bundle.timeline.len(),
     );
-    assert_eq!(original_bundle.timeline, imported_bundle.timeline,
-               "Timeline must be preserved across roundtrip");
+    assert_eq!(
+        original_bundle.timeline, imported_bundle.timeline,
+        "Timeline must be preserved across roundtrip"
+    );
 
     logger.log_assertion(
         "manifest_preserved",
         json!(original_bundle.manifest.event_count),
         json!(imported_bundle.manifest.event_count),
-        original_bundle.manifest == imported_bundle.manifest
+        original_bundle.manifest == imported_bundle.manifest,
     );
-    assert_eq!(original_bundle.manifest, imported_bundle.manifest,
-               "Manifest must be preserved across roundtrip");
+    assert_eq!(
+        original_bundle.manifest, imported_bundle.manifest,
+        "Manifest must be preserved across roundtrip"
+    );
 
     logger.log_assertion(
         "chunks_preserved",
         json!(original_bundle.chunks.len()),
         json!(imported_bundle.chunks.len()),
-        original_bundle.chunks == imported_bundle.chunks
+        original_bundle.chunks == imported_bundle.chunks,
     );
-    assert_eq!(original_bundle.chunks, imported_bundle.chunks,
-               "Chunks must be preserved across roundtrip");
+    assert_eq!(
+        original_bundle.chunks, imported_bundle.chunks,
+        "Chunks must be preserved across roundtrip"
+    );
 
     // Verify canonical JSON is stable across multiple serializations
-    let re_exported_json = to_canonical_json(&imported_bundle)
-        .expect("re-export to canonical JSON should succeed");
+    let re_exported_json =
+        to_canonical_json(&imported_bundle).expect("re-export to canonical JSON should succeed");
 
     logger.log_assertion(
         "canonical_json_stable",
         json!(canonical_json.len()),
         json!(re_exported_json.len()),
-        canonical_json == re_exported_json
+        canonical_json == re_exported_json,
     );
-    assert_eq!(canonical_json, re_exported_json,
-               "Canonical JSON must be stable across import/export cycle");
+    assert_eq!(
+        canonical_json, re_exported_json,
+        "Canonical JSON must be stable across import/export cycle"
+    );
 
     logger.log_test_complete("passed", 1);
 }
@@ -641,13 +698,16 @@ fn test_replay_bundle_file_corruption_detection() {
     validate_test_environment();
     let logger = TestLogger::new("file_corruption_detection");
 
-    logger.log_phase("setup", "test_start", json!({
-        "test_type": "corruption_detection",
-        "mock_free": true
-    }));
+    logger.log_phase(
+        "setup",
+        "test_start",
+        json!({
+            "test_type": "corruption_detection",
+            "mock_free": true
+        }),
+    );
 
-    let workspace = tempfile::tempdir()
-        .expect("create temporary workspace");
+    let workspace = tempfile::tempdir().expect("create temporary workspace");
 
     // Generate valid bundle
     let incident_id = "incident_corruption_test_001";
@@ -657,25 +717,31 @@ fn test_replay_bundle_file_corruption_detection() {
 
     // Write bundle to file
     let bundle_file_path = workspace.path().join("bundle_corruption_test.json");
-    let canonical_json = to_canonical_json(&original_bundle)
-        .expect("to_canonical_json should succeed");
+    let canonical_json =
+        to_canonical_json(&original_bundle).expect("to_canonical_json should succeed");
 
-    fs::write(&bundle_file_path, &canonical_json)
-        .expect("writing bundle to file should succeed");
+    fs::write(&bundle_file_path, &canonical_json).expect("writing bundle to file should succeed");
 
-    logger.log_file_operation("write", &bundle_file_path, u64::try_from(canonical_json.len()).unwrap_or(u64::MAX));
+    logger.log_file_operation(
+        "write",
+        &bundle_file_path,
+        u64::try_from(canonical_json.len()).unwrap_or(u64::MAX),
+    );
 
     // Corrupt the file by truncating it
     let corrupted_json = &canonical_json[..canonical_json.len() / 2];
     let corrupted_path = workspace.path().join("bundle_corrupted.json");
-    fs::write(&corrupted_path, corrupted_json)
-        .expect("writing corrupted bundle should succeed");
+    fs::write(&corrupted_path, corrupted_json).expect("writing corrupted bundle should succeed");
 
-    logger.log_file_operation("write_corrupted", &corrupted_path, u64::try_from(corrupted_json.len()).unwrap_or(u64::MAX));
+    logger.log_file_operation(
+        "write_corrupted",
+        &corrupted_path,
+        u64::try_from(corrupted_json.len()).unwrap_or(u64::MAX),
+    );
 
     // Attempt to import corrupted bundle
-    let corrupted_contents = fs::read_to_string(&corrupted_path)
-        .expect("reading corrupted bundle should succeed");
+    let corrupted_contents =
+        fs::read_to_string(&corrupted_path).expect("reading corrupted bundle should succeed");
 
     let import_result: Result<ReplayBundle, _> = serde_json::from_str(&corrupted_contents);
 
@@ -683,16 +749,16 @@ fn test_replay_bundle_file_corruption_detection() {
         "corruption_detected",
         json!(false),
         json!(import_result.is_ok()),
-        import_result.is_err()
+        import_result.is_err(),
     );
     assert!(import_result.is_err(), "Corrupted bundle import must fail");
 
     // Verify intact file still works
-    let intact_contents = fs::read_to_string(&bundle_file_path)
-        .expect("reading intact bundle should succeed");
+    let intact_contents =
+        fs::read_to_string(&bundle_file_path).expect("reading intact bundle should succeed");
 
-    let intact_import: ReplayBundle = serde_json::from_str(&intact_contents)
-        .expect("intact bundle import must succeed");
+    let intact_import: ReplayBundle =
+        serde_json::from_str(&intact_contents).expect("intact bundle import must succeed");
 
     let intact_valid = validate_bundle_integrity(&intact_import)
         .expect("validate_bundle_integrity should succeed");
@@ -702,7 +768,7 @@ fn test_replay_bundle_file_corruption_detection() {
         "intact_bundle_valid",
         json!(true),
         json!(intact_valid),
-        intact_valid
+        intact_valid,
     );
 
     logger.log_test_complete("passed", 2);

@@ -35,9 +35,7 @@ fn one_source_rate_limited_does_not_block_other_sources() {
         limiter
             .check_auth_attempt("trace-a", source_a)
             .unwrap_or_else(|err| {
-                panic!(
-                    "source A attempt {attempt} should pass before bucket drains, got {err:?}"
-                )
+                panic!("source A attempt {attempt} should pass before bucket drains, got {err:?}")
             });
     }
     let blocked = limiter

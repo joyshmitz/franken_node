@@ -24,7 +24,13 @@ fn test_signing_key(i: u32) -> SigningKey {
     SigningKey::from_bytes(&seed)
 }
 
-fn build_case(count: usize) -> (ThresholdConfig, PublicationArtifact, PreparsedThresholdConfig) {
+fn build_case(
+    count: usize,
+) -> (
+    ThresholdConfig,
+    PublicationArtifact,
+    PreparsedThresholdConfig,
+) {
     let mut signer_keys = Vec::with_capacity(count);
     let mut signing_keys = Vec::with_capacity(count);
 
@@ -138,16 +144,20 @@ fn bench_verify_threshold(c: &mut Criterion) {
     for count in [8usize, 32usize] {
         let (config, artifact, parsed) = build_case(count);
 
-        group.bench_with_input(BenchmarkId::new("current", count), &(&config, &artifact), |b, case| {
-            b.iter(|| {
-                black_box(verify_threshold(
-                    black_box(case.0),
-                    black_box(case.1),
-                    "bench-trace",
-                    "2026-04-27T00:00:00Z",
-                ))
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::new("current", count),
+            &(&config, &artifact),
+            |b, case| {
+                b.iter(|| {
+                    black_box(verify_threshold(
+                        black_box(case.0),
+                        black_box(case.1),
+                        "bench-trace",
+                        "2026-04-27T00:00:00Z",
+                    ))
+                })
+            },
+        );
 
         group.bench_with_input(
             BenchmarkId::new("preparsed_keys", count),

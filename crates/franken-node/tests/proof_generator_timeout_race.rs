@@ -1,7 +1,7 @@
 use frankenengine_node::{
     connector::vef_execution_receipt::{
-        error_codes, receipt_hash_sha256, serialize_canonical, verify_hash, ExecutionActionType,
-        ExecutionReceipt, RECEIPT_SCHEMA_VERSION,
+        ExecutionActionType, ExecutionReceipt, RECEIPT_SCHEMA_VERSION, error_codes,
+        receipt_hash_sha256, serialize_canonical, verify_hash,
     },
     vef::{
         proof_generator::{

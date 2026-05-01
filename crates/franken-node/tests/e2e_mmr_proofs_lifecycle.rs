@@ -172,8 +172,8 @@ fn e2e_mmr_inclusion_proof_negative_paths() {
 
     // ── LeafMismatch: pass a different marker hash ─────────────────
     let other_marker_hash = stream.get(2).unwrap().marker_hash.clone();
-    let err = verify_inclusion(&proof, &root, &other_marker_hash)
-        .expect_err("wrong marker rejected");
+    let err =
+        verify_inclusion(&proof, &root, &other_marker_hash).expect_err("wrong marker rejected");
     assert!(matches!(err, ProofError::LeafMismatch { .. }));
     assert_eq!(err.code(), "MMR_LEAF_MISMATCH");
     h.log_phase("leaf_mismatch", true, json!({"code": err.code()}));
@@ -185,25 +185,28 @@ fn e2e_mmr_inclusion_proof_negative_paths() {
         chars[0] = if chars[0] == '0' { '1' } else { '0' };
         *first = chars.into_iter().collect();
     }
-    let err = verify_inclusion(&tampered, &root, &marker_hash)
-        .expect_err("tampered audit path rejected");
+    let err =
+        verify_inclusion(&tampered, &root, &marker_hash).expect_err("tampered audit path rejected");
     assert!(matches!(err, ProofError::RootMismatch { .. }));
     assert_eq!(err.code(), "MMR_ROOT_MISMATCH");
-    h.log_phase("root_mismatch_tampered_path", true, json!({"code": err.code()}));
+    h.log_phase(
+        "root_mismatch_tampered_path",
+        true,
+        json!({"code": err.code()}),
+    );
 
     // ── SequenceOutOfRange via leaf_index >= tree_size ─────────────
     let mut bad_idx = proof.clone();
     bad_idx.leaf_index = bad_idx.tree_size; // first invalid index
-    let err = verify_inclusion(&bad_idx, &root, &marker_hash)
-        .expect_err("oob leaf_index rejected");
+    let err = verify_inclusion(&bad_idx, &root, &marker_hash).expect_err("oob leaf_index rejected");
     assert!(matches!(err, ProofError::SequenceOutOfRange { .. }));
     h.log_phase("seq_oob_in_verify", true, json!({"code": err.code()}));
 
     // ── InvalidProof via mismatched tree_size ──────────────────────
     let mut wrong_size = proof.clone();
     wrong_size.tree_size = wrong_size.tree_size.saturating_add(1);
-    let err = verify_inclusion(&wrong_size, &root, &marker_hash)
-        .expect_err("size mismatch rejected");
+    let err =
+        verify_inclusion(&wrong_size, &root, &marker_hash).expect_err("size mismatch rejected");
     assert!(matches!(err, ProofError::InvalidProof { .. }));
     assert_eq!(err.code(), "MMR_INVALID_PROOF");
     h.log_phase("size_mismatch", true, json!({}));
@@ -232,7 +235,11 @@ fn e2e_mmr_checkpoint_stale_when_stream_grows() {
     let err = mmr_inclusion_proof(&stream, &ckpt, 0).expect_err("stale ckpt rejected");
     assert!(matches!(err, ProofError::CheckpointStale { .. }));
     assert_eq!(err.code(), "MMR_CHECKPOINT_STALE");
-    h.log_phase("checkpoint_stale_detected", true, json!({"code": err.code()}));
+    h.log_phase(
+        "checkpoint_stale_detected",
+        true,
+        json!({"code": err.code()}),
+    );
 }
 
 #[test]
@@ -256,7 +263,8 @@ fn e2e_mmr_disabled_checkpoint_rejects_all_apis() {
     assert!(matches!(err, ProofError::MmrDisabled));
 
     // mmr_inclusion_proof → MmrDisabled
-    let err = mmr_inclusion_proof(&stream, &disabled, 0).expect_err("inclusion on disabled rejected");
+    let err =
+        mmr_inclusion_proof(&stream, &disabled, 0).expect_err("inclusion on disabled rejected");
     assert!(matches!(err, ProofError::MmrDisabled));
     h.log_phase("disabled_rejects_all", true, json!({"code": err.code()}));
 
@@ -294,8 +302,7 @@ fn e2e_mmr_prefix_proof_lifecycle() {
     );
 
     // PrefixSizeInvalid: A larger than B is forbidden.
-    let bad = mmr_prefix_proof(&ckpt_b, &ckpt_a)
-        .expect_err("a bigger than b rejected");
+    let bad = mmr_prefix_proof(&ckpt_b, &ckpt_a).expect_err("a bigger than b rejected");
     assert!(matches!(bad, ProofError::PrefixSizeInvalid { .. }));
     assert_eq!(bad.code(), "MMR_PREFIX_SIZE_INVALID");
     h.log_phase("prefix_size_invalid", true, json!({"code": bad.code()}));
@@ -319,7 +326,10 @@ fn e2e_mmr_marker_leaf_hash_is_deterministic_and_distinct() {
     assert_eq!(h1.len(), 64, "must be sha256-hex (64 chars)");
 
     let h3 = marker_leaf_hash("sha256:different-input");
-    assert_ne!(h1, h3, "different inputs must produce different leaf hashes");
+    assert_ne!(
+        h1, h3,
+        "different inputs must produce different leaf hashes"
+    );
 
     // Empty input has a stable hash too (function tolerates empty).
     let empty = marker_leaf_hash("");

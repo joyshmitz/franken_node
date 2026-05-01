@@ -1,5 +1,5 @@
 use frankenengine_node::supply_chain::trust_card::{
-    to_canonical_json, verify_card_signature, TrustCard, TrustCardInput, TrustCardRegistry,
+    TrustCard, TrustCardInput, TrustCardRegistry, to_canonical_json, verify_card_signature,
 };
 use serde::Deserialize;
 use std::collections::BTreeMap;

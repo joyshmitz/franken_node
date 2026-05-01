@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 
 use frankenengine_verifier_sdk::*;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// API contract requirement levels for test prioritization
 #[derive(Debug, Clone, Copy)]
@@ -182,7 +182,10 @@ fn fixture_object_string<'a>(
 }
 
 fn is_lower_hex_digest(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 fn assert_rfc3339_timestamp(value: &str, context: &str) -> Result<(), String> {
@@ -201,7 +204,9 @@ fn bundle_error_display_from_fixture(entry: &ErrorMatrixEntry) -> Result<String,
     let display = match entry.error_type.as_str() {
         "Json" => format!(
             "{}",
-            bundle::BundleError::Json(fixture_string(&entry.error_data, "bundle Json.error_data")?.to_string())
+            bundle::BundleError::Json(
+                fixture_string(&entry.error_data, "bundle Json.error_data")?.to_string()
+            )
         ),
         "UnsupportedSchema" => format!(
             "{}",
@@ -262,7 +267,11 @@ fn bundle_error_display_from_fixture(entry: &ErrorMatrixEntry) -> Result<String,
             )?;
             let field = match field {
                 "bundle_id" => "bundle_id",
-                other => return Err(format!("unsupported bundle MissingField fixture field {other}")),
+                other => {
+                    return Err(format!(
+                        "unsupported bundle MissingField fixture field {other}"
+                    ));
+                }
             };
             format!("{}", bundle::BundleError::MissingField { field })
         }
@@ -380,7 +389,9 @@ fn sdk_error_display_from_fixture(entry: &ErrorMatrixEntry) -> Result<String, St
         ),
         "Json" => format!(
             "{}",
-            VerifierSdkError::Json(fixture_string(&entry.error_data, "sdk Json.error_data")?.to_string())
+            VerifierSdkError::Json(
+                fixture_string(&entry.error_data, "sdk Json.error_data")?.to_string()
+            )
         ),
         other => return Err(format!("unsupported sdk error fixture type {other}")),
     };
@@ -586,7 +597,10 @@ fn test_verification_result_json_shape() -> Result<(), String> {
     assert!(parsed_value.get("verifier_signature").unwrap().is_string());
     assert!(parsed_value.get("sdk_version").unwrap().is_string());
     assert!(parsed_value.get("result_origin_nonce").is_none());
-    assert_rfc3339_timestamp(&result.execution_timestamp, "live result execution_timestamp")?;
+    assert_rfc3339_timestamp(
+        &result.execution_timestamp,
+        "live result execution_timestamp",
+    )?;
     assert_eq!(result.verifier_identity, "verifier://shape-test");
     assert!(
         is_lower_hex_digest(&result.artifact_binding_hash),
@@ -766,7 +780,9 @@ fn test_transparency_entry_fixture_matches_live_json_contract() -> Result<(), St
     );
     fixture.merkle_proof[1]
         .strip_prefix("leaf_index:")
-        .ok_or_else(|| "transparency_entry merkle_proof[1] must start with leaf_index:".to_string())?
+        .ok_or_else(|| {
+            "transparency_entry merkle_proof[1] must start with leaf_index:".to_string()
+        })?
         .parse::<usize>()
         .map_err(|err| format!("transparency_entry leaf_index must parse as usize: {err}"))?;
     fixture.merkle_proof[2]
@@ -1111,8 +1127,11 @@ fn test_verifier_sdk_new_rejects_invalid_identities() -> Result<(), String> {
         let test_bundle = vec![0u8; 32]; // minimal test bundle
         match sdk.validate_bundle(&test_bundle) {
             Err(VerifierSdkError::InvalidVerifierIdentity { actual, .. }) => {
-                assert_eq!(actual, invalid_input,
-                    "Error should report the actual invalid identity for case: {}", description);
+                assert_eq!(
+                    actual, invalid_input,
+                    "Error should report the actual invalid identity for case: {}",
+                    description
+                );
             }
             other => {
                 return Err(format!(
@@ -1183,7 +1202,9 @@ fn test_verify_trust_state_rejects_malformed_trust_anchor() -> Result<(), String
         Ok(result) => Err(format!(
             "expected malformed trust-anchor rejection, got unexpected success"
         )),
-        Err(other) => Err(format!("expected MalformedTrustAnchor, got different error type")),
+        Err(other) => Err(format!(
+            "expected MalformedTrustAnchor, got different error type"
+        )),
     }
 }
 

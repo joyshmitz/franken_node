@@ -6,6 +6,10 @@
 use frankenengine_node::claims::claim_compiler::{
     ClaimCompiler, CompilationResult, CompilerConfig, ExternalClaim,
 };
+use frankenengine_node::observability::durability_violation::{
+    CausalEvent, CausalEventType, DurabilityViolationDetector, FailedArtifact, HaltPolicy,
+    ProofContext, ViolationContext,
+};
 use frankenengine_node::registry::staking_governance::{
     RiskTier, SlashEvent, SlashEvidence, SlashRecord, StakeId, StakingAuditEntry, StakingLedger,
     ViolationType,
@@ -15,10 +19,6 @@ use frankenengine_node::supply_chain::trust_card::{
     DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary, PublisherIdentity,
     ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard, TrustCardComparison,
     TrustCardDiffEntry, render_comparison_human, render_trust_card_human, to_canonical_json,
-};
-use frankenengine_node::observability::durability_violation::{
-    DurabilityViolationDetector, ViolationContext, CausalEvent, CausalEventType,
-    FailedArtifact, HaltPolicy, ProofContext,
 };
 
 use regex::Regex;
@@ -408,14 +408,12 @@ fn golden_durability_violation_bundle_json() {
 fn golden_durability_violation_bundle_minimal() {
     // Test with minimal context to ensure clean output
     let ctx = ViolationContext {
-        events: vec![
-            CausalEvent {
-                event_type: CausalEventType::ArtifactUnverifiable,
-                timestamp_ms: 4500,
-                description: "Single test event".to_string(),
-                evidence_ref: None,
-            }
-        ],
+        events: vec![CausalEvent {
+            event_type: CausalEventType::ArtifactUnverifiable,
+            timestamp_ms: 4500,
+            description: "Single test event".to_string(),
+            evidence_ref: None,
+        }],
         artifacts: vec![],
         proofs: ProofContext::new(),
         hardening_level: "critical".to_string(),
@@ -436,29 +434,28 @@ fn golden_durability_violation_bundle_minimal() {
 fn golden_durability_violation_bundle_escaping() {
     // Test proper JSON escaping of special characters
     let ctx = ViolationContext {
-        events: vec![
-            CausalEvent {
-                event_type: CausalEventType::RepairFailed,
-                timestamp_ms: 6500,
-                description: "Event with quotes and tabs and backslashes".to_string(),
-                evidence_ref: Some("EVD-escape-test".to_string()),
-            }
-        ],
-        artifacts: vec![
-            FailedArtifact {
-                artifact_path: "path/with spaces/and quotes.bin".to_string(),
-                expected_hash: "1111111111111111111111111111111111111111111111111111111111111111".to_string(),
-                actual_hash: "2222222222222222222222222222222222222222222222222222222222222222".to_string(),
-                failure_reason: "Reason with quotes and newlines and tabs".to_string(),
-            }
-        ],
+        events: vec![CausalEvent {
+            event_type: CausalEventType::RepairFailed,
+            timestamp_ms: 6500,
+            description: "Event with quotes and tabs and backslashes".to_string(),
+            evidence_ref: Some("EVD-escape-test".to_string()),
+        }],
+        artifacts: vec![FailedArtifact {
+            artifact_path: "path/with spaces/and quotes.bin".to_string(),
+            expected_hash: "1111111111111111111111111111111111111111111111111111111111111111"
+                .to_string(),
+            actual_hash: "2222222222222222222222222222222222222222222222222222222222222222"
+                .to_string(),
+            failure_reason: "Reason with quotes and newlines and tabs".to_string(),
+        }],
         proofs: ProofContext::new(),
         hardening_level: "level with quotes and newlines".to_string(),
         epoch_id: 999,
         timestamp_ms: 7000,
     };
 
-    let mut detector = DurabilityViolationDetector::new(HaltPolicy::HaltScope("test-scope".to_string()));
+    let mut detector =
+        DurabilityViolationDetector::new(HaltPolicy::HaltScope("test-scope".to_string()));
     let bundle = detector.generate_bundle(&ctx);
 
     let json_output = bundle.to_json();

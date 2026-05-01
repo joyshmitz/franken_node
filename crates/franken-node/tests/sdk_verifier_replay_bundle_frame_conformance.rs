@@ -84,23 +84,32 @@ fn workspace_path(relative: &str) -> PathBuf {
 
 fn read_fixture_bytes(relative: &str) -> Result<Vec<u8>, String> {
     let path = workspace_path(relative);
-    std::fs::read(&path).map_err(|err| format!("fixture {} must be readable: {err}", path.display()))
+    std::fs::read(&path)
+        .map_err(|err| format!("fixture {} must be readable: {err}", path.display()))
 }
 
 fn load_fixture_bundle(relative: &str) -> Result<ReplayBundle, String> {
     let path = workspace_path(relative);
-    let raw = std::fs::read_to_string(&path)
-        .map_err(|err| format!("fixture {} must be readable as UTF-8 JSON: {err}", path.display()))?;
-    serde_json::from_str(&raw)
-        .map_err(|err| format!("fixture {} must parse as ReplayBundle: {err}", path.display()))
+    let raw = std::fs::read_to_string(&path).map_err(|err| {
+        format!(
+            "fixture {} must be readable as UTF-8 JSON: {err}",
+            path.display()
+        )
+    })?;
+    serde_json::from_str(&raw).map_err(|err| {
+        format!(
+            "fixture {} must parse as ReplayBundle: {err}",
+            path.display()
+        )
+    })
 }
 
 fn mutate_bundle(bundle: &mut ReplayBundle, mutation: Mutation) -> Result<(), String> {
     match mutation {
         Mutation::FlipSignatureLastNibble => {
             let current = bundle.signature.signature_hex.clone();
-            let (prefix, last) = current
-                .split_at(current.len().checked_sub(1).ok_or_else(|| {
+            let (prefix, last) =
+                current.split_at(current.len().checked_sub(1).ok_or_else(|| {
                     "signature tamper vector requires non-empty signature_hex".to_string()
                 })?);
             let flipped = if last == "0" { "1" } else { "0" };
@@ -170,9 +179,14 @@ fn sdk_verifier_replay_bundle_frame_vectors_match_live_bundle_contract() -> Test
                 let canonical_bytes = canonical_bytes_for_vector(vector)?;
 
                 if vector.expected == ExpectedVerdict::Pass {
-                    let expected_sha256 =
-                        vector.expected_canonical_bytes_sha256.as_ref().ok_or_else(|| {
-                            format!("{} must declare expected_canonical_bytes_sha256", vector.name)
+                    let expected_sha256 = vector
+                        .expected_canonical_bytes_sha256
+                        .as_ref()
+                        .ok_or_else(|| {
+                            format!(
+                                "{} must declare expected_canonical_bytes_sha256",
+                                vector.name
+                            )
                         })?;
                     assert_eq!(
                         sha256_hex(&canonical_bytes),
@@ -189,8 +203,9 @@ fn sdk_verifier_replay_bundle_frame_vectors_match_live_bundle_contract() -> Test
                         vector.name
                     );
 
-                    let verified = bundle::verify(&canonical_bytes)
-                        .map_err(|err| format!("{} canonical bytes must verify: {err}", vector.name))?;
+                    let verified = bundle::verify(&canonical_bytes).map_err(|err| {
+                        format!("{} canonical bytes must verify: {err}", vector.name)
+                    })?;
                     assert_eq!(
                         verified.integrity_hash,
                         vector.expected_integrity_hash.as_deref().ok_or_else(|| {
@@ -209,7 +224,10 @@ fn sdk_verifier_replay_bundle_frame_vectors_match_live_bundle_contract() -> Test
                     );
 
                     let reserialized = bundle::serialize(&verified).map_err(|err| {
-                        format!("{} verified bundle must reserialize canonically: {err}", vector.name)
+                        format!(
+                            "{} verified bundle must reserialize canonically: {err}",
+                            vector.name
+                        )
                     })?;
                     assert_eq!(
                         reserialized, canonical_bytes,
@@ -217,11 +235,14 @@ fn sdk_verifier_replay_bundle_frame_vectors_match_live_bundle_contract() -> Test
                         vector.name
                     );
                 } else {
-                    let err = bundle::verify(&canonical_bytes)
-                        .expect_err(&format!("{} mutated canonical bytes must fail closed", vector.name));
-                    let expected_error = vector.expected_error.as_deref().ok_or_else(|| {
-                        format!("{} must declare expected_error", vector.name)
-                    })?;
+                    let err = bundle::verify(&canonical_bytes).expect_err(&format!(
+                        "{} mutated canonical bytes must fail closed",
+                        vector.name
+                    ));
+                    let expected_error = vector
+                        .expected_error
+                        .as_deref()
+                        .ok_or_else(|| format!("{} must declare expected_error", vector.name))?;
                     assert_eq!(
                         bundle_error_name(&err),
                         expected_error,
@@ -232,11 +253,14 @@ fn sdk_verifier_replay_bundle_frame_vectors_match_live_bundle_contract() -> Test
             }
             InputMode::RawFixtureBytes => {
                 let raw_bytes = read_fixture_bytes(&vector.source_fixture)?;
-                let err = bundle::verify(&raw_bytes)
-                    .expect_err(&format!("{} raw fixture bytes must fail closed", vector.name));
-                let expected_error = vector.expected_error.as_deref().ok_or_else(|| {
-                    format!("{} must declare expected_error", vector.name)
-                })?;
+                let err = bundle::verify(&raw_bytes).expect_err(&format!(
+                    "{} raw fixture bytes must fail closed",
+                    vector.name
+                ));
+                let expected_error = vector
+                    .expected_error
+                    .as_deref()
+                    .ok_or_else(|| format!("{} must declare expected_error", vector.name))?;
                 assert_eq!(
                     bundle_error_name(&err),
                     expected_error,

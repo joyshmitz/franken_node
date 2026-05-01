@@ -183,8 +183,9 @@ impl ReplayTracker {
     /// Check if nonce was already used and mark it as used.
     /// Returns Ok(()) if nonce is fresh, Err if replayed.
     pub fn check_and_mark(&self, nonce: &str) -> Result<(), ReceiptError> {
-        let mut used = lock_utils::safe_lock(&self.used_nonces)
-            .map_err(|e| ReceiptError::Internal(format!("Failed to acquire replay tracker lock: {}", e)))?;
+        let mut used = lock_utils::safe_lock(&self.used_nonces).map_err(|e| {
+            ReceiptError::Internal(format!("Failed to acquire replay tracker lock: {}", e))
+        })?;
 
         if used.contains(&nonce.to_string()) {
             return Err(ReceiptError::ReplayAttack {
@@ -249,7 +250,9 @@ pub enum ReceiptError {
     ReplayAttack { nonce: String },
     #[error("audience binding mismatch: expected '{expected}', got '{actual}'")]
     AudienceMismatch { expected: String, actual: String },
-    #[error("stale receipt: timestamp '{timestamp}' is older than {max_age_secs} seconds (age: {age_secs}s)")]
+    #[error(
+        "stale receipt: timestamp '{timestamp}' is older than {max_age_secs} seconds (age: {age_secs}s)"
+    )]
     StaleReceipt {
         timestamp: String,
         max_age_secs: u64,
@@ -532,7 +535,10 @@ pub fn verify_receipt_with_audience(
         .map_err(ReceiptError::SignatureDecode)?;
     let signature = Signature::from_slice(&sig_bytes).map_err(|_| ReceiptError::SignatureBytes)?;
 
-    if public_key.verify_strict(payload.as_bytes(), &signature).is_err() {
+    if public_key
+        .verify_strict(payload.as_bytes(), &signature)
+        .is_err()
+    {
         return Ok(false);
     }
 
@@ -1744,12 +1750,7 @@ mod tests {
         ));
 
         // No expected audience (legacy mode) should pass
-        let result = verify_receipt_with_audience(
-            &signed,
-            &demo_verifying_key(),
-            None,
-            None,
-        );
+        let result = verify_receipt_with_audience(&signed, &demo_verifying_key(), None, None);
         assert!(result.is_ok() && result.unwrap());
     }
 
@@ -2098,17 +2099,22 @@ mod tests {
 
         // Create receipt with old timestamp (older than MAX_RECEIPT_AGE_SECS)
         let mut receipt = make_receipt("test", Decision::Approved);
-        let stale_time = clock::wall_now()
-            - chrono::Duration::seconds((MAX_RECEIPT_AGE_SECS + 1) as i64);
+        let stale_time =
+            clock::wall_now() - chrono::Duration::seconds((MAX_RECEIPT_AGE_SECS + 1) as i64);
         receipt.timestamp = stale_time.to_rfc3339();
 
         let signed = sign_receipt(&receipt, &key).expect("should sign stale receipt");
 
         // Verification should reject stale receipt
-        let err = verify_receipt(&signed, &public_key).expect_err("stale receipt should be rejected");
+        let err =
+            verify_receipt(&signed, &public_key).expect_err("stale receipt should be rejected");
 
         match err {
-            ReceiptError::StaleReceipt { timestamp, max_age_secs, age_secs } => {
+            ReceiptError::StaleReceipt {
+                timestamp,
+                max_age_secs,
+                age_secs,
+            } => {
                 assert_eq!(timestamp, receipt.timestamp);
                 assert_eq!(max_age_secs, MAX_RECEIPT_AGE_SECS);
                 assert!(age_secs >= MAX_RECEIPT_AGE_SECS);
@@ -2131,10 +2137,15 @@ mod tests {
         let signed = sign_receipt(&receipt, &key).expect("should sign future receipt");
 
         // Verification should reject future receipt
-        let err = verify_receipt(&signed, &public_key).expect_err("future receipt should be rejected");
+        let err =
+            verify_receipt(&signed, &public_key).expect_err("future receipt should be rejected");
 
         match err {
-            ReceiptError::StaleReceipt { timestamp, max_age_secs, age_secs: _ } => {
+            ReceiptError::StaleReceipt {
+                timestamp,
+                max_age_secs,
+                age_secs: _,
+            } => {
                 assert_eq!(timestamp, receipt.timestamp);
                 assert_eq!(max_age_secs, MAX_RECEIPT_AGE_SECS);
             }
@@ -2159,8 +2170,14 @@ mod tests {
         assert!(tracker.check_and_mark("nonce_z").is_ok());
 
         // "nonce_a" and "nonce_m" (newer) should still be tracked and cause replay errors
-        assert!(matches!(tracker.check_and_mark("nonce_a"), Err(ReceiptError::ReplayAttack { .. })));
-        assert!(matches!(tracker.check_and_mark("nonce_m"), Err(ReceiptError::ReplayAttack { .. })));
+        assert!(matches!(
+            tracker.check_and_mark("nonce_a"),
+            Err(ReceiptError::ReplayAttack { .. })
+        ));
+        assert!(matches!(
+            tracker.check_and_mark("nonce_m"),
+            Err(ReceiptError::ReplayAttack { .. })
+        ));
     }
 
     /// Test ReplayTracker handles concurrent access without panicking
@@ -2170,16 +2187,18 @@ mod tests {
         use std::thread;
 
         let tracker = Arc::new(ReplayTracker::with_capacity(100));
-        let handles: Vec<_> = (0..4).map(|thread_id| {
-            let tracker = Arc::clone(&tracker);
-            thread::spawn(move || {
-                for i in 0..25 {
-                    let nonce = format!("thread_{}_nonce_{}", thread_id, i);
-                    // Should not panic even under contention
-                    let _ = tracker.check_and_mark(&nonce);
-                }
+        let handles: Vec<_> = (0..4)
+            .map(|thread_id| {
+                let tracker = Arc::clone(&tracker);
+                thread::spawn(move || {
+                    for i in 0..25 {
+                        let nonce = format!("thread_{}_nonce_{}", thread_id, i);
+                        // Should not panic even under contention
+                        let _ = tracker.check_and_mark(&nonce);
+                    }
+                })
             })
-        }).collect();
+            .collect();
 
         for handle in handles {
             handle.join().expect("Thread should not panic");
@@ -2194,7 +2213,9 @@ mod tests {
         assert!(tracker.check_and_mark("unique_nonce").is_ok());
 
         // Second use should fail with replay attack error
-        let err = tracker.check_and_mark("unique_nonce").expect_err("duplicate nonce should be rejected");
+        let err = tracker
+            .check_and_mark("unique_nonce")
+            .expect_err("duplicate nonce should be rejected");
 
         match err {
             ReceiptError::ReplayAttack { nonce } => {

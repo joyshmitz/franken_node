@@ -9,15 +9,12 @@
 //! no mocks for critical native execution paths.
 
 use frankenengine_node::{
-    config::{Config, Profile, PreferredRuntime},
-    ops::{
-        engine_dispatcher::EngineDispatcher,
-        telemetry_bridge::TelemetryBridge,
-    },
+    config::{Config, PreferredRuntime, Profile},
+    ops::{engine_dispatcher::EngineDispatcher, telemetry_bridge::TelemetryBridge},
     storage::frankensqlite_adapter::FrankensqliteAdapter,
 };
-use std::sync::{Arc, Mutex};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::TempDir;
 
@@ -33,8 +30,11 @@ fn create_mock_engine_binary(dir: &Path) -> PathBuf {
     let engine_path = dir.join("franken-engine");
     #[cfg(unix)]
     {
-        std::fs::write(&engine_path, "#!/bin/bash\necho 'Mock engine output'\nexit 0\n")
-            .expect("Failed to write mock engine");
+        std::fs::write(
+            &engine_path,
+            "#!/bin/bash\necho 'Mock engine output'\nexit 0\n",
+        )
+        .expect("Failed to write mock engine");
         use std::os::unix::fs::PermissionsExt;
         let mut perms = std::fs::metadata(&engine_path)
             .expect("Failed to get metadata")
@@ -45,8 +45,11 @@ fn create_mock_engine_binary(dir: &Path) -> PathBuf {
     #[cfg(windows)]
     {
         let batch_path = dir.join("franken-engine.bat");
-        std::fs::write(&batch_path, "@echo off\necho Mock engine output\nexit /b 0\n")
-            .expect("Failed to write mock engine batch");
+        std::fs::write(
+            &batch_path,
+            "@echo off\necho Mock engine output\nexit /b 0\n",
+        )
+        .expect("Failed to write mock engine batch");
         batch_path
     }
 
@@ -129,8 +132,11 @@ fn create_crashing_mock_engine_binary(dir: &Path) -> PathBuf {
     #[cfg(unix)]
     {
         // Use kill -9 to simulate a crash/panic
-        std::fs::write(&engine_path, "#!/bin/bash\necho 'About to crash'\nkill -9 $$\n")
-            .expect("Failed to write crashing mock engine");
+        std::fs::write(
+            &engine_path,
+            "#!/bin/bash\necho 'About to crash'\nkill -9 $$\n",
+        )
+        .expect("Failed to write crashing mock engine");
         use std::os::unix::fs::PermissionsExt;
         let mut perms = std::fs::metadata(&engine_path)
             .expect("Failed to get metadata")
@@ -142,8 +148,11 @@ fn create_crashing_mock_engine_binary(dir: &Path) -> PathBuf {
     {
         let batch_path = dir.join("crashing-franken-engine.bat");
         // Use taskkill to simulate crash on Windows
-        std::fs::write(&batch_path, "@echo off\necho About to crash\ntaskkill /f /pid %PID%\n")
-            .expect("Failed to write crashing mock engine batch");
+        std::fs::write(
+            &batch_path,
+            "@echo off\necho About to crash\ntaskkill /f /pid %PID%\n",
+        )
+        .expect("Failed to write crashing mock engine batch");
         batch_path
     }
     #[cfg(unix)]
@@ -214,10 +223,8 @@ fn test_strict_profile_rejects_fallback_without_native_engine() {
     let mut config = Config::default();
     config.profile = Profile::Strict; // Strict profile should reject fallback
 
-    let dispatcher = EngineDispatcher::new(
-        Some(engine_path.clone()),
-        PreferredRuntime::FrankenEngine,
-    );
+    let dispatcher =
+        EngineDispatcher::new(Some(engine_path.clone()), PreferredRuntime::FrankenEngine);
     // Create test telemetry bridge
     let socket_path = temp_dir.path().join("test-telemetry.sock");
     let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
@@ -259,10 +266,8 @@ fn test_balanced_profile_allows_external_process_fallback() {
     let mut config = Config::default();
     config.profile = Profile::Balanced; // Balanced allows fallback
 
-    let dispatcher = EngineDispatcher::new(
-        Some(engine_path.clone()),
-        PreferredRuntime::FrankenEngine,
-    );
+    let dispatcher =
+        EngineDispatcher::new(Some(engine_path.clone()), PreferredRuntime::FrankenEngine);
     // Create test telemetry bridge
     let socket_path = temp_dir.path().join("test-telemetry.sock");
     let adapter = Arc::new(Mutex::new(FrankensqliteAdapter::default()));
@@ -305,16 +310,13 @@ fn test_native_engine_error_handling_propagation() {
 
     let result = dispatcher.dispatch_run(&nonexistent_path, &config, &policy_mode);
 
-    assert!(
-        result.is_err(),
-        "Should fail for nonexistent source file"
-    );
+    assert!(result.is_err(), "Should fail for nonexistent source file");
 
     let error = result.unwrap_err().to_string();
     assert!(
-        error.contains("Failed to read application source") ||
-        error.contains("No such file or directory") ||
-        error.contains("cannot find the file"),
+        error.contains("Failed to read application source")
+            || error.contains("No such file or directory")
+            || error.contains("cannot find the file"),
         "Error should indicate source read failure, got: {}",
         error
     );
@@ -399,10 +401,10 @@ fn test_engine_timeout_handling() {
     let error = result.unwrap_err().to_string();
 
     // Verify this is actually a timeout error, not some other error
-    let is_timeout_error = error.contains("timed out") ||
-                          error.contains("timeout") ||
-                          error.contains("Timeout") ||
-                          error.contains("deadline exceeded");
+    let is_timeout_error = error.contains("timed out")
+        || error.contains("timeout")
+        || error.contains("Timeout")
+        || error.contains("deadline exceeded");
 
     // If it's not a timeout error, it might be because the process was killed
     // or failed for another reason, which is also acceptable timeout behavior
@@ -415,10 +417,10 @@ fn test_engine_timeout_handling() {
         );
 
         // And verify the error indicates process failure/interruption
-        let is_process_failure = error.contains("failed") ||
-                                error.contains("killed") ||
-                                error.contains("terminated") ||
-                                error.contains("exit");
+        let is_process_failure = error.contains("failed")
+            || error.contains("killed")
+            || error.contains("terminated")
+            || error.contains("exit");
         assert!(
             is_process_failure,
             "If not a timeout error, should be a process failure error. Got: {}",
@@ -464,18 +466,17 @@ fn test_native_engine_missing_binary_error_handling() {
     // Execute and expect failure due to missing binary
     let result = dispatcher.dispatch_run(&app_path, &config, "test");
 
-    assert!(
-        result.is_err(),
-        "Should fail when engine binary is missing"
-    );
+    assert!(result.is_err(), "Should fail when engine binary is missing");
 
     let error = result.unwrap_err();
     let error_str = error.to_string();
 
     // Verify this is an ActionableError with proper context
     assert!(
-        error_str.contains("engine") || error_str.contains("binary") ||
-        error_str.contains("not found") || error_str.contains("No such file"),
+        error_str.contains("engine")
+            || error_str.contains("binary")
+            || error_str.contains("not found")
+            || error_str.contains("No such file"),
         "Error should indicate engine binary issue, got: {}",
         error_str
     );
@@ -519,8 +520,10 @@ fn test_engine_non_zero_exit_code_error_handling() {
 
     // Verify error indicates process failure
     assert!(
-        error_str.contains("failed") || error_str.contains("exit") ||
-        error_str.contains("error") || error_str.contains("status"),
+        error_str.contains("failed")
+            || error_str.contains("exit")
+            || error_str.contains("error")
+            || error_str.contains("status"),
         "Error should indicate process failure, got: {}",
         error_str
     );
@@ -580,9 +583,11 @@ fn test_engine_crash_signal_error_handling() {
 
     // Verify error indicates abnormal termination
     assert!(
-        error_str.contains("signal") || error_str.contains("killed") ||
-        error_str.contains("terminated") || error_str.contains("crash") ||
-        error_str.contains("failed"),
+        error_str.contains("signal")
+            || error_str.contains("killed")
+            || error_str.contains("terminated")
+            || error_str.contains("crash")
+            || error_str.contains("failed"),
         "Error should indicate abnormal process termination, got: {}",
         error_str
     );
@@ -598,10 +603,8 @@ fn test_dispatcher_creation_and_configuration() {
 
     // Test various dispatcher configurations
     let dispatcher1 = EngineDispatcher::new(None, PreferredRuntime::Auto);
-    let dispatcher2 = EngineDispatcher::new(
-        Some(engine_path.clone()),
-        PreferredRuntime::FrankenEngine,
-    );
+    let dispatcher2 =
+        EngineDispatcher::new(Some(engine_path.clone()), PreferredRuntime::FrankenEngine);
     let dispatcher3 = EngineDispatcher::new(None, PreferredRuntime::Node);
 
     // Dispatchers should be created successfully

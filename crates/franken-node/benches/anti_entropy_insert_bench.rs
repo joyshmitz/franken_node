@@ -50,9 +50,11 @@ fn bench_insert_scaling(c: &mut Criterion) {
     for size in [256usize, 1024, 2048] {
         let records: Vec<_> = (0..size).map(make_record).collect();
 
-        group.bench_with_input(BenchmarkId::new("current_insert", size), &records, |b, records| {
-            b.iter(|| black_box(current_insert(black_box(records))))
-        });
+        group.bench_with_input(
+            BenchmarkId::new("current_insert", size),
+            &records,
+            |b, records| b.iter(|| black_box(current_insert(black_box(records)))),
+        );
 
         group.bench_with_input(
             BenchmarkId::new("batched_digest_once", size),

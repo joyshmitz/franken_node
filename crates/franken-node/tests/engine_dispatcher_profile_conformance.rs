@@ -15,8 +15,11 @@ use frankenengine_node::{
 
 #[cfg(feature = "engine")]
 use frankenengine_engine::{
-    runtime_config::{RuntimeConfig as EngineRuntimeConfig, ExecutionConfig, GuardplaneConfig, OptimizationConfig, ExtensionHostConfig},
-    execution_orchestrator::{OrchestratorConfig, LossMatrixPreset},
+    execution_orchestrator::{LossMatrixPreset, OrchestratorConfig},
+    runtime_config::{
+        ExecutionConfig, ExtensionHostConfig, GuardplaneConfig, OptimizationConfig,
+        RuntimeConfig as EngineRuntimeConfig,
+    },
     security_epoch::SecurityEpoch,
 };
 
@@ -58,11 +61,19 @@ fn conformance_strict_profile_config_values() {
 
     // MUST: Strict guardplane security settings (95% confidence)
     assert_eq!(
-        runtime_config.guardplane.thresholds.tail_confidence_millionths, 950_000,
+        runtime_config
+            .guardplane
+            .thresholds
+            .tail_confidence_millionths,
+        950_000,
         "Strict profile MUST use 95% confidence threshold"
     );
     assert_eq!(
-        runtime_config.guardplane.thresholds.critical_pvalue_millionths, 25_000,
+        runtime_config
+            .guardplane
+            .thresholds
+            .critical_pvalue_millionths,
+        25_000,
         "Strict profile MUST use 2.5% critical p-value"
     );
     assert_eq!(
@@ -81,7 +92,8 @@ fn conformance_strict_profile_config_values() {
     );
 
     // Test OrchestratorConfig mapping
-    let orchestrator_config = EngineDispatcher::map_config_to_orchestrator_config_for_tests(&config);
+    let orchestrator_config =
+        EngineDispatcher::map_config_to_orchestrator_config_for_tests(&config);
 
     // MUST: Conservative loss matrix for safety-first approach
     assert_eq!(
@@ -121,7 +133,11 @@ fn conformance_strict_profile_config_values() {
         "Strict profile MUST use 32K token limit"
     );
     assert_eq!(
-        orchestrator_config.parser_options.budget.max_recursion_depth, 128,
+        orchestrator_config
+            .parser_options
+            .budget
+            .max_recursion_depth,
+        128,
         "Strict profile MUST use shallow recursion: 128"
     );
 
@@ -147,13 +163,11 @@ fn conformance_balanced_profile_config_values() {
     // MUST: Use ExecutionConfig::default() for balanced profile
     let default_execution = frankenengine_engine::runtime_config::ExecutionConfig::default();
     assert_eq!(
-        runtime_config.execution.deterministic_budget,
-        default_execution.deterministic_budget,
+        runtime_config.execution.deterministic_budget, default_execution.deterministic_budget,
         "Balanced profile MUST use default deterministic_budget"
     );
     assert_eq!(
-        runtime_config.execution.throughput_budget,
-        default_execution.throughput_budget,
+        runtime_config.execution.throughput_budget, default_execution.throughput_budget,
         "Balanced profile MUST use default throughput_budget"
     );
     assert_eq!(
@@ -165,7 +179,10 @@ fn conformance_balanced_profile_config_values() {
     // MUST: Use GuardplaneConfig::default() for balanced profile
     let default_guardplane = frankenengine_engine::runtime_config::GuardplaneConfig::default();
     assert_eq!(
-        runtime_config.guardplane.thresholds.tail_confidence_millionths,
+        runtime_config
+            .guardplane
+            .thresholds
+            .tail_confidence_millionths,
         default_guardplane.thresholds.tail_confidence_millionths,
         "Balanced profile MUST use default confidence thresholds"
     );
@@ -177,7 +194,8 @@ fn conformance_balanced_profile_config_values() {
     );
 
     // Test OrchestratorConfig mapping
-    let orchestrator_config = EngineDispatcher::map_config_to_orchestrator_config_for_tests(&config);
+    let orchestrator_config =
+        EngineDispatcher::map_config_to_orchestrator_config_for_tests(&config);
 
     // MUST: Balanced loss matrix
     assert_eq!(
@@ -217,7 +235,11 @@ fn conformance_balanced_profile_config_values() {
         "Balanced profile MUST use 64K token limit"
     );
     assert_eq!(
-        orchestrator_config.parser_options.budget.max_recursion_depth, 256,
+        orchestrator_config
+            .parser_options
+            .budget
+            .max_recursion_depth,
+        256,
         "Balanced profile MUST use standard recursion: 256"
     );
 
@@ -268,11 +290,19 @@ fn conformance_legacy_risky_profile_config_values() {
 
     // MUST: Relaxed guardplane security (70% confidence)
     assert_eq!(
-        runtime_config.guardplane.thresholds.tail_confidence_millionths, 700_000,
+        runtime_config
+            .guardplane
+            .thresholds
+            .tail_confidence_millionths,
+        700_000,
         "LegacyRisky profile MUST use 70% confidence threshold"
     );
     assert_eq!(
-        runtime_config.guardplane.thresholds.critical_pvalue_millionths, 100_000,
+        runtime_config
+            .guardplane
+            .thresholds
+            .critical_pvalue_millionths,
+        100_000,
         "LegacyRisky profile MUST use 10% critical p-value"
     );
     assert_eq!(
@@ -291,7 +321,8 @@ fn conformance_legacy_risky_profile_config_values() {
     );
 
     // Test OrchestratorConfig mapping
-    let orchestrator_config = EngineDispatcher::map_config_to_orchestrator_config_for_tests(&config);
+    let orchestrator_config =
+        EngineDispatcher::map_config_to_orchestrator_config_for_tests(&config);
 
     // MUST: Permissive loss matrix for performance/compatibility
     assert_eq!(
@@ -331,7 +362,11 @@ fn conformance_legacy_risky_profile_config_values() {
         "LegacyRisky profile MUST use 256K token limit"
     );
     assert_eq!(
-        orchestrator_config.parser_options.budget.max_recursion_depth, 512,
+        orchestrator_config
+            .parser_options
+            .budget
+            .max_recursion_depth,
+        512,
         "LegacyRisky profile MUST allow deep recursion: 512"
     );
 
@@ -364,7 +399,10 @@ fn conformance_optimization_extension_host_structure() {
         // (specific field testing requires knowing ExtensionHostConfig structure)
         let _ = &runtime_config.extension_host;
 
-        println!("✓ Profile {:?}: OptimizationConfig and ExtensionHostConfig structures present", profile);
+        println!(
+            "✓ Profile {:?}: OptimizationConfig and ExtensionHostConfig structures present",
+            profile
+        );
     }
 }
 
@@ -377,8 +415,22 @@ fn conformance_profile_capability_mappings() {
     // MUST: Each profile must generate valid capabilities that franken-engine recognizes
     let test_cases = [
         (Profile::Strict, &["fs_read", "timer"] as &[&str]),
-        (Profile::Balanced, &["fs_read", "network_egress", "builtin", "timer"]),
-        (Profile::LegacyRisky, &["fs_read", "fs_write", "network_egress", "builtin", "env_read", "process_spawn", "timer"]),
+        (
+            Profile::Balanced,
+            &["fs_read", "network_egress", "builtin", "timer"],
+        ),
+        (
+            Profile::LegacyRisky,
+            &[
+                "fs_read",
+                "fs_write",
+                "network_egress",
+                "builtin",
+                "env_read",
+                "process_spawn",
+                "timer",
+            ],
+        ),
     ];
 
     for (profile, expected_capabilities) in &test_cases {
@@ -387,9 +439,11 @@ fn conformance_profile_capability_mappings() {
 
         // MUST: Profile must generate expected capability count
         assert_eq!(
-            capabilities.len(), expected_capabilities.len(),
+            capabilities.len(),
+            expected_capabilities.len(),
             "{:?} profile MUST generate {} capabilities",
-            profile, expected_capabilities.len()
+            profile,
+            expected_capabilities.len()
         );
 
         // MUST: Profile must generate expected capability strings
@@ -397,11 +451,16 @@ fn conformance_profile_capability_mappings() {
             assert!(
                 capabilities.contains(&expected_cap.to_string()),
                 "{:?} profile MUST include '{}' capability",
-                profile, expected_cap
+                profile,
+                expected_cap
             );
         }
 
-        println!("✓ Profile {:?}: {} capabilities validated", profile, capabilities.len());
+        println!(
+            "✓ Profile {:?}: {} capabilities validated",
+            profile,
+            capabilities.len()
+        );
     }
 }
 
@@ -420,26 +479,66 @@ fn generate_profile_conformance_report() {
         config.profile = *profile;
 
         let runtime_config = EngineDispatcher::map_config_to_runtime_config_for_tests(&config);
-        let orchestrator_config = EngineDispatcher::map_config_to_orchestrator_config_for_tests(&config);
+        let orchestrator_config =
+            EngineDispatcher::map_config_to_orchestrator_config_for_tests(&config);
         let capabilities = EngineDispatcher::get_validated_capabilities_for_tests(*profile)
             .expect("profile capability mapping should validate");
 
         println!("Profile: {:?}", profile);
         println!("├─ RuntimeConfig:");
-        println!("│  ├─ deterministic_budget: {}", runtime_config.execution.deterministic_budget);
-        println!("│  ├─ throughput_budget: {}", runtime_config.execution.throughput_budget);
-        println!("│  ├─ max_call_depth: {}", runtime_config.execution.max_call_depth);
-        println!("│  ├─ tail_confidence_millionths: {}", runtime_config.guardplane.thresholds.tail_confidence_millionths);
-        println!("│  └─ workload_min_pass_rate_millionths: {}", runtime_config.gates.workload_min_pass_rate_millionths);
+        println!(
+            "│  ├─ deterministic_budget: {}",
+            runtime_config.execution.deterministic_budget
+        );
+        println!(
+            "│  ├─ throughput_budget: {}",
+            runtime_config.execution.throughput_budget
+        );
+        println!(
+            "│  ├─ max_call_depth: {}",
+            runtime_config.execution.max_call_depth
+        );
+        println!(
+            "│  ├─ tail_confidence_millionths: {}",
+            runtime_config
+                .guardplane
+                .thresholds
+                .tail_confidence_millionths
+        );
+        println!(
+            "│  └─ workload_min_pass_rate_millionths: {}",
+            runtime_config.gates.workload_min_pass_rate_millionths
+        );
 
         println!("├─ OrchestratorConfig:");
-        println!("│  ├─ loss_matrix_preset: {:?}", orchestrator_config.loss_matrix_preset);
-        println!("│  ├─ drain_deadline_ticks: {}", orchestrator_config.drain_deadline_ticks);
-        println!("│  ├─ max_concurrent_sagas: {}", orchestrator_config.max_concurrent_sagas);
+        println!(
+            "│  ├─ loss_matrix_preset: {:?}",
+            orchestrator_config.loss_matrix_preset
+        );
+        println!(
+            "│  ├─ drain_deadline_ticks: {}",
+            orchestrator_config.drain_deadline_ticks
+        );
+        println!(
+            "│  ├─ max_concurrent_sagas: {}",
+            orchestrator_config.max_concurrent_sagas
+        );
         println!("│  ├─ security_epoch: {:?}", orchestrator_config.epoch);
-        println!("│  ├─ max_source_bytes: {}", orchestrator_config.parser_options.budget.max_source_bytes);
-        println!("│  ├─ max_token_count: {}", orchestrator_config.parser_options.budget.max_token_count);
-        println!("│  └─ max_recursion_depth: {}", orchestrator_config.parser_options.budget.max_recursion_depth);
+        println!(
+            "│  ├─ max_source_bytes: {}",
+            orchestrator_config.parser_options.budget.max_source_bytes
+        );
+        println!(
+            "│  ├─ max_token_count: {}",
+            orchestrator_config.parser_options.budget.max_token_count
+        );
+        println!(
+            "│  └─ max_recursion_depth: {}",
+            orchestrator_config
+                .parser_options
+                .budget
+                .max_recursion_depth
+        );
 
         println!("└─ Capabilities: {:?}", capabilities);
         println!();
@@ -450,8 +549,10 @@ fn generate_profile_conformance_report() {
     }
 
     let conformance_score = (passing_assertions as f64 / total_assertions as f64) * 100.0;
-    println!("CONFORMANCE SCORE: {}/{} assertions passed ({:.1}%)",
-             passing_assertions, total_assertions, conformance_score);
+    println!(
+        "CONFORMANCE SCORE: {}/{} assertions passed ({:.1}%)",
+        passing_assertions, total_assertions, conformance_score
+    );
 
     assert!(
         conformance_score >= 95.0,

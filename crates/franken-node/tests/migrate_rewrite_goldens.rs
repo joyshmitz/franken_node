@@ -1,6 +1,6 @@
 use assert_cmd::Command;
-use insta::assert_snapshot;
 use insta::Settings;
+use insta::assert_snapshot;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;

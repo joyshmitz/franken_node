@@ -4,7 +4,7 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use frankenengine_node::supply_chain::{
     artifact_signing::{self, KeyId, KeyRing},
     extension_registry::{
-        AdmissionKernel, ExtensionSignature, RegistryConfig, RegistryResult, RegistrationRequest,
+        AdmissionKernel, ExtensionSignature, RegistrationRequest, RegistryConfig, RegistryResult,
         SignedExtensionRegistry, VersionEntry, canonical_registration_manifest_bytes, event_codes,
     },
     provenance::{
@@ -87,17 +87,10 @@ fn valid_provenance(now_epoch: u64) -> ProvenanceAttestation {
 
 fn valid_request(name: &str, signing_key: &SigningKey, now_epoch: u64) -> RegistrationRequest {
     let initial_version = valid_version();
-    let tags = vec![
-        "stable".to_string(),
-        "supply-chain-attested".to_string(),
-    ];
-    let manifest_bytes = canonical_registration_manifest_bytes(
-        name,
-        "pub-001",
-        &initial_version,
-        &tags,
-    )
-    .expect("registration manifest should canonicalize");
+    let tags = vec!["stable".to_string(), "supply-chain-attested".to_string()];
+    let manifest_bytes =
+        canonical_registration_manifest_bytes(name, "pub-001", &initial_version, &tags)
+            .expect("registration manifest should canonicalize");
 
     RegistrationRequest {
         name: name.to_string(),

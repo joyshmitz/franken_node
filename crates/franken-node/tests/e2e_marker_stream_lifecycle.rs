@@ -113,12 +113,42 @@ fn e2e_marker_stream_full_append_query_integrity() {
 
     // ── ARRANGE: append one of every event_type with monotonic ts ──
     let items = [
-        (MarkerEventType::TrustDecision, "sha256:trust-001", 1_000_000_000u64, "trace-trust-1"),
-        (MarkerEventType::RevocationEvent, "sha256:rev-001", 1_000_000_010, "trace-rev-1"),
-        (MarkerEventType::QuarantineAction, "sha256:quar-001", 1_000_000_020, "trace-quar-1"),
-        (MarkerEventType::PolicyChange, "sha256:policy-001", 1_000_000_030, "trace-policy-1"),
-        (MarkerEventType::EpochTransition, "sha256:epoch-001", 1_000_000_040, "trace-epoch-1"),
-        (MarkerEventType::IncidentEscalation, "sha256:incident-001", 1_000_000_050, "trace-incident-1"),
+        (
+            MarkerEventType::TrustDecision,
+            "sha256:trust-001",
+            1_000_000_000u64,
+            "trace-trust-1",
+        ),
+        (
+            MarkerEventType::RevocationEvent,
+            "sha256:rev-001",
+            1_000_000_010,
+            "trace-rev-1",
+        ),
+        (
+            MarkerEventType::QuarantineAction,
+            "sha256:quar-001",
+            1_000_000_020,
+            "trace-quar-1",
+        ),
+        (
+            MarkerEventType::PolicyChange,
+            "sha256:policy-001",
+            1_000_000_030,
+            "trace-policy-1",
+        ),
+        (
+            MarkerEventType::EpochTransition,
+            "sha256:epoch-001",
+            1_000_000_040,
+            "trace-epoch-1",
+        ),
+        (
+            MarkerEventType::IncidentEscalation,
+            "sha256:incident-001",
+            1_000_000_050,
+            "trace-incident-1",
+        ),
     ];
     let mut stream = build_real_stream(&items);
     assert_eq!(stream.len(), 6);
@@ -184,7 +214,12 @@ fn e2e_marker_stream_invariant_rejection_paths() {
 
     // ── empty payload_hash rejected ────────────────────────────────
     let err = s
-        .append(MarkerEventType::TrustDecision, "   ", 1, "trace-bad-payload")
+        .append(
+            MarkerEventType::TrustDecision,
+            "   ",
+            1,
+            "trace-bad-payload",
+        )
         .expect_err("empty payload_hash rejected");
     match err {
         MarkerStreamError::InvalidPayload { reason } => {
@@ -217,7 +252,12 @@ fn e2e_marker_stream_invariant_rejection_paths() {
 
     // ── INV-MKS-MONOTONIC-TIME: timestamp 150 < head 200 rejected ──
     let err = s
-        .append(MarkerEventType::EpochTransition, "sha256:p3", 150, "trace-3")
+        .append(
+            MarkerEventType::EpochTransition,
+            "sha256:p3",
+            150,
+            "trace-3",
+        )
         .expect_err("time regression rejected");
     match err {
         MarkerStreamError::TimeRegression {
@@ -258,7 +298,12 @@ fn e2e_marker_stream_find_divergence_point_binary_search() {
     let mut remote = MarkerStream::new();
 
     let prefix = [
-        (MarkerEventType::TrustDecision, "sha256:p0", 100u64, "trace-0"),
+        (
+            MarkerEventType::TrustDecision,
+            "sha256:p0",
+            100u64,
+            "trace-0",
+        ),
         (MarkerEventType::TrustDecision, "sha256:p1", 110, "trace-1"),
         (MarkerEventType::TrustDecision, "sha256:p2", 120, "trace-2"),
         (MarkerEventType::TrustDecision, "sha256:p3", 130, "trace-3"),
@@ -270,10 +315,20 @@ fn e2e_marker_stream_find_divergence_point_binary_search() {
     // Diverge at sequence 4 with different payload hashes (and different
     // event types, so the marker_hash absolutely diverges).
     local
-        .append(MarkerEventType::PolicyChange, "sha256:LOCAL-only", 140, "trace-L")
+        .append(
+            MarkerEventType::PolicyChange,
+            "sha256:LOCAL-only",
+            140,
+            "trace-L",
+        )
         .expect("local divergent");
     remote
-        .append(MarkerEventType::IncidentEscalation, "sha256:REMOTE-only", 140, "trace-R")
+        .append(
+            MarkerEventType::IncidentEscalation,
+            "sha256:REMOTE-only",
+            140,
+            "trace-R",
+        )
         .expect("remote divergent");
 
     let result = find_divergence_point(&local, &remote);
@@ -284,8 +339,7 @@ fn e2e_marker_stream_find_divergence_point_binary_search() {
     assert!(result.local_hash_at_divergence.is_some());
     assert!(result.remote_hash_at_divergence.is_some());
     assert_ne!(
-        result.local_hash_at_divergence,
-        result.remote_hash_at_divergence,
+        result.local_hash_at_divergence, result.remote_hash_at_divergence,
         "divergent markers must have different hashes"
     );
     // Binary search: comparison_count must be O(log n) of shared prefix.

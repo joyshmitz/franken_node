@@ -3,10 +3,9 @@ use std::collections::BTreeMap;
 use frankenengine_node::supply_chain::certification::{EvidenceType, VerifiedEvidenceRef};
 use frankenengine_node::supply_chain::trust_card::{
     BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
-    compute_card_hash,
     DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary, PublisherIdentity,
     ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard, TrustCardInput,
-    TrustCardMutation, TrustCardRegistry, TrustCardRegistrySnapshot,
+    TrustCardMutation, TrustCardRegistry, TrustCardRegistrySnapshot, compute_card_hash,
 };
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
@@ -91,9 +90,8 @@ fn registry_with_exhausted_trust_card_version() -> TrustCardRegistry {
 
     let mut cards_by_extension = BTreeMap::new();
     cards_by_extension.insert(card.extension.extension_id.clone(), vec![card]);
-    let snapshot =
-        TrustCardRegistrySnapshot::signed(60, cards_by_extension, DEFAULT_REGISTRY_KEY)
-            .expect("signed snapshot");
+    let snapshot = TrustCardRegistrySnapshot::signed(60, cards_by_extension, DEFAULT_REGISTRY_KEY)
+        .expect("signed snapshot");
     TrustCardRegistry::from_snapshot(snapshot, DEFAULT_REGISTRY_KEY, 1_776_792_601)
         .expect("load exhausted-version registry")
 }
@@ -215,9 +213,8 @@ fn authoritative_registry_rejects_stale_writer_after_high_water_advances() {
         "unexpected error: {err:?}"
     );
 
-    let mut loaded =
-        TrustCardRegistry::load_authoritative_state(&snapshot_path, 60, 1_776_792_700)
-            .expect("load authoritative state");
+    let mut loaded = TrustCardRegistry::load_authoritative_state(&snapshot_path, 60, 1_776_792_700)
+        .expect("load authoritative state");
     let card = loaded
         .read(
             "npm:@operator/auth-guard",

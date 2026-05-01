@@ -7,7 +7,7 @@
 //! serializer behavior.
 
 use frankenengine_node::connector::canonical_serializer::{CanonicalSerializer, TrustObjectType};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 struct CanonicalCase {
     object_type: TrustObjectType,
@@ -104,7 +104,8 @@ fn canonical_serializer_live_contract_payloads_are_deterministic() {
             .expect("second serialization should succeed");
 
         assert_eq!(
-            first, second,
+            first,
+            second,
             "{} serialization should be deterministic",
             case.object_type.label()
         );

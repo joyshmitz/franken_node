@@ -29,9 +29,9 @@ use frankenengine_node::supply_chain::certification::{EvidenceType, VerifiedEvid
 use frankenengine_node::supply_chain::trust_card::{
     BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
     DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary, PublisherIdentity,
-    ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCardError,
-    TrustCardInput, TrustCardListFilter, TrustCardMutation, TrustCardRegistry,
-    compute_card_hash, verify_card_signature,
+    ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCardError, TrustCardInput,
+    TrustCardListFilter, TrustCardMutation, TrustCardRegistry, compute_card_hash,
+    verify_card_signature,
 };
 use serde_json::json;
 use tracing::{error, info};
@@ -222,14 +222,13 @@ fn e2e_trust_card_lifecycle_create_upgrade_revoke_snapshot() {
         )
         .expect("v2 upgrade with evidence succeeds");
     assert_eq!(v2.trust_card_version, 2);
-    assert_eq!(v2.previous_version_hash.as_deref(), Some(v1.card_hash.as_str()));
+    assert_eq!(
+        v2.previous_version_hash.as_deref(),
+        Some(v1.card_hash.as_str())
+    );
     assert_eq!(v2.certification_level, CertificationLevel::Gold);
     verify_card_signature(&v2, REGISTRY_KEY).expect("v2 signature verifies");
-    h.log_phase(
-        "v2_upgraded",
-        true,
-        json!({"version": 2, "level": "Gold"}),
-    );
+    h.log_phase("v2_upgraded", true, json!({"version": 2, "level": "Gold"}));
 
     // ── ASSERT: upgrade WITHOUT evidence is rejected ────────────────
     let mutation_without_evidence = TrustCardMutation {
@@ -271,10 +270,17 @@ fn e2e_trust_card_lifecycle_create_upgrade_revoke_snapshot() {
     let v3 = reg
         .update(extension_id, revoke, now0 + 300, "trace-revoke")
         .expect("revoke succeeds");
-    assert!(matches!(v3.revocation_status, RevocationStatus::Revoked { .. }));
+    assert!(matches!(
+        v3.revocation_status,
+        RevocationStatus::Revoked { .. }
+    ));
     assert!(v3.active_quarantine);
     verify_card_signature(&v3, REGISTRY_KEY).expect("v3 signature verifies");
-    h.log_phase("v3_revoked", true, json!({"version": v3.trust_card_version}));
+    h.log_phase(
+        "v3_revoked",
+        true,
+        json!({"version": v3.trust_card_version}),
+    );
 
     // ── ASSERT: INV-TC-MONOTONIC-REVOCATION — cannot transition back ─
     let try_reactivate = TrustCardMutation {
@@ -287,12 +293,7 @@ fn e2e_trust_card_lifecycle_create_upgrade_revoke_snapshot() {
         last_verified_timestamp: None,
         evidence_refs: None,
     };
-    let irreversible = reg.update(
-        extension_id,
-        try_reactivate,
-        now0 + 400,
-        "trace-reactivate",
-    );
+    let irreversible = reg.update(extension_id, try_reactivate, now0 + 400, "trace-reactivate");
     assert!(matches!(
         irreversible,
         Err(TrustCardError::RevocationIrreversible)
@@ -313,11 +314,14 @@ fn e2e_trust_card_lifecycle_create_upgrade_revoke_snapshot() {
     );
 
     // ── ACT 6: round-trip via from_snapshot ─────────────────────────
-    let mut reloaded =
-        TrustCardRegistry::from_snapshot(snapshot, REGISTRY_KEY, now0 + 500)
-            .expect("from_snapshot succeeds");
+    let mut reloaded = TrustCardRegistry::from_snapshot(snapshot, REGISTRY_KEY, now0 + 500)
+        .expect("from_snapshot succeeds");
     let reloaded_cards = reloaded
-        .list(&TrustCardListFilter::empty(), "trace-list-after-reload", now0 + 500)
+        .list(
+            &TrustCardListFilter::empty(),
+            "trace-list-after-reload",
+            now0 + 500,
+        )
         .expect("list succeeds after reload");
     let reloaded_v3 = reloaded_cards
         .into_iter()

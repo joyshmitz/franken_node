@@ -80,8 +80,14 @@ fn ready_tier_classes() -> &'static [ControlTaskClass] {
 #[test]
 fn fresh_policy_invariants_hold() {
     let policy = ControlLanePolicy::new();
-    assert!(policy.verify_all_assigned(), "verify_all_assigned must hold on fresh policy");
-    assert!(policy.verify_budget_sum(), "verify_budget_sum must hold on fresh policy");
+    assert!(
+        policy.verify_all_assigned(),
+        "verify_all_assigned must hold on fresh policy"
+    );
+    assert!(
+        policy.verify_budget_sum(),
+        "verify_budget_sum must hold on fresh policy"
+    );
     assert_eq!(
         u16::from(CANCEL_LANE_BUDGET_PCT)
             + u16::from(TIMED_LANE_BUDGET_PCT)

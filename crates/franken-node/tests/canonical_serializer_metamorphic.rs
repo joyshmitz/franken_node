@@ -6,15 +6,15 @@
 //! canonical form, which would break deterministic serialization requirements.
 
 use arbitrary::Arbitrary;
-use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use frankenengine_node::connector::canonical_serializer::{CanonicalSerializer, TrustObjectType};
 use frankenengine_node::supply_chain::certification::{EvidenceType, VerifiedEvidenceRef};
 use frankenengine_node::supply_chain::trust_card::{
-    to_canonical_json, BehavioralProfile, CapabilityDeclaration, CapabilityRisk,
-    CertificationLevel, DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary,
-    PublisherIdentity, ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard,
-    TrustCardInput,
+    BehavioralProfile, CapabilityDeclaration, CapabilityRisk, CertificationLevel,
+    DependencyTrustStatus, ExtensionIdentity, ProvenanceSummary, PublisherIdentity,
+    ReputationTrend, RevocationStatus, RiskAssessment, RiskLevel, TrustCard, TrustCardInput,
+    to_canonical_json,
 };
 use proptest::prelude::*;
 use serde_json::{Map, Value};

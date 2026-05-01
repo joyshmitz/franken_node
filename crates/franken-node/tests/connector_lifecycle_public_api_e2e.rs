@@ -1,15 +1,15 @@
 use std::collections::BTreeSet;
 
 use frankenengine_node::connector::cancellation_protocol::{
-    error_codes, event_codes, CancellationBudget, CancellationPhase, CancellationProtocol,
-    WorkflowKind, SCHEMA_VERSION,
+    CancellationBudget, CancellationPhase, CancellationProtocol, SCHEMA_VERSION, WorkflowKind,
+    error_codes, event_codes,
 };
 use frankenengine_node::connector::health_gate::{
-    standard_checks, HealthGateError, HealthGateResult,
+    HealthGateError, HealthGateResult, standard_checks,
 };
-use frankenengine_node::connector::lifecycle::{transition, ConnectorState};
+use frankenengine_node::connector::lifecycle::{ConnectorState, transition};
 use frankenengine_node::connector::trace_context::{TraceContext, TraceStore, TracedArtifact};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const CONNECTOR_ID: &str = "connector-public-api-e2e";
 const SUITE: &str = "connector_lifecycle_public_api_e2e";

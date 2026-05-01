@@ -256,7 +256,9 @@ fn registry_publish_persists_artifact_and_search_reports_integrity() {
         use sha2::Digest;
         format!(
             "sha256:{}",
-            hex::encode(sha2::Sha256::digest(fs::read(&artifact_path).expect("read stored artifact")))
+            hex::encode(sha2::Sha256::digest(
+                fs::read(&artifact_path).expect("read stored artifact")
+            ))
         )
     };
     assert_eq!(

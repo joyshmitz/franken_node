@@ -11,7 +11,7 @@ use frankenengine_node::control_plane::fleet_transport::{
     FileFleetTransport, FleetAction, FleetTargetKind, FleetTransport, NodeHealth, NodeStatus,
 };
 use frankenengine_node::supply_chain::trust_card::{
-    fixture_registry, TrustCardListFilter, TrustCardMutation, TrustCardRegistry,
+    TrustCardListFilter, TrustCardMutation, TrustCardRegistry, fixture_registry,
 };
 use serde_json::Value;
 
@@ -443,7 +443,10 @@ fn assert_structured_log_event_exists(
         "Expected structured log event with code '{}' and message containing '{}' not found. Available events: {:#?}",
         event_code,
         message_contains,
-        events.iter().map(|e| format!("{}:{}", e.event_code, e.message)).collect::<Vec<_>>()
+        events
+            .iter()
+            .map(|e| format!("{}:{}", e.event_code, e.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -736,8 +739,8 @@ fn trust_card_displays_known_extension_details() {
 #[test]
 fn run_missing_registry_suggests_init_scan() {
     // Perfect E2E: Real Node.js runtime detection with tempfile RAII and structured logging
-    use tempfile::TempDir;
     use std::time::Instant;
+    use tempfile::TempDir;
 
     init_test_tracing();
     let test_start = Instant::now();
@@ -773,12 +776,16 @@ fn run_missing_registry_suggests_init_scan() {
         workspace.path(),
         &["run", "--policy", "strict", "--runtime", "node", "."],
         &[
-            ("PATH", &real_node_path),  // Real Node.js binary in PATH
+            ("PATH", &real_node_path), // Real Node.js binary in PATH
         ],
     );
 
     let execution_time_ms = test_start.elapsed().as_millis() as u64;
-    log_pipeline_step(3, "execute_real_cli", &format!("completed_in_{}ms", execution_time_ms));
+    log_pipeline_step(
+        3,
+        "execute_real_cli",
+        &format!("completed_in_{}ms", execution_time_ms),
+    );
 
     // Verify real E2E behavior
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -794,7 +801,11 @@ fn run_missing_registry_suggests_init_scan() {
     assert!(stderr.contains("authoritative trust registry missing"));
     assert!(stderr.contains("fix_command=franken-node init --profile strict --scan"));
 
-    log_pipeline_step(5, "test_complete", "all_assertions_passed_with_real_components");
+    log_pipeline_step(
+        5,
+        "test_complete",
+        "all_assertions_passed_with_real_components",
+    );
     // Workspace automatically cleaned up by TempDir RAII
 }
 
@@ -825,8 +836,7 @@ project_id = "real-e2e-test"
 [policy_enforcement]
 strict_mode = true
 "#;
-    std::fs::write(workspace.join(".franken-config.toml"), config)
-        .expect("write real config file");
+    std::fs::write(workspace.join(".franken-config.toml"), config).expect("write real config file");
 }
 
 #[test]
@@ -848,9 +858,11 @@ fn run_json_emits_blocked_preflight_verdict_for_revoked_dependency() {
     let violations = payload["verdict"]["violations"]
         .as_array()
         .expect("violations array");
-    assert!(violations
-        .iter()
-        .any(|violation| violation["kind"] == "revoked"));
+    assert!(
+        violations
+            .iter()
+            .any(|violation| violation["kind"] == "revoked")
+    );
     assert_eq!(
         payload["receipt"]["action_name"],
         "run_preflight_trust_gate"
@@ -886,9 +898,7 @@ fn run_explicit_runtime_missing_returns_127() {
     let output = run_cli_in_workspace_with_env(
         workspace.path(),
         &["run", "--policy", "balanced", "--runtime", "node", "."],
-        &[
-            ("PATH", empty_path.to_str().expect("utf8 path")),
-        ],
+        &[("PATH", empty_path.to_str().expect("utf8 path"))],
     );
 
     assert_eq!(output.status.code(), Some(127));
@@ -932,9 +942,7 @@ preferred = "node"
     let output = run_cli_in_workspace_with_env(
         workspace.path(),
         &["run", "--policy", "balanced", "--json", "."],
-        &[
-            ("PATH", runtime_path.as_str()),
-        ],
+        &[("PATH", runtime_path.as_str())],
     );
 
     assert!(
@@ -1034,8 +1042,10 @@ fn trust_revoke_marks_target_as_revoked() {
         String::from_utf8_lossy(&persisted.stderr)
     );
     let persisted_stdout = String::from_utf8_lossy(&persisted.stdout);
-    assert!(persisted_stdout
-        .contains("revocation: revoked (manual revoke via franken-node trust revoke)"));
+    assert!(
+        persisted_stdout
+            .contains("revocation: revoked (manual revoke via franken-node trust revoke)")
+    );
     assert!(persisted_stdout.contains("quarantine: true"));
 }
 
@@ -1191,13 +1201,11 @@ fn trust_quarantine_propagates_through_fleet_transport_pipeline() {
         "fleet status should show one active quarantine after trust quarantine: {status_payload:#}"
     );
     assert_eq!(
-        status_payload["active_incidents"][0]["incident_id"],
-        incident_id,
+        status_payload["active_incidents"][0]["incident_id"], incident_id,
         "fleet status should expose the exact active incident: {status_payload:#}"
     );
     assert_eq!(
-        status_payload["active_incidents"][0]["convergence"]["progress_pct"],
-        0,
+        status_payload["active_incidents"][0]["convergence"]["progress_pct"], 0,
         "fleet status should report unconverged nodes before node receipts advance: {status_payload:#}"
     );
 
@@ -1487,10 +1495,12 @@ fn trust_sync_reports_summary_counts() {
     );
     let payload = parse_json_stdout(&exported, "trust-card export after trust sync");
     assert_eq!(payload["user_facing_risk_assessment"]["level"], "high");
-    assert!(payload["user_facing_risk_assessment"]["summary"]
-        .as_str()
-        .expect("risk summary")
-        .contains("OSV-2026-0001"));
+    assert!(
+        payload["user_facing_risk_assessment"]["summary"]
+            .as_str()
+            .expect("risk summary")
+            .contains("OSV-2026-0001")
+    );
 
     server.join().expect("join OSV fixture server");
     assert_eq!(requests.lock().expect("lock requests").len(), 2);
@@ -1739,10 +1749,12 @@ fn full_init_to_run_pipeline_empty_registry_warns_on_untracked_dependency_json()
     let init_payload = parse_json_stdout(&init_output, "init --json full pipeline empty registry");
     assert2::assert!(init_payload["command"] == "init");
     assert2::assert!(init_payload["trust_scan"].is_null());
-    assert2::assert!(workspace
-        .path()
-        .join(".franken-node/state/trust-card-registry.v1.json")
-        .is_file());
+    assert2::assert!(
+        workspace
+            .path()
+            .join(".franken-node/state/trust-card-registry.v1.json")
+            .is_file()
+    );
 
     log_pipeline_step(
         2,
@@ -1763,9 +1775,7 @@ fn full_init_to_run_pipeline_empty_registry_warns_on_untracked_dependency_json()
     let run_output = run_cli_in_workspace_with_structured_logs_and_env(
         workspace.path(),
         &run_args,
-        &[
-            ("PATH", runtime_path.as_str()),
-        ],
+        &[("PATH", runtime_path.as_str())],
     );
     ensure_command_success(
         "run with empty registry",
@@ -1867,9 +1877,7 @@ fn full_init_to_run_pipeline_with_trust_data_reports_trusted_extensions_json() {
     let run_output = run_cli_in_workspace_with_env(
         workspace.path(),
         &run_args,
-        &[
-            ("PATH", runtime_path.as_str()),
-        ],
+        &[("PATH", runtime_path.as_str())],
     );
     ensure_command_success(
         "run with populated trust registry",
@@ -1894,10 +1902,12 @@ fn full_init_to_run_pipeline_with_trust_data_reports_trusted_extensions_json() {
 
     assert2::assert!(preflight_payload["verdict"]["status"] == "passed");
     assert2::assert!(run_payload["success"].as_bool() == Some(true));
-    assert2::assert!(run_payload["preflight"]["verdict"]["warnings"]
-        .as_array()
-        .expect("warnings array")
-        .is_empty());
+    assert2::assert!(
+        run_payload["preflight"]["verdict"]["warnings"]
+            .as_array()
+            .expect("warnings array")
+            .is_empty()
+    );
     let runtime_probe =
         parse_captured_runtime_probe(&run_payload, "trusted registry captured output");
     assert2::assert!(runtime_probe["marker"] == "trusted-registry");
@@ -1906,15 +1916,21 @@ fn full_init_to_run_pipeline_with_trust_data_reports_trusted_extensions_json() {
     assert2::assert!(runtime_probe["policy"] == "balanced");
     assert2::assert!(results.len() == 3);
     assert2::assert!(results.iter().all(|result| result["status"] == "trusted"));
-    assert2::assert!(results
-        .iter()
-        .any(|result| result["extension_id"] == "npm:react"));
-    assert2::assert!(results
-        .iter()
-        .any(|result| result["extension_id"] == "npm:typescript"));
-    assert2::assert!(results
-        .iter()
-        .any(|result| result["extension_id"] == "npm:@types/node"));
+    assert2::assert!(
+        results
+            .iter()
+            .any(|result| result["extension_id"] == "npm:react")
+    );
+    assert2::assert!(
+        results
+            .iter()
+            .any(|result| result["extension_id"] == "npm:typescript")
+    );
+    assert2::assert!(
+        results
+            .iter()
+            .any(|result| result["extension_id"] == "npm:@types/node")
+    );
     assert2::assert!(run_payload["receipt"]["violation_count"] == 0);
     assert2::assert!(receipt_path.is_file());
     assert2::assert!(started.elapsed() < Duration::from_secs(30));
@@ -1984,13 +2000,17 @@ fn full_init_to_run_pipeline_revoked_extension_blocks_in_strict_json() {
 
     assert2::assert!(run_payload["verdict"]["status"] == "blocked");
     assert2::assert!(run_payload["receipt"]["decision"] == "denied");
-    assert2::assert!(violations
-        .iter()
-        .any(|violation| violation["kind"] == "revoked"));
+    assert2::assert!(
+        violations
+            .iter()
+            .any(|violation| violation["kind"] == "revoked")
+    );
     assert2::assert!(results.iter().any(|result| result["status"] == "revoked"));
-    assert2::assert!(results
-        .iter()
-        .any(|result| result["extension_id"] == "npm:@beta/telemetry-bridge"));
+    assert2::assert!(
+        results
+            .iter()
+            .any(|result| result["extension_id"] == "npm:@beta/telemetry-bridge")
+    );
     assert2::assert!(started.elapsed() < Duration::from_secs(30));
 }
 

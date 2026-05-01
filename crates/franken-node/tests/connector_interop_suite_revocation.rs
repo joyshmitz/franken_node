@@ -1,4 +1,4 @@
-use frankenengine_node::connector::interop_suite::{run_suite, InteropClass, InteropTestCase};
+use frankenengine_node::connector::interop_suite::{InteropClass, InteropTestCase, run_suite};
 
 const REVOKED_STATUS: &str = "revoked";
 

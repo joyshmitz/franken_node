@@ -134,12 +134,7 @@ fn e2e_revocation_registry_monotonic_advance_and_stale_reject() {
     assert_eq!(reg.total_revocations(), 3);
 
     // ── ASSERT: stale advance is rejected with REV_STALE_HEAD ───────
-    let stale = reg.advance_head(head(
-        "zone-prod",
-        2,
-        "sha256:art-stale",
-        "trace-stale",
-    ));
+    let stale = reg.advance_head(head("zone-prod", 2, "sha256:art-stale", "trace-stale"));
     match stale {
         Err(RevocationError::StaleHead {
             zone_id,
@@ -164,11 +159,7 @@ fn e2e_revocation_registry_monotonic_advance_and_stale_reject() {
     h.log_phase("equal_to_current_rejected", true, json!({}));
 
     // ── ASSERT: audit trail captures every action, including rejects ─
-    let advanced = reg
-        .audits
-        .iter()
-        .filter(|a| a.action == "advanced")
-        .count();
+    let advanced = reg.audits.iter().filter(|a| a.action == "advanced").count();
     let rejected = reg
         .audits
         .iter()
@@ -289,7 +280,11 @@ fn e2e_revocation_registry_recovery_from_canonical_log() {
     match bad_err {
         RevocationError::RecoveryFailed { reason } => {
             assert!(reason.contains("non-monotonic"));
-            h.log_phase("non_monotonic_log_rejected", true, json!({"reason": reason}));
+            h.log_phase(
+                "non_monotonic_log_rejected",
+                true,
+                json!({"reason": reason}),
+            );
         }
         other => panic!("expected RecoveryFailed, got {other:?}"),
     }
@@ -311,10 +306,7 @@ fn e2e_revocation_registry_input_validation() {
 
     // Empty artifact → InvalidInput.
     let bad_art = reg.advance_head(head("zone-real", 1, "  ", "trace-bad-art"));
-    assert!(matches!(
-        bad_art,
-        Err(RevocationError::InvalidInput { .. })
-    ));
+    assert!(matches!(bad_art, Err(RevocationError::InvalidInput { .. })));
     h.log_phase("empty_artifact_rejected", true, json!({}));
 
     // Successful advance, then duplicate-revoke the same artifact at a higher
@@ -327,7 +319,11 @@ fn e2e_revocation_registry_input_validation() {
     match dup {
         Err(RevocationError::InvalidInput { detail }) => {
             assert!(detail.contains("already revoked"));
-            h.log_phase("duplicate_revocation_rejected", true, json!({"detail": detail}));
+            h.log_phase(
+                "duplicate_revocation_rejected",
+                true,
+                json!({"detail": detail}),
+            );
         }
         other => panic!("expected InvalidInput for duplicate revoke, got {other:?}"),
     }

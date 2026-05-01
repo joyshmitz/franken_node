@@ -3,15 +3,16 @@ use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
 use chrono::{TimeDelta, Utc};
-use frankenengine_node::control_plane::fleet_transport::{
-    canonical_fleet_convergence_receipt_payload, fleet_convergence_receipt_verdict,
-    FileFleetTransport, FleetAction, FleetActionRecord, FleetTargetKind, FleetTransport,
-    NodeHealth, NodeStatus,
-};
 #[cfg(feature = "asupersync-transport")]
 use frankenengine_node::control_plane::fleet_transport::{
-    wait_until_fleet_converged_or_timeout, AsupersyncFleetNetwork, AsupersyncFleetTransport,
+    AsupersyncFleetNetwork, AsupersyncFleetTransport, wait_until_fleet_converged_or_timeout,
 };
+use frankenengine_node::control_plane::fleet_transport::{
+    FileFleetTransport, FleetAction, FleetActionRecord, FleetTargetKind, FleetTransport,
+    NodeHealth, NodeStatus, canonical_fleet_convergence_receipt_payload,
+    fleet_convergence_receipt_verdict,
+};
+use frankenengine_node::security::decision_receipt::signing_key_id;
 use frankenengine_node::supply_chain::trust_card::{
     ReputationTrend, RiskAssessment, RiskLevel, TrustCardMutation, TrustCardRegistry,
 };
@@ -483,7 +484,11 @@ fn assert_convergence_receipt_signature_round_trips(
 
     let mut hasher = Sha256::new();
     hasher.update(b"fleet_convergence_receipt_payload_v1:");
-    hasher.update(u64::try_from(canonical_payload.len()).unwrap_or(u64::MAX).to_le_bytes());
+    hasher.update(
+        u64::try_from(canonical_payload.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
     hasher.update(&canonical_payload);
     assert_eq!(
         signature["signed_payload_sha256"]
@@ -2425,6 +2430,147 @@ convergence_timeout_seconds = 360
 }
 
 #[test]
+fn ops_rotate_key_json_preview_exits_non_success_and_proves_no_remediation() {
+    let workspace = tempdir().expect("tempdir");
+    let (old_key_path, old_key) = write_test_signing_key(workspace.path(), "keys/old.key", 51);
+    let (new_key_path, new_key) = write_test_signing_key(workspace.path(), "keys/new.key", 52);
+    let old_key_before = std::fs::read(&old_key_path).expect("read old key before preview");
+    let new_key_arg = new_key_path.display().to_string();
+    let old_key_env = old_key_path.display().to_string();
+
+    let output = run_cli_in_dir_with_env(
+        workspace.path(),
+        &[
+            "ops",
+            "rotate-key",
+            "--new-key",
+            new_key_arg.as_str(),
+            "--json",
+        ],
+        &[(
+            "FRANKEN_NODE_SECURITY_DECISION_RECEIPT_SIGNING_KEY_PATH",
+            old_key_env.as_str(),
+        )],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "ops rotate-key preview must be automation-visible as non-success\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload = json_stdout(&output, "ops rotate-key preview");
+    assert_eq!(payload["command"], "ops rotate-key");
+    assert_eq!(payload["status"], "preview_only");
+    assert_eq!(payload["rotation_status"], "not_applied");
+    assert_eq!(payload["remediation_status"], "not_remediated");
+    assert_eq!(payload["automation_contract"], "non_remediating_preview");
+    assert_eq!(payload["actual_rotation_occurred"], false);
+    assert_eq!(payload["signer_config_updated"], false);
+    assert_eq!(payload["evidence_ledger_appended"], false);
+    assert_eq!(payload["old_key_still_active"], true);
+    assert_eq!(payload["exit_code"], 2);
+    assert_eq!(payload["feasibility_decision"], "hardened_preview_boundary");
+    let expected_old_fingerprint = signing_key_id(&old_key.verifying_key());
+    let expected_new_fingerprint = signing_key_id(&new_key.verifying_key());
+    assert_eq!(
+        payload["old_key_fingerprint"].as_str(),
+        Some(expected_old_fingerprint.as_str())
+    );
+    assert_eq!(
+        payload["new_key_fingerprint"].as_str(),
+        Some(expected_new_fingerprint.as_str())
+    );
+    assert_ne!(
+        payload["old_key_fingerprint"].as_str(),
+        payload["new_key_fingerprint"].as_str(),
+        "old/new fingerprints should prove the command compared distinct keys"
+    );
+    assert_eq!(
+        payload["active_signer_path"].as_str(),
+        Some(old_key_env.as_str())
+    );
+    assert_eq!(payload["new_key_path"].as_str(), Some(new_key_arg.as_str()));
+    assert_eq!(payload["active_signer_source"].as_str(), Some("env"));
+
+    let events = payload["events"].as_array().expect("preview events array");
+    assert!(
+        events
+            .iter()
+            .any(|event| event["event"] == "rotation_preview_only"),
+        "preview JSON must include rotation_preview_only event: {payload:#?}"
+    );
+    assert!(
+        events.iter().all(|event| event["apply"] == false),
+        "preview JSON events must all report apply=false: {payload:#?}"
+    );
+    assert!(
+        events.iter().all(|event| event["dry_run"] == true
+            && event["old_fingerprint"] == expected_old_fingerprint
+            && event["new_fingerprint"] == expected_new_fingerprint
+            && event["config_path"].is_null()
+            && event["evidence_path"].is_null()),
+        "preview JSON events must carry a complete logging envelope: {payload:#?}"
+    );
+
+    let old_key_after = std::fs::read(&old_key_path).expect("read old key after preview");
+    assert_eq!(
+        old_key_after, old_key_before,
+        "preview must not mutate active signer key material"
+    );
+}
+
+#[test]
+fn ops_rotate_key_invalid_new_key_fails_closed_before_preview_output() {
+    let workspace = tempdir().expect("tempdir");
+    let (old_key_path, _) = write_test_signing_key(workspace.path(), "keys/old.key", 61);
+    let invalid_key_path = workspace.path().join("keys/not-a-key.txt");
+    std::fs::write(&invalid_key_path, "not-a-valid-ed25519-key").expect("write invalid key");
+    let invalid_key_arg = invalid_key_path.display().to_string();
+    let old_key_env = old_key_path.display().to_string();
+
+    let output = run_cli_in_dir_with_env(
+        workspace.path(),
+        &[
+            "ops",
+            "rotate-key",
+            "--new-key",
+            invalid_key_arg.as_str(),
+            "--json",
+        ],
+        &[(
+            "FRANKEN_NODE_SECURITY_DECISION_RECEIPT_SIGNING_KEY_PATH",
+            old_key_env.as_str(),
+        )],
+    );
+
+    assert!(
+        !output.status.success(),
+        "invalid key material must fail closed"
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "invalid key rejection should use normal error exit, not preview exit\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "invalid key rejection must not emit a preview JSON success contract: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("failed decoding Ed25519 new signing key"),
+        "stderr should identify key decoding failure: {stderr}"
+    );
+}
+
+#[test]
 fn fleet_release_human_output_shape_is_stable() {
     let fleet_state = tempdir().expect("tempdir");
     let fleet_state_dir = fleet_state.path().join("fleet-state");
@@ -2496,10 +2642,12 @@ fn fleet_reconcile_json_output_shape_is_stable() {
     assert_eq!(payload["action"]["action_type"], "reconcile");
     assert_eq!(payload["action"]["success"], true);
     assert_eq!(payload["action"]["event_code"], "FLEET-005");
-    assert!(payload["action"]["operation_id"]
-        .as_str()
-        .expect("operation id")
-        .starts_with("fleet-op-reconcile-"));
+    assert!(
+        payload["action"]["operation_id"]
+            .as_str()
+            .expect("operation id")
+            .starts_with("fleet-op-reconcile-")
+    );
     assert_eq!(payload["action"]["receipt"]["issuer"], "cli-fleet-operator");
     assert_convergence_receipt_signature_round_trips(&payload["convergence_receipt"], &signing_key);
     assert_eq!(payload["status"]["zone_id"], "all");

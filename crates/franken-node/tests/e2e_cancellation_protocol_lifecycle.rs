@@ -134,10 +134,7 @@ fn e2e_cancellation_protocol_happy_path_six_phases() {
     proto
         .start_drain("wf-1", 1_100, "trace-drain-start")
         .expect("start_drain");
-    assert_eq!(
-        proto.current_phase("wf-1"),
-        Some(CancelPhase::Draining)
-    );
+    assert_eq!(proto.current_phase("wf-1"), Some(CancelPhase::Draining));
     h.log_phase("draining", true, json!({}));
 
     // Phase 2b: DRAIN complete.
@@ -154,19 +151,28 @@ fn e2e_cancellation_protocol_happy_path_six_phases() {
     proto
         .finalize("wf-1", &clean_resources(), 1_300, "trace-final")
         .expect("finalize");
-    assert_eq!(
-        proto.current_phase("wf-1"),
-        Some(CancelPhase::Finalized)
-    );
+    assert_eq!(proto.current_phase("wf-1"), Some(CancelPhase::Finalized));
     h.log_phase("finalized", true, json!({}));
 
     // INV-CANP-AUDIT-COMPLETE: every phase logged.
     let log = proto.audit_log();
     let event_codes: Vec<_> = log.iter().map(|e| e.event_code.as_str()).collect();
-    assert!(event_codes.iter().any(|c| *c == "CAN-001"), "request logged");
-    assert!(event_codes.iter().any(|c| *c == "CAN-002"), "drain start logged");
-    assert!(event_codes.iter().any(|c| *c == "CAN-003"), "drain complete logged");
-    assert!(event_codes.iter().any(|c| *c == "CAN-005"), "finalize logged");
+    assert!(
+        event_codes.iter().any(|c| *c == "CAN-001"),
+        "request logged"
+    );
+    assert!(
+        event_codes.iter().any(|c| *c == "CAN-002"),
+        "drain start logged"
+    );
+    assert!(
+        event_codes.iter().any(|c| *c == "CAN-003"),
+        "drain complete logged"
+    );
+    assert!(
+        event_codes.iter().any(|c| *c == "CAN-005"),
+        "finalize logged"
+    );
     h.log_phase("audit_complete", true, json!({"events": log.len()}));
 
     // Re-finalizing a Finalized workflow returns AlreadyFinal.
@@ -188,7 +194,9 @@ fn e2e_cancellation_protocol_drain_timeout_force_vs_reject() {
     proto
         .request_cancel("wf-force", 1, 1_000, "trace-r")
         .expect("request");
-    proto.start_drain("wf-force", 1_010, "trace-s").expect("start");
+    proto
+        .start_drain("wf-force", 1_010, "trace-s")
+        .expect("start");
     // 5_000 - 1_010 = 3_990ms elapsed >> 100ms timeout.
     proto
         .complete_drain("wf-force", 5_000, "trace-c")
@@ -243,7 +251,9 @@ fn e2e_cancellation_protocol_finalize_resource_leak_rejected() {
     proto
         .request_cancel("wf-leak", 0, 1_000, "trace-r")
         .expect("request");
-    proto.start_drain("wf-leak", 1_010, "trace-s").expect("start");
+    proto
+        .start_drain("wf-leak", 1_010, "trace-s")
+        .expect("start");
     proto
         .complete_drain("wf-leak", 1_020, "trace-c")
         .expect("complete");
@@ -297,12 +307,13 @@ fn e2e_cancellation_protocol_illegal_transitions_and_unknown_workflow() {
     let err = proto
         .start_drain("wf-ghost", 1_000, "trace-ghost")
         .expect_err("unknown rejected");
-    assert!(matches!(
-        err,
-        CancelProtocolError::WorkflowNotFound { .. }
-    ));
+    assert!(matches!(err, CancelProtocolError::WorkflowNotFound { .. }));
     assert_eq!(err.code(), "ERR_CANCEL_NOT_FOUND");
-    h.log_phase("unknown_workflow_rejected", true, json!({"code": err.code()}));
+    h.log_phase(
+        "unknown_workflow_rejected",
+        true,
+        json!({"code": err.code()}),
+    );
 
     // Request → start_drain → finalize WITHOUT complete_drain in between
     // (illegal transition Draining → Finalizing).
@@ -317,7 +328,11 @@ fn e2e_cancellation_protocol_illegal_transitions_and_unknown_workflow() {
         .expect_err("skip-drain-complete rejected");
     assert!(matches!(err, CancelProtocolError::InvalidPhase { .. }));
     assert_eq!(err.code(), "ERR_CANCEL_INVALID_PHASE");
-    h.log_phase("invalid_transition_rejected", true, json!({"code": err.code()}));
+    h.log_phase(
+        "invalid_transition_rejected",
+        true,
+        json!({"code": err.code()}),
+    );
 
     // can_transition_to: Idle → DrainComplete is illegal.
     assert!(!CancelPhase::Idle.can_transition_to(&CancelPhase::DrainComplete));

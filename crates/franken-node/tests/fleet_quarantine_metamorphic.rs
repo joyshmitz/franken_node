@@ -8,7 +8,7 @@ use frankenengine_node::api::middleware::{AuthIdentity, AuthMethod, TraceContext
 use frankenengine_node::control_plane::fleet_transport::FileFleetTransport;
 use rand::{Rng, SeedableRng};
 use std::collections::HashMap;
-use tempfile::{tempdir, TempDir};
+use tempfile::{TempDir, tempdir};
 
 /// Capture fleet state for comparison
 #[derive(Debug, Clone, PartialEq)]
@@ -72,8 +72,8 @@ fn test_trace(operation: &str) -> TraceContext {
 fn activated_fleet_manager() -> (FleetControlManager, TempDir) {
     // Create temporary directory for file-based transport
     let temp_dir = tempdir().expect("create temp directory");
-    let transport = FileFleetTransport::new(temp_dir.path().to_path_buf())
-        .expect("create file transport");
+    let transport =
+        FileFleetTransport::new(temp_dir.path().to_path_buf()).expect("create file transport");
 
     // Use real file-based transport instead of mock/in-memory approach
     let signing_key = ed25519_dalek::SigningKey::from_bytes(&[63_u8; 32]);

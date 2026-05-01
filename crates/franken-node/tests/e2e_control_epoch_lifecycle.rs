@@ -148,11 +148,7 @@ fn e2e_epoch_store_full_lifecycle_advance_set_recover() {
     match bad_manifest {
         Err(EpochError::InvalidManifestHash { reason }) => {
             assert!(reason.contains("empty") || reason.contains("whitespace"));
-            h.log_phase(
-                "empty_manifest_rejected",
-                true,
-                json!({"reason": reason}),
-            );
+            h.log_phase("empty_manifest_rejected", true, json!({"reason": reason}));
         }
         other => panic!("expected InvalidManifestHash, got {other:?}"),
     }
@@ -161,12 +157,7 @@ fn e2e_epoch_store_full_lifecycle_advance_set_recover() {
 
     // ── ACT: epoch_set jumps forward (skips ahead) ──────────────────
     let t10 = store
-        .epoch_set(
-            10,
-            "sha256:manifest-jump",
-            1_745_750_030,
-            "trace-jump",
-        )
+        .epoch_set(10, "sha256:manifest-jump", 1_745_750_030, "trace-jump")
         .expect("jump to 10");
     assert_eq!(t10.old_epoch, ControlEpoch::new(2));
     assert_eq!(t10.new_epoch, ControlEpoch::new(10));
@@ -175,27 +166,21 @@ fn e2e_epoch_store_full_lifecycle_advance_set_recover() {
     h.log_phase("epoch_set_jump", true, json!({"new_epoch": 10}));
 
     // ── ASSERT: regression rejected ─────────────────────────────────
-    let regression = store.epoch_set(
-        9,
-        "sha256:manifest-regress",
-        1_745_750_040,
-        "trace-regress",
-    );
+    let regression = store.epoch_set(9, "sha256:manifest-regress", 1_745_750_040, "trace-regress");
     match regression {
         Err(EpochError::EpochRegression { current, attempted }) => {
             assert_eq!(current, ControlEpoch::new(10));
             assert_eq!(attempted, ControlEpoch::new(9));
-            h.log_phase("regression_rejected", true, json!({"current": 10, "attempted": 9}));
+            h.log_phase(
+                "regression_rejected",
+                true,
+                json!({"current": 10, "attempted": 9}),
+            );
         }
         other => panic!("expected EpochRegression, got {other:?}"),
     }
     // Equal-to-current is also a regression.
-    let equal = store.epoch_set(
-        10,
-        "sha256:manifest-eq",
-        1_745_750_050,
-        "trace-eq",
-    );
+    let equal = store.epoch_set(10, "sha256:manifest-eq", 1_745_750_050, "trace-eq");
     assert!(matches!(equal, Err(EpochError::EpochRegression { .. })));
     assert_eq!(store.epoch_read(), ControlEpoch::new(10));
     h.log_phase("equal_rejected", true, json!({}));
@@ -215,7 +200,11 @@ fn e2e_epoch_store_full_lifecycle_advance_set_recover() {
     for t in store.transitions() {
         assert!(t.verify(), "transition MAC must verify: {t:?}");
     }
-    h.log_phase("all_macs_verify", true, json!({"count": store.transition_count()}));
+    h.log_phase(
+        "all_macs_verify",
+        true,
+        json!({"count": store.transition_count()}),
+    );
 }
 
 #[test]
@@ -273,13 +262,8 @@ fn e2e_check_artifact_epoch_full_validity_window_matrix() {
     h.log_phase("lookback_edge_accepted", true, json!({}));
 
     // ── REJECT: future epoch ────────────────────────────────────────
-    let future = check_artifact_epoch(
-        "art-future",
-        ControlEpoch::new(11),
-        &policy,
-        "trace-future",
-    )
-    .expect_err("future epoch rejected");
+    let future = check_artifact_epoch("art-future", ControlEpoch::new(11), &policy, "trace-future")
+        .expect_err("future epoch rejected");
     assert!(matches!(
         future.rejection_reason,
         EpochRejectionReason::FutureEpoch
@@ -355,13 +339,8 @@ fn e2e_check_artifact_epoch_full_validity_window_matrix() {
     h.log_phase("null_byte_rejected", true, json!({}));
 
     // ── REJECT: leading slash ───────────────────────────────────────
-    let slash = check_artifact_epoch(
-        "/abs/path",
-        ControlEpoch::new(10),
-        &policy,
-        "trace-slash",
-    )
-    .expect_err("absolute artifact_id rejected");
+    let slash = check_artifact_epoch("/abs/path", ControlEpoch::new(10), &policy, "trace-slash")
+        .expect_err("absolute artifact_id rejected");
     assert!(matches!(
         slash.rejection_reason,
         EpochRejectionReason::InvalidArtifactId
@@ -398,8 +377,8 @@ fn e2e_check_artifact_epoch_full_validity_window_matrix() {
 
     // ── ASSERT: rejection ordering — invalid artifact_id wins over future
     let priority = check_artifact_epoch(
-        "",                       // invalid id
-        ControlEpoch::new(99),    // also future
+        "",                    // invalid id
+        ControlEpoch::new(99), // also future
         &policy,
         "trace-priority",
     )
@@ -419,13 +398,8 @@ fn e2e_check_artifact_epoch_at_genesis_zero_lookback() {
     let policy = ValidityWindowPolicy::new(ControlEpoch::GENESIS, 0);
     assert_eq!(policy.min_accepted_epoch(), ControlEpoch::GENESIS);
 
-    check_artifact_epoch(
-        "art-genesis",
-        ControlEpoch::GENESIS,
-        &policy,
-        "trace-gen",
-    )
-    .expect("genesis itself is accepted under zero-lookback policy");
+    check_artifact_epoch("art-genesis", ControlEpoch::GENESIS, &policy, "trace-gen")
+        .expect("genesis itself is accepted under zero-lookback policy");
     h.log_phase("genesis_accepted", true, json!({}));
 
     let any_future = check_artifact_epoch(

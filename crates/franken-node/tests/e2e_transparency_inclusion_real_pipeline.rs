@@ -205,7 +205,12 @@ fn e2e_transparency_inclusion_real_pipeline_full_coverage() {
     let h = Harness::new("e2e_transparency_inclusion_real_pipeline_full_coverage");
 
     // ── ARRANGE ────────────────────────────────────────────────────
-    let artifacts = ["sha256:art-alpha", "sha256:art-bravo", "sha256:art-charlie", "sha256:art-delta"];
+    let artifacts = [
+        "sha256:art-alpha",
+        "sha256:art-bravo",
+        "sha256:art-charlie",
+        "sha256:art-delta",
+    ];
     let (root, proofs) = build_balanced_proofs(&artifacts);
     h.log_phase(
         "tree_built",
@@ -254,7 +259,11 @@ fn e2e_transparency_inclusion_real_pipeline_full_coverage() {
         "2026-04-26T22:00:01Z",
     );
     assert_failure(&missing, &ProofFailure::ProofMissing);
-    h.log_phase("verify_missing_rejected", true, json!({"trace": missing.trace_id}));
+    h.log_phase(
+        "verify_missing_rejected",
+        true,
+        json!({"trace": missing.trace_id}),
+    );
 
     // ── ACT + ASSERT: ProofMissing-not-required → passes through ───
     let optional_policy = TransparencyPolicy {

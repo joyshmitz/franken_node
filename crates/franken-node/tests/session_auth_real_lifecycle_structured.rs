@@ -17,7 +17,7 @@ use serde_json::json;
 use std::sync::Once;
 use std::time::Instant;
 use tempfile::TempDir;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 static TEST_TRACING_INIT: Once = Once::new();
 
@@ -68,8 +68,14 @@ impl SessionTestHarness {
             phase: phase.to_string(),
             duration_ms,
             session_config: details.get("session_config").cloned().unwrap_or(json!({})),
-            events_count: details.get("events_count").and_then(|v| v.as_u64()).map(|v| v as usize),
-            error_details: details.get("error_details").and_then(|v| v.as_str()).map(String::from),
+            events_count: details
+                .get("events_count")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize),
+            error_details: details
+                .get("error_details")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             success,
         };
 
@@ -97,19 +103,24 @@ impl SessionTestHarness {
 
 fn init_test_tracing() {
     TEST_TRACING_INIT.call_once(|| {
-        let _ = tracing_subscriber::fmt()
-            .with_test_writer()
-            .try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     });
 }
 
-fn realistic_lifecycle_scenario(max_sessions: usize, message_count: usize) -> SessionLifecycleScenario {
+fn realistic_lifecycle_scenario(
+    max_sessions: usize,
+    message_count: usize,
+) -> SessionLifecycleScenario {
     let mut messages = Vec::new();
 
     // Generate realistic message patterns
     for i in 0..message_count {
         messages.push(SessionLifecycleMessage {
-            direction: if i % 2 == 0 { MessageDirection::Send } else { MessageDirection::Receive },
+            direction: if i % 2 == 0 {
+                MessageDirection::Send
+            } else {
+                MessageDirection::Receive
+            },
             sequence: i as u64,
             payload_hash: format!("payload-{:08x}", rand::random::<u32>()),
             timestamp: 10_000 + (i as u64 * 100),
@@ -142,22 +153,30 @@ fn structured_session_lifecycle_with_realistic_load() {
 
     // Phase 1: Setup realistic scenario
     let scenario = realistic_lifecycle_scenario(4, 10);
-    test_harness.log_phase("setup", true, json!({
-        "action": "creating_scenario",
-        "session_config": {
-            "max_sessions": scenario.config.max_sessions,
-            "replay_window": scenario.config.replay_window,
-            "session_timeout_ms": scenario.config.session_timeout_ms
-        },
-        "message_count": scenario.messages.len(),
-        "session_id": scenario.session_id
-    }));
+    test_harness.log_phase(
+        "setup",
+        true,
+        json!({
+            "action": "creating_scenario",
+            "session_config": {
+                "max_sessions": scenario.config.max_sessions,
+                "replay_window": scenario.config.replay_window,
+                "session_timeout_ms": scenario.config.session_timeout_ms
+            },
+            "message_count": scenario.messages.len(),
+            "session_id": scenario.session_id
+        }),
+    );
 
     // Phase 2: Execute session lifecycle
-    test_harness.log_phase("execution", true, json!({
-        "action": "executing_session_lifecycle",
-        "scenario_id": scenario.session_id
-    }));
+    test_harness.log_phase(
+        "execution",
+        true,
+        json!({
+            "action": "executing_session_lifecycle",
+            "scenario_id": scenario.session_id
+        }),
+    );
 
     let result = session_lifecycle_events(scenario);
 
@@ -173,9 +192,21 @@ fn structured_session_lifecycle_with_realistic_load() {
 
             // Verify expected event patterns
             assert!(!events.is_empty(), "Should generate lifecycle events");
-            assert!(events.iter().any(|e| e.event_code == event_codes::SCC_SESSION_ESTABLISHED));
-            assert!(events.iter().any(|e| e.event_code == event_codes::SCC_SESSION_TERMINATED));
-            assert!(events.iter().any(|e| e.event_code == event_codes::SCC_MESSAGE_ACCEPTED));
+            assert!(
+                events
+                    .iter()
+                    .any(|e| e.event_code == event_codes::SCC_SESSION_ESTABLISHED)
+            );
+            assert!(
+                events
+                    .iter()
+                    .any(|e| e.event_code == event_codes::SCC_SESSION_TERMINATED)
+            );
+            assert!(
+                events
+                    .iter()
+                    .any(|e| e.event_code == event_codes::SCC_MESSAGE_ACCEPTED)
+            );
 
             test_harness.log_phase("verification", true, json!({
                 "action": "test_completed_successfully",
@@ -186,12 +217,19 @@ fn structured_session_lifecycle_with_realistic_load() {
             }));
         }
         Err(e) => {
-            test_harness.log_phase("analysis", false, json!({
-                "action": "session_lifecycle_failed",
-                "error_details": e.to_string(),
-                "error_type": format!("{:?}", e)
-            }));
-            panic!("Session lifecycle should succeed with realistic scenario: {:?}", e);
+            test_harness.log_phase(
+                "analysis",
+                false,
+                json!({
+                    "action": "session_lifecycle_failed",
+                    "error_details": e.to_string(),
+                    "error_type": format!("{:?}", e)
+                }),
+            );
+            panic!(
+                "Session lifecycle should succeed with realistic scenario: {:?}",
+                e
+            );
         }
     }
 
@@ -208,56 +246,83 @@ fn structured_session_error_propagation_with_logging() {
 
     // Phase 1: Setup error scenario
     let error_scenario = realistic_lifecycle_scenario(0, 5); // max_sessions=0 should fail
-    test_harness.log_phase("setup", true, json!({
-        "action": "creating_error_scenario",
-        "session_config": {
-            "max_sessions": 0,
-            "expected_failure": true
-        },
-        "message_count": error_scenario.messages.len()
-    }));
+    test_harness.log_phase(
+        "setup",
+        true,
+        json!({
+            "action": "creating_error_scenario",
+            "session_config": {
+                "max_sessions": 0,
+                "expected_failure": true
+            },
+            "message_count": error_scenario.messages.len()
+        }),
+    );
 
     // Phase 2: Execute and expect failure
-    test_harness.log_phase("execution", true, json!({
-        "action": "executing_error_scenario",
-        "expecting_failure": true
-    }));
+    test_harness.log_phase(
+        "execution",
+        true,
+        json!({
+            "action": "executing_error_scenario",
+            "expecting_failure": true
+        }),
+    );
 
     let result = session_lifecycle_events(error_scenario);
 
     // Phase 3: Verify error behavior
     match result {
         Err(SessionError::MaxSessionsReached { limit }) => {
-            test_harness.log_phase("analysis", true, json!({
-                "action": "error_correctly_propagated",
-                "error_type": "MaxSessionsReached",
-                "limit": limit,
-                "expected": true
-            }));
+            test_harness.log_phase(
+                "analysis",
+                true,
+                json!({
+                    "action": "error_correctly_propagated",
+                    "error_type": "MaxSessionsReached",
+                    "limit": limit,
+                    "expected": true
+                }),
+            );
 
             assert_eq!(limit, 0, "Error should report correct limit");
 
-            test_harness.log_phase("verification", true, json!({
-                "action": "error_test_completed_successfully",
-                "error_limit": limit,
-                "error_correctly_typed": true
-            }));
+            test_harness.log_phase(
+                "verification",
+                true,
+                json!({
+                    "action": "error_test_completed_successfully",
+                    "error_limit": limit,
+                    "error_correctly_typed": true
+                }),
+            );
         }
         Err(other_error) => {
-            test_harness.log_phase("analysis", false, json!({
-                "action": "unexpected_error_type",
-                "error_details": other_error.to_string(),
-                "expected_error": "MaxSessionsReached"
-            }));
+            test_harness.log_phase(
+                "analysis",
+                false,
+                json!({
+                    "action": "unexpected_error_type",
+                    "error_details": other_error.to_string(),
+                    "expected_error": "MaxSessionsReached"
+                }),
+            );
             panic!("Expected MaxSessionsReached error, got: {:?}", other_error);
         }
         Ok(events) => {
-            test_harness.log_phase("analysis", false, json!({
-                "action": "unexpected_success",
-                "events_count": events.len(),
-                "expected": "failure with max_sessions=0"
-            }));
-            panic!("Expected failure with max_sessions=0, but got {} events", events.len());
+            test_harness.log_phase(
+                "analysis",
+                false,
+                json!({
+                    "action": "unexpected_success",
+                    "events_count": events.len(),
+                    "expected": "failure with max_sessions=0"
+                }),
+            );
+            panic!(
+                "Expected failure with max_sessions=0, but got {} events",
+                events.len()
+            );
         }
     }
 
@@ -273,10 +338,14 @@ fn structured_session_replay_window_behavior() {
     let test_harness = SessionTestHarness::new("structured_session_replay_window");
 
     // Test replay window behavior with structured logging
-    test_harness.log_phase("setup", true, json!({
-        "action": "testing_replay_window",
-        "test_type": "demo_windowed_replay"
-    }));
+    test_harness.log_phase(
+        "setup",
+        true,
+        json!({
+            "action": "testing_replay_window",
+            "test_type": "demo_windowed_replay"
+        }),
+    );
 
     let replay_events = demo_windowed_replay();
 
@@ -290,22 +359,33 @@ fn structured_session_replay_window_behavior() {
         .filter(|event| event.event_code == event_codes::SCC_MESSAGE_ACCEPTED)
         .count();
 
-    test_harness.log_phase("analysis", true, json!({
-        "action": "replay_analysis",
-        "total_events": replay_events.len(),
-        "rejected_messages": rejected_count,
-        "accepted_messages": accepted_count,
-        "replay_protection_working": rejected_count > 0
-    }));
+    test_harness.log_phase(
+        "analysis",
+        true,
+        json!({
+            "action": "replay_analysis",
+            "total_events": replay_events.len(),
+            "rejected_messages": rejected_count,
+            "accepted_messages": accepted_count,
+            "replay_protection_working": rejected_count > 0
+        }),
+    );
 
-    assert!(rejected_count > 0, "Replay window should reject some duplicate messages");
+    assert!(
+        rejected_count > 0,
+        "Replay window should reject some duplicate messages"
+    );
     assert!(accepted_count > 0, "Should accept some legitimate messages");
 
-    test_harness.log_phase("verification", true, json!({
-        "action": "replay_window_test_completed",
-        "replay_protection_verified": true,
-        "rejection_rate": (rejected_count as f64) / (replay_events.len() as f64)
-    }));
+    test_harness.log_phase(
+        "verification",
+        true,
+        json!({
+            "action": "replay_window_test_completed",
+            "replay_protection_verified": true,
+            "rejection_rate": (rejected_count as f64) / (replay_events.len() as f64)
+        }),
+    );
 
     info!(
         test_name = "structured_session_replay_window",

@@ -7,14 +7,14 @@
 //! Why no mocks: CLI runtime detection and trust registry behavior can only be validated
 //! against real Node.js binaries and filesystem operations.
 
+use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::Once;
 use std::time::Instant;
-use serde_json::Value;
 use tempfile::TempDir;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 static TEST_TRACING_INIT: Once = Once::new();
 
@@ -64,7 +64,7 @@ impl RealNodeRuntimeTestHarness {
     fn find_node_binary() -> Option<PathBuf> {
         // Try common Node.js locations and PATH
         let candidates = [
-            "node",                    // In PATH
+            "node",                   // In PATH
             "/usr/bin/node",          // System location
             "/usr/local/bin/node",    // Homebrew/manual install
             "/opt/homebrew/bin/node", // Apple Silicon Homebrew
@@ -130,10 +130,14 @@ impl RealNodeRuntimeTestHarness {
     fn setup_node_project_with_missing_registry(&self) -> Result<(), Box<dyn std::error::Error>> {
         let workspace = self.workspace_path();
 
-        self.log_phase("setup", true, serde_json::json!({
-            "action": "creating_node_project",
-            "path": workspace.display().to_string()
-        }));
+        self.log_phase(
+            "setup",
+            true,
+            serde_json::json!({
+                "action": "creating_node_project",
+                "path": workspace.display().to_string()
+            }),
+        );
 
         // Create franken-node config (balanced profile, no trust registry)
         fs::write(
@@ -168,12 +172,16 @@ process.exit(0);
 "#;
         fs::write(workspace.join("index.js"), index_js)?;
 
-        self.log_phase("setup", true, serde_json::json!({
-            "action": "project_structure_created",
-            "files": ["franken_node.toml", "package.json", "index.js"],
-            "config_profile": "balanced",
-            "dependencies_count": 1
-        }));
+        self.log_phase(
+            "setup",
+            true,
+            serde_json::json!({
+                "action": "project_structure_created",
+                "files": ["franken_node.toml", "package.json", "index.js"],
+                "config_profile": "balanced",
+                "dependencies_count": 1
+            }),
+        );
 
         Ok(())
     }
@@ -213,11 +221,7 @@ fn run_franken_node_with_real_runtime(
     if let Some(node_path) = node_binary {
         if let Some(node_dir) = node_path.parent() {
             let current_path = std::env::var_os("PATH").unwrap_or_default();
-            let new_path = format!(
-                "{}:{}",
-                node_dir.display(),
-                current_path.to_string_lossy()
-            );
+            let new_path = format!("{}:{}", node_dir.display(), current_path.to_string_lossy());
             command.env("PATH", new_path);
         }
     }
@@ -233,9 +237,7 @@ fn run_franken_node_with_real_runtime(
 
 fn init_test_tracing() {
     TEST_TRACING_INIT.call_once(|| {
-        let _ = tracing_subscriber::fmt()
-            .with_test_writer()
-            .try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     });
 }
 
@@ -244,26 +246,34 @@ fn real_node_runtime_missing_registry_suggests_init_scan_with_structured_logging
     let test_harness = RealNodeRuntimeTestHarness::new("real_node_runtime_missing_registry_test");
 
     // Phase 1: Setup workspace with real Node.js project
-    test_harness.log_phase("setup", true, serde_json::json!({
-        "action": "starting_test",
-        "has_node_binary": test_harness.node_binary.is_some(),
-        "node_path": test_harness.node_binary.as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|| "not_found".to_string())
-    }));
+    test_harness.log_phase(
+        "setup",
+        true,
+        serde_json::json!({
+            "action": "starting_test",
+            "has_node_binary": test_harness.node_binary.is_some(),
+            "node_path": test_harness.node_binary.as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "not_found".to_string())
+        }),
+    );
 
     if test_harness.node_binary.is_none() {
-        test_harness.log_phase("setup", false, serde_json::json!({
-            "action": "skipping_test",
-            "reason": "No Node.js binary found in system",
-            "suggestion": "Install Node.js to run this test",
-            "searched_paths": [
-                "/usr/bin/node",
-                "/usr/local/bin/node",
-                "/opt/homebrew/bin/node",
-                "which node"
-            ]
-        }));
+        test_harness.log_phase(
+            "setup",
+            false,
+            serde_json::json!({
+                "action": "skipping_test",
+                "reason": "No Node.js binary found in system",
+                "suggestion": "Install Node.js to run this test",
+                "searched_paths": [
+                    "/usr/bin/node",
+                    "/usr/local/bin/node",
+                    "/opt/homebrew/bin/node",
+                    "which node"
+                ]
+            }),
+        );
 
         // Skip test gracefully if Node.js not available
         warn!("SKIP: No Node.js binary found. Install Node.js to run this test.");
@@ -275,11 +285,15 @@ fn real_node_runtime_missing_registry_suggests_init_scan_with_structured_logging
         .expect("workspace setup should succeed");
 
     // Phase 2: Run franken-node with real Node.js runtime
-    test_harness.log_phase("execution", true, serde_json::json!({
-        "action": "running_franken_node",
-        "args": ["run", "--policy", "strict", "--runtime", "node", "."],
-        "node_binary": test_harness.node_binary.as_ref().unwrap().display().to_string()
-    }));
+    test_harness.log_phase(
+        "execution",
+        true,
+        serde_json::json!({
+            "action": "running_franken_node",
+            "args": ["run", "--policy", "strict", "--runtime", "node", "."],
+            "node_binary": test_harness.node_binary.as_ref().unwrap().display().to_string()
+        }),
+    );
 
     let output = run_franken_node_with_real_runtime(
         test_harness.workspace_path(),
@@ -328,14 +342,18 @@ fn real_node_runtime_missing_registry_suggests_init_scan_with_structured_logging
         stderr
     );
 
-    test_harness.log_phase("verification", true, serde_json::json!({
-        "action": "test_completed",
-        "all_assertions_passed": true,
-        "node_runtime_detection": "successful",
-        "registry_detection": "successful",
-        "suggestion_generation": "successful",
-        "mock_free_validation": "successful"
-    }));
+    test_harness.log_phase(
+        "verification",
+        true,
+        serde_json::json!({
+            "action": "test_completed",
+            "all_assertions_passed": true,
+            "node_runtime_detection": "successful",
+            "registry_detection": "successful",
+            "suggestion_generation": "successful",
+            "mock_free_validation": "successful"
+        }),
+    );
 
     info!(
         test_name = "real_node_runtime_missing_registry_test",
@@ -348,10 +366,14 @@ fn real_node_runtime_missing_registry_suggests_init_scan_with_structured_logging
 fn real_node_runtime_workspace_isolation_verification() {
     let test_harness = RealNodeRuntimeTestHarness::new("workspace_isolation_test");
 
-    test_harness.log_phase("isolation_test", true, serde_json::json!({
-        "action": "testing_workspace_isolation",
-        "workspace_path": test_harness.workspace_path().display().to_string()
-    }));
+    test_harness.log_phase(
+        "isolation_test",
+        true,
+        serde_json::json!({
+            "action": "testing_workspace_isolation",
+            "workspace_path": test_harness.workspace_path().display().to_string()
+        }),
+    );
 
     // Verify each test gets its own isolated workspace
     assert!(test_harness.workspace_path().exists());
@@ -363,18 +385,23 @@ fn real_node_runtime_workspace_isolation_verification() {
     assert!(test_file.exists());
 
     // Verify workspace is unique and isolated
-    let workspace_name = test_harness.workspace_path()
+    let workspace_name = test_harness
+        .workspace_path()
         .file_name()
         .and_then(|name| name.to_str())
         .expect("workspace should have a name");
 
-    test_harness.log_phase("isolation_test", true, serde_json::json!({
-        "action": "workspace_isolation_verified",
-        "test_file_exists": test_file.exists(),
-        "workspace_unique_id": workspace_name,
-        "workspace_writable": true,
-        "isolation_confirmed": true
-    }));
+    test_harness.log_phase(
+        "isolation_test",
+        true,
+        serde_json::json!({
+            "action": "workspace_isolation_verified",
+            "test_file_exists": test_file.exists(),
+            "workspace_unique_id": workspace_name,
+            "workspace_writable": true,
+            "isolation_confirmed": true
+        }),
+    );
 
     info!("Workspace isolation test passed - each test gets its own isolated workspace");
 }

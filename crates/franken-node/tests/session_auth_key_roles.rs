@@ -1,5 +1,5 @@
 use frankenengine_node::api::session_auth::{
-    sign_handshake, SessionConfig, SessionError, SessionManager,
+    SessionConfig, SessionError, SessionManager, sign_handshake,
 };
 use frankenengine_node::control_plane::control_epoch::ControlEpoch;
 use frankenengine_node::control_plane::key_role_separation::{KeyRole, KeyRoleRegistry};

@@ -298,7 +298,7 @@ fn vef_receipt_chain_checkpoint_capacity_fails_closed_without_eviction() -> Test
     for seq in 0..MAX_CHECKPOINTS {
         let seq_u64 = u64::try_from(seq).unwrap_or_else(|_| {
             // This should never happen with MAX_CHECKPOINTS=1024, but handle gracefully
-            seq as u64  // Use saturating conversion as fallback
+            seq as u64 // Use saturating conversion as fallback
         });
         chain
             .append(
@@ -358,7 +358,8 @@ fn vef_execution_receipt_binary_format_golden() {
         capability_context,
         actor_identity: "agent:golden-test-actor".to_string(),
         artifact_identity: "artifact:ext:franken-node-core-v1.0.0".to_string(),
-        policy_snapshot_hash: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+        policy_snapshot_hash:
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
         timestamp_millis: 1704067200000, // Fixed timestamp: 2024-01-01T00:00:00Z
         sequence_number: 1000,
         witness_references: vec![

@@ -3,8 +3,8 @@
 //! Generates automated compliance reports from conformance test results.
 //! Used by CI to validate specification compliance and track coverage metrics.
 
-use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Structured test result for report generation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,7 +56,9 @@ impl ComplianceReport {
         let mut failing_tests = Vec::new();
 
         for result in &results {
-            let section_stats = by_section.entry(result.section.clone()).or_insert((0, 0, 0, 0));
+            let section_stats = by_section
+                .entry(result.section.clone())
+                .or_insert((0, 0, 0, 0));
             section_stats.0 += 1; // total
 
             match result.verdict.as_str() {
@@ -100,7 +102,8 @@ impl ComplianceReport {
         let expected_failures = total_xfail;
 
         let overall_score = if requirements_tested > 0 {
-            (requirements_passing as f64 / (requirements_passing + requirements_failing) as f64) * 100.0
+            (requirements_passing as f64 / (requirements_passing + requirements_failing) as f64)
+                * 100.0
         } else {
             100.0
         };
@@ -137,11 +140,18 @@ impl ComplianceReport {
         report.push_str(&format!("**Generated**: {}\n", self.generated_at));
         report.push_str(&format!("**SDK Version**: {}\n", self.sdk_version));
         report.push_str(&format!("**Specification**: {}\n", self.specification));
-        report.push_str(&format!("**Conformance Level**: {} ({:.1}%)\n\n", self.conformance_level, self.overall_score));
+        report.push_str(&format!(
+            "**Conformance Level**: {} ({:.1}%)\n\n",
+            self.conformance_level, self.overall_score
+        ));
 
         report.push_str("## Summary\n\n");
-        report.push_str(&format!("- **Total Requirements**: {}\n", self.total_requirements));
-        report.push_str(&format!("- **Requirements Tested**: {} ({:.1}%)\n",
+        report.push_str(&format!(
+            "- **Total Requirements**: {}\n",
+            self.total_requirements
+        ));
+        report.push_str(&format!(
+            "- **Requirements Tested**: {} ({:.1}%)\n",
             self.requirements_tested,
             if self.total_requirements > 0 {
                 (self.requirements_tested as f64 / self.total_requirements as f64) * 100.0
@@ -149,9 +159,18 @@ impl ComplianceReport {
                 100.0
             }
         ));
-        report.push_str(&format!("- **✅ Passing**: {}\n", self.requirements_passing));
-        report.push_str(&format!("- **❌ Failing**: {}\n", self.requirements_failing));
-        report.push_str(&format!("- **⚠️ Expected Failures**: {}\n\n", self.expected_failures));
+        report.push_str(&format!(
+            "- **✅ Passing**: {}\n",
+            self.requirements_passing
+        ));
+        report.push_str(&format!(
+            "- **❌ Failing**: {}\n",
+            self.requirements_failing
+        ));
+        report.push_str(&format!(
+            "- **⚠️ Expected Failures**: {}\n\n",
+            self.expected_failures
+        ));
 
         report.push_str("## Coverage by Section\n\n");
         report.push_str("| Section | Total | Pass | Fail | XFail | Pass Rate |\n");
@@ -186,8 +205,10 @@ impl ComplianceReport {
             }
         }
 
-        report.push_str(&format!("\n---\n\n**Final Score**: {} ({:.1}%)\n",
-            self.conformance_level, self.overall_score));
+        report.push_str(&format!(
+            "\n---\n\n**Final Score**: {} ({:.1}%)\n",
+            self.conformance_level, self.overall_score
+        ));
 
         report
     }
@@ -235,16 +256,14 @@ mod tests {
 
     #[test]
     fn test_markdown_report_format() {
-        let test_results = vec![
-            TestResultEntry {
-                id: "TEST-001".to_string(),
-                section: "test".to_string(),
-                level: "Must".to_string(),
-                description: "Test description".to_string(),
-                verdict: "PASS".to_string(),
-                reason: None,
-            },
-        ];
+        let test_results = vec![TestResultEntry {
+            id: "TEST-001".to_string(),
+            section: "test".to_string(),
+            level: "Must".to_string(),
+            description: "Test description".to_string(),
+            verdict: "PASS".to_string(),
+            reason: None,
+        }];
 
         let report = ComplianceReport::from_test_results(test_results);
         let markdown = report.to_markdown();
@@ -256,16 +275,14 @@ mod tests {
 
     #[test]
     fn test_json_report_serialization() {
-        let test_results = vec![
-            TestResultEntry {
-                id: "TEST-001".to_string(),
-                section: "test".to_string(),
-                level: "Must".to_string(),
-                description: "Test description".to_string(),
-                verdict: "PASS".to_string(),
-                reason: None,
-            },
-        ];
+        let test_results = vec![TestResultEntry {
+            id: "TEST-001".to_string(),
+            section: "test".to_string(),
+            level: "Must".to_string(),
+            description: "Test description".to_string(),
+            verdict: "PASS".to_string(),
+            reason: None,
+        }];
 
         let report = ComplianceReport::from_test_results(test_results);
         let json = report.to_json().expect("JSON serialization should work");

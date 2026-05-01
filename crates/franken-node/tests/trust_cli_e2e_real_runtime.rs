@@ -10,14 +10,14 @@
 //! Why no mocks: CLI runtime detection, filesystem interaction, and process behavior
 //! can only be validated against real components.
 
+use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::Once;
 use std::time::Instant;
-use serde_json::{json, Value};
 use tempfile::TempDir;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 static TEST_TRACING_INIT: Once = Once::new();
 
@@ -67,8 +67,8 @@ impl RealRuntimeTestHarness {
     fn find_node_binary() -> Option<PathBuf> {
         // Try common Node.js locations
         let candidates = [
-            "node",           // In PATH
-            "/usr/bin/node",  // Common system location
+            "node",                // In PATH
+            "/usr/bin/node",       // Common system location
             "/usr/local/bin/node", // Homebrew/manual install
         ];
 
@@ -120,10 +120,14 @@ impl RealRuntimeTestHarness {
     fn setup_node_project_with_real_runtime(&self) -> Result<(), Box<dyn std::error::Error>> {
         let workspace = self.workspace_path();
 
-        self.log_phase("setup", true, json!({
-            "action": "creating_workspace",
-            "path": workspace.display().to_string()
-        }));
+        self.log_phase(
+            "setup",
+            true,
+            json!({
+                "action": "creating_workspace",
+                "path": workspace.display().to_string()
+            }),
+        );
 
         // Create franken-node config (minimal, no trust registry)
         let config = json!({
@@ -134,8 +138,10 @@ impl RealRuntimeTestHarness {
                 "trust_sources": []
             }
         });
-        fs::write(workspace.join("franken-node.config.json"),
-                 serde_json::to_string_pretty(&config)?)?;
+        fs::write(
+            workspace.join("franken-node.config.json"),
+            serde_json::to_string_pretty(&config)?,
+        )?;
 
         // Create package.json with real dependency
         let package_json = json!({
@@ -145,8 +151,10 @@ impl RealRuntimeTestHarness {
                 "@acme/auth-guard": "^1.4.2"
             }
         });
-        fs::write(workspace.join("package.json"),
-                 serde_json::to_string_pretty(&package_json)?)?;
+        fs::write(
+            workspace.join("package.json"),
+            serde_json::to_string_pretty(&package_json)?,
+        )?;
 
         // Create a real Node.js entry point
         let index_js = r#"
@@ -156,11 +164,15 @@ process.exit(0);
 "#;
         fs::write(workspace.join("index.js"), index_js)?;
 
-        self.log_phase("setup", true, json!({
-            "action": "workspace_created",
-            "files": ["franken-node.config.json", "package.json", "index.js"],
-            "config": config
-        }));
+        self.log_phase(
+            "setup",
+            true,
+            json!({
+                "action": "workspace_created",
+                "files": ["franken-node.config.json", "package.json", "index.js"],
+                "config": config
+            }),
+        );
 
         Ok(())
     }
@@ -212,11 +224,7 @@ fn run_franken_node_with_real_runtime(
     if let Some(node_path) = node_binary {
         let node_dir = node_path.parent().expect("node binary dir");
         let current_path = std::env::var_os("PATH").unwrap_or_default();
-        let new_path = format!(
-            "{}:{}",
-            node_dir.display(),
-            current_path.to_string_lossy()
-        );
+        let new_path = format!("{}:{}", node_dir.display(), current_path.to_string_lossy());
         command.env("PATH", new_path);
     }
 
@@ -231,9 +239,7 @@ fn run_franken_node_with_real_runtime(
 
 fn init_test_tracing() {
     TEST_TRACING_INIT.call_once(|| {
-        let _ = tracing_subscriber::fmt()
-            .with_test_writer()
-            .try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     });
 }
 
@@ -242,22 +248,31 @@ fn real_runtime_missing_registry_suggests_init_scan_with_structured_logging() {
     let test_harness = RealRuntimeTestHarness::new("real_runtime_missing_registry_test");
 
     // Phase 1: Setup workspace with real Node.js project
-    test_harness.log_phase("setup", true, json!({
-        "action": "starting_test",
-        "has_node_binary": test_harness.node_binary.is_some()
-    }));
+    test_harness.log_phase(
+        "setup",
+        true,
+        json!({
+            "action": "starting_test",
+            "has_node_binary": test_harness.node_binary.is_some()
+        }),
+    );
 
     if test_harness.node_binary.is_none() {
-        test_harness.log_phase("setup", false, json!({
-            "action": "skipping_test",
-            "reason": "No Node.js binary found in system",
-            "suggestion": "Install Node.js to run this test"
-        }));
+        test_harness.log_phase(
+            "setup",
+            false,
+            json!({
+                "action": "skipping_test",
+                "reason": "No Node.js binary found in system",
+                "suggestion": "Install Node.js to run this test"
+            }),
+        );
         eprintln!("SKIP: No Node.js binary found. Install Node.js to run this test.");
         return;
     }
 
-    test_harness.setup_node_project_with_real_runtime()
+    test_harness
+        .setup_node_project_with_real_runtime()
         .expect("workspace setup should succeed");
 
     // Phase 2: Run franken-node with real Node.js runtime
@@ -268,7 +283,15 @@ fn real_runtime_missing_registry_suggests_init_scan_with_structured_logging() {
 
     let output = run_franken_node_with_real_runtime(
         test_harness.workspace_path(),
-        &["run", "--policy", "strict", "--runtime", "node", ".", "--structured-logs-jsonl"],
+        &[
+            "run",
+            "--policy",
+            "strict",
+            "--runtime",
+            "node",
+            ".",
+            "--structured-logs-jsonl",
+        ],
         test_harness.node_binary.as_ref(),
     );
 
@@ -305,13 +328,17 @@ fn real_runtime_missing_registry_suggests_init_scan_with_structured_logging() {
         stderr
     );
 
-    test_harness.log_phase("verification", true, json!({
-        "action": "test_completed",
-        "all_assertions_passed": true,
-        "runtime_detection": "successful",
-        "registry_detection": "successful",
-        "suggestion_generation": "successful"
-    }));
+    test_harness.log_phase(
+        "verification",
+        true,
+        json!({
+            "action": "test_completed",
+            "all_assertions_passed": true,
+            "runtime_detection": "successful",
+            "registry_detection": "successful",
+            "suggestion_generation": "successful"
+        }),
+    );
 
     info!(
         test_name = "real_runtime_missing_registry_test",
@@ -324,10 +351,14 @@ fn real_runtime_missing_registry_suggests_init_scan_with_structured_logging() {
 fn real_runtime_integration_with_tempdir_isolation() {
     let test_harness = RealRuntimeTestHarness::new("real_runtime_integration_test");
 
-    test_harness.log_phase("isolation_test", true, json!({
-        "action": "testing_tempdir_isolation",
-        "workspace_path": test_harness.workspace_path().display().to_string()
-    }));
+    test_harness.log_phase(
+        "isolation_test",
+        true,
+        json!({
+            "action": "testing_tempdir_isolation",
+            "workspace_path": test_harness.workspace_path().display().to_string()
+        }),
+    );
 
     // Verify each test gets its own isolated tempdir
     assert!(test_harness.workspace_path().exists());
@@ -338,11 +369,15 @@ fn real_runtime_integration_with_tempdir_isolation() {
     fs::write(&test_file, "isolated test data").expect("write test file");
     assert!(test_file.exists());
 
-    test_harness.log_phase("isolation_test", true, json!({
-        "action": "tempdir_isolation_verified",
-        "test_file_exists": test_file.exists(),
-        "workspace_writable": true
-    }));
+    test_harness.log_phase(
+        "isolation_test",
+        true,
+        json!({
+            "action": "tempdir_isolation_verified",
+            "test_file_exists": test_file.exists(),
+            "workspace_writable": true
+        }),
+    );
 
     info!("Tempdir isolation test passed - each test gets its own workspace");
 }

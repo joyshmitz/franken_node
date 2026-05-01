@@ -1,9 +1,9 @@
 //! Runnable metamorphic relations for the claims compiler and scoreboard.
 
 use frankenengine_node::claims::claim_compiler::{
-    make_test_claim, ClaimCompiler, CompilationResult, CompiledContract, CompilerConfig,
-    ExternalClaim, ScoreboardConfig, ScoreboardPipeline, ScoreboardRejectionReason,
-    ScoreboardSnapshot, ScoreboardUpdateResult,
+    ClaimCompiler, CompilationResult, CompiledContract, CompilerConfig, ExternalClaim,
+    ScoreboardConfig, ScoreboardPipeline, ScoreboardRejectionReason, ScoreboardSnapshot,
+    ScoreboardUpdateResult, make_test_claim,
 };
 
 type TestResult = Result<(), String>;

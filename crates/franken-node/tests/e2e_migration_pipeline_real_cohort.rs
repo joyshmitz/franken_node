@@ -201,7 +201,8 @@ fn e2e_migration_pipeline_full_pipeline_happy_path() {
     ];
     for (i, (from, to)) in expected.iter().enumerate() {
         assert_eq!(state.current_stage, *from, "stage[{i}]: wrong from");
-        state = advance(state).unwrap_or_else(|e| panic!("advance from {} failed: {e}", from.label()));
+        state =
+            advance(state).unwrap_or_else(|e| panic!("advance from {} failed: {e}", from.label()));
         assert_eq!(state.current_stage, *to, "stage[{i}]: wrong to");
         let last = state
             .stage_history
@@ -226,10 +227,7 @@ fn e2e_migration_pipeline_full_pipeline_happy_path() {
         verify_receipt_signature(receipt),
         "receipt signature must verify: {receipt:?}"
     );
-    assert!(
-        !receipt.signature.is_empty(),
-        "signature must be populated"
-    );
+    assert!(!receipt.signature.is_empty(), "signature must be populated");
     assert!(
         !receipt.pre_migration_hash.is_empty(),
         "pre-migration hash must be populated"
@@ -251,7 +249,11 @@ fn e2e_migration_pipeline_full_pipeline_happy_path() {
     let after_complete = advance(state.clone());
     let err = after_complete.expect_err("advancing past COMPLETE must fail");
     assert_eq!(err.code, error_codes::ERR_PIPE_INVALID_TRANSITION);
-    h.log_phase("terminal_advance_rejected", true, json!({"err": err.to_string()}));
+    h.log_phase(
+        "terminal_advance_rejected",
+        true,
+        json!({"err": err.to_string()}),
+    );
 
     // ── ASSERT: cohort summary reports finite, normalised metrics ──
     let summary = compute_cohort_summary(&state);

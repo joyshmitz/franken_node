@@ -16,7 +16,7 @@ use frankenengine_node::control_plane::cancellation_protocol::{
     CancelPhase, CancelProtocolError, CancellationProtocol, DEFAULT_MAX_RECORDS,
 };
 use frankenengine_node::control_plane::control_lane_policy::{
-    event_codes, ControlLane, ControlLanePolicy, ControlTaskClass,
+    ControlLane, ControlLanePolicy, ControlTaskClass, event_codes,
 };
 
 #[test]

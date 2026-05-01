@@ -1,5 +1,5 @@
-use insta::{assert_json_snapshot, Settings};
-use serde_json::{json, Map, Value};
+use insta::{Settings, assert_json_snapshot};
+use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use std::error::Error;
 use std::io::{Error as IoError, ErrorKind};

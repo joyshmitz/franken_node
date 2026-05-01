@@ -111,7 +111,7 @@ mod traceparent_parser_hardening {
     //! reject oversized + dash-flooded headers up front so it never walks an
     //! attacker-controlled number of segments.
 
-    use super::{TraceContext, parse_traceparent, TRACEPARENT_HEADER_LEN};
+    use super::{TRACEPARENT_HEADER_LEN, TraceContext, parse_traceparent};
 
     /// Canonical 55-byte W3C traceparent shape: `00-32hex-16hex-2hex`.
     const VALID: &str = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
@@ -149,8 +149,7 @@ mod traceparent_parser_hardening {
         // 55-byte header where extra dashes inside fields create a 5th segment.
         // Exactly 55 bytes total, but split into 5+ segments so the
         // post-split is_some check trips and parser rejects.
-        let weird: String = "00-0af7651916cd43dd8448eb211c80319-b7ad6b71-9203331-01"
-            .to_string();
+        let weird: String = "00-0af7651916cd43dd8448eb211c80319-b7ad6b71-9203331-01".to_string();
         assert_eq!(weird.len(), TRACEPARENT_HEADER_LEN);
         assert!(parse_traceparent(&weird).is_none());
     }

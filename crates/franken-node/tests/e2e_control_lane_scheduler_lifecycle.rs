@@ -29,8 +29,8 @@ use std::sync::Once;
 use std::time::Instant;
 
 use frankenengine_node::control_plane::control_lane_mapping::{
-    ControlLane, ControlLanePolicy, ControlLanePolicyError, ControlLaneScheduler,
-    ControlTaskClass, LaneBudget, default_control_lane_policy, select_next_lane, task_classes,
+    ControlLane, ControlLanePolicy, ControlLanePolicyError, ControlLaneScheduler, ControlTaskClass,
+    LaneBudget, default_control_lane_policy, select_next_lane, task_classes,
 };
 use serde_json::json;
 use tracing::{error, info};
@@ -167,7 +167,10 @@ fn e2e_control_lane_policy_validation_rejects_bad_budgets() {
     });
     let err = bad_cancel.validate().expect_err("cancel<20 rejected");
     match err {
-        ControlLanePolicyError::InvalidBudget { lane: ControlLane::Cancel, detail } => {
+        ControlLanePolicyError::InvalidBudget {
+            lane: ControlLane::Cancel,
+            detail,
+        } => {
             assert!(detail.contains("cancel"));
             h.log_phase("cancel_min_budget", true, json!({"detail": detail}));
         }
@@ -204,10 +207,7 @@ fn e2e_control_lane_policy_validation_rejects_bad_budgets() {
         starvation_threshold_ticks: 2,
     });
     let err = overflow.validate().expect_err("overflow rejected");
-    assert!(matches!(
-        err,
-        ControlLanePolicyError::BudgetOverflow { .. }
-    ));
+    assert!(matches!(err, ControlLanePolicyError::BudgetOverflow { .. }));
     assert_eq!(err.code(), "ERR_CLM_BUDGET_OVERFLOW");
     h.log_phase("budget_overflow", true, json!({"code": err.code()}));
 
@@ -219,10 +219,7 @@ fn e2e_control_lane_policy_validation_rejects_bad_budgets() {
         starvation_threshold_ticks: 3,
     });
     let err = undershoot.validate().expect_err("undershoot rejected");
-    assert!(matches!(
-        err,
-        ControlLanePolicyError::InvalidBudget { .. }
-    ));
+    assert!(matches!(err, ControlLanePolicyError::InvalidBudget { .. }));
     h.log_phase("budget_under_100", true, json!({}));
 
     // starvation_threshold_ticks=0 rejected.
@@ -233,10 +230,7 @@ fn e2e_control_lane_policy_validation_rejects_bad_budgets() {
         starvation_threshold_ticks: 0,
     });
     let err = zero_thresh.validate().expect_err("zero threshold rejected");
-    assert!(matches!(
-        err,
-        ControlLanePolicyError::InvalidBudget { .. }
-    ));
+    assert!(matches!(err, ControlLanePolicyError::InvalidBudget { .. }));
     h.log_phase("zero_threshold", true, json!({}));
 }
 
@@ -332,7 +326,10 @@ fn e2e_control_lane_scheduler_starvation_detection() {
     let still_starved = alerts
         .iter()
         .any(|a| matches!(a, ControlLanePolicyError::Starvation { lane, .. } if *lane == ControlLane::Ready));
-    assert!(!still_starved, "Ready should no longer be starved after 5 tasks_run");
+    assert!(
+        !still_starved,
+        "Ready should no longer be starved after 5 tasks_run"
+    );
     h.log_phase("starvation_cleared", true, json!({}));
 
     // Metrics snapshot reports the cumulative tasks_run.

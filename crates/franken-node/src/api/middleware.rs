@@ -841,8 +841,8 @@ impl AuthFailureLimiter {
     pub fn record_success(&mut self, source_ip: &str) {
         if let Some(state) = self.source_states.get_mut(source_ip) {
             state.failure_count = 0;
-            // We do not refund tokens because `check_auth_attempt` (which uses peek) 
-            // no longer consumes them. We just clear the failure count so the 
+            // We do not refund tokens because `check_auth_attempt` (which uses peek)
+            // no longer consumes them. We just clear the failure count so the
             // legitimate user can be evicted from the bounded map.
         }
     }
@@ -923,8 +923,7 @@ impl AuthFailureLimiter {
         config: &RateLimitConfig,
         source_ip: &str,
     ) -> &'a mut AuthFailureSourceState {
-        if !source_states.contains_key(source_ip)
-            && source_states.len() >= MAX_AUTH_FAILURE_SOURCES
+        if !source_states.contains_key(source_ip) && source_states.len() >= MAX_AUTH_FAILURE_SOURCES
         {
             Self::evict_lowest_priority_source_from(source_states);
         }
@@ -1067,8 +1066,7 @@ impl PerformanceRateLimiter {
         config: &RateLimitConfig,
         source_ip: &str,
     ) -> &'a mut PerformanceSourceState {
-        if !source_states.contains_key(source_ip)
-            && source_states.len() >= MAX_AUTH_FAILURE_SOURCES
+        if !source_states.contains_key(source_ip) && source_states.len() >= MAX_AUTH_FAILURE_SOURCES
         {
             Self::evict_lowest_priority_source_from(source_states);
         }
@@ -2169,7 +2167,8 @@ mod tests {
             },
             trace_propagation: true,
         };
-        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
+        let mut perf_limiter =
+            PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
         let keys = get_test_keys();
 
         let mut auth_limiter = AuthFailureLimiter::new();
@@ -2203,7 +2202,8 @@ mod tests {
             },
             trace_propagation: true,
         };
-        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
+        let mut perf_limiter =
+            PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
         let keys = get_test_keys();
         let invalid_traceparent = "00-00000000000000000000000000000000-b7ad6b7169203331-01";
 
@@ -2238,7 +2238,8 @@ mod tests {
             },
             trace_propagation: false,
         };
-        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
+        let mut perf_limiter =
+            PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
         let keys = get_test_keys();
         let incoming_traceparent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
 
@@ -2273,7 +2274,8 @@ mod tests {
             },
             trace_propagation: true,
         };
-        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::FleetControl));
+        let mut perf_limiter =
+            PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::FleetControl));
         let keys = get_test_keys();
 
         let mut auth_limiter = AuthFailureLimiter::new();
@@ -2308,7 +2310,8 @@ mod tests {
             },
             trace_propagation: true,
         };
-        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::FleetControl));
+        let mut perf_limiter =
+            PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::FleetControl));
         let keys = get_test_keys();
 
         let mut auth_limiter = AuthFailureLimiter::new();
@@ -2699,7 +2702,8 @@ mod api_middleware_additional_negative_tests {
 
     #[test]
     fn negative_middleware_auth_failure_skips_handler() {
-        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
+        let mut perf_limiter =
+            PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
         let mut handler_called = false;
 
         let mut auth_limiter = AuthFailureLimiter::new();
@@ -2970,7 +2974,8 @@ mod api_middleware_edge_negative_tests {
 
     #[test]
     fn negative_middleware_handler_error_logs_endpoint_error() {
-        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
+        let mut perf_limiter =
+            PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
         let keys = std::collections::BTreeSet::new();
 
         let mut auth_limiter = AuthFailureLimiter::new();
@@ -3585,7 +3590,8 @@ mod api_middleware_advanced_security_edge_tests {
             trace_propagation: true,
         };
 
-        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
+        let mut perf_limiter =
+            PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
         let keys = setup_keys();
         let mut handler_call_count = 0;
 
@@ -3811,7 +3817,8 @@ mod api_middleware_advanced_security_edge_tests {
             burst_size: 2,
             fail_closed: true,
         });
-        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::FleetControl));
+        let mut perf_limiter =
+            PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::FleetControl));
         let keys = get_test_keys();
 
         // First two attempts should be allowed (burst_size = 2)
@@ -3873,7 +3880,8 @@ mod api_middleware_advanced_security_edge_tests {
             burst_size: 2,
             fail_closed: true,
         });
-        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::FleetControl));
+        let mut perf_limiter =
+            PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::FleetControl));
         let keys = get_test_keys();
 
         for _ in 0..2 {
@@ -3943,7 +3951,8 @@ mod api_middleware_advanced_security_edge_tests {
             burst_size: 0,
             fail_closed: true,
         });
-        let mut perf_limiter = PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
+        let mut perf_limiter =
+            PerformanceRateLimiter::with_config(default_rate_limit(EndpointGroup::Operator));
         let keys = get_test_keys();
 
         // Should succeed because auth failure limiting is skipped for AuthMethod::None

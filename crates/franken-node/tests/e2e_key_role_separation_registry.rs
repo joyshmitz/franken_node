@@ -134,7 +134,7 @@ fn e2e_key_role_separation_bind_and_role_exclusivity() {
     // role is rejected with RoleSeparationViolation.
     let err = reg
         .bind(
-            "key-00",                     // already bound to Signing
+            "key-00", // already bound to Signing
             KeyRole::Encryption,
             vec![0xAA; 32],
             AUTHORITY,
@@ -207,7 +207,11 @@ fn e2e_key_role_separation_bind_and_role_exclusivity() {
     let encryption = reg.lookup_by_role(KeyRole::Encryption);
     assert_eq!(encryption.len(), 1);
     assert_eq!(encryption[0].key_id, "key-01");
-    h.log_phase("lookup_by_role", true, json!({"signing": 1, "encryption": 1}));
+    h.log_phase(
+        "lookup_by_role",
+        true,
+        json!({"signing": 1, "encryption": 1}),
+    );
 }
 
 #[test]
@@ -274,10 +278,7 @@ fn e2e_key_role_separation_rotate_atomic() {
             "trace-rotate-same",
         )
         .expect_err("same-key rotation rejected");
-    assert!(matches!(
-        err,
-        KeyRoleSeparationError::RotationFailed { .. }
-    ));
+    assert!(matches!(err, KeyRoleSeparationError::RotationFailed { .. }));
     h.log_phase("same_key_rotation_rejected", true, json!({}));
 
     // Wrong role for old_key rejected.
@@ -293,10 +294,7 @@ fn e2e_key_role_separation_rotate_atomic() {
             "trace-rotate-wrong-role",
         )
         .expect_err("wrong-role rotation rejected");
-    assert!(matches!(
-        err,
-        KeyRoleSeparationError::RotationFailed { .. }
-    ));
+    assert!(matches!(err, KeyRoleSeparationError::RotationFailed { .. }));
     h.log_phase("wrong_role_rotation_rejected", true, json!({}));
 
     // Atomic rotation succeeds: old revoked, new bound.
@@ -348,7 +346,12 @@ fn e2e_key_role_separation_verify_role_guard() {
 
     // Wrong expected role → KeyRoleMismatch.
     let err = reg
-        .verify_role("key-guard-1", KeyRole::Encryption, NOW + 1, "trace-mismatch")
+        .verify_role(
+            "key-guard-1",
+            KeyRole::Encryption,
+            NOW + 1,
+            "trace-mismatch",
+        )
         .expect_err("wrong role rejected");
     match err {
         KeyRoleSeparationError::KeyRoleMismatch {
@@ -375,7 +378,11 @@ fn e2e_key_role_separation_verify_role_guard() {
         .expect_err("expiry boundary fail-closed");
     assert!(matches!(err, KeyRoleSeparationError::KeyExpired { .. }));
     assert_eq!(err.code(), "KRS_KEY_EXPIRED");
-    h.log_phase("expired_boundary_fail_closed", true, json!({"code": err.code()}));
+    h.log_phase(
+        "expired_boundary_fail_closed",
+        true,
+        json!({"code": err.code()}),
+    );
 
     // Past boundary → still expired.
     let err = reg

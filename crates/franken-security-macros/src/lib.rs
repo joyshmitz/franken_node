@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{parse_macro_input, Expr, LitStr, Result, Token};
+use syn::{Expr, LitStr, Result, Token, parse_macro_input};
 
 struct SecureHashArgs {
     domain_tag: LitStr,

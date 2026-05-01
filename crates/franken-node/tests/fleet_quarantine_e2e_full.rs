@@ -7,13 +7,12 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use chrono::Utc;
+use frankenengine_node::api::error::ApiError;
 use frankenengine_node::api::fleet_quarantine::{
     FLEET_INTERNAL, FLEET_QUARANTINE_INITIATED, FLEET_RECONCILE_COMPLETED, FLEET_RELEASED,
-    FleetActionResult, FleetControlManager, QuarantineRequest, QuarantineScope,
-    handle_quarantine, replace_shared_fleet_control_manager_for_tests,
-    reset_shared_fleet_control_manager_for_tests,
+    FleetActionResult, FleetControlManager, QuarantineRequest, QuarantineScope, handle_quarantine,
+    replace_shared_fleet_control_manager_for_tests, reset_shared_fleet_control_manager_for_tests,
 };
-use frankenengine_node::api::error::ApiError;
 use frankenengine_node::api::middleware::{AuthIdentity, AuthMethod, TraceContext};
 use frankenengine_node::control_plane::fleet_transport::{
     FileFleetTransport, FleetAction as PersistedFleetAction, FleetActionRecord, FleetTargetKind,

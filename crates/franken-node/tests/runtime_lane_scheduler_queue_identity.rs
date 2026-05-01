@@ -1,6 +1,6 @@
 use frankenengine_node::runtime::lane_scheduler::{
-    default_policy, error_codes, event_codes, task_classes, LaneConfig, LaneMappingPolicy,
-    LaneScheduler, LaneSchedulerError, SchedulerLane,
+    LaneConfig, LaneMappingPolicy, LaneScheduler, LaneSchedulerError, SchedulerLane,
+    default_policy, error_codes, event_codes, task_classes,
 };
 
 fn single_background_lane_policy() -> LaneMappingPolicy {
@@ -65,9 +65,7 @@ fn hot_reload_rejects_removed_lane_with_active_work() {
         .expect_err("removing a lane with active work must fail closed");
     assert_eq!(error.code(), error_codes::ERR_LANE_INVALID_POLICY);
     let detail = match error {
-        LaneSchedulerError::InvalidPolicy { detail } => {
-            detail
-        }
+        LaneSchedulerError::InvalidPolicy { detail } => detail,
         _ => String::new(),
     };
     assert!(detail.contains("control_critical"));
@@ -125,9 +123,11 @@ fn lane_scheduler_keeps_capped_task_identity_and_promotes_fifo() {
         .complete_task(&active.task_id, 1_010, "trace-complete")
         .expect("completion should promote queued task");
 
-    assert!(scheduler
-        .queued_task_ids(SchedulerLane::Background)
-        .is_empty());
+    assert!(
+        scheduler
+            .queued_task_ids(SchedulerLane::Background)
+            .is_empty()
+    );
     assert_eq!(
         scheduler.active_task_ids(SchedulerLane::Background),
         vec![queued_task_id.clone()]

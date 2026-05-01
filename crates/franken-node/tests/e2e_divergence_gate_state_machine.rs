@@ -33,8 +33,7 @@ use std::sync::Once;
 use std::time::Instant;
 
 use frankenengine_node::control_plane::divergence_gate::{
-    ControlPlaneDivergenceGate, DivergenceGateError, GateState, MutationKind,
-    OperatorAuthorization,
+    ControlPlaneDivergenceGate, DivergenceGateError, GateState, MutationKind, OperatorAuthorization,
 };
 use frankenengine_node::control_plane::fork_detection::{DetectionResult, StateVector};
 use frankenengine_node::control_plane::marker_stream::{MarkerEventType, MarkerStream};
@@ -157,7 +156,11 @@ fn e2e_divergence_gate_normal_path_allows_mutations() {
     // respond_halt is INVALID from Normal.
     let err = gate.respond_halt(1_745_750_007, "trace-halt-bad");
     match err {
-        Err(DivergenceGateError::InvalidTransition { from, to: _, reason: _ }) => {
+        Err(DivergenceGateError::InvalidTransition {
+            from,
+            to: _,
+            reason: _,
+        }) => {
             assert_eq!(from, "normal");
             h.log_phase("halt_from_normal_rejected", true, json!({}));
         }
@@ -204,22 +207,19 @@ fn e2e_divergence_gate_forked_blocks_mutations_then_quarantine_then_alert() {
 
     // respond_halt valid from Diverged: state stays, halt logged on
     // active_divergence.response_mode.
-    gate.respond_halt(1_745_750_009, "trace-halt").expect("halt ok");
+    gate.respond_halt(1_745_750_009, "trace-halt")
+        .expect("halt ok");
     assert_eq!(gate.state(), GateState::Diverged);
     assert_eq!(
-        gate.active_divergence().and_then(|a| a.response_mode.as_deref()),
+        gate.active_divergence()
+            .and_then(|a| a.response_mode.as_deref()),
         Some("HALT")
     );
     h.log_phase("halt_recorded", true, json!({}));
 
     // respond_quarantine: transitions to Quarantined, partition recorded.
     let partition = gate
-        .respond_quarantine(
-            "partition-east",
-            "node-A",
-            1_745_750_010,
-            "trace-quar",
-        )
+        .respond_quarantine("partition-east", "node-A", 1_745_750_010, "trace-quar")
         .expect("quarantine ok");
     assert_eq!(partition.partition_id, "partition-east");
     assert_eq!(partition.divergence_epoch, 7);
@@ -312,10 +312,7 @@ fn e2e_divergence_gate_recover_rejects_tampered_authorization() {
     let mut chars: Vec<char> = auth.authorization_hash.chars().collect();
     chars[0] = if chars[0] == '0' { '1' } else { '0' };
     auth.authorization_hash = chars.into_iter().collect();
-    assert!(
-        !auth.verify(SIGNING_KEY),
-        "tampered auth must NOT verify"
-    );
+    assert!(!auth.verify(SIGNING_KEY), "tampered auth must NOT verify");
     h.log_phase("auth_tampered", true, json!({}));
 
     let err = gate

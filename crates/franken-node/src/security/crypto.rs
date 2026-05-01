@@ -47,7 +47,11 @@ pub trait SignatureVerifier: Send + Sync {
     ///
     /// # Returns
     /// `Ok(())` if the signature is valid, `Err` otherwise.
-    fn verify(&self, message: &[u8], signature_bytes: &[u8]) -> Result<(), SignatureVerificationError>;
+    fn verify(
+        &self,
+        message: &[u8],
+        signature_bytes: &[u8],
+    ) -> Result<(), SignatureVerificationError>;
 
     /// Get the algorithm name for this verifier (e.g., "ed25519").
     fn algorithm(&self) -> &'static str;
@@ -102,7 +106,11 @@ impl Ed25519Verifier {
 }
 
 impl SignatureVerifier for Ed25519Verifier {
-    fn verify(&self, message: &[u8], signature_bytes: &[u8]) -> Result<(), SignatureVerificationError> {
+    fn verify(
+        &self,
+        message: &[u8],
+        signature_bytes: &[u8],
+    ) -> Result<(), SignatureVerificationError> {
         use ed25519_dalek::Verifier;
 
         if signature_bytes.len() != 64 {
@@ -135,11 +143,19 @@ impl SignatureVerifier for Ed25519Verifier {
 /// signatures are stored as hex strings.
 pub trait HexSignatureVerifier {
     /// Verify a signature where the signature is provided as a hex string.
-    fn verify_hex(&self, message: &[u8], signature_hex: &str) -> Result<(), SignatureVerificationError>;
+    fn verify_hex(
+        &self,
+        message: &[u8],
+        signature_hex: &str,
+    ) -> Result<(), SignatureVerificationError>;
 }
 
 impl<V: SignatureVerifier> HexSignatureVerifier for V {
-    fn verify_hex(&self, message: &[u8], signature_hex: &str) -> Result<(), SignatureVerificationError> {
+    fn verify_hex(
+        &self,
+        message: &[u8],
+        signature_hex: &str,
+    ) -> Result<(), SignatureVerificationError> {
         let signature_bytes = hex::decode(signature_hex)
             .map_err(|_| SignatureVerificationError::MalformedSignature)?;
         self.verify(message, &signature_bytes)
@@ -195,7 +211,10 @@ mod tests {
         let key_hex = hex::encode(verifying_key.as_bytes());
 
         let verifier = Ed25519Verifier::from_hex(&key_hex).unwrap();
-        assert_eq!(verifier.public_key_bytes(), verifying_key.as_bytes().to_vec());
+        assert_eq!(
+            verifier.public_key_bytes(),
+            verifying_key.as_bytes().to_vec()
+        );
     }
 
     #[test]
@@ -219,13 +238,19 @@ mod tests {
         let short_signature = [0u8; 32]; // Wrong length
 
         let result = verifier.verify(message, &short_signature);
-        assert!(matches!(result, Err(SignatureVerificationError::MalformedSignature)));
+        assert!(matches!(
+            result,
+            Err(SignatureVerificationError::MalformedSignature)
+        ));
     }
 
     #[test]
     fn malformed_public_key() {
         let invalid_key_bytes = [0u8; 16]; // Wrong length
         let result = Ed25519Verifier::from_bytes(&invalid_key_bytes);
-        assert!(matches!(result, Err(SignatureVerificationError::MalformedPublicKey)));
+        assert!(matches!(
+            result,
+            Err(SignatureVerificationError::MalformedPublicKey)
+        ));
     }
 }

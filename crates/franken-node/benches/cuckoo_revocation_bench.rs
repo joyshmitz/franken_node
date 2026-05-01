@@ -3,7 +3,7 @@
 //! This benchmark demonstrates the performance improvement from using cuckoo filters
 //! for O(1) revocation checking instead of O(log n) BTreeSet lookups.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use frankenengine_node::security::cuckoo_filter::CuckooFilter;
 use std::collections::BTreeSet;
 use std::time::Duration;
@@ -85,29 +85,27 @@ fn benchmark_revocation_checking(c: &mut Criterion) {
         );
 
         // Benchmark BTreeSet lookup
-        group.bench_with_input(
-            BenchmarkId::new("btree_lookup", size),
-            &size,
-            |b, _| {
-                let mut query_idx = 0;
-                b.iter(|| {
-                    let query = &test_queries[query_idx % test_queries.len()];
-                    query_idx = (query_idx + 1) % test_queries.len();
-                    black_box(btree_checker.contains(query))
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("btree_lookup", size), &size, |b, _| {
+            let mut query_idx = 0;
+            b.iter(|| {
+                let query = &test_queries[query_idx % test_queries.len()];
+                query_idx = (query_idx + 1) % test_queries.len();
+                black_box(btree_checker.contains(query))
+            })
+        });
 
         // Report memory usage
         let cuckoo_memory = cuckoo_filter.memory_usage();
         let btree_memory = std::mem::size_of::<BTreeRevocationChecker>()
             + btree_checker.len() * (std::mem::size_of::<String>() + 24); // approx node overhead
 
-        println!("Size {}: CuckooFilter {}KB, BTreeSet {}KB, ratio {:.1}x",
-                 size,
-                 cuckoo_memory / 1024,
-                 btree_memory / 1024,
-                 btree_memory as f64 / cuckoo_memory as f64);
+        println!(
+            "Size {}: CuckooFilter {}KB, BTreeSet {}KB, ratio {:.1}x",
+            size,
+            cuckoo_memory / 1024,
+            btree_memory / 1024,
+            btree_memory as f64 / cuckoo_memory as f64
+        );
     }
 
     group.finish();
@@ -118,9 +116,7 @@ fn benchmark_insertion_performance(c: &mut Criterion) {
     group.measurement_time(Duration::from_secs(5));
 
     for &size in &[10_000, 50_000] {
-        let tokens: Vec<String> = (0..size)
-            .map(|i| format!("token_{:08}", i))
-            .collect();
+        let tokens: Vec<String> = (0..size).map(|i| format!("token_{:08}", i)).collect();
 
         // Benchmark CuckooFilter insertion
         group.bench_with_input(
@@ -137,18 +133,14 @@ fn benchmark_insertion_performance(c: &mut Criterion) {
         );
 
         // Benchmark BTreeSet insertion
-        group.bench_with_input(
-            BenchmarkId::new("btree_insert", size),
-            &size,
-            |b, _| {
-                b.iter(|| {
-                    let mut checker = BTreeRevocationChecker::new();
-                    for token in &tokens {
-                        black_box(checker.insert(token.clone()));
-                    }
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("btree_insert", size), &size, |b, _| {
+            b.iter(|| {
+                let mut checker = BTreeRevocationChecker::new();
+                for token in &tokens {
+                    black_box(checker.insert(token.clone()));
+                }
+            })
+        });
     }
 
     group.finish();
@@ -159,9 +151,7 @@ fn benchmark_deletion_performance(c: &mut Criterion) {
     group.measurement_time(Duration::from_secs(5));
 
     let size = 10_000;
-    let tokens: Vec<String> = (0..size)
-        .map(|i| format!("token_{:08}", i))
-        .collect();
+    let tokens: Vec<String> = (0..size).map(|i| format!("token_{:08}", i)).collect();
 
     // Setup pre-filled CuckooFilter
     let mut cuckoo_filter = CuckooFilter::new(size);
@@ -174,7 +164,8 @@ fn benchmark_deletion_performance(c: &mut Criterion) {
         b.iter(|| {
             let mut filter = cuckoo_filter.clone();
             for (i, token) in tokens.iter().enumerate() {
-                if i % 10 == 0 { // Delete every 10th token
+                if i % 10 == 0 {
+                    // Delete every 10th token
                     black_box(filter.remove(token));
                 }
             }

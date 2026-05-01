@@ -1,9 +1,7 @@
 use frankenengine_node::connector::vef_execution_receipt::{
     ExecutionReceipt, RECEIPT_SCHEMA_VERSION, validate_receipt,
 };
-use frankenengine_node::security::decision_receipt::{
-    DECISION_RECEIPT_SIGNATURE_VERSION, Receipt,
-};
+use frankenengine_node::security::decision_receipt::{DECISION_RECEIPT_SIGNATURE_VERSION, Receipt};
 use frankenengine_node::supply_chain::manifest::SignedExtensionManifest;
 use serde::Deserialize;
 use std::collections::BTreeSet;
@@ -60,16 +58,14 @@ fn read_workspace_bytes(relative_path: &str) -> Result<Vec<u8>, String> {
 
 fn load_index() -> Result<PublishedVectorsIndex, String> {
     let bytes = read_workspace_bytes("artifacts/conformance_vectors/v1/index.json")?;
-    serde_json::from_slice(&bytes).map_err(|err| format!("published vector index must parse: {err}"))
+    serde_json::from_slice(&bytes)
+        .map_err(|err| format!("published vector index must parse: {err}"))
 }
 
 #[test]
 fn published_conformance_vectors_remain_parseable() -> TestResult {
     let index = load_index()?;
-    assert_eq!(
-        index.schema_version,
-        "franken-node/conformance-vectors/v1"
-    );
+    assert_eq!(index.schema_version, "franken-node/conformance-vectors/v1");
     assert_eq!(index.source_bead_id, "bd-3humk");
     assert_eq!(index.source_version, "v1");
     assert_eq!(index.vectors.len(), 3);
