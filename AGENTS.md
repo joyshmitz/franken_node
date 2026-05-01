@@ -97,11 +97,26 @@ The current checked-in workspace manifest does **not** define a custom `[profile
 
 ### Feature Flags
 
-```toml
-[features]
-extended-surfaces = [] # Expose broader product/API surfaces from the library build
-test-support = []      # Enable testing-only helpers and modules
-```
+Feature documentation must stay in sync with `crates/franken-node/Cargo.toml`.
+Current crate features:
+
+| Feature | Default | Purpose |
+|---------|---------|---------|
+| `engine` | default: enabled | Links the sibling `frankenengine-engine` and `frankenengine-extension-host` crates. |
+| `http-client` | default: enabled | Enables outbound HTTP client support via `ureq` and `url`. |
+| `external-commands` | default: enabled | Enables external command/process helpers via `which` and `ctrlc`. |
+| `extended-surfaces` | opt-in | Legacy umbrella for `control-plane`, `policy-engine`, `remote-ops`, `admin-tools`, `verifier-tools`, and `advanced-features`. |
+| `control-plane` | opt-in | API middleware, fleet operations, and control-plane functionality. |
+| `policy-engine` | opt-in | Security policies, guardrail monitors, and hardening state machines. |
+| `remote-ops` | opt-in | Remote operations, distributed coordination, and eviction sagas. |
+| `admin-tools` | opt-in | Enterprise governance, migration tools, and administrative functionality. |
+| `verifier-tools` | opt-in | Verifier-specific tooling, economy, and SDK surfaces. |
+| `advanced-features` | opt-in | Claims, conformance, encoding, extensions, federation, performance, and repair surfaces. |
+| `test-support` | opt-in | Shared test helpers; currently enables `control-plane` and `admin-tools`. |
+| `asupersync-transport` | opt-in | Direct asupersync transport integration. |
+| `compression` | opt-in | Gzip/deflate support via `flate2`. |
+| `cbor-serialization` | opt-in | CBOR encoding support via `serde_cbor`. |
+| `blake3` | opt-in | Optional BLAKE3 hashing support. |
 
 ---
 
@@ -270,8 +285,9 @@ CLI / config / profiles
 
 ### Feature Flags and Packaging Reality
 
-- `extended-surfaces` enables heavier product surfaces such as `api`, `claims`, `conformance`, `extensions`, `federation`, `policy`, `registry`, `sdk`, and `verifier_economy`.
-- `test-support` enables shared testing helpers and harness-facing modules.
+- `default` enables only `engine`, `http-client`, and `external-commands`.
+- `extended-surfaces` is a legacy umbrella over the current granular product features: `control-plane`, `policy-engine`, `remote-ops`, `admin-tools`, `verifier-tools`, and `advanced-features`.
+- `test-support` enables shared testing helpers by composing `control-plane` and `admin-tools`.
 - Deployment/profile defaults live in `packaging/profiles.toml`, which currently defines `local`, `dev`, and `enterprise` packaging metadata for packaging/release flows. The live runtime `--profile <name>` / `FRANKEN_NODE_PROFILE` path still selects `strict`, `balanced`, or `legacy-risky`.
 
 ### Working Assumptions for Agents

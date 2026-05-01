@@ -7,7 +7,7 @@
 **FrankenNode** is a trust-native JavaScript runtime replacement for Node.js/Bun, designed around supply chain security, migration assistance, and verifiable execution. The system implements a 3-kernel architecture for separation of concerns between execution, correctness control, and product surfaces.
 
 **Key Stats:**
-- **Language:** Rust 2024 Edition (nightly toolchain)
+- **Language:** Rust 2024 Edition (this checkout does not pin a `rust-toolchain.toml`; use a compatible stable toolchain unless a task proves otherwise)
 - **Architecture:** 3-kernel design (franken_engine + asupersync + franken_node)
 - **Test Coverage:** 500+ integration tests, 70+ conformance harnesses, fuzz testing
 - **Package:** `frankenengine-node` (binary: `franken-node`)
@@ -197,16 +197,16 @@ FrankenNode uses granular feature flags for compile-time optimization and option
 - **`external-commands`** - External process execution (default: enabled)
 
 ### Product Surface Features
-- **`extended-surfaces`** - All product surfaces (legacy umbrella feature)
+- **`extended-surfaces`** - Legacy umbrella for `control-plane`, `policy-engine`, `remote-ops`, `admin-tools`, `verifier-tools`, and `advanced-features`
 - **`control-plane`** - API middleware, fleet operations, control plane
 - **`policy-engine`** - Security policies, guardrail monitors, hardening
 - **`remote-ops`** - Remote operations, distributed coordination
 - **`admin-tools`** - Enterprise governance, migration tools
 - **`verifier-tools`** - Verifier-specific tooling and SDK
-- **`advanced-features`** - Claims, conformance, encoding, extensions
+- **`advanced-features`** - Claims, conformance, encoding, extensions, federation, performance, and repair surfaces
 
 ### Development Features
-- **`test-support`** - Test utilities and extended testing surfaces
+- **`test-support`** - Test utilities and extended testing surfaces; composes `control-plane` and `admin-tools`
 - **`asupersync-transport`** - Direct asupersync integration
 
 ### Optional Dependencies

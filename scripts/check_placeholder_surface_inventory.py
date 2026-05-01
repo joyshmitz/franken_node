@@ -20,8 +20,10 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import re
 import sys
 import tempfile
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -42,6 +44,26 @@ INVENTORY_DRIFT = "PLACEHOLDER_SCANNER_INVENTORY_DRIFT"
 MISSING_ANCHOR = "PLACEHOLDER_SCANNER_MISSING_ANCHOR"
 ALLOWLIST_ESCAPE = "PLACEHOLDER_SCANNER_ALLOWLIST_ESCAPE"
 UNEXPECTED_OCCURRENCE = "PLACEHOLDER_SCANNER_UNDOCUMENTED_OCCURRENCE"
+DOCS_TRUTH_DRIFT = "DOCS_TRUTH_DRIFT"
+
+DOCS_TRUTH_BEAD = "bd-15zqy"
+FEATURE_DOCS = ("AGENTS.md", "docs/ARCHITECTURE_OVERVIEW.md")
+TOOLCHAIN_DOCS = ("AGENTS.md", "docs/ARCHITECTURE_OVERVIEW.md")
+REPRODUCTION_STATUS_DOCS = (
+    "docs/governance/placeholder_surface_inventory.md",
+    "docs/reproduction_playbook.md",
+)
+REPRODUCTION_ANCHORS = (
+    "def verify_claim(",
+    "subprocess.run(",
+    "procedure executed successfully and met threshold",
+    '"run_mode": "executed"',
+)
+STALE_REPRODUCTION_MARKERS = (
+    "verification simulated (full execution requires test harness)",
+    "script currently emits `pass: true`",
+    "simulates claim verification",
+)
 
 SCAN_ROOTS = ("crates", "sdk", "scripts", "tests", "docs")
 SCAN_EXTENSIONS = {".md", ".py", ".rs", ".sh", ".toml"}
@@ -93,6 +115,8 @@ RULES: tuple[RuleSpec, ...] = (
             "crates/franken-node/src/supply_chain/trust_card.rs",
             "crates/franken-node/src/api/trust_card_routes.rs",
             "crates/franken-node/tests/trust_cli_e2e.rs",
+            "crates/franken-node/tests/fleet_cli_e2e.rs",
+            "crates/franken-node/tests/golden/trust_card_golden_tests.rs",
         ),
         allowed_line_substrings=("fn fixture_registry(",),
         allowed_simulation_label="fixture_registry(...)",
@@ -303,12 +327,11 @@ RULES: tuple[RuleSpec, ...] = (
     ),
     RuleSpec(
         rule_id="reproduction_script_simulated_verification",
-        surface="external reproduction script remains explicitly simulated until replaced",
-        classification="disallowed_live_shortcut",
+        surface="external reproduction script executes mapped verification procedures",
+        classification="truthful_partial_surface",
         markers=("verification simulated (full execution requires test harness)",),
         search_paths=("scripts/reproduce.py", "docs/**/*.md"),
-        documented_paths=("scripts/reproduce.py",),
-        required_anchor_markers=("def verify_claim(", "def run_reproduction("),
+        required_anchor_markers=REPRODUCTION_ANCHORS,
         anchor_paths=("scripts/reproduce.py",),
         inventory_id="PSI-010",
         remediation_bead="bd-2fqyv.10",
@@ -468,11 +491,14 @@ def _inventory_alignment_failures(
         match = next((row for row in inventory_rows if row.get("ID") == f"`{rule.inventory_id}`"), None)
         if match is None:
             failures.append(f"inventory row missing: {rule.inventory_id}")
-        elif match.get("Classification") != f"`{rule.classification}`":
-            failures.append(
-                f"inventory classification drift for {rule.inventory_id}: "
-                f"expected {rule.classification}, found {match.get('Classification')}"
-            )
+        else:
+            expected_classification = f"`{rule.classification}`"
+            found_classification = match.get("Classification", "")
+            if expected_classification not in found_classification:
+                failures.append(
+                    f"inventory classification drift for {rule.inventory_id}: "
+                    f"expected {rule.classification}, found {found_classification}"
+                )
     if rule.allowed_simulation_label is not None:
         allowed_rows = tables["allowed_simulations"]
         if not any(rule.allowed_simulation_label in row.get("Surface", "") for row in allowed_rows):
@@ -485,6 +511,209 @@ def _anchor_failures(rule: RuleSpec, root: Path = ROOT) -> list[str]:
         return []
     combined = "\n".join(_load_text(path, root) for path in rule.anchor_paths)
     return [marker for marker in rule.required_anchor_markers if marker not in combined]
+
+
+def _docs_truth_entry(
+    *,
+    check_id: str,
+    document_path: str,
+    passed: bool,
+    expected_value: str,
+    observed_value: str,
+    remediation_hint: str,
+    severity: str = "error",
+) -> dict[str, Any]:
+    return {
+        "check_id": check_id,
+        "document_path": document_path,
+        "expected_value": expected_value,
+        "observed_value": observed_value,
+        "severity": severity,
+        "remediation_hint": remediation_hint,
+        "trace_id": f"{DOCS_TRUTH_BEAD}:{check_id}",
+        "pass": passed,
+        "reason_code": STATIC_PASS if passed else DOCS_TRUTH_DRIFT,
+    }
+
+
+def _load_cargo_features(root: Path = ROOT) -> tuple[set[str], set[str]]:
+    cargo_path = root / "crates/franken-node/Cargo.toml"
+    data = tomllib.loads(cargo_path.read_text(encoding="utf-8"))
+    features = data.get("features", {})
+    feature_names = set(features) - {"default"}
+    default_features = set(features.get("default", []))
+    return feature_names, default_features
+
+
+def _markdown_section(text: str, heading: str) -> str:
+    lines = text.splitlines()
+    start: int | None = None
+    level = 0
+    for idx, line in enumerate(lines):
+        if line.strip() == heading:
+            start = idx + 1
+            level = len(line) - len(line.lstrip("#"))
+            break
+    if start is None:
+        return ""
+    end = len(lines)
+    for idx in range(start, len(lines)):
+        stripped = lines[idx].lstrip()
+        if stripped.startswith("#"):
+            current_level = len(stripped) - len(stripped.lstrip("#"))
+            if current_level <= level:
+                end = idx
+                break
+    return "\n".join(lines[start:end])
+
+
+def _feature_section_for_doc(rel_path: str, text: str) -> str:
+    heading = "### Feature Flags" if rel_path == "AGENTS.md" else "## Feature Flags"
+    return _markdown_section(text, heading)
+
+
+def _line_feature_name(line: str) -> str | None:
+    stripped = line.strip()
+    if stripped.startswith("|"):
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if not cells or cells[0].lower() == "feature" or set(cells[0]) <= {"-", ":"}:
+            return None
+        match = re.search(r"`([a-z][a-z0-9-]+)`", cells[0])
+        return match.group(1) if match else None
+    match = re.search(r"^-\s+\*\*`([a-z][a-z0-9-]+)`\*\*", stripped)
+    return match.group(1) if match else None
+
+
+def _documented_features(section: str, known_features: set[str]) -> set[str]:
+    documented: set[str] = set()
+    for line in section.splitlines():
+        feature = _line_feature_name(line)
+        if feature is not None and (feature in known_features or "-" in feature):
+            documented.add(feature)
+    return documented
+
+
+def _documented_default_features(section: str, known_features: set[str]) -> set[str]:
+    default_features: set[str] = set()
+    for line in section.splitlines():
+        lowered = line.lower()
+        if "default: enabled" not in lowered:
+            continue
+        feature = _line_feature_name(line)
+        if feature in known_features:
+            default_features.add(feature)
+    return default_features
+
+
+def _format_set(values: set[str]) -> str:
+    return ", ".join(sorted(values)) if values else "none"
+
+
+def evaluate_docs_truth(root: Path = ROOT) -> list[dict[str, Any]]:
+    feature_names, default_features = _load_cargo_features(root)
+    checks: list[dict[str, Any]] = []
+
+    for rel_path in FEATURE_DOCS:
+        text = _load_text(rel_path, root)
+        section = _feature_section_for_doc(rel_path, text)
+        documented = _documented_features(section, feature_names)
+        documented_defaults = _documented_default_features(section, feature_names)
+        missing = feature_names - documented
+        extra = documented - feature_names
+        missing_defaults = default_features - documented_defaults
+        extra_defaults = documented_defaults - default_features
+        passed = not any((missing, extra, missing_defaults, extra_defaults)) and bool(section)
+        observed_parts = [
+            f"missing={_format_set(missing)}",
+            f"extra={_format_set(extra)}",
+            f"missing_defaults={_format_set(missing_defaults)}",
+            f"extra_defaults={_format_set(extra_defaults)}",
+        ]
+        if not section:
+            observed_parts.append("feature_section=missing")
+        checks.append(
+            _docs_truth_entry(
+                check_id=f"feature_flags:{rel_path}",
+                document_path=rel_path,
+                passed=passed,
+                expected_value=(
+                    f"features={_format_set(feature_names)}; "
+                    f"default_features={_format_set(default_features)}"
+                ),
+                observed_value="; ".join(observed_parts),
+                remediation_hint=(
+                    "Update the Feature Flags section to match "
+                    "crates/franken-node/Cargo.toml, including default-enabled markers."
+                ),
+            )
+        )
+
+    toolchain_files = sorted(
+        path.relative_to(root).as_posix()
+        for path in root.glob("rust-toolchain*")
+        if path.is_file()
+    )
+    stale_toolchain_pattern = re.compile(
+        r"Rust\s+2024\s+Edition\s*\([^)]*nightly[^)]*\)|nightly toolchain",
+        re.IGNORECASE,
+    )
+    for rel_path in TOOLCHAIN_DOCS:
+        text = _load_text(rel_path, root)
+        stale_matches = [
+            match.group(0)
+            for match in stale_toolchain_pattern.finditer(text)
+        ]
+        passed = not stale_matches and (bool(toolchain_files) or "Rust 2024" in text)
+        checks.append(
+            _docs_truth_entry(
+                check_id=f"toolchain:{rel_path}",
+                document_path=rel_path,
+                passed=passed,
+                expected_value=(
+                    "Rust 2024 documented without a nightly-toolchain claim; "
+                    f"rust_toolchain_files={_format_set(set(toolchain_files))}"
+                ),
+                observed_value=(
+                    f"stale_claims={'; '.join(stale_matches) if stale_matches else 'none'}; "
+                    f"mentions_rust_2024={'yes' if 'Rust 2024' in text else 'no'}"
+                ),
+                remediation_hint=(
+                    "State Rust 2024 compatibility and the live rust-toolchain file status; "
+                    "do not claim this checkout pins nightly unless a rust-toolchain file exists."
+                ),
+            )
+        )
+
+    reproduce_text = _load_text("scripts/reproduce.py", root)
+    missing_reproduction_anchors = [
+        marker for marker in REPRODUCTION_ANCHORS if marker not in reproduce_text
+    ]
+    stale_reproduction_hits: list[str] = []
+    for rel_path in REPRODUCTION_STATUS_DOCS + ("scripts/reproduce.py",):
+        text = _load_text(rel_path, root)
+        for marker in STALE_REPRODUCTION_MARKERS:
+            if marker in text:
+                stale_reproduction_hits.append(f"{rel_path}: {marker}")
+    checks.append(
+        _docs_truth_entry(
+            check_id="reproduction:procedure_execution_status",
+            document_path="scripts/reproduce.py",
+            passed=not missing_reproduction_anchors and not stale_reproduction_hits,
+            expected_value=(
+                "scripts/reproduce.py executes mapped procedure_ref/harness_kind/"
+                "measurement_key checks and docs do not claim simulated verification"
+            ),
+            observed_value=(
+                f"missing_anchors={_format_set(set(missing_reproduction_anchors))}; "
+                f"stale_markers={'; '.join(stale_reproduction_hits) if stale_reproduction_hits else 'none'}"
+            ),
+            remediation_hint=(
+                "Keep dry-run labeled as planned, keep executed runs tied to subprocess "
+                "procedure execution, and update governance docs when the reproduction contract changes."
+            ),
+        )
+    )
+    return checks
 
 
 def evaluate_rule(
@@ -566,7 +795,9 @@ def run_all(root: Path = ROOT) -> dict[str, Any]:
     repo_files = _iter_repo_files(root)
     tables = load_inventory_tables(root)
     rules = [evaluate_rule(rule, root=root, repo_files=repo_files, tables=tables) for rule in RULES]
+    docs_truth_checks = evaluate_docs_truth(root)
     failed_rules = [rule for rule in rules if not rule["pass"]]
+    failed_docs_truth_checks = [check for check in docs_truth_checks if not check["pass"]]
     documented_occurrences = sum(rule["documented_occurrence_count"] for rule in rules)
     allowlisted_occurrences = sum(rule["allowlisted_occurrence_count"] for rule in rules)
     unexpected_occurrences = sum(rule["unexpected_occurrence_count"] for rule in rules)
@@ -575,7 +806,7 @@ def run_all(root: Path = ROOT) -> dict[str, Any]:
     inventory_drift_total = sum(len(rule["inventory_alignment_failures"]) for rule in rules)
 
     return {
-        "schema_version": "placeholder-surface-scanner-v1.0",
+        "schema_version": "placeholder-surface-scanner-v1.1",
         "bead_id": SUPPORT_BEAD,
         "parent_bead_id": PARENT_BEAD,
         "inventory_doc": INVENTORY_DOC_REL,
@@ -584,10 +815,11 @@ def run_all(root: Path = ROOT) -> dict[str, Any]:
             "verification_evidence": EVIDENCE_PATH_REL,
             "verification_summary": SUMMARY_PATH_REL,
         },
-        "verdict": "PASS" if not failed_rules else "FAIL",
-        "overall_pass": not failed_rules,
+        "verdict": "PASS" if not failed_rules and not failed_docs_truth_checks else "FAIL",
+        "overall_pass": not failed_rules and not failed_docs_truth_checks,
         "summary": {
             "rule_count": len(RULES),
+            "docs_truth_check_count": len(docs_truth_checks),
             "inventory_entry_count": len(tables["inventory"]),
             "allowed_simulation_count": len(tables["allowed_simulations"]),
             "documented_occurrences": documented_occurrences,
@@ -596,6 +828,7 @@ def run_all(root: Path = ROOT) -> dict[str, Any]:
             "allowlist_escapes": allowlist_escapes,
             "missing_anchor_markers": missing_anchor_total,
             "inventory_drift_failures": inventory_drift_total,
+            "docs_truth_failures": len(failed_docs_truth_checks),
         },
         "temporary_allowlist_strategy": {
             "pass_condition": (
@@ -623,7 +856,11 @@ def run_all(root: Path = ROOT) -> dict[str, Any]:
             ),
         },
         "rules": rules,
+        "docs_truth_checks": docs_truth_checks,
         "failed_rules": [rule["rule_id"] for rule in failed_rules],
+        "failed_docs_truth_checks": [
+            check["check_id"] for check in failed_docs_truth_checks
+        ],
     }
 
 
@@ -646,10 +883,12 @@ def write_artifacts(payload: dict[str, Any], root: Path = ROOT) -> None:
         f"- Verdict: `{payload['verdict']}`",
         f"- Inventory doc: `{payload['inventory_doc']}`",
         f"- Rule count: `{summary['rule_count']}`",
+        f"- Docs truth checks: `{summary['docs_truth_check_count']}`",
         f"- Documented open-debt occurrences: `{summary['documented_occurrences']}`",
         f"- Allowlisted fixture occurrences: `{summary['allowlisted_occurrences']}`",
         f"- Unexpected occurrences: `{summary['unexpected_occurrences']}`",
         f"- Allowlist escapes: `{summary['allowlist_escapes']}`",
+        f"- Docs truth failures: `{summary['docs_truth_failures']}`",
         "",
         "## Documented Open Debt",
     ]
@@ -690,7 +929,14 @@ def write_artifacts(payload: dict[str, Any], root: Path = ROOT) -> None:
                 lines.append(
                     f"- `{rule['rule_id']}` failed via `{rule['reason_code']}`."
                 )
-    else:
+    if payload["failed_docs_truth_checks"]:
+        for check in payload["docs_truth_checks"]:
+            if check["check_id"] in payload["failed_docs_truth_checks"]:
+                lines.append(
+                    f"- `{check['check_id']}` failed for `{check['document_path']}`: "
+                    f"{check['observed_value']}"
+                )
+    if not payload["failed_rules"] and not payload["failed_docs_truth_checks"]:
         lines.append("- None.")
 
     summary_path = artifact_dir / "verification_summary.md"
@@ -787,6 +1033,7 @@ def main(argv: list[str] | None = None) -> int:
         extra={
             "verdict": payload["verdict"],
             "failed_rules": len(payload["failed_rules"]),
+            "failed_docs_truth_checks": len(payload["failed_docs_truth_checks"]),
             "documented_occurrences": payload["summary"]["documented_occurrences"],
         },
     )

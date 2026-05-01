@@ -23,8 +23,79 @@ def _copy_real_inventory(root: Path) -> None:
     _write_inventory(root, (ROOT / mod.INVENTORY_DOC_REL).read_text(encoding="utf-8"))
 
 
+def _write_file(root: Path, rel_path: str, text: str) -> None:
+    target = root / rel_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+
+
 def _rule(rule_id: str) -> mod.RuleSpec:
     return next(rule for rule in mod.RULES if rule.rule_id == rule_id)
+
+
+def _write_minimal_docs_truth_root(root: Path) -> None:
+    _write_file(
+        root,
+        "crates/franken-node/Cargo.toml",
+        """[features]
+engine = []
+http-client = []
+test-support = []
+default = ["engine", "http-client"]
+""",
+    )
+    feature_section = """### Feature Flags
+
+- **`engine`** - engine integration (default: enabled)
+- **`http-client`** - HTTP client support (default: enabled)
+- **`test-support`** - test helpers
+"""
+    _write_file(
+        root,
+        "AGENTS.md",
+        f"""# Agents
+
+## Toolchain
+
+Rust 2024; this fixture does not pin a rust-toolchain.toml.
+
+{feature_section}
+""",
+    )
+    _write_file(
+        root,
+        "docs/ARCHITECTURE_OVERVIEW.md",
+        """# Architecture
+
+**Language:** Rust 2024 Edition; no rust-toolchain.toml is pinned.
+
+## Feature Flags
+
+- **`engine`** - engine integration (default: enabled)
+- **`http-client`** - HTTP client support (default: enabled)
+- **`test-support`** - test helpers
+""",
+    )
+    _write_file(root, "README.md", "# Project\n\nRust 2024\n")
+    _write_file(
+        root,
+        "docs/governance/placeholder_surface_inventory.md",
+        """# Placeholder Surface Inventory
+
+External reproduction executes mapped procedure references; dry-run mode is planned only.
+""",
+    )
+    _write_file(root, "docs/reproduction_playbook.md", "Executed runs call mapped procedures.\n")
+    _write_file(
+        root,
+        "scripts/reproduce.py",
+        """def verify_claim():
+    subprocess.run([])
+    detail = "procedure executed successfully and met threshold"
+
+REPORT = {"run_mode": "executed"}
+""",
+    )
 
 
 class InventoryParsingTests(unittest.TestCase):
@@ -109,10 +180,112 @@ class EvaluateRuleTests(unittest.TestCase):
         self.assertTrue(result["inventory_alignment_failures"])
 
 
+class DocsTruthTests(unittest.TestCase):
+    def test_minimal_docs_truth_fixture_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            _write_minimal_docs_truth_root(root)
+
+            checks = mod.evaluate_docs_truth(root)
+
+        self.assertTrue(all(check["pass"] for check in checks), checks)
+
+    def test_stale_reproduction_placeholder_text_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            _write_minimal_docs_truth_root(root)
+            _write_file(
+                root,
+                "docs/governance/placeholder_surface_inventory.md",
+                "The script currently emits `pass: true` with verification simulated (full execution requires test harness).\n",
+            )
+
+            checks = mod.evaluate_docs_truth(root)
+            failed = [check for check in checks if not check["pass"]]
+
+        self.assertEqual([check["check_id"] for check in failed], ["reproduction:procedure_execution_status"])
+        self.assertIn("stale_markers=", failed[0]["observed_value"])
+
+    def test_missing_feature_flag_doc_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            _write_minimal_docs_truth_root(root)
+            agents = (root / "AGENTS.md").read_text(encoding="utf-8").replace(
+                "- **`test-support`** - test helpers\n",
+                "",
+            )
+            (root / "AGENTS.md").write_text(agents, encoding="utf-8")
+
+            checks = mod.evaluate_docs_truth(root)
+            failed = [check for check in checks if check["check_id"] == "feature_flags:AGENTS.md"]
+
+        self.assertEqual(len(failed), 1)
+        self.assertFalse(failed[0]["pass"])
+        self.assertIn("missing=test-support", failed[0]["observed_value"])
+
+    def test_extra_feature_flag_doc_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            _write_minimal_docs_truth_root(root)
+            arch = (root / "docs/ARCHITECTURE_OVERVIEW.md").read_text(encoding="utf-8")
+            arch += "- **`phantom-feature`** - nonexistent feature\n"
+            (root / "docs/ARCHITECTURE_OVERVIEW.md").write_text(arch, encoding="utf-8")
+
+            checks = mod.evaluate_docs_truth(root)
+            failed = [
+                check
+                for check in checks
+                if check["check_id"] == "feature_flags:docs/ARCHITECTURE_OVERVIEW.md"
+            ]
+
+        self.assertEqual(len(failed), 1)
+        self.assertFalse(failed[0]["pass"])
+        self.assertIn("extra=phantom-feature", failed[0]["observed_value"])
+
+    def test_incorrect_default_feature_doc_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            _write_minimal_docs_truth_root(root)
+            agents = (root / "AGENTS.md").read_text(encoding="utf-8").replace(
+                "- **`test-support`** - test helpers",
+                "- **`test-support`** - test helpers (default: enabled)",
+            )
+            (root / "AGENTS.md").write_text(agents, encoding="utf-8")
+
+            checks = mod.evaluate_docs_truth(root)
+            failed = [check for check in checks if check["check_id"] == "feature_flags:AGENTS.md"]
+
+        self.assertEqual(len(failed), 1)
+        self.assertFalse(failed[0]["pass"])
+        self.assertIn("extra_defaults=test-support", failed[0]["observed_value"])
+
+    def test_nightly_toolchain_claim_fails_without_toolchain_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            _write_minimal_docs_truth_root(root)
+            arch = (root / "docs/ARCHITECTURE_OVERVIEW.md").read_text(encoding="utf-8")
+            arch = arch.replace("Rust 2024 Edition", "Rust 2024 Edition (nightly toolchain)")
+            (root / "docs/ARCHITECTURE_OVERVIEW.md").write_text(arch, encoding="utf-8")
+
+            checks = mod.evaluate_docs_truth(root)
+            failed = [
+                check
+                for check in checks
+                if check["check_id"] == "toolchain:docs/ARCHITECTURE_OVERVIEW.md"
+            ]
+
+        self.assertEqual(len(failed), 1)
+        self.assertFalse(failed[0]["pass"])
+        self.assertIn("nightly toolchain", failed[0]["observed_value"])
+
+
 class RealRepoTests(unittest.TestCase):
     def test_run_all_passes_on_shared_tree(self) -> None:
         payload = mod.run_all()
-        self.assertTrue(payload["overall_pass"], payload["failed_rules"])
+        self.assertTrue(
+            payload["overall_pass"],
+            (payload["failed_rules"], payload["failed_docs_truth_checks"]),
+        )
 
     def test_ci_workflow_exists(self) -> None:
         workflow = ROOT / ".github/workflows/placeholder-remediation-gate.yml"
