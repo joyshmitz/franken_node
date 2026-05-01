@@ -777,7 +777,7 @@ fn verify_json_outputs_match_golden_matrix() {
             &[],
         ),
         verify_json_matrix_case(
-            "migration_pass",
+            "migration_source_unproven",
             vec!["verify", "migration", "rewrite", "--json"]
                 .into_iter()
                 .map(str::to_string)

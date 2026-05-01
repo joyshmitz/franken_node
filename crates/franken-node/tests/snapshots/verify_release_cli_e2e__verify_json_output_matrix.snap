@@ -90,31 +90,56 @@ expression: matrix
     "stderr": ""
   },
   {
-    "name": "migration_pass",
+    "name": "migration_source_unproven",
     "args": [
       "verify",
       "migration",
       "rewrite",
       "--json"
     ],
-    "exit_code": 0,
-    "success": true,
+    "exit_code": 1,
+    "success": false,
     "stdout_json": {
       "command": "verify migration",
       "contract_version": "3.0.0",
       "schema_version": "verifier-cli-contract-v1",
       "compat_version": null,
-      "verdict": "PASS",
-      "status": "pass",
-      "exit_code": 0,
-      "reason": "migration lane `rewrite` resolved to [repo]/crates/franken-node/src/migration/mod.rs with no state record present under [repo]/.franken-node/state/migrations",
+      "verdict": "UNPROVEN",
+      "status": "unproven",
+      "exit_code": 1,
+      "reason": "migration lane `rewrite` resolved to [repo]/crates/franken-node/src/migration/mod.rs but no authoritative migration evidence record was found under [repo]/.franken-node/state/migrations; source presence is diagnostic only",
       "details": {
         "migration_id": "rewrite",
         "record_path": null,
         "status": "source_present",
+        "authority": "diagnostic_only",
         "post_conditions_met": null,
-        "diff_summary": "no state record declared",
-        "lane_source": "[repo]/crates/franken-node/src/migration/mod.rs"
+        "diff_summary": "source present without migration evidence is unproven",
+        "lane_source": "[repo]/crates/franken-node/src/migration/mod.rs",
+        "searched_locations": [
+          {
+            "kind": "state_record",
+            "path": "[repo]/.franken-node/state/migrations/rewrite.json"
+          },
+          {
+            "kind": "lane_source",
+            "path": "[repo]/crates/franken-node/src/migration/mod.rs",
+            "authority": "diagnostic_only"
+          }
+        ],
+        "missing_fields": [
+          "migration_evidence_record"
+        ],
+        "invariant_failures": [
+          {
+            "invariant_id": "MIGRATION_EVIDENCE_RECORD_MISSING",
+            "field": "record_path",
+            "observed": null,
+            "expected": "state record under .franken-node/state/migrations",
+            "severity": "error",
+            "remediation_hint": "run migration audit/rewrite/validate and persist the migration evidence record before treating this result as PASS"
+          }
+        ]
       }
     },
     "stderr": ""
@@ -142,8 +167,29 @@ expression: matrix
         "migration_id": "definitely_not_a_lane",
         "record_path": null,
         "status": "missing",
+        "authority": "missing",
         "post_conditions_met": false,
-        "diff_summary": "no migration record or lane source resolved"
+        "diff_summary": "no migration record or lane source resolved",
+        "searched_locations": [
+          {
+            "kind": "state_record",
+            "path": "[repo]/.franken-node/state/migrations/definitely_not_a_lane.json"
+          }
+        ],
+        "missing_fields": [
+          "migration_evidence_record",
+          "lane_source"
+        ],
+        "invariant_failures": [
+          {
+            "invariant_id": "MIGRATION_TARGET_UNKNOWN",
+            "field": "migration_id",
+            "observed": "definitely-not-a-lane",
+            "expected": "audit, rewrite, validate, bpet_migration_gate, dgis_migration_gate",
+            "severity": "error",
+            "remediation_hint": "verify a known migration lane or create an authoritative migration evidence record for this id"
+          }
+        ]
       }
     },
     "stderr": ""
