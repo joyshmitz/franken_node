@@ -215,6 +215,9 @@ pub enum ConformanceError {
     MissingDomain {
         domain: String,
     },
+    CapacityExceeded {
+        capacity: usize,
+    },
 }
 
 impl ConformanceError {
@@ -228,6 +231,7 @@ impl ConformanceError {
             Self::FixtureParse { .. } => error_codes::ERR_CONF_FIXTURE_PARSE,
             Self::ReleaseBlocked { .. } => error_codes::ERR_CONF_RELEASE_BLOCKED,
             Self::MissingDomain { .. } => error_codes::ERR_CONF_MISSING_DOMAIN,
+            Self::CapacityExceeded { .. } => "ERR_CONF_CAPACITY_EXCEEDED",
         }
     }
 }
@@ -269,6 +273,9 @@ impl fmt::Display for ConformanceError {
             }
             Self::MissingDomain { domain } => {
                 write!(f, "{}: {}", self.code(), domain)
+            }
+            Self::CapacityExceeded { capacity } => {
+                write!(f, "{}: capacity {} exceeded", self.code(), capacity)
             }
         }
     }
@@ -312,18 +319,14 @@ impl ConformanceSuiteRunner {
         }
     }
 
-    fn push_fixture(&mut self, fixture: ConformanceFixture) {
+    fn push_fixture(&mut self, fixture: ConformanceFixture) -> Result<(), ConformanceError> {
         if self.fixtures.len() >= MAX_CONFORMANCE_FIXTURES {
-            let overflow = self
-                .fixtures
-                .len()
-                .saturating_sub(MAX_CONFORMANCE_FIXTURES)
-                .saturating_add(1);
-            for f in self.fixtures.drain(0..overflow) {
-                self.id_registry.remove(f.conformance_id.as_str());
-            }
+            return Err(ConformanceError::CapacityExceeded {
+                capacity: MAX_CONFORMANCE_FIXTURES,
+            });
         }
         self.fixtures.push(fixture);
+        Ok(())
     }
 
     fn push_result(&mut self, record: ConformanceTestRecord) {
@@ -344,8 +347,8 @@ impl ConformanceSuiteRunner {
         if self.id_registry.get(&id_str).copied().unwrap_or(false) {
             return Err(ConformanceError::DuplicateId { id: id_str });
         }
+        self.push_fixture(fixture)?;
         self.id_registry.insert(id_str, true);
-        self.push_fixture(fixture);
         Ok(())
     }
 

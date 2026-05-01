@@ -1068,6 +1068,7 @@ pub enum ProofCarryingDecodeError {
     MissingProofInMandatoryMode { object_id: String },
     InvalidProof { object_id: String, reason: String },
     ReconstructionFailed { object_id: String, reason: String },
+    CapacityExceeded { resource: String, capacity: usize },
 }
 
 impl ProofCarryingDecodeError {
@@ -1076,6 +1077,7 @@ impl ProofCarryingDecodeError {
             Self::MissingProofInMandatoryMode { .. } => "PROOF_MISSING_MANDATORY",
             Self::InvalidProof { .. } => "PROOF_INVALID",
             Self::ReconstructionFailed { .. } => "RECONSTRUCTION_FAILED",
+            Self::CapacityExceeded { .. } => "CAPACITY_EXCEEDED",
         }
     }
 }
@@ -1091,6 +1093,9 @@ impl std::fmt::Display for ProofCarryingDecodeError {
             }
             Self::ReconstructionFailed { object_id, reason } => {
                 write!(f, "{}: object {object_id}: {reason}", self.code())
+            }
+            Self::CapacityExceeded { resource, capacity } => {
+                write!(f, "{}: resource {} exceeded capacity {}", self.code(), resource, capacity)
             }
         }
     }
@@ -1264,14 +1269,18 @@ impl ProofCarryingDecoder {
         &self.registered_algorithms
     }
 
-    pub fn register_algorithm(&mut self, algorithm_id: AlgorithmId) {
+    pub fn register_algorithm(&mut self, algorithm_id: AlgorithmId) -> Result<(), ProofCarryingDecodeError> {
         if !self.registered_algorithms.contains(&algorithm_id) {
-            push_bounded(
-                &mut self.registered_algorithms,
-                algorithm_id,
-                MAX_REGISTERED_ALGORITHMS,
-            );
+            if self.registered_algorithms.len() >= MAX_REGISTERED_ALGORITHMS {
+                return Err(ProofCarryingDecodeError::CapacityExceeded {
+                    resource: "registered_algorithms".to_string(),
+                    capacity: MAX_REGISTERED_ALGORITHMS,
+                });
+            }
+            self.registered_algorithms.push(algorithm_id);
         }
+        Ok(())
+    }
 
         // Inline negative-path tests
         #[cfg(test)]
@@ -1280,7 +1289,7 @@ impl ProofCarryingDecoder {
             // Test: registering duplicate algorithm should be idempotent
             let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test", "secret");
             let initial_count = decoder.registered_algorithms().len();
-            decoder.register_algorithm(AlgorithmId::new("reed_solomon_8_4")); // Already exists
+            decoder.register_algorithm(AlgorithmId::new("reed_solomon_8_4")).unwrap(); // Already exists
             assert_eq!(
                 decoder.registered_algorithms().len(),
                 initial_count,
@@ -1290,7 +1299,7 @@ impl ProofCarryingDecoder {
             // Test: registering empty algorithm ID should be allowed
             let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test", "secret");
             let initial_count = decoder.registered_algorithms().len();
-            decoder.register_algorithm(AlgorithmId::new(""));
+            decoder.register_algorithm(AlgorithmId::new("")).unwrap();
             assert_eq!(
                 decoder.registered_algorithms().len(),
                 initial_count + 1,
@@ -1300,11 +1309,16 @@ impl ProofCarryingDecoder {
             // Test: registering many algorithms should respect capacity
             let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test", "secret");
             let initial_count = decoder.registered_algorithms().len();
-            // Try to register more than the capacity
-            for i in 0..MAX_REGISTERED_ALGORITHMS + 10 {
-                decoder.register_algorithm(AlgorithmId::new(format!("algo_{}", i)));
+            // Try to register up to the capacity
+            for i in 0..(MAX_REGISTERED_ALGORITHMS - initial_count) {
+                decoder.register_algorithm(AlgorithmId::new(format!("algo_{}", i))).unwrap();
             }
-            // Should be capped at MAX_REGISTERED_ALGORITHMS via push_bounded
+            // Next one should fail
+            let err = decoder.register_algorithm(AlgorithmId::new("algo_overflow")).unwrap_err();
+            assert!(
+                matches!(err, ProofCarryingDecodeError::CapacityExceeded { .. }),
+                "should return CapacityExceeded when full"
+            );
             assert!(
                 decoder.registered_algorithms().len() <= MAX_REGISTERED_ALGORITHMS,
                 "should respect maximum capacity"
@@ -1312,8 +1326,8 @@ impl ProofCarryingDecoder {
 
             // Test: case sensitivity in algorithm registration
             let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test", "secret");
-            decoder.register_algorithm(AlgorithmId::new("CaseSensitive"));
-            decoder.register_algorithm(AlgorithmId::new("casesensitive"));
+            decoder.register_algorithm(AlgorithmId::new("CaseSensitive")).unwrap();
+            decoder.register_algorithm(AlgorithmId::new("casesensitive")).unwrap();
             let case_sensitive_count = decoder
                 .registered_algorithms()
                 .iter()
@@ -1327,7 +1341,7 @@ impl ProofCarryingDecoder {
             // Test: Unicode algorithm IDs should be supported
             let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test", "secret");
             let initial_count = decoder.registered_algorithms().len();
-            decoder.register_algorithm(AlgorithmId::new("算法_αλγόριθμος"));
+            decoder.register_algorithm(AlgorithmId::new("算法_αλγόριθμος")).unwrap();
             assert_eq!(
                 decoder.registered_algorithms().len(),
                 initial_count + 1,
@@ -1338,7 +1352,7 @@ impl ProofCarryingDecoder {
             let mut decoder = ProofCarryingDecoder::new(ProofMode::Mandatory, "test", "secret");
             let initial_count = decoder.registered_algorithms().len();
             let long_id = "x".repeat(10000);
-            decoder.register_algorithm(AlgorithmId::new(&long_id));
+            decoder.register_algorithm(AlgorithmId::new(&long_id)).unwrap();
             assert_eq!(
                 decoder.registered_algorithms().len(),
                 initial_count + 1,
