@@ -1,13 +1,13 @@
 {
-  "drill_id": "drill-rb-001",
-  "trace_id": "trace-drill-rb-001",
-  "runbook_id": "RB-001",
-  "runbook_title": "Trust State Corruption",
-  "runbook_path": "fixtures/runbooks/rb_001_trust_state_corruption.json",
+  "drill_id": "drill-rb-002",
+  "trace_id": "trace-drill-rb-002",
+  "runbook_id": "RB-002",
+  "runbook_title": "Mass Revocation Event",
+  "runbook_path": "fixtures/runbooks/rb_002_mass_revocation_event.json",
   "status": "PASS",
-  "started_at": "2026-02-21T01:10:54.611883+00:00",
-  "completed_at": "2026-02-21T01:10:54.611934+00:00",
-  "steps_executed": 21,
+  "started_at": "2026-05-01T05:41:44.763779+00:00",
+  "completed_at": "2026-05-01T05:41:44.763797+00:00",
+  "steps_executed": 24,
   "required_phases": [
     "containment",
     "investigation",
@@ -18,180 +18,204 @@
   "events": [
     {
       "event": "DRILL_STARTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "status": "INFO"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "containment",
       "step_index": 1,
-      "step": "Activate safe mode via franken-node safe-mode enter --reason trust_corruption",
+      "step": "Throttle revocation processing to prevent cascade",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "containment",
       "step_index": 2,
-      "step": "Freeze all trust delegation operations",
+      "step": "Activate fleet-wide revocation pause if rate exceeds 500/min",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "containment",
       "step_index": 3,
-      "step": "Block new trust chain extensions",
+      "step": "Snapshot current revocation state before further processing",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "containment",
       "step_index": 4,
-      "step": "Notify on-call security team via incident channel",
+      "step": "Alert security operations center",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "investigation",
       "step_index": 1,
-      "step": "Diff current trust state against last known-good snapshot",
+      "step": "Identify revocation source (automated policy vs manual operator action)",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "investigation",
       "step_index": 2,
-      "step": "Identify divergence point in evidence ledger",
+      "step": "Audit revocation requests for unauthorized or anomalous patterns",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "investigation",
       "step_index": 3,
-      "step": "Check for unauthorized trust mutations in audit log",
+      "step": "Check whether revocation trigger was a compromised signing key",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "investigation",
       "step_index": 4,
-      "step": "Correlate with recent deployments or configuration changes",
+      "step": "Determine blast radius: how many nodes and delegations are affected",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "investigation",
       "step_index": 5,
-      "step": "Determine scope of corruption (single node vs fleet-wide)",
+      "step": "Review recent CRL updates",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "repair",
       "step_index": 1,
-      "step": "Restore trust state from last verified snapshot",
+      "step": "If revocations are legitimate, resume processing at controlled rate",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "repair",
       "step_index": 2,
-      "step": "Re-derive trust chain from verified root of trust",
+      "step": "If revocations are illegitimate, revert revocation batch from snapshot",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "repair",
       "step_index": 3,
-      "step": "Re-validate all trust delegations against policy",
+      "step": "Re-issue trust delegations for incorrectly revoked entities",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "repair",
       "step_index": 4,
-      "step": "Replay evidence ledger entries from verified checkpoint",
+      "step": "If a signing key is compromised, do not treat franken-node ops rotate-key as remediation; it is preview-only and leaves the old key active",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
+      "phase": "repair",
+      "step_index": 5,
+      "step": "Use franken-node ops rotate-key --new-key <path> --json only to validate candidate key material before a supported signer-config and evidence-ledger rotation procedure",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-002",
+      "phase": "repair",
+      "step_index": 6,
+      "step": "Update revocation policy to prevent recurrence",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-002",
       "phase": "verification",
       "step_index": 1,
-      "step": "Run full trust re-verification pass",
+      "step": "Confirm revocation list consistency across all fleet nodes",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "verification",
       "step_index": 2,
-      "step": "Confirm trust state hash matches expected value",
+      "step": "Validate that legitimate revocations are honored fleet-wide",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "verification",
       "step_index": 3,
-      "step": "Validate evidence ledger consistency end-to-end",
+      "step": "Verify that incorrectly revoked entities have restored access",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "verification",
       "step_index": 4,
-      "step": "Verify all trust delegations are policy-compliant",
+      "step": "For any key-rotation emergency, confirm ops rotate-key output reports status=preview_only, actual_rotation_occurred=false, and a non-success exit before treating it as validation-only evidence",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
+      "phase": "verification",
+      "step_index": 5,
+      "step": "Run trust delegation audit",
+      "status": "PASS"
+    },
+    {
+      "event": "DRILL_STEP_EXECUTED",
+      "trace_id": "trace-drill-rb-002",
       "phase": "rollback",
       "step_index": 1,
-      "step": "Revert to previous epoch if repair fails",
+      "step": "Restore pre-revocation trust state from snapshot",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "rollback",
       "step_index": 2,
-      "step": "Restore pre-corruption trust state from backup",
+      "step": "Re-process revocations selectively (legitimate only)",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "rollback",
       "step_index": 3,
-      "step": "Invalidate trust tokens issued during corruption window",
+      "step": "Coordinate fleet-wide epoch reset if full rollback needed",
       "status": "PASS"
     },
     {
       "event": "DRILL_STEP_EXECUTED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "phase": "rollback",
       "step_index": 4,
-      "step": "Escalate to security incident team if rollback also fails",
+      "step": "Escalate to governance board if policy-level changes required",
       "status": "PASS"
     },
     {
       "event": "DRILL_COMPLETED",
-      "trace_id": "trace-drill-rb-001",
+      "trace_id": "trace-drill-rb-002",
       "status": "PASS"
     }
   ]

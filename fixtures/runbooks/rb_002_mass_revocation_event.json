@@ -34,12 +34,15 @@
       "If revocations are legitimate, resume processing at controlled rate",
       "If revocations are illegitimate, revert revocation batch from snapshot",
       "Re-issue trust delegations for incorrectly revoked entities",
+      "If a signing key is compromised, do not treat franken-node ops rotate-key as remediation; it is preview-only and leaves the old key active",
+      "Use franken-node ops rotate-key --new-key <path> --json only to validate candidate key material before a supported signer-config and evidence-ledger rotation procedure",
       "Update revocation policy to prevent recurrence"
     ],
     "verification": [
       "Confirm revocation list consistency across all fleet nodes",
       "Validate that legitimate revocations are honored fleet-wide",
       "Verify that incorrectly revoked entities have restored access",
+      "For any key-rotation emergency, confirm ops rotate-key output reports status=preview_only, actual_rotation_occurred=false, and a non-success exit before treating it as validation-only evidence",
       "Run trust delegation audit"
     ],
     "rollback": [
@@ -54,12 +57,13 @@
   "command_references": [
     "franken-node trust revoke --batch fixtures/revocations/test_batch.json",
     "franken-node trust delegations restore --from-snapshot snapshots/pre_revocation.json",
+    "franken-node ops rotate-key --new-key ./keys/candidate.ed25519 --json (preview-only validation; not remediation)",
     "POST /api/v1/trust/revocations/pause"
   ],
   "coverage_tags": [
     "key-rotation-emergency",
     "malicious-extension-detection"
   ],
-  "last_reviewed": "2026-02-21",
+  "last_reviewed": "2026-05-01",
   "review_cadence": "per_release_cycle"
 }

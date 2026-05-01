@@ -7,7 +7,7 @@ This index tracks high-severity trust-incident runbooks for Section 10.8 (`bd-nr
 | Runbook ID | Incident | Markdown | JSON Fixture | Severity | Privilege | ETR | Last Reviewed | Cadence | Coverage Tags |
 |---|---|---|---|---|---|---|---|---|---|
 | RB-001 | Trust State Corruption | `docs/runbooks/trust_state_corruption.md` | `fixtures/runbooks/rb_001_trust_state_corruption.json` | critical | P1 | 30m | 2026-02-21 | per_release_cycle | `trust-anchor-compromise`, `malicious-extension-detection` |
-| RB-002 | Mass Revocation Event | `docs/runbooks/mass_revocation_event.md` | `fixtures/runbooks/rb_002_mass_revocation_event.json` | critical | P1 | 1h | 2026-02-21 | per_release_cycle | `key-rotation-emergency`, `malicious-extension-detection` |
+| RB-002 | Mass Revocation Event | `docs/runbooks/mass_revocation_event.md` | `fixtures/runbooks/rb_002_mass_revocation_event.json` | critical | P1 | 1h | 2026-05-01 | per_release_cycle | `key-rotation-emergency`, `malicious-extension-detection` |
 | RB-003 | Fleet Quarantine Activation | `docs/runbooks/fleet_quarantine_activation.md` | `fixtures/runbooks/rb_003_fleet_quarantine_activation.json` | high | P2 | 45m | 2026-02-21 | per_release_cycle | `fleet-wide-quarantine-escalation`, `malicious-extension-detection` |
 | RB-004 | Epoch Transition Failure | `docs/runbooks/epoch_transition_failure.md` | `fixtures/runbooks/rb_004_epoch_transition_failure.json` | critical | P1 | 1h | 2026-02-21 | per_release_cycle | `control-plane-split-brain` |
 | RB-005 | Evidence Ledger Divergence | `docs/runbooks/evidence_ledger_divergence.md` | `fixtures/runbooks/rb_005_evidence_ledger_divergence.json` | high | P2 | 45m | 2026-02-21 | per_release_cycle | `control-plane-split-brain` |
