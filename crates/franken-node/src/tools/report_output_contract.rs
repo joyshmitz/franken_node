@@ -28,6 +28,7 @@ use std::collections::BTreeMap;
 use uuid::Uuid;
 
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
+const REPORT_OUTPUT_HASH_DOMAIN: &[u8] = b"report_output_hash_v1:";
 
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
@@ -47,6 +48,24 @@ fn contains_nul_byte(value: &str) -> bool {
 
 fn len_to_u64(len: usize) -> u64 {
     u64::try_from(len).unwrap_or(u64::MAX)
+}
+
+fn report_output_hash(data: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(REPORT_OUTPUT_HASH_DOMAIN);
+    hasher.update(data);
+    hex::encode(hasher.finalize())
+}
+
+fn missing_required_artifact_count(artifacts: &[ArtifactEntry]) -> usize {
+    REQUIRED_ARTIFACT_TYPES
+        .iter()
+        .filter(|required| {
+            !artifacts
+                .iter()
+                .any(|artifact| artifact.artifact_type.as_str() == **required)
+        })
+        .count()
 }
 
 pub mod event_codes {
@@ -267,22 +286,14 @@ impl ReportOutputContract {
         );
 
         // Check completeness
-        let present_types: Vec<&str> = bundle
-            .artifacts
-            .iter()
-            .map(|a| a.artifact_type.as_str())
-            .collect();
-        let missing: Vec<&&str> = REQUIRED_ARTIFACT_TYPES
-            .iter()
-            .filter(|t| !present_types.contains(*t))
-            .collect();
-        bundle.is_complete = missing.is_empty();
+        let missing_count = missing_required_artifact_count(&bundle.artifacts);
+        bundle.is_complete = missing_count == 0;
 
         if !bundle.is_complete {
             self.log(
                 event_codes::ROC_ERR_INCOMPLETE,
                 trace_id,
-                serde_json::json!({"missing": missing.len()}),
+                serde_json::json!({"missing": missing_count}),
             );
         }
 
@@ -303,9 +314,7 @@ impl ReportOutputContract {
             "artifacts": bundle.artifacts.len(),
         })
         .to_string();
-        bundle.bundle_hash = hex::encode(Sha256::digest(
-            [b"report_output_hash_v1:" as &[u8], hash_input.as_bytes()].concat(),
-        ));
+        bundle.bundle_hash = report_output_hash(hash_input.as_bytes());
         bundle.contract_version = self.contract_version.clone();
         bundle.created_at = Utc::now().to_rfc3339();
 
