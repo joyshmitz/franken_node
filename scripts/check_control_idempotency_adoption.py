@@ -7,12 +7,11 @@ Usage:
 
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
-from datetime import datetime, timezone
-from pathlib import Path
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 
 
 # --- Constants ---
@@ -44,6 +43,33 @@ CUSTOM_IDEMPOTENCY_PATTERNS = [
     "idempotency_cache",
     "dedup_map",
 ]
+
+
+def _read_text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _rel(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _load_json_object(path: Path) -> tuple[dict | None, str | None]:
+    text = _read_text(path)
+    if text is None:
+        return None, f"unable to read {_rel(path)}"
+    try:
+        payload = json.JSONDecoder().decode(text)
+    except json.JSONDecodeError as exc:
+        return None, f"invalid JSON: {exc.msg}"
+    if not isinstance(payload, dict):
+        return None, "expected JSON object"
+    return payload, None
 
 
 def check_key_derivation_exists() -> dict:
@@ -80,21 +106,24 @@ def check_adoption_report_exists() -> dict:
     """CIA-REPORT: Adoption report artifact exists and is valid."""
     if not ADOPTION_REPORT.exists():
         return {"id": "CIA-REPORT", "status": "FAIL", "details": {"error": "not found"}}
-    try:
-        data = json.loads(ADOPTION_REPORT.read_text())
-        ok = (data.get("bead") == "bd-1cwp"
-              and data.get("adoption_status") == "documented"
-              and isinstance(data.get("retryable_requests"), list))
-        return {"id": "CIA-REPORT", "status": "PASS" if ok else "FAIL", "details": {"valid": ok}}
-    except json.JSONDecodeError as e:
-        return {"id": "CIA-REPORT", "status": "FAIL", "details": {"error": str(e)}}
+    data, error = _load_json_object(ADOPTION_REPORT)
+    if error is not None:
+        return {"id": "CIA-REPORT", "status": "FAIL", "details": {"error": error}}
+    ok = (
+        data.get("bead") == "bd-1cwp"
+        and data.get("adoption_status") == "documented"
+        and isinstance(data.get("retryable_requests"), list)
+    )
+    return {"id": "CIA-REPORT", "status": "PASS" if ok else "FAIL", "details": {"valid": ok}}
 
 
 def check_retryable_requests_documented() -> dict:
     """CIA-RETRY: All retryable requests documented in adoption doc."""
     if not ADOPTION_DOC.exists():
         return {"id": "CIA-RETRY", "status": "FAIL", "details": {"error": "doc not found"}}
-    content = ADOPTION_DOC.read_text()
+    content = _read_text(ADOPTION_DOC)
+    if content is None:
+        return {"id": "CIA-RETRY", "status": "FAIL", "details": {"error": "doc unreadable"}}
     missing = [r for r in RETRYABLE_REQUESTS if r not in content]
     return {
         "id": "CIA-RETRY",
@@ -107,7 +136,9 @@ def check_non_retryable_documented() -> dict:
     """CIA-NORETRY: Non-retryable requests documented."""
     if not ADOPTION_DOC.exists():
         return {"id": "CIA-NORETRY", "status": "FAIL", "details": {"error": "doc not found"}}
-    content = ADOPTION_DOC.read_text()
+    content = _read_text(ADOPTION_DOC)
+    if content is None:
+        return {"id": "CIA-NORETRY", "status": "FAIL", "details": {"error": "doc unreadable"}}
     missing = [r for r in NON_RETRYABLE_REQUESTS if r not in content]
     return {
         "id": "CIA-NORETRY",
@@ -120,7 +151,9 @@ def check_derive_key_function() -> dict:
     """CIA-DERIVE: derive_key function exists in canonical source."""
     if not KEY_DERIVATION_SRC.exists():
         return {"id": "CIA-DERIVE", "status": "FAIL", "details": {"error": "source not found"}}
-    content = KEY_DERIVATION_SRC.read_text()
+    content = _read_text(KEY_DERIVATION_SRC)
+    if content is None:
+        return {"id": "CIA-DERIVE", "status": "FAIL", "details": {"error": "source unreadable"}}
     has_fn = "fn derive_key" in content
     return {"id": "CIA-DERIVE", "status": "PASS" if has_fn else "FAIL", "details": {"found": has_fn}}
 
@@ -129,7 +162,9 @@ def check_dedup_contract_documented() -> dict:
     """CIA-CONTRACT: Dedupe contract sections in adoption doc."""
     if not ADOPTION_DOC.exists():
         return {"id": "CIA-CONTRACT", "status": "FAIL", "details": {"error": "doc not found"}}
-    content = ADOPTION_DOC.read_text()
+    content = _read_text(ADOPTION_DOC)
+    if content is None:
+        return {"id": "CIA-CONTRACT", "status": "FAIL", "details": {"error": "doc unreadable"}}
     required = ["Dedupe Contract", "Epoch Binding", "Prohibition on Custom"]
     missing = [s for s in required if s not in content]
     return {
@@ -143,7 +178,9 @@ def check_epoch_binding_documented() -> dict:
     """CIA-EPOCH: Epoch binding enforcement documented."""
     if not ADOPTION_DOC.exists():
         return {"id": "CIA-EPOCH", "status": "FAIL", "details": {"error": "doc not found"}}
-    content = ADOPTION_DOC.read_text()
+    content = _read_text(ADOPTION_DOC)
+    if content is None:
+        return {"id": "CIA-EPOCH", "status": "FAIL", "details": {"error": "doc unreadable"}}
     has_epoch = "epoch-bound" in content.lower() or "epoch binding" in content.lower() or "Epoch Binding" in content
     return {"id": "CIA-EPOCH", "status": "PASS" if has_epoch else "FAIL", "details": {"found": has_epoch}}
 
@@ -153,7 +190,13 @@ def check_no_custom_idempotency() -> dict:
     violations = []
     if CONNECTOR_DIR.exists():
         for rs_file in sorted(CONNECTOR_DIR.glob("*.rs")):
-            content = rs_file.read_text()
+            content = _read_text(rs_file)
+            if content is None:
+                violations.append({
+                    "file": str(rs_file.relative_to(ROOT)),
+                    "pattern": "unreadable source",
+                })
+                continue
             for pattern in CUSTOM_IDEMPOTENCY_PATTERNS:
                 if pattern in content:
                     violations.append({
@@ -171,18 +214,17 @@ def check_report_retryable_count() -> dict:
     """CIA-COUNT: Report lists all 4 retryable requests."""
     if not ADOPTION_REPORT.exists():
         return {"id": "CIA-COUNT", "status": "FAIL", "details": {"error": "report not found"}}
-    try:
-        data = json.loads(ADOPTION_REPORT.read_text())
-        retryable = data.get("retryable_requests", [])
-        types = [r.get("request_type") for r in retryable]
-        missing = [r for r in RETRYABLE_REQUESTS if r not in types]
-        return {
-            "id": "CIA-COUNT",
-            "status": "PASS" if not missing else "FAIL",
-            "details": {"count": len(retryable), "missing": missing},
-        }
-    except json.JSONDecodeError as e:
-        return {"id": "CIA-COUNT", "status": "FAIL", "details": {"error": str(e)}}
+    data, error = _load_json_object(ADOPTION_REPORT)
+    if error is not None:
+        return {"id": "CIA-COUNT", "status": "FAIL", "details": {"error": error}}
+    retryable = data.get("retryable_requests", [])
+    types = [r.get("request_type") for r in retryable if isinstance(r, dict)]
+    missing = [r for r in RETRYABLE_REQUESTS if r not in types]
+    return {
+        "id": "CIA-COUNT",
+        "status": "PASS" if not missing else "FAIL",
+        "details": {"count": len(retryable), "missing": missing},
+    }
 
 
 def check_spec_contract_exists() -> dict:
@@ -203,7 +245,9 @@ def check_event_codes_documented() -> dict:
     """CIA-EVENTS: Event codes documented in adoption doc."""
     if not ADOPTION_DOC.exists():
         return {"id": "CIA-EVENTS", "status": "FAIL", "details": {"error": "doc not found"}}
-    content = ADOPTION_DOC.read_text()
+    content = _read_text(ADOPTION_DOC)
+    if content is None:
+        return {"id": "CIA-EVENTS", "status": "FAIL", "details": {"error": "doc unreadable"}}
     codes = ["IDP-001", "IDP-002", "IDP-003", "IDP-004", "IDP-005"]
     missing = [c for c in codes if c not in content]
     return {
@@ -217,7 +261,9 @@ def check_invariants_documented() -> dict:
     """CIA-INV: Invariants documented in adoption doc."""
     if not ADOPTION_DOC.exists():
         return {"id": "CIA-INV", "status": "FAIL", "details": {"error": "doc not found"}}
-    content = ADOPTION_DOC.read_text()
+    content = _read_text(ADOPTION_DOC)
+    if content is None:
+        return {"id": "CIA-INV", "status": "FAIL", "details": {"error": "doc unreadable"}}
     invs = ["INV-IDP-CANONICAL-KEY", "INV-IDP-DEDUP-CONSULTED", "INV-IDP-EPOCH-BOUND",
             "INV-IDP-NO-CUSTOM", "INV-IDP-CONFLICT-HARD"]
     missing = [i for i in invs if i not in content]
@@ -265,7 +311,7 @@ def self_test() -> dict:
 
 
 def main():
-    logger = configure_test_logging("check_control_idempotency_adoption")
+    configure_test_logging("check_control_idempotency_adoption")
     json_output = "--json" in sys.argv
 
     result = self_test()

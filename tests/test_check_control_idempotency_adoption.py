@@ -3,11 +3,19 @@
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-import check_control_idempotency_adoption as cia
+import check_control_idempotency_adoption as cia  # noqa: E402
+
+
+def load_report() -> dict:
+    data, error = cia._load_json_object(cia.ADOPTION_REPORT)
+    if error is not None:
+        raise AssertionError(error)
+    return data
 
 
 class TestConstants(unittest.TestCase):
@@ -52,12 +60,38 @@ class TestCheckAdoptionReportExists(unittest.TestCase):
         self.assertEqual(result["id"], "CIA-REPORT")
 
     def test_report_has_bead(self):
-        data = json.loads(cia.ADOPTION_REPORT.read_text())
+        data = load_report()
         self.assertEqual(data["bead"], "bd-1cwp")
 
     def test_report_has_adoption_status(self):
-        data = json.loads(cia.ADOPTION_REPORT.read_text())
+        data = load_report()
         self.assertEqual(data["adoption_status"], "documented")
+
+    def test_malformed_report_fails_closed(self):
+        original = cia.ADOPTION_REPORT
+        with tempfile.TemporaryDirectory(prefix="cia-report-") as tmp:
+            report_path = Path(tmp) / "report.json"
+            report_path.write_text("{not-json", encoding="utf-8")
+            cia.ADOPTION_REPORT = report_path
+            try:
+                result = cia.check_adoption_report_exists()
+                self.assertEqual(result["status"], "FAIL")
+                self.assertIn("invalid JSON", result["details"]["error"])
+            finally:
+                cia.ADOPTION_REPORT = original
+
+    def test_non_object_report_fails_closed(self):
+        original = cia.ADOPTION_REPORT
+        with tempfile.TemporaryDirectory(prefix="cia-report-") as tmp:
+            report_path = Path(tmp) / "report.json"
+            report_path.write_text("[]", encoding="utf-8")
+            cia.ADOPTION_REPORT = report_path
+            try:
+                result = cia.check_adoption_report_exists()
+                self.assertEqual(result["status"], "FAIL")
+                self.assertIn("expected JSON object", result["details"]["error"])
+            finally:
+                cia.ADOPTION_REPORT = original
 
 
 class TestCheckRetryableRequestsDocumented(unittest.TestCase):
@@ -104,6 +138,21 @@ class TestCheckReportRetryableCount(unittest.TestCase):
     def test_four_retryable(self):
         result = cia.check_report_retryable_count()
         self.assertEqual(result["details"]["count"], 4)
+
+    def test_retryable_count_ignores_malformed_entries(self):
+        original = cia.ADOPTION_REPORT
+        data = load_report()
+        data["retryable_requests"].append("not-an-object")
+        with tempfile.TemporaryDirectory(prefix="cia-report-") as tmp:
+            report_path = Path(tmp) / "report.json"
+            report_path.write_text(json.dumps(data), encoding="utf-8")
+            cia.ADOPTION_REPORT = report_path
+            try:
+                result = cia.check_report_retryable_count()
+                self.assertEqual(result["status"], "PASS")
+                self.assertEqual(result["details"]["count"], 5)
+            finally:
+                cia.ADOPTION_REPORT = original
 
 
 class TestCheckEventCodesDocumented(unittest.TestCase):
