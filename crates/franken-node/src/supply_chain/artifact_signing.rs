@@ -13,7 +13,11 @@ use rand::rngs::OsRng;
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
-use crate::security::{constant_time, crypto::{Ed25519Verifier, SignatureVerifier}};
+use crate::push_bounded;
+use crate::security::{
+    constant_time,
+    crypto::{Ed25519Verifier, SignatureVerifier},
+};
 
 const MAX_TRANSITIONS: usize = 4096;
 const RELEASE_MANIFEST_SIGNATURE_DOMAIN: &[u8] = b"release_manifest_v1:";
@@ -22,18 +26,6 @@ const RELEASE_MANIFEST_SIGNATURE_DOMAIN: &[u8] = b"release_manifest_v1:";
 const MAX_ARTIFACT_NAME_LEN: usize = 512;
 /// Maximum entries accepted from an attacker-controlled checksum manifest.
 const MAX_MANIFEST_ENTRIES: usize = 4096;
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 // ---------------------------------------------------------------------------
 // Event codes

@@ -7,6 +7,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::push_bounded;
+
 const RESERVED_ARTIFACT_ID: &str = "<unknown>";
 
 /// Maximum number of attestations to prevent memory exhaustion.
@@ -18,20 +20,6 @@ const MAX_TRUSTED_BUILDERS: usize = 256;
 
 /// Maximum artifact ID length to prevent memory exhaustion DoS attacks.
 const MAX_ARTIFACT_ID_LEN: usize = 512;
-
-/// Push item to vector with bounded capacity to prevent memory exhaustion.
-/// When capacity is exceeded, removes oldest entries to maintain the limit.
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 // ── Types ───────────────────────────────────────────────────────────
 

@@ -11,24 +11,11 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
+use crate::push_bounded;
 
 /// Maximum number of issues that can be reported during attestation verification.
 /// Prevents memory exhaustion from adversarial attestations with many problems.
 const MAX_CHAIN_ISSUES: usize = 1024;
-
-/// Push item to bounded vector with capacity limit to prevent memory exhaustion.
-/// When capacity is exceeded, removes oldest entries to maintain the limit.
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

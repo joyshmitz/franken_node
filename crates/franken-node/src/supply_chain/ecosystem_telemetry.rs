@@ -14,25 +14,13 @@ use super::{
     certification::{CertificationLevel, CertificationRegistry},
     extension_registry::{ExtensionStatus, SignedExtensionRegistry},
 };
+use crate::push_bounded;
 
 const MAX_ANOMALY_ALERTS: usize = 4096;
 const MAX_DATA_POINTS: usize = 4096;
 const MAX_VALUES_PER_METRIC: usize = 1024;
 const MIN_DEVIATION_THRESHOLD_PCT: f64 = 0.0;
 const MAX_DEVIATION_THRESHOLD_PCT: f64 = 100.0;
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 fn valid_deviation_threshold_pct(value: f64) -> bool {
     value.is_finite()
@@ -607,7 +595,8 @@ impl TelemetryPipeline {
             // If still over budget, drop oldest entries regardless of aggregation level.
             let overflow = self.data_points.len().saturating_sub(cap - 1);
             if overflow > 0 {
-                self.data_points.drain(0..overflow.min(self.data_points.len()));
+                self.data_points
+                    .drain(0..overflow.min(self.data_points.len()));
             }
         }
 

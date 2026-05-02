@@ -15,28 +15,17 @@ use sha2::{Digest, Sha256};
 
 use crate::config::BenchmarkConfig;
 #[cfg(feature = "advanced-features")]
-use crate::tools::benchmark_suite::{BenchmarkDimension, run_default_suite};
-use crate::security::constant_time;
+use crate::observability::evidence_ledger::LedgerMetrics;
 #[cfg(feature = "advanced-features")]
 use crate::observability::evidence_ledger::{DecisionKind, EvidenceLedger};
+use crate::push_bounded;
+use crate::security::constant_time;
 #[cfg(feature = "advanced-features")]
-use crate::observability::evidence_ledger::LedgerMetrics;
+use crate::tools::benchmark_suite::{BenchmarkDimension, run_default_suite};
 
 const MAX_HISTORY_ENTRIES: usize = 4096;
 const MAX_BET_ENTRIES: usize = 4096;
 const MAX_TELEMETRY: usize = 4096;
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 // ── Event codes ──────────────────────────────────────────────────────────────
 
@@ -1374,9 +1363,9 @@ struct BenchmarkThresholds {
 #[cfg(feature = "advanced-features")]
 fn get_benchmark_baseline_defaults() -> (f64, f64, f64) {
     (
-        BASELINE_COMPAT_PERCENT,    // compatibility percentage fallback
-        BASELINE_THROUGHPUT_OPS,    // throughput operations fallback
-        BASELINE_LATENCY_P99_MS,    // latency P99 fallback
+        BASELINE_COMPAT_PERCENT, // compatibility percentage fallback
+        BASELINE_THROUGHPUT_OPS, // throughput operations fallback
+        BASELINE_LATENCY_P99_MS, // latency P99 fallback
     )
 }
 
@@ -1523,7 +1512,7 @@ pub fn validate_benchmark_thresholds() -> Result<BenchmarkValidationResult, Cate
 /// This is the config-aware version of `validate_benchmark_thresholds` that uses
 /// thresholds and paths from the benchmark configuration.
 pub fn validate_benchmark_thresholds_with_config(
-    config: &BenchmarkConfig
+    config: &BenchmarkConfig,
 ) -> Result<BenchmarkValidationResult, CategoryShiftError> {
     let summary_path = &config.summary_path;
 
@@ -1557,7 +1546,7 @@ pub fn validate_benchmark_thresholds_with_config(
 /// Internal helper that validates benchmark summary against specific thresholds.
 fn validate_benchmark_with_thresholds(
     summary: &BenchmarkSummary,
-    thresholds: &BenchmarkThresholds
+    thresholds: &BenchmarkThresholds,
 ) -> Result<BenchmarkValidationResult, CategoryShiftError> {
     let mut details = Vec::new();
     let mut passed = true;
@@ -1686,9 +1675,11 @@ fn generate_security_metrics(
     let analyzed_decisions = total_decisions.max(1) as f64;
     let intervention_ratio = neutralized_attacks as f64 / analyzed_decisions;
     let audit_coverage_ratio = ((category_coverage_ratio + retention_ratio) / 2.0).clamp(0.0, 1.0);
-    let surface_reduction_factor =
-        (1.0 + (intervention_ratio * 8.0) + (category_coverage_ratio * 3.0) + (retention_ratio * 2.0))
-            .max(1.0);
+    let surface_reduction_factor = (1.0
+        + (intervention_ratio * 8.0)
+        + (category_coverage_ratio * 3.0)
+        + (retention_ratio * 2.0))
+        .max(1.0);
 
     Ok(RealSecurityMetrics {
         surface_reduction_factor,
@@ -1759,7 +1750,9 @@ fn analyze_migration_performance(
     let threshold = migration_config.verification_threshold.unwrap_or(0.95);
     let config_adjusted_success = threshold * 0.97; // Small operational degradation
     let evidence_adjusted_success = evidence_success_rate * 0.96; // Evidence-based adjustment
-    let operational_success_rate = config_adjusted_success.min(evidence_adjusted_success).max(0.70);
+    let operational_success_rate = config_adjusted_success
+        .min(evidence_adjusted_success)
+        .max(0.70);
 
     // Real time calculation based on evidence activity and configuration rigor
     let evidence_activity_factor = if total_decisions > 100 {
@@ -1900,8 +1893,11 @@ fn generate_economics_metrics(
 
     // Cost-benefit ratio from real trust economics and network activity
     let base_ratio = 1.8; // Conservative baseline from observability data
-    let cost_benefit_ratio = base_ratio * trust_multiplier * stability_multiplier *
-                           volume_multiplier * network_multiplier;
+    let cost_benefit_ratio = base_ratio
+        * trust_multiplier
+        * stability_multiplier
+        * volume_multiplier
+        * network_multiplier;
 
     // Attacker ROI calculation from real evidence patterns and network difficulty
     let evidence_roi_impact = calculate_attacker_economics(evidence_ledger);
@@ -1994,9 +1990,8 @@ fn generate_real_moonshot_bets(
     let mut migration_blockers = Vec::new();
     if !migration_has_observability {
         migration_status = BetStatus::Blocked;
-        migration_blockers.push(
-            "No migration evidence recorded in the observability ledger".to_string(),
-        );
+        migration_blockers
+            .push("No migration evidence recorded in the observability ledger".to_string());
     } else {
         if migration_data.velocity_factor < THRESHOLD_MIGRATION_VELOCITY {
             migration_blockers.push(format!(
@@ -2029,8 +2024,9 @@ fn generate_real_moonshot_bets(
     let mut security_blockers = Vec::new();
     if !security_has_observability {
         security_status = BetStatus::Blocked;
-        security_blockers
-            .push("No security observability metrics available for compromise tracking".to_string());
+        security_blockers.push(
+            "No security observability metrics available for compromise tracking".to_string(),
+        );
     } else {
         if security_data.surface_reduction_factor < THRESHOLD_COMPROMISE_REDUCTION {
             security_blockers.push(format!(
@@ -2737,8 +2733,7 @@ mod tests {
         assert_eq!(audited_metrics.attacks_neutralized, 5);
         assert_eq!(audited_metrics.coverage_percent, 100.0);
         assert!(
-            audited_metrics.surface_reduction_factor
-                > admit_only_metrics.surface_reduction_factor
+            audited_metrics.surface_reduction_factor > admit_only_metrics.surface_reduction_factor
         );
         assert!(
             audited_metrics.surface_reduction_factor >= THRESHOLD_COMPROMISE_REDUCTION,
@@ -3217,9 +3212,18 @@ mod tests {
             .collect();
 
         assert_eq!(statuses.get("moonshot-compat"), Some(&BetStatus::Completed));
-        assert_eq!(statuses.get("moonshot-migration"), Some(&BetStatus::Completed));
-        assert_eq!(statuses.get("moonshot-security"), Some(&BetStatus::Completed));
-        assert_eq!(statuses.get("moonshot-adoption"), Some(&BetStatus::Completed));
+        assert_eq!(
+            statuses.get("moonshot-migration"),
+            Some(&BetStatus::Completed)
+        );
+        assert_eq!(
+            statuses.get("moonshot-security"),
+            Some(&BetStatus::Completed)
+        );
+        assert_eq!(
+            statuses.get("moonshot-adoption"),
+            Some(&BetStatus::Completed)
+        );
         assert!(bets.iter().all(|bet| bet.blockers.is_empty()));
     }
 
