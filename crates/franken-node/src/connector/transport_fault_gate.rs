@@ -22,18 +22,7 @@ use crate::security::constant_time;
 // ── Constants ────────────────────────────────────────────────────────────────
 
 use crate::capacity_defaults::aliases::{MAX_AUDIT_LOG_ENTRIES, MAX_RESULTS};
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
+use crate::push_bounded;
 
 pub const SCHEMA_VERSION: &str = "tfg-v1.0";
 pub const BEAD_ID: &str = "bd-3u6o";
@@ -708,8 +697,16 @@ impl TransportFaultGate {
             h.update(SECTION.as_bytes());
             h.update([u8::from(passed)]);
             h.update(u64::try_from(total_tests).unwrap_or(u64::MAX).to_le_bytes());
-            h.update(u64::try_from(passed_tests).unwrap_or(u64::MAX).to_le_bytes());
-            h.update(u64::try_from(failed_tests).unwrap_or(u64::MAX).to_le_bytes());
+            h.update(
+                u64::try_from(passed_tests)
+                    .unwrap_or(u64::MAX)
+                    .to_le_bytes(),
+            );
+            h.update(
+                u64::try_from(failed_tests)
+                    .unwrap_or(u64::MAX)
+                    .to_le_bytes(),
+            );
             let results_json =
                 serde_json::to_string(&results).unwrap_or_else(|e| format!("__serde_err:{e}"));
             h.update(

@@ -6,6 +6,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::push_bounded;
+
 /// Maximum number of mounted secrets tracked for exact cleanup coverage.
 const MAX_MOUNTED_SECRETS: usize = 4096;
 
@@ -120,18 +122,6 @@ pub struct ActivationInput {
     pub timestamp: String,
 }
 
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
-
 /// Tracks ephemeral secrets mounted during activation for cleanup.
 #[derive(Debug, Default)]
 pub struct EphemeralSecretTracker {
@@ -142,7 +132,10 @@ pub struct EphemeralSecretTracker {
 impl EphemeralSecretTracker {
     pub fn mount(&mut self, secret_ref: &str) -> Result<(), String> {
         if self.mounted.len() >= MAX_MOUNTED_SECRETS {
-            return Err(format!("tracker exhausted: exceeded max secrets {}", MAX_MOUNTED_SECRETS));
+            return Err(format!(
+                "tracker exhausted: exceeded max secrets {}",
+                MAX_MOUNTED_SECRETS
+            ));
         }
         self.mounted.push(secret_ref.to_string());
         self.cleaned = false;

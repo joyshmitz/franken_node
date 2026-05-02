@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
+use crate::push_bounded;
 const MAX_SCORE_HISTORY: usize = 4096;
 const MAX_DISPUTES: usize = 4096;
 
@@ -589,18 +590,6 @@ impl EcosystemReputationApi {
 }
 
 // -- Bounded push helper -------------------------------------------------------
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 // -- Tests ---------------------------------------------------------------------
 
