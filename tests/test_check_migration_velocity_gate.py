@@ -2,22 +2,25 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
+import runpy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase, main
 
 ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts" / "check_migration_velocity_gate.py"
 
-spec = importlib.util.spec_from_file_location(
-    "check_migration_velocity_gate",
-    ROOT / "scripts" / "check_migration_velocity_gate.py",
-)
-mod = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = mod
-spec.loader.exec_module(mod)
+
+class ScriptNamespace:
+    def __init__(self, script_globals: dict[str, object]) -> None:
+        object.__setattr__(self, "_script_globals", script_globals)
+
+    def __getattr__(self, name: str) -> object:
+        return self._script_globals[name]
+
+
+mod = ScriptNamespace(runpy.run_path(str(SCRIPT)))
 
 
 def _base_spec_text() -> str:

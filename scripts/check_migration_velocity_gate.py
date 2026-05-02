@@ -7,15 +7,14 @@ import argparse
 import hashlib
 import json
 import tempfile
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import sys
-from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 
 SPEC = ROOT / "docs" / "specs" / "section_13" / "bd-3agp_contract.md"
 REPORT = ROOT / "artifacts" / "13" / "migration_velocity_report.json"
@@ -62,6 +61,14 @@ def _trace_id(payload: dict[str, Any]) -> str:
 
 def _parse_iso8601(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _json_decode(text: str) -> Any:
+    return json.JSONDecoder().decode(text)
+
+
+def _is_json_true(value: Any) -> bool:
+    return isinstance(value, bool) and value
 
 
 def _safe_rel(path: Path) -> str:
@@ -150,7 +157,7 @@ def run_checks(spec_path: Path = SPEC, report_path: Path = REPORT) -> dict[str, 
     report_errors: list[str] = []
     if report_path.is_file():
         try:
-            report = json.loads(report_path.read_text(encoding="utf-8"))
+            report = _json_decode(report_path.read_text(encoding="utf-8"))
             if not isinstance(report, dict):
                 report_errors.append("report root must be an object")
         except json.JSONDecodeError as exc:
@@ -225,7 +232,7 @@ def run_checks(spec_path: Path = SPEC, report_path: Path = REPORT) -> dict[str, 
                 total_manual += float(manual)
             if isinstance(tooled, (int, float)) and tooled > 0:
                 total_tooled += float(tooled)
-            if project.get("ci_release_sample") is True:
+            if _is_json_true(project.get("ci_release_sample")):
                 ci_sample_count += 1
 
     _check(
@@ -435,7 +442,7 @@ def self_test() -> bool:
             return False
 
         # Perturb to force threshold failure.
-        data = json.loads(report.read_text(encoding="utf-8"))
+        data = _json_decode(report.read_text(encoding="utf-8"))
         data["overall_velocity_ratio"] = 2.9
         data["total_tooled_minutes"] = int(data["total_tooled_minutes"] * 1.3)
         report.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -444,7 +451,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
-    logger = configure_test_logging("check_migration_velocity_gate")
+    configure_test_logging("check_migration_velocity_gate")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON output.")
     parser.add_argument("--self-test", action="store_true", help="Run internal self-test and exit.")
