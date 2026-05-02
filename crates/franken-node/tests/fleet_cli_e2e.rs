@@ -14,7 +14,8 @@ use frankenengine_node::control_plane::fleet_transport::{
 };
 use frankenengine_node::security::decision_receipt::signing_key_id;
 use frankenengine_node::supply_chain::trust_card::{
-    ReputationTrend, RiskAssessment, RiskLevel, TrustCardMutation, TrustCardRegistry,
+    ReputationTrend, RiskAssessment, RiskLevel, SnapshotSourceContext, TrustCardMutation,
+    TrustCardRegistry,
 };
 use insta::{assert_json_snapshot, assert_snapshot};
 use sha2::{Digest, Sha256};
@@ -1421,7 +1422,13 @@ fn fleet_agent_applies_quarantine_actions_to_local_registry() {
         .path()
         .join(".franken-node/state/trust-card-registry.v1.json");
     let mut registry =
-        TrustCardRegistry::load_authoritative_state(&registry_path, 60, 2_000).expect("load");
+        TrustCardRegistry::load_authoritative_state(
+            &registry_path,
+            60,
+            2_000,
+            SnapshotSourceContext::TrustedFile,
+        )
+        .expect("load");
     let card = registry
         .read(
             "npm:@acme/auth-guard",
@@ -1450,7 +1457,13 @@ fn fleet_agent_release_actions_clear_local_quarantine_state() {
         .path()
         .join(".franken-node/state/trust-card-registry.v1.json");
     let mut registry =
-        TrustCardRegistry::load_authoritative_state(&registry_path, 60, 2_000).expect("load");
+        TrustCardRegistry::load_authoritative_state(
+            &registry_path,
+            60,
+            2_000,
+            SnapshotSourceContext::TrustedFile,
+        )
+        .expect("load");
     registry
         .update(
             "npm:@acme/auth-guard",
@@ -1523,7 +1536,13 @@ fn fleet_agent_release_actions_clear_local_quarantine_state() {
     );
 
     let mut registry =
-        TrustCardRegistry::load_authoritative_state(&registry_path, 60, 2_100).expect("reload");
+        TrustCardRegistry::load_authoritative_state(
+            &registry_path,
+            60,
+            2_100,
+            SnapshotSourceContext::TrustedFile,
+        )
+        .expect("reload");
     let card = registry
         .read(
             "npm:@acme/auth-guard",
@@ -1555,7 +1574,13 @@ fn fleet_agent_release_actions_clear_global_quarantine_state() {
         .path()
         .join(".franken-node/state/trust-card-registry.v1.json");
     let mut registry =
-        TrustCardRegistry::load_authoritative_state(&registry_path, 60, 2_000).expect("load");
+        TrustCardRegistry::load_authoritative_state(
+            &registry_path,
+            60,
+            2_000,
+            SnapshotSourceContext::TrustedFile,
+        )
+        .expect("load");
     registry
         .update(
             "npm:@acme/auth-guard",
@@ -1628,7 +1653,13 @@ fn fleet_agent_release_actions_clear_global_quarantine_state() {
     );
 
     let mut registry =
-        TrustCardRegistry::load_authoritative_state(&registry_path, 60, 2_100).expect("reload");
+        TrustCardRegistry::load_authoritative_state(
+            &registry_path,
+            60,
+            2_100,
+            SnapshotSourceContext::TrustedFile,
+        )
+        .expect("reload");
     let card = registry
         .read(
             "npm:@acme/auth-guard",
@@ -1721,7 +1752,13 @@ fn fleet_agent_release_preserves_quarantine_when_another_incident_is_still_activ
         .path()
         .join(".franken-node/state/trust-card-registry.v1.json");
     let mut registry =
-        TrustCardRegistry::load_authoritative_state(&registry_path, 60, 2_100).expect("reload");
+        TrustCardRegistry::load_authoritative_state(
+            &registry_path,
+            60,
+            2_100,
+            SnapshotSourceContext::TrustedFile,
+        )
+        .expect("reload");
     let card = registry
         .read(
             "npm:@acme/auth-guard",
@@ -1770,9 +1807,13 @@ fn fleet_agent_release_actions_clear_local_quarantine_state_across_poll_cycles()
         let registry_path = project_root.join(".franken-node/state/trust-card-registry.v1.json");
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            let mut registry =
-                TrustCardRegistry::load_authoritative_state(&registry_path, 60, 3_000)
-                    .expect("load registry");
+            let mut registry = TrustCardRegistry::load_authoritative_state(
+                &registry_path,
+                60,
+                3_000,
+                SnapshotSourceContext::TrustedFile,
+            )
+            .expect("load registry");
             let card = registry
                 .read(
                     "npm:@acme/auth-guard",
@@ -1838,7 +1879,13 @@ fn fleet_agent_release_actions_clear_local_quarantine_state_across_poll_cycles()
         .path()
         .join(".franken-node/state/trust-card-registry.v1.json");
     let mut registry =
-        TrustCardRegistry::load_authoritative_state(&registry_path, 60, 3_100).expect("reload");
+        TrustCardRegistry::load_authoritative_state(
+            &registry_path,
+            60,
+            3_100,
+            SnapshotSourceContext::TrustedFile,
+        )
+        .expect("reload");
     let card = registry
         .read(
             "npm:@acme/auth-guard",

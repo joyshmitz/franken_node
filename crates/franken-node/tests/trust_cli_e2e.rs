@@ -11,7 +11,8 @@ use frankenengine_node::control_plane::fleet_transport::{
     FileFleetTransport, FleetAction, FleetTargetKind, FleetTransport, NodeHealth, NodeStatus,
 };
 use frankenengine_node::supply_chain::trust_card::{
-    TrustCardListFilter, TrustCardMutation, TrustCardRegistry, fixture_registry,
+    SnapshotSourceContext, TrustCardListFilter, TrustCardMutation, TrustCardRegistry,
+    fixture_registry,
 };
 use serde_json::Value;
 
@@ -246,8 +247,13 @@ fn seeded_fixture_trust_workspace() -> tempfile::TempDir {
 
 fn rewrite_fixture_last_verified_timestamps(workspace: &Path, now_secs: u64) {
     let registry_path = workspace.join(".franken-node/state/trust-card-registry.v1.json");
-    let mut registry = TrustCardRegistry::load_authoritative_state(&registry_path, 60, now_secs)
-        .expect("load authoritative trust registry");
+    let mut registry = TrustCardRegistry::load_authoritative_state(
+        &registry_path,
+        60,
+        now_secs,
+        SnapshotSourceContext::TrustedFile,
+    )
+    .expect("load authoritative trust registry");
     let cards = registry
         .list(
             &TrustCardListFilter::empty(),
