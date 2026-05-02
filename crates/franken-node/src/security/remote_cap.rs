@@ -29,6 +29,9 @@ const MAX_REPLAY_ENTRIES: usize = 4_096;
 const MIN_SECRET_MATERIAL_LEN: usize = 16;
 const MIN_SECRET_ENTROPY_BITS: usize = 56;
 const REMOTE_CAP_REPLAY_STORE_ENV: &str = "FRANKEN_NODE_REMOTECAP_REPLAY_STORE";
+const REMOTE_CAP_REPLAY_SYNC_BATCH_ENV: &str = "FRANKEN_NODE_REMOTECAP_REPLAY_SYNC_BATCH";
+const DEFAULT_REPLAY_MARKER_SYNC_BATCH: usize = 32;
+const MAX_REPLAY_MARKER_SYNC_BATCH: usize = 1024;
 const CUCKOO_REVOCATION_ENV: &str = "FRANKEN_NODE_CUCKOO_REVOCATION";
 const KNOWN_WEAK_SECRET_MATERIAL: &[&str] = &[
     "admin",
@@ -494,17 +497,48 @@ impl ReplayStoreBackend {
 
 #[derive(Debug, Clone)]
 struct DurableReplayStore {
+    inner: Arc<DurableReplayStoreInner>,
+}
+
+#[derive(Debug)]
+struct DurableReplayStoreInner {
     consumed_dir: PathBuf,
+    pending_syncs: Mutex<ReplayMarkerSyncBatch>,
+    sync_batch_size: usize,
+}
+
+#[derive(Debug, Default)]
+struct ReplayMarkerSyncBatch {
+    markers: Vec<std::fs::File>,
+}
+
+impl Drop for DurableReplayStoreInner {
+    fn drop(&mut self) {
+        let _ = self.flush_pending_markers();
+    }
 }
 
 impl DurableReplayStore {
     fn open(root: impl AsRef<Path>) -> Result<Self, RemoteCapError> {
+        Self::open_with_sync_batch_size(root, replay_marker_sync_batch_size())
+    }
+
+    fn open_with_sync_batch_size(
+        root: impl AsRef<Path>,
+        sync_batch_size: usize,
+    ) -> Result<Self, RemoteCapError> {
         let root = root.as_ref().to_path_buf();
         let consumed_dir = root.join("consumed");
         std::fs::create_dir_all(&consumed_dir)
             .map_err(|source| replay_store_error("create", &consumed_dir, source))?;
         sync_directory(&consumed_dir)?;
-        Ok(Self { consumed_dir })
+        Ok(Self {
+            inner: Arc::new(DurableReplayStoreInner {
+                consumed_dir,
+                pending_syncs: Mutex::new(ReplayMarkerSyncBatch::default()),
+                sync_batch_size: sync_batch_size.clamp(1, MAX_REPLAY_MARKER_SYNC_BATCH),
+            }),
+        })
     }
 
     fn contains_consumed(&self, replay_key: &str) -> Result<bool, RemoteCapError> {
@@ -532,14 +566,54 @@ impl DurableReplayStore {
 
         marker
             .write_all(durable_replay_record(cap, replay_key).as_bytes())
-            .and_then(|()| marker.sync_all())
-            .map_err(|source| replay_store_error("fsync marker", &path, source))?;
-        sync_directory(&self.consumed_dir)?;
+            .map_err(|source| replay_store_error("write marker", &path, source))?;
+
+        let should_flush = {
+            let mut pending = self.inner.pending_syncs.lock().map_err(|_| {
+                replay_store_poisoned_lock_error("queue marker sync", &self.inner.consumed_dir)
+            })?;
+            pending.markers.push(marker);
+            pending.markers.len() >= self.inner.sync_batch_size
+        };
+
+        if should_flush {
+            self.inner.flush_pending_markers()?;
+        }
         Ok(true)
     }
 
     fn marker_path(&self, replay_key: &str) -> PathBuf {
-        self.consumed_dir.join(format!("{replay_key}.seen"))
+        self.inner.consumed_dir.join(format!("{replay_key}.seen"))
+    }
+
+    #[cfg(test)]
+    fn pending_marker_sync_count(&self) -> usize {
+        self.inner
+            .pending_syncs
+            .lock()
+            .map(|pending| pending.markers.len())
+            .unwrap_or(0)
+    }
+}
+
+impl DurableReplayStoreInner {
+    fn flush_pending_markers(&self) -> Result<(), RemoteCapError> {
+        let markers = {
+            let mut pending = self.pending_syncs.lock().map_err(|_| {
+                replay_store_poisoned_lock_error("flush marker sync batch", &self.consumed_dir)
+            })?;
+            if pending.markers.is_empty() {
+                return Ok(());
+            }
+            std::mem::take(&mut pending.markers)
+        };
+
+        for marker in &markers {
+            marker.sync_all().map_err(|source| {
+                replay_store_error("fsync marker batch", &self.consumed_dir, source)
+            })?;
+        }
+        sync_directory(&self.consumed_dir)
     }
 }
 
@@ -2555,6 +2629,24 @@ fn replay_store_error(action: &str, path: &Path, source: std::io::Error) -> Remo
     }
 }
 
+fn replay_store_poisoned_lock_error(action: &str, path: &Path) -> RemoteCapError {
+    RemoteCapError::CryptoEngineUnavailable {
+        detail: format!(
+            "remote capability replay store {action} failed for {}: lock poisoned",
+            path.display()
+        ),
+    }
+}
+
+fn replay_marker_sync_batch_size() -> usize {
+    std::env::var(REMOTE_CAP_REPLAY_SYNC_BATCH_ENV)
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .filter(|size| *size > 0)
+        .map(|size| size.min(MAX_REPLAY_MARKER_SYNC_BATCH))
+        .unwrap_or(DEFAULT_REPLAY_MARKER_SYNC_BATCH)
+}
+
 fn sync_directory(path: &Path) -> Result<(), RemoteCapError> {
     std::fs::File::open(path)
         .and_then(|directory| directory.sync_all())
@@ -3049,6 +3141,68 @@ mod tests {
             .expect_err("replay after gate restart must fail");
 
         assert_eq!(err.code(), "REMOTECAP_REPLAY");
+    }
+
+    #[test]
+    fn durable_replay_store_batches_marker_syncs_until_threshold() {
+        let provider = CapabilityProvider::new("secret-a").expect("valid provider");
+        let (first_cap, _) = provider
+            .issue(
+                "operator",
+                scope(),
+                1_700_000_000,
+                300,
+                true,
+                true,
+                "trace-batched-replay-first",
+            )
+            .expect("first issue");
+        let (second_cap, _) = provider
+            .issue(
+                "operator",
+                scope(),
+                1_700_000_001,
+                300,
+                true,
+                true,
+                "trace-batched-replay-second",
+            )
+            .expect("second issue");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = DurableReplayStore::open_with_sync_batch_size(
+            dir.path().join("remote-cap-replay-batched"),
+            2,
+        )
+        .expect("open durable store");
+
+        let first_replay_key = replay_store_key(&first_cap);
+        assert!(store
+            .consume(&first_cap, &first_replay_key)
+            .expect("first consume writes marker"));
+        assert_eq!(
+            store.pending_marker_sync_count(),
+            1,
+            "first marker should be queued for batched fsync"
+        );
+        assert!(store
+            .contains_consumed(&first_replay_key)
+            .expect("queued marker remains visible"));
+
+        let second_replay_key = replay_store_key(&second_cap);
+        assert!(store
+            .consume(&second_cap, &second_replay_key)
+            .expect("second consume writes marker"));
+        assert_eq!(
+            store.pending_marker_sync_count(),
+            0,
+            "batch threshold should flush queued marker fsyncs together"
+        );
+        assert!(
+            !store
+                .consume(&first_cap, &first_replay_key)
+                .expect("existing marker is still replay-protected"),
+            "duplicate single-use token should still fail through create_new"
+        );
     }
 
     #[test]
