@@ -20,10 +20,11 @@ import json
 import re
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
-from pathlib import Path
+
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "control_plane" / "control_epoch.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_14" / "bd-3hdv_contract.md"
@@ -125,7 +126,7 @@ def check_content(path, patterns, category):
             results.append({"id": f"CEP-{category.upper()}-MISSING",
                            "check": f"{category}: {p}", "pass": False, "detail": "file missing"})
         return results
-    content = path.read_text()
+    content = path.read_text(encoding="utf-8")
     for p in patterns:
         found = p in content
         short = p[:30].upper().replace(' ', '-').replace('(', '').replace(')', '')
@@ -142,7 +143,7 @@ def check_module_registered():
     if not MOD_RS.is_file():
         return {"id": "CEP-MOD-REG", "check": "module registered in mod.rs",
                 "pass": False, "detail": "mod.rs missing"}
-    content = MOD_RS.read_text()
+    content = MOD_RS.read_text(encoding="utf-8")
     found = "control_epoch" in content
     return {
         "id": "CEP-MOD-REG",
@@ -156,7 +157,7 @@ def check_traits(path):
     results = []
     if not path.is_file():
         return results
-    content = path.read_text()
+    content = path.read_text(encoding="utf-8")
     for trait_name in REQUIRED_TRAITS:
         found = trait_name in content
         results.append({
@@ -172,7 +173,7 @@ def check_test_count(path):
     if not path.is_file():
         return {"id": "CEP-TEST-COUNT", "check": "test count",
                 "pass": False, "detail": "file missing"}
-    content = path.read_text()
+    content = path.read_text(encoding="utf-8")
     count = len(re.findall(r"#\[test\]", content))
     return {
         "id": "CEP-TEST-COUNT",
@@ -238,22 +239,27 @@ def run_checks():
 
 def self_test():
     result = run_checks()
-    assert isinstance(result, dict), "Result must be a dict"
-    assert result["bead"] == "bd-3hdv"
-    assert "checks" in result
-    assert isinstance(result["checks"], list)
-    assert len(result["checks"]) > 0
-    assert "verdict" in result
-    assert "summary" in result
+    _require(isinstance(result, dict), "result must be a dict")
+    _require(result["bead"] == "bd-3hdv", "unexpected bead id")
+    _require("checks" in result, "checks missing")
+    _require(isinstance(result["checks"], list), "checks must be a list")
+    _require(len(result["checks"]) > 0, "checks must not be empty")
+    _require("verdict" in result, "verdict missing")
+    _require("summary" in result, "summary missing")
     print(f"self_test passed: {result['summary']['passing_checks']}/{result['summary']['total_checks']} checks")
     return result
 
 
-def main():
-    logger = configure_test_logging("check_control_epoch")
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise RuntimeError(message)
+
+
+def main() -> int:
+    configure_test_logging("check_control_epoch")
     if "--self-test" in sys.argv:
         self_test()
-        return
+        return 0
 
     result = run_checks()
 
@@ -269,8 +275,8 @@ def main():
             status = "PASS" if check["pass"] else "FAIL"
             print(f"  [{status}] {check['check']}: {check['detail']}")
 
-    sys.exit(0 if result["verdict"] == "PASS" else 1)
+    return 0 if result["verdict"] == "PASS" else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -12,7 +12,7 @@ IMPL = ROOT / "crates" / "franken-node" / "src" / "control_plane" / "control_epo
 SPEC = ROOT / "docs" / "specs" / "section_10_14" / "bd-3hdv_contract.md"
 
 sys.path.insert(0, str(ROOT / "scripts"))
-import check_control_epoch as cce
+import check_control_epoch as cce  # noqa: E402
 
 
 class TestFileExistence(unittest.TestCase):
@@ -28,7 +28,7 @@ class TestFileExistence(unittest.TestCase):
 
 class TestTypePresence(unittest.TestCase):
     def setUp(self):
-        self.content = IMPL.read_text()
+        self.content = IMPL.read_text(encoding="utf-8")
 
     def test_control_epoch_struct(self):
         self.assertIn("pub struct ControlEpoch", self.content)
@@ -45,7 +45,7 @@ class TestTypePresence(unittest.TestCase):
 
 class TestMethodPresence(unittest.TestCase):
     def setUp(self):
-        self.content = IMPL.read_text()
+        self.content = IMPL.read_text(encoding="utf-8")
 
     def test_epoch_advance(self):
         self.assertIn("fn epoch_advance(", self.content)
@@ -65,7 +65,7 @@ class TestMethodPresence(unittest.TestCase):
 
 class TestInvariants(unittest.TestCase):
     def setUp(self):
-        self.content = IMPL.read_text()
+        self.content = IMPL.read_text(encoding="utf-8")
 
     def test_monotonic_invariant(self):
         self.assertIn("INV-EPOCH-MONOTONIC", self.content)
@@ -82,7 +82,7 @@ class TestInvariants(unittest.TestCase):
 
 class TestErrorCodes(unittest.TestCase):
     def setUp(self):
-        self.content = IMPL.read_text()
+        self.content = IMPL.read_text(encoding="utf-8")
 
     def test_regression_code(self):
         self.assertIn("EPOCH_REGRESSION", self.content)
@@ -96,7 +96,7 @@ class TestErrorCodes(unittest.TestCase):
 
 class TestRequiredTests(unittest.TestCase):
     def setUp(self):
-        self.content = IMPL.read_text()
+        self.content = IMPL.read_text(encoding="utf-8")
 
     def test_monotonicity_tests(self):
         for name in ["thousand_advances_monotonic", "sequential_advances", "single_advance"]:
@@ -119,7 +119,7 @@ class TestRequiredTests(unittest.TestCase):
 
 class TestSpecContent(unittest.TestCase):
     def setUp(self):
-        self.content = SPEC.read_text()
+        self.content = SPEC.read_text(encoding="utf-8")
 
     def test_control_epoch_mentioned(self):
         self.assertIn("ControlEpoch", self.content)
@@ -153,7 +153,7 @@ class TestSelfTestAndCli(unittest.TestCase):
             check=False,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        payload = json.loads(completed.stdout)
+        payload = json.JSONDecoder().decode(completed.stdout)
         self.assertEqual(payload["verdict"], "PASS")
         self.assertEqual(payload["bead"], "bd-3hdv")
 
