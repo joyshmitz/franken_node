@@ -3,20 +3,17 @@
 import json
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-import migrate_report
-import sys
-from pathlib import Path
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import migrate_report  # noqa: E402
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
+
 
 def main():
-    logger = configure_test_logging("check_migrate_report")
+    configure_test_logging("check_migrate_report")
     json_output = "--json" in sys.argv
     result = migrate_report.self_test()
     if json_output:
