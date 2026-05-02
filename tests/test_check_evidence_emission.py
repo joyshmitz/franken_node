@@ -12,7 +12,7 @@ IMPL = ROOT / "crates" / "franken-node" / "src" / "policy" / "evidence_emission.
 SPEC = ROOT / "docs" / "specs" / "section_10_14" / "bd-oolt_contract.md"
 
 sys.path.insert(0, str(ROOT / "scripts"))
-import check_evidence_emission as cee
+import check_evidence_emission as cee  # noqa: E402
 
 
 class TestFileExistence(unittest.TestCase):
@@ -115,7 +115,7 @@ class TestSelfTestAndCli(unittest.TestCase):
             cwd=str(ROOT), check=False,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        payload = json.loads(completed.stdout)
+        payload = json.JSONDecoder().decode(completed.stdout)
         self.assertEqual(payload["verdict"], "PASS")
         self.assertEqual(payload["bead_id"], "bd-oolt")
 
