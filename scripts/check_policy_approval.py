@@ -5,15 +5,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import sys
-from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
+
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 
 SPEC_PATH = ROOT / "docs/specs/section_10_5/bd-sh3_contract.md"
 RUST_IMPL_PATH = ROOT / "crates/franken-node/src/policy/approval_workflow.rs"
@@ -282,22 +282,29 @@ def write_summary(evidence: dict[str, Any]) -> None:
 
 def self_test() -> bool:
     evidence = run_all_checks()
-    assert isinstance(evidence, dict)
-    assert evidence["bead_id"] == "bd-sh3"
-    assert "checks" in evidence
-    assert "summary" in evidence
+    if not isinstance(evidence, dict):
+        raise AssertionError("evidence must be a dictionary")
+    if evidence.get("bead_id") != "bd-sh3":
+        raise AssertionError("evidence bead_id mismatch")
+    for key in ("checks", "summary"):
+        if key not in evidence:
+            raise AssertionError(f"missing evidence key: {key}")
     expected = [
         "files", "spec_invariants", "rust_symbols", "event_codes",
         "error_codes", "engine_methods", "tests", "states",
         "mod_registration", "hash_chain", "role_separation", "rollback_mechanism",
     ]
+    missing = []
     for cat in expected:
-        assert cat in evidence["checks"], f"missing check: {cat}"
+        if cat not in evidence["checks"]:
+            missing.append(cat)
+    if missing:
+        raise AssertionError(f"missing checks: {', '.join(missing)}")
     return True
 
 
 def main() -> None:
-    logger = configure_test_logging("check_policy_approval")
+    configure_test_logging("check_policy_approval")
     parser = argparse.ArgumentParser(description="Verify bd-sh3 policy approval workflows")
     parser.add_argument("--json", action="store_true", help="Output JSON evidence")
     parser.add_argument("--self-test", action="store_true", help="Run self-test")

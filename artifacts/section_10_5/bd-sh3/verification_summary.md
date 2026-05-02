@@ -1,7 +1,7 @@
 # Verification Summary: Policy Change Approval Workflows with Cryptographic Audit Trail
 
 **Bead:** bd-sh3 | **Section:** 10.5
-**Timestamp:** 2026-03-25T00:23:30.847188+00:00
+**Timestamp:** 2026-05-02T15:20:01.468802+00:00
 **Overall:** PASS
 **Checks:** 12/12 passed
 
@@ -11,8 +11,8 @@
 - **error_codes:** PASS
 - **event_codes:** PASS
 - **File spec:** PASS (docs/specs/section_10_5/bd-sh3_contract.md, 2767 bytes)
-- **File rust_impl:** PASS (crates/franken-node/src/policy/approval_workflow.rs, 64814 bytes)
-- **File mod_rs:** PASS (crates/franken-node/src/policy/mod.rs, 491 bytes)
+- **File rust_impl:** PASS (crates/franken-node/src/policy/approval_workflow.rs, 80891 bytes)
+- **File mod_rs:** PASS (crates/franken-node/src/policy/mod.rs, 80675 bytes)
 - **hash_chain:** PASS
 - **mod_registration:** PASS
 - **role_separation:** PASS
