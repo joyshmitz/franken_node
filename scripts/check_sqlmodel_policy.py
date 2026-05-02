@@ -7,15 +7,13 @@ import argparse
 import hashlib
 import json
 import re
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
-import sys
-from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 POLICY_DOC_PATH = ROOT / "docs" / "specs" / "sqlmodel_rust_usage_policy.md"
 POLICY_MATRIX_PATH = ROOT / "artifacts" / "10.16" / "sqlmodel_policy_matrix.json"
@@ -69,10 +67,14 @@ def _trace_id(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _load_json(path: Path) -> Any:
+    return json.JSONDecoder().decode(path.read_text(encoding="utf-8"))
+
+
 def _load_persistence_domains(source_matrix_path: Path) -> set[str]:
     if not source_matrix_path.is_file():
         raise FileNotFoundError(f"missing source persistence matrix: {source_matrix_path}")
-    source = json.loads(source_matrix_path.read_text(encoding="utf-8"))
+    source = _load_json(source_matrix_path)
     classes = source.get("persistence_classes", [])
     if not isinstance(classes, list):
         raise ValueError("source persistence matrix persistence_classes must be a list")
@@ -285,6 +287,12 @@ def evaluate_policy(
     return success, report
 
 
+def _configure_logging() -> None:
+    from scripts.lib.test_logger import configure_test_logging
+
+    configure_test_logging("check_sqlmodel_policy")
+
+
 def run_checks(
     policy_matrix_path: Path = POLICY_MATRIX_PATH,
     policy_doc_path: Path = POLICY_DOC_PATH,
@@ -295,7 +303,7 @@ def run_checks(
     if not policy_doc_path.is_file():
         raise FileNotFoundError(f"missing sqlmodel policy doc: {policy_doc_path}")
 
-    policy_matrix = json.loads(policy_matrix_path.read_text(encoding="utf-8"))
+    policy_matrix = _load_json(policy_matrix_path)
     policy_doc_text = policy_doc_path.read_text(encoding="utf-8")
     expected_domains = _load_persistence_domains(source_persistence_matrix_path)
 
@@ -370,7 +378,8 @@ def self_test() -> tuple[bool, dict[str, Any]]:
             policy_doc.read_text(encoding="utf-8"),
             _load_persistence_domains(source_matrix),
         )
-        assert ok, f"self_test expected pass but got errors: {report['errors']}"
+        if not ok:
+            raise RuntimeError(f"self_test expected pass but got errors: {report['errors']}")
 
         # Integration behavior: new persistence domain should fail if unclassified.
         source_matrix.write_text(
@@ -391,14 +400,18 @@ def self_test() -> tuple[bool, dict[str, Any]]:
             policy_doc.read_text(encoding="utf-8"),
             _load_persistence_domains(source_matrix),
         )
-        assert not ok_missing
-        assert any("missing sqlmodel classification" in e for e in report_missing["errors"])
+        if ok_missing:
+            raise RuntimeError("self_test expected missing-domain scenario to fail")
+        if not any("missing sqlmodel classification" in e for e in report_missing["errors"]):
+            raise RuntimeError(
+                f"self_test missing-domain report lacked classification error: {report_missing}"
+            )
 
     return True, {"ok": True, "self_test": "passed"}
 
 
 def main() -> int:
-    logger = configure_test_logging("check_sqlmodel_policy")
+    _configure_logging()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON output")
     parser.add_argument("--self-test", action="store_true", help="run internal self-test")

@@ -2,22 +2,30 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
+import runpy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase, main
 
 ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts" / "check_sqlmodel_policy.py"
 
-spec = importlib.util.spec_from_file_location(
-    "check_sqlmodel_policy",
-    ROOT / "scripts" / "check_sqlmodel_policy.py",
-)
-mod = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = mod
-spec.loader.exec_module(mod)
+
+class ScriptNamespace:
+    def __init__(self, script_globals: dict[str, object]) -> None:
+        object.__setattr__(self, "_script_globals", script_globals)
+
+    def __getattr__(self, name: str) -> object:
+        return self._script_globals[name]
+
+
+script_globals = runpy.run_path(str(SCRIPT))
+mod = ScriptNamespace(script_globals["run_checks"].__globals__)
+
+
+def load_json_file(path: Path) -> dict[str, object]:
+    return json.JSONDecoder().decode(path.read_text(encoding="utf-8"))
 
 
 class TestFixturePaths(TestCase):
@@ -46,8 +54,8 @@ class TestVerification(TestCase):
         self.assertEqual(payload["self_test"], "passed")
 
     def test_missing_domain_classification_is_rejected(self) -> None:
-        policy = json.loads(mod.POLICY_MATRIX_PATH.read_text(encoding="utf-8"))
-        source = json.loads(mod.PERSISTENCE_MATRIX_PATH.read_text(encoding="utf-8"))
+        policy = load_json_file(mod.POLICY_MATRIX_PATH)
+        source = load_json_file(mod.PERSISTENCE_MATRIX_PATH)
         source["persistence_classes"].append({"domain": "new_unclassified_domain"})
 
         with TemporaryDirectory(prefix="sqlmodel-policy-test-") as tmp:
@@ -70,7 +78,7 @@ class TestVerification(TestCase):
         self.assertTrue(any("missing sqlmodel classification" in err for err in report["errors"]))
 
     def test_mandatory_domain_without_model_is_rejected(self) -> None:
-        policy = json.loads(mod.POLICY_MATRIX_PATH.read_text(encoding="utf-8"))
+        policy = load_json_file(mod.POLICY_MATRIX_PATH)
         policy["domains"][0]["typed_model_defined"] = False
 
         with TemporaryDirectory(prefix="sqlmodel-policy-test-") as tmp:
@@ -88,7 +96,7 @@ class TestVerification(TestCase):
         self.assertTrue(any("mandatory domain must set typed_model_defined=true" in e for e in report["errors"]))
 
     def test_model_ownership_conflict_is_rejected(self) -> None:
-        policy = json.loads(mod.POLICY_MATRIX_PATH.read_text(encoding="utf-8"))
+        policy = load_json_file(mod.POLICY_MATRIX_PATH)
         # Force a duplicate model name with different owner module.
         policy["domains"][1]["model_name"] = policy["domains"][0]["model_name"]
 
@@ -107,7 +115,7 @@ class TestVerification(TestCase):
         self.assertTrue(any("model ownership conflict" in e for e in report["errors"]))
 
     def test_invalid_classification_is_rejected(self) -> None:
-        policy = json.loads(mod.POLICY_MATRIX_PATH.read_text(encoding="utf-8"))
+        policy = load_json_file(mod.POLICY_MATRIX_PATH)
         policy["domains"][0]["classification"] = "required"
 
         with TemporaryDirectory(prefix="sqlmodel-policy-test-") as tmp:
