@@ -13,7 +13,7 @@ stable, machine-parseable error codes.
 
 - **Connector**: An extension integration class that bridges external functionality
   into the franken_node runtime via the extension host.
-- **Lifecycle state**: One of eight mutually exclusive states a connector occupies.
+- **Lifecycle state**: One of nine mutually exclusive states a connector occupies.
 - **Transition**: A directed edge in the FSM graph from one state to another.
 - **Illegal transition**: Any (source, target) pair not in the permitted set.
 
@@ -27,6 +27,7 @@ stable, machine-parseable error codes.
 | `Configured` | happy-path | Configuration applied and validated.              |
 | `Active`     | happy-path | Connector is serving requests.                   |
 | `Paused`     | non-happy  | Temporarily suspended by operator or policy.     |
+| `Cancelling` | non-happy  | Three-phase cancellation is draining work.       |
 | `Stopped`    | non-happy  | Gracefully stopped; may be reconfigured.         |
 | `Failed`     | non-happy  | Error state requiring investigation or reset.    |
 
@@ -45,16 +46,20 @@ Legal transitions (source → target):
 | Configured   | Active       | Activation succeeds              |
 | Configured   | Failed       | Activation fails                 |
 | Active       | Paused       | Operator/policy pause            |
+| Active       | Cancelling   | Cancellation requested           |
 | Active       | Stopped      | Operator/policy stop             |
 | Active       | Failed       | Runtime failure                  |
 | Paused       | Active       | Resume                           |
+| Paused       | Cancelling   | Cancellation requested while paused |
 | Paused       | Stopped      | Stop while paused                |
 | Paused       | Failed       | Failure while paused             |
+| Cancelling   | Stopped      | Cancellation drained and finalized |
+| Cancelling   | Failed       | Cancellation failed              |
 | Stopped      | Configured   | Reconfigure for restart          |
 | Stopped      | Failed       | Cleanup failure                  |
 | Failed       | Discovered   | Reset/retry from scratch         |
 
-Total: 17 legal transitions out of 56 possible (8×7 excluding self-loops).
+Total: 21 legal transitions out of 72 possible (9×8 excluding self-loops).
 
 ## Invariants
 
@@ -77,7 +82,7 @@ Total: 17 legal transitions out of 56 possible (8×7 excluding self-loops).
 
 ```rust
 pub enum ConnectorState {
-    Discovered, Verified, Installed, Configured, Active, Paused, Stopped, Failed,
+    Discovered, Verified, Installed, Configured, Active, Paused, Cancelling, Stopped, Failed,
 }
 
 pub fn transition(from: ConnectorState, to: ConnectorState) -> Result<ConnectorState, LifecycleError>;

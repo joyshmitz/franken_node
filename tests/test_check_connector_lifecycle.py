@@ -10,11 +10,11 @@ import check_connector_lifecycle as cl
 
 
 class TestFSMSpec(unittest.TestCase):
-    def test_eight_states(self):
-        self.assertEqual(len(cl.STATES), 8)
+    def test_nine_states(self):
+        self.assertEqual(len(cl.STATES), 9)
 
-    def test_seventeen_legal_transitions(self):
-        self.assertEqual(len(cl.LEGAL_TRANSITIONS), 17)
+    def test_twenty_one_legal_transitions(self):
+        self.assertEqual(len(cl.LEGAL_TRANSITIONS), 21)
 
     def test_no_self_transitions_in_spec(self):
         for s, t in cl.LEGAL_TRANSITIONS:
@@ -34,9 +34,9 @@ class TestCheckFSMCompleteness(unittest.TestCase):
     def test_passes(self):
         result = cl.check_fsm_completeness()
         self.assertEqual(result["status"], "PASS")
-        self.assertEqual(result["details"]["total_pairs"], 56)
-        self.assertEqual(result["details"]["legal"], 17)
-        self.assertEqual(result["details"]["illegal"], 39)
+        self.assertEqual(result["details"]["total_pairs"], 72)
+        self.assertEqual(result["details"]["legal"], 21)
+        self.assertEqual(result["details"]["illegal"], 51)
 
 
 class TestCheckNoSelfTransitions(unittest.TestCase):
@@ -91,8 +91,8 @@ class TestCheckTransitionMatrix(unittest.TestCase):
     def test_passes(self):
         result = cl.check_transition_matrix_artifact()
         self.assertEqual(result["status"], "PASS")
-        self.assertEqual(result["details"]["total_entries"], 56)
-        self.assertEqual(result["details"]["legal_count"], 17)
+        self.assertEqual(result["details"]["total_entries"], 72)
+        self.assertEqual(result["details"]["legal_count"], 21)
 
 
 class TestSelfTest(unittest.TestCase):
@@ -122,6 +122,17 @@ class TestIllegalTransitions(unittest.TestCase):
             if state == "failed":
                 continue
             self.assertIn((state, "failed"), cl.LEGAL_TRANSITIONS)
+
+    def test_active_and_paused_can_enter_cancelling(self):
+        self.assertIn(("active", "cancelling"), cl.LEGAL_TRANSITIONS)
+        self.assertIn(("paused", "cancelling"), cl.LEGAL_TRANSITIONS)
+
+    def test_cancelling_can_only_stop_or_fail(self):
+        cancelling_targets = sorted(
+            t for s, t in cl.LEGAL_TRANSITIONS if s == "cancelling"
+        )
+        self.assertEqual(cancelling_targets, ["failed", "stopped"])
+        self.assertNotIn(("cancelling", "active"), cl.LEGAL_TRANSITIONS)
 
 
 if __name__ == "__main__":

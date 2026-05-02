@@ -6,7 +6,7 @@ from pathlib import Path
 
 STATES = [
     "discovered", "verified", "installed", "configured",
-    "active", "paused", "stopped", "failed",
+    "active", "paused", "cancelling", "stopped", "failed",
 ]
 
 LEGAL_TRANSITIONS = {
@@ -19,11 +19,15 @@ LEGAL_TRANSITIONS = {
     ("configured", "active"),
     ("configured", "failed"),
     ("active", "paused"),
+    ("active", "cancelling"),
     ("active", "stopped"),
     ("active", "failed"),
     ("paused", "active"),
+    ("paused", "cancelling"),
     ("paused", "stopped"),
     ("paused", "failed"),
+    ("cancelling", "stopped"),
+    ("cancelling", "failed"),
     ("stopped", "configured"),
     ("stopped", "failed"),
     ("failed", "discovered"),

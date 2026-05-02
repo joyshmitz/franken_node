@@ -3,25 +3,25 @@
   "bead": "bd-2gh",
   "section": "10.13",
   "verdict": "PASS",
-  "timestamp": "2026-02-20T10:31:49Z",
+  "timestamp": "2026-05-02T00:00:00Z",
   "checks": [
-    {"id": "LIFECYCLE-COMPLETE", "status": "PASS", "details": {"total_pairs": 56, "legal": 17, "illegal": 39}},
+    {"id": "LIFECYCLE-COMPLETE", "status": "PASS", "details": {"total_pairs": 72, "legal": 21, "illegal": 51}},
     {"id": "LIFECYCLE-NO-SELF", "status": "PASS"},
     {"id": "LIFECYCLE-REACHABLE", "status": "PASS"},
     {"id": "LIFECYCLE-OUTGOING", "status": "PASS"},
     {"id": "LIFECYCLE-HAPPY-PATH", "status": "PASS"},
     {"id": "LIFECYCLE-RECOVERY", "status": "PASS"},
     {"id": "LIFECYCLE-IMPL", "status": "PASS"},
-    {"id": "LIFECYCLE-TESTS", "status": "PASS", "details": {"rust_tests": 10, "python_tests": 21}},
-    {"id": "LIFECYCLE-MATRIX", "status": "PASS", "details": {"total_entries": 56, "legal_count": 17}},
+    {"id": "LIFECYCLE-TESTS", "status": "PASS", "details": {"rust_tests": 63, "python_tests": 23}},
+    {"id": "LIFECYCLE-MATRIX", "status": "PASS", "details": {"total_entries": 72, "legal_count": 21}},
     {"id": "LIFECYCLE-SPEC", "status": "PASS"}
   ],
   "summary": {
     "total_checks": 10,
     "passing_checks": 10,
     "failing_checks": 0,
-    "rust_unit_tests": 10,
-    "python_unit_tests": 21
+    "rust_unit_tests": 63,
+    "python_unit_tests": 23
   },
   "artifacts": {
     "spec": "docs/specs/section_10_13/bd-2gh_contract.md",

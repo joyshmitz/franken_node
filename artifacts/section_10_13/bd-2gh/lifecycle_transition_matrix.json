@@ -8,12 +8,13 @@
     "configured",
     "active",
     "paused",
+    "cancelling",
     "stopped",
     "failed"
   ],
-  "total_transitions": 56,
-  "legal_count": 17,
-  "illegal_count": 39,
+  "total_transitions": 72,
+  "legal_count": 21,
+  "illegal_count": 51,
   "transitions": [
     {
       "from": "discovered",
@@ -42,6 +43,11 @@
     },
     {
       "from": "discovered",
+      "to": "cancelling",
+      "legal": false
+    },
+    {
+      "from": "discovered",
       "to": "stopped",
       "legal": false
     },
@@ -77,6 +83,11 @@
     },
     {
       "from": "verified",
+      "to": "cancelling",
+      "legal": false
+    },
+    {
+      "from": "verified",
       "to": "stopped",
       "legal": false
     },
@@ -112,6 +123,11 @@
     },
     {
       "from": "installed",
+      "to": "cancelling",
+      "legal": false
+    },
+    {
+      "from": "installed",
       "to": "stopped",
       "legal": false
     },
@@ -147,6 +163,11 @@
     },
     {
       "from": "configured",
+      "to": "cancelling",
+      "legal": false
+    },
+    {
+      "from": "configured",
       "to": "stopped",
       "legal": false
     },
@@ -182,6 +203,11 @@
     },
     {
       "from": "active",
+      "to": "cancelling",
+      "legal": true
+    },
+    {
+      "from": "active",
       "to": "stopped",
       "legal": true
     },
@@ -217,6 +243,11 @@
     },
     {
       "from": "paused",
+      "to": "cancelling",
+      "legal": true
+    },
+    {
+      "from": "paused",
       "to": "stopped",
       "legal": true
     },
@@ -226,6 +257,46 @@
       "legal": true
     },
     {
+      "from": "cancelling",
+      "to": "discovered",
+      "legal": false
+    },
+    {
+      "from": "cancelling",
+      "to": "verified",
+      "legal": false
+    },
+    {
+      "from": "cancelling",
+      "to": "installed",
+      "legal": false
+    },
+    {
+      "from": "cancelling",
+      "to": "configured",
+      "legal": false
+    },
+    {
+      "from": "cancelling",
+      "to": "active",
+      "legal": false
+    },
+    {
+      "from": "cancelling",
+      "to": "paused",
+      "legal": false
+    },
+    {
+      "from": "cancelling",
+      "to": "stopped",
+      "legal": true
+    },
+    {
+      "from": "cancelling",
+      "to": "failed",
+      "legal": true
+    },
+    {
       "from": "stopped",
       "to": "discovered",
       "legal": false
@@ -253,6 +324,11 @@
     {
       "from": "stopped",
       "to": "paused",
+      "legal": false
+    },
+    {
+      "from": "stopped",
+      "to": "cancelling",
       "legal": false
     },
     {
@@ -288,6 +364,11 @@
     {
       "from": "failed",
       "to": "paused",
+      "legal": false
+    },
+    {
+      "from": "failed",
+      "to": "cancelling",
       "legal": false
     },
     {

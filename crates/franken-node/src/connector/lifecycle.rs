@@ -1,6 +1,6 @@
 //! Connector lifecycle FSM.
 //!
-//! Defines the eight lifecycle states a connector can occupy and the
+//! Defines the nine lifecycle states a connector can occupy and the
 //! deterministic transition table that governs legal state changes.
 //! Illegal transitions are rejected with stable error codes.
 

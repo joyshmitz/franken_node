@@ -15,16 +15,17 @@
 
 ## Test Results
 
-- Rust unit tests: 10 passed
-- Python unit tests: 21 passed
+- Rust lifecycle tests: 63 source-level `#[test]` cases
+- Python unit tests: 23 passed
 - Verification checks: 10/10 PASS
 
 ## FSM Summary
 
-- States: 8 (discovered, verified, installed, configured, active, paused, stopped, failed)
-- Legal transitions: 17 out of 56 non-self pairs
-- Illegal transitions: 39 (all rejected with stable error codes)
+- States: 9 (discovered, verified, installed, configured, active, paused, cancelling, stopped, failed)
+- Legal transitions: 21 out of 72 non-self pairs
+- Illegal transitions: 51 (all rejected with stable error codes)
 - Happy path: discovered → verified → installed → configured → active
+- Cancellation path: active/paused → cancelling → stopped/failed
 - Recovery path: failed → discovered
 
 ## Verdict: PASS

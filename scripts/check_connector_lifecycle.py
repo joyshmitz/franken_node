@@ -1,4 +1,3 @@
-import os
 #!/usr/bin/env python3
 """
 Connector Lifecycle FSM Verification (bd-2gh).
@@ -13,19 +12,19 @@ Usage:
 import json
 import subprocess
 import sys
-from pathlib import Path
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 from datetime import datetime, timezone
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 
 
 # --- FSM specification (mirrors Rust implementation) ---
 
 STATES = [
     "discovered", "verified", "installed", "configured",
-    "active", "paused", "stopped", "failed",
+    "active", "paused", "cancelling", "stopped", "failed",
 ]
 
 LEGAL_TRANSITIONS = {
@@ -38,11 +37,15 @@ LEGAL_TRANSITIONS = {
     ("configured", "active"),
     ("configured", "failed"),
     ("active", "paused"),
+    ("active", "cancelling"),
     ("active", "stopped"),
     ("active", "failed"),
     ("paused", "active"),
+    ("paused", "cancelling"),
     ("paused", "stopped"),
     ("paused", "failed"),
+    ("cancelling", "stopped"),
+    ("cancelling", "failed"),
     ("stopped", "configured"),
     ("stopped", "failed"),
     ("failed", "discovered"),
@@ -53,8 +56,9 @@ LEGAL_TARGETS = {
     "verified": ["installed", "failed"],
     "installed": ["configured", "failed"],
     "configured": ["active", "failed"],
-    "active": ["paused", "stopped", "failed"],
-    "paused": ["active", "stopped", "failed"],
+    "active": ["paused", "cancelling", "stopped", "failed"],
+    "paused": ["active", "cancelling", "stopped", "failed"],
+    "cancelling": ["stopped", "failed"],
     "stopped": ["configured", "failed"],
     "failed": ["discovered"],
 }
@@ -157,7 +161,7 @@ def check_rust_tests_pass() -> dict:
             capture_output=True, text=True, timeout=3600, cwd=str(ROOT),
         )
         lines = result.stdout.strip().split("\n")
-        summary = [l for l in lines if "test result:" in l]
+        summary = [line for line in lines if "test result:" in line]
         passed = result.returncode == 0
         return {
             "id": "LIFECYCLE-TESTS",
@@ -179,7 +183,7 @@ def check_transition_matrix_artifact() -> dict:
         legal_count = sum(1 for e in entries if e.get("legal"))
         return {
             "id": "LIFECYCLE-MATRIX",
-            "status": "PASS" if len(entries) == 56 and legal_count == 17 else "FAIL",
+            "status": "PASS" if len(entries) == 72 and legal_count == 21 else "FAIL",
             "details": {"total_entries": len(entries), "legal_count": legal_count},
         }
     except Exception as e:
@@ -232,7 +236,7 @@ def self_test() -> dict:
 
 
 def main():
-    logger = configure_test_logging("check_connector_lifecycle")
+    configure_test_logging("check_connector_lifecycle")
     json_output = "--json" in sys.argv
     result = self_test()
 
