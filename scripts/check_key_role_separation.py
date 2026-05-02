@@ -23,10 +23,11 @@ import json
 import re
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
-from pathlib import Path
+
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "control_plane" / "key_role_separation.rs"
 SPEC = ROOT / "docs" / "specs" / "section_10_10" / "bd-364_contract.md"
@@ -171,7 +172,7 @@ def check_content(path, patterns, category):
                 "detail": "file missing",
             })
         return results
-    content = path.read_text()
+    content = path.read_text(encoding="utf-8")
     for p in patterns:
         found = p in content
         short = p[:30].upper().replace(' ', '-').replace('(', '').replace(')', '')
@@ -188,7 +189,7 @@ def check_module_registered():
     if not MOD_RS.is_file():
         return {"id": "KRS-MOD-REG", "check": "module registered in mod.rs",
                 "pass": False, "detail": "mod.rs missing"}
-    content = MOD_RS.read_text()
+    content = MOD_RS.read_text(encoding="utf-8")
     found = "key_role_separation" in content
     return {
         "id": "KRS-MOD-REG",
@@ -205,7 +206,7 @@ def check_role_tags(path):
         results.append({"id": "KRS-ROLE-TAGS", "check": "role tags",
                         "pass": False, "detail": "file missing"})
         return results
-    content = path.read_text()
+    content = path.read_text(encoding="utf-8")
     for role, tag in [("Signing", "0x00, 0x01"), ("Encryption", "0x00, 0x02"),
                       ("Issuance", "0x00, 0x03"), ("Attestation", "0x00, 0x04")]:
         found = tag in content
@@ -222,7 +223,7 @@ def check_test_count(path):
     if not path.is_file():
         return {"id": "KRS-TEST-COUNT", "check": "test count",
                 "pass": False, "detail": "file missing"}
-    content = path.read_text()
+    content = path.read_text(encoding="utf-8")
     count = len(re.findall(r"#\[test\]", content))
     return {
         "id": "KRS-TEST-COUNT",
@@ -237,7 +238,7 @@ def check_binding_fields(path):
     results = []
     if not path.is_file():
         return results
-    content = path.read_text()
+    content = path.read_text(encoding="utf-8")
     for field in ["key_id", "role", "public_key_bytes", "bound_at", "bound_by",
                   "max_validity_seconds"]:
         found = f"pub {field}" in content
@@ -316,22 +317,27 @@ def run_checks():
 
 def self_test():
     result = run_checks()
-    assert isinstance(result, dict), "Result must be a dict"
-    assert result["bead"] == "bd-364"
-    assert "checks" in result
-    assert isinstance(result["checks"], list)
-    assert len(result["checks"]) > 0
-    assert "verdict" in result
-    assert "summary" in result
+    _require(isinstance(result, dict), "result must be a dict")
+    _require(result["bead"] == "bd-364", "unexpected bead id")
+    _require("checks" in result, "checks missing")
+    _require(isinstance(result["checks"], list), "checks must be a list")
+    _require(len(result["checks"]) > 0, "checks must not be empty")
+    _require("verdict" in result, "verdict missing")
+    _require("summary" in result, "summary missing")
     print(f"self_test passed: {result['summary']['passing_checks']}/{result['summary']['total_checks']} checks")
     return result
 
 
-def main():
-    logger = configure_test_logging("check_key_role_separation")
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise RuntimeError(message)
+
+
+def main() -> int:
+    configure_test_logging("check_key_role_separation")
     if "--self-test" in sys.argv:
         self_test()
-        return
+        return 0
 
     result = run_checks()
 
@@ -347,8 +353,8 @@ def main():
             status = "PASS" if check["pass"] else "FAIL"
             print(f"  [{status}] {check['check']}: {check['detail']}")
 
-    sys.exit(0 if result["verdict"] == "PASS" else 1)
+    return 0 if result["verdict"] == "PASS" else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-import check_key_role_separation as mod
+import check_key_role_separation as mod  # noqa: E402
 
 
 class TestConstants(unittest.TestCase):
@@ -120,7 +120,7 @@ class TestSelfTest(unittest.TestCase):
 class TestJsonOutput(unittest.TestCase):
     def test_serializable(self):
         result = mod.run_checks()
-        parsed = json.loads(json.dumps(result))
+        parsed = json.JSONDecoder().decode(json.dumps(result))
         self.assertEqual(parsed["bead"], "bd-364")
 
     def test_all_fields(self):
