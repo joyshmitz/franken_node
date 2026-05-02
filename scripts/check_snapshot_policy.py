@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-from pathlib import Path
 """Verification script for bd-24s: Snapshot Policy and Bounded Replay Targets."""
 
 import json
 import os
 import sys
+from pathlib import Path
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
+
 CHECKS = []
 
 
@@ -23,8 +24,15 @@ def check(check_id, description, passed, details=None):
     return passed
 
 
+def _configure_logging() -> None:
+    from scripts.lib.test_logger import configure_test_logging
+
+    configure_test_logging("check_snapshot_policy")
+
+
 def main():
-    logger = configure_test_logging("check_snapshot_policy")
+    _configure_logging()
+    CHECKS.clear()
     print("bd-24s: Snapshot Policy and Bounded Replay — Verification\n")
     all_pass = True
 
@@ -32,7 +40,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/snapshot_policy.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = Path(impl_path).read_text()
+        content = Path(impl_path).read_text(encoding="utf-8")
         has_policy = "struct SnapshotPolicy" in content
         has_tracker = "struct SnapshotTracker" in content
         has_record = "struct SnapshotRecord" in content
@@ -45,7 +53,7 @@ def main():
 
     # SNAP-TRIGGERS: Policy has both every_updates and every_bytes
     if impl_exists:
-        content = Path(impl_path).read_text()
+        content = Path(impl_path).read_text(encoding="utf-8")
         has_updates = "every_updates" in content
         has_bytes = "every_bytes" in content
         all_pass &= check("SNAP-TRIGGERS", "Both snapshot triggers (every_updates, every_bytes)",
@@ -55,7 +63,7 @@ def main():
 
     # SNAP-ERRORS: All 4 error codes present
     if impl_exists:
-        content = Path(impl_path).read_text()
+        content = Path(impl_path).read_text(encoding="utf-8")
         errors = ["SNAPSHOT_HASH_MISMATCH", "SNAPSHOT_STALE", "REPLAY_BOUND_EXCEEDED", "POLICY_INVALID"]
         found = [e for e in errors if e in content]
         all_pass &= check("SNAP-ERRORS", "All 4 error codes present",
@@ -65,7 +73,7 @@ def main():
 
     # SNAP-AUDIT: Policy audit record type exists
     if impl_exists:
-        content = Path(impl_path).read_text()
+        content = Path(impl_path).read_text(encoding="utf-8")
         has_audit = "struct PolicyAuditRecord" in content and "audit_log" in content
         all_pass &= check("SNAP-AUDIT", "Policy change audit records", has_audit)
     else:
@@ -85,7 +93,7 @@ def main():
         fpath = os.path.join(fixture_dir, f)
         if os.path.isfile(fpath):
             try:
-                data = json.loads(Path(fpath).read_text())
+                data = json.JSONDecoder().decode(Path(fpath).read_text(encoding="utf-8"))
                 if "cases" not in data or len(data["cases"]) == 0:
                     fixture_valid = False
             except (json.JSONDecodeError, KeyError):
@@ -98,7 +106,7 @@ def main():
     conf_path = os.path.join(ROOT, "tests/conformance/snapshot_policy_conformance.rs")
     conf_exists = os.path.isfile(conf_path)
     if conf_exists:
-        content = Path(conf_path).read_text()
+        content = Path(conf_path).read_text(encoding="utf-8")
         has_trigger = "trigger" in content.lower()
         has_replay = "replay" in content.lower()
         has_hash = "hash" in content.lower()
@@ -112,7 +120,7 @@ def main():
 
     # SNAP-REPLAY-BYTES: Replay bounds carry byte limits through the implementation.
     if impl_exists:
-        content = Path(impl_path).read_text()
+        content = Path(impl_path).read_text(encoding="utf-8")
         has_byte_bound_surface = all(token in content for token in [
             "pub max_replay_bytes: u64",
             "pub replay_bytes: u64",
@@ -135,8 +143,8 @@ def main():
 
     # SNAP-FAIL-CLOSED: Source-local tests/checkers pin byte-boundary and invalid-construction semantics.
     if impl_exists and conf_exists:
-        impl_content = Path(impl_path).read_text()
-        conf_content = Path(conf_path).read_text()
+        impl_content = Path(impl_path).read_text(encoding="utf-8")
+        conf_content = Path(conf_path).read_text(encoding="utf-8")
         fail_closed_surface = all(token in impl_content for token in [
             "fn replay_target_byte_boundary_fail_closed()",
             "fn check_replay_bound_byte_boundary_fail_closed()",
@@ -162,7 +170,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-24s_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = Path(spec_path).read_text()
+        content = Path(spec_path).read_text(encoding="utf-8")
         has_triggers = "every_updates" in content and "every_bytes" in content
         has_invariants = "INV-SNAP" in content
     else:
@@ -187,9 +195,8 @@ def main():
 
     evidence_dir = os.path.join(ROOT, "artifacts/section_10_13/bd-24s")
     os.makedirs(evidence_dir, exist_ok=True)
-    with open(os.path.join(evidence_dir, "verification_evidence.json"), "w") as f:
-        json.dump(evidence, f, indent=2)
-        f.write("\n")
+    evidence_path = Path(evidence_dir) / "verification_evidence.json"
+    evidence_path.write_text(f"{json.dumps(evidence, indent=2)}\n", encoding="utf-8")
 
     return 0 if all_pass else 1
 

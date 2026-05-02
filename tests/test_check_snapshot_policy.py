@@ -3,6 +3,7 @@
 import json
 import os
 import unittest
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -13,8 +14,7 @@ class TestSnapshotFixtures(unittest.TestCase):
     def _load_fixture(self, name):
         path = os.path.join(ROOT, "fixtures/snapshot_policy", name)
         self.assertTrue(os.path.isfile(path), f"Fixture {name} must exist")
-        with open(path) as f:
-            return json.load(f)
+        return json.JSONDecoder().decode(Path(path).read_text(encoding="utf-8"))
 
     def test_trigger_scenarios_exist(self):
         data = self._load_fixture("trigger_scenarios.json")
@@ -80,8 +80,7 @@ class TestSnapshotImplementation(unittest.TestCase):
     def setUp(self):
         self.impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/snapshot_policy.rs")
         self.assertTrue(os.path.isfile(self.impl_path))
-        with open(self.impl_path) as f:
-            self.content = f.read()
+        self.content = Path(self.impl_path).read_text(encoding="utf-8")
 
     def test_has_snapshot_policy(self):
         self.assertIn("struct SnapshotPolicy", self.content)
@@ -140,8 +139,7 @@ class TestSnapshotConformance(unittest.TestCase):
     def setUp(self):
         self.conf_path = os.path.join(ROOT, "tests/conformance/snapshot_policy_conformance.rs")
         self.assertTrue(os.path.isfile(self.conf_path))
-        with open(self.conf_path) as f:
-            self.content = f.read()
+        self.content = Path(self.conf_path).read_text(encoding="utf-8")
 
     def test_covers_triggers(self):
         self.assertIn("trigger", self.content.lower())
@@ -173,8 +171,7 @@ class TestSnapshotChecker(unittest.TestCase):
     def setUp(self):
         self.check_path = os.path.join(ROOT, "scripts/check_snapshot_policy.py")
         self.assertTrue(os.path.isfile(self.check_path))
-        with open(self.check_path) as f:
-            self.content = f.read()
+        self.content = Path(self.check_path).read_text(encoding="utf-8")
 
     def test_checker_tracks_replay_byte_surface(self):
         self.assertIn("SNAP-REPLAY-BYTES", self.content)
@@ -184,6 +181,9 @@ class TestSnapshotChecker(unittest.TestCase):
         self.assertIn("SNAP-FAIL-CLOSED", self.content)
         self.assertIn("tracker_construction_rejects_invalid_policy", self.content)
         self.assertIn("replay_byte_boundary_fails_closed", self.content)
+
+    def test_checker_clears_accumulated_checks(self):
+        self.assertIn("CHECKS.clear()", self.content)
 
     def test_checker_no_longer_runs_local_cargo(self):
         self.assertNotIn("subprocess.run", self.content)
@@ -196,8 +196,7 @@ class TestSnapshotSpec(unittest.TestCase):
     def setUp(self):
         self.spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-24s_contract.md")
         self.assertTrue(os.path.isfile(self.spec_path))
-        with open(self.spec_path) as f:
-            self.content = f.read()
+        self.content = Path(self.spec_path).read_text(encoding="utf-8")
 
     def test_has_triggers(self):
         self.assertIn("every_updates", self.content)
