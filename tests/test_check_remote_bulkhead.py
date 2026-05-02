@@ -1,20 +1,18 @@
 """Tests for scripts/check_remote_bulkhead.py (bd-v4l0)."""
 from __future__ import annotations
 
-import importlib.util
 import json
+import runpy
 import subprocess
 import sys
+import types
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "check_remote_bulkhead.py"
 
-spec = importlib.util.spec_from_file_location("check_remote_bulkhead", SCRIPT)
-assert spec is not None and spec.loader is not None
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
+module = types.SimpleNamespace(**runpy.run_path(str(SCRIPT)))
 
 
 class TestChecksStructure(unittest.TestCase):
@@ -44,6 +42,9 @@ class TestChecksStructure(unittest.TestCase):
             0,
             f"Failed checks: {[r['check'] for r in failed]}",
         )
+
+    def test_read_missing_file_returns_none(self):
+        self.assertIsNone(module._read(str(ROOT / "missing-remote-bulkhead-file.rs")))
 
 
 class TestIndividualChecks(unittest.TestCase):
@@ -133,9 +134,10 @@ class TestCliOutput(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        data = json.loads(result.stdout)
+        data = json.JSONDecoder().decode(result.stdout)
         self.assertEqual(data["bead"], "bd-v4l0")
         self.assertEqual(data["section"], "10.14")
         self.assertEqual(data["title"], "Remote Bulkhead")
@@ -153,6 +155,7 @@ class TestCliOutput(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("self_test:", result.stdout)
@@ -164,6 +167,7 @@ class TestCliOutput(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("bd-v4l0", result.stdout)

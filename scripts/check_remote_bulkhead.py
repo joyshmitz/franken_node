@@ -11,8 +11,11 @@ SRC = os.path.join(ROOT, "crates", "franken-node", "src", "remote", "remote_bulk
 
 
 def _read(path):
-    with open(path) as f:
-        return f.read()
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return None
 
 
 def _checks():
@@ -26,6 +29,9 @@ def _checks():
         check("SOURCE_EXISTS", False, f"missing {SRC}")
         return results
     src = _read(SRC)
+    if src is None:
+        check("SOURCE_EXISTS", False, f"unreadable {SRC}")
+        return results
     check("SOURCE_EXISTS", True, SRC)
 
     # 2. Event codes (8 codes in event_codes module)
@@ -95,14 +101,32 @@ def _checks():
     )
 
     # 6. RemoteCap gating
-    has_remote_cap = "has_remote_cap" in src
+    has_remote_cap_lookup = "RemoteCapLookup" in src
     has_remote_cap_required = "RemoteCapRequired" in src
+    rejects_missing_or_denied = (
+        "RemoteCapLookup::Denied | RemoteCapLookup::NotPresent" in src
+    )
+    returns_cap_required = "Err(BulkheadError::RemoteCapRequired)" in src
+    has_queue_regression = (
+        "remote_cap_missing_under_queue_policy_does_not_enqueue" in src
+        and "missing RemoteCap should reject before queue admission" in src
+    )
     check(
         "REMOTECAP_GATING",
-        has_remote_cap and has_remote_cap_required,
-        "RemoteCap gating on acquire"
-        if (has_remote_cap and has_remote_cap_required)
-        else "missing has_remote_cap or RemoteCapRequired",
+        has_remote_cap_lookup
+        and has_remote_cap_required
+        and rejects_missing_or_denied
+        and returns_cap_required
+        and has_queue_regression,
+        "RemoteCapLookup fail-closed acquire gate with queue admission regression"
+        if (
+            has_remote_cap_lookup
+            and has_remote_cap_required
+            and rejects_missing_or_denied
+            and returns_cap_required
+            and has_queue_regression
+        )
+        else "missing RemoteCapLookup denial handling, RemoteCapRequired return, or queue regression",
     )
 
     # 7. Drain mode
@@ -223,7 +247,7 @@ def self_test():
 
 
 def main():
-    logger = configure_test_logging("check_remote_bulkhead")
+    configure_test_logging("check_remote_bulkhead")
     if "--self-test" in sys.argv:
         ok = self_test()
         sys.exit(0 if ok else 1)
