@@ -12,10 +12,10 @@ Usage:
 import json
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
-from pathlib import Path
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 
 
 SPEC_PATH = ROOT / "docs" / "specs" / "section_10_9" / "bd-1e0_contract.md"
@@ -28,6 +28,10 @@ RESULTS: list[dict] = []
 def _check(name: str, passed: bool, detail: str = "") -> bool:
     RESULTS.append({"name": name, "pass": passed, "detail": detail})
     return passed
+
+
+def _json_decode(text: str) -> dict:
+    return json.JSONDecoder().decode(text)
 
 
 def _safe_rel(path: Path) -> str:
@@ -76,7 +80,7 @@ def check_flagship_configs() -> int:
     for cfg_path in configs:
         label = cfg_path.stem
         try:
-            data = json.loads(cfg_path.read_text(encoding="utf-8"))
+            data = _json_decode(cfg_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as exc:
             _check(f"flagship:{label}:valid_json", False, str(exc))
             continue
@@ -435,24 +439,32 @@ def run_all() -> dict:
 
 
 def self_test():
-    assert callable(check_files_exist)
-    assert callable(check_pipeline_stages)
-    assert callable(check_event_codes)
-    assert callable(check_invariants)
-    assert callable(check_flagship_configs)
-    assert callable(check_rollback_policy)
-    assert callable(check_reproducibility)
-    assert callable(check_evidence_integrity)
+    for check_fn in [
+        check_files_exist,
+        check_pipeline_stages,
+        check_event_codes,
+        check_invariants,
+        check_flagship_configs,
+        check_rollback_policy,
+        check_reproducibility,
+        check_evidence_integrity,
+    ]:
+        if not callable(check_fn):
+            raise RuntimeError(f"self_test found non-callable check: {check_fn!r}")
     result = run_all()
-    assert "verdict" in result
-    assert result["total"] > 0
-    assert result["bead_id"] == "bd-1e0"
-    assert isinstance(result["checks"], list)
+    if "verdict" not in result:
+        raise RuntimeError("self_test result missing verdict")
+    if result["total"] <= 0:
+        raise RuntimeError("self_test result has no checks")
+    if result["bead_id"] != "bd-1e0":
+        raise RuntimeError(f"self_test bead mismatch: {result['bead_id']}")
+    if not isinstance(result["checks"], list):
+        raise RuntimeError("self_test checks is not a list")
     print("self_test: OK")
 
 
 def main():
-    logger = configure_test_logging("check_migration_demo")
+    configure_test_logging("check_migration_demo")
     if "--self-test" in sys.argv:
         self_test()
         return

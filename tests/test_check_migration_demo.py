@@ -2,15 +2,30 @@
 """Unit tests for scripts/check_migration_demo.py"""
 
 import json
+import runpy
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts" / "check_migration_demo.py"
 
-sys.path.insert(0, str(ROOT / "scripts"))
-import check_migration_demo as checker
+
+class ScriptNamespace:
+    def __init__(self, script_globals: dict[str, object]) -> None:
+        object.__setattr__(self, "_script_globals", script_globals)
+
+    def __getattr__(self, name: str) -> object:
+        return self._script_globals[name]
+
+
+checker = ScriptNamespace(runpy.run_path(str(SCRIPT)))
+
+
+def _json_decode(text: str) -> dict:
+    return json.JSONDecoder().decode(text)
 
 
 class TestFilesExist(unittest.TestCase):
@@ -43,7 +58,7 @@ class TestFlagshipConfigs(unittest.TestCase):
     def test_configs_valid_json(self):
         for cfg_path in checker.FIXTURES_DIR.glob("*.json"):
             with self.subTest(cfg=cfg_path.stem):
-                data = json.loads(cfg_path.read_text(encoding="utf-8"))
+                data = _json_decode(cfg_path.read_text(encoding="utf-8"))
                 self.assertIn("name", data)
                 self.assertIn("category", data)
                 self.assertIn("repository_url", data)
@@ -52,7 +67,7 @@ class TestFlagshipConfigs(unittest.TestCase):
     def test_distinct_categories(self):
         cats = set()
         for cfg_path in checker.FIXTURES_DIR.glob("*.json"):
-            data = json.loads(cfg_path.read_text(encoding="utf-8"))
+            data = _json_decode(cfg_path.read_text(encoding="utf-8"))
             cats.add(data.get("category", ""))
         self.assertGreaterEqual(len(cats), 3)
 
@@ -266,8 +281,8 @@ class TestSafeRel(unittest.TestCase):
         self.assertEqual(checker._safe_rel(p), "docs/specs/foo.md")
 
     def test_outside_root(self):
-        p = Path("/tmp/unrelated/file.txt")
-        self.assertEqual(checker._safe_rel(p), "/tmp/unrelated/file.txt")
+        p = Path(tempfile.gettempdir()) / "unrelated" / "file.txt"
+        self.assertEqual(checker._safe_rel(p), str(p))
 
 
 class TestJsonOutput(unittest.TestCase):
@@ -278,28 +293,35 @@ class TestJsonOutput(unittest.TestCase):
 
     def test_cli_json(self):
         proc = subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "check_migration_demo.py"),
-             "--json"],
-            capture_output=True, text=True,
+            [sys.executable, str(SCRIPT), "--json"],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=30,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        data = json.loads(proc.stdout)
+        data = _json_decode(proc.stdout)
         self.assertEqual(data["verdict"], "PASS")
         self.assertEqual(data["bead_id"], "bd-1e0")
 
     def test_cli_human(self):
         proc = subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "check_migration_demo.py")],
-            capture_output=True, text=True,
+            [sys.executable, str(SCRIPT)],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=30,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("PASS", proc.stdout)
 
     def test_cli_self_test(self):
         proc = subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "check_migration_demo.py"),
-             "--self-test"],
-            capture_output=True, text=True,
+            [sys.executable, str(SCRIPT), "--self-test"],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=30,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("self_test: OK", proc.stdout)
