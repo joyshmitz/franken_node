@@ -3,29 +3,22 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SCRIPT = ROOT / "scripts" / "check_epoch_scoped_keys.py"
+sys.path.insert(0, str(ROOT / "scripts"))
 
-
-def load_checker():
-    spec = importlib.util.spec_from_file_location("check_epoch_scoped_keys", SCRIPT)
-    module = importlib.util.module_from_spec(spec)
-    assert spec is not None
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+import check_epoch_scoped_keys as checker
 
 
 class EpochScopedKeyCheckerTests(unittest.TestCase):
     def setUp(self):
-        self.checker = load_checker()
+        self.checker = checker
 
     def test_run_checks_shape(self):
         report = self.checker.run_checks()
@@ -79,6 +72,20 @@ class EpochScopedKeyCheckerTests(unittest.TestCase):
 
             count_check = next(c for c in checks if c["id"] == "EKS-VECTOR-COUNT")
             self.assertFalse(count_check["pass"])
+
+    def test_vectors_reject_non_object_json(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "vectors.json"
+            p.write_text("[]", encoding="utf-8")
+            original = self.checker.VECTORS
+            try:
+                self.checker.VECTORS = p
+                checks = self.checker.check_vectors_json()
+            finally:
+                self.checker.VECTORS = original
+
+        self.assertEqual(checks[0]["id"], "EKS-VECTOR-JSON")
+        self.assertFalse(checks[0]["pass"])
 
     def test_vectors_accept_valid_shape(self):
         vectors = []

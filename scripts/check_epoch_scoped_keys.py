@@ -12,11 +12,12 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
-from pathlib import Path
-from typing import Any
+
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 
 
 IMPL = ROOT / "crates" / "franken-node" / "src" / "security" / "epoch_scoped_keys.rs"
@@ -47,6 +48,17 @@ REQUIRED_CONFORMANCE_MARKERS = [
 ]
 
 
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    payload = json.JSONDecoder().decode(_read_text(path))
+    if not isinstance(payload, dict):
+        raise TypeError("json payload is not an object")
+    return payload
+
+
 def check_file(path: Path, check_id: str, label: str) -> dict[str, Any]:
     ok = path.is_file()
     rel = path.relative_to(ROOT) if ok else path
@@ -68,7 +80,7 @@ def check_markers(path: Path, markers: list[str], prefix: str) -> list[dict[str,
                 "detail": f"missing: {path.relative_to(ROOT)}",
             }
         ]
-    text = path.read_text(encoding="utf-8")
+    text = _read_text(path)
     out = []
     for marker in markers:
         ok = marker in text
@@ -92,7 +104,7 @@ def check_module_registration() -> dict[str, Any]:
             "pass": False,
             "detail": f"missing: {MOD_RS.relative_to(ROOT)}",
         }
-    text = MOD_RS.read_text(encoding="utf-8")
+    text = _read_text(MOD_RS)
     ok = "pub mod epoch_scoped_keys;" in text
     return {
         "id": "EKS-MOD-REG",
@@ -110,7 +122,7 @@ def check_impl_test_count() -> dict[str, Any]:
             "pass": False,
             "detail": "implementation file missing",
         }
-    text = IMPL.read_text(encoding="utf-8")
+    text = _read_text(IMPL)
     count = len(re.findall(r"#\[test\]", text))
     return {
         "id": "EKS-IMPL-TEST-COUNT",
@@ -136,10 +148,9 @@ def check_vectors_json() -> list[dict[str, Any]]:
             }
         ]
 
-    raw = VECTORS.read_text(encoding="utf-8")
     try:
-        doc = json.loads(raw)
-    except json.JSONDecodeError as exc:
+        doc = _read_json_object(VECTORS)
+    except (json.JSONDecodeError, OSError, TypeError) as exc:
         return [
             {
                 "id": "EKS-VECTOR-JSON",
@@ -260,12 +271,17 @@ def run_checks() -> dict[str, Any]:
     }
 
 
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise RuntimeError(message)
+
+
 def self_test() -> None:
     report = run_checks()
-    assert report["bead"] == "bd-3cs3"
-    assert report["section"] == "10.14"
-    assert isinstance(report["checks"], list)
-    assert report["summary"]["total_checks"] >= 12
+    _require(report["bead"] == "bd-3cs3", "unexpected bead id")
+    _require(report["section"] == "10.14", "unexpected section")
+    _require(isinstance(report["checks"], list), "checks must be a list")
+    _require(report["summary"]["total_checks"] >= 12, "too few checks")
     print(
         f"self_test passed: {report['summary']['passing_checks']}/"
         f"{report['summary']['total_checks']}"
@@ -273,7 +289,7 @@ def self_test() -> None:
 
 
 def main() -> int:
-    logger = configure_test_logging("check_epoch_scoped_keys")
+    configure_test_logging("check_epoch_scoped_keys")
     if "--self-test" in sys.argv:
         self_test()
         return 0
