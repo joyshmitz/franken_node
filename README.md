@@ -142,7 +142,7 @@ franken-node init --profile balanced
 ```
 2. Audit your existing project:
 ```bash
-franken-node migrate audit ./my-app --out migration-audit.json
+franken-node migrate audit ./my-app --format json --out migration-audit.json
 ```
 3. Validate compatibility before rollout:
 ```bash
