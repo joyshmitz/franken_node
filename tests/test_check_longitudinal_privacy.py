@@ -2,6 +2,7 @@
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -45,6 +46,36 @@ class TestReportLoad(unittest.TestCase):
         data, checks = mod.load_report()
         self.assertIsInstance(data, dict)
         self.assertTrue(all(c["pass"] for c in checks))
+
+    def test_malformed_report_fails_closed(self):
+        original_report = mod.REPORT
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                mod.REPORT = Path(tmpdir) / "longitudinal_privacy_report.json"
+                mod.REPORT.write_text("{bad-json", encoding="utf-8")
+
+                data, checks = mod.load_report()
+
+            self.assertIsNone(data)
+            self.assertFalse(checks[-1]["pass"])
+            self.assertEqual(checks[-1]["check"], "report: valid json")
+        finally:
+            mod.REPORT = original_report
+
+    def test_non_object_report_fails_closed(self):
+        original_report = mod.REPORT
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                mod.REPORT = Path(tmpdir) / "longitudinal_privacy_report.json"
+                mod.REPORT.write_text("[]", encoding="utf-8")
+
+                data, checks = mod.load_report()
+
+            self.assertIsNone(data)
+            self.assertFalse(checks[-1]["pass"])
+            self.assertEqual(checks[-1]["detail"], "not an object")
+        finally:
+            mod.REPORT = original_report
 
 
 class TestHelpers(unittest.TestCase):
@@ -124,7 +155,7 @@ class TestJsonRoundTrip(unittest.TestCase):
     def test_json_serializable(self):
         result = mod.run_checks()
         blob = json.dumps(result, indent=2)
-        parsed = json.loads(blob)
+        parsed = json.JSONDecoder().decode(blob)
         self.assertEqual(parsed["bead_id"], "bd-1rff")
 
 
