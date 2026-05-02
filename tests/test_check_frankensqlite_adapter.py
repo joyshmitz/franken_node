@@ -2,6 +2,7 @@
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -78,6 +79,47 @@ class TestCheckReport(unittest.TestCase):
         results = mod.check_report()
         for r in results:
             self.assertTrue(r["pass"], f"Failed: {r['check']}: {r['detail']}")
+
+    def test_malformed_report_fails_closed(self):
+        original_report = mod.REPORT
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                mod.REPORT = Path(tmpdir) / "frankensqlite_adapter_report.json"
+                mod.REPORT.write_text("{bad-json", encoding="utf-8")
+
+                results = mod.check_report()
+
+            self.assertEqual(results[-1]["check"], "report: valid JSON")
+            self.assertFalse(results[-1]["pass"])
+        finally:
+            mod.REPORT = original_report
+
+    def test_non_object_report_fails_closed(self):
+        original_report = mod.REPORT
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                mod.REPORT = Path(tmpdir) / "frankensqlite_adapter_report.json"
+                mod.REPORT.write_text("[]", encoding="utf-8")
+
+                results = mod.check_report()
+
+            self.assertEqual(results[-1]["check"], "report: valid JSON")
+            self.assertFalse(results[-1]["pass"])
+            self.assertEqual(results[-1]["detail"], "not an object")
+        finally:
+            mod.REPORT = original_report
+
+    def test_malformed_matrix_returns_empty_object(self):
+        original_matrix = mod.MATRIX
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                mod.MATRIX = Path(tmpdir) / "frankensqlite_persistence_matrix.json"
+                mod.MATRIX.write_text("{bad-json", encoding="utf-8")
+
+                self.assertEqual(mod.load_persistence_matrix(), {})
+                self.assertEqual(mod.persistence_classes(), [])
+        finally:
+            mod.MATRIX = original_matrix
 
     def test_report_verdict(self):
         results = mod.check_report()
@@ -160,7 +202,7 @@ class TestJsonOutput(unittest.TestCase):
     def test_json_serializable(self):
         result = mod.run_checks()
         output = json.dumps(result, indent=2)
-        parsed = json.loads(output)
+        parsed = json.JSONDecoder().decode(output)
         self.assertEqual(parsed["bead_id"], "bd-2tua")
 
     def test_json_has_all_fields(self):

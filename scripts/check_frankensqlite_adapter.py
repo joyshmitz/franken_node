@@ -19,8 +19,25 @@ REPORT = ROOT / "artifacts" / "10.16" / "frankensqlite_adapter_report.json"
 MATRIX = ROOT / "artifacts" / "10.16" / "frankensqlite_persistence_matrix.json"
 SPEC = ROOT / "docs" / "specs" / "section_10_16" / "bd-2tua_contract.md"
 
+
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _read_json(path: Path) -> dict:
+    return json.JSONDecoder().decode(_read_text(path))
+
+
+def _result(check: str, passed: bool, detail: str) -> dict:
+    return {"check": check, "pass": bool(passed), "detail": detail}
+
+
 def load_persistence_matrix():
-    return json.loads(MATRIX.read_text())
+    try:
+        data = _read_json(MATRIX)
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def persistence_classes():
@@ -146,9 +163,9 @@ def check_content(path, patterns, category):
     results = []
     if not path.exists():
         for p in patterns:
-            results.append({"check": f"{category}: {p}", "pass": False, "detail": "file missing"})
+            results.append(_result(f"{category}: {p}", False, "file missing"))
         return results
-    text = path.read_text()
+    text = _read_text(path)
     for p in patterns:
         found = p in text
         results.append({
@@ -161,8 +178,8 @@ def check_content(path, patterns, category):
 
 def check_impl_test_count():
     if not IMPL.exists():
-        return {"check": "conformance test count", "pass": False, "detail": "impl missing"}
-    text = IMPL.read_text()
+        return _result("conformance test count", False, "impl missing")
+    text = _read_text(IMPL)
     count = len(re.findall(r"#\[test\]", text))
     ok = count >= 40
     return {
@@ -174,8 +191,8 @@ def check_impl_test_count():
 
 def check_serde_derives():
     if not IMPL.exists():
-        return {"check": "Serialize/Deserialize derives", "pass": False, "detail": "impl missing"}
-    text = IMPL.read_text()
+        return _result("Serialize/Deserialize derives", False, "impl missing")
+    text = _read_text(IMPL)
     has_ser = "Serialize" in text and "Deserialize" in text
     return {
         "check": "Serialize/Deserialize derives",
@@ -187,15 +204,18 @@ def check_serde_derives():
 def check_report():
     results = []
     if not REPORT.exists():
-        results.append({"check": "report: exists", "pass": False, "detail": "MISSING"})
+        results.append(_result("report: exists", False, "MISSING"))
         return results
-    results.append({"check": "report: exists", "pass": True, "detail": "found"})
+    results.append(_result("report: exists", True, "found"))
     try:
-        data = json.loads(REPORT.read_text())
-    except json.JSONDecodeError:
-        results.append({"check": "report: valid JSON", "pass": False, "detail": "invalid JSON"})
+        data = _read_json(REPORT)
+    except (json.JSONDecodeError, OSError):
+        results.append(_result("report: valid JSON", False, "invalid JSON"))
         return results
-    results.append({"check": "report: valid JSON", "pass": True, "detail": "valid"})
+    if not isinstance(data, dict):
+        results.append(_result("report: valid JSON", False, "not an object"))
+        return results
+    results.append(_result("report: valid JSON", True, "valid"))
 
     verdict = data.get("gate_verdict", "")
     results.append({
@@ -210,7 +230,7 @@ def check_report():
         tier: sum(1 for item in classes if item.get("safety_tier") == tier)
         for tier in ("tier_1", "tier_2", "tier_3")
     }
-    expected_replay_enabled = sum(1 for item in classes if item.get("replay_support") is True)
+    expected_replay_enabled = sum(1 for item in classes if bool(item.get("replay_support", False)))
     expected_total_tables = sum(len(item.get("tables", [])) for item in classes)
 
     cr = data.get("conformance_results", [])
@@ -265,10 +285,10 @@ def check_report():
 def check_spec():
     results = []
     if not SPEC.exists():
-        results.append({"check": "spec doc: exists", "pass": False, "detail": "MISSING"})
+        results.append(_result("spec doc: exists", False, "MISSING"))
         return results
-    results.append({"check": "spec doc: exists", "pass": True, "detail": "found"})
-    text = SPEC.read_text()
+    results.append(_result("spec doc: exists", True, "found"))
+    text = _read_text(SPEC)
     for section in ["Types", "Methods", "Event Codes", "Invariants", "Acceptance Criteria"]:
         found = section in text
         results.append({
@@ -284,9 +304,9 @@ def check_persistence_domains():
     results = []
     if not IMPL.exists():
         for d in PERSISTENCE_DOMAINS:
-            results.append({"check": f"domain: {d}", "pass": False, "detail": "impl missing"})
+            results.append(_result(f"domain: {d}", False, "impl missing"))
         return results
-    text = IMPL.read_text()
+    text = _read_text(IMPL)
     for d in PERSISTENCE_DOMAINS:
         found = d in text
         results.append({
