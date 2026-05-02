@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
+import runpy
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "check_section_10_3_gate.py"
+LEGACY_SCRIPT = ROOT / "scripts" / "gate_section_10_3.py"
 
-spec = importlib.util.spec_from_file_location("check_section_10_3_gate", SCRIPT)
-mod = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = mod
-spec.loader.exec_module(mod)
+
+def load_script_namespace(path: Path) -> SimpleNamespace:
+    return SimpleNamespace(**runpy.run_path(str(path)))
+
+
+mod = load_script_namespace(SCRIPT)
+legacy_mod = load_script_namespace(LEGACY_SCRIPT)
 
 
 class TestRunAllShape(unittest.TestCase):
@@ -83,7 +88,7 @@ class TestCli(unittest.TestCase):
             check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        parsed = json.loads(proc.stdout)
+        parsed = json.JSONDecoder().decode(proc.stdout)
         self.assertEqual(parsed["bead_id"], "bd-3enl")
         self.assertEqual(parsed["mode"], "self-test")
 
@@ -95,9 +100,35 @@ class TestCli(unittest.TestCase):
             timeout=30,
             check=False,
         )
-        parsed = json.loads(proc.stdout)
+        parsed = json.JSONDecoder().decode(proc.stdout)
         self.assertEqual(parsed["bead_id"], "bd-3enl")
         self.assertIn("checks", parsed)
+
+
+class TestLegacySectionGate(unittest.TestCase):
+    def test_legacy_run_script_missing_file_fails_closed(self) -> None:
+        result = legacy_mod.run_script("scripts/not_a_real_section_gate.py")
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("Not found", result["error"])
+
+    def test_legacy_evidence_checks_all_section_beads(self) -> None:
+        result = legacy_mod.check_evidence()
+        self.assertEqual(set(result["details"]), set(legacy_mod.EVIDENCE_DIRS))
+        self.assertIn(result["status"], ("PASS", "FAIL"))
+
+    def test_legacy_json_cli_output_parseable(self) -> None:
+        proc = subprocess.run(
+            [sys.executable, str(LEGACY_SCRIPT), "--json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        parsed = json.JSONDecoder().decode(proc.stdout)
+        self.assertEqual(parsed["gate"], "section_10_3_verification")
+        self.assertEqual(parsed["section"], "10.3")
+        self.assertIn(parsed["verdict"], ("PASS", "FAIL"))
 
 
 class TestConstants(unittest.TestCase):

@@ -46,10 +46,14 @@ def run_script(script_path: str) -> dict:
     try:
         result = subprocess.run(
             [sys.executable, str(full_path), "--json"],
-            capture_output=True, text=True, timeout=3600, cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=3600,
+            cwd=str(ROOT),
+            check=False,
         )
         try:
-            data = json.loads(result.stdout)
+            data = json.JSONDecoder().decode(result.stdout)
             return {"status": data.get("verdict", "UNKNOWN")}
         except json.JSONDecodeError:
             return {"status": "PASS" if result.returncode == 0 else "FAIL"}
@@ -64,7 +68,11 @@ def run_tests() -> dict:
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pytest"] + test_files + ["-v", "--tb=short"],
-            capture_output=True, text=True, timeout=3600, cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=3600,
+            cwd=str(ROOT),
+            check=False,
         )
         lines = result.stdout.strip().split("\n")
         return {"status": "PASS" if result.returncode == 0 else "FAIL", "summary": lines[-1] if lines else ""}
