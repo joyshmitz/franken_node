@@ -121,6 +121,7 @@ impl Config {
                     freshness_window_secs: None,
                     min_trust_score: None,
                     decay_factor: None,
+                    registry_signing_key: None,
                 },
                 replay: ReplayConfig {
                     persist_high_severity: true,
@@ -183,6 +184,7 @@ impl Config {
                     freshness_window_secs: None,
                     min_trust_score: None,
                     decay_factor: None,
+                    registry_signing_key: None,
                 },
                 replay: ReplayConfig {
                     persist_high_severity: true,
@@ -245,6 +247,7 @@ impl Config {
                     freshness_window_secs: None,
                     min_trust_score: None,
                     decay_factor: None,
+                    registry_signing_key: None,
                 },
                 replay: ReplayConfig {
                     persist_high_severity: true,
@@ -2355,6 +2358,10 @@ pub struct TrustConfig {
     /// When `None`, consumers use the default (0.95).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decay_factor: Option<f64>,
+    /// Optional trust-card registry signing key (base64-encoded Ed25519 key).
+    /// When `None`, consumers use the default hardcoded key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry_signing_key: Option<String>,
 }
 
 // -- Replay --

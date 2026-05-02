@@ -17,6 +17,7 @@ use std::{
     time::Duration,
 };
 
+use base64;
 use fs2::FileExt;
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
@@ -148,6 +149,17 @@ pub const TRUST_CARD_DIFF_COMPUTED: &str = "TRUST_CARD_DIFF_COMPUTED";
 const DEFAULT_CACHE_TTL_SECS: u64 = crate::config::timeouts::TRUST_CARD_CACHE_TTL_SECS;
 const DEFAULT_REGISTRY_KEY: &[u8] = b"franken-node-trust-card-registry-key-v1";
 pub const TRUST_CARD_REGISTRY_SNAPSHOT_SCHEMA: &str = "franken-node/trust-card-registry-state/v1";
+
+/// Get registry signing key from config or default if not specified.
+fn get_registry_key(config: &crate::config::TrustConfig) -> Vec<u8> {
+    match &config.registry_signing_key {
+        Some(key_base64) => {
+            // Attempt to decode from base64, fallback to default on error
+            base64::decode(key_base64).unwrap_or_else(|_| DEFAULT_REGISTRY_KEY.to_vec())
+        }
+        None => DEFAULT_REGISTRY_KEY.to_vec(),
+    }
+}
 
 /// Validate basic bounds for a parsed snapshot (lazy validation).
 /// Used for trusted file sources where comprehensive validation is less critical.
@@ -729,6 +741,20 @@ impl TrustCardRegistry {
         }
     }
 
+    /// Create an empty trust-card registry using configuration for signing key.
+    ///
+    /// # Parameters
+    /// - `config`: Trust configuration containing optional registry signing key.
+    ///
+    /// # Returns
+    /// A new empty `TrustCardRegistry` with signing key from config or default.
+    #[must_use]
+    pub fn from_config(config: &crate::config::TrustConfig) -> Self {
+        let cache_ttl_secs = config.card_cache_ttl_secs.unwrap_or(DEFAULT_CACHE_TTL_SECS);
+        let registry_key = get_registry_key(config);
+        Self::new(cache_ttl_secs, &registry_key)
+    }
+
     /// Materialize the registry's current authoritative state as a signed snapshot.
     ///
     /// # Parameters
@@ -900,6 +926,69 @@ impl TrustCardRegistry {
         loaded_at_secs: u64,
     ) -> Result<Self, TrustCardError> {
         Self::load_authoritative_state(path, cache_ttl_secs, loaded_at_secs, SnapshotSourceContext::TrustedFile)
+    }
+
+    /// Load authoritative trust-card state from disk using configuration for signing key.
+    ///
+    /// # Parameters
+    /// - `path`: snapshot file to read and validate.
+    /// - `config`: trust configuration containing signing key and cache TTL settings.
+    /// - `loaded_at_secs`: timestamp assigned to cache entries restored from disk.
+    /// - `source_context`: validation strategy based on source trust level.
+    ///
+    /// # Returns
+    /// A validated `TrustCardRegistry` reconstructed from the on-disk snapshot.
+    pub fn load_authoritative_state_from_config(
+        path: &Path,
+        config: &crate::config::TrustConfig,
+        loaded_at_secs: u64,
+        source_context: SnapshotSourceContext,
+    ) -> Result<Self, TrustCardError> {
+        let cache_ttl_secs = config.card_cache_ttl_secs.unwrap_or(DEFAULT_CACHE_TTL_SECS);
+        let registry_key = get_registry_key(config);
+
+        let raw = std::fs::read_to_string(path).map_err(|err| TrustCardError::SnapshotRead {
+            path: path.to_path_buf(),
+            detail: err.to_string(),
+        })?;
+
+        // Contextual validation strategy based on source trust level
+        let snapshot = match source_context {
+            SnapshotSourceContext::TrustedFile => {
+                // Lazy validation: parse first, then basic checks
+                let snapshot = serde_json::from_str::<TrustCardRegistrySnapshot>(&raw)
+                    .map_err(|err| TrustCardError::SnapshotParse {
+                        path: path.to_path_buf(),
+                        detail: err.to_string(),
+                    })?;
+                validate_basic_bounds(&snapshot)?;
+                snapshot
+            }
+            SnapshotSourceContext::UntrustedNetwork => {
+                // Eager validation: verify signature first, comprehensive checks
+                verify_signature_before_parsing(&raw, &registry_key)
+                    .map_err(|err| sanitize_error_for_untrusted(err))?;
+
+                let snapshot = serde_json::from_str::<TrustCardRegistrySnapshot>(&raw)
+                    .map_err(|err| sanitize_error_for_untrusted(TrustCardError::SnapshotParse {
+                        path: path.to_path_buf(),
+                        detail: err.to_string(),
+                    }))?;
+
+                validate_comprehensive(&snapshot, &registry_key)
+                    .map_err(|err| sanitize_error_for_untrusted(err))?;
+                snapshot
+            }
+        };
+
+        let high_water = read_snapshot_high_water(path, &registry_key)?;
+        validate_snapshot_high_water(path, &snapshot, high_water.as_ref())?;
+        let trusted_snapshot = snapshot.clone();
+        let mut registry = Self::from_snapshot(snapshot, &registry_key, loaded_at_secs)?;
+        registry.cache_ttl_secs = cache_ttl_secs.max(1);
+
+        persist_snapshot_high_water_if_newer(path, &trusted_snapshot, high_water.as_ref())?;
+        Ok(registry)
     }
 
     /// Persist the registry's authoritative snapshot and signed high-water marker atomically.
