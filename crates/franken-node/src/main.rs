@@ -3,7 +3,6 @@
 
 pub use frankenengine_node::{ActionableError, lock_utils};
 
-#[cfg(any(test, feature = "admin-tools"))]
 fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     if cap == 0 {
         items.clear();

@@ -8,7 +8,9 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+#[cfg(test)]
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
+#[cfg(test)]
 use crate::push_bounded;
 
 /// Sandbox profile tiers, ordered from most to least restrictive.

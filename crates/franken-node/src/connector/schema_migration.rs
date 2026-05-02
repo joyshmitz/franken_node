@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::push_bounded;
 use crate::security::constant_time;
 use crate::storage::models::SchemaMigrationRecord;
 
@@ -18,18 +19,6 @@ const MAX_HINTS: usize = 4096;
 const MAX_STEP_RESULTS: usize = 4096;
 const MAX_JOURNAL_RECORDS: usize = 4096;
 const RECEIPT_SCHEMA_VERSION: &str = "franken-node/schema-migration-receipt/v1";
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 fn len_to_u64(len: usize) -> u64 {
     u64::try_from(len).unwrap_or(u64::MAX)

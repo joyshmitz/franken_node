@@ -10,6 +10,7 @@ use std::collections::VecDeque;
 use std::f64::consts::PI;
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
+use crate::push_bounded;
 const MAX_RECENT_SHIFTS: usize = 4096;
 const MAX_CATEGORICAL_STATE_CELLS: usize = MAX_EVENTS;
 
@@ -1063,18 +1064,6 @@ fn regime_shift_is_valid(shift: &RegimeShift) -> bool {
         && shift.run_length > 0
         && shift.old_regime_mean.is_finite()
         && shift.new_regime_mean.is_finite()
-}
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
 }
 
 // ---------------------------------------------------------------------------

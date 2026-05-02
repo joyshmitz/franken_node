@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+#[cfg(test)]
 use crate::push_bounded;
 
 const RESERVED_ARTIFACT_ID: &str = "<unknown>";

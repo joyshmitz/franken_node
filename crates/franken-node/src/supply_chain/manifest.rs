@@ -18,10 +18,13 @@ use frankenengine_extension_host::{
 };
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
 use crate::capacity_defaults::aliases::MAX_CHAIN_ENTRIES;
+#[cfg(test)]
 use crate::push_bounded;
 
 /// Maximum capabilities per manifest to prevent memory exhaustion.
+#[cfg(test)]
 const MAX_CAPABILITIES: usize = 1024;
 
 pub const MANIFEST_SCHEMA_VERSION: &str = "1.0";

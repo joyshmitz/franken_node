@@ -17,10 +17,11 @@ use std::{
 
 #[cfg(feature = "asupersync-transport")]
 use crate::capacity_defaults::aliases::MAX_CONTROL_EVENTS;
+#[cfg(any(test, feature = "asupersync-transport"))]
+use crate::push_bounded;
 use crate::{
     capacity_defaults::aliases::{MAX_ACTION_LOG_ENTRIES, MAX_NODES_CAP},
     config::timeouts,
-    push_bounded,
 };
 
 #[cfg(feature = "control-plane")]

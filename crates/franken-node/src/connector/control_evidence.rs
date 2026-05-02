@@ -17,6 +17,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::capacity_defaults::aliases::{MAX_ENTRIES, MAX_EVENTS, MAX_FIELDS};
+use crate::push_bounded;
 
 const MAX_EVIDENCE_FIELD_BYTES: usize = MAX_FIELDS;
 const MAX_EVIDENCE_LIST_ITEMS: usize = MAX_FIELDS;
@@ -413,18 +414,6 @@ impl Default for ControlEvidenceEmitter {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
 }
 
 fn validate_identifier_field(field_name: &str, value: &str) -> Result<(), ConformanceError> {

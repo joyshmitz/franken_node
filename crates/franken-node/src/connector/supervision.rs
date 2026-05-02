@@ -13,6 +13,7 @@ use std::fmt;
 use std::time::Instant;
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
+use crate::push_bounded;
 
 // ---------------------------------------------------------------------------
 // Schema version
@@ -925,22 +926,6 @@ impl Supervisor {
     fn restart_within_window(&self, now_ms: u64, restart_timestamp_ms: u64) -> bool {
         now_ms.saturating_sub(restart_timestamp_ms) <= self.time_window_ms
     }
-}
-
-// ---------------------------------------------------------------------------
-// Bounded push helper
-// ---------------------------------------------------------------------------
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
 }
 
 fn push_bounded_deque<T>(items: &mut VecDeque<T>, item: T, cap: usize) {

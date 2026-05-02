@@ -6,20 +6,10 @@
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::push_bounded;
+
 // Hardening: bounded capacity for failure collections
 const MAX_VERIFICATION_FAILURES: usize = 256;
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 /// A candidate node for coordinator selection.
 #[derive(Debug, Clone)]

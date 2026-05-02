@@ -179,7 +179,6 @@ impl std::fmt::Display for PersistenceError {
 
 use crate::capacity_defaults::aliases::MAX_TOTAL_ARTIFACTS;
 use crate::capacity_defaults::base;
-use crate::push_bounded;
 
 /// Maximum sequence length per artifact type to prevent unbounded growth.
 const MAX_SEQUENCE_PER_TYPE: usize = base::STANDARD;
