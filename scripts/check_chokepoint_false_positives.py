@@ -7,13 +7,17 @@ Usage:
     python3 scripts/check_chokepoint_false_positives.py --self-test --json
 """
 
+from __future__ import annotations
+
+import copy
 import json
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
-from pathlib import Path
+
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 
 
 BEAD_ID = "bd-paui"
@@ -37,6 +41,14 @@ REQUIRED_CONTRACT_TERMS = [
 ]
 
 
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _read_json(path: Path) -> dict:
+    return json.JSONDecoder().decode(_read_text(path))
+
+
 def check_file(path: Path, label: str) -> dict:
     ok = path.exists()
     return {
@@ -52,7 +64,7 @@ def check_contract() -> list[dict]:
         checks.append({"check": "contract: exists", "pass": False, "detail": "MISSING"})
         return checks
 
-    text = CONTRACT.read_text(encoding="utf-8")
+    text = _read_text(CONTRACT)
     checks.append({"check": "contract: exists", "pass": True, "detail": "found"})
 
     for term in REQUIRED_CONTRACT_TERMS:
@@ -73,9 +85,12 @@ def load_report() -> tuple[dict | None, list[dict]]:
 
     checks.append({"check": "report: exists", "pass": True, "detail": "found"})
     try:
-        data = json.loads(REPORT.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
+        data = _read_json(REPORT)
+    except (json.JSONDecodeError, OSError):
         checks.append({"check": "report: valid json", "pass": False, "detail": "invalid"})
+        return None, checks
+    if not isinstance(data, dict):
+        checks.append({"check": "report: valid json", "pass": False, "detail": "not an object"})
         return None, checks
 
     checks.append({"check": "report: valid json", "pass": True, "detail": "valid"})
@@ -290,7 +305,7 @@ def check_report(data: dict | None) -> list[dict]:
         "detail": "stable" if deterministic else "unstable",
     })
 
-    adversarial = json.loads(json.dumps(data))
+    adversarial = copy.deepcopy(data)
     safe_rule = rule_lookup(adversarial, "rule-safe-chokepoint-01")
     if safe_rule:
         safe_rule["counterfactual"]["false_positive_rate_pct"] = 2.0
@@ -354,7 +369,7 @@ def self_test() -> tuple[bool, list[dict]]:
 
 
 def main() -> int:
-    logger = configure_test_logging("check_chokepoint_false_positives")
+    configure_test_logging("check_chokepoint_false_positives")
     as_json = "--json" in sys.argv
     run_self_test = "--self-test" in sys.argv
 
