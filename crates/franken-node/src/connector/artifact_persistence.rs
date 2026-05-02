@@ -179,23 +179,10 @@ impl std::fmt::Display for PersistenceError {
 
 use crate::capacity_defaults::aliases::MAX_TOTAL_ARTIFACTS;
 use crate::capacity_defaults::base;
+use crate::push_bounded;
 
 /// Maximum sequence length per artifact type to prevent unbounded growth.
 const MAX_SEQUENCE_PER_TYPE: usize = base::STANDARD;
-
-/// Push item to vector with bounded capacity to prevent memory exhaustion.
-/// When capacity is exceeded, removes oldest entries to maintain the limit.
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 /// Artifact persistence store with replay hooks.
 #[derive(Debug)]
@@ -287,7 +274,10 @@ impl ArtifactStore {
         self.artifacts.insert(artifact_id.to_string(), artifact);
         let seq_list = self.sequences.entry(artifact_type).or_default();
         if seq_list.len() >= MAX_SEQUENCE_PER_TYPE {
-            let overflow = seq_list.len().saturating_sub(MAX_SEQUENCE_PER_TYPE).saturating_add(1);
+            let overflow = seq_list
+                .len()
+                .saturating_sub(MAX_SEQUENCE_PER_TYPE)
+                .saturating_add(1);
             let safe_overflow = overflow.min(seq_list.len());
             for id in seq_list.drain(0..safe_overflow) {
                 self.artifacts.remove(&id);

@@ -15,6 +15,7 @@ use sha2::{Digest, Sha256};
 pub const SCHEMA_VERSION: &str = "saga-v1.0";
 
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
+use crate::push_bounded;
 
 /// Maximum retained sagas before terminal-only reclamation or fail-closed rejection.
 const MAX_SAGAS: usize = 2048;
@@ -26,18 +27,6 @@ const MAX_RECORDS_PER_SAGA: usize = 4096;
 const ERR_SAGA_CAPACITY_EXCEEDED: &str = "ERR_SAGA_CAPACITY_EXCEEDED";
 /// Stable error when a generated saga id would overwrite an existing saga.
 const ERR_SAGA_ID_REUSED: &str = "ERR_SAGA_ID_REUSED";
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 // ── Event codes ──────────────────────────────────────────────────────────────
 

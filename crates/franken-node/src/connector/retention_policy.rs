@@ -5,19 +5,9 @@
 
 use std::collections::BTreeMap;
 
-const MAX_DECISIONS: usize = 4096;
+use crate::push_bounded;
 
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
+const MAX_DECISIONS: usize = 4096;
 
 fn contains_nul(value: &str) -> bool {
     value.as_bytes().contains(&0)

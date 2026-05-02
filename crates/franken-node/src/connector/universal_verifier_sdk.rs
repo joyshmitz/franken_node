@@ -36,23 +36,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::push_bounded;
+
 /// Maximum number of verification steps per session.
 const MAX_SESSION_STEPS: usize = 4096;
 const CAPSULE_SIGNATURE_ALGORITHM: &str = "ed25519";
 const CAPSULE_SIGNATURE_ALGORITHM_METADATA_KEY: &str = "signature_algorithm";
 const CAPSULE_SIGNER_PUBLIC_KEY_METADATA_KEY: &str = "ed25519_public_key";
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 // ---------------------------------------------------------------------------
 // Schema version
