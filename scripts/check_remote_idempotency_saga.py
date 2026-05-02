@@ -15,10 +15,10 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
-from pathlib import Path
 
 
 BEAD_ID = "bd-3hw"
@@ -62,9 +62,20 @@ def _check(name: str, passed: bool, detail: str) -> dict:
 
 
 def _file_text(path: Path) -> str | None:
-    if path.exists():
+    try:
         return path.read_text(encoding="utf-8")
-    return None
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return None
+
+
+def _json_object_from_text(text: str) -> dict | None:
+    try:
+        value = json.JSONDecoder().decode(text)
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
 
 
 def run_all() -> dict:
@@ -144,12 +155,9 @@ def run_all() -> dict:
     # --- EVIDENCE required fields ---
     evidence_data = None
     if evidence_text:
-        try:
-            evidence_data = json.loads(evidence_text)
-        except json.JSONDecodeError:
-            evidence_data = None
+        evidence_data = _json_object_from_text(evidence_text)
 
-    if evidence_data:
+    if evidence_data is not None:
         for field in EVIDENCE_REQUIRED_FIELDS:
             found = field in evidence_data
             checks.append(_check(
@@ -275,17 +283,27 @@ def run_all() -> dict:
 def self_test() -> bool:
     """Verify the checker itself is well-formed."""
     result = run_all()
-    assert isinstance(result, dict)
-    assert result["bead_id"] == BEAD_ID
-    assert result["section"] == SECTION
-    assert isinstance(result["checks"], list)
-    assert isinstance(result["total"], int)
-    assert result["total"] > 0
+    if not isinstance(result, dict):
+        raise RuntimeError("run_all must return a dict")
+    if result["bead_id"] != BEAD_ID:
+        raise RuntimeError("run_all reported the wrong bead_id")
+    if result["section"] != SECTION:
+        raise RuntimeError("run_all reported the wrong section")
+    if not isinstance(result["checks"], list):
+        raise RuntimeError("run_all checks must be a list")
+    if not isinstance(result["total"], int):
+        raise RuntimeError("run_all total must be an int")
+    if result["total"] <= 0:
+        raise RuntimeError("run_all must report at least one check")
     for check in result["checks"]:
-        assert "name" in check
-        assert "passed" in check
-        assert "detail" in check
-        assert isinstance(check["passed"], bool)
+        if "name" not in check:
+            raise RuntimeError("check missing name")
+        if "passed" not in check:
+            raise RuntimeError("check missing passed")
+        if "detail" not in check:
+            raise RuntimeError("check missing detail")
+        if not isinstance(check["passed"], bool):
+            raise RuntimeError("check passed value must be bool")
     return True
 
 

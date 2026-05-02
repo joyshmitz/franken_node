@@ -3,15 +3,37 @@
 from __future__ import annotations
 
 import json
+import runpy
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "scripts"))
+SCRIPT = ROOT / "scripts" / "check_remote_idempotency_saga.py"
 
-import check_remote_idempotency_saga as checker
+
+class CheckerProxy:
+    def __init__(self, namespace: dict, live_globals: dict):
+        super().__setattr__("_namespace", namespace)
+        super().__setattr__("_live_globals", live_globals)
+
+    def __getattr__(self, name: str):
+        if name in self._live_globals:
+            return self._live_globals[name]
+        return self._namespace[name]
+
+    def __setattr__(self, name: str, value) -> None:
+        self._namespace[name] = value
+        self._live_globals[name] = value
+
+
+_checker_namespace = runpy.run_path(str(SCRIPT))
+checker = CheckerProxy(
+    _checker_namespace,
+    _checker_namespace["run_all"].__globals__,
+)
 
 
 class TestSelfTest(unittest.TestCase):
@@ -123,6 +145,17 @@ class TestSpecChecks(unittest.TestCase):
 
 
 class TestEvidenceChecks(unittest.TestCase):
+    def run_with_evidence_text(self, text: str) -> dict:
+        original_path = checker.EVIDENCE_PATH
+        with tempfile.TemporaryDirectory() as temp_dir:
+            evidence_path = Path(temp_dir) / "verification_evidence.json"
+            evidence_path.write_text(text, encoding="utf-8")
+            checker.EVIDENCE_PATH = evidence_path
+            try:
+                return checker.run_all()
+            finally:
+                checker.EVIDENCE_PATH = original_path
+
     def test_evidence_exists(self):
         result = checker.run_all()
         check = next(c for c in result["checks"]
@@ -160,6 +193,34 @@ class TestEvidenceChecks(unittest.TestCase):
                      if c["name"] == "EVIDENCE_VERDICT")
         self.assertTrue(check["passed"], check["detail"])
 
+    def test_malformed_evidence_fails_closed(self):
+        result = self.run_with_evidence_text("{not-json")
+        field_check = next(c for c in result["checks"]
+                           if c["name"] == "EVIDENCE_FIELD:bead_id")
+        verdict_check = next(c for c in result["checks"]
+                             if c["name"] == "EVIDENCE_VERDICT")
+        self.assertFalse(field_check["passed"])
+        self.assertFalse(verdict_check["passed"])
+        self.assertEqual(result["verdict"], "FAIL")
+
+    def test_non_object_evidence_fails_closed(self):
+        result = self.run_with_evidence_text("[]")
+        field_check = next(c for c in result["checks"]
+                           if c["name"] == "EVIDENCE_FIELD:bead_id")
+        verdict_check = next(c for c in result["checks"]
+                             if c["name"] == "EVIDENCE_VERDICT")
+        self.assertFalse(field_check["passed"])
+        self.assertFalse(verdict_check["passed"])
+        self.assertEqual(result["verdict"], "FAIL")
+
+    def test_empty_object_evidence_reports_missing_fields(self):
+        result = self.run_with_evidence_text("{}")
+        field_check = next(c for c in result["checks"]
+                           if c["name"] == "EVIDENCE_FIELD:bead_id")
+        self.assertFalse(field_check["passed"])
+        self.assertEqual(field_check["detail"], "field 'bead_id' missing")
+        self.assertEqual(result["verdict"], "FAIL")
+
 
 class TestSummaryChecks(unittest.TestCase):
     def test_summary_exists(self):
@@ -188,9 +249,10 @@ class TestJsonOutput(unittest.TestCase):
             [sys.executable,
              str(ROOT / "scripts" / "check_remote_idempotency_saga.py"),
              "--json"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, check=False, timeout=30,
         )
-        data = json.loads(proc.stdout)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        data = json.JSONDecoder().decode(proc.stdout)
         self.assertEqual(data["bead_id"], "bd-3hw")
         self.assertIn("checks", data)
 
@@ -199,7 +261,7 @@ class TestJsonOutput(unittest.TestCase):
             [sys.executable,
              str(ROOT / "scripts" / "check_remote_idempotency_saga.py"),
              "--self-test"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, check=False, timeout=30,
         )
         self.assertEqual(proc.returncode, 0)
         self.assertIn("self_test passed", proc.stdout)
