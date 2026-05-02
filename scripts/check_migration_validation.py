@@ -9,17 +9,17 @@ Usage:
 import json
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
-from pathlib import Path
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-import migration_validation_runner as runner
+sys.path.insert(0, str(ROOT / "scripts"))
+import migration_validation_runner as runner  # noqa: E402
 
 
 def main():
-    logger = configure_test_logging("check_migration_validation")
+    configure_test_logging("check_migration_validation")
     json_output = "--json" in sys.argv
     result = runner.self_test()
 
