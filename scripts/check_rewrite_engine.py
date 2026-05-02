@@ -9,17 +9,17 @@ Usage:
 import json
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
-from pathlib import Path
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "scripts"))
-import rewrite_suggestion_engine as engine
+import rewrite_suggestion_engine as engine  # noqa: E402
 
 
 def main():
-    logger = configure_test_logging("check_rewrite_engine")
+    configure_test_logging("check_rewrite_engine")
     json_output = "--json" in sys.argv
     result = engine.self_test()
 

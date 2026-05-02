@@ -3,20 +3,17 @@
 import json
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-import migration_confidence_report as report
-import sys
-from pathlib import Path
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
+
+sys.path.insert(0, str(ROOT / "scripts"))
+import migration_confidence_report as report  # noqa: E402
+
 
 def main():
-    logger = configure_test_logging("check_confidence_report")
+    configure_test_logging("check_confidence_report")
     json_output = "--json" in sys.argv
     result = report.self_test()
     if json_output:
@@ -26,6 +23,7 @@ def main():
             print(f"  [{'OK' if c['status'] == 'PASS' else 'FAIL'}] {c['id']}")
         print(f"\nVerdict: {result['verdict']}")
     sys.exit(0 if result["verdict"] == "PASS" else 1)
+
 
 if __name__ == "__main__":
     main()
