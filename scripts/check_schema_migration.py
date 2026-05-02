@@ -10,7 +10,6 @@ from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 
 CHECKS = []
 SCHEMA_MIGRATION_TEST_TARGET = "state_migration_contract"
@@ -80,6 +79,7 @@ def run_schema_migration_tests():
         text=True,
         timeout=3600,
         cwd=ROOT,
+        check=False,
     )
     output = result.stdout + result.stderr
     summary = parse_rust_test_summary(output)
@@ -87,8 +87,15 @@ def run_schema_migration_tests():
     return summary, output
 
 
+def _configure_logging() -> None:
+    from scripts.lib.test_logger import configure_test_logging
+
+    configure_test_logging("check_schema_migration")
+
+
 def main():
-    logger = configure_test_logging("check_schema_migration")
+    _configure_logging()
+    CHECKS.clear()
     print("bd-b44: State Schema Migration — Verification\n")
     all_pass = True
 
@@ -96,7 +103,7 @@ def main():
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/schema_migration.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = Path(impl_path).read_text()
+        content = Path(impl_path).read_text(encoding="utf-8")
         has_version = "struct SchemaVersion" in content
         has_contract = "struct SchemaContract" in content
         has_hint = "struct MigrationHint" in content
@@ -109,7 +116,7 @@ def main():
 
     # MIGRATE-HINTS: All 4 hint types
     if impl_exists:
-        content = Path(impl_path).read_text()
+        content = Path(impl_path).read_text(encoding="utf-8")
         hints = ["AddField", "RemoveField", "RenameField", "Transform"]
         found = [h for h in hints if h in content]
         all_pass &= check("MIGRATE-HINTS", "All 4 hint types (add/remove/rename/transform)",
@@ -119,7 +126,7 @@ def main():
 
     # MIGRATE-ERRORS: All 4 error codes
     if impl_exists:
-        content = Path(impl_path).read_text()
+        content = Path(impl_path).read_text(encoding="utf-8")
         errors = ["MIGRATION_PATH_MISSING", "MIGRATION_ALREADY_APPLIED",
                   "MIGRATION_ROLLBACK_FAILED", "SCHEMA_VERSION_INVALID"]
         found = [e for e in errors if e in content]
@@ -130,7 +137,7 @@ def main():
 
     # MIGRATE-IDEMPOTENT: Idempotency check function
     if impl_exists:
-        content = Path(impl_path).read_text()
+        content = Path(impl_path).read_text(encoding="utf-8")
         has_idemp = "fn check_idempotency" in content
         all_pass &= check("MIGRATE-IDEMPOTENT", "Idempotency check function", has_idemp)
     else:
@@ -149,7 +156,7 @@ def main():
     receipts_valid = False
     if os.path.isfile(receipts_path):
         try:
-            data = json.loads(Path(receipts_path).read_text())
+            data = json.JSONDecoder().decode(Path(receipts_path).read_text(encoding="utf-8"))
             receipts_valid = "receipts" in data and len(data["receipts"]) > 0
         except json.JSONDecodeError:
             pass
@@ -159,7 +166,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/state_migration_contract.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = Path(integ_path).read_text()
+        content = Path(integ_path).read_text(encoding="utf-8")
         has_e2e = "end_to_end" in content
         has_idemp = "idempotent" in content
         has_range = "range_check" in content or "contract" in content
@@ -172,7 +179,7 @@ def main():
     harness_path = os.path.join(ROOT, "crates/franken-node/tests/state_migration_contract.rs")
     harness_exists = os.path.isfile(harness_path)
     if harness_exists:
-        harness_content = Path(harness_path).read_text()
+        harness_content = Path(harness_path).read_text(encoding="utf-8")
         harness_wired = "../../../tests/integration/state_migration_contract.rs" in harness_content
     else:
         harness_wired = False
@@ -214,7 +221,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-b44_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = Path(spec_path).read_text()
+        content = Path(spec_path).read_text(encoding="utf-8")
         has_invariants = "INV-MIGRATE" in content
         has_hints = "add_field" in content and "remove_field" in content
     else:
@@ -238,9 +245,8 @@ def main():
 
     evidence_dir = os.path.join(ROOT, "artifacts/section_10_13/bd-b44")
     os.makedirs(evidence_dir, exist_ok=True)
-    with open(os.path.join(evidence_dir, "verification_evidence.json"), "w") as f:
-        json.dump(evidence, f, indent=2)
-        f.write("\n")
+    evidence_path = Path(evidence_dir) / "verification_evidence.json"
+    evidence_path.write_text(f"{json.dumps(evidence, indent=2)}\n", encoding="utf-8")
 
     return 0 if all_pass else 1
 

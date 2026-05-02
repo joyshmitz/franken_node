@@ -3,6 +3,7 @@
 import json
 import os
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from scripts import check_schema_migration
@@ -16,8 +17,7 @@ class TestMigrationFixtures(unittest.TestCase):
     def _load_fixture(self, name):
         path = os.path.join(ROOT, "fixtures/schema_migration", name)
         self.assertTrue(os.path.isfile(path), f"Fixture {name} must exist")
-        with open(path) as f:
-            return json.load(f)
+        return json.JSONDecoder().decode(Path(path).read_text(encoding="utf-8"))
 
     def test_migration_paths_exist(self):
         data = self._load_fixture("migration_paths.json")
@@ -68,15 +68,13 @@ class TestMigrationReceipts(unittest.TestCase):
 
     def test_receipts_valid(self):
         path = os.path.join(ROOT, "artifacts/section_10_13/bd-b44/state_migration_receipts.json")
-        with open(path) as f:
-            data = json.load(f)
+        data = json.JSONDecoder().decode(Path(path).read_text(encoding="utf-8"))
         self.assertIn("receipts", data)
         self.assertGreater(len(data["receipts"]), 0)
 
     def test_receipts_have_outcomes(self):
         path = os.path.join(ROOT, "artifacts/section_10_13/bd-b44/state_migration_receipts.json")
-        with open(path) as f:
-            data = json.load(f)
+        data = json.JSONDecoder().decode(Path(path).read_text(encoding="utf-8"))
         for r in data["receipts"]:
             self.assertIn("outcome", r)
             self.assertIn("connector_id", r)
@@ -88,8 +86,7 @@ class TestMigrationImplementation(unittest.TestCase):
     def setUp(self):
         self.impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/schema_migration.rs")
         self.assertTrue(os.path.isfile(self.impl_path))
-        with open(self.impl_path) as f:
-            self.content = f.read()
+        self.content = Path(self.impl_path).read_text(encoding="utf-8")
 
     def test_has_schema_version(self):
         self.assertIn("struct SchemaVersion", self.content)
@@ -125,9 +122,13 @@ class TestMigrationCheckerLogic(unittest.TestCase):
     def test_cargo_harness_wires_integration_test(self):
         harness_path = os.path.join(ROOT, "crates/franken-node/tests/state_migration_contract.rs")
         self.assertTrue(os.path.isfile(harness_path))
-        with open(harness_path) as f:
-            content = f.read()
+        content = Path(harness_path).read_text(encoding="utf-8")
         self.assertIn("../../../tests/integration/state_migration_contract.rs", content)
+
+    def test_checker_clears_accumulated_checks(self):
+        check_path = os.path.join(ROOT, "scripts/check_schema_migration.py")
+        content = Path(check_path).read_text(encoding="utf-8")
+        self.assertIn("CHECKS.clear()", content)
 
     def test_parse_rust_test_summary_handles_singular_and_plural(self):
         output = """
@@ -188,6 +189,7 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out
             text=True,
             timeout=3600,
             cwd=check_schema_migration.ROOT,
+            check=False,
         )
         self.assertEqual(summary["returncode"], 0)
         self.assertEqual(summary["passed"], 1)
@@ -200,8 +202,7 @@ class TestMigrationSpec(unittest.TestCase):
     def setUp(self):
         self.spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-b44_contract.md")
         self.assertTrue(os.path.isfile(self.spec_path))
-        with open(self.spec_path) as f:
-            self.content = f.read()
+        self.content = Path(self.spec_path).read_text(encoding="utf-8")
 
     def test_has_invariants(self):
         for inv in ["INV-MIGRATE-PATH", "INV-MIGRATE-IDEMPOTENT",
