@@ -1,103 +1,228 @@
 """Tests for scripts/check_epoch_transition_barrier.py (bd-2wsm)."""
 
-import importlib.util
+from __future__ import annotations
+
 import json
-import os
 import subprocess
 import sys
-import pytest
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPT = os.path.join(ROOT, "scripts", "check_epoch_transition_barrier.py")
-
-spec = importlib.util.spec_from_file_location("check_etb", SCRIPT)
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
+import tempfile
+import unittest
+from pathlib import Path
 
 
-class TestSelfTest:
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts" / "check_epoch_transition_barrier.py"
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import check_epoch_transition_barrier as mod  # noqa: E402
+
+
+def decode_json(payload: str) -> dict:
+    decoded = json.JSONDecoder().decode(payload)
+    if not isinstance(decoded, dict):
+        raise TypeError("expected JSON object")
+    return decoded
+
+
+class SelfTestTests(unittest.TestCase):
     def test_self_test_passes(self):
-        assert mod.self_test() is True
+        self.assertTrue(mod.self_test())
 
 
-class TestJsonOutput:
+class JsonOutputTests(unittest.TestCase):
+    def run_json(self) -> dict:
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return decode_json(result.stdout)
+
     def test_json_output(self):
-        result = subprocess.run([sys.executable, SCRIPT, "--json"], capture_output=True, text=True)
-        data = json.loads(result.stdout)
-        assert data["bead_id"] == "bd-2wsm"
-        assert data["section"] == "10.14"
-        assert isinstance(data["checks"], list)
+        data = self.run_json()
+        self.assertEqual(data["bead_id"], "bd-2wsm")
+        self.assertEqual(data["section"], "10.14")
+        self.assertIsInstance(data["checks"], list)
 
     def test_verdict_field(self):
-        result = subprocess.run([sys.executable, SCRIPT, "--json"], capture_output=True, text=True)
-        data = json.loads(result.stdout)
-        assert data["verdict"] in ("PASS", "FAIL")
+        self.assertIn(self.run_json()["verdict"], ("PASS", "FAIL"))
 
     def test_checks_have_fields(self):
-        result = subprocess.run([sys.executable, SCRIPT, "--json"], capture_output=True, text=True)
-        data = json.loads(result.stdout)
-        for c in data["checks"]:
-            assert "check" in c and "passed" in c and "detail" in c
+        for check in self.run_json()["checks"]:
+            self.assertIn("check", check)
+            self.assertIn("passed", check)
+            self.assertIn("detail", check)
 
     def test_minimum_check_count(self):
-        result = subprocess.run([sys.executable, SCRIPT, "--json"], capture_output=True, text=True)
-        data = json.loads(result.stdout)
-        assert len(data["checks"]) >= 25
+        self.assertGreaterEqual(len(self.run_json()["checks"]), 25)
 
 
-class TestIndividualChecks:
-    @pytest.fixture(scope="class")
-    def results(self):
-        return {r["check"]: r for r in mod._checks()}
+class IndividualCheckTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.results = {result["check"]: result for result in mod._checks()}
 
-    def test_source_exists(self, results): assert results["source_exists"]["passed"]
-    def test_module_wiring(self, results): assert results["module_wiring"]["passed"]
-    def test_struct_barrier_phase(self, results): assert results["struct_BarrierPhase"]["passed"]
-    def test_struct_drain_ack(self, results): assert results["struct_DrainAck"]["passed"]
-    def test_struct_abort_reason(self, results): assert results["struct_AbortReason"]["passed"]
-    def test_struct_barrier_error(self, results): assert results["struct_BarrierError"]["passed"]
-    def test_struct_barrier_config(self, results): assert results["struct_BarrierConfig"]["passed"]
-    def test_struct_transcript_entry(self, results): assert results["struct_TranscriptEntry"]["passed"]
-    def test_struct_barrier_transcript(self, results): assert results["struct_BarrierTranscript"]["passed"]
-    def test_struct_barrier_audit_record(self, results): assert results["struct_BarrierAuditRecord"]["passed"]
-    def test_struct_barrier_instance(self, results): assert results["struct_BarrierInstance"]["passed"]
-    def test_struct_epoch_transition_barrier(self, results): assert results["struct_EpochTransitionBarrier"]["passed"]
-    def test_phase_proposed(self, results): assert results["phase_proposed"]["passed"]
-    def test_phase_draining(self, results): assert results["phase_draining"]["passed"]
-    def test_phase_committed(self, results): assert results["phase_committed"]["passed"]
-    def test_phase_aborted(self, results): assert results["phase_aborted"]["passed"]
-    def test_fn_propose(self, results): assert results["fn_propose"]["passed"]
-    def test_fn_record_drain_ack(self, results): assert results["fn_record_drain_ack"]["passed"]
-    def test_fn_try_commit(self, results): assert results["fn_try_commit"]["passed"]
-    def test_fn_abort(self, results): assert results["fn_abort"]["passed"]
-    def test_fn_record_drain_failure(self, results): assert results["fn_record_drain_failure"]["passed"]
-    def test_fn_check_participant_timeouts(self, results): assert results["fn_check_participant_timeouts"]["passed"]
-    def test_fn_register_participant(self, results): assert results["fn_register_participant"]["passed"]
-    def test_all_acked(self, results): assert results["all_acked"]["passed"]
-    def test_missing_acks(self, results): assert results["missing_acks"]["passed"]
-    def test_is_terminal(self, results): assert results["is_terminal"]["passed"]
-    def test_is_barrier_active(self, results): assert results["is_barrier_active"]["passed"]
-    def test_configurable_timeout(self, results): assert results["configurable_timeout"]["passed"]
-    def test_transcript_export(self, results): assert results["transcript_export"]["passed"]
-    def test_audit_log(self, results): assert results["audit_log"]["passed"]
-    def test_event_codes(self, results): assert results["event_codes"]["passed"]
-    def test_error_codes(self, results): assert results["error_codes"]["passed"]
-    def test_invariants(self, results): assert results["invariants"]["passed"]
-    def test_config_validation(self, results): assert results["config_validation"]["passed"]
-    def test_schema_version(self, results): assert results["schema_version"]["passed"]
-    def test_spec_alignment(self, results): assert results["spec_alignment"]["passed"]
-    def test_test_coverage(self, results): assert results["test_coverage"]["passed"]
+    def assert_passed(self, name: str) -> None:
+        self.assertTrue(self.results[name]["passed"], name)
+
+    def test_source_exists(self):
+        self.assert_passed("source_exists")
+
+    def test_module_wiring(self):
+        self.assert_passed("module_wiring")
+
+    def test_struct_barrier_phase(self):
+        self.assert_passed("struct_BarrierPhase")
+
+    def test_struct_drain_ack(self):
+        self.assert_passed("struct_DrainAck")
+
+    def test_struct_abort_reason(self):
+        self.assert_passed("struct_AbortReason")
+
+    def test_struct_barrier_error(self):
+        self.assert_passed("struct_BarrierError")
+
+    def test_struct_barrier_config(self):
+        self.assert_passed("struct_BarrierConfig")
+
+    def test_struct_transcript_entry(self):
+        self.assert_passed("struct_TranscriptEntry")
+
+    def test_struct_barrier_transcript(self):
+        self.assert_passed("struct_BarrierTranscript")
+
+    def test_struct_barrier_audit_record(self):
+        self.assert_passed("struct_BarrierAuditRecord")
+
+    def test_struct_barrier_instance(self):
+        self.assert_passed("struct_BarrierInstance")
+
+    def test_struct_epoch_transition_barrier(self):
+        self.assert_passed("struct_EpochTransitionBarrier")
+
+    def test_phase_proposed(self):
+        self.assert_passed("phase_proposed")
+
+    def test_phase_draining(self):
+        self.assert_passed("phase_draining")
+
+    def test_phase_committed(self):
+        self.assert_passed("phase_committed")
+
+    def test_phase_aborted(self):
+        self.assert_passed("phase_aborted")
+
+    def test_fn_propose(self):
+        self.assert_passed("fn_propose")
+
+    def test_fn_record_drain_ack(self):
+        self.assert_passed("fn_record_drain_ack")
+
+    def test_fn_try_commit(self):
+        self.assert_passed("fn_try_commit")
+
+    def test_fn_abort(self):
+        self.assert_passed("fn_abort")
+
+    def test_fn_record_drain_failure(self):
+        self.assert_passed("fn_record_drain_failure")
+
+    def test_fn_check_participant_timeouts(self):
+        self.assert_passed("fn_check_participant_timeouts")
+
+    def test_fn_register_participant(self):
+        self.assert_passed("fn_register_participant")
+
+    def test_all_acked(self):
+        self.assert_passed("all_acked")
+
+    def test_missing_acks(self):
+        self.assert_passed("missing_acks")
+
+    def test_is_terminal(self):
+        self.assert_passed("is_terminal")
+
+    def test_is_barrier_active(self):
+        self.assert_passed("is_barrier_active")
+
+    def test_configurable_timeout(self):
+        self.assert_passed("configurable_timeout")
+
+    def test_transcript_export(self):
+        self.assert_passed("transcript_export")
+
+    def test_audit_log(self):
+        self.assert_passed("audit_log")
+
+    def test_event_codes(self):
+        self.assert_passed("event_codes")
+
+    def test_error_codes(self):
+        self.assert_passed("error_codes")
+
+    def test_invariants(self):
+        self.assert_passed("invariants")
+
+    def test_config_validation(self):
+        self.assert_passed("config_validation")
+
+    def test_schema_version(self):
+        self.assert_passed("schema_version")
+
+    def test_spec_alignment(self):
+        self.assert_passed("spec_alignment")
+
+    def test_test_coverage(self):
+        self.assert_passed("test_coverage")
 
 
-class TestOverall:
+class FailureModeTests(unittest.TestCase):
+    def test_missing_source_fails_closed_without_crashing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing = Path(tmpdir) / "missing.rs"
+            original = mod.IMPL
+            try:
+                mod.IMPL = missing
+                checks = {result["check"]: result for result in mod._checks()}
+            finally:
+                mod.IMPL = original
+
+        self.assertFalse(checks["source_exists"]["passed"])
+        self.assertFalse(checks["test_coverage"]["passed"])
+
+
+class OverallTests(unittest.TestCase):
     def test_all_checks_pass(self):
-        failed = [r for r in mod._checks() if not r["passed"]]
-        assert len(failed) == 0, f"Failed: {[r['check'] for r in failed]}"
+        failed = [result for result in mod._checks() if not result["passed"]]
+        self.assertEqual([], failed, f"Failed: {[result['check'] for result in failed]}")
 
     def test_verdict_is_pass(self):
-        result = subprocess.run([sys.executable, SCRIPT, "--json"], capture_output=True, text=True)
-        assert json.loads(result.stdout)["verdict"] == "PASS"
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(decode_json(result.stdout)["verdict"], "PASS")
 
     def test_human_output(self):
-        result = subprocess.run([sys.executable, SCRIPT], capture_output=True, text=True)
-        assert "bd-2wsm" in result.stdout and "PASS" in result.stdout
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("bd-2wsm", result.stdout)
+        self.assertIn("PASS", result.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()
