@@ -97,6 +97,35 @@ impl ReputationTier {
         }
     }
 
+    /// Score threshold to reach this tier using configuration (inclusive lower bound).
+    #[must_use]
+    pub fn threshold_from_config(self, config: &crate::config::ReputationThresholds) -> f64 {
+        match self {
+            Self::Suspended => 0.0,
+            Self::Untrusted => 0.0,
+            Self::Provisional => config.provisional,
+            Self::Established => config.established,
+            Self::Trusted => config.trusted,
+        }
+    }
+
+    /// Derive tier from a numeric score using configuration (0..=100).
+    #[must_use]
+    pub fn from_score_with_config(score: f64, config: &crate::config::ReputationThresholds) -> Self {
+        if !score.is_finite() {
+            return Self::Untrusted;
+        }
+        if score >= config.trusted {
+            Self::Trusted
+        } else if score >= config.established {
+            Self::Established
+        } else if score >= config.provisional {
+            Self::Provisional
+        } else {
+            Self::Untrusted
+        }
+    }
+
     /// Human-readable description of what this tier allows.
     #[must_use]
     pub fn policy_description(self) -> &'static str {

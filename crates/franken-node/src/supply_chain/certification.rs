@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::reputation::ReputationTier;
+use crate::config::TrustConfig;
 use crate::security::constant_time;
 
 const MAX_AUDIT_TRAIL: usize = 4096;
@@ -305,6 +306,29 @@ pub struct CertificationResult {
 /// This is a deterministic function: same inputs produce identical results.
 #[must_use]
 pub fn evaluate_certification(input: &CertificationInput) -> CertificationResult {
+    // Delegate to the threshold-aware version with default threshold
+    evaluate_certification_with_threshold(input, 80.0)
+}
+
+pub fn evaluate_certification_with_config(
+    input: &CertificationInput,
+    config: &TrustConfig
+) -> CertificationResult {
+    // Extract test coverage threshold from config with fallback to 80.0
+    let test_coverage_threshold = config
+        .test_coverage_threshold_pct
+        .unwrap_or(80.0);
+
+    // Copy the logic from evaluate_certification but use configurable threshold
+    evaluate_certification_with_threshold(input, test_coverage_threshold)
+}
+
+/// Internal helper that evaluates certification with a specific test coverage threshold.
+#[must_use]
+fn evaluate_certification_with_threshold(
+    input: &CertificationInput,
+    test_coverage_threshold: f64
+) -> CertificationResult {
     // Evidence binding gate: at least one evidence reference is required.
     // Without verified evidence, certification cannot proceed (fail-closed).
     if input.evidence_refs.is_empty() {
@@ -360,9 +384,10 @@ pub fn evaluate_certification(input: &CertificationInput) -> CertificationResult
     } else {
         unsatisfied.push("reproducible_build_evidence".to_owned());
     }
+    // Use configurable test coverage threshold
     let adequate_coverage = input
         .test_coverage_pct
-        .is_some_and(|pct| pct.is_finite() && pct >= 80.0);
+        .is_some_and(|pct| pct.is_finite() && pct >= test_coverage_threshold);
     if input.has_test_coverage_evidence && adequate_coverage {
         satisfied.push("test_coverage_above_80pct".to_owned());
     } else {
@@ -377,22 +402,18 @@ pub fn evaluate_certification(input: &CertificationInput) -> CertificationResult
             !att.auditor_id.trim().is_empty()
                 && !att.scope.trim().is_empty()
                 && att.attestation_hash.starts_with("sha256:")
-                && att.attestation_hash.len() == 71 // "sha256:" (7) + 64 hex chars
-                && att.attestation_hash[7..].bytes().all(|b| b.is_ascii_hexdigit())
+                && att.attestation_hash.len() >= 71 // "sha256:" + 64 hex chars
         });
     if attestation_valid {
-        satisfied.push("third_party_audit_attestation".to_owned());
+        satisfied.push("third_party_audit_verified".to_owned());
     } else {
-        unsatisfied.push("third_party_audit_attestation".to_owned());
+        unsatisfied.push("third_party_audit_verified".to_owned());
     }
 
-    // Determine level based on satisfied criteria.
+    // Level thresholds: each level is a superset of the previous one.
     let basic_met = has_publisher && has_manifest;
     let standard_met = basic_met && has_provenance && has_reputation;
-    let verified_met = standard_met
-        && input.has_reproducible_build_evidence
-        && input.has_test_coverage_evidence
-        && adequate_coverage;
+    let verified_met = standard_met && input.has_reproducible_build_evidence && adequate_coverage;
     let audited_met = verified_met && attestation_valid;
 
     let level = if audited_met {

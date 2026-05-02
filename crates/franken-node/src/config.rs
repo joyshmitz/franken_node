@@ -122,6 +122,8 @@ impl Config {
                     min_trust_score: None,
                     decay_factor: None,
                     registry_signing_key: None,
+                    reputation_tier_thresholds: None,
+                    test_coverage_threshold_pct: None,
                 },
                 replay: ReplayConfig {
                     persist_high_severity: true,
@@ -185,6 +187,8 @@ impl Config {
                     min_trust_score: None,
                     decay_factor: None,
                     registry_signing_key: None,
+                    reputation_tier_thresholds: None,
+                    test_coverage_threshold_pct: None,
                 },
                 replay: ReplayConfig {
                     persist_high_severity: true,
@@ -248,6 +252,8 @@ impl Config {
                     min_trust_score: None,
                     decay_factor: None,
                     registry_signing_key: None,
+                    reputation_tier_thresholds: None,
+                    test_coverage_threshold_pct: None,
                 },
                 replay: ReplayConfig {
                     persist_high_severity: true,
@@ -2335,6 +2341,26 @@ pub struct MigrationConfig {
 // -- Trust --
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReputationThresholds {
+    /// Minimum score for trusted reputation tier.
+    pub trusted: f64,
+    /// Minimum score for established reputation tier.
+    pub established: f64,
+    /// Minimum score for provisional reputation tier.
+    pub provisional: f64,
+}
+
+impl Default for ReputationThresholds {
+    fn default() -> Self {
+        Self {
+            trusted: 80.0,
+            established: 50.0,
+            provisional: 20.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TrustConfig {
     /// Risky actions require fresh revocation checks.
     pub risky_requires_fresh_revocation: bool,
@@ -2362,6 +2388,14 @@ pub struct TrustConfig {
     /// When `None`, consumers use the default hardcoded key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry_signing_key: Option<String>,
+    /// Optional reputation tier thresholds (trusted, established, provisional).
+    /// When `None`, consumers use defaults (80.0, 50.0, 20.0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reputation_tier_thresholds: Option<ReputationThresholds>,
+    /// Optional test coverage percentage threshold for certification.
+    /// When `None`, consumers use the default (80.0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_coverage_threshold_pct: Option<f64>,
 }
 
 // -- Replay --
