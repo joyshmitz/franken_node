@@ -598,22 +598,21 @@ impl DurableReplayStore {
 
 impl DurableReplayStoreInner {
     fn flush_pending_markers(&self) -> Result<(), RemoteCapError> {
-        let markers = {
-            let mut pending = self.pending_syncs.lock().map_err(|_| {
-                replay_store_poisoned_lock_error("flush marker sync batch", &self.consumed_dir)
-            })?;
-            if pending.markers.is_empty() {
-                return Ok(());
-            }
-            std::mem::take(&mut pending.markers)
-        };
+        let mut pending = self.pending_syncs.lock().map_err(|_| {
+            replay_store_poisoned_lock_error("flush marker sync batch", &self.consumed_dir)
+        })?;
+        if pending.markers.is_empty() {
+            return Ok(());
+        }
 
-        for marker in &markers {
+        for marker in &pending.markers {
             marker.sync_all().map_err(|source| {
                 replay_store_error("fsync marker batch", &self.consumed_dir, source)
             })?;
         }
-        sync_directory(&self.consumed_dir)
+        sync_directory(&self.consumed_dir)?;
+        pending.markers.clear();
+        Ok(())
     }
 }
 
