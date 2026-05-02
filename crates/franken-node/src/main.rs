@@ -7834,6 +7834,296 @@ struct DoctorPolicyActivationReport {
     wording_validation: WordingValidation,
 }
 
+const DEBUG_TRACE_POLICY_SCHEMA_VERSION: &str = "franken-node/debug-trace-policy/v1";
+const DEBUG_TRACE_POLICY_ENGINE_DOCTOR_ACTIVATION: &str = "doctor_policy_activation";
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DebugTracePolicyConfig {
+    schema_version: String,
+    policy_engine: String,
+}
+
+fn parse_debug_trace_policy_config(raw: &str, path: &Path) -> Result<DebugTracePolicyConfig> {
+    let config: DebugTracePolicyConfig = serde_json::from_str(raw).with_context(|| {
+        format!(
+            "failed parsing debug trace policy {} as JSON",
+            path.display()
+        )
+    })?;
+
+    if config.schema_version != DEBUG_TRACE_POLICY_SCHEMA_VERSION {
+        anyhow::bail!(
+            "unsupported debug trace policy schema `{}`; expected `{}`",
+            config.schema_version,
+            DEBUG_TRACE_POLICY_SCHEMA_VERSION
+        );
+    }
+    if config.policy_engine != DEBUG_TRACE_POLICY_ENGINE_DOCTOR_ACTIVATION {
+        anyhow::bail!(
+            "unsupported debug trace policy_engine `{}`; expected `{}`",
+            config.policy_engine,
+            DEBUG_TRACE_POLICY_ENGINE_DOCTOR_ACTIVATION
+        );
+    }
+
+    Ok(config)
+}
+
+fn json_value_kind(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Object(_) => "object",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::Bool(_) => "boolean",
+        serde_json::Value::Null => "null",
+    }
+}
+
+fn decision_reason_label(reason: &DecisionReason) -> &'static str {
+    match reason {
+        DecisionReason::TopCandidateAccepted => "top_candidate_accepted",
+        DecisionReason::TopCandidateBlockedFallbackUsed { .. } => {
+            "top_candidate_blocked_fallback_used"
+        }
+        DecisionReason::AllCandidatesBlocked => "all_candidates_blocked",
+        DecisionReason::NoCandidates => "no_candidates",
+    }
+}
+
+fn debug_trace_status_for(verdict: DoctorGuardrailVerdictKind) -> &'static str {
+    match verdict {
+        DoctorGuardrailVerdictKind::Allow => "pass",
+        DoctorGuardrailVerdictKind::Warn => "warn",
+        DoctorGuardrailVerdictKind::Block => "fail",
+    }
+}
+
+fn debug_trace_evidence_refs(report: &DoctorPolicyActivationReport) -> Vec<String> {
+    let mut refs = Vec::new();
+    for finding in &report.guardrail_certificate.findings {
+        push_bounded(
+            &mut refs,
+            format!(
+                "policy.guardrail:{}:{}",
+                finding.monitor_name, finding.event_code
+            ),
+            64,
+        );
+    }
+    push_bounded(&mut refs, "policy.decision_engine".to_string(), 64);
+    push_bounded(&mut refs, "policy.explainer_wording".to_string(), 64);
+    refs
+}
+
+fn build_debug_trace_json_report(
+    args: &DebugTraceArgs,
+    policy_path: &Path,
+    input_path: &Path,
+    policy_content: &str,
+    input_content: &str,
+    input_data: &serde_json::Value,
+    policy_config: &DebugTracePolicyConfig,
+    activation: &DoctorPolicyActivationReport,
+) -> serde_json::Value {
+    let verdict = activation.guardrail_certificate.dominant_verdict;
+    let decision_reason = decision_reason_label(&activation.decision_outcome.reason);
+    let chosen = activation
+        .decision_outcome
+        .chosen
+        .as_ref()
+        .map(|candidate| candidate.0.as_str());
+
+    serde_json::json!({
+        "trace_id": args.trace_id,
+        "policy_file": policy_path.display().to_string(),
+        "input_file": input_path.display().to_string(),
+        "policy_schema_version": policy_config.schema_version,
+        "policy_engine": policy_config.policy_engine,
+        "trace_steps": [
+            {
+                "step": 1,
+                "type": "policy_load",
+                "status": "success",
+                "details": {
+                    "policy_size": policy_content.len(),
+                    "schema_version": policy_config.schema_version,
+                    "policy_engine": policy_config.policy_engine,
+                }
+            },
+            {
+                "step": 2,
+                "type": "input_load",
+                "status": "success",
+                "details": {
+                    "input_size": input_content.len(),
+                    "input_type": json_value_kind(input_data),
+                    "candidate_count": activation.candidate_count,
+                    "observation_count": activation.observation_count,
+                    "prefiltered_candidate_count": activation.prefiltered_candidate_count,
+                }
+            },
+            {
+                "step": 3,
+                "type": "guardrail_evaluation",
+                "status": "success",
+                "details": {
+                    "dominant_verdict": verdict.as_str(),
+                    "findings_count": activation.guardrail_certificate.findings.len(),
+                    "blocking_budget_ids": activation.guardrail_certificate.blocking_budget_ids,
+                }
+            },
+            {
+                "step": 4,
+                "type": "bayesian_ranking",
+                "status": "success",
+                "details": {
+                    "top_ranked_candidate": activation.top_ranked_candidate,
+                    "candidate_count": activation.candidate_count,
+                    "observation_count": activation.observation_count,
+                }
+            },
+            {
+                "step": 5,
+                "type": "decision_engine",
+                "status": "success",
+                "details": {
+                    "chosen": chosen,
+                    "reason": decision_reason,
+                    "blocked_count": activation.decision_outcome.blocked.len(),
+                    "epoch_id": activation.decision_outcome.epoch_id,
+                }
+            },
+            {
+                "step": 6,
+                "type": "explanation_wording",
+                "status": if activation.wording_validation.valid { "success" } else { "fail" },
+                "details": {
+                    "valid": activation.wording_validation.valid,
+                    "violations": activation.wording_validation.violations,
+                }
+            }
+        ],
+        "final_verdict": {
+            "status": debug_trace_status_for(verdict),
+            "verdict": verdict.as_str(),
+            "chosen": chosen,
+            "reason": decision_reason,
+            "evidence": debug_trace_evidence_refs(activation),
+        },
+        "diagnostics": {
+            "decision_outcome": activation.decision_outcome,
+            "explanation": activation.explanation,
+            "guardrail_certificate": activation.guardrail_certificate,
+        }
+    })
+}
+
+fn render_debug_trace_human(
+    args: &DebugTraceArgs,
+    policy_path: &Path,
+    input_path: &Path,
+    policy_content: &str,
+    input_content: &str,
+    input_data: &serde_json::Value,
+    policy_config: &DebugTracePolicyConfig,
+    activation: &DoctorPolicyActivationReport,
+) {
+    let verdict = activation.guardrail_certificate.dominant_verdict;
+    let decision_reason = decision_reason_label(&activation.decision_outcome.reason);
+    let chosen = activation
+        .decision_outcome
+        .chosen
+        .as_ref()
+        .map_or("none", |candidate| candidate.0.as_str());
+
+    println!("Debug Trace: Policy Evaluation");
+    println!("Trace ID: {}", args.trace_id);
+    println!("Policy: {}", policy_path.display());
+    println!("Input:  {}", input_path.display());
+    println!();
+
+    println!("Step 1: Policy Loading");
+    println!("  status=success");
+    println!("  schema_version={}", policy_config.schema_version);
+    println!("  policy_engine={}", policy_config.policy_engine);
+    println!("  policy_size_bytes={}", policy_content.len());
+    if args.verbose {
+        println!(
+            "  policy_excerpt={}...",
+            policy_content
+                .chars()
+                .take(100)
+                .collect::<String>()
+                .replace('\n', "\\n")
+        );
+    }
+    println!();
+
+    println!("Step 2: Input Loading");
+    println!("  status=success");
+    println!("  input_type={}", json_value_kind(input_data));
+    println!("  input_size_bytes={}", input_content.len());
+    println!("  candidates={}", activation.candidate_count);
+    println!("  observations={}", activation.observation_count);
+    println!();
+
+    println!("Step 3: Guardrail Evaluation");
+    println!("  status=success");
+    println!("  dominant_verdict={}", verdict.as_str());
+    println!(
+        "  findings_count={}",
+        activation.guardrail_certificate.findings.len()
+    );
+    println!(
+        "  blocking_budget_ids={:?}",
+        activation.guardrail_certificate.blocking_budget_ids
+    );
+    println!();
+
+    println!("Step 4: Bayesian Ranking");
+    println!("  status=success");
+    println!(
+        "  top_ranked_candidate={}",
+        activation.top_ranked_candidate.as_deref().unwrap_or("none")
+    );
+    println!();
+
+    println!("Step 5: Decision Engine");
+    println!("  status=success");
+    println!("  chosen={chosen}");
+    println!("  reason={decision_reason}");
+    println!(
+        "  blocked_count={}",
+        activation.decision_outcome.blocked.len()
+    );
+    println!();
+
+    println!("Step 6: Explanation Wording");
+    println!(
+        "  status={}",
+        if activation.wording_validation.valid {
+            "success"
+        } else {
+            "fail"
+        }
+    );
+    println!("  valid={}", activation.wording_validation.valid);
+    println!(
+        "  violations={:?}",
+        activation.wording_validation.violations
+    );
+    println!();
+
+    println!("Final Verdict:");
+    println!("  status={}", debug_trace_status_for(verdict));
+    println!("  verdict={}", verdict.as_str());
+    println!("  chosen={chosen}");
+    println!("  reason={decision_reason}");
+    println!("  evidence={:?}", debug_trace_evidence_refs(activation));
+}
+
 fn parse_hardening_level(label: &str, field: &str) -> Result<HardeningLevel> {
     let normalized = label.trim().to_ascii_lowercase();
     HardeningLevel::from_label(&normalized).ok_or_else(|| {
@@ -22683,6 +22973,8 @@ fn handle_debug_trace(args: &DebugTraceArgs) -> Result<()> {
     let policy_content = fs::read_to_string(policy_path)
         .with_context(|| format!("Failed to read policy file: {:?}", policy_path))?;
 
+    let policy_config = parse_debug_trace_policy_config(&policy_content, policy_path)?;
+
     // Load input fixture
     let input_content = fs::read_to_string(input_path)
         .with_context(|| format!("Failed to read input file: {:?}", input_path))?;
@@ -22691,118 +22983,37 @@ fn handle_debug_trace(args: &DebugTraceArgs) -> Result<()> {
     let input_data: Value = serde_json::from_str(&input_content)
         .with_context(|| format!("Failed to parse input JSON from: {:?}", input_path))?;
 
-    if args.json {
-        // JSON output mode
-        let output = serde_json::json!({
-            "trace_id": args.trace_id,
-            "policy_file": policy_path.display().to_string(),
-            "input_file": input_path.display().to_string(),
-            "trace_steps": [
-                {
-                    "step": 1,
-                    "type": "policy_load",
-                    "status": "success",
-                    "details": {
-                        "policy_size": policy_content.len(),
-                        "policy_type": "unknown" // TODO: detect policy type
-                    }
-                },
-                {
-                    "step": 2,
-                    "type": "input_load",
-                    "status": "success",
-                    "details": {
-                        "input_size": input_content.len(),
-                        "input_type": match input_data {
-                            Value::Object(_) => "object",
-                            Value::Array(_) => "array",
-                            _ => "primitive"
-                        }
-                    }
-                },
-                {
-                    "step": 3,
-                    "type": "policy_evaluation",
-                    "status": "not_implemented",
-                    "details": {
-                        "message": "Policy evaluation engine not yet implemented",
-                        "phase": "preview"
-                    }
-                }
-            ],
-            "final_verdict": {
-                "status": "not_implemented",
-                "verdict": null,
-                "evidence": []
-            },
-            "implementation_status": "preview",
-            "next_steps": "Implement policy engine integration for bd-1l4cj.2"
-        });
+    let activation = run_doctor_policy_activation(input_path).with_context(|| {
+        format!(
+            "failed evaluating debug trace policy input {} with engine {}",
+            input_path.display(),
+            policy_config.policy_engine
+        )
+    })?;
 
+    if args.json {
+        let output = build_debug_trace_json_report(
+            args,
+            policy_path,
+            input_path,
+            &policy_content,
+            &input_content,
+            &input_data,
+            &policy_config,
+            &activation,
+        );
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
-        // Human-readable output mode
-        println!("🔍 Debug Trace: Policy Evaluation");
-        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        println!("📋 Trace ID: {}", args.trace_id);
-        println!("📁 Policy: {}", policy_path.display());
-        println!("📄 Input:  {}", input_path.display());
-        println!();
-
-        println!("📊 Step 1: Policy Loading");
-        println!("  ✅ Loaded policy file ({} bytes)", policy_content.len());
-        if args.verbose {
-            println!(
-                "  📝 Policy preview: {}...",
-                policy_content
-                    .chars()
-                    .take(100)
-                    .collect::<String>()
-                    .replace('\n', "\\n")
-            );
-        }
-        println!();
-
-        println!("📊 Step 2: Input Parsing");
-        println!("  ✅ Parsed input JSON ({} bytes)", input_content.len());
-        println!(
-            "  📋 Input type: {}",
-            match input_data {
-                Value::Object(_) => "Object",
-                Value::Array(_) => "Array",
-                Value::String(_) => "String",
-                Value::Number(_) => "Number",
-                Value::Bool(_) => "Boolean",
-                Value::Null => "Null",
-            }
+        render_debug_trace_human(
+            args,
+            policy_path,
+            input_path,
+            &policy_content,
+            &input_content,
+            &input_data,
+            &policy_config,
+            &activation,
         );
-        if args.verbose {
-            println!(
-                "  📝 Input preview: {}",
-                serde_json::to_string(&input_data)?
-                    .chars()
-                    .take(200)
-                    .collect::<String>()
-            );
-        }
-        println!();
-
-        println!("📊 Step 3: Policy Evaluation");
-        println!("  ⚠️  Policy engine not yet implemented (Phase 1)");
-        println!("  📝 This is a preview implementation for bd-1l4cj.2");
-        println!();
-
-        println!("🎯 Final Verdict:");
-        println!("  Status: Not implemented");
-        println!("  Verdict: N/A (preview mode)");
-        println!("  Evidence: N/A");
-        println!();
-
-        println!("📋 Next Steps:");
-        println!("  • Implement policy engine integration");
-        println!("  • Add rule-by-rule tracing");
-        println!("  • Support policy binding evaluation");
-        println!("  • Add evidence trail collection");
     }
 
     Ok(())

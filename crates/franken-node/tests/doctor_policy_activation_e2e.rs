@@ -1,9 +1,11 @@
 use insta::assert_json_snapshot;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 const POLICY_ACTIVATION_INPUT_ENV: &str = "FRANKEN_NODE_DOCTOR_POLICY_ACTIVATION_INPUT";
+const DEBUG_TRACE_POLICY_SCHEMA_VERSION: &str = "franken-node/debug-trace-policy/v1";
+const DEBUG_TRACE_POLICY_ENGINE_DOCTOR_ACTIVATION: &str = "doctor_policy_activation";
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -36,7 +38,20 @@ fn doctor_command(repo: &Path) -> Command {
     }
 }
 
-fn run_doctor_args(args: &[String], env_policy_input: Option<&Path>) -> Output {
+fn log_phase(test_name: &str, phase: &str, detail: Value) {
+    eprintln!(
+        "{}",
+        serde_json::to_string(&json!({
+            "suite": "doctor_policy_activation_e2e",
+            "test": test_name,
+            "phase": phase,
+            "detail": detail,
+        }))
+        .expect("structured test log serializes")
+    );
+}
+
+fn run_cli_args(args: &[String], env_policy_input: Option<&Path>) -> Output {
     let repo = repo_root();
     let mut command = doctor_command(&repo);
     command.env_remove(POLICY_ACTIVATION_INPUT_ENV);
@@ -46,7 +61,25 @@ fn run_doctor_args(args: &[String], env_policy_input: Option<&Path>) -> Output {
     command
         .args(args)
         .output()
-        .expect("failed to run franken-node doctor")
+        .expect("failed to run franken-node CLI")
+}
+
+fn run_doctor_args(args: &[String], env_policy_input: Option<&Path>) -> Output {
+    run_cli_args(args, env_policy_input)
+}
+
+fn write_debug_trace_policy(dir: &Path, policy_engine: &str) -> PathBuf {
+    let policy_path = dir.join("debug_trace_policy.json");
+    std::fs::write(
+        &policy_path,
+        serde_json::to_string_pretty(&json!({
+            "schema_version": DEBUG_TRACE_POLICY_SCHEMA_VERSION,
+            "policy_engine": policy_engine,
+        }))
+        .expect("debug trace policy serializes"),
+    )
+    .expect("debug trace policy writes");
+    policy_path
 }
 
 fn parse_successful_json(output: Output) -> Value {
@@ -713,4 +746,307 @@ fn doctor_policy_activation_without_input_omits_policy_activation_checks() {
             .iter()
             .all(|entry| entry["check_code"].as_str() != Some("DR-POLICY-009"))
     );
+}
+
+#[test]
+fn debug_trace_policy_activation_json_runs_real_policy_pipeline() {
+    let test_name = "debug_trace_policy_activation_json_runs_real_policy_pipeline";
+    let workspace = tempfile::tempdir().expect("debug trace workspace");
+    let policy_path = write_debug_trace_policy(
+        workspace.path(),
+        DEBUG_TRACE_POLICY_ENGINE_DOCTOR_ACTIVATION,
+    );
+    let input_path = fixture_path("doctor_policy_activation_pass.json");
+    log_phase(
+        test_name,
+        "fixtures_written",
+        json!({
+            "policy_path": policy_path.display().to_string(),
+            "input_path": input_path.display().to_string(),
+        }),
+    );
+
+    let args = vec![
+        "debug".to_string(),
+        "trace".to_string(),
+        "--policy".to_string(),
+        policy_path.display().to_string(),
+        "--input".to_string(),
+        input_path.display().to_string(),
+        "--json".to_string(),
+        "--trace-id".to_string(),
+        test_name.to_string(),
+    ];
+    let output = run_cli_args(&args, None);
+    log_phase(
+        test_name,
+        "command_executed",
+        json!({
+            "status": output.status.code(),
+            "stdout_len": output.stdout.len(),
+            "stderr": String::from_utf8_lossy(&output.stderr),
+        }),
+    );
+    assert!(
+        output.status.success(),
+        "debug trace --json failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("not_implemented"),
+        "debug trace JSON must not emit preview/not_implemented output"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).expect("debug trace stdout JSON");
+    log_phase(
+        test_name,
+        "stdout_json_parsed",
+        json!({
+            "trace_id": report["trace_id"],
+            "final_status": report["final_verdict"]["status"],
+            "steps": report["trace_steps"].as_array().map_or(0, Vec::len),
+        }),
+    );
+
+    assert_eq!(report["trace_id"], test_name);
+    assert_eq!(
+        report["policy_schema_version"],
+        DEBUG_TRACE_POLICY_SCHEMA_VERSION
+    );
+    assert_eq!(
+        report["policy_engine"],
+        DEBUG_TRACE_POLICY_ENGINE_DOCTOR_ACTIVATION
+    );
+    assert_eq!(report["final_verdict"]["status"], "pass");
+    assert_eq!(report["final_verdict"]["verdict"], "allow");
+    assert_eq!(
+        report["trace_steps"]
+            .as_array()
+            .expect("trace steps array")
+            .iter()
+            .map(|step| step["type"].as_str().expect("step type"))
+            .collect::<Vec<_>>(),
+        vec![
+            "policy_load",
+            "input_load",
+            "guardrail_evaluation",
+            "bayesian_ranking",
+            "decision_engine",
+            "explanation_wording",
+        ]
+    );
+    assert_eq!(
+        report["diagnostics"]["decision_outcome"]["reason"],
+        "TopCandidateAccepted"
+    );
+    log_phase(
+        test_name,
+        "final_verdict_checked",
+        json!({
+            "verdict": report["final_verdict"]["verdict"],
+            "reason": report["final_verdict"]["reason"],
+        }),
+    );
+}
+
+#[test]
+fn debug_trace_policy_activation_human_uses_real_verdict() {
+    let test_name = "debug_trace_policy_activation_human_uses_real_verdict";
+    let workspace = tempfile::tempdir().expect("debug trace workspace");
+    let policy_path = write_debug_trace_policy(
+        workspace.path(),
+        DEBUG_TRACE_POLICY_ENGINE_DOCTOR_ACTIVATION,
+    );
+    let input_path = fixture_path("doctor_policy_activation_pass.json");
+    log_phase(
+        test_name,
+        "fixtures_written",
+        json!({
+            "policy_path": policy_path.display().to_string(),
+            "input_path": input_path.display().to_string(),
+        }),
+    );
+
+    let args = vec![
+        "debug".to_string(),
+        "trace".to_string(),
+        "--policy".to_string(),
+        policy_path.display().to_string(),
+        "--input".to_string(),
+        input_path.display().to_string(),
+        "--trace-id".to_string(),
+        test_name.to_string(),
+    ];
+    let output = run_cli_args(&args, None);
+    log_phase(
+        test_name,
+        "command_executed",
+        json!({
+            "status": output.status.code(),
+            "stdout_len": output.stdout.len(),
+            "stderr": String::from_utf8_lossy(&output.stderr),
+        }),
+    );
+    assert!(
+        output.status.success(),
+        "debug trace human output failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Debug Trace: Policy Evaluation"));
+    assert!(stdout.contains("Step 3: Guardrail Evaluation"));
+    assert!(stdout.contains("Step 5: Decision Engine"));
+    assert!(stdout.contains("Final Verdict:"));
+    assert!(stdout.contains("verdict=allow"));
+    assert!(stdout.contains("reason=top_candidate_accepted"));
+    assert!(!stdout.contains("not implemented"));
+    assert!(!stdout.contains("preview"));
+    log_phase(
+        test_name,
+        "human_output_checked",
+        json!({
+            "stdout_len": stdout.len(),
+            "contains_verdict": stdout.contains("verdict=allow"),
+        }),
+    );
+}
+
+#[test]
+fn debug_trace_unsupported_policy_engine_fails_closed() {
+    let test_name = "debug_trace_unsupported_policy_engine_fails_closed";
+    let workspace = tempfile::tempdir().expect("debug trace workspace");
+    let policy_path = write_debug_trace_policy(workspace.path(), "preview_only");
+    let input_path = fixture_path("doctor_policy_activation_pass.json");
+    log_phase(
+        test_name,
+        "fixtures_written",
+        json!({
+            "policy_path": policy_path.display().to_string(),
+            "input_path": input_path.display().to_string(),
+        }),
+    );
+
+    let args = vec![
+        "debug".to_string(),
+        "trace".to_string(),
+        "--policy".to_string(),
+        policy_path.display().to_string(),
+        "--input".to_string(),
+        input_path.display().to_string(),
+        "--json".to_string(),
+        "--trace-id".to_string(),
+        test_name.to_string(),
+    ];
+    let output = run_cli_args(&args, None);
+    log_phase(
+        test_name,
+        "failure_path_checked",
+        json!({
+            "status": output.status.code(),
+            "stdout": String::from_utf8_lossy(&output.stdout),
+            "stderr": String::from_utf8_lossy(&output.stderr),
+        }),
+    );
+    assert!(
+        !output.status.success(),
+        "unsupported policy engine must fail closed"
+    );
+    assert!(output.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("unsupported debug trace policy_engine `preview_only`")
+    );
+}
+
+#[test]
+fn debug_trace_malformed_input_json_fails_closed() {
+    let test_name = "debug_trace_malformed_input_json_fails_closed";
+    let workspace = tempfile::tempdir().expect("debug trace workspace");
+    let policy_path = write_debug_trace_policy(
+        workspace.path(),
+        DEBUG_TRACE_POLICY_ENGINE_DOCTOR_ACTIVATION,
+    );
+    let input_path = workspace.path().join("malformed_policy_input.json");
+    std::fs::write(&input_path, "{ invalid json").expect("malformed input writes");
+    log_phase(
+        test_name,
+        "fixtures_written",
+        json!({
+            "policy_path": policy_path.display().to_string(),
+            "input_path": input_path.display().to_string(),
+        }),
+    );
+
+    let args = vec![
+        "debug".to_string(),
+        "trace".to_string(),
+        "--policy".to_string(),
+        policy_path.display().to_string(),
+        "--input".to_string(),
+        input_path.display().to_string(),
+        "--json".to_string(),
+        "--trace-id".to_string(),
+        test_name.to_string(),
+    ];
+    let output = run_cli_args(&args, None);
+    log_phase(
+        test_name,
+        "failure_path_checked",
+        json!({
+            "status": output.status.code(),
+            "stdout": String::from_utf8_lossy(&output.stdout),
+            "stderr": String::from_utf8_lossy(&output.stderr),
+        }),
+    );
+    assert!(!output.status.success(), "malformed input must fail closed");
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Failed to parse input JSON from"));
+}
+
+#[test]
+fn debug_trace_missing_input_file_fails_closed() {
+    let test_name = "debug_trace_missing_input_file_fails_closed";
+    let workspace = tempfile::tempdir().expect("debug trace workspace");
+    let policy_path = write_debug_trace_policy(
+        workspace.path(),
+        DEBUG_TRACE_POLICY_ENGINE_DOCTOR_ACTIVATION,
+    );
+    let input_path = workspace.path().join("missing_policy_input.json");
+    log_phase(
+        test_name,
+        "fixtures_written",
+        json!({
+            "policy_path": policy_path.display().to_string(),
+            "input_path": input_path.display().to_string(),
+        }),
+    );
+
+    let args = vec![
+        "debug".to_string(),
+        "trace".to_string(),
+        "--policy".to_string(),
+        policy_path.display().to_string(),
+        "--input".to_string(),
+        input_path.display().to_string(),
+        "--json".to_string(),
+        "--trace-id".to_string(),
+        test_name.to_string(),
+    ];
+    let output = run_cli_args(&args, None);
+    log_phase(
+        test_name,
+        "failure_path_checked",
+        json!({
+            "status": output.status.code(),
+            "stdout": String::from_utf8_lossy(&output.stdout),
+            "stderr": String::from_utf8_lossy(&output.stderr),
+        }),
+    );
+    assert!(!output.status.success(), "missing input must fail closed");
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Failed to read input file"));
 }
