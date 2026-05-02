@@ -23,7 +23,7 @@ use super::middleware::{
 };
 use super::trust_card_routes::ApiResponse;
 use super::utf8_prefix;
-use crate::encoding::deterministic_seed::push_bounded;
+use crate::push_bounded;
 use crate::security::constant_time::ct_eq;
 
 const MAX_STORED_CONFORMANCE_CHECKS: usize = 256;
