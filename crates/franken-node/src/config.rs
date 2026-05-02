@@ -4847,6 +4847,18 @@ state_dir = ""
     }
 
     #[test]
+    fn validation_rejects_zero_verifier_claim_cap() {
+        let mut config = Config::for_profile(Profile::Balanced);
+        config.verifier.max_claims_per_request = 0;
+
+        let err = config.validate().unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("verifier.max_claims_per_request must be > 0"));
+    }
+
+    #[test]
     fn validation_rejects_zero_runtime_lane_limits() {
         let mut config = Config::for_profile(Profile::Balanced);
         let lane = config
