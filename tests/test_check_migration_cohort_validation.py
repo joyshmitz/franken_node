@@ -1,9 +1,11 @@
 """Tests for scripts/check_migration_cohort_validation.py (bd-sxt5)."""
 
 import json
+import os
 import runpy
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -209,17 +211,29 @@ class TestBuildReport(unittest.TestCase):
         """Full report with E2E execution."""
         if not mcv.E2E_SCRIPT.exists() or not mcv.RESULTS_FILE.exists():
             self.skipTest("artifacts or E2E script not present")
-        report = mcv.build_report(execute=True)
-        self.assertEqual(report["verdict"], "PASS")
-        e2e_check = next((check for check in report["checks"] if check["id"] == "e2e_execution"), None)
-        self.assertIsNotNone(e2e_check)
-        self.assertTrue(e2e_check["pass"])
+        with tempfile.TemporaryDirectory(prefix="mcv-e2e-") as temp_dir:
+            output_dir = Path(temp_dir)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "MIGRATION_COHORT_RESULTS_FILE": str(mcv.RESULTS_FILE),
+                    "MIGRATION_COHORT_LOG_FILE": str(output_dir / "validation_log.jsonl"),
+                    "MIGRATION_COHORT_SUMMARY_FILE": str(output_dir / "validation_summary.json"),
+                }
+            )
+            report = mcv.build_report(execute=True, e2e_env=env)
+            self.assertEqual(report["verdict"], "PASS")
+            e2e_check = next((check for check in report["checks"] if check["id"] == "e2e_execution"), None)
+            self.assertIsNotNone(e2e_check)
+            self.assertTrue(e2e_check["pass"])
+            self.assertTrue((output_dir / "validation_log.jsonl").is_file())
+            self.assertTrue((output_dir / "validation_summary.json").is_file())
 
 
 class TestCliOutput(unittest.TestCase):
     def test_json_cli_output(self):
         proc = subprocess.run(
-            [sys.executable, str(SCRIPT), "--json"],
+            [sys.executable, str(SCRIPT), "--json", "--no-exec"],
             capture_output=True,
             check=False,
             text=True,

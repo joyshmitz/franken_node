@@ -156,7 +156,7 @@ def _check_results_structure(data):
     return checks
 
 
-def build_report(execute=True):
+def build_report(execute=True, e2e_env=None):
     """Build the verification report."""
     checks = []
 
@@ -223,6 +223,7 @@ def build_report(execute=True):
             capture_output=True,
             check=False,
             cwd=ROOT,
+            env=e2e_env,
             text=True,
             timeout=3600,
         )

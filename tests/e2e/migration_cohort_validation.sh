@@ -2,12 +2,14 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-RESULTS_FILE="${ROOT_DIR}/artifacts/15/migration_cohort_results.json"
-LOG_FILE="${ROOT_DIR}/artifacts/15/migration_cohort_validation_log.jsonl"
-SUMMARY_FILE="${ROOT_DIR}/artifacts/15/migration_cohort_validation_summary.json"
+RESULTS_FILE="${MIGRATION_COHORT_RESULTS_FILE:-${ROOT_DIR}/artifacts/15/migration_cohort_results.json}"
+LOG_FILE="${MIGRATION_COHORT_LOG_FILE:-${ROOT_DIR}/artifacts/15/migration_cohort_validation_log.jsonl}"
+SUMMARY_FILE="${MIGRATION_COHORT_SUMMARY_FILE:-${ROOT_DIR}/artifacts/15/migration_cohort_validation_summary.json}"
 TRACE_ID="trace-bd-sxt5-e2e"
 
 mkdir -p "$(dirname "${RESULTS_FILE}")"
+mkdir -p "$(dirname "${LOG_FILE}")"
+mkdir -p "$(dirname "${SUMMARY_FILE}")"
 : > "${LOG_FILE}"
 
 if ! command -v jq >/dev/null 2>&1; then
