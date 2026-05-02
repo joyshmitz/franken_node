@@ -11,13 +11,14 @@ Usage:
 
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
-from pathlib import Path
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 
 
 BEAD_ID = "bd-sxt5"
@@ -53,8 +54,11 @@ def _canonical_json(value):
 
 
 def _read_json(path):
-    with open(path) as f:
-        return json.load(f)
+    return json.JSONDecoder().decode(path.read_text(encoding="utf-8"))
+
+
+def _is_json_true(value):
+    return isinstance(value, bool) and value
 
 
 def _check_results_structure(data):
@@ -140,7 +144,9 @@ def _check_results_structure(data):
         "detail": f"cohort success: {agg.get('cohort_success_rate_pct', 0)}% (min: {MIN_COHORT_SUCCESS_PCT}%)",
     })
 
-    ci_flags = agg.get("determinism_verified") is True and agg.get("ci_reproducible") is True
+    ci_flags = _is_json_true(agg.get("determinism_verified")) and _is_json_true(
+        agg.get("ci_reproducible")
+    )
     checks.append({
         "id": "ci_reproducibility",
         "pass": ci_flags,
@@ -163,9 +169,13 @@ def build_report(execute=True):
 
     # 2. Results structure validation
     if RESULTS_FILE.exists():
-        data = _read_json(RESULTS_FILE)
-        structure_checks = _check_results_structure(data)
-        checks.extend(structure_checks)
+        try:
+            data = _read_json(RESULTS_FILE)
+        except (json.JSONDecodeError, OSError) as exc:
+            checks.append({"id": "results_structure", "pass": False, "detail": f"invalid results JSON: {exc}"})
+        else:
+            structure_checks = _check_results_structure(data)
+            checks.extend(structure_checks)
     else:
         checks.append({"id": "results_structure", "pass": False, "detail": "results file missing"})
 
@@ -186,8 +196,12 @@ def build_report(execute=True):
     # 5. Evidence file exists and has PASS verdict
     evidence_pass = False
     if EVIDENCE_FILE.exists():
-        ev = _read_json(EVIDENCE_FILE)
-        evidence_pass = str(ev.get("verdict", "")).upper() == "PASS"
+        try:
+            ev = _read_json(EVIDENCE_FILE)
+        except (json.JSONDecodeError, OSError):
+            evidence_pass = False
+        else:
+            evidence_pass = str(ev.get("verdict", "")).upper() == "PASS"
     checks.append({
         "id": "evidence_verdict",
         "pass": evidence_pass,
@@ -203,9 +217,14 @@ def build_report(execute=True):
 
     # 7. E2E execution (only if execute=True)
     if execute and E2E_SCRIPT.exists():
+        bash = shutil.which("bash") or "/bin/bash"
         proc = subprocess.run(
-            ["bash", str(E2E_SCRIPT)],
-            capture_output=True, text=True, cwd=ROOT, timeout=3600,
+            [bash, str(E2E_SCRIPT)],
+            capture_output=True,
+            check=False,
+            cwd=ROOT,
+            text=True,
+            timeout=3600,
         )
         e2e_pass = proc.returncode == 0 and "PASS" in proc.stdout
         checks.append({
@@ -287,11 +306,14 @@ def self_test():
 
     all_ok = all(c["pass"] for c in checks)
     print(f"self_test: {len(checks)} checks — {'PASS' if all_ok else 'FAIL'}", file=sys.stderr)
+    if not all_ok:
+        failed = [check["check"] for check in checks if not check["pass"]]
+        raise RuntimeError(f"self_test failed: {failed}")
     return True
 
 
 def main():
-    logger = configure_test_logging("check_migration_cohort_validation")
+    configure_test_logging("check_migration_cohort_validation")
     as_json = "--json" in sys.argv
     no_execution = "--no-exec" in sys.argv
 
