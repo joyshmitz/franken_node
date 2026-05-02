@@ -3,11 +3,16 @@
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import check_remote_registry_adoption as cra
+
+
+def load_adoption_report() -> dict:
+    return json.JSONDecoder().decode(cra.ADOPTION_REPORT.read_text(encoding="utf-8"))
 
 
 class TestConstants(unittest.TestCase):
@@ -53,16 +58,44 @@ class TestCheckAdoptionReportExists(unittest.TestCase):
         self.assertEqual(result["id"], "CRA-REPORT")
 
     def test_report_has_bead_field(self):
-        data = json.loads(cra.ADOPTION_REPORT.read_text())
+        data = load_adoption_report()
         self.assertEqual(data["bead"], "bd-3014")
 
     def test_report_has_section_field(self):
-        data = json.loads(cra.ADOPTION_REPORT.read_text())
+        data = load_adoption_report()
         self.assertEqual(data["section"], "10.15")
 
     def test_report_has_adoption_status(self):
-        data = json.loads(cra.ADOPTION_REPORT.read_text())
+        data = load_adoption_report()
         self.assertEqual(data["adoption_status"], "documented")
+
+    def test_malformed_report_fails_closed(self):
+        original_report = cra.ADOPTION_REPORT
+        with tempfile.TemporaryDirectory() as temp_dir:
+            report_path = Path(temp_dir) / "remote_registry_adoption_report.json"
+            report_path.write_text("{not-json", encoding="utf-8")
+            cra.ADOPTION_REPORT = report_path
+            try:
+                result = cra.check_adoption_report_exists()
+            finally:
+                cra.ADOPTION_REPORT = original_report
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("invalid JSON", result["details"]["error"])
+
+    def test_non_object_report_fails_closed(self):
+        original_report = cra.ADOPTION_REPORT
+        with tempfile.TemporaryDirectory() as temp_dir:
+            report_path = Path(temp_dir) / "remote_registry_adoption_report.json"
+            report_path.write_text("[]", encoding="utf-8")
+            cra.ADOPTION_REPORT = report_path
+            try:
+                report_result = cra.check_adoption_report_exists()
+                count_result = cra.check_report_computation_count()
+            finally:
+                cra.ADOPTION_REPORT = original_report
+        self.assertEqual(report_result["status"], "FAIL")
+        self.assertEqual(count_result["status"], "FAIL")
+        self.assertEqual(report_result["details"]["error"], "JSON root must be an object")
 
 
 class TestCheckComputationNamesDocumented(unittest.TestCase):

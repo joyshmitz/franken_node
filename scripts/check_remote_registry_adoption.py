@@ -12,12 +12,12 @@ Usage:
 
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts.lib.test_logger import configure_test_logging
-from datetime import datetime, timezone
-from pathlib import Path
 
 
 # --- Constants ---
@@ -52,6 +52,28 @@ DIVERGENT_PATTERNS = [
 ]
 
 
+def read_text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return None
+
+
+def read_json_object(path: Path) -> tuple[dict | None, str | None]:
+    text = read_text(path)
+    if text is None:
+        return None, "file not found"
+    try:
+        value = json.JSONDecoder().decode(text)
+    except json.JSONDecodeError as error:
+        return None, f"invalid JSON: {error}"
+    if not isinstance(value, dict):
+        return None, "JSON root must be an object"
+    return value, None
+
+
 def check_registry_source_exists() -> dict:
     """CRA-SRC: Computation registry source file exists."""
     exists = REGISTRY_SRC.exists()
@@ -74,44 +96,37 @@ def check_adoption_doc_exists() -> dict:
 
 def check_adoption_report_exists() -> dict:
     """CRA-REPORT: Adoption report artifact exists and is valid JSON."""
-    if not ADOPTION_REPORT.exists():
+    data, error = read_json_object(ADOPTION_REPORT)
+    if data is None:
         return {
             "id": "CRA-REPORT",
             "status": "FAIL",
-            "details": {"error": "file not found"},
+            "details": {"error": error},
         }
-    try:
-        data = json.loads(ADOPTION_REPORT.read_text())
-        has_bead = data.get("bead") == "bd-3014"
-        has_computations = isinstance(data.get("registered_computations"), list)
-        has_status = data.get("adoption_status") == "documented"
-        ok = has_bead and has_computations and has_status
-        return {
-            "id": "CRA-REPORT",
-            "status": "PASS" if ok else "FAIL",
-            "details": {
-                "has_bead": has_bead,
-                "has_computations": has_computations,
-                "has_status": has_status,
-            },
-        }
-    except json.JSONDecodeError as e:
-        return {
-            "id": "CRA-REPORT",
-            "status": "FAIL",
-            "details": {"error": f"invalid JSON: {e}"},
-        }
+    has_bead = data.get("bead") == "bd-3014"
+    has_computations = isinstance(data.get("registered_computations"), list)
+    has_status = data.get("adoption_status") == "documented"
+    ok = has_bead and has_computations and has_status
+    return {
+        "id": "CRA-REPORT",
+        "status": "PASS" if ok else "FAIL",
+        "details": {
+            "has_bead": has_bead,
+            "has_computations": has_computations,
+            "has_status": has_status,
+        },
+    }
 
 
 def check_computation_names_documented() -> dict:
     """CRA-NAMES: All required computation names appear in adoption doc."""
-    if not ADOPTION_DOC.exists():
+    content = read_text(ADOPTION_DOC)
+    if content is None:
         return {
             "id": "CRA-NAMES",
             "status": "FAIL",
             "details": {"error": "adoption doc not found"},
         }
-    content = ADOPTION_DOC.read_text()
     missing = [n for n in REQUIRED_COMPUTATION_NAMES if n not in content]
     return {
         "id": "CRA-NAMES",
@@ -122,13 +137,13 @@ def check_computation_names_documented() -> dict:
 
 def check_error_code_in_registry() -> dict:
     """CRA-ERRCODE: ERR_UNKNOWN_COMPUTATION error code defined in registry source."""
-    if not REGISTRY_SRC.exists():
+    content = read_text(REGISTRY_SRC)
+    if content is None:
         return {
             "id": "CRA-ERRCODE",
             "status": "FAIL",
             "details": {"error": "registry source not found"},
         }
-    content = REGISTRY_SRC.read_text()
     has_code = "ERR_UNKNOWN_COMPUTATION" in content
     return {
         "id": "CRA-ERRCODE",
@@ -139,13 +154,13 @@ def check_error_code_in_registry() -> dict:
 
 def check_validate_method_exists() -> dict:
     """CRA-VALIDATE: validate_computation_name method exists in registry source."""
-    if not REGISTRY_SRC.exists():
+    content = read_text(REGISTRY_SRC)
+    if content is None:
         return {
             "id": "CRA-VALIDATE",
             "status": "FAIL",
             "details": {"error": "registry source not found"},
         }
-    content = REGISTRY_SRC.read_text()
     has_method = "validate_computation_name" in content
     return {
         "id": "CRA-VALIDATE",
@@ -165,7 +180,13 @@ def check_no_divergent_registries() -> dict:
 
     for scan_dir in dirs_to_scan:
         for rs_file in sorted(scan_dir.glob("*.rs")):
-            content = rs_file.read_text()
+            content = read_text(rs_file)
+            if content is None:
+                violations.append({
+                    "file": str(rs_file.relative_to(ROOT)),
+                    "pattern": "unreadable source file",
+                })
+                continue
             for pattern in DIVERGENT_PATTERNS:
                 if pattern in content:
                     violations.append({
@@ -202,13 +223,13 @@ def check_test_file_exists() -> dict:
 
 def check_adoption_doc_content() -> dict:
     """CRA-CONTENT: Adoption doc contains key sections."""
-    if not ADOPTION_DOC.exists():
+    content = read_text(ADOPTION_DOC)
+    if content is None:
         return {
             "id": "CRA-CONTENT",
             "status": "FAIL",
             "details": {"error": "adoption doc not found"},
         }
-    content = ADOPTION_DOC.read_text()
     required_sections = [
         "Fail-Closed Contract",
         "Prohibition on Divergent Registries",
@@ -226,39 +247,42 @@ def check_adoption_doc_content() -> dict:
 
 def check_report_computation_count() -> dict:
     """CRA-COUNT: Adoption report lists all 5 computations."""
-    if not ADOPTION_REPORT.exists():
+    data, error = read_json_object(ADOPTION_REPORT)
+    if data is None:
         return {
             "id": "CRA-COUNT",
             "status": "FAIL",
-            "details": {"error": "report not found"},
+            "details": {"error": error},
         }
-    try:
-        data = json.loads(ADOPTION_REPORT.read_text())
-        computations = data.get("registered_computations", [])
-        names = [c.get("name") for c in computations]
-        missing = [n for n in REQUIRED_COMPUTATION_NAMES if n not in names]
-        return {
-            "id": "CRA-COUNT",
-            "status": "PASS" if not missing else "FAIL",
-            "details": {"count": len(computations), "missing": missing},
-        }
-    except json.JSONDecodeError as e:
+    computations = data.get("registered_computations", [])
+    if not isinstance(computations, list):
         return {
             "id": "CRA-COUNT",
             "status": "FAIL",
-            "details": {"error": str(e)},
+            "details": {"error": "registered_computations must be a list"},
         }
+    names = [
+        computation.get("name")
+        for computation in computations
+        if isinstance(computation, dict)
+    ]
+    missing = [n for n in REQUIRED_COMPUTATION_NAMES if n not in names]
+    return {
+        "id": "CRA-COUNT",
+        "status": "PASS" if not missing else "FAIL",
+        "details": {"count": len(computations), "missing": missing},
+    }
 
 
 def check_canonical_naming_function() -> dict:
     """CRA-NAMING: is_canonical_computation_name function exists in registry."""
-    if not REGISTRY_SRC.exists():
+    content = read_text(REGISTRY_SRC)
+    if content is None:
         return {
             "id": "CRA-NAMING",
             "status": "FAIL",
             "details": {"error": "registry source not found"},
         }
-    content = REGISTRY_SRC.read_text()
     has_fn = "is_canonical_computation_name" in content
     return {
         "id": "CRA-NAMING",
@@ -301,7 +325,7 @@ def self_test() -> dict:
 
 
 def main():
-    logger = configure_test_logging("check_remote_registry_adoption")
+    configure_test_logging("check_remote_registry_adoption")
     json_output = "--json" in sys.argv
     run_self_test = "--self-test" in sys.argv
 
