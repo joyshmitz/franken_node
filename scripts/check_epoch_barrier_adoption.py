@@ -7,12 +7,11 @@ Usage:
 
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
-from datetime import datetime, timezone
-from pathlib import Path
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 
 
 BARRIER_SRC = ROOT / "crates" / "franken-node" / "src" / "control_plane" / "epoch_transition_barrier.rs"
@@ -30,6 +29,33 @@ PARTICIPANTS = [
 ]
 
 
+def _read_text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _rel(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _load_json_object(path: Path) -> tuple[dict | None, str | None]:
+    text = _read_text(path)
+    if text is None:
+        return None, f"unable to read {_rel(path)}"
+    try:
+        payload = json.JSONDecoder().decode(text)
+    except json.JSONDecodeError as exc:
+        return None, f"invalid JSON: {exc.msg}"
+    if not isinstance(payload, dict):
+        return None, "expected JSON object"
+    return payload, None
+
+
 def check_barrier_source_exists() -> dict:
     exists = BARRIER_SRC.exists()
     return {"id": "EBA-SRC", "status": "PASS" if exists else "FAIL",
@@ -39,7 +65,9 @@ def check_barrier_source_exists() -> dict:
 def check_barrier_mod_wired() -> dict:
     if not BARRIER_MOD.exists():
         return {"id": "EBA-MOD", "status": "FAIL", "details": {"error": "mod.rs not found"}}
-    content = BARRIER_MOD.read_text()
+    content = _read_text(BARRIER_MOD)
+    if content is None:
+        return {"id": "EBA-MOD", "status": "FAIL", "details": {"error": "mod.rs unreadable"}}
     ok = "pub mod epoch_transition_barrier;" in content
     return {"id": "EBA-MOD", "status": "PASS" if ok else "FAIL", "details": {"wired": ok}}
 
@@ -53,20 +81,23 @@ def check_adoption_doc_exists() -> dict:
 def check_transcript_exists() -> dict:
     if not TRANSCRIPT.exists():
         return {"id": "EBA-TRANSCRIPT", "status": "FAIL", "details": {"error": "not found"}}
-    try:
-        data = json.loads(TRANSCRIPT.read_text())
-        ok = (data.get("bead") == "bd-1hbw"
-              and data.get("adoption_status") == "documented"
-              and isinstance(data.get("barrier_participants"), list))
-        return {"id": "EBA-TRANSCRIPT", "status": "PASS" if ok else "FAIL", "details": {"valid": ok}}
-    except json.JSONDecodeError as e:
-        return {"id": "EBA-TRANSCRIPT", "status": "FAIL", "details": {"error": str(e)}}
+    data, error = _load_json_object(TRANSCRIPT)
+    if error is not None:
+        return {"id": "EBA-TRANSCRIPT", "status": "FAIL", "details": {"error": error}}
+    ok = (
+        data.get("bead") == "bd-1hbw"
+        and data.get("adoption_status") == "documented"
+        and isinstance(data.get("barrier_participants"), list)
+    )
+    return {"id": "EBA-TRANSCRIPT", "status": "PASS" if ok else "FAIL", "details": {"valid": ok}}
 
 
 def check_participants_documented() -> dict:
     if not ADOPTION_DOC.exists():
         return {"id": "EBA-PARTICIPANTS", "status": "FAIL", "details": {"error": "doc not found"}}
-    content = ADOPTION_DOC.read_text()
+    content = _read_text(ADOPTION_DOC)
+    if content is None:
+        return {"id": "EBA-PARTICIPANTS", "status": "FAIL", "details": {"error": "doc unreadable"}}
     missing = [p for p in PARTICIPANTS if p not in content]
     return {
         "id": "EBA-PARTICIPANTS",
@@ -78,7 +109,9 @@ def check_participants_documented() -> dict:
 def check_abort_semantics_documented() -> dict:
     if not ADOPTION_DOC.exists():
         return {"id": "EBA-ABORT", "status": "FAIL", "details": {"error": "doc not found"}}
-    content = ADOPTION_DOC.read_text()
+    content = _read_text(ADOPTION_DOC)
+    if content is None:
+        return {"id": "EBA-ABORT", "status": "FAIL", "details": {"error": "doc unreadable"}}
     required = ["Abort Semantics", "Timeout abort", "Cancel abort", "No split-brain"]
     missing = [s for s in required if s.lower() not in content.lower()]
     return {
@@ -91,7 +124,9 @@ def check_abort_semantics_documented() -> dict:
 def check_event_codes_documented() -> dict:
     if not ADOPTION_DOC.exists():
         return {"id": "EBA-EVENTS", "status": "FAIL", "details": {"error": "doc not found"}}
-    content = ADOPTION_DOC.read_text()
+    content = _read_text(ADOPTION_DOC)
+    if content is None:
+        return {"id": "EBA-EVENTS", "status": "FAIL", "details": {"error": "doc unreadable"}}
     codes = ["EPB-001", "EPB-002", "EPB-003", "EPB-004", "EPB-005", "EPB-006"]
     missing = [c for c in codes if c not in content]
     return {
@@ -104,7 +139,9 @@ def check_event_codes_documented() -> dict:
 def check_invariants_documented() -> dict:
     if not ADOPTION_DOC.exists():
         return {"id": "EBA-INV", "status": "FAIL", "details": {"error": "doc not found"}}
-    content = ADOPTION_DOC.read_text()
+    content = _read_text(ADOPTION_DOC)
+    if content is None:
+        return {"id": "EBA-INV", "status": "FAIL", "details": {"error": "doc unreadable"}}
     invs = ["INV-EPB-CANONICAL", "INV-EPB-ALL-ARRIVE", "INV-EPB-NO-SPLIT-BRAIN",
             "INV-EPB-DETERMINISTIC-ABORT", "INV-EPB-TRANSCRIPT-STABLE"]
     missing = [i for i in invs if i not in content]
@@ -118,35 +155,33 @@ def check_invariants_documented() -> dict:
 def check_transcript_participants_count() -> dict:
     if not TRANSCRIPT.exists():
         return {"id": "EBA-PCOUNT", "status": "FAIL", "details": {"error": "not found"}}
-    try:
-        data = json.loads(TRANSCRIPT.read_text())
-        participants = data.get("barrier_participants", [])
-        ids = [p.get("participant_id") for p in participants]
-        missing = [p for p in PARTICIPANTS if p not in ids]
-        return {
-            "id": "EBA-PCOUNT",
-            "status": "PASS" if not missing else "FAIL",
-            "details": {"count": len(participants), "missing": missing},
-        }
-    except json.JSONDecodeError as e:
-        return {"id": "EBA-PCOUNT", "status": "FAIL", "details": {"error": str(e)}}
+    data, error = _load_json_object(TRANSCRIPT)
+    if error is not None:
+        return {"id": "EBA-PCOUNT", "status": "FAIL", "details": {"error": error}}
+    participants = data.get("barrier_participants", [])
+    ids = [p.get("participant_id") for p in participants if isinstance(p, dict)]
+    missing = [p for p in PARTICIPANTS if p not in ids]
+    return {
+        "id": "EBA-PCOUNT",
+        "status": "PASS" if not missing else "FAIL",
+        "details": {"count": len(participants), "missing": missing},
+    }
 
 
 def check_transcript_test_scenarios() -> dict:
     if not TRANSCRIPT.exists():
         return {"id": "EBA-SCENARIOS", "status": "FAIL", "details": {"error": "not found"}}
-    try:
-        data = json.loads(TRANSCRIPT.read_text())
-        scenarios = data.get("test_scenarios", {})
-        required = ["full_commit", "timeout_abort", "cancel_abort"]
-        missing = [s for s in required if s not in scenarios]
-        return {
-            "id": "EBA-SCENARIOS",
-            "status": "PASS" if not missing else "FAIL",
-            "details": {"missing": missing, "total": len(required)},
-        }
-    except json.JSONDecodeError as e:
-        return {"id": "EBA-SCENARIOS", "status": "FAIL", "details": {"error": str(e)}}
+    data, error = _load_json_object(TRANSCRIPT)
+    if error is not None:
+        return {"id": "EBA-SCENARIOS", "status": "FAIL", "details": {"error": error}}
+    scenarios = data.get("test_scenarios", {})
+    required = ["full_commit", "timeout_abort", "cancel_abort"]
+    missing = [s for s in required if s not in scenarios]
+    return {
+        "id": "EBA-SCENARIOS",
+        "status": "PASS" if not missing else "FAIL",
+        "details": {"missing": missing, "total": len(required)},
+    }
 
 
 def check_spec_contract_exists() -> dict:
@@ -168,7 +203,13 @@ def check_no_custom_barrier() -> dict:
     patterns = ["BarrierProtocol", "fn propose_barrier", "fn barrier_commit"]
     if connector_dir.exists():
         for rs_file in sorted(connector_dir.glob("*.rs")):
-            content = rs_file.read_text()
+            content = _read_text(rs_file)
+            if content is None:
+                violations.append({
+                    "file": str(rs_file.relative_to(ROOT)),
+                    "pattern": "unreadable source",
+                })
+                continue
             for pattern in patterns:
                 if pattern in content:
                     violations.append({
@@ -216,7 +257,7 @@ def self_test() -> dict:
 
 
 def main():
-    logger = configure_test_logging("check_epoch_barrier_adoption")
+    configure_test_logging("check_epoch_barrier_adoption")
     json_output = "--json" in sys.argv
     result = self_test()
     if json_output:

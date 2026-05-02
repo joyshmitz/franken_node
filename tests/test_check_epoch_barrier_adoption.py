@@ -3,11 +3,19 @@
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-import check_epoch_barrier_adoption as eba
+import check_epoch_barrier_adoption as eba  # noqa: E402
+
+
+def load_transcript() -> dict:
+    data, error = eba._load_json_object(eba.TRANSCRIPT)
+    if error is not None:
+        raise AssertionError(error)
+    return data
 
 
 class TestCheckBarrierSourceExists(unittest.TestCase):
@@ -34,8 +42,34 @@ class TestCheckTranscriptExists(unittest.TestCase):
         self.assertEqual(result["status"], "PASS")
 
     def test_has_bead(self):
-        data = json.loads(eba.TRANSCRIPT.read_text())
+        data = load_transcript()
         self.assertEqual(data["bead"], "bd-1hbw")
+
+    def test_malformed_transcript_fails_closed(self):
+        original = eba.TRANSCRIPT
+        with tempfile.TemporaryDirectory(prefix="eba-transcript-") as tmp:
+            transcript_path = Path(tmp) / "transcript.json"
+            transcript_path.write_text("{not-json", encoding="utf-8")
+            eba.TRANSCRIPT = transcript_path
+            try:
+                result = eba.check_transcript_exists()
+                self.assertEqual(result["status"], "FAIL")
+                self.assertIn("invalid JSON", result["details"]["error"])
+            finally:
+                eba.TRANSCRIPT = original
+
+    def test_non_object_transcript_fails_closed(self):
+        original = eba.TRANSCRIPT
+        with tempfile.TemporaryDirectory(prefix="eba-transcript-") as tmp:
+            transcript_path = Path(tmp) / "transcript.json"
+            transcript_path.write_text("[]", encoding="utf-8")
+            eba.TRANSCRIPT = transcript_path
+            try:
+                result = eba.check_transcript_exists()
+                self.assertEqual(result["status"], "FAIL")
+                self.assertIn("expected JSON object", result["details"]["error"])
+            finally:
+                eba.TRANSCRIPT = original
 
 
 class TestCheckParticipantsDocumented(unittest.TestCase):
@@ -78,6 +112,21 @@ class TestCheckTranscriptParticipantsCount(unittest.TestCase):
     def test_four_participants(self):
         result = eba.check_transcript_participants_count()
         self.assertEqual(result["details"]["count"], 4)
+
+    def test_participants_count_ignores_malformed_entries(self):
+        original = eba.TRANSCRIPT
+        data = load_transcript()
+        data["barrier_participants"].append("not-an-object")
+        with tempfile.TemporaryDirectory(prefix="eba-transcript-") as tmp:
+            transcript_path = Path(tmp) / "transcript.json"
+            transcript_path.write_text(json.dumps(data), encoding="utf-8")
+            eba.TRANSCRIPT = transcript_path
+            try:
+                result = eba.check_transcript_participants_count()
+                self.assertEqual(result["status"], "PASS")
+                self.assertEqual(result["details"]["count"], 5)
+            finally:
+                eba.TRANSCRIPT = original
 
 
 class TestCheckTranscriptTestScenarios(unittest.TestCase):
