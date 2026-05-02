@@ -75,6 +75,8 @@ mod policy {
     pub mod policy_explainer;
 }
 
+#[cfg(feature = "control-plane")]
+use crate::api::fleet_quarantine::{RevocationScope, RevocationSeverity};
 use crate::api::session_auth::{SessionConfig, SessionManager};
 use crate::api::{
     fleet_quarantine::{
@@ -7199,6 +7201,8 @@ fn count_active_fleet_quarantines(fleet_state_dir: &Path) -> Result<u64> {
             PersistedFleetAction::Release { incident_id, .. } => {
                 active_incidents.remove(&incident_id);
             }
+            #[cfg(feature = "control-plane")]
+            PersistedFleetAction::Revoke { .. } => {}
             PersistedFleetAction::PolicyUpdate { .. } => {}
         }
     }
@@ -11660,6 +11664,8 @@ mod build_context_tests {
 mod fleet_command_tests {
     use super::*;
     use crate::api::fleet_quarantine::{ConvergencePhase, ConvergenceState, DecisionReceipt};
+    #[cfg(feature = "control-plane")]
+    use crate::api::fleet_quarantine::{RevocationScope, RevocationSeverity};
 
     #[test]
     fn fleet_cli_identity_has_operator_and_admin_roles() {
@@ -11867,6 +11873,46 @@ mod fleet_command_tests {
             status.pending_convergences[0].phase,
             ConvergencePhase::TimedOut
         );
+    }
+
+    #[test]
+    #[cfg(feature = "control-plane")]
+    fn fleet_status_counts_revoke_actions_by_zone() {
+        let revoke_record = |action_id: &str, zone_id: &str| PersistedFleetActionRecord {
+            action_id: action_id.to_string(),
+            emitted_at: DateTime::parse_from_rfc3339("2026-04-06T01:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&Utc),
+            action: PersistedFleetAction::Revoke {
+                extension_id: format!("npm:@acme/{action_id}"),
+                scope: RevocationScope {
+                    zone_id: zone_id.to_string(),
+                    tenant_id: None,
+                    severity: RevocationSeverity::Mandatory,
+                    reason: "publisher key compromised".to_string(),
+                },
+            },
+        };
+        let loaded = LoadedFleetState {
+            state_dir: PathBuf::from("/tmp/fleet"),
+            convergence_timeout_seconds: 120,
+            state: FleetSharedState {
+                schema_version: control_plane::fleet_transport::FLEET_SHARED_STATE_SCHEMA
+                    .to_string(),
+                actions: vec![
+                    revoke_record("fleet-op-prod-revoke", "prod"),
+                    revoke_record("fleet-op-staging-revoke", "staging"),
+                ],
+                nodes: Vec::new(),
+            },
+            stale_nodes: Vec::new(),
+            active_incidents: Vec::new(),
+        };
+
+        let prod_status = fleet_status_from_loaded_state(&loaded, "prod");
+        assert_eq!(prod_status.active_revocations, 1);
+        let all_status = fleet_status_from_loaded_state(&loaded, "all");
+        assert_eq!(all_status.active_revocations, 2);
     }
 
     #[test]
@@ -17388,6 +17434,16 @@ fn fleet_action_applies_to_zone(action_zone: &str, agent_zone: &str) -> bool {
     action_zone == "all" || action_zone == agent_zone
 }
 
+fn persisted_fleet_action_zone(action: &PersistedFleetAction) -> &str {
+    match action {
+        PersistedFleetAction::Quarantine { zone_id, .. }
+        | PersistedFleetAction::Release { zone_id, .. }
+        | PersistedFleetAction::PolicyUpdate { zone_id, .. } => zone_id,
+        #[cfg(feature = "control-plane")]
+        PersistedFleetAction::Revoke { scope, .. } => &scope.zone_id,
+    }
+}
+
 fn node_matches_filter(node: &PersistedNodeStatus, requested_zone: &str) -> bool {
     requested_zone == "all" || node.zone_id == requested_zone
 }
@@ -17434,6 +17490,8 @@ fn derive_active_fleet_incidents(
             PersistedFleetAction::Release { incident_id, .. } => {
                 active_by_incident.remove(incident_id);
             }
+            #[cfg(feature = "control-plane")]
+            PersistedFleetAction::Revoke { .. } => {}
             PersistedFleetAction::PolicyUpdate { .. } => {}
         }
     }
@@ -17503,6 +17561,8 @@ fn derive_active_fleet_incidents(
             PersistedFleetAction::Release { .. } | PersistedFleetAction::PolicyUpdate { .. } => {
                 None
             }
+            #[cfg(feature = "control-plane")]
+            PersistedFleetAction::Revoke { .. } => None,
         })
         .collect::<Vec<_>>();
 
@@ -17512,6 +17572,22 @@ fn derive_active_fleet_incidents(
             .then_with(|| left.incident_id.cmp(&right.incident_id))
     });
     incidents
+}
+
+fn count_active_fleet_revocations(state: &FleetSharedState, requested_zone: &str) -> u32 {
+    let active_revocations = state
+        .actions
+        .iter()
+        .filter(|record| match &record.action {
+            #[cfg(feature = "control-plane")]
+            PersistedFleetAction::Revoke { scope, .. } => {
+                zone_matches_filter(&scope.zone_id, requested_zone)
+            }
+            _ => false,
+        })
+        .count();
+
+    u32::try_from(active_revocations).unwrap_or(u32::MAX)
 }
 
 fn load_fleet_state(project_root: &Path) -> Result<LoadedFleetState> {
@@ -17566,7 +17642,7 @@ fn fleet_status_from_loaded_state(loaded: &LoadedFleetState, requested_zone: &st
     FleetStatus {
         zone_id: requested_zone.to_string(),
         active_quarantines: u32::try_from(pending_convergences.len()).unwrap_or(u32::MAX),
-        active_revocations: 0,
+        active_revocations: count_active_fleet_revocations(&loaded.state, requested_zone),
         healthy_nodes,
         total_nodes,
         activated: true,
@@ -18263,6 +18339,65 @@ fn apply_fleet_quarantine_action(
     Ok(updated_extensions)
 }
 
+#[cfg(feature = "control-plane")]
+fn apply_fleet_revoke_action(
+    project_root: &Path,
+    extension_id: &str,
+    scope: &RevocationScope,
+    now_secs: u64,
+) -> Result<bool> {
+    if scope.severity == RevocationSeverity::Advisory {
+        return Ok(false);
+    }
+
+    let mut state = fleet_agent_registry_state(project_root, now_secs)?;
+    let existing = state
+        .registry
+        .read(
+            extension_id,
+            now_secs,
+            "trace-cli-fleet-agent-revoke-lookup",
+        )
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+    if existing.is_none() {
+        return Ok(false);
+    }
+
+    let severity = match scope.severity {
+        RevocationSeverity::Advisory => "advisory",
+        RevocationSeverity::Mandatory => "mandatory",
+        RevocationSeverity::Emergency => "emergency",
+    };
+    let now_rfc3339 = rfc3339_timestamp_from_secs(now_secs);
+    state
+        .registry
+        .update(
+            extension_id,
+            TrustCardMutation {
+                certification_level: None,
+                revocation_status: Some(RevocationStatus::Revoked {
+                    reason: format!("fleet {severity} revoke: {}", scope.reason),
+                    revoked_at: now_rfc3339.clone(),
+                }),
+                active_quarantine: Some(true),
+                reputation_score_basis_points: None,
+                reputation_trend: Some(ReputationTrend::Declining),
+                user_facing_risk_assessment: Some(RiskAssessment {
+                    level: RiskLevel::Critical,
+                    summary: format!("Revoked by fleet {severity} action."),
+                }),
+                last_verified_timestamp: Some(now_rfc3339),
+                evidence_refs: None,
+            },
+            now_secs,
+            "trace-cli-fleet-agent-revoke",
+        )
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+
+    persist_trust_card_cli_registry(&state)?;
+    Ok(true)
+}
+
 fn apply_fleet_release_action(
     project_root: &Path,
     agent_zone: &str,
@@ -18301,6 +18436,8 @@ fn apply_fleet_release_action(
             PersistedFleetAction::Quarantine { .. }
             | PersistedFleetAction::Release { .. }
             | PersistedFleetAction::PolicyUpdate { .. } => {}
+            #[cfg(feature = "control-plane")]
+            PersistedFleetAction::Revoke { .. } => {}
         }
     }
 
@@ -18424,17 +18561,10 @@ fn run_fleet_agent(args: &FleetAgentArgs) -> Result<()> {
             .iter()
             .enumerate()
             .filter(|action| {
-                let zone_matches = match &action.1.action {
-                    PersistedFleetAction::Quarantine { zone_id, .. } => {
-                        fleet_action_applies_to_zone(zone_id, &resolved.zone_id)
-                    }
-                    PersistedFleetAction::Release { zone_id, .. } => {
-                        fleet_action_applies_to_zone(zone_id, &resolved.zone_id)
-                    }
-                    PersistedFleetAction::PolicyUpdate { zone_id, .. } => {
-                        fleet_action_applies_to_zone(zone_id, &resolved.zone_id)
-                    }
-                };
+                let zone_matches = fleet_action_applies_to_zone(
+                    persisted_fleet_action_zone(&action.1.action),
+                    &resolved.zone_id,
+                );
                 if !zone_matches {
                     return false;
                 }
@@ -18537,6 +18667,31 @@ fn run_fleet_agent(args: &FleetAgentArgs) -> Result<()> {
                     }
                     Ok::<(), anyhow::Error>(())
                 }
+                #[cfg(feature = "control-plane")]
+                PersistedFleetAction::Revoke {
+                    extension_id,
+                    scope,
+                } => match apply_fleet_revoke_action(Path::new("."), extension_id, scope, now_secs)
+                {
+                    Ok(revoked) => {
+                        tracing::info!(
+                            node_id = resolved.node_id.as_str(),
+                            zone_id = resolved.zone_id.as_str(),
+                            extension_id = extension_id.as_str(),
+                            severity = ?scope.severity,
+                            revoked,
+                            "fleet agent processed revoke action"
+                        );
+                        if !resolved.json {
+                            eprintln!(
+                                "fleet agent: applying revoke extension={} severity={:?} revoked={}",
+                                extension_id, scope.severity, revoked
+                            );
+                        }
+                        Ok::<(), anyhow::Error>(())
+                    }
+                    Err(err) => Err(err),
+                },
             };
             if let Err(err) = apply_result {
                 node_health = NodeHealth::Degraded;
