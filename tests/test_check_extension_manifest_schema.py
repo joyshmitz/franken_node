@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -53,6 +54,28 @@ class TestManifestSchemaVerifier(unittest.TestCase):
         with patch.object(checker, "SCHEMA_PATH", Path("/nonexistent/schema.json")):
             result = checker.check_schema_shape()
             self.assertEqual(result["status"], "FAIL")
+
+    def test_malformed_schema_is_detected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            schema = Path(tmpdir) / "schema.json"
+            schema.write_text("{bad-json", encoding="utf-8")
+            with patch.object(checker, "SCHEMA_PATH", schema):
+                shape = checker.check_schema_shape()
+                caps = checker.check_capability_enum()
+
+        self.assertEqual(shape["status"], "FAIL")
+        self.assertEqual(caps["status"], "FAIL")
+
+    def test_non_object_schema_is_detected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            schema = Path(tmpdir) / "schema.json"
+            schema.write_text("[]", encoding="utf-8")
+            with patch.object(checker, "SCHEMA_PATH", schema):
+                shape = checker.check_schema_shape()
+                caps = checker.check_capability_enum()
+
+        self.assertEqual(shape["status"], "FAIL")
+        self.assertEqual(caps["status"], "FAIL")
 
     def test_summary_markdown_has_table(self) -> None:
         report = {

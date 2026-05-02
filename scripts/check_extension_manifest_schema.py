@@ -6,12 +6,13 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from datetime import datetime, timezone
+from typing import Any
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
+
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 
 
 SPEC_PATH = ROOT / "docs/specs/section_10_4/extension_manifest_schema.md"
@@ -51,6 +52,17 @@ REQUIRED_TOP_LEVEL_FIELDS = [
 ]
 
 
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    payload = json.JSONDecoder().decode(_read_text(path))
+    if not isinstance(payload, dict):
+        raise TypeError("json payload is not an object")
+    return payload
+
+
 def _check(check_id: str, description: str, passed: bool, details: str | None = None) -> dict[str, Any]:
     record: dict[str, Any] = {
         "id": check_id,
@@ -66,7 +78,7 @@ def check_spec_contract() -> dict[str, Any]:
     if not SPEC_PATH.exists():
         return _check("EMS-SPEC", "Spec contract exists with invariants", False, "missing spec file")
 
-    content = SPEC_PATH.read_text(encoding="utf-8")
+    content = _read_text(SPEC_PATH)
     invariants = [
         "INV-EMS-CANONICAL-FIELDS",
         "INV-EMS-ENGINE-COMPAT",
@@ -88,14 +100,14 @@ def check_schema_shape() -> dict[str, Any]:
         return _check("EMS-SCHEMA", "JSON schema exists with canonical field order", False, "missing schema file")
 
     try:
-        data = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+        data = _read_json_object(SCHEMA_PATH)
+    except (json.JSONDecodeError, OSError, TypeError) as exc:
         return _check("EMS-SCHEMA", "JSON schema exists with canonical field order", False, f"invalid json: {exc}")
 
     required = data.get("required", [])
     has_required_fields = required == REQUIRED_TOP_LEVEL_FIELDS
     has_schema = data.get("$schema") == "https://json-schema.org/draft/2020-12/schema"
-    has_no_extras = data.get("additionalProperties") is False
+    has_no_extras = isinstance(data.get("additionalProperties"), bool) and not data["additionalProperties"]
 
     passed = has_required_fields and has_schema and has_no_extras
     details = None
@@ -109,8 +121,8 @@ def check_schema_shape() -> dict[str, Any]:
 
 def check_capability_enum() -> dict[str, Any]:
     try:
-        data = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+        data = _read_json_object(SCHEMA_PATH)
+    except (OSError, json.JSONDecodeError, TypeError):
         return _check("EMS-CAPS", "Capability enum aligns with engine ExtensionManifest", False)
 
     actual = (
@@ -128,7 +140,7 @@ def check_rust_integration() -> dict[str, Any]:
     if not RUST_IMPL_PATH.exists():
         return _check("EMS-RUST", "Rust module implements schema + engine integration", False, "missing rust module")
 
-    content = RUST_IMPL_PATH.read_text(encoding="utf-8")
+    content = _read_text(RUST_IMPL_PATH)
     required_markers = [
         "pub struct SignedExtensionManifest",
         "pub fn validate_signed_manifest",
@@ -149,7 +161,7 @@ def check_log_codes() -> dict[str, Any]:
     if not RUST_IMPL_PATH.exists():
         return _check("EMS-LOGS", "Structured manifest event codes are defined", False)
 
-    content = RUST_IMPL_PATH.read_text(encoding="utf-8")
+    content = _read_text(RUST_IMPL_PATH)
     missing = [code for code in REQUIRED_LOG_CODES if code not in content]
     return _check(
         "EMS-LOGS",
@@ -163,7 +175,7 @@ def check_integration_surface() -> dict[str, Any]:
     if not INTEGRATION_TEST_PATH.exists():
         return _check("EMS-INTEG", "Integration tests cover admission fail-closed invariants", False)
 
-    content = INTEGRATION_TEST_PATH.read_text(encoding="utf-8")
+    content = _read_text(INTEGRATION_TEST_PATH)
     invariants = [
         "inv_ems_engine_compatibility_gate",
         "inv_ems_signature_gate_fail_closed",
@@ -224,7 +236,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
-    logger = configure_test_logging("check_extension_manifest_schema")
+    configure_test_logging("check_extension_manifest_schema")
     checks = collect_checks()
     passing = sum(1 for check in checks if check["status"] == "PASS")
     total = len(checks)
