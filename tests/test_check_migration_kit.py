@@ -1,132 +1,152 @@
 """Tests for scripts/check_migration_kit.py (bd-wpck)."""
 
-import importlib.util
 import json
-import os
+import runpy
 import subprocess
 import sys
+import unittest
+from pathlib import Path
 
-import pytest
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPT = os.path.join(ROOT, "scripts", "check_migration_kit.py")
-
-# Dynamic import
-spec = importlib.util.spec_from_file_location("check_migration_kit", SCRIPT)
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts" / "check_migration_kit.py"
 
 
-class TestSelfTest:
+class ScriptNamespace:
+    def __init__(self, script_globals: dict[str, object]) -> None:
+        object.__setattr__(self, "_script_globals", script_globals)
+
+
+    def __getattr__(self, name: str) -> object:
+        return self._script_globals[name]
+
+
+mod = ScriptNamespace(runpy.run_path(str(SCRIPT)))
+
+
+def _run_script(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), *args],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=30,
+    )
+
+
+def _run_json() -> dict[str, object]:
+    result = _run_script("--json")
+    if result.returncode != 0:
+        msg = f"{SCRIPT.name} --json failed: {result.stderr}"
+        raise AssertionError(msg)
+    return json.JSONDecoder().decode(result.stdout)
+
+
+class TestSelfTest(unittest.TestCase):
     def test_self_test_passes(self):
-        assert mod.self_test() is True
+        self.assertTrue(mod.self_test())
 
 
-class TestJsonOutput:
+class TestJsonOutput(unittest.TestCase):
     def test_json_output(self):
-        result = subprocess.run(
-            [sys.executable, SCRIPT, "--json"],
-            capture_output=True, text=True,
-        )
-        data = json.loads(result.stdout)
-        assert data["bead_id"] == "bd-wpck"
-        assert data["section"] == "15"
-        assert "checks_passed" in data
-        assert "checks_total" in data
-        assert "verdict" in data
-        assert isinstance(data["checks"], list)
+        data = _run_json()
+        self.assertEqual(data["bead_id"], "bd-wpck")
+        self.assertEqual(data["section"], "15")
+        self.assertIn("checks_passed", data)
+        self.assertIn("checks_total", data)
+        self.assertIn("verdict", data)
+        self.assertIsInstance(data["checks"], list)
 
 
-class TestIndividualChecks:
-    @pytest.fixture(scope="class")
-    def results(self):
-        return {r["check"]: r for r in mod._checks()}
+class TestIndividualChecks(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.results = {check["check"]: check for check in mod._checks()}
 
-    def test_source_exists(self, results):
-        assert results["source_exists"]["passed"]
+    def assertCheckPasses(self, name: str) -> None:
+        self.assertTrue(self.results[name]["passed"], self.results[name]["detail"])
 
-    def test_module_wiring(self, results):
-        assert results["module_wiring"]["passed"]
+    def test_source_exists(self):
+        self.assertCheckPasses("source_exists")
 
-    def test_archetypes(self, results):
-        assert results["archetypes"]["passed"]
+    def test_module_wiring(self):
+        self.assertCheckPasses("module_wiring")
 
-    def test_migration_phases(self, results):
-        assert results["migration_phases"]["passed"]
+    def test_archetypes(self):
+        self.assertCheckPasses("archetypes")
 
-    def test_struct_migration_step(self, results):
-        assert results["struct_MigrationStep"]["passed"]
+    def test_migration_phases(self):
+        self.assertCheckPasses("migration_phases")
 
-    def test_struct_compatibility_mapping(self, results):
-        assert results["struct_CompatibilityMapping"]["passed"]
+    def test_struct_migration_step(self):
+        self.assertCheckPasses("struct_MigrationStep")
 
-    def test_struct_migration_kit(self, results):
-        assert results["struct_MigrationKit"]["passed"]
+    def test_struct_compatibility_mapping(self):
+        self.assertCheckPasses("struct_CompatibilityMapping")
 
-    def test_struct_migration_report(self, results):
-        assert results["struct_MigrationReport"]["passed"]
+    def test_struct_migration_kit(self):
+        self.assertCheckPasses("struct_MigrationKit")
 
-    def test_struct_mke_audit_record(self, results):
-        assert results["struct_MkeAuditRecord"]["passed"]
+    def test_struct_migration_report(self):
+        self.assertCheckPasses("struct_MigrationReport")
 
-    def test_struct_migration_kit_ecosystem(self, results):
-        assert results["struct_MigrationKitEcosystem"]["passed"]
+    def test_struct_mke_audit_record(self):
+        self.assertCheckPasses("struct_MkeAuditRecord")
 
-    def test_compatibility_gating(self, results):
-        assert results["compatibility_gating"]["passed"]
+    def test_struct_migration_kit_ecosystem(self):
+        self.assertCheckPasses("struct_MigrationKitEcosystem")
 
-    def test_step_management(self, results):
-        assert results["step_management"]["passed"]
+    def test_compatibility_gating(self):
+        self.assertCheckPasses("compatibility_gating")
 
-    def test_deterministic_hashing(self, results):
-        assert results["deterministic_hashing"]["passed"]
+    def test_step_management(self):
+        self.assertCheckPasses("step_management")
 
-    def test_kit_versioning(self, results):
-        assert results["kit_versioning"]["passed"]
+    def test_deterministic_hashing(self):
+        self.assertCheckPasses("deterministic_hashing")
 
-    def test_report_generation(self, results):
-        assert results["report_generation"]["passed"]
+    def test_content_hash_surface(self):
+        self.assertCheckPasses("content_hash_surface")
 
-    def test_event_codes(self, results):
-        assert results["event_codes"]["passed"]
+    def test_nan_inf_guard(self):
+        self.assertCheckPasses("nan_inf_guard")
 
-    def test_invariants(self, results):
-        assert results["invariants"]["passed"]
+    def test_kit_versioning(self):
+        self.assertCheckPasses("kit_versioning")
 
-    def test_audit_log(self, results):
-        assert results["audit_log"]["passed"]
+    def test_report_generation(self):
+        self.assertCheckPasses("report_generation")
 
-    def test_spec_alignment(self, results):
-        assert results["spec_alignment"]["passed"]
+    def test_event_codes(self):
+        self.assertCheckPasses("event_codes")
 
-    def test_test_coverage(self, results):
-        assert results["test_coverage"]["passed"]
+    def test_invariants(self):
+        self.assertCheckPasses("invariants")
 
-    def test_content_hash_surface(self, results):
-        assert results["content_hash_surface"]["passed"]
+    def test_audit_log(self):
+        self.assertCheckPasses("audit_log")
 
-    def test_nan_inf_guard(self, results):
-        assert results["nan_inf_guard"]["passed"]
+    def test_spec_alignment(self):
+        self.assertCheckPasses("spec_alignment")
+
+    def test_test_coverage(self):
+        self.assertCheckPasses("test_coverage")
 
 
-class TestOverall:
+class TestOverall(unittest.TestCase):
     def test_all_checks_pass(self):
         results = mod._checks()
-        failed = [r for r in results if not r["passed"]]
-        assert len(failed) == 0, f"Failed: {[r['check'] for r in failed]}"
+        failed = [check["check"] for check in results if not check["passed"]]
+        self.assertEqual(failed, [])
 
     def test_verdict_is_pass(self):
-        result = subprocess.run(
-            [sys.executable, SCRIPT, "--json"],
-            capture_output=True, text=True,
-        )
-        data = json.loads(result.stdout)
-        assert data["verdict"] == "PASS"
+        self.assertEqual(_run_json()["verdict"], "PASS")
 
     def test_human_output(self):
-        result = subprocess.run(
-            [sys.executable, SCRIPT],
-            capture_output=True, text=True,
-        )
-        assert "bd-wpck" in result.stdout
-        assert "PASS" in result.stdout
+        result = _run_script()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("bd-wpck", result.stdout)
+        self.assertIn("PASS", result.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()

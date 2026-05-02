@@ -6,16 +6,17 @@ Usage:
 """
 
 import json
-import os
 import re
 import sys
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
-IMPL = os.path.join(ROOT, "crates", "franken-node", "src", "supply_chain",
-                     "migration_kit.rs")
-MOD_RS = os.path.join(ROOT, "crates", "franken-node", "src", "supply_chain", "mod.rs")
-SPEC = os.path.join(ROOT, "docs", "specs", "section_15", "bd-wpck_contract.md")
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
+
+IMPL = ROOT / "crates/franken-node/src/supply_chain/migration_kit.rs"
+MOD_RS = ROOT / "crates/franken-node/src/supply_chain/mod.rs"
+SPEC = ROOT / "docs/specs/section_15/bd-wpck_contract.md"
 
 BEAD = "bd-wpck"
 SECTION = "15"
@@ -36,21 +37,22 @@ REQUIRED_INVARIANTS = [
 ]
 
 
-def _read(path):
-    with open(path) as f:
-        return f.read()
+def _read(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8")
 
 
-def _checks():
+def _checks() -> list[dict[str, object]]:
     results = []
 
-    def ok(name, passed, detail=""):
+    def ok(name: str, passed: bool, detail: str = "") -> None:
         results.append({"check": name, "passed": passed, "detail": detail})
 
     src = _read(IMPL)
 
     # 1. Source exists
-    ok("source_exists", os.path.isfile(IMPL), IMPL)
+    ok("source_exists", IMPL.is_file(), str(IMPL))
 
     # 2. Module wiring
     mod_src = _read(MOD_RS)
@@ -140,7 +142,7 @@ def _checks():
        "JSONL audit export")
 
     # 14. Spec alignment
-    ok("spec_alignment", os.path.isfile(SPEC), SPEC)
+    ok("spec_alignment", SPEC.is_file(), str(SPEC))
 
     # 15. Test coverage (count #[test])
     test_count = len(re.findall(r"#\[test\]", src))
@@ -151,18 +153,22 @@ def _checks():
     return results
 
 
-def self_test():
+def self_test() -> bool:
     """Smoke-test that all checks produce output."""
     results = _checks()
-    assert len(results) >= 17, f"Expected >=17 checks, got {len(results)}"
-    for r in results:
-        assert "check" in r and "passed" in r
+    if len(results) < 17:
+        msg = f"expected >=17 checks, got {len(results)}"
+        raise RuntimeError(msg)
+    for result in results:
+        if "check" not in result or "passed" not in result:
+            msg = f"malformed check result: {result!r}"
+            raise RuntimeError(msg)
     print(f"self_test: {len(results)} checks OK", file=sys.stderr)
     return True
 
 
-def main():
-    logger = configure_test_logging("check_migration_kit")
+def main() -> None:
+    configure_test_logging("check_migration_kit")
     as_json = "--json" in sys.argv
 
     if "--self-test" in sys.argv:
@@ -175,15 +181,20 @@ def main():
     verdict = "PASS" if passed == total else "FAIL"
 
     if as_json:
-        print(json.dumps({
-            "bead_id": BEAD,
-            "section": SECTION,
-            "gate_script": os.path.basename(__file__),
-            "checks_passed": passed,
-            "checks_total": total,
-            "verdict": verdict,
-            "checks": results,
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "bead_id": BEAD,
+                    "section": SECTION,
+                    "gate_script": Path(__file__).name,
+                    "checks_passed": passed,
+                    "checks_total": total,
+                    "verdict": verdict,
+                    "checks": results,
+                },
+                indent=2,
+            )
+        )
     else:
         for r in results:
             mark = "PASS" if r["passed"] else "FAIL"
