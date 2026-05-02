@@ -2,23 +2,18 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "scripts"))
 
-spec = importlib.util.spec_from_file_location(
-    "check_compat_corpus_gate",
-    ROOT / "scripts" / "check_compat_corpus_gate.py",
-)
-mod = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = mod
-spec.loader.exec_module(mod)
+import check_compat_corpus_gate as mod  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -415,18 +410,19 @@ class TestMissingFileDetection(unittest.TestCase):
 class TestJsonOutput(unittest.TestCase):
     def test_json_serializable(self):
         result = mod.run_all()
-        parsed = json.loads(json.dumps(result))
+        parsed = json.JSONDecoder().decode(json.dumps(result))
         self.assertEqual(parsed["bead_id"], "bd-28sz")
 
     def test_json_flag_via_subprocess(self):
         proc = subprocess.run(
             [sys.executable, str(ROOT / "scripts" / "check_compat_corpus_gate.py"), "--json"],
             capture_output=True,
+            check=False,
             text=True,
             timeout=30,
         )
         self.assertEqual(proc.returncode, 0, f"stderr: {proc.stderr}")
-        data = json.loads(proc.stdout)
+        data = json.JSONDecoder().decode(proc.stdout)
         self.assertEqual(data["bead_id"], "bd-28sz")
         self.assertEqual(data["verdict"], "PASS")
 
@@ -447,9 +443,9 @@ class TestSafeRel(unittest.TestCase):
         self.assertFalse(result.startswith("/"))
 
     def test_safe_rel_with_non_root_path(self):
-        p = Path("/tmp/fakepath/file.txt")
+        p = Path(tempfile.gettempdir()) / "fakepath" / "file.txt"
         result = mod._safe_rel(p)
-        self.assertEqual(result, "/tmp/fakepath/file.txt")
+        self.assertEqual(result, str(p))
 
     def test_safe_rel_returns_string(self):
         p = mod.ROOT / "docs" / "test.md"

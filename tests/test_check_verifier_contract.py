@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import subprocess
 import sys
@@ -14,16 +13,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "check_verifier_contract.py"
+sys.path.insert(0, str(ROOT))
+
+from scripts import check_verifier_contract as checker  # noqa: E402
 
 
 def load_checker():
-    spec = importlib.util.spec_from_file_location("check_verifier_contract", SCRIPT)
-    module = importlib.util.module_from_spec(spec)
-    assert spec is not None
-    assert spec.loader is not None
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return checker
 
 
 def write_contract(path: Path, *, previous_major: int, snapshots: dict[str, Path]) -> None:
@@ -109,11 +105,13 @@ class VerifierContractCheckerTests(unittest.TestCase):
         proc = subprocess.run(
             [sys.executable, str(SCRIPT), "--json"],
             capture_output=True,
+            check=False,
             text=True,
             cwd=ROOT,
+            timeout=30,
         )
         self.assertEqual(proc.returncode, 0)
-        data = json.loads(proc.stdout)
+        data = json.JSONDecoder().decode(proc.stdout)
         self.assertEqual(data["bead_id"], "bd-3ex")
         self.assertEqual(data["verdict"], "PASS")
 
@@ -172,7 +170,7 @@ class VerifierContractCheckerTests(unittest.TestCase):
                 contract_path=contract_path,
             )
             self.assertEqual(report_update["verdict"], "PASS")
-            refreshed = json.loads(
+            refreshed = json.JSONDecoder().decode(
                 snapshot_paths["verify_module_default"].read_text(encoding="utf-8")
             )
             self.assertEqual(refreshed["exit_code"], 0)
@@ -206,7 +204,9 @@ class VerifierContractCheckerTests(unittest.TestCase):
                 snapshot_paths[scenario].write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
             # Breaking change: mutate existing field value with no major bump.
-            broken = json.loads(snapshot_paths["verify_module_default"].read_text(encoding="utf-8"))
+            broken = json.JSONDecoder().decode(
+                snapshot_paths["verify_module_default"].read_text(encoding="utf-8")
+            )
             broken["reason"] = "different-reason"
             snapshot_paths["verify_module_default"].write_text(
                 json.dumps(broken, indent=2),

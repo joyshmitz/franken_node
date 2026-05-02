@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-import check_compatibility_corpus_pass_gate as mod
+import check_compatibility_corpus_pass_gate as mod  # noqa: E402
 
 
 class TestConstants(unittest.TestCase):
@@ -77,7 +77,7 @@ class TestGateEvaluation(unittest.TestCase):
 
     def test_evaluate_gate_regression(self):
         data, _ = mod.load_report()
-        data = json.loads(json.dumps(data))
+        data = json.JSONDecoder().decode(json.dumps(data))
         data["previous_release"]["overall_pass_rate_pct"] = 99.9
         eval_result = mod.evaluate_gate(data)
         self.assertTrue(eval_result["regression_detected"])
@@ -138,7 +138,7 @@ class TestJsonRoundTrip(unittest.TestCase):
     def test_json_serializable(self):
         result = mod.run_checks()
         blob = json.dumps(result, indent=2)
-        parsed = json.loads(blob)
+        parsed = json.JSONDecoder().decode(blob)
         self.assertEqual(parsed["bead_id"], "bd-28sz")
 
 
