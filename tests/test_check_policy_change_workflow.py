@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-import check_policy_change_workflow as checker
+import check_policy_change_workflow as checker  # noqa: E402
 
 
 class TestCheckFileHelper(unittest.TestCase):
@@ -186,16 +186,16 @@ class TestJsonOutput(unittest.TestCase):
     def test_cli_json(self):
         proc = subprocess.run(
             [sys.executable, str(ROOT / "scripts" / "check_policy_change_workflow.py"), "--json"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, check=False,
         )
         self.assertEqual(proc.returncode, 0)
-        data = json.loads(proc.stdout)
+        data = json.JSONDecoder().decode(proc.stdout)
         self.assertEqual(data["verdict"], "PASS")
 
     def test_cli_human(self):
         proc = subprocess.run(
             [sys.executable, str(ROOT / "scripts" / "check_policy_change_workflow.py")],
-            capture_output=True, text=True,
+            capture_output=True, text=True, check=False,
         )
         self.assertEqual(proc.returncode, 0)
         self.assertIn("PASS", proc.stdout)
