@@ -1,7 +1,7 @@
 """Unit tests for scripts/check_migration_artifacts.py (bd-3hm)."""
 
-import importlib.util
 import json
+import runpy
 import subprocess
 import sys
 import unittest
@@ -10,10 +10,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT_PATH = ROOT / "scripts" / "check_migration_artifacts.py"
 
-# Load the module via importlib to match the bead spec
-spec = importlib.util.spec_from_file_location("check_migration_artifacts", SCRIPT_PATH)
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
+class ScriptNamespace:
+    def __init__(self, values: dict[str, object]) -> None:
+        object.__setattr__(self, "_values", values)
+
+    def __getattr__(self, name: str) -> object:
+        return self._values[name]
+
+    def __setattr__(self, name: str, value: object) -> None:
+        self._values[name] = value
+
+
+script_globals = runpy.run_path(str(SCRIPT_PATH))
+mod = ScriptNamespace(script_globals["run_all"].__globals__)
 
 
 class TestVerdict(unittest.TestCase):
@@ -98,8 +107,9 @@ class TestJsonCliOutput(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=30,
+            check=False,
         )
-        parsed = json.loads(proc.stdout)
+        parsed = json.JSONDecoder().decode(proc.stdout)
         self.assertEqual(parsed["bead_id"], "bd-3hm")
         self.assertIn("verdict", parsed)
         self.assertIn("checks", parsed)
@@ -114,6 +124,7 @@ class TestSelfTestCliExit(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=30,
+            check=False,
         )
         self.assertEqual(proc.returncode, 0, f"self-test failed:\n{proc.stdout}\n{proc.stderr}")
 
