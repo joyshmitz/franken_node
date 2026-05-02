@@ -10,6 +10,7 @@
 //! - INV-VEF-CHAIN-FAIL-CLOSED: tampering is detected and reported with stable error codes.
 
 use super::connector::vef_execution_receipt::{ExecutionReceipt, receipt_hash_sha256};
+use crate::push_bounded;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
@@ -42,18 +43,6 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
 }
 
 use frankenengine_node::capacity_defaults::aliases::{MAX_CHAIN_ENTRIES, MAX_CHECKPOINTS};
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 /// Stable schema version for chain serialization and hash material.
 pub const RECEIPT_CHAIN_SCHEMA_VERSION: &str = "vef-receipt-chain-v1";

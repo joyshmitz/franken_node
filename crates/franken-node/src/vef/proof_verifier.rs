@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
+use crate::push_bounded;
 const MAX_REPORTS: usize = 2048;
 const PREDICATE_EVIDENCE_CAPACITY: usize = 6;
 const REPORT_EVENT_CAPACITY: usize = 4;
@@ -23,19 +24,6 @@ const REPORT_EVENT_CAPACITY: usize = 4;
 use crate::security::constant_time;
 use std::collections::BTreeMap;
 use std::fmt;
-
-// Security-hardened vector operations
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 // ── Schema version ──────────────────────────────────────────────────────────
 

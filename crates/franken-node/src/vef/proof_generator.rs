@@ -25,6 +25,7 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
+use crate::push_bounded;
 
 /// Schema version for proof generator output format.
 pub const PROOF_GENERATOR_SCHEMA_VERSION: &str = "vef-proof-generator-v1";
@@ -770,18 +771,6 @@ impl Clone for ConcurrentProofGenerator {
             inner: Arc::clone(&self.inner),
         }
     }
-}
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────
