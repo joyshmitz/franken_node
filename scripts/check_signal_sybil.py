@@ -15,14 +15,17 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
-from pathlib import Path
-from typing import Any
+
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 
 SPEC = ROOT / "docs" / "specs" / "section_12" / "bd-13yn_contract.md"
 POLICY = ROOT / "docs" / "policy" / "risk_signal_poisoning_sybil.md"
+EVIDENCE = ROOT / "artifacts" / "section_12" / "bd-13yn" / "verification_evidence.json"
+SUMMARY = ROOT / "artifacts" / "section_12" / "bd-13yn" / "verification_summary.md"
 
 EVENT_CODES = ["SPS-001", "SPS-002", "SPS-003", "SPS-004"]
 INVARIANTS = [
@@ -49,6 +52,14 @@ def _check(name: str, passed: bool, detail: str = "") -> dict[str, Any]:
     }
     RESULTS.append(entry)
     return entry
+
+
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    return json.JSONDecoder().decode(_read_text(path))
 
 
 def _safe_rel(path: Path) -> str:
@@ -88,7 +99,7 @@ def check_spec_bead_id() -> None:
     if not SPEC.is_file():
         _check("spec_bead_id", False, "spec file missing")
         return
-    text = SPEC.read_text()
+    text = _read_text(SPEC)
     ok = "bd-13yn" in text
     _check("spec_bead_id", ok, "found" if ok else "NOT FOUND")
 
@@ -98,7 +109,7 @@ def check_spec_section() -> None:
     if not SPEC.is_file():
         _check("spec_section_12", False, "spec file missing")
         return
-    text = SPEC.read_text()
+    text = _read_text(SPEC)
     ok = "12" in text and ("Risk Control" in text or "Risk" in text)
     _check("spec_section_12", ok, "found" if ok else "NOT FOUND")
 
@@ -109,7 +120,7 @@ def check_spec_event_codes() -> None:
         for code in EVENT_CODES:
             _check(f"spec_event_code_{code}", False, "spec file missing")
         return
-    text = SPEC.read_text()
+    text = _read_text(SPEC)
     for code in EVENT_CODES:
         ok = code in text
         _check(f"spec_event_code_{code}", ok, "found" if ok else "NOT FOUND")
@@ -121,7 +132,7 @@ def check_spec_invariants() -> None:
         for inv in INVARIANTS:
             _check(f"spec_invariant_{inv}", False, "spec file missing")
         return
-    text = SPEC.read_text()
+    text = _read_text(SPEC)
     for inv in INVARIANTS:
         ok = inv in text
         _check(f"spec_invariant_{inv}", ok, "found" if ok else "NOT FOUND")
@@ -133,7 +144,7 @@ def check_spec_error_codes() -> None:
         for code in ERROR_CODES:
             _check(f"spec_error_code_{code}", False, "spec file missing")
         return
-    text = SPEC.read_text()
+    text = _read_text(SPEC)
     for code in ERROR_CODES:
         ok = code in text
         _check(f"spec_error_code_{code}", ok, "found" if ok else "NOT FOUND")
@@ -144,7 +155,7 @@ def check_spec_thresholds() -> None:
     if not SPEC.is_file():
         _check("spec_thresholds", False, "spec file missing")
         return
-    text = SPEC.read_text()
+    text = _read_text(SPEC)
     has_5pct = "5%" in text
     has_1pct = "1%" in text
     has_10_scenarios = "10" in text
@@ -163,7 +174,7 @@ def check_spec_countermeasures() -> None:
     if not SPEC.is_file():
         _check("spec_countermeasures", False, "spec file missing")
         return
-    text = SPEC.read_text().lower()
+    text = _read_text(SPEC).lower()
     has_aggregation = "robust aggregation" in text or "trimmed-mean" in text
     has_stake = "stake" in text and "weight" in text
     has_sybil = "sybil" in text and ("detection" in text or "resistance" in text)
@@ -183,7 +194,7 @@ def check_spec_acceptance_criteria() -> None:
     if not SPEC.is_file():
         _check("spec_acceptance_criteria", False, "spec file missing")
         return
-    text = SPEC.read_text()
+    text = _read_text(SPEC)
     ok = "Acceptance Criteria" in text
     _check("spec_acceptance_criteria", ok, "found" if ok else "NOT FOUND")
 
@@ -193,7 +204,7 @@ def check_spec_test_scenarios() -> None:
     if not SPEC.is_file():
         _check("spec_test_scenarios", False, "spec file missing")
         return
-    text = SPEC.read_text()
+    text = _read_text(SPEC)
     ok = "Test Scenario" in text or "Scenario" in text
     _check("spec_test_scenarios", ok, "found" if ok else "NOT FOUND")
 
@@ -203,7 +214,7 @@ def check_policy_risk_description() -> None:
     if not POLICY.is_file():
         _check("policy_risk_description", False, "policy file missing")
         return
-    text = POLICY.read_text()
+    text = _read_text(POLICY)
     has_desc = "Signal Poisoning" in text and "Sybil" in text
     has_section = "Risk Description" in text
     ok = has_desc and has_section
@@ -221,7 +232,7 @@ def check_policy_impact() -> None:
     if not POLICY.is_file():
         _check("policy_impact", False, "policy file missing")
         return
-    text = POLICY.read_text()
+    text = _read_text(POLICY)
     ok = "Impact" in text and "Critical" in text
     _check("policy_impact", ok, "found" if ok else "NOT FOUND")
 
@@ -231,7 +242,7 @@ def check_policy_likelihood() -> None:
     if not POLICY.is_file():
         _check("policy_likelihood", False, "policy file missing")
         return
-    text = POLICY.read_text()
+    text = _read_text(POLICY)
     ok = "Likelihood" in text and "High" in text
     _check("policy_likelihood", ok, "found" if ok else "NOT FOUND")
 
@@ -241,7 +252,7 @@ def check_policy_countermeasures() -> None:
     if not POLICY.is_file():
         _check("policy_countermeasures", False, "policy file missing")
         return
-    text = POLICY.read_text()
+    text = _read_text(POLICY)
     has_agg = "Robust Aggregation" in text
     has_stake = "Stake" in text
     has_sybil = "Sybil Detection" in text or "Sybil Resistance" in text
@@ -261,7 +272,7 @@ def check_policy_escalation() -> None:
     if not POLICY.is_file():
         _check("policy_escalation", False, "policy file missing")
         return
-    text = POLICY.read_text()
+    text = _read_text(POLICY)
     ok = "Escalation" in text and "60 second" in text.lower()
     _check(
         "policy_escalation",
@@ -277,7 +288,7 @@ def check_policy_evidence_requirements() -> None:
     if not POLICY.is_file():
         _check("policy_evidence_requirements", False, "policy file missing")
         return
-    text = POLICY.read_text()
+    text = _read_text(POLICY)
     ok = "Evidence" in text and "review" in text.lower()
     _check(
         "policy_evidence_requirements",
@@ -293,7 +304,7 @@ def check_policy_thresholds() -> None:
     if not POLICY.is_file():
         _check("policy_thresholds", False, "policy file missing")
         return
-    text = POLICY.read_text()
+    text = _read_text(POLICY)
     has_5pct = "5%" in text
     has_1pct = "1%" in text
     has_60s = "60 second" in text.lower()
@@ -313,7 +324,7 @@ def check_policy_invariants() -> None:
         for inv in INVARIANTS:
             _check(f"policy_invariant_{inv}", False, "policy file missing")
         return
-    text = POLICY.read_text()
+    text = _read_text(POLICY)
     for inv in INVARIANTS:
         ok = inv in text
         _check(f"policy_invariant_{inv}", ok, "found" if ok else "NOT FOUND")
@@ -325,7 +336,7 @@ def check_policy_event_codes() -> None:
         for code in EVENT_CODES:
             _check(f"policy_event_code_{code}", False, "policy file missing")
         return
-    text = POLICY.read_text()
+    text = _read_text(POLICY)
     for code in EVENT_CODES:
         ok = code in text
         _check(f"policy_event_code_{code}", ok, "found" if ok else "NOT FOUND")
@@ -336,7 +347,7 @@ def validate_signal_provenance() -> None:
     if not POLICY.is_file():
         _check("signal_provenance_coverage", False, "policy file missing")
         return
-    text = POLICY.read_text()
+    text = _read_text(POLICY)
     # Signal provenance = robust aggregation + stake weighting = 100% coverage
     has_coverage = "100%" in text
     has_aggregation = "aggregation" in text.lower()
@@ -355,7 +366,7 @@ def validate_sybil_resistance() -> None:
     if not POLICY.is_file():
         _check("sybil_resistance_mechanisms", False, "policy file missing")
         return
-    text = POLICY.read_text()
+    text = _read_text(POLICY)
     has_detection = "detect" in text.lower() and "cluster" in text.lower()
     has_attenuation = "attenuate" in text.lower() or "attenuation" in text.lower()
     has_influence = "100" in text and "influence" in text.lower()
@@ -371,13 +382,13 @@ def validate_sybil_resistance() -> None:
 
 def check_verification_evidence() -> None:
     """Verification evidence artifact must exist and be valid."""
-    p = ROOT / "artifacts" / "section_12" / "bd-13yn" / "verification_evidence.json"
+    p = EVIDENCE
     if not p.is_file():
         _check("verification_evidence", False, f"MISSING: {_safe_rel(p)}")
         return
     try:
-        data = json.loads(p.read_text())
-        ok = data.get("bead_id") == "bd-13yn" and data.get("status") == "pass"
+        data = _read_json(p)
+        ok = isinstance(data, dict) and data.get("bead_id") == "bd-13yn" and data.get("status") == "pass"
         _check(
             "verification_evidence",
             ok,
@@ -385,13 +396,13 @@ def check_verification_evidence() -> None:
             if ok
             else "evidence has incorrect bead_id or status",
         )
-    except (json.JSONDecodeError, KeyError) as exc:
+    except (json.JSONDecodeError, OSError) as exc:
         _check("verification_evidence", False, f"parse error: {exc}")
 
 
 def check_verification_summary() -> None:
     """Verification summary artifact must exist."""
-    p = ROOT / "artifacts" / "section_12" / "bd-13yn" / "verification_summary.md"
+    p = SUMMARY
     ok = p.is_file()
     _check(
         "verification_summary",
@@ -469,7 +480,7 @@ def self_test() -> bool:
 
 
 def main() -> None:
-    logger = configure_test_logging("check_signal_sybil")
+    configure_test_logging("check_signal_sybil")
     parser = argparse.ArgumentParser(
         description="Verify bd-13yn: signal poisoning and Sybil"
     )

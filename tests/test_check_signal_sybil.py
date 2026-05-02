@@ -1,19 +1,16 @@
 """Unit tests for scripts/check_signal_sybil.py (bd-13yn)."""
 from __future__ import annotations
 
-import importlib.util
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location(
-    "check_signal_sybil", ROOT / "scripts" / "check_signal_sybil.py"
-)
-mod = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = mod
-spec.loader.exec_module(mod)
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import check_signal_sybil as mod
 
 
 class TestRunAllStructure(unittest.TestCase):
@@ -413,7 +410,7 @@ class TestJsonOutput(unittest.TestCase):
     def test_json_serializable(self) -> None:
         result = mod.run_all()
         output = json.dumps(result, indent=2)
-        parsed = json.loads(output)
+        parsed = json.JSONDecoder().decode(output)
         self.assertEqual(parsed["bead_id"], "bd-13yn")
         self.assertEqual(parsed["section"], "12")
         self.assertIn("checks", parsed)
@@ -422,7 +419,7 @@ class TestJsonOutput(unittest.TestCase):
     def test_json_check_format(self) -> None:
         result = mod.run_all()
         output = json.dumps(result, indent=2)
-        parsed = json.loads(output)
+        parsed = json.JSONDecoder().decode(output)
         for c in parsed["checks"]:
             self.assertIn("check", c)
             self.assertIn("pass", c)
@@ -438,9 +435,9 @@ class TestSafeRel(unittest.TestCase):
         self.assertEqual(result, "docs/specs/test.md")
 
     def test_path_outside_root(self) -> None:
-        p = Path("/tmp/some/other/path.md")
+        p = ROOT.parent / "outside-root-for-test.md"
         result = mod._safe_rel(p)
-        self.assertEqual(result, "/tmp/some/other/path.md")
+        self.assertEqual(result, str(p))
 
     def test_root_itself(self) -> None:
         result = mod._safe_rel(mod.ROOT)
@@ -500,6 +497,38 @@ class TestRunAllIdempotent(unittest.TestCase):
         self.assertEqual(r1["total"], r2["total"])
         self.assertEqual(r1["passed"], r2["passed"])
         self.assertEqual(len(r1["checks"]), len(r2["checks"]))
+
+
+class TestVerificationEvidenceFailures(unittest.TestCase):
+    def setUp(self) -> None:
+        mod.RESULTS = []
+        self.original_evidence = mod.EVIDENCE
+
+    def tearDown(self) -> None:
+        mod.EVIDENCE = self.original_evidence
+        mod.RESULTS = []
+
+    def test_malformed_verification_evidence_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod.EVIDENCE = Path(tmpdir) / "verification_evidence.json"
+            mod.EVIDENCE.write_text("{bad-json", encoding="utf-8")
+
+            mod.check_verification_evidence()
+
+        self.assertEqual(mod.RESULTS[0]["check"], "verification_evidence")
+        self.assertFalse(mod.RESULTS[0]["pass"])
+        self.assertIn("parse error", mod.RESULTS[0]["detail"])
+
+    def test_non_object_verification_evidence_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod.EVIDENCE = Path(tmpdir) / "verification_evidence.json"
+            mod.EVIDENCE.write_text("[]", encoding="utf-8")
+
+            mod.check_verification_evidence()
+
+        self.assertEqual(mod.RESULTS[0]["check"], "verification_evidence")
+        self.assertFalse(mod.RESULTS[0]["pass"])
+        self.assertIn("incorrect bead_id or status", mod.RESULTS[0]["detail"])
 
 
 if __name__ == "__main__":
