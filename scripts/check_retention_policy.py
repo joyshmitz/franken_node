@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from pathlib import Path
 """Verification script for bd-1p2b: Control-plane retention policy."""
 
 import json
@@ -7,9 +6,11 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
+
 CHECKS = []
 
 
@@ -25,15 +26,22 @@ def check(check_id, description, passed, details=None):
     return passed
 
 
+def _configure_logging() -> None:
+    from scripts.lib.test_logger import configure_test_logging
+
+    configure_test_logging("check_retention_policy")
+
+
 def main():
-    logger = configure_test_logging("check_retention_policy")
+    _configure_logging()
+    CHECKS.clear()
     print("bd-1p2b: Control-Plane Retention Policy — Verification\n")
     all_pass = True
 
     impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/retention_policy.rs")
     impl_exists = os.path.isfile(impl_path)
     if impl_exists:
-        content = Path(impl_path).read_text()
+        content = Path(impl_path).read_text(encoding="utf-8")
         has_class = "enum RetentionClass" in content
         has_policy = "struct RetentionPolicy" in content
         has_registry = "struct RetentionRegistry" in content
@@ -45,7 +53,7 @@ def main():
     all_pass &= check("CPR-IMPL", "Implementation with all required types", impl_exists and all_types)
 
     if impl_exists:
-        content = Path(impl_path).read_text()
+        content = Path(impl_path).read_text(encoding="utf-8")
         errors = ["CPR_UNCLASSIFIED", "CPR_DROP_REQUIRED", "CPR_INVALID_POLICY",
                   "CPR_STORAGE_FULL", "CPR_NOT_FOUND"]
         found = [e for e in errors if e in content]
@@ -58,7 +66,7 @@ def main():
     matrix_valid = False
     if os.path.isfile(matrix_path):
         try:
-            data = json.loads(Path(matrix_path).read_text())
+            data = json.JSONDecoder().decode(Path(matrix_path).read_text(encoding="utf-8"))
             matrix_valid = "matrix" in data and len(data["matrix"]) >= 5
         except json.JSONDecodeError:
             pass
@@ -67,7 +75,7 @@ def main():
     integ_path = os.path.join(ROOT, "tests/integration/retention_class_enforcement.rs")
     integ_exists = os.path.isfile(integ_path)
     if integ_exists:
-        content = Path(integ_path).read_text()
+        content = Path(integ_path).read_text(encoding="utf-8")
         has_classified = "inv_cpr_classified" in content
         has_required = "inv_cpr_required_durable" in content
         has_ephemeral = "inv_cpr_ephemeral_policy" in content
@@ -81,7 +89,7 @@ def main():
         result = subprocess.run(
             ["rch", "exec", "--", "cargo", "test", "-p", "frankenengine-node", "--", "connector::retention_policy"],
             capture_output=True, text=True, timeout=3600,
-            cwd=os.path.join(ROOT, "crates/franken-node")
+            cwd=os.path.join(ROOT, "crates/franken-node"), check=False,
         )
         test_output = result.stdout + result.stderr
         matches = re.findall(r"test result: ok\. (\d+) passed", test_output)
@@ -95,7 +103,7 @@ def main():
     spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-1p2b_contract.md")
     spec_exists = os.path.isfile(spec_path)
     if spec_exists:
-        content = Path(spec_path).read_text()
+        content = Path(spec_path).read_text(encoding="utf-8")
         has_invariants = "INV-CPR" in content
         has_types = "RetentionClass" in content and "RetentionPolicy" in content
     else:
@@ -118,9 +126,8 @@ def main():
 
     evidence_dir = os.path.join(ROOT, "artifacts/section_10_13/bd-1p2b")
     os.makedirs(evidence_dir, exist_ok=True)
-    with open(os.path.join(evidence_dir, "verification_evidence.json"), "w") as f:
-        json.dump(evidence, f, indent=2)
-        f.write("\n")
+    evidence_path = Path(evidence_dir) / "verification_evidence.json"
+    evidence_path.write_text(f"{json.dumps(evidence, indent=2)}\n", encoding="utf-8")
 
     return 0 if all_pass else 1
 
