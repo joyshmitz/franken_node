@@ -2,21 +2,15 @@
 
 from __future__ import annotations
 
-import importlib.util
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "scripts"))
 
-spec = importlib.util.spec_from_file_location(
-    "check_open_trust_compat_specs",
-    ROOT / "scripts" / "check_open_trust_compat_specs.py",
-)
-mod = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = mod
-spec.loader.exec_module(mod)
+import check_open_trust_compat_specs as mod
 
 
 class TestOpenTrustCompatSpecs(unittest.TestCase):
@@ -47,6 +41,34 @@ class TestOpenTrustCompatSpecs(unittest.TestCase):
         self.assertTrue(
             any(
                 check["check"] == "spec_event_codes" and not check["pass"]
+                for check in report["checks"]
+            )
+        )
+
+    def test_malformed_artifact_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="bd-f955-test-") as tmp:
+            spec_path, artifact_path = mod._fixture(Path(tmp))
+            artifact_path.write_text("{bad-json", encoding="utf-8")
+            report = mod.run_checks(spec_path, artifact_path)
+
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertTrue(
+            any(
+                check["check"] == "artifact_parse" and not check["pass"]
+                for check in report["checks"]
+            )
+        )
+
+    def test_non_object_artifact_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="bd-f955-test-") as tmp:
+            spec_path, artifact_path = mod._fixture(Path(tmp))
+            artifact_path.write_text("[]", encoding="utf-8")
+            report = mod.run_checks(spec_path, artifact_path)
+
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertTrue(
+            any(
+                check["check"] == "artifact_parse" and not check["pass"]
                 for check in report["checks"]
             )
         )

@@ -5,15 +5,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
-import sys
-from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
+
+from scripts.lib.test_logger import configure_test_logging  # noqa: E402
 SPEC_PATH = ROOT / "docs" / "specs" / "section_16" / "bd-f955_open_trust_compatibility_specs.md"
 ARTIFACT_PATH = ROOT / "artifacts" / "16" / "open_trust_compatibility_specs.json"
 
@@ -56,8 +56,12 @@ def _check(name: str, passed: bool, detail: str = "") -> None:
     )
 
 
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
 def _load_json(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = json.JSONDecoder().decode(_read_text(path))
     if not isinstance(payload, dict):
         raise ValueError("artifact root must be a JSON object")
     return payload
@@ -69,7 +73,7 @@ def run_checks(spec_path: Path = SPEC_PATH, artifact_path: Path = ARTIFACT_PATH)
     _check("spec_exists", spec_path.is_file(), str(spec_path))
     _check("artifact_exists", artifact_path.is_file(), str(artifact_path))
 
-    spec_text = spec_path.read_text(encoding="utf-8") if spec_path.is_file() else ""
+    spec_text = _read_text(spec_path) if spec_path.is_file() else ""
 
     heading_failures = [heading for heading in REQUIRED_HEADINGS if heading not in spec_text]
     _check(
@@ -97,7 +101,7 @@ def run_checks(spec_path: Path = SPEC_PATH, artifact_path: Path = ARTIFACT_PATH)
     if artifact_path.is_file():
         try:
             artifact = _load_json(artifact_path)
-        except Exception as exc:  # pragma: no cover - defensive
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
             parse_error = str(exc)
     _check("artifact_parse", parse_error == "", parse_error or "ok")
 
@@ -157,9 +161,10 @@ def run_checks(spec_path: Path = SPEC_PATH, artifact_path: Path = ARTIFACT_PATH)
     trust = artifact.get("trust_requirements")
     trust_ok = (
         isinstance(trust, dict)
-        and trust.get("signed_provenance") is True
-        and trust.get("deterministic_replay") is True
-        and trust.get("open_schema") is True
+        and all(
+            isinstance(trust.get(key), bool) and trust[key]
+            for key in ("signed_provenance", "deterministic_replay", "open_schema")
+        )
     )
     _check("artifact_trust_requirements", trust_ok)
 
@@ -216,7 +221,7 @@ def _fixture(base: Path, *, missing_heading: bool = False, missing_code: bool = 
     spec_dir.mkdir(parents=True, exist_ok=True)
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
-    spec_text = SPEC_PATH.read_text(encoding="utf-8")
+    spec_text = _read_text(SPEC_PATH)
     if missing_heading:
         spec_text = spec_text.replace("## Governance", "## Policy Governance", 1)
     if missing_code:
@@ -249,7 +254,7 @@ def self_test() -> bool:
 
 
 def main() -> int:
-    logger = configure_test_logging("check_open_trust_compat_specs")
+    configure_test_logging("check_open_trust_compat_specs")
     parser = argparse.ArgumentParser(description="Check bd-f955 open trust/compatibility specs")
     parser.add_argument("--json", action="store_true", help="emit JSON report")
     parser.add_argument("--self-test", action="store_true", help="run checker self-test")
