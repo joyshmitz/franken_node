@@ -29,9 +29,6 @@ const MAX_REPLAY_ENTRIES: usize = 4_096;
 const MIN_SECRET_MATERIAL_LEN: usize = 16;
 const MIN_SECRET_ENTROPY_BITS: usize = 56;
 const REMOTE_CAP_REPLAY_STORE_ENV: &str = "FRANKEN_NODE_REMOTECAP_REPLAY_STORE";
-const REMOTE_CAP_REPLAY_SYNC_BATCH_ENV: &str = "FRANKEN_NODE_REMOTECAP_REPLAY_SYNC_BATCH";
-const DEFAULT_REPLAY_MARKER_SYNC_BATCH: usize = 32;
-const MAX_REPLAY_MARKER_SYNC_BATCH: usize = 1024;
 const CUCKOO_REVOCATION_ENV: &str = "FRANKEN_NODE_CUCKOO_REVOCATION";
 const KNOWN_WEAK_SECRET_MATERIAL: &[&str] = &[
     "admin",
@@ -504,7 +501,6 @@ struct DurableReplayStore {
 struct DurableReplayStoreInner {
     consumed_dir: PathBuf,
     pending_syncs: Mutex<ReplayMarkerSyncBatch>,
-    sync_batch_size: usize,
 }
 
 #[derive(Debug, Default)]
@@ -520,13 +516,6 @@ impl Drop for DurableReplayStoreInner {
 
 impl DurableReplayStore {
     fn open(root: impl AsRef<Path>) -> Result<Self, RemoteCapError> {
-        Self::open_with_sync_batch_size(root, replay_marker_sync_batch_size())
-    }
-
-    fn open_with_sync_batch_size(
-        root: impl AsRef<Path>,
-        sync_batch_size: usize,
-    ) -> Result<Self, RemoteCapError> {
         let root = root.as_ref().to_path_buf();
         let consumed_dir = root.join("consumed");
         std::fs::create_dir_all(&consumed_dir)
@@ -536,7 +525,6 @@ impl DurableReplayStore {
             inner: Arc::new(DurableReplayStoreInner {
                 consumed_dir,
                 pending_syncs: Mutex::new(ReplayMarkerSyncBatch::default()),
-                sync_batch_size: sync_batch_size.clamp(1, MAX_REPLAY_MARKER_SYNC_BATCH),
             }),
         })
     }
@@ -2650,15 +2638,6 @@ fn replay_store_poisoned_lock_error(action: &str, path: &Path) -> RemoteCapError
     }
 }
 
-fn replay_marker_sync_batch_size() -> usize {
-    std::env::var(REMOTE_CAP_REPLAY_SYNC_BATCH_ENV)
-        .ok()
-        .and_then(|raw| raw.parse::<usize>().ok())
-        .filter(|size| *size > 0)
-        .map(|size| size.min(MAX_REPLAY_MARKER_SYNC_BATCH))
-        .unwrap_or(DEFAULT_REPLAY_MARKER_SYNC_BATCH)
-}
-
 fn sync_directory(path: &Path) -> Result<(), RemoteCapError> {
     std::fs::File::open(path)
         .and_then(|directory| directory.sync_all())
@@ -3188,11 +3167,8 @@ mod tests {
             )
             .expect("second issue");
         let dir = tempfile::tempdir().expect("tempdir");
-        let store = DurableReplayStore::open_with_sync_batch_size(
-            dir.path().join("remote-cap-replay-batched"),
-            2,
-        )
-        .expect("open durable store");
+        let store = DurableReplayStore::open(dir.path().join("remote-cap-replay-batched"))
+            .expect("open durable store");
 
         let first_replay_key = replay_store_key(&first_cap);
         assert!(store
