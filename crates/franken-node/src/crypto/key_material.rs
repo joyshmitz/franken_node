@@ -134,6 +134,8 @@ impl Ed25519KeyMaterial {
 }
 
 // Simple in-memory key storage for testing/development
+const MAX_TEST_KEYS: usize = 1000; // Bound test key storage growth
+
 lazy_static::lazy_static! {
     static ref KEY_STORAGE: Arc<Mutex<HashMap<String, Ed25519KeyMaterial>>> =
         Arc::new(Mutex::new(HashMap::new()));
@@ -219,6 +221,16 @@ impl Ed25519KeyMaterial {
         let mut storage = KEY_STORAGE.lock().map_err(|_| {
             KeyMaterialError::StorageFailed("Failed to acquire storage lock".to_string())
         })?;
+
+        // Reject key_id if it would exceed length bound (prevent memory exhaustion)
+        if self.key_id.len() > 256 {
+            return Err(KeyMaterialError::StorageFailed("Key ID too long".to_string()));
+        }
+
+        // Prevent unbounded storage growth in test scenarios
+        if !storage.contains_key(&self.key_id) && storage.len() >= MAX_TEST_KEYS {
+            return Err(KeyMaterialError::StorageFailed("Test key storage capacity exceeded".to_string()));
+        }
 
         storage.insert(self.key_id.clone(), self.clone());
         Ok(())
