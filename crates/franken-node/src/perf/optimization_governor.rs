@@ -44,6 +44,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::capacity_defaults::aliases::MAX_AUDIT_TRAIL_ENTRIES;
+use crate::push_bounded;
 
 /// Maximum knobs to prevent memory exhaustion in knob enumeration.
 const MAX_KNOBS: usize = 64;
@@ -2182,72 +2183,6 @@ pub struct GovernorDispatchSnapshot {
     pub applied_count: usize,
 }
 
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-
-    // Inline negative-path tests
-    #[cfg(test)]
-    {
-        // Test: zero capacity clears all existing items and doesn't add new one
-        let mut test_vec = vec!["a", "b", "c"];
-        push_bounded(&mut test_vec, "d", 0);
-        assert!(test_vec.is_empty(), "zero capacity should clear all items");
-
-        // Test: capacity of 1 should maintain only the latest item
-        let mut single_cap = vec!["old"];
-        push_bounded(&mut single_cap, "new", 1);
-        assert_eq!(
-            single_cap,
-            vec!["new"],
-            "capacity 1 should keep only latest"
-        );
-
-        // Test: saturating arithmetic prevents overflow in drain calculation
-        let mut large_vec = vec![0; usize::MAX.saturating_sub(10)];
-        let large_cap = usize::MAX.saturating_sub(5);
-        large_vec.truncate(large_cap + 2); // Simulate near-overflow condition
-        push_bounded(&mut large_vec, 999, large_cap);
-        // Should not panic due to saturating_sub/saturating_add
-        assert!(large_vec.len() <= large_cap.saturating_add(1));
-
-        // Test: exact capacity boundary doesn't trigger eviction
-        let mut exact_cap = vec![1, 2, 3];
-        push_bounded(&mut exact_cap, 4, 4);
-        assert_eq!(
-            exact_cap,
-            vec![1, 2, 3, 4],
-            "exact capacity should not evict"
-        );
-
-        // Test: exceeding capacity by 1 evicts exactly 1 item
-        let mut over_by_one = vec![1, 2, 3];
-        push_bounded(&mut over_by_one, 4, 3);
-        assert_eq!(
-            over_by_one,
-            vec![2, 3, 4],
-            "should evict oldest when over by 1"
-        );
-
-        // Test: drain range bounds are correctly calculated
-        let mut bounds_test = vec![1, 2, 3, 4, 5, 6];
-        push_bounded(&mut bounds_test, 7, 3);
-        assert_eq!(bounds_test.len(), 3, "should respect capacity");
-        assert_eq!(
-            bounds_test[bounds_test.len() - 1],
-            7,
-            "new item should be last"
-        );
-    }
-}
-
 // ===========================================================================
 // Tests
 // ===========================================================================
@@ -2304,6 +2239,25 @@ mod tests {
             rationale: "Probe an unsafe metric edge".to_string(),
             trace_id: format!("trace-{id}"),
         }
+    }
+
+    #[test]
+    fn push_bounded_shared_helper_preserves_boundary_contract() {
+        let mut zero_capacity = vec!["a", "b", "c"];
+        push_bounded(&mut zero_capacity, "d", 0);
+        assert!(zero_capacity.is_empty());
+
+        let mut exact_capacity = vec![1, 2, 3];
+        push_bounded(&mut exact_capacity, 4, 4);
+        assert_eq!(exact_capacity, vec![1, 2, 3, 4]);
+
+        let mut over_capacity = vec![1, 2, 3];
+        push_bounded(&mut over_capacity, 4, 3);
+        assert_eq!(over_capacity, vec![2, 3, 4]);
+
+        let mut roomy_capacity = vec![1, 2, 3];
+        push_bounded(&mut roomy_capacity, 4, usize::MAX);
+        assert_eq!(roomy_capacity, vec![1, 2, 3, 4]);
     }
 
     #[test]
