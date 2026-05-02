@@ -13,6 +13,7 @@
 use sha2::{Digest, Sha256};
 use std::fmt;
 
+use crate::push_bounded;
 use serde_json::json;
 
 const MAX_ACTIVE_HALTS: usize = 4096;
@@ -20,18 +21,6 @@ const MAX_BUNDLES: usize = 4096;
 const MAX_CAUSAL_EVENTS: usize = 1024;
 const MAX_FAILED_ARTIFACTS: usize = 512;
 const MAX_PROOF_REFS: usize = 256;
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 /// Stable event codes for structured logging.
 pub mod event_codes {

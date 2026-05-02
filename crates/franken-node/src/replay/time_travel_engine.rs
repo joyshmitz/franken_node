@@ -33,6 +33,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
+use crate::push_bounded;
 use crate::security::constant_time;
 
 // ---------------------------------------------------------------------------
@@ -51,18 +52,6 @@ const MAX_SIDE_EFFECTS_PER_STEP: usize = crate::capacity_defaults::base::TRACE;
 /// Maximum allowed clock drift tolerance in nanoseconds (1 second).
 /// Replays with timestamp drifts beyond this threshold trigger ERR_REPLAY_CLOCK_DRIFT.
 const CLOCK_DRIFT_TOLERANCE_NS: u64 = 1_000_000_000;
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 /// SECURITY: Sanitizes identifiers for safe inclusion in audit log messages by escaping
 /// control characters, newlines, and other characters that could be used

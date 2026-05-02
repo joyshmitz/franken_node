@@ -8,6 +8,8 @@ use std::{
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 
+use crate::push_bounded;
+
 pub mod timeouts;
 
 /// Default number of configuration merge decisions to track.
@@ -17,20 +19,6 @@ const MIN_REGISTRY_SIGNING_KEY_BYTES: usize = 32;
 
 const fn default_max_merge_decisions() -> usize {
     DEFAULT_MAX_MERGE_DECISIONS
-}
-
-/// Push item to vector with bounded capacity to prevent memory exhaustion.
-/// When capacity is exceeded, removes oldest entries to maintain the limit.
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
 }
 
 /// Top-level configuration for franken_node.

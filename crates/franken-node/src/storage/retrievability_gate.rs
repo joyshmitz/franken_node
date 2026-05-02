@@ -16,6 +16,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt;
 
+use crate::push_bounded;
 use crate::security::constant_time;
 
 // ---------------------------------------------------------------------------
@@ -29,18 +30,6 @@ pub const RG_EVICTION_PERMITTED: &str = "RG_EVICTION_PERMITTED";
 pub const RG_GATE_INITIALIZED: &str = "RG_GATE_INITIALIZED";
 
 use crate::capacity_defaults::aliases::{MAX_EVENTS, MAX_RECEIPTS};
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 const CONTENT_HASH_DOMAIN: &[u8] = b"retrievability_gate_hash_v1:";
 const SHA256_DIGEST_BYTES: usize = 32;

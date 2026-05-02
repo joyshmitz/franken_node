@@ -26,6 +26,7 @@
 //! - **INV-FSA-CONCURRENT-SAFE**: Concurrent access causes no corruption
 //! - **INV-FSA-SCHEMA-VERSIONED**: Schema migrations are versioned and reversible
 
+use crate::push_bounded;
 use crate::security::constant_time;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -54,18 +55,6 @@ const MAX_AUDIT_REPLAY_RESULTS: usize = MAX_AUDIT_LOG_ENTRIES + 1;
 // ---------------------------------------------------------------------------
 
 use crate::capacity_defaults::aliases::{MAX_AUDIT_LOG_ENTRIES, MAX_EVENTS, MAX_SCHEMA_VERSIONS};
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 /// SECURITY: Sanitizes keys for safe inclusion in log messages by escaping
 /// control characters, newlines, and other characters that could be used
