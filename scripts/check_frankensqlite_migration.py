@@ -162,7 +162,7 @@ def load_report() -> tuple[dict | None, list[dict]]:
     results.append({"check": "report: exists", "pass": True, "detail": "found"})
 
     try:
-        data = json.loads(REPORT.read_text(encoding="utf-8"))
+        data = json.JSONDecoder().decode(REPORT.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         results.append({"check": "report: valid json", "pass": False, "detail": "invalid"})
         return None, results
@@ -219,8 +219,10 @@ def check_report(data: dict | None) -> list[dict]:
         status_ok = domain.get("migration_status") == "migrated"
         rows = domain.get("rows_migrated", 0)
         rows_ok = isinstance(rows, int) and rows > 0
-        invariants_ok = domain.get("invariants_verified") is True
-        rollback_ok = domain.get("rollback_tested") is True
+        invariants_value = domain.get("invariants_verified")
+        rollback_value = domain.get("rollback_tested")
+        invariants_ok = isinstance(invariants_value, bool) and invariants_value
+        rollback_ok = isinstance(rollback_value, bool) and rollback_value
         primary_ok = domain.get("primary_persistence") == "frankensqlite"
 
         results.append({

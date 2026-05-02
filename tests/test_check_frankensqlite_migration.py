@@ -150,7 +150,7 @@ class TestJsonOutput(unittest.TestCase):
     def test_json_serializable(self):
         result = mod.run_checks()
         blob = json.dumps(result, indent=2)
-        parsed = json.loads(blob)
+        parsed = json.JSONDecoder().decode(blob)
         self.assertEqual(parsed["bead_id"], "bd-26ux")
 
     def test_json_has_expected_keys(self):
