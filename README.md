@@ -337,7 +337,7 @@ regression_threshold_pct = 10.0
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `lockstep validation failed` | Behavior delta across runtimes | Run `franken-node verify lockstep --emit-fixtures` and inspect generated divergence fixtures |
+| `lockstep validation failed` | Behavior delta across runtimes | Run `franken-node verify lockstep ./my-app --emit-fixtures` and inspect generated divergence fixtures |
 | `revocation frontier stale` | Local trust state is older than policy requirement or vulnerability refresh has not been re-run since the last registry change | Run `franken-node trust sync --force`; the command refreshes npm cards against OSV, preserves stale data if the network fails, and emits warnings for packages that could not be refreshed |
 | `artifact rejected: missing attestation` | Registry policy requires provenance proofs | Rebuild artifact with provenance metadata and re-sign before publish |
 | `quarantine not converged` | One or more nodes did not apply control action in time | Run `franken-node fleet status --verbose`, then `franken-node fleet reconcile` |
