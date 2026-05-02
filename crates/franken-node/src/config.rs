@@ -2696,8 +2696,8 @@ pub struct TrustConfig {
     /// When `None`, consumers use the default (0.95).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decay_factor: Option<f64>,
-    /// Optional trust-card registry signing key (base64-encoded Ed25519 key).
-    /// When `None`, consumers use the default hardcoded key.
+    /// Optional trust-card registry signing key (base64-encoded HMAC key).
+    /// Validated runtime configurations must set this fail-closed trust boundary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry_signing_key: Option<String>,
     /// Optional reputation tier thresholds (trusted, established, provisional).

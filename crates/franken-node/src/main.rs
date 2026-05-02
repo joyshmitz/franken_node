@@ -7677,13 +7677,9 @@ fn maybe_auto_quarantine_run_dependencies(
         return Ok(Vec::new());
     }
 
-    let cache_ttl = config
-        .trust
-        .card_cache_ttl_secs
-        .unwrap_or(config::timeouts::TRUST_CARD_CACHE_TTL_SECS);
-    let mut registry = TrustCardRegistry::load_authoritative_state(
+    let mut registry = TrustCardRegistry::load_authoritative_state_from_config(
         &registry_path,
-        cache_ttl,
+        &config.trust,
         now_secs,
         SnapshotSourceContext::TrustedFile,
     )
@@ -12472,14 +12468,10 @@ fn trust_card_cli_registry(now_secs: u64) -> Result<TrustCardCliRegistryState> {
             path.display()
         );
     }
-    let cache_ttl = resolved
-        .config
-        .trust
-        .card_cache_ttl_secs
-        .unwrap_or(config::timeouts::TRUST_CARD_CACHE_TTL_SECS);
-    let registry = TrustCardRegistry::load_authoritative_state(
+    let cache_ttl = trust_registry_cache_ttl(&resolved.config.trust);
+    let registry = TrustCardRegistry::load_authoritative_state_from_config(
         &path,
-        cache_ttl,
+        &resolved.config.trust,
         now_secs,
         SnapshotSourceContext::TrustedFile,
     )
@@ -12528,6 +12520,25 @@ fn project_local_root_from_source_path(
             format!("failed resolving current working directory for {authoritative_surface}")
         })
         .map(|cwd| cwd.join(root))
+}
+
+fn trust_registry_cache_ttl(trust: &config::TrustConfig) -> u64 {
+    trust
+        .card_cache_ttl_secs
+        .unwrap_or(config::timeouts::TRUST_CARD_CACHE_TTL_SECS)
+}
+
+fn trust_registry_config_for_project(project_root: &Path) -> Result<config::Config> {
+    let config_path = project_root.join("franken_node.toml");
+    if config_path.is_file() {
+        return Ok(
+            config::Config::resolve(Some(&config_path), CliOverrides::default())
+                .map_err(|err| anyhow::anyhow!(err.to_string()))?
+                .config,
+        );
+    }
+
+    Ok(config::Config::for_profile(Profile::Balanced))
 }
 
 fn run_project_root(app_path: &Path) -> PathBuf {
@@ -12779,20 +12790,22 @@ fn percent_encode_path_component(raw: &str) -> String {
 
 fn trust_scan_registry_state(
     project_root: &Path,
+    trust_config: &config::TrustConfig,
     now_secs: u64,
 ) -> Result<TrustCardCliRegistryState> {
     ensure_state_dir(project_root)?;
     let path = project_root.join(TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH);
     let registry = if path.is_file() {
-        TrustCardRegistry::load_authoritative_state(
+        TrustCardRegistry::load_authoritative_state_from_config(
             &path,
-            60,
+            trust_config,
             now_secs,
             SnapshotSourceContext::TrustedFile,
         )
         .map_err(|err| anyhow::anyhow!(err.to_string()))?
     } else {
-        let registry = TrustCardRegistry::default();
+        let registry = TrustCardRegistry::from_config(trust_config)
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
         registry
             .persist_authoritative_state(&path)
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
@@ -12802,7 +12815,7 @@ fn trust_scan_registry_state(
     Ok(TrustCardCliRegistryState {
         path,
         registry,
-        cache_ttl_secs: 60,
+        cache_ttl_secs: trust_registry_cache_ttl(trust_config),
     })
 }
 
@@ -13540,7 +13553,8 @@ fn run_trust_scan(project_root: &Path, deep: bool, audit: bool) -> Result<TrustS
     let dependencies = collect_trust_scan_dependencies(&project_root)?;
     let lockfile_metadata = parse_trust_scan_lockfile_metadata(&project_root)?;
     let now_secs = now_unix_secs();
-    let mut state = trust_scan_registry_state(&project_root, now_secs)?;
+    let config = trust_registry_config_for_project(&project_root)?;
+    let mut state = trust_scan_registry_state(&project_root, &config.trust, now_secs)?;
     let mut warnings = Vec::new();
     let mut items = Vec::new();
     let mut created_cards = 0usize;
@@ -13746,10 +13760,6 @@ fn evaluate_run_trust_preflight(
 ) -> Result<RunPreFlightReport> {
     let project_root = run_project_root(app_path);
     let dependencies = collect_run_package_dependencies(&project_root)?;
-    let cache_ttl = config
-        .trust
-        .card_cache_ttl_secs
-        .unwrap_or(config::timeouts::TRUST_CARD_CACHE_TTL_SECS);
     let mut registry_path = None::<PathBuf>;
 
     let verdict = match dependencies {
@@ -13774,9 +13784,9 @@ fn evaluate_run_trust_preflight(
                     reason: missing_trust_registry_message(&authoritative_registry, policy_mode),
                 }
             } else {
-                match TrustCardRegistry::load_authoritative_state(
+                match TrustCardRegistry::load_authoritative_state_from_config(
                     &authoritative_registry,
-                    cache_ttl,
+                    &config.trust,
                     now_secs,
                     SnapshotSourceContext::TrustedFile,
                 ) {
@@ -17881,7 +17891,8 @@ fn fleet_agent_registry_state(
     project_root: &Path,
     now_secs: u64,
 ) -> Result<TrustCardCliRegistryState> {
-    trust_scan_registry_state(project_root, now_secs)
+    let config = trust_registry_config_for_project(project_root)?;
+    trust_scan_registry_state(project_root, &config.trust, now_secs)
 }
 
 fn apply_fleet_quarantine_action(
@@ -24497,6 +24508,41 @@ mod run_trust_gate_tests {
             }
             other => panic!("expected passed verdict, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn trust_scan_uses_project_configured_registry_signing_key() {
+        let tmp = TempDir::new().expect("tempdir");
+        write_demo_project(tmp.path(), &[("left-pad", "^1.3.0")]);
+
+        let mut custom_config = config::Config::for_profile(Profile::Balanced);
+        custom_config.trust.registry_signing_key = Some(BASE64_STANDARD.encode([0xA5_u8; 32]));
+        std::fs::write(
+            tmp.path().join("franken_node.toml"),
+            custom_config.to_toml().expect("serialize config"),
+        )
+        .expect("write config");
+
+        let first = run_trust_scan(tmp.path(), false, false).expect("first trust scan");
+        assert_eq!(first.created_cards, 1);
+        assert_eq!(first.skipped_existing, 0);
+
+        let second = run_trust_scan(tmp.path(), false, false).expect("second trust scan");
+        assert_eq!(second.created_cards, 0);
+        assert_eq!(second.skipped_existing, 1);
+
+        let registry_path = tmp.path().join(TRUST_CARD_REGISTRY_STATE_RELATIVE_PATH);
+        let default_config = config::Config::for_profile(Profile::Balanced);
+        let default_key_load = TrustCardRegistry::load_authoritative_state_from_config(
+            &registry_path,
+            &default_config.trust,
+            2_000,
+            SnapshotSourceContext::TrustedFile,
+        );
+        assert!(
+            default_key_load.is_err(),
+            "registry signed with project config key must reject default-key validation"
+        );
     }
 
     #[test]
