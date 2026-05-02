@@ -119,7 +119,7 @@ class TestReportValidation(unittest.TestCase):
             root = Path(tmp)
             _write_pass_fixture(root)
             report = root / "artifacts/10.20/dgis_migration_health_report.json"
-            data = json.loads(report.read_text(encoding="utf-8"))
+            data = json.JSONDecoder().decode(report.read_text(encoding="utf-8"))
             data["evaluation"]["verdict"] = "not-valid"
             report.write_text(json.dumps(data), encoding="utf-8")
             checks = checker.check_report(root)

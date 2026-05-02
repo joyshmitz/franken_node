@@ -12,12 +12,11 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.lib.test_logger import configure_test_logging
 from datetime import datetime, timezone
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
 
 REQUIRED_FILES = [
@@ -107,7 +106,7 @@ def check_report(root: Path) -> list[dict]:
         return [_check(False, "BD2D17-REPORT-EXISTS", str(report_path))]
 
     try:
-        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report = json.JSONDecoder().decode(report_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         return [_check(False, "BD2D17-REPORT-JSON", f"invalid json: {exc}")]
 
@@ -333,7 +332,9 @@ def self_test() -> dict:
 
 
 def main() -> int:
-    logger = configure_test_logging("check_dgis_migration_gate")
+    from scripts.lib.test_logger import configure_test_logging
+
+    configure_test_logging("check_dgis_migration_gate")
     json_output = "--json" in sys.argv
     run_self_test = "--self-test" in sys.argv
 
