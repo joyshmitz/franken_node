@@ -2,6 +2,7 @@
 
 use crate::crypto::{SignatureScheme, Ed25519Scheme, Ed25519Error};
 use serde::Serialize;
+use serde_json::Value;
 use std::marker::PhantomData;
 
 /// High-level signing operations with built-in security patterns.
@@ -108,9 +109,35 @@ impl CryptoSigner for Ed25519Signer {
         context: &str,
         data: &T,
     ) -> Result<[u8; 64], Ed25519Error> {
-        let serialized = serde_json::to_vec(data)
+        let serialized = to_canonical_bytes(data)
             .map_err(|e| Ed25519Error::SerializationFailed(e.to_string()))?;
         self.sign_message(key, context, &serialized)
+    }
+}
+
+/// Serialize data to canonical bytes for deterministic signing.
+/// Ensures consistent ordering of object keys to prevent signature variation.
+fn to_canonical_bytes<T: Serialize>(data: &T) -> Result<Vec<u8>, serde_json::Error> {
+    let value = serde_json::to_value(data)?;
+    let canonical = canonicalize_json(&value);
+    serde_json::to_vec(&canonical)
+}
+
+/// Canonicalize JSON by sorting object keys recursively.
+/// This ensures deterministic serialization regardless of input ordering.
+fn canonicalize_json(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut keys: Vec<&str> = map.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            let mut out = serde_json::Map::with_capacity(map.len());
+            for key in keys {
+                out.insert(key.to_string(), canonicalize_json(&map[key]));
+            }
+            Value::Object(out)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(canonicalize_json).collect()),
+        _ => value.clone(),
     }
 }
 
