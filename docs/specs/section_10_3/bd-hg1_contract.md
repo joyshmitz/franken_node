@@ -33,8 +33,13 @@ franken-node migrate-report <project_dir> [--format json|html] [--output report.
 
 1. Single command produces complete report.
 2. Report is self-contained (no external references needed).
-3. Output is deterministic for identical project state.
-4. JSON output validates against schema.
+3. Stable report content is deterministic for identical project state: section ordering, risk scoring, API inventory, rewrite suggestions, rollout gates, and confidence bands must not vary for the same inputs.
+4. `generated_at_utc` is intentionally dynamic provenance and is excluded from content-determinism comparisons.
+5. JSON output validates against schema.
+
+## Determinism Boundary
+
+Regression tests and gates must compare stable report content separately from wall-clock provenance. Do not remove `generated_at_utc` to satisfy deterministic-output checks; scrub or ignore that field when asserting repeatability.
 
 ## References
 

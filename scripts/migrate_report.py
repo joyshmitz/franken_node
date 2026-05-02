@@ -48,6 +48,7 @@ def check_rust_cli_contract(root: Path = ROOT) -> list[dict]:
     main_rs, main_err = _read_source(root, "crates/franken-node/src/main.rs")
     migration_rs, migration_err = _read_source(root, "crates/franken-node/src/migration/mod.rs")
     e2e_rs, e2e_err = _read_source(root, "crates/franken-node/tests/migrate_cli_e2e.rs")
+    spec_md, spec_err = _read_source(root, "docs/specs/section_10_3/bd-hg1_contract.md")
 
     checks = [
         _check(
@@ -83,6 +84,14 @@ def check_rust_cli_contract(root: Path = ROOT) -> list[dict]:
             and "migrate_report_html_output_writes_escaped_report_file" in e2e_rs
             and '"migrate-report"' in e2e_rs,
             {"file": "crates/franken-node/tests/migrate_cli_e2e.rs", "error": e2e_err},
+        ),
+        _check(
+            "RUST-CLI-MIGRATE-REPORT-DETERMINISM-BOUNDARY",
+            spec_err is None
+            and "Stable report content is deterministic" in spec_md
+            and "`generated_at_utc` is intentionally dynamic provenance" in spec_md
+            and "Do not remove `generated_at_utc`" in spec_md,
+            {"file": "docs/specs/section_10_3/bd-hg1_contract.md", "error": spec_err},
         ),
     ]
     return checks

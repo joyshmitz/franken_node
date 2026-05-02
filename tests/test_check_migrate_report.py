@@ -54,6 +54,7 @@ class TestSelfTest(unittest.TestCase):
         self.assertIn("RUST-CLI-MIGRATE-REPORT-DISPATCH", check_ids)
         self.assertIn("RUST-CLI-MIGRATE-REPORT-RENDERER", check_ids)
         self.assertIn("RUST-CLI-MIGRATE-REPORT-E2E", check_ids)
+        self.assertIn("RUST-CLI-MIGRATE-REPORT-DETERMINISM-BOUNDARY", check_ids)
 
     def test_rust_cli_contract_fails_for_missing_checkout_files(self):
         with tempfile.TemporaryDirectory() as tmpdir:
