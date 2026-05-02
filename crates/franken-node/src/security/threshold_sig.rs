@@ -4,6 +4,8 @@
 //! below threshold are rejected. Verification failures produce stable,
 //! machine-readable failure reasons.
 
+#[cfg(test)]
+use crate::push_bounded;
 use crate::security::constant_time;
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
@@ -17,20 +19,6 @@ const MAX_SIGNER_KEYS: usize = 1024;
 const MAX_SIGNATURES: usize = 2048;
 #[cfg(test)]
 const MAX_TEST_RESULTS: usize = 1024;
-
-#[cfg(test)]
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 // ── Types ───────────────────────────────────────────────────────────
 

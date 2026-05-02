@@ -14,6 +14,7 @@ use uuid::Uuid;
 // ---------------------------------------------------------------------------
 
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
+use crate::push_bounded;
 
 pub mod event_codes {
     pub const BPET_RISK_PRICED: &str = "BPET-ECON-001";
@@ -778,19 +779,6 @@ pub fn default_motif_library() -> Vec<CompromiseMotif> {
             typical_time_to_compromise_days: 365.0,
         },
     ]
-}
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
 }
 
 // ---------------------------------------------------------------------------

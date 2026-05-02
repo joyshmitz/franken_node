@@ -26,6 +26,7 @@ use uuid::Uuid;
 
 use crate::capacity_defaults::aliases::MAX_RECEIPT_CHAIN;
 use crate::lock_utils;
+use crate::push_bounded;
 
 /// Process-local receipt persistence lock.
 ///
@@ -81,18 +82,6 @@ mod canonical_f64 {
             ))
         }
     }
-}
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
 }
 
 pub type Ed25519PrivateKey = SigningKey;

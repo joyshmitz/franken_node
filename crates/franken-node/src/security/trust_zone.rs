@@ -25,6 +25,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
+use crate::push_bounded;
 const MAX_ALLOWED_CROSS_ZONE_TARGETS: usize = 4096;
 const MAX_KEY_ZONE_BINDINGS_PER_KEY: usize = 4096;
 
@@ -709,18 +710,6 @@ impl Default for ZoneSegmentationEngine {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
 }
 
 // ---------------------------------------------------------------------------

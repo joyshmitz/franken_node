@@ -10,24 +10,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use crate::push_bounded;
+
 // ── Capacity constants ──────────────────────────────────────────────────
 
 /// Maximum audit events to retain in memory (prevents unbounded growth).
 const MAX_AUDIT_LOG_ENTRIES: usize = 2000;
-
-/// Push item to vector with bounded capacity to prevent memory exhaustion.
-/// When capacity is exceeded, removes oldest entries to maintain the limit.
-fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
-    if cap == 0 {
-        items.clear();
-        return;
-    }
-    if items.len() >= cap {
-        let overflow = items.len().saturating_sub(cap).saturating_add(1);
-        items.drain(0..overflow.min(items.len()));
-    }
-    items.push(item);
-}
 
 // ── Schema version ──────────────────────────────────────────────────
 
