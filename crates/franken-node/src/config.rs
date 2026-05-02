@@ -75,6 +75,9 @@ pub struct Config {
 
     /// Algorithmic and statistical threshold constants.
     pub thresholds: ThresholdsConfig,
+
+    /// Category shift benchmark gate configuration.
+    pub benchmark: BenchmarkConfig,
 }
 
 impl Default for Config {
@@ -162,6 +165,7 @@ impl Config {
                 engine: EngineConfig::default(),
                 runtime: RuntimeConfig::strict_defaults(),
                 thresholds: ThresholdsConfig::default(),
+                benchmark: BenchmarkConfig::default(),
             },
             Profile::Balanced => Self {
                 profile,
@@ -227,6 +231,7 @@ impl Config {
                 engine: EngineConfig::default(),
                 runtime: RuntimeConfig::balanced_defaults(),
                 thresholds: ThresholdsConfig::default(),
+                benchmark: BenchmarkConfig::default(),
             },
             Profile::LegacyRisky => Self {
                 profile,
@@ -292,6 +297,7 @@ impl Config {
                 engine: EngineConfig::default(),
                 runtime: RuntimeConfig::legacy_defaults(),
                 thresholds: ThresholdsConfig::default(),
+                benchmark: BenchmarkConfig::default(),
             },
         }
     }
@@ -3048,6 +3054,66 @@ impl ThresholdsConfig {
             max_variance_pct: Some(DEFAULT_THRESHOLD_MAX_VARIANCE_PCT),
             regression_threshold_pct: Some(DEFAULT_THRESHOLD_REGRESSION_THRESHOLD_PCT),
             min_resilience_score: Some(DEFAULT_THRESHOLD_MIN_RESILIENCE_SCORE),
+        }
+    }
+}
+
+// -- Benchmark Configuration --
+
+/// Configuration for category shift benchmark gate thresholds and paths.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BenchmarkConfig {
+    /// Path to the benchmark summary JSON file.
+    ///
+    /// **Default:** `artifacts/category_shift/latest_benchmark_summary.json`
+    #[serde(default = "default_benchmark_summary_path")]
+    pub summary_path: String,
+
+    /// Minimum aggregate score required to pass the benchmark gate.
+    ///
+    /// **Valid range:** any u32 value, typically 0-100.
+    /// **Default:** 70
+    #[serde(default = "default_min_aggregate_score")]
+    pub min_aggregate_score: u32,
+
+    /// Maximum acceptable latency in milliseconds.
+    ///
+    /// **Valid range:** any finite positive f64 value.
+    /// **Default:** 500.0
+    #[serde(default = "default_max_latency_ms")]
+    pub max_latency_ms: f64,
+
+    /// Minimum required throughput in operations per second.
+    ///
+    /// **Valid range:** any u64 value.
+    /// **Default:** 50000
+    #[serde(default = "default_min_throughput_ops")]
+    pub min_throughput_ops: u64,
+}
+
+fn default_benchmark_summary_path() -> String {
+    "artifacts/category_shift/latest_benchmark_summary.json".to_string()
+}
+
+fn default_min_aggregate_score() -> u32 {
+    70
+}
+
+fn default_max_latency_ms() -> f64 {
+    500.0
+}
+
+fn default_min_throughput_ops() -> u64 {
+    50000
+}
+
+impl Default for BenchmarkConfig {
+    fn default() -> Self {
+        Self {
+            summary_path: default_benchmark_summary_path(),
+            min_aggregate_score: default_min_aggregate_score(),
+            max_latency_ms: default_max_latency_ms(),
+            min_throughput_ops: default_min_throughput_ops(),
         }
     }
 }

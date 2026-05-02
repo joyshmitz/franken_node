@@ -13,6 +13,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::config::BenchmarkConfig;
 #[cfg(feature = "advanced-features")]
 use crate::tools::benchmark_suite::{BenchmarkDimension, run_default_suite};
 use crate::security::constant_time;
@@ -1512,7 +1513,19 @@ fn save_benchmark_results(
 
 /// Validate benchmark results against baseline thresholds for CI gating
 pub fn validate_benchmark_thresholds() -> Result<BenchmarkValidationResult, CategoryShiftError> {
-    let summary_path = "artifacts/category_shift/latest_benchmark_summary.json";
+    // Delegate to config-aware version with default configuration
+    let default_config = BenchmarkConfig::default();
+    validate_benchmark_thresholds_with_config(&default_config)
+}
+
+/// Validate benchmark results against configurable thresholds for CI gating.
+///
+/// This is the config-aware version of `validate_benchmark_thresholds` that uses
+/// thresholds and paths from the benchmark configuration.
+pub fn validate_benchmark_thresholds_with_config(
+    config: &BenchmarkConfig
+) -> Result<BenchmarkValidationResult, CategoryShiftError> {
+    let summary_path = &config.summary_path;
 
     if !Path::new(summary_path).exists() {
         return Ok(BenchmarkValidationResult {
@@ -1531,13 +1544,21 @@ pub fn validate_benchmark_thresholds() -> Result<BenchmarkValidationResult, Cate
         CategoryShiftError::Json(format!("failed to parse benchmark summary: {}", e))
     })?;
 
-    // Define baseline thresholds for CI gating
+    // Use configurable thresholds from config
     let thresholds = BenchmarkThresholds {
-        min_aggregate_score: 70,   // Require minimum aggregate score of 70/100
-        max_latency_ms: 500.0,     // Maximum acceptable latency
-        min_throughput_ops: 50000, // Minimum required throughput
+        min_aggregate_score: config.min_aggregate_score,
+        max_latency_ms: config.max_latency_ms,
+        min_throughput_ops: config.min_throughput_ops,
     };
 
+    validate_benchmark_with_thresholds(&summary, &thresholds)
+}
+
+/// Internal helper that validates benchmark summary against specific thresholds.
+fn validate_benchmark_with_thresholds(
+    summary: &BenchmarkSummary,
+    thresholds: &BenchmarkThresholds
+) -> Result<BenchmarkValidationResult, CategoryShiftError> {
     let mut details = Vec::new();
     let mut passed = true;
 
@@ -1561,20 +1582,39 @@ pub fn validate_benchmark_thresholds() -> Result<BenchmarkValidationResult, Cate
             if scenario.raw_value > thresholds.max_latency_ms {
                 passed = false;
                 details.push(format!(
-                    "Latency scenario '{}': {:.2}ms exceeds threshold {:.2}ms (FAIL)",
+                    "Latency scenario '{}' exceeded threshold: {:.2}ms > {:.2}ms (FAIL)",
                     scenario.name, scenario.raw_value, thresholds.max_latency_ms
                 ));
             } else {
                 details.push(format!(
-                    "Latency scenario '{}': {:.2}ms meets threshold {:.2}ms (PASS)",
+                    "Latency scenario '{}' within threshold: {:.2}ms <= {:.2}ms (PASS)",
                     scenario.name, scenario.raw_value, thresholds.max_latency_ms
                 ));
             }
         }
     }
 
+    // Check throughput scenarios
+    for scenario in &summary.scenarios {
+        if scenario.name.contains("throughput") || scenario.name.contains("ops_per_sec") {
+            let throughput = scenario.raw_value as u64;
+            if throughput < thresholds.min_throughput_ops {
+                passed = false;
+                details.push(format!(
+                    "Throughput scenario '{}' below threshold: {} < {} ops/sec (FAIL)",
+                    scenario.name, throughput, thresholds.min_throughput_ops
+                ));
+            } else {
+                details.push(format!(
+                    "Throughput scenario '{}' meets threshold: {} >= {} ops/sec (PASS)",
+                    scenario.name, throughput, thresholds.min_throughput_ops
+                ));
+            }
+        }
+    }
+
     let message = if passed {
-        "All benchmark thresholds met".to_string()
+        "All benchmark thresholds passed".to_string()
     } else {
         "Some benchmark thresholds failed".to_string()
     };
