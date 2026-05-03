@@ -5,10 +5,12 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 // ── Capacity limits ─────────────────────────────────────────────────
 use crate::capacity_defaults::aliases::MAX_AUDIT_LOG_ENTRIES;
 use crate::push_bounded;
+use crate::security::constant_time;
 const MAX_EVIDENCE: usize = 4096;
 
 // ── Schema ──────────────────────────────────────────────────────────
@@ -20,6 +22,7 @@ pub const EVIDENCE_CAPSULE_SEALED: &str = "EVIDENCE_CAPSULE_SEALED";
 pub const EVIDENCE_CAPSULE_EXPORTED: &str = "EVIDENCE_CAPSULE_EXPORTED";
 pub const EVIDENCE_CAPSULE_VERIFIED: &str = "EVIDENCE_CAPSULE_VERIFIED";
 pub const EVIDENCE_CAPSULE_REJECTED: &str = "EVIDENCE_CAPSULE_REJECTED";
+const EVIDENCE_COMMITMENT_DOMAIN: &str = "franken_node:vef:evidence_commitment:v1";
 
 // ── Error codes ─────────────────────────────────────────────────────
 pub const ERR_CAPSULE_EMPTY_EVIDENCE: &str = "ERR_CAPSULE_EMPTY_EVIDENCE";
@@ -119,6 +122,23 @@ impl EvidenceCapsule {
     ///
     /// INV-EVIDENCE-CAPSULE-VERIFIABLE
     pub fn verify_all(&self) -> CapsuleVerificationResult {
+        self.verify_all_internal(None)
+    }
+
+    /// Verify all evidence against explicit verifier trust anchors.
+    ///
+    /// INV-EVIDENCE-CAPSULE-VERIFIABLE
+    pub fn verify_all_with_context(
+        &self,
+        context: &EvidenceVerificationContext,
+    ) -> CapsuleVerificationResult {
+        self.verify_all_internal(Some(context))
+    }
+
+    fn verify_all_internal(
+        &self,
+        context: Option<&EvidenceVerificationContext>,
+    ) -> CapsuleVerificationResult {
         if !self.sealed {
             return CapsuleVerificationResult {
                 valid: false,
@@ -127,24 +147,34 @@ impl EvidenceCapsule {
                 failures: vec!["capsule not sealed".into()],
             };
         }
+        if self.schema_version != SCHEMA_VERSION {
+            return CapsuleVerificationResult {
+                valid: false,
+                checked: 0,
+                passed: 0,
+                failures: vec![format!(
+                    "schema mismatch expected={} got={}",
+                    SCHEMA_VERSION, self.schema_version
+                )],
+            };
+        }
+        if self.evidence.is_empty() {
+            return CapsuleVerificationResult {
+                valid: false,
+                checked: 0,
+                passed: 0,
+                failures: vec!["empty evidence".into()],
+            };
+        }
 
         let mut passed: usize = 0;
         let mut failures = Vec::new();
 
         for ev in &self.evidence {
-            if ev.verified && !ev.receipt_chain_commitment.is_empty() && !ev.proof_id.is_empty() {
+            let reasons = self.evidence_verification_failures(ev, context);
+            if reasons.is_empty() {
                 passed = passed.saturating_add(1);
             } else {
-                let mut reasons = Vec::new();
-                if !ev.verified {
-                    reasons.push("not verified");
-                }
-                if ev.receipt_chain_commitment.is_empty() {
-                    reasons.push("empty commitment");
-                }
-                if ev.proof_id.is_empty() {
-                    reasons.push("empty proof_id");
-                }
                 failures.push(format!("evidence {}: {}", ev.proof_id, reasons.join(", ")));
             }
         }
@@ -160,6 +190,83 @@ impl EvidenceCapsule {
     pub fn evidence_count(&self) -> usize {
         self.evidence.len()
     }
+
+    /// Derive the canonical commitment a verifier expects for this evidence.
+    ///
+    /// The serialized `verified` flag is producer-supplied metadata; it is
+    /// intentionally excluded so `verify_all` derives validity from the
+    /// evidence content and capsule context.
+    pub fn derive_receipt_chain_commitment(&self, ev: &VefEvidence) -> String {
+        let mut hasher = Sha256::new();
+        update_len_prefixed(&mut hasher, EVIDENCE_COMMITMENT_DOMAIN.as_bytes());
+        update_len_prefixed(&mut hasher, self.schema_version.as_bytes());
+        update_len_prefixed(&mut hasher, self.capsule_id.as_bytes());
+        update_u64(&mut hasher, self.created_at_epoch);
+        update_len_prefixed(&mut hasher, ev.proof_id.as_bytes());
+        update_len_prefixed(&mut hasher, ev.proof_type.as_bytes());
+        update_u64(&mut hasher, ev.window_start);
+        update_u64(&mut hasher, ev.window_end);
+        update_u64(
+            &mut hasher,
+            u64::try_from(ev.policy_constraints.len()).unwrap_or(u64::MAX),
+        );
+        for constraint in &ev.policy_constraints {
+            update_len_prefixed(&mut hasher, constraint.as_bytes());
+        }
+
+        format!("sha256:{}", hex::encode(hasher.finalize()))
+    }
+
+    fn evidence_verification_failures(
+        &self,
+        ev: &VefEvidence,
+        context: Option<&EvidenceVerificationContext>,
+    ) -> Vec<&'static str> {
+        let mut reasons = Vec::new();
+        if ev.receipt_chain_commitment.is_empty() {
+            reasons.push("empty commitment");
+        }
+        if ev.proof_id.is_empty() {
+            reasons.push("empty proof_id");
+        }
+        if ev.proof_type.is_empty() {
+            reasons.push("empty proof_type");
+        }
+        if ev.window_start >= ev.window_end {
+            reasons.push("invalid evidence window");
+        }
+        if !ev.receipt_chain_commitment.is_empty() {
+            let expected = self.derive_receipt_chain_commitment(ev);
+            if !constant_time::ct_eq_bytes(
+                ev.receipt_chain_commitment.as_bytes(),
+                expected.as_bytes(),
+            ) {
+                reasons.push("commitment mismatch");
+            }
+        }
+        match context {
+            Some(context) => {
+                if !context.trusts_commitment(&ev.receipt_chain_commitment) {
+                    reasons.push("untrusted commitment");
+                }
+                if !context.accepts_proof_type(&ev.proof_type) {
+                    reasons.push("untrusted proof_type");
+                }
+            }
+            None => reasons.push("missing verification context"),
+        }
+        reasons
+    }
+}
+
+fn update_len_prefixed(hasher: &mut Sha256, bytes: &[u8]) {
+    let len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+    hasher.update(len.to_le_bytes());
+    hasher.update(bytes);
+}
+
+fn update_u64(hasher: &mut Sha256, value: u64) {
+    hasher.update(value.to_le_bytes());
 }
 
 /// Result of capsule verification.
@@ -169,6 +276,27 @@ pub struct CapsuleVerificationResult {
     pub checked: usize,
     pub passed: usize,
     pub failures: Vec<String>,
+}
+
+/// Explicit trust anchors used to verify evidence capsule contents.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct EvidenceVerificationContext {
+    pub trusted_receipt_chain_commitments: Vec<String>,
+    pub accepted_proof_types: Vec<String>,
+}
+
+impl EvidenceVerificationContext {
+    fn trusts_commitment(&self, commitment: &str) -> bool {
+        self.trusted_receipt_chain_commitments
+            .iter()
+            .any(|trusted| constant_time::ct_eq_bytes(trusted.as_bytes(), commitment.as_bytes()))
+    }
+
+    fn accepts_proof_type(&self, proof_type: &str) -> bool {
+        self.accepted_proof_types
+            .iter()
+            .any(|accepted| constant_time::ct_eq_bytes(accepted.as_bytes(), proof_type.as_bytes()))
+    }
 }
 
 /// Capsule errors.
@@ -319,9 +447,35 @@ mod tests {
         }
     }
 
+    fn valid_test_evidence(capsule: &EvidenceCapsule) -> VefEvidence {
+        let mut ev = test_evidence();
+        ev.receipt_chain_commitment = capsule.derive_receipt_chain_commitment(&ev);
+        ev
+    }
+
+    fn add_valid_test_evidence(capsule: &mut EvidenceCapsule) {
+        let ev = valid_test_evidence(capsule);
+        capsule.add_evidence(ev).expect("add should succeed");
+    }
+
+    fn verification_context(capsule: &EvidenceCapsule) -> EvidenceVerificationContext {
+        EvidenceVerificationContext {
+            trusted_receipt_chain_commitments: capsule
+                .evidence
+                .iter()
+                .map(|ev| capsule.derive_receipt_chain_commitment(ev))
+                .collect(),
+            accepted_proof_types: capsule
+                .evidence
+                .iter()
+                .map(|ev| ev.proof_type.clone())
+                .collect(),
+        }
+    }
+
     fn sealed_capsule() -> EvidenceCapsule {
         let mut c = EvidenceCapsule::new("cap-1".into(), 1000);
-        c.add_evidence(test_evidence()).expect("add should succeed");
+        add_valid_test_evidence(&mut c);
         c.seal().expect("seal should succeed");
         c
     }
@@ -377,9 +531,20 @@ mod tests {
     #[test]
     fn test_verify_all_ok() {
         let c = sealed_capsule();
-        let result = c.verify_all();
+        let result = c.verify_all_with_context(&verification_context(&c));
         assert!(result.valid);
         assert_eq!(result.passed, 1);
+    }
+
+    #[test]
+    fn verify_all_without_context_fails_closed() {
+        let c = sealed_capsule();
+        let result = c.verify_all();
+
+        assert!(!result.valid);
+        assert_eq!(result.checked, 1);
+        assert_eq!(result.passed, 0);
+        assert!(result.failures[0].contains("missing verification context"));
     }
 
     #[test]
@@ -391,14 +556,61 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_unverified_evidence() {
+    fn verify_all_rejects_serialized_empty_sealed_capsule() {
+        let mut c = EvidenceCapsule::new("c1".into(), 1000);
+        c.sealed = true;
+
+        let result = c.verify_all();
+
+        assert!(!result.valid);
+        assert_eq!(result.checked, 0);
+        assert!(result.failures[0].contains("empty evidence"));
+    }
+
+    #[test]
+    fn verify_all_rechecks_schema_for_serialized_capsule() {
+        let mut c = sealed_capsule();
+        c.schema_version = "evidence-capsule-v0".into();
+
+        let result = c.verify_all_with_context(&verification_context(&c));
+
+        assert!(!result.valid);
+        assert_eq!(result.checked, 0);
+        assert!(result.failures[0].contains("schema mismatch"));
+    }
+
+    #[test]
+    fn verify_all_ignores_producer_verified_flag_when_commitment_matches() {
         let mut c = EvidenceCapsule::new("c1".into(), 1000);
         let mut ev = test_evidence();
         ev.verified = false;
+        ev.receipt_chain_commitment = c.derive_receipt_chain_commitment(&ev);
         c.add_evidence(ev).expect("add should succeed");
         c.seal().expect("seal should succeed");
-        let result = c.verify_all();
+        let result = c.verify_all_with_context(&verification_context(&c));
+
+        assert!(result.valid);
+        assert_eq!(result.passed, 1);
+        assert!(result.failures.is_empty());
+    }
+
+    #[test]
+    fn verify_all_rejects_forged_verified_flag_with_random_commitment() {
+        let mut c = EvidenceCapsule::new("c1".into(), 1000);
+        let mut ev = test_evidence();
+        ev.verified = true;
+        ev.receipt_chain_commitment =
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000".into();
+        c.add_evidence(ev).expect("add should succeed");
+        c.seal().expect("seal should succeed");
+
+        let result = c.verify_all_with_context(&verification_context(&c));
+
         assert!(!result.valid);
+        assert_eq!(result.checked, 1);
+        assert_eq!(result.passed, 0);
+        assert!(result.failures[0].contains("commitment mismatch"));
+        assert!(!result.failures[0].contains("not verified"));
     }
 
     #[test]
@@ -504,12 +716,13 @@ mod tests {
     #[test]
     fn test_multiple_evidence() {
         let mut c = EvidenceCapsule::new("c1".into(), 1000);
-        c.add_evidence(test_evidence()).expect("add should succeed");
+        add_valid_test_evidence(&mut c);
         let mut ev2 = test_evidence();
         ev2.proof_id = "proof-2".into();
+        ev2.receipt_chain_commitment = c.derive_receipt_chain_commitment(&ev2);
         c.add_evidence(ev2).expect("add should succeed");
         c.seal().expect("seal should succeed");
-        let result = c.verify_all();
+        let result = c.verify_all_with_context(&verification_context(&c));
         assert!(result.valid);
         assert_eq!(result.checked, 2);
         assert_eq!(result.passed, 2);
@@ -556,6 +769,7 @@ mod tests {
         let mut c = EvidenceCapsule::new("c1".into(), 1000);
         let mut ev = test_evidence();
         ev.proof_id.clear();
+        ev.receipt_chain_commitment = c.derive_receipt_chain_commitment(&ev);
         c.add_evidence(ev).expect("add should succeed");
         c.seal().expect("seal should succeed");
 
@@ -581,9 +795,9 @@ mod tests {
 
         assert!(!result.valid);
         assert_eq!(result.failures.len(), 1);
-        assert!(result.failures[0].contains("not verified"));
         assert!(result.failures[0].contains("empty commitment"));
         assert!(result.failures[0].contains("empty proof_id"));
+        assert!(!result.failures[0].contains("not verified"));
     }
 
     #[test]
