@@ -16,7 +16,7 @@
 //! - INV-OBL-SCAN-PERIODIC: the leak oracle runs on a configurable interval
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -239,6 +239,8 @@ pub struct LeakOracleReport {
     pub verdict: String,
 }
 
+type TerminalObligationKey = (u64, u64, String);
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TrackerState {
     obligations: BTreeMap<String, Obligation>,
@@ -248,6 +250,12 @@ struct TrackerState {
     scan_results: Vec<LeakScanResult>,
     /// Per-flow budget for concurrent reservations. INV-OBL-BUDGET-BOUND
     flow_budget: usize,
+    #[serde(skip)]
+    reserved_per_flow: BTreeMap<ObligationFlow, usize>,
+    #[serde(skip)]
+    terminal_obligations: BTreeMap<TerminalObligationKey, String>,
+    #[serde(skip)]
+    reserved_by_deadline: BTreeMap<u64, BTreeSet<String>>,
 }
 
 fn lock_tracker_state(tracker: &Arc<Mutex<TrackerState>>) -> MutexGuard<'_, TrackerState> {
@@ -266,6 +274,9 @@ impl TrackerState {
             leak_timeout_secs: DEFAULT_LEAK_TIMEOUT_SECS,
             scan_results: Vec::new(),
             flow_budget: DEFAULT_FLOW_BUDGET,
+            reserved_per_flow: BTreeMap::new(),
+            terminal_obligations: BTreeMap::new(),
+            reserved_by_deadline: BTreeMap::new(),
         }
     }
 
@@ -273,67 +284,160 @@ impl TrackerState {
         push_bounded(&mut self.audit_log, record, MAX_AUDIT_LOG_ENTRIES);
     }
 
-    /// Count of currently reserved obligations for a specific flow.
-    fn reserved_count_for_flow(&self, flow: &ObligationFlow) -> usize {
-        self.obligations
+    fn deadline_for_reserved_at_ms(&self, reserved_at_ms: u64) -> u64 {
+        reserved_at_ms.saturating_add(self.leak_timeout_secs.saturating_mul(1000))
+    }
+
+    fn is_reserved_expired(&self, obligation: &Obligation, now_ms: u64) -> bool {
+        let timeout_ms = self.leak_timeout_secs.saturating_mul(1000);
+        now_ms.saturating_sub(obligation.reserved_at_ms) >= timeout_ms
+    }
+
+    fn terminal_index_key(id: &str, obligation: &Obligation) -> TerminalObligationKey {
+        (
+            obligation
+                .resolved_at_ms
+                .unwrap_or(obligation.reserved_at_ms),
+            obligation.reserved_at_ms,
+            id.to_string(),
+        )
+    }
+
+    fn indexed_obligation_count(&self) -> usize {
+        self.reserved_per_flow
             .values()
-            .filter(|o| o.state == ObligationState::Reserved && &o.flow == flow)
-            .count()
+            .fold(0usize, |acc, count| acc.saturating_add(*count))
+            .saturating_add(self.terminal_obligations.len())
+    }
+
+    fn ensure_indexes_current(&mut self) {
+        if self.indexed_obligation_count() != self.obligations.len() {
+            self.rebuild_indexes();
+        }
+    }
+
+    fn rebuild_indexes(&mut self) {
+        self.reserved_per_flow.clear();
+        self.terminal_obligations.clear();
+        self.reserved_by_deadline.clear();
+
+        let timeout_ms = self.leak_timeout_secs.saturating_mul(1000);
+        for (id, obligation) in &self.obligations {
+            match obligation.state {
+                ObligationState::Reserved => {
+                    *self
+                        .reserved_per_flow
+                        .entry(obligation.flow.clone())
+                        .or_default() += 1;
+                    let deadline_ms = obligation.reserved_at_ms.saturating_add(timeout_ms);
+                    self.reserved_by_deadline
+                        .entry(deadline_ms)
+                        .or_default()
+                        .insert(id.clone());
+                }
+                ObligationState::Committed
+                | ObligationState::RolledBack
+                | ObligationState::Leaked => {
+                    self.terminal_obligations
+                        .insert(Self::terminal_index_key(id, obligation), id.clone());
+                }
+            }
+        }
+    }
+
+    fn insert_reserved_index(&mut self, id: &str, flow: ObligationFlow, reserved_at_ms: u64) {
+        *self.reserved_per_flow.entry(flow).or_default() += 1;
+        let deadline_ms = self.deadline_for_reserved_at_ms(reserved_at_ms);
+        self.reserved_by_deadline
+            .entry(deadline_ms)
+            .or_default()
+            .insert(id.to_string());
+    }
+
+    fn remove_reserved_index(&mut self, id: &str, flow: &ObligationFlow, reserved_at_ms: u64) {
+        let remove_flow = if let Some(count) = self.reserved_per_flow.get_mut(flow) {
+            *count = count.saturating_sub(1);
+            *count == 0
+        } else {
+            false
+        };
+        if remove_flow {
+            self.reserved_per_flow.remove(flow);
+        }
+
+        let deadline_ms = self.deadline_for_reserved_at_ms(reserved_at_ms);
+        let remove_deadline = if let Some(ids) = self.reserved_by_deadline.get_mut(&deadline_ms) {
+            ids.remove(id);
+            ids.is_empty()
+        } else {
+            false
+        };
+        if remove_deadline {
+            self.reserved_by_deadline.remove(&deadline_ms);
+        }
+    }
+
+    fn insert_terminal_index(&mut self, id: &str, resolved_at_ms: u64, reserved_at_ms: u64) {
+        self.terminal_obligations.insert(
+            (resolved_at_ms, reserved_at_ms, id.to_string()),
+            id.to_string(),
+        );
+    }
+
+    /// Count of currently reserved obligations for a specific flow.
+    fn reserved_count_for_flow(&mut self, flow: &ObligationFlow) -> usize {
+        self.ensure_indexes_current();
+        self.reserved_per_flow.get(flow).copied().unwrap_or(0)
     }
 
     fn evict_oldest_terminal_obligation(&mut self) -> bool {
-        let terminal_key = self
-            .obligations
-            .iter()
-            .filter(|(_, obligation)| {
-                matches!(
-                    obligation.state,
-                    ObligationState::Committed
-                        | ObligationState::RolledBack
-                        | ObligationState::Leaked
-                )
-            })
-            .min_by_key(|(id, obligation)| {
-                (
-                    obligation
-                        .resolved_at_ms
-                        .unwrap_or(obligation.reserved_at_ms),
-                    obligation.reserved_at_ms,
-                    id.as_str(),
-                )
-            })
-            .map(|(id, _)| id.clone());
+        self.ensure_indexes_current();
 
-        terminal_key
-            .and_then(|id| self.obligations.remove(&id))
-            .is_some()
+        while let Some((key, id)) = self
+            .terminal_obligations
+            .first_key_value()
+            .map(|(key, id)| (key.clone(), id.clone()))
+        {
+            self.terminal_obligations.remove(&key);
+            if self.obligations.remove(&id).is_some() {
+                return true;
+            }
+        }
+
+        false
     }
 
     fn mark_expired_reserved_as_leaked(&mut self, now_ms: u64, trace_id: &str) -> Vec<String> {
-        let timeout_ms = self.leak_timeout_secs.saturating_mul(1000);
-        let leaked_ids: Vec<String> = self
-            .obligations
-            .iter()
-            .filter(|(_, obligation)| {
-                obligation.state == ObligationState::Reserved
-                    && now_ms.saturating_sub(obligation.reserved_at_ms) >= timeout_ms
-            })
-            .map(|(id, _)| id.clone())
+        self.ensure_indexes_current();
+
+        let candidate_ids: Vec<String> = self
+            .reserved_by_deadline
+            .range(..=now_ms)
+            .flat_map(|(_, ids)| ids.iter().cloned())
             .collect();
 
-        for id in &leaked_ids {
-            let flow = if let Some(obligation) = self.obligations.get_mut(id) {
-                obligation.state = ObligationState::Leaked;
-                obligation.resolved_at_ms = Some(now_ms);
-                obligation.flow.as_str().to_string()
-            } else {
+        let mut leaked_ids = Vec::new();
+        for id in candidate_ids {
+            let Some((flow, reserved_at_ms)) = self.obligations.get(&id).and_then(|obligation| {
+                (obligation.state == ObligationState::Reserved
+                    && self.is_reserved_expired(obligation, now_ms))
+                .then(|| (obligation.flow.clone(), obligation.reserved_at_ms))
+            }) else {
                 continue;
             };
+
+            if let Some(obligation) = self.obligations.get_mut(&id) {
+                obligation.state = ObligationState::Leaked;
+                obligation.resolved_at_ms = Some(now_ms);
+            }
+
+            self.remove_reserved_index(&id, &flow, reserved_at_ms);
+            self.insert_terminal_index(&id, now_ms, reserved_at_ms);
 
             self.push_audit(ObligationAuditRecord {
                 event_code: event_codes::OBL_LEAK_DETECTED.to_string(),
                 obligation_id: id.clone(),
-                flow,
+                flow: flow.as_str().to_string(),
                 state: "Leaked".to_string(),
                 trace_id: trace_id.to_string(),
                 schema_version: SCHEMA_VERSION.to_string(),
@@ -342,6 +446,8 @@ impl TrackerState {
                     self.leak_timeout_secs
                 ),
             });
+
+            leaked_ids.push(id);
         }
 
         leaked_ids
@@ -401,6 +507,7 @@ impl TrackerState {
             trace_id: trace_id.to_string(),
         };
         self.obligations.insert(id.0.clone(), obligation);
+        self.insert_reserved_index(&id.0, flow.clone(), now_ms);
 
         self.push_audit(ObligationAuditRecord {
             event_code: event_codes::OBL_RESERVED.to_string(),
@@ -438,30 +545,39 @@ impl TrackerState {
     /// - `ERR_OBL_ALREADY_COMMITTED` if already committed
     /// - `ERR_OBL_ALREADY_ROLLED_BACK` if already rolled back
     fn commit(&mut self, id: &ObligationId, now_ms: u64, trace_id: &str) -> Result<(), String> {
-        let obligation = self
-            .obligations
-            .get_mut(&id.0)
-            .ok_or_else(|| error_codes::ERR_OBL_NOT_FOUND.to_string())?;
+        self.ensure_indexes_current();
 
-        match obligation.state {
-            ObligationState::Reserved => {}
-            ObligationState::Committed => {
-                return Err(error_codes::ERR_OBL_ALREADY_COMMITTED.to_string());
+        let (flow, reserved_at_ms) = {
+            let obligation = self
+                .obligations
+                .get(&id.0)
+                .ok_or_else(|| error_codes::ERR_OBL_NOT_FOUND.to_string())?;
+
+            match obligation.state {
+                ObligationState::Reserved => {}
+                ObligationState::Committed => {
+                    return Err(error_codes::ERR_OBL_ALREADY_COMMITTED.to_string());
+                }
+                ObligationState::RolledBack | ObligationState::Leaked => {
+                    return Err(error_codes::ERR_OBL_ALREADY_ROLLED_BACK.to_string());
+                }
             }
-            ObligationState::RolledBack | ObligationState::Leaked => {
-                return Err(error_codes::ERR_OBL_ALREADY_ROLLED_BACK.to_string());
-            }
+
+            (obligation.flow.clone(), obligation.reserved_at_ms)
+        };
+
+        if let Some(obligation) = self.obligations.get_mut(&id.0) {
+            obligation.state = ObligationState::Committed;
+            obligation.resolved_at_ms = Some(now_ms);
         }
 
-        obligation.state = ObligationState::Committed;
-        obligation.resolved_at_ms = Some(now_ms);
-
-        let flow_str = obligation.flow.as_str().to_string();
+        self.remove_reserved_index(&id.0, &flow, reserved_at_ms);
+        self.insert_terminal_index(&id.0, now_ms, reserved_at_ms);
 
         self.push_audit(ObligationAuditRecord {
             event_code: event_codes::OBL_COMMITTED.to_string(),
             obligation_id: id.0.clone(),
-            flow: flow_str,
+            flow: flow.as_str().to_string(),
             state: "Committed".to_string(),
             trace_id: trace_id.to_string(),
             schema_version: SCHEMA_VERSION.to_string(),
@@ -489,31 +605,40 @@ impl TrackerState {
         trace_id: &str,
         detail: &str,
     ) -> Result<(), String> {
-        let obligation = self
-            .obligations
-            .get_mut(&id.0)
-            .ok_or_else(|| error_codes::ERR_OBL_NOT_FOUND.to_string())?;
+        self.ensure_indexes_current();
 
-        match obligation.state {
-            ObligationState::Reserved => {}
-            ObligationState::RolledBack | ObligationState::Leaked => {
-                // Idempotent: already rolled back
-                return Ok(());
+        let (flow, reserved_at_ms) = {
+            let obligation = self
+                .obligations
+                .get(&id.0)
+                .ok_or_else(|| error_codes::ERR_OBL_NOT_FOUND.to_string())?;
+
+            match obligation.state {
+                ObligationState::Reserved => {}
+                ObligationState::RolledBack | ObligationState::Leaked => {
+                    // Idempotent: already rolled back
+                    return Ok(());
+                }
+                ObligationState::Committed => {
+                    return Err(error_codes::ERR_OBL_ALREADY_COMMITTED.to_string());
+                }
             }
-            ObligationState::Committed => {
-                return Err(error_codes::ERR_OBL_ALREADY_COMMITTED.to_string());
-            }
+
+            (obligation.flow.clone(), obligation.reserved_at_ms)
+        };
+
+        if let Some(obligation) = self.obligations.get_mut(&id.0) {
+            obligation.state = ObligationState::RolledBack;
+            obligation.resolved_at_ms = Some(now_ms);
         }
 
-        obligation.state = ObligationState::RolledBack;
-        obligation.resolved_at_ms = Some(now_ms);
-
-        let flow_str = obligation.flow.as_str().to_string();
+        self.remove_reserved_index(&id.0, &flow, reserved_at_ms);
+        self.insert_terminal_index(&id.0, now_ms, reserved_at_ms);
 
         self.push_audit(ObligationAuditRecord {
             event_code: event_codes::OBL_ROLLED_BACK.to_string(),
             obligation_id: id.0.clone(),
-            flow: flow_str,
+            flow: flow.as_str().to_string(),
             state: "RolledBack".to_string(),
             trace_id: trace_id.to_string(),
             schema_version: SCHEMA_VERSION.to_string(),
@@ -677,7 +802,8 @@ impl<'de> Deserialize<'de> for ObligationTracker {
     where
         D: serde::Deserializer<'de>,
     {
-        let state = TrackerState::deserialize(deserializer)?;
+        let mut state = TrackerState::deserialize(deserializer)?;
+        state.rebuild_indexes();
         Ok(Self {
             inner: Arc::new(Mutex::new(state)),
         })
@@ -1506,6 +1632,48 @@ mod tests {
         t.try_reserve(ObligationFlow::Quarantine, vec![], 1002, "t3")
             .unwrap();
         assert_eq!(t.total_obligations(), 3);
+    }
+
+    #[test]
+    fn test_try_reserve_budget_index_tracks_terminal_transitions() {
+        let mut t = ObligationTracker::with_flow_budget(1);
+        let first = t
+            .try_reserve(ObligationFlow::Publish, vec![], 1000, "t1")
+            .unwrap();
+
+        let err = t
+            .try_reserve(ObligationFlow::Publish, vec![], 1001, "t2")
+            .unwrap_err();
+        assert_eq!(err, error_codes::ERR_OBL_BUDGET_EXCEEDED);
+
+        t.commit(&first, 1010, "t3").unwrap();
+        let second = t
+            .try_reserve(ObligationFlow::Publish, vec![], 1020, "t4")
+            .unwrap();
+
+        let err = t
+            .try_reserve(ObligationFlow::Publish, vec![], 1030, "t5")
+            .unwrap_err();
+        assert_eq!(err, error_codes::ERR_OBL_BUDGET_EXCEEDED);
+
+        t.rollback(&second, 1040, "t6").unwrap();
+        t.try_reserve(ObligationFlow::Publish, vec![], 1050, "t7")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_deserialize_rebuilds_reservation_indexes() {
+        let mut t = ObligationTracker::with_flow_budget(1);
+        t.try_reserve(ObligationFlow::Publish, vec![], 1000, "t1")
+            .unwrap();
+
+        let serialized = serde_json::to_string(&t).unwrap();
+        let mut round_trip: ObligationTracker = serde_json::from_str(&serialized).unwrap();
+
+        let err = round_trip
+            .try_reserve(ObligationFlow::Publish, vec![], 1001, "t2")
+            .unwrap_err();
+        assert_eq!(err, error_codes::ERR_OBL_BUDGET_EXCEEDED);
     }
 
     // 43. leak oracle report includes per_flow_counts
