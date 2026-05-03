@@ -31,7 +31,7 @@ mod tests {
     #[test]
     fn vtf_arithmetic_overflow_protection() {
         // Test potential overflow in fault generation arithmetic
-        let config = FaultConfig {
+        let excessive_faults = FaultConfig {
             drop_probability: 1.0,
             reorder_probability: 0.0,
             reorder_max_depth: 1,
@@ -40,12 +40,20 @@ mod tests {
             max_faults: usize::MAX,
         };
 
-        // Large message count that could cause overflow
-        let schedule = FaultSchedule::from_seed(42, &config, 1_000_000);
+        let fault_err = excessive_faults
+            .validate()
+            .expect_err("unbounded max_faults must be rejected");
+        assert!(fault_err.contains("max_faults"));
 
-        // Should not panic and should respect max_faults limit (effectively bounded by usize::MAX)
-        assert!(schedule.faults.len() <= 1_000_000);
-        assert!(schedule.total_messages == 1_000_000);
+        let config = FaultConfig {
+            max_faults: MAX_SCHEDULED_FAULTS,
+            ..excessive_faults
+        };
+
+        let message_err =
+            FaultSchedule::try_from_seed(42, &config, MAX_CAMPAIGN_MESSAGES.saturating_add(1))
+                .expect_err("unbounded total_messages must be rejected");
+        assert!(message_err.contains("total_messages"));
     }
 
     #[test]
@@ -395,10 +403,9 @@ mod tests {
 
         // Test valid artifact ID with Unicode
         let valid_id = "测试-artifact-🚀";
-        assert!(
-            mgr.start_saga(valid_id, RemoteCapLookup::Granted, "test")
-                .is_ok()
-        );
+        assert!(mgr
+            .start_saga(valid_id, RemoteCapLookup::Granted, "test")
+            .is_ok());
     }
 
     // ── Idempotency Store Edge Cases ────────────────────────────────────────────

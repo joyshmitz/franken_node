@@ -9,6 +9,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::capacity_defaults::aliases::MAX_RESULTS;
 use crate::push_bounded;
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -17,6 +18,8 @@ pub const SCHEMA_VERSION: &str = "vtf-v1.0";
 pub const DEFAULT_MAX_FAULT_LOG_ENTRIES: usize = 4_096;
 pub const DEFAULT_MAX_AUDIT_LOG_ENTRIES: usize = 4_096;
 pub const MAX_CORRUPT_BITS: usize = 4_096;
+pub const MAX_SCHEDULED_FAULTS: usize = MAX_RESULTS;
+pub const MAX_CAMPAIGN_MESSAGES: usize = MAX_RESULTS;
 
 fn default_max_fault_log_entries() -> usize {
     DEFAULT_MAX_FAULT_LOG_ENTRIES
@@ -117,8 +120,18 @@ impl FaultConfig {
         if self.max_faults == 0 {
             return Err("max_faults must be > 0".to_string());
         }
+        if self.max_faults > MAX_SCHEDULED_FAULTS {
+            return Err(format!("max_faults must be <= {MAX_SCHEDULED_FAULTS}"));
+        }
         Ok(())
     }
+}
+
+fn validate_total_messages(total_messages: usize) -> Result<(), String> {
+    if total_messages > MAX_CAMPAIGN_MESSAGES {
+        return Err(format!("total_messages must be <= {MAX_CAMPAIGN_MESSAGES}"));
+    }
+    Ok(())
 }
 
 /// Pre-built fault scenarios.
@@ -202,17 +215,17 @@ pub struct FaultSchedule {
 }
 
 impl FaultSchedule {
-    /// Create a deterministic schedule from seed and config.
-    pub fn from_seed(seed: u64, config: &FaultConfig, total_messages: usize) -> Self {
-        if config.validate().is_err() {
-            return FaultSchedule {
-                seed,
-                faults: Vec::new(),
-                total_messages,
-            };
-        }
+    /// Create a deterministic schedule from seed and config, rejecting inputs
+    /// that would exceed bounded campaign capacities.
+    pub fn try_from_seed(
+        seed: u64,
+        config: &FaultConfig,
+        total_messages: usize,
+    ) -> Result<Self, String> {
+        config.validate()?;
+        validate_total_messages(total_messages)?;
 
-        let mut faults = Vec::new();
+        let mut faults = Vec::with_capacity(config.max_faults.min(total_messages));
         let mut rng_state = if seed == 0 { 1 } else { seed };
         let mut fault_count = 0;
 
@@ -233,19 +246,27 @@ impl FaultSchedule {
             }
 
             if roll < config.drop_probability {
-                faults.push(ScheduledFault {
-                    message_index: msg_idx,
-                    fault: FaultClass::Drop,
-                });
+                push_bounded(
+                    &mut faults,
+                    ScheduledFault {
+                        message_index: msg_idx,
+                        fault: FaultClass::Drop,
+                    },
+                    MAX_SCHEDULED_FAULTS,
+                );
                 fault_count = fault_count.saturating_add(1);
             } else if roll < config.drop_probability + config.reorder_probability {
                 let max_depth = u64::try_from(config.reorder_max_depth.max(1)).unwrap_or(u64::MAX);
                 let depth = usize::try_from((rng_state % max_depth).saturating_add(1))
                     .unwrap_or(usize::MAX);
-                faults.push(ScheduledFault {
-                    message_index: msg_idx,
-                    fault: FaultClass::Reorder { depth },
-                });
+                push_bounded(
+                    &mut faults,
+                    ScheduledFault {
+                        message_index: msg_idx,
+                        fault: FaultClass::Reorder { depth },
+                    },
+                    MAX_SCHEDULED_FAULTS,
+                );
                 fault_count = fault_count.saturating_add(1);
             } else if roll
                 < config.drop_probability + config.reorder_probability + config.corrupt_probability
@@ -262,27 +283,95 @@ impl FaultSchedule {
                             .saturating_add(i),
                     );
                 }
-                faults.push(ScheduledFault {
-                    message_index: msg_idx,
-                    fault: FaultClass::Corrupt {
-                        bit_positions: bits,
+                push_bounded(
+                    &mut faults,
+                    ScheduledFault {
+                        message_index: msg_idx,
+                        fault: FaultClass::Corrupt {
+                            bit_positions: bits,
+                        },
                     },
-                });
+                    MAX_SCHEDULED_FAULTS,
+                );
                 fault_count = fault_count.saturating_add(1);
             }
         }
 
-        FaultSchedule {
+        Ok(FaultSchedule {
             seed,
             faults,
             total_messages,
-        }
+        })
+    }
+
+    /// Create a deterministic schedule from seed and config.
+    pub fn from_seed(seed: u64, config: &FaultConfig, total_messages: usize) -> Self {
+        Self::try_from_seed(seed, config, total_messages).unwrap_or_else(|_| FaultSchedule {
+            seed,
+            faults: Vec::new(),
+            total_messages,
+        })
     }
 
     fn fault_at(&self, msg_idx: usize) -> Option<&ScheduledFault> {
         self.faults
             .iter()
             .find(|fault| fault.message_index == msg_idx)
+    }
+}
+
+fn campaign_content_hash(schedule_json: &str, delivered_json: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"virtual_transport_faults_content_v1:");
+    hasher.update(
+        u64::try_from(schedule_json.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
+    hasher.update(schedule_json.as_bytes());
+    hasher.update(
+        u64::try_from(delivered_json.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
+    hasher.update(delivered_json.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+fn rejected_campaign_content_hash(
+    scenario_name: &str,
+    seed: u64,
+    total_messages: usize,
+    reason: &str,
+) -> String {
+    let schedule_json = serde_json::json!({
+        "scenario": scenario_name,
+        "seed": seed,
+        "total_messages": total_messages,
+        "rejected": true,
+        "reason": reason,
+    })
+    .to_string();
+    campaign_content_hash(&schedule_json, "[]")
+}
+
+impl CampaignResult {
+    fn rejected(scenario_name: &str, seed: u64, total_messages: usize, reason: &str) -> Self {
+        Self {
+            scenario_name: scenario_name.to_string(),
+            seed,
+            total_messages,
+            total_faults: 0,
+            drops: 0,
+            reorders: 0,
+            corruptions: 0,
+            content_hash: rejected_campaign_content_hash(
+                scenario_name,
+                seed,
+                total_messages,
+                reason,
+            ),
+        }
     }
 }
 
@@ -524,7 +613,24 @@ impl VirtualTransportFaultHarness {
             serde_json::json!({"scenario": scenario_name, "messages": total_messages}),
         );
 
-        let schedule = FaultSchedule::from_seed(self.seed, config, total_messages);
+        let schedule = match FaultSchedule::try_from_seed(self.seed, config, total_messages) {
+            Ok(schedule) => schedule,
+            Err(reason) => {
+                self.log_audit(
+                    event_codes::FAULT_SCENARIO_END,
+                    trace_id,
+                    serde_json::json!({
+                        "scenario": scenario_name,
+                        "total_faults": 0,
+                        "total_messages": total_messages,
+                        "delivered_messages": 0,
+                        "rejected": true,
+                        "reason": reason,
+                    }),
+                );
+                return CampaignResult::rejected(scenario_name, self.seed, total_messages, &reason);
+            }
+        };
         self.log_audit(
             event_codes::FAULT_SCHEDULE_CREATED,
             trace_id,
@@ -569,32 +675,26 @@ impl VirtualTransportFaultHarness {
             if let Some(processed) =
                 self.process_message(&schedule, msg_idx, message_id, &payload, trace_id)
             {
-                delivered_payload_hashes.push(payload_hash(&processed));
+                push_bounded(
+                    &mut delivered_payload_hashes,
+                    payload_hash(&processed),
+                    MAX_CAMPAIGN_MESSAGES,
+                );
             }
         }
         for payload in self.flush_reorder_buffer() {
-            delivered_payload_hashes.push(payload_hash(&payload));
+            push_bounded(
+                &mut delivered_payload_hashes,
+                payload_hash(&payload),
+                MAX_CAMPAIGN_MESSAGES,
+            );
         }
 
         let schedule_json =
             serde_json::to_string(&schedule.faults).unwrap_or_else(|e| format!("__serde_err:{e}"));
         let delivered_json = serde_json::to_string(&delivered_payload_hashes)
             .unwrap_or_else(|e| format!("__serde_err:{e}"));
-        let mut hasher = Sha256::new();
-        hasher.update(b"virtual_transport_faults_content_v1:");
-        hasher.update(
-            u64::try_from(schedule_json.len())
-                .unwrap_or(u64::MAX)
-                .to_le_bytes(),
-        );
-        hasher.update(schedule_json.as_bytes());
-        hasher.update(
-            u64::try_from(delivered_json.len())
-                .unwrap_or(u64::MAX)
-                .to_le_bytes(),
-        );
-        hasher.update(delivered_json.as_bytes());
-        let content_hash = hex::encode(hasher.finalize());
+        let content_hash = campaign_content_hash(&schedule_json, &delivered_json);
 
         self.log_audit(
             event_codes::FAULT_CAMPAIGN_COMPLETE,
@@ -728,6 +828,33 @@ mod tests {
             invalid.validate(),
             Err("fault probabilities must sum to <= 1".to_string())
         );
+    }
+
+    #[test]
+    fn test_fault_config_rejects_unbounded_fault_budget() {
+        let invalid = FaultConfig {
+            drop_probability: 1.0,
+            reorder_probability: 0.0,
+            reorder_max_depth: 0,
+            corrupt_probability: 0.0,
+            corrupt_bit_count: 0,
+            max_faults: MAX_SCHEDULED_FAULTS.saturating_add(1),
+        };
+
+        let err = invalid
+            .validate()
+            .expect_err("fault budgets above the schedule cap must fail");
+
+        assert!(err.contains("max_faults"));
+    }
+
+    #[test]
+    fn test_fault_schedule_rejects_unbounded_message_count() {
+        let err =
+            FaultSchedule::try_from_seed(42, &chaos(), MAX_CAMPAIGN_MESSAGES.saturating_add(1))
+                .expect_err("message counts above the campaign cap must fail");
+
+        assert!(err.contains("total_messages"));
     }
 
     #[test]
@@ -891,24 +1018,18 @@ mod tests {
         let config = chaos();
         let result = harness.run_campaign("chaos", &config, 100, "t1");
         assert_eq!(harness.fault_count(), result.total_faults);
-        assert!(
-            harness
-                .audit_log()
-                .iter()
-                .any(|entry| entry.event_code == event_codes::FAULT_SCHEDULE_CREATED)
-        );
-        assert!(
-            harness
-                .audit_log()
-                .iter()
-                .any(|entry| entry.event_code == event_codes::FAULT_INJECTED)
-        );
-        assert!(
-            harness
-                .audit_log()
-                .iter()
-                .any(|entry| entry.event_code == event_codes::FAULT_SCENARIO_END)
-        );
+        assert!(harness
+            .audit_log()
+            .iter()
+            .any(|entry| entry.event_code == event_codes::FAULT_SCHEDULE_CREATED));
+        assert!(harness
+            .audit_log()
+            .iter()
+            .any(|entry| entry.event_code == event_codes::FAULT_INJECTED));
+        assert!(harness
+            .audit_log()
+            .iter()
+            .any(|entry| entry.event_code == event_codes::FAULT_SCENARIO_END));
     }
 
     #[test]
@@ -1300,12 +1421,38 @@ mod tests {
         assert_eq!(result.corruptions, 0);
         assert_eq!(harness.fault_count(), 0);
         assert!(!result.content_hash.is_empty());
-        assert!(
-            harness
-                .audit_log()
-                .iter()
-                .any(|record| record.event_code == event_codes::FAULT_SCENARIO_END)
+        assert!(harness
+            .audit_log()
+            .iter()
+            .any(|record| record.event_code == event_codes::FAULT_SCENARIO_END));
+    }
+
+    #[test]
+    fn test_oversized_campaign_rejects_without_processing_messages() {
+        let mut harness = VirtualTransportFaultHarness::new(42);
+
+        let result = harness.run_campaign(
+            "oversized",
+            &chaos(),
+            MAX_CAMPAIGN_MESSAGES.saturating_add(1),
+            "t1",
         );
+
+        assert_eq!(
+            result.total_messages,
+            MAX_CAMPAIGN_MESSAGES.saturating_add(1)
+        );
+        assert_eq!(result.total_faults, 0);
+        assert_eq!(result.drops, 0);
+        assert_eq!(result.reorders, 0);
+        assert_eq!(result.corruptions, 0);
+        assert_eq!(harness.fault_count(), 0);
+        assert!(!result.content_hash.is_empty());
+        assert!(harness.audit_log().iter().any(|record| record
+            .detail
+            .get("rejected")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)));
     }
 
     #[test]
