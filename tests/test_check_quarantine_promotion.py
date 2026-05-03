@@ -1,29 +1,37 @@
 """Unit tests for check_quarantine_promotion.py verification logic."""
 
 import json
-import os
+import subprocess
+import sys
 import unittest
+from pathlib import Path
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts/check_quarantine_promotion.py"
+RECEIPTS_PATH = ROOT / "artifacts/section_10_13/bd-3cm3/quarantine_promotion_receipts.json"
+EVIDENCE_PATH = ROOT / "artifacts/section_10_13/bd-3cm3/verification_evidence.json"
+JSON_DECODER = json.JSONDecoder()
+
+
+def decode_json_object(raw: str) -> dict[str, object]:
+    parsed = JSON_DECODER.decode(raw)
+    if not isinstance(parsed, dict):
+        raise AssertionError("expected JSON object")
+    return parsed
 
 
 class TestPromotionReceipts(unittest.TestCase):
 
     def test_receipts_exist(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-3cm3/quarantine_promotion_receipts.json")
-        self.assertTrue(os.path.isfile(path))
+        self.assertTrue(RECEIPTS_PATH.is_file())
 
     def test_receipts_valid_json(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-3cm3/quarantine_promotion_receipts.json")
-        with open(path) as f:
-            data = json.load(f)
+        data = decode_json_object(RECEIPTS_PATH.read_text(encoding="utf-8"))
         self.assertIn("receipts", data)
         self.assertGreaterEqual(len(data["receipts"]), 1)
 
     def test_has_rejections(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-3cm3/quarantine_promotion_receipts.json")
-        with open(path) as f:
-            data = json.load(f)
+        data = decode_json_object(RECEIPTS_PATH.read_text(encoding="utf-8"))
         self.assertIn("rejections", data)
         self.assertGreaterEqual(len(data["rejections"]), 1)
 
@@ -31,10 +39,9 @@ class TestPromotionReceipts(unittest.TestCase):
 class TestPromotionImpl(unittest.TestCase):
 
     def setUp(self):
-        self.impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/quarantine_promotion.rs")
-        self.assertTrue(os.path.isfile(self.impl_path))
-        with open(self.impl_path) as f:
-            self.content = f.read()
+        self.impl_path = ROOT / "crates/franken-node/src/connector/quarantine_promotion.rs"
+        self.assertTrue(self.impl_path.is_file())
+        self.content = self.impl_path.read_text(encoding="utf-8")
 
     def test_has_promotion_rule(self):
         self.assertIn("struct PromotionRule", self.content)
@@ -60,10 +67,9 @@ class TestPromotionImpl(unittest.TestCase):
 class TestPromotionSpec(unittest.TestCase):
 
     def setUp(self):
-        self.spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-3cm3_contract.md")
-        self.assertTrue(os.path.isfile(self.spec_path))
-        with open(self.spec_path) as f:
-            self.content = f.read()
+        self.spec_path = ROOT / "docs/specs/section_10_13/bd-3cm3_contract.md"
+        self.assertTrue(self.spec_path.is_file())
+        self.content = self.spec_path.read_text(encoding="utf-8")
 
     def test_has_invariants(self):
         for inv in ["INV-QPR-SCHEMA-GATED", "INV-QPR-AUTHENTICATED",
@@ -79,10 +85,9 @@ class TestPromotionSpec(unittest.TestCase):
 class TestPromotionIntegration(unittest.TestCase):
 
     def setUp(self):
-        self.integ_path = os.path.join(ROOT, "tests/integration/quarantine_promotion_gate.rs")
-        self.assertTrue(os.path.isfile(self.integ_path))
-        with open(self.integ_path) as f:
-            self.content = f.read()
+        self.integ_path = ROOT / "tests/integration/quarantine_promotion_gate.rs"
+        self.assertTrue(self.integ_path.is_file())
+        self.content = self.integ_path.read_text(encoding="utf-8")
 
     def test_covers_schema_gated(self):
         self.assertIn("inv_qpr_schema_gated", self.content)
@@ -95,6 +100,40 @@ class TestPromotionIntegration(unittest.TestCase):
 
     def test_covers_fail_closed(self):
         self.assertIn("inv_qpr_fail_closed", self.content)
+
+
+class TestPromotionCheckerCli(unittest.TestCase):
+
+    def test_json_mode_is_structural_and_machine_readable(self):
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        evidence = decode_json_object(result.stdout)
+        statuses = {check["id"]: check["status"] for check in evidence["checks"]}
+
+        self.assertEqual(evidence["gate"], "quarantine_promotion_verification")
+        self.assertEqual(evidence["mode"], "structural")
+        self.assertEqual(statuses["QPR-TESTS"], "SKIP")
+        self.assertEqual(evidence["summary"]["skipped_checks"], 1)
+        self.assertNotIn("bd-3cm3:", result.stdout)
+
+    def test_json_mode_does_not_rewrite_evidence_artifact(self):
+        before = EVIDENCE_PATH.read_text(encoding="utf-8")
+        subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        after = EVIDENCE_PATH.read_text(encoding="utf-8")
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":
