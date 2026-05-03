@@ -15573,7 +15573,7 @@ fn persist_local_registry_artifact(
     ensure_registry_storage_root(project_root)?;
     let expected_hash = compute_registry_artifact_sha256(package_bytes);
     anyhow::ensure!(
-        request.initial_version.content_hash == expected_hash,
+        security::constant_time::ct_eq(&request.initial_version.content_hash, &expected_hash),
         "registry publish artifact hash mismatch: request={} actual={expected_hash}",
         request.initial_version.content_hash
     );
