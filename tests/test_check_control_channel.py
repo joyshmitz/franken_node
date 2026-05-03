@@ -1,22 +1,24 @@
 """Unit tests for check_control_channel.py verification logic."""
 
 import json
-import os
+import subprocess
+import sys
 import unittest
+from pathlib import Path
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts/check_control_channel.py"
+VECTORS_PATH = ROOT / "artifacts/section_10_13/bd-v97o/control_channel_replay_vectors.json"
+EVIDENCE_PATH = ROOT / "artifacts/section_10_13/bd-v97o/verification_evidence.json"
 
 
 class TestControlChannelVectors(unittest.TestCase):
 
     def test_vectors_exist(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-v97o/control_channel_replay_vectors.json")
-        self.assertTrue(os.path.isfile(path))
+        self.assertTrue(VECTORS_PATH.is_file())
 
     def test_vectors_valid_json(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-v97o/control_channel_replay_vectors.json")
-        with open(path) as f:
-            data = json.load(f)
+        data = json.loads(VECTORS_PATH.read_text(encoding="utf-8"))
         self.assertIn("vectors", data)
         self.assertGreaterEqual(len(data["vectors"]), 3)
 
@@ -24,10 +26,9 @@ class TestControlChannelVectors(unittest.TestCase):
 class TestControlChannelImpl(unittest.TestCase):
 
     def setUp(self):
-        self.impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/control_channel.rs")
-        self.assertTrue(os.path.isfile(self.impl_path))
-        with open(self.impl_path) as f:
-            self.content = f.read()
+        self.impl_path = ROOT / "crates/franken-node/src/connector/control_channel.rs"
+        self.assertTrue(self.impl_path.is_file())
+        self.content = self.impl_path.read_text(encoding="utf-8")
 
     def test_has_channel_config(self):
         self.assertIn("struct ChannelConfig", self.content)
@@ -50,10 +51,9 @@ class TestControlChannelImpl(unittest.TestCase):
 class TestControlChannelSpec(unittest.TestCase):
 
     def setUp(self):
-        self.spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-v97o_contract.md")
-        self.assertTrue(os.path.isfile(self.spec_path))
-        with open(self.spec_path) as f:
-            self.content = f.read()
+        self.spec_path = ROOT / "docs/specs/section_10_13/bd-v97o_contract.md"
+        self.assertTrue(self.spec_path.is_file())
+        self.content = self.spec_path.read_text(encoding="utf-8")
 
     def test_has_invariants(self):
         for inv in ["INV-ACC-AUTHENTICATED", "INV-ACC-MONOTONIC",
@@ -64,10 +64,9 @@ class TestControlChannelSpec(unittest.TestCase):
 class TestControlChannelIntegration(unittest.TestCase):
 
     def setUp(self):
-        self.integ_path = os.path.join(ROOT, "tests/integration/control_channel_replay.rs")
-        self.assertTrue(os.path.isfile(self.integ_path))
-        with open(self.integ_path) as f:
-            self.content = f.read()
+        self.integ_path = ROOT / "tests/integration/control_channel_replay.rs"
+        self.assertTrue(self.integ_path.is_file())
+        self.content = self.integ_path.read_text(encoding="utf-8")
 
     def test_covers_authenticated(self):
         self.assertIn("inv_acc_authenticated", self.content)
@@ -80,6 +79,40 @@ class TestControlChannelIntegration(unittest.TestCase):
 
     def test_covers_auditable(self):
         self.assertIn("inv_acc_auditable", self.content)
+
+
+class TestControlChannelCli(unittest.TestCase):
+
+    def test_json_mode_is_structural_and_machine_readable(self):
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        evidence = json.loads(result.stdout)
+        statuses = {check["id"]: check["status"] for check in evidence["checks"]}
+
+        self.assertEqual(evidence["gate"], "control_channel_verification")
+        self.assertEqual(evidence["mode"], "structural")
+        self.assertEqual(statuses["ACC-TESTS"], "SKIP")
+        self.assertEqual(evidence["summary"]["skipped_checks"], 1)
+        self.assertNotIn("bd-v97o:", result.stdout)
+
+    def test_json_mode_does_not_rewrite_evidence_artifact(self):
+        before = EVIDENCE_PATH.read_text(encoding="utf-8")
+        subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        after = EVIDENCE_PATH.read_text(encoding="utf-8")
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":
