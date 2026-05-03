@@ -117,9 +117,7 @@ impl Config {
                     freshness_window_secs: None,
                     min_trust_score: None,
                     decay_factor: None,
-                    registry_signing_key: Some(
-                        "ZnJhbmtlbi1ub2RlLXRydXN0LWNhcmQtcmVnaXN0cnkta2V5LXYx".to_string(),
-                    ),
+                    registry_signing_key: None,
                     reputation_tier_thresholds: None,
                     test_coverage_threshold_pct: None,
                 },
@@ -191,9 +189,7 @@ impl Config {
                     freshness_window_secs: None,
                     min_trust_score: None,
                     decay_factor: None,
-                    registry_signing_key: Some(
-                        "ZnJhbmtlbi1ub2RlLXRydXN0LWNhcmQtcmVnaXN0cnkta2V5LXYx".to_string(),
-                    ),
+                    registry_signing_key: None,
                     reputation_tier_thresholds: None,
                     test_coverage_threshold_pct: None,
                 },
@@ -265,9 +261,7 @@ impl Config {
                     freshness_window_secs: None,
                     min_trust_score: None,
                     decay_factor: None,
-                    registry_signing_key: Some(
-                        "ZnJhbmtlbi1ub2RlLXRydXN0LWNhcmQtcmVnaXN0cnkta2V5LXYx".to_string(),
-                    ),
+                    registry_signing_key: None,
                     reputation_tier_thresholds: None,
                     test_coverage_threshold_pct: None,
                 },
@@ -811,6 +805,14 @@ impl Config {
                 push_bounded(
                     &mut decisions,
                     MergeDecision::new(stage.clone(), "trust.decay_factor", value),
+                    MAX_MERGE_DECISIONS,
+                );
+            }
+            if let Some(value) = &section.registry_signing_key {
+                self.trust.registry_signing_key = Some(value.clone());
+                push_bounded(
+                    &mut decisions,
+                    MergeDecision::new(stage.clone(), "trust.registry_signing_key", value),
                     MAX_MERGE_DECISIONS,
                 );
             }
@@ -1399,6 +1401,14 @@ impl Config {
             decisions,
             MAX_MERGE_DECISIONS,
         )?;
+        if let Some(value) = env_lookup("FRANKEN_NODE_TRUST_REGISTRY_SIGNING_KEY") {
+            self.trust.registry_signing_key = Some(value.clone());
+            push_bounded(
+                &mut decisions,
+                MergeDecision::new(MergeStage::Env, "trust.registry_signing_key", value),
+                MAX_MERGE_DECISIONS,
+            );
+        }
 
         apply_env_field_bool(
             "FRANKEN_NODE_REPLAY_PERSIST_HIGH_SEVERITY",
@@ -2347,6 +2357,7 @@ struct TrustOverrides {
     pub freshness_window_secs: Option<u64>,
     pub min_trust_score: Option<f64>,
     pub decay_factor: Option<f64>,
+    pub registry_signing_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -3528,6 +3539,10 @@ mod tests {
 
     use super::*;
 
+    fn test_registry_signing_key() -> String {
+        base64::engine::general_purpose::STANDARD.encode([0xC7_u8; 32])
+    }
+
     fn map_lookup(map: BTreeMap<String, String>) -> impl Fn(&str) -> Option<String> {
         move |key| map.get(key).cloned()
     }
@@ -3554,6 +3569,7 @@ mod tests {
         assert_eq!(config.runtime.remote_max_in_flight, 50);
         assert_eq!(config.runtime.bulkhead_retry_after_ms, 50);
         assert_eq!(config.runtime.lanes.len(), 4);
+        assert_eq!(config.trust.registry_signing_key, None);
     }
 
     #[test]
@@ -3578,8 +3594,24 @@ mod tests {
     }
 
     #[test]
+    fn profile_defaults_do_not_embed_registry_signing_key() {
+        for profile in [Profile::Strict, Profile::Balanced, Profile::LegacyRisky] {
+            let config = Config::for_profile(profile);
+            assert_eq!(config.trust.registry_signing_key, None);
+            assert!(
+                config
+                    .validate()
+                    .unwrap_err()
+                    .to_string()
+                    .contains("trust.registry_signing_key must be configured")
+            );
+        }
+    }
+
+    #[test]
     fn roundtrip_toml_serialization() {
         let mut config = Config::for_profile(Profile::Balanced);
+        config.trust.registry_signing_key = Some(test_registry_signing_key());
         config.engine.binary_path = Some(PathBuf::from("/opt/franken-engine"));
         config.fleet.state_dir = Some(PathBuf::from(".franken-node/state/fleet"));
         config.fleet.node_id = Some("node-balanced-1".to_string());
@@ -3593,6 +3625,10 @@ mod tests {
         assert_eq!(parsed.engine.binary_path, config.engine.binary_path);
         assert_eq!(parsed.fleet.state_dir, config.fleet.state_dir);
         assert_eq!(parsed.fleet.node_id, config.fleet.node_id);
+        assert_eq!(
+            parsed.trust.registry_signing_key,
+            config.trust.registry_signing_key
+        );
         assert_eq!(
             parsed.fleet.poll_interval_seconds,
             config.fleet.poll_interval_seconds
@@ -4149,6 +4185,52 @@ bulkhead_retry_after_ms = 33
     }
 
     #[test]
+    fn resolve_accepts_explicit_registry_signing_key_file_override() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("franken_node.toml");
+        let key = test_registry_signing_key();
+        std::fs::write(
+            &path,
+            format!(
+                r#"
+[trust]
+registry_signing_key = "{key}"
+"#
+            ),
+        )
+        .unwrap();
+
+        let resolved = Config::resolve_with_env(
+            Some(&path),
+            CliOverrides::default(),
+            &map_lookup(BTreeMap::new()),
+        )
+        .unwrap();
+
+        assert_eq!(resolved.config.trust.registry_signing_key, Some(key));
+        assert!(resolved.decisions.iter().any(|decision| {
+            decision.field == "trust.registry_signing_key" && decision.stage == MergeStage::File
+        }));
+    }
+
+    #[test]
+    fn resolve_accepts_explicit_registry_signing_key_env_override() {
+        let key = test_registry_signing_key();
+        let env = BTreeMap::from([(
+            "FRANKEN_NODE_TRUST_REGISTRY_SIGNING_KEY".to_string(),
+            key.clone(),
+        )]);
+
+        let resolved =
+            Config::resolve_with_env(None, CliOverrides::default(), &map_lookup(env)).unwrap();
+
+        assert_eq!(resolved.config.trust.registry_signing_key, Some(key));
+        assert!(resolved.decisions.iter().any(|decision| {
+            decision.field == "trust.registry_signing_key" && decision.stage == MergeStage::Env
+        }));
+    }
+
+    #[test]
     fn resolve_applies_timeout_and_ttl_file_and_env_overrides() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("franken_node.toml");
@@ -4202,6 +4284,7 @@ max_degraded_duration_secs = 900
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("franken_node.toml");
         let mut config = Config::for_profile(Profile::Balanced);
+        config.trust.registry_signing_key = Some(test_registry_signing_key());
         config.security.authorized_api_keys =
             BTreeSet::from(["alpha-key".to_string(), "beta-key".to_string()]);
         std::fs::write(&path, config.to_toml().unwrap()).unwrap();

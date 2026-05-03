@@ -34,8 +34,16 @@ struct StructuredLogEvent {
 }
 
 const FIXTURE_RECEIPT_KEY_ID: &str = "72416df9f1dcd9b3";
+const FIXTURE_REGISTRY_KEY: &[u8] = b"franken-node-trust-card-registry-key-v1";
 
 static TEST_TRACING_INIT: Once = Once::new();
+
+fn explicit_fixture_registry_config(profile: &str) -> String {
+    format!(
+        "profile = \"{profile}\"\n\n[trust]\nregistry_signing_key = \"{}\"\n",
+        BASE64_STANDARD.encode(FIXTURE_REGISTRY_KEY)
+    )
+}
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -218,7 +226,7 @@ fn seeded_fixture_trust_workspace_with_timestamp(now_secs: u64) -> tempfile::Tem
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(
         dir.path().join("franken_node.toml"),
-        "profile = \"balanced\"\n",
+        explicit_fixture_registry_config("balanced"),
     )
     .expect("write config");
 
@@ -297,7 +305,7 @@ fn config_only_workspace() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(
         dir.path().join("franken_node.toml"),
-        "profile = \"balanced\"\n",
+        explicit_fixture_registry_config("balanced"),
     )
     .expect("write config");
     dir
@@ -307,7 +315,7 @@ fn scannable_trust_workspace() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(
         dir.path().join("franken_node.toml"),
-        "profile = \"balanced\"\n",
+        explicit_fixture_registry_config("balanced"),
     )
     .expect("write config");
     fs::write(
