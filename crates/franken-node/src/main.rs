@@ -20211,7 +20211,7 @@ fn handle_verify_transparency_log(args: &VerifyTransparencyLogArgs) -> Result<i3
     let mut line_number = 0;
 
     for line in reader.lines() {
-        line_number += 1;
+        line_number = line_number.saturating_add(1);
         let line = line.with_context(|| format!("Failed to read line {}", line_number))?;
         if line.trim().is_empty() {
             continue;
