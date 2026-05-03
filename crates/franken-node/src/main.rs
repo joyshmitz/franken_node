@@ -7195,7 +7195,7 @@ fn count_active_fleet_quarantines(fleet_state_dir: &Path) -> Result<u64> {
                 format!(
                     "failed parsing fleet action log {} line {}",
                     actions_path.display(),
-                    line_index + 1
+                    line_index.saturating_add(1)
                 )
             })?;
         match record.action {
