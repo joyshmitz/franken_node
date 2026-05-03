@@ -13,6 +13,10 @@ use crate::security::remote_cap::{CapabilityGate, RemoteCap, RemoteOperation};
 
 /// Maximum computation entries before new registrations are rejected.
 const MAX_COMPUTATION_ENTRIES: usize = 4096;
+/// Maximum bytes accepted for each caller-supplied registry text field.
+const MAX_COMPUTATION_TEXT_FIELD_BYTES: usize = 16 * 1024;
+/// Maximum retained bytes across registered descriptions and schemas.
+const MAX_COMPUTATION_REGISTRY_TEXT_BYTES: usize = 1024 * 1024;
 
 // Event codes required by bead acceptance criteria.
 pub const CR_REGISTRY_LOADED: &str = "CR_REGISTRY_LOADED";
@@ -184,6 +188,15 @@ impl ComputationRegistry {
         trace_id: &str,
     ) -> Result<Self, ComputationRegistryError> {
         let mut registry = Self::new(catalog.registry_version, trace_id);
+        if let Err((name, reason)) = validate_catalog_text_budget(&catalog.entries) {
+            registry.record_event(
+                CR_REGISTRY_REJECTED,
+                trace_id,
+                Some(name.clone()),
+                format!("catalog rejected reason={reason}"),
+            );
+            return Err(ComputationRegistryError::InvalidComputationEntry { name, reason });
+        }
         for entry in catalog.entries {
             registry.register_computation(entry, trace_id)?;
         }
@@ -274,6 +287,18 @@ impl ComputationRegistry {
                 reason: "input_schema and output_schema are required".to_string(),
             });
         }
+        if let Err(reason) = validate_entry_text_budget(&entry) {
+            self.record_event(
+                CR_REGISTRY_REJECTED,
+                trace_id,
+                Some(entry.name.clone()),
+                format!("registration rejected reason={reason}"),
+            );
+            return Err(ComputationRegistryError::InvalidComputationEntry {
+                name: entry.name,
+                reason,
+            });
+        }
         if self.entries.contains_key(&entry.name) {
             self.record_event(
                 CR_REGISTRY_REJECTED,
@@ -298,6 +323,25 @@ impl ComputationRegistry {
                 reason: format!(
                     "registry at capacity ({} entries, max {MAX_COMPUTATION_ENTRIES})",
                     self.entries.len()
+                ),
+            });
+        }
+        let projected_text_bytes = self
+            .retained_text_bytes()
+            .saturating_add(entry_text_bytes(&entry));
+        if projected_text_bytes > MAX_COMPUTATION_REGISTRY_TEXT_BYTES {
+            self.record_event(
+                CR_REGISTRY_REJECTED,
+                trace_id,
+                Some(entry.name.clone()),
+                format!(
+                    "registration rejected reason=registry text bytes at capacity projected={projected_text_bytes} max={MAX_COMPUTATION_REGISTRY_TEXT_BYTES}"
+                ),
+            );
+            return Err(ComputationRegistryError::InvalidComputationEntry {
+                name: entry.name,
+                reason: format!(
+                    "registry text bytes at capacity ({projected_text_bytes} projected, max {MAX_COMPUTATION_REGISTRY_TEXT_BYTES})"
                 ),
             });
         }
@@ -796,6 +840,55 @@ impl ComputationRegistry {
             MAX_AUDIT_EVENTS,
         );
     }
+
+    fn retained_text_bytes(&self) -> usize {
+        self.entries.values().fold(0usize, |total, entry| {
+            total.saturating_add(entry_text_bytes(entry))
+        })
+    }
+}
+
+fn validate_catalog_text_budget(entries: &[ComputationEntry]) -> Result<(), (String, String)> {
+    let mut total = 0usize;
+    for entry in entries {
+        if let Err(reason) = validate_entry_text_budget(entry) {
+            return Err((entry.name.clone(), reason));
+        }
+        total = total.saturating_add(entry_text_bytes(entry));
+        if total > MAX_COMPUTATION_REGISTRY_TEXT_BYTES {
+            return Err((
+                entry.name.clone(),
+                format!(
+                    "catalog text bytes exceed maximum ({total} bytes, max {MAX_COMPUTATION_REGISTRY_TEXT_BYTES})"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_entry_text_budget(entry: &ComputationEntry) -> Result<(), String> {
+    let fields = [
+        ("description", entry.description.len()),
+        ("input_schema", entry.input_schema.len()),
+        ("output_schema", entry.output_schema.len()),
+    ];
+    for (field, len) in fields {
+        if len > MAX_COMPUTATION_TEXT_FIELD_BYTES {
+            return Err(format!(
+                "{field} exceeds maximum byte length ({len} bytes, max {MAX_COMPUTATION_TEXT_FIELD_BYTES})"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn entry_text_bytes(entry: &ComputationEntry) -> usize {
+    entry
+        .description
+        .len()
+        .saturating_add(entry.input_schema.len())
+        .saturating_add(entry.output_schema.len())
 }
 
 /// Canonical naming contract: `domain.action.vN`
@@ -1531,6 +1624,53 @@ mod tests {
             Some("overflow.action.v1")
         );
         assert!(!registry.entries.contains_key("overflow.action.v1"));
+    }
+
+    #[test]
+    fn registration_rejects_oversized_schema_field() {
+        let mut registry = ComputationRegistry::new(1, "trace-load");
+        let mut entry = sample_entry("trust.verify_manifest.v1");
+        entry.input_schema = "x".repeat(MAX_COMPUTATION_TEXT_FIELD_BYTES.saturating_add(1));
+
+        let err = registry
+            .register_computation(entry, "trace-register-oversized-schema")
+            .expect_err("oversized schema must fail closed");
+
+        assert_eq!(err.code(), ERR_INVALID_COMPUTATION_ENTRY);
+        assert!(err.to_string().contains("input_schema exceeds maximum"));
+        assert!(registry.list_computations().is_empty());
+        assert_eq!(
+            registry
+                .audit_events()
+                .last()
+                .map(|event| event.event_code.as_str()),
+            Some(CR_REGISTRY_REJECTED)
+        );
+    }
+
+    #[test]
+    fn from_catalog_rejects_total_schema_budget() {
+        let oversized_entries =
+            (0..(MAX_COMPUTATION_REGISTRY_TEXT_BYTES / MAX_COMPUTATION_TEXT_FIELD_BYTES + 2))
+                .map(|idx| {
+                    let mut entry = sample_entry(&format!("trust.bulk_schema{idx}.v1"));
+                    entry.input_schema = "x".repeat(MAX_COMPUTATION_TEXT_FIELD_BYTES);
+                    entry
+                })
+                .collect();
+        let catalog = RegistryCatalog {
+            registry_version: 1,
+            entries: oversized_entries,
+        };
+
+        let err = ComputationRegistry::from_catalog(catalog, "trace-catalog-budget")
+            .expect_err("catalog text budget must fail closed");
+
+        assert_eq!(err.code(), ERR_INVALID_COMPUTATION_ENTRY);
+        assert!(
+            err.to_string()
+                .contains("catalog text bytes exceed maximum")
+        );
     }
 
     #[test]
