@@ -597,8 +597,30 @@ impl ControlPlaneDivergenceGate {
         timestamp: u64,
         trace_id: &str,
     ) {
-        // Guard: only transition from Normal to avoid overwriting
-        // quarantine/alert/recovery state
+        if matches!(self.state, GateState::Diverged) {
+            if !self.matches_active_divergence(result, local, remote) {
+                push_bounded(
+                    &mut self.events,
+                    event_codes::DG_001_DIVERGENCE_DETECTED.to_string(),
+                    MAX_EVENT_CODES,
+                );
+                self.emit_audit(
+                    timestamp,
+                    event_codes::DG_001_DIVERGENCE_DETECTED,
+                    &format!(
+                        "subsequent divergence while already diverged: {} at epoch {}",
+                        result.label(),
+                        local.epoch
+                    ),
+                    trace_id,
+                    local.epoch,
+                );
+            }
+            return;
+        }
+
+        // Guard: only first transition from Normal may overwrite
+        // active divergence state.
         if !matches!(self.state, GateState::Normal) {
             return;
         }
@@ -629,6 +651,20 @@ impl ControlPlaneDivergenceGate {
             trace_id,
             local.epoch,
         );
+    }
+
+    fn matches_active_divergence(
+        &self,
+        result: &DetectionResult,
+        local: &StateVector,
+        remote: &StateVector,
+    ) -> bool {
+        self.active_divergence.as_ref().is_some_and(|active| {
+            active.detection_result == result.label()
+                && active.fork_epoch == local.epoch
+                && active.local_hash == local.state_hash
+                && active.remote_hash == remote.state_hash
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -1169,6 +1205,53 @@ mod tests {
         let ad = gate.active_divergence().unwrap();
         assert_eq!(ad.detection_result, "FORKED");
         assert_eq!(ad.fork_epoch, 10);
+    }
+
+    #[test]
+    fn test_distinct_fork_while_diverged_is_audited_without_overwriting_active_divergence() {
+        let mut gate = ControlPlaneDivergenceGate::new("test");
+        let (local, remote) = forked_pair();
+        gate.check_propagation(&local, &remote, 2000, "trace-1");
+        let active_before = gate.active_divergence().cloned().unwrap();
+        let audit_before = gate.audit_log().len();
+        let events_before = gate.events().len();
+        let parent = StateVector::compute_state_hash("parent");
+        let second_remote = make_sv(10, "state-C", &parent, "node-C");
+
+        let (result, _, _) = gate.check_propagation(&local, &second_remote, 2001, "trace-2");
+
+        assert_eq!(result, DetectionResult::Forked);
+        assert_eq!(gate.state(), GateState::Diverged);
+        assert_eq!(
+            gate.active_divergence().unwrap().local_hash,
+            active_before.local_hash
+        );
+        assert_eq!(
+            gate.active_divergence().unwrap().remote_hash,
+            active_before.remote_hash
+        );
+        assert_eq!(gate.audit_log().len(), audit_before + 1);
+        assert_eq!(gate.events().len(), events_before + 1);
+        let entry = gate.audit_log().last().unwrap();
+        assert_eq!(entry.event_code, event_codes::DG_001_DIVERGENCE_DETECTED);
+        assert_eq!(entry.trace_id, "trace-2");
+        assert_eq!(entry.epoch_id, 10);
+        assert!(entry.detail.contains("subsequent divergence"));
+    }
+
+    #[test]
+    fn test_duplicate_fork_while_diverged_is_not_reaudited() {
+        let mut gate = ControlPlaneDivergenceGate::new("test");
+        let (local, remote) = forked_pair();
+        gate.check_propagation(&local, &remote, 2000, "trace-1");
+        let audit_before = gate.audit_log().len();
+        let events_before = gate.events().len();
+
+        let (result, _, _) = gate.check_propagation(&local, &remote, 2001, "trace-2");
+
+        assert_eq!(result, DetectionResult::Forked);
+        assert_eq!(gate.audit_log().len(), audit_before);
+        assert_eq!(gate.events().len(), events_before);
     }
 
     // --- Gap detection ---

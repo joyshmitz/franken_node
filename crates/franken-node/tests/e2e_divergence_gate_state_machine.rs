@@ -33,7 +33,8 @@ use std::sync::Once;
 use std::time::Instant;
 
 use frankenengine_node::control_plane::divergence_gate::{
-    ControlPlaneDivergenceGate, DivergenceGateError, GateState, MutationKind, OperatorAuthorization,
+    ControlPlaneDivergenceGate, DivergenceGateError, GateState, MutationKind,
+    OperatorAuthorization, event_codes,
 };
 use frankenengine_node::control_plane::fork_detection::{DetectionResult, StateVector};
 use frankenengine_node::control_plane::marker_stream::{MarkerEventType, MarkerStream};
@@ -119,7 +120,7 @@ fn sv(node: &str, epoch: u64, payload: &str, parent_hash: &str) -> StateVector {
 const SIGNING_KEY: &[u8] = b"e2e-divergence-gate-hmac-key-v1";
 
 #[test]
-fn e2e_divergence_gate_normal_path_allows_mutations() {
+fn e2e_divergence_gate_normal_path_allows_mutations() -> Result<(), String> {
     let h = Harness::new("e2e_divergence_gate_normal_path_allows_mutations");
 
     let mut gate = ControlPlaneDivergenceGate::new("node-A");
@@ -164,12 +165,14 @@ fn e2e_divergence_gate_normal_path_allows_mutations() {
             assert_eq!(from, "normal");
             h.log_phase("halt_from_normal_rejected", true, json!({}));
         }
-        other => panic!("expected InvalidTransition, got {other:?}"),
+        other => return Err(format!("expected InvalidTransition, got {other:?}")),
     }
+
+    Ok(())
 }
 
 #[test]
-fn e2e_divergence_gate_forked_blocks_mutations_then_quarantine_then_alert() {
+fn e2e_divergence_gate_forked_blocks_mutations_then_quarantine_then_alert() -> Result<(), String> {
     let h = Harness::new("e2e_divergence_gate_forked_blocks_mutations_then_quarantine_then_alert");
 
     let mut gate = ControlPlaneDivergenceGate::new("node-A");
@@ -200,7 +203,7 @@ fn e2e_divergence_gate_forked_blocks_mutations_then_quarantine_then_alert() {
             assert_eq!(mutation_kind, "policy_update");
             assert_eq!(gate_state, "diverged");
         }
-        other => panic!("expected DivergenceBlock, got {other:?}"),
+        other => return Err(format!("expected DivergenceBlock, got {other:?}")),
     }
     assert_eq!(gate.blocked_mutations().len(), 1);
     h.log_phase("mutation_blocked", true, json!({}));
@@ -240,6 +243,59 @@ fn e2e_divergence_gate_forked_blocks_mutations_then_quarantine_then_alert() {
         true,
         json!({"alert_id": alert.alert_id, "severity": alert.severity}),
     );
+
+    Ok(())
+}
+
+#[test]
+fn e2e_divergence_gate_audits_distinct_fork_while_already_diverged() {
+    let h = Harness::new("e2e_divergence_gate_audits_distinct_fork_while_already_diverged");
+
+    let mut gate = ControlPlaneDivergenceGate::new("node-A");
+
+    let local = sv("node-A", 7, "payload-A", "parent-7");
+    let remote = sv("node-B", 7, "payload-B-DIFFERENT", "parent-7");
+    let (result, _, _) = gate.check_propagation(&local, &remote, 1_745_750_007, "trace-fork-1");
+    assert_eq!(result, DetectionResult::Forked);
+    assert_eq!(gate.state(), GateState::Diverged);
+
+    let active_before = gate
+        .active_divergence()
+        .expect("first fork records active divergence")
+        .clone();
+    let audit_before = gate.audit_log().len();
+    let events_before = gate.events().len();
+    h.log_phase(
+        "first_fork_recorded",
+        true,
+        json!({"remote_hash": active_before.remote_hash.as_str()}),
+    );
+
+    let second_remote = sv("node-C", 7, "payload-C-DIFFERENT", "parent-7");
+    let (second_result, _, _) =
+        gate.check_propagation(&local, &second_remote, 1_745_750_008, "trace-fork-2");
+
+    assert_eq!(second_result, DetectionResult::Forked);
+    assert_eq!(gate.state(), GateState::Diverged);
+    let active_after = gate
+        .active_divergence()
+        .expect("subsequent fork preserves active divergence");
+    assert_eq!(active_after.local_hash, active_before.local_hash);
+    assert_eq!(active_after.remote_hash, active_before.remote_hash);
+    assert_eq!(active_after.detected_at, active_before.detected_at);
+    assert_eq!(gate.audit_log().len(), audit_before + 1);
+    assert_eq!(gate.events().len(), events_before + 1);
+    let audit_entry = gate
+        .audit_log()
+        .last()
+        .expect("distinct subsequent fork emits audit entry");
+    assert_eq!(
+        audit_entry.event_code,
+        event_codes::DG_001_DIVERGENCE_DETECTED
+    );
+    assert_eq!(audit_entry.trace_id, "trace-fork-2");
+    assert!(audit_entry.detail.contains("subsequent divergence"));
+    h.log_phase("second_fork_audited_without_overwrite", true, json!({}));
 }
 
 #[test]
@@ -290,7 +346,7 @@ fn e2e_divergence_gate_recover_with_authorized_operator() {
 }
 
 #[test]
-fn e2e_divergence_gate_recover_rejects_tampered_authorization() {
+fn e2e_divergence_gate_recover_rejects_tampered_authorization() -> Result<(), String> {
     let h = Harness::new("e2e_divergence_gate_recover_rejects_tampered_authorization");
 
     let mut gate = ControlPlaneDivergenceGate::new("node-A");
@@ -327,10 +383,12 @@ fn e2e_divergence_gate_recover_rejects_tampered_authorization() {
                 json!({"reason": reason}),
             );
         }
-        other => panic!("expected UnauthorizedRecovery, got {other:?}"),
+        other => return Err(format!("expected UnauthorizedRecovery, got {other:?}")),
     }
     // Gate must remain Diverged (not transition to Normal/Recovering).
     assert_eq!(gate.state(), GateState::Diverged);
+
+    Ok(())
 }
 
 #[test]
