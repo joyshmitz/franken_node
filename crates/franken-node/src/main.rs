@@ -1011,7 +1011,7 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
                         return (Some(signing_key), local_candidates);
                     }
                     if let Some(entry) = entry.as_str() {
-                        local_candidates.push(entry.to_string());
+                        push_bounded(&mut local_candidates, entry.to_string(), 64);
                     }
                     if let Some(nested) = entry.as_object() {
                         let (maybe_key, extras) =
@@ -1019,7 +1019,9 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
                         if let Some(signing_key) = maybe_key {
                             return (Some(signing_key), local_candidates);
                         }
-                        local_candidates.extend(extras);
+                        for extra in extras {
+                            push_bounded(&mut local_candidates, extra, 64);
+                        }
                     }
                 }
             }
@@ -1033,7 +1035,7 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
                     for entry in entries {
                         match entry {
                             serde_json::Value::String(text) => {
-                                local_candidates.push(text.to_string());
+                                push_bounded(&mut local_candidates, text.to_string(), 64);
                             }
                             serde_json::Value::Array(values) => {
                                 if let Some(bytes) = parse_byte_array(values)
@@ -1048,7 +1050,9 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
                                 if let Some(signing_key) = maybe_key {
                                     return (Some(signing_key), local_candidates);
                                 }
-                                local_candidates.extend(extras);
+                                for extra in extras {
+                            push_bounded(&mut local_candidates, extra, 64);
+                        }
                             }
                             _ => {}
                         }
@@ -1062,9 +1066,9 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
                         let encoding = encoding.trim().to_ascii_lowercase();
                         let prefix = encoding_prefix_for_blob(&encoding);
                         if let Some(prefix) = prefix {
-                            local_candidates.push(format!("{prefix}:{text}"));
+                            push_bounded(&mut local_candidates, format!("{prefix}:{text}"), 64);
                         } else {
-                            local_candidates.push(text.to_string());
+                            push_bounded(&mut local_candidates, text.to_string(), 64);
                         }
                     } else {
                         local_candidates.push(text.to_string());
@@ -1087,7 +1091,7 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
                     for entry in entries {
                         match entry {
                             serde_json::Value::String(text) => {
-                                local_candidates.push(text.to_string());
+                                push_bounded(&mut local_candidates, text.to_string(), 64);
                             }
                             serde_json::Value::Array(values) => {
                                 if let Some(bytes) = parse_byte_array(values)
@@ -1102,7 +1106,9 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
                                 if let Some(signing_key) = maybe_key {
                                     return (Some(signing_key), local_candidates);
                                 }
-                                local_candidates.extend(extras);
+                                for extra in extras {
+                            push_bounded(&mut local_candidates, extra, 64);
+                        }
                             }
                             _ => {}
                         }
@@ -1116,9 +1122,9 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
                         let encoding = encoding.trim().to_ascii_lowercase();
                         let prefix = encoding_prefix_for_blob(&encoding);
                         if let Some(prefix) = prefix {
-                            local_candidates.push(format!("{prefix}:{text}"));
+                            push_bounded(&mut local_candidates, format!("{prefix}:{text}"), 64);
                         } else {
-                            local_candidates.push(text.to_string());
+                            push_bounded(&mut local_candidates, text.to_string(), 64);
                         }
                     } else {
                         local_candidates.push(text.to_string());
@@ -1141,7 +1147,7 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
                     for entry in entries {
                         match entry {
                             serde_json::Value::String(text) => {
-                                local_candidates.push(text.to_string());
+                                push_bounded(&mut local_candidates, text.to_string(), 64);
                             }
                             serde_json::Value::Array(values) => {
                                 if let Some(bytes) = parse_byte_array(values)
@@ -1156,7 +1162,9 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
                                 if let Some(signing_key) = maybe_key {
                                     return (Some(signing_key), local_candidates);
                                 }
-                                local_candidates.extend(extras);
+                                for extra in extras {
+                            push_bounded(&mut local_candidates, extra, 64);
+                        }
                             }
                             _ => {}
                         }
@@ -1170,9 +1178,9 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
                         let encoding = encoding.trim().to_ascii_lowercase();
                         let prefix = encoding_prefix_for_blob(&encoding);
                         if let Some(prefix) = prefix {
-                            local_candidates.push(format!("{prefix}:{text}"));
+                            push_bounded(&mut local_candidates, format!("{prefix}:{text}"), 64);
                         } else {
-                            local_candidates.push(text.to_string());
+                            push_bounded(&mut local_candidates, text.to_string(), 64);
                         }
                     } else {
                         local_candidates.push(text.to_string());
@@ -1189,7 +1197,7 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
         }
 
         match value {
-            serde_json::Value::String(value) => candidates.push(value),
+            serde_json::Value::String(value) => push_bounded(&mut candidates, value, 64),
             serde_json::Value::Array(values) => {
                 if let Some(bytes) = parse_byte_array(&values)
                     && let Some(signing_key) = signing_key_from_bytes(&bytes)
@@ -1198,7 +1206,7 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
                 }
                 for entry in values {
                     match entry {
-                        serde_json::Value::String(value) => candidates.push(value),
+                        serde_json::Value::String(value) => push_bounded(&mut candidates, value, 64),
                         serde_json::Value::Array(values) => {
                             if let Some(bytes) = parse_byte_array(&values)
                                 && let Some(signing_key) = signing_key_from_bytes(&bytes)
@@ -1212,7 +1220,9 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
                             if let Some(signing_key) = maybe_key {
                                 return Some(signing_key);
                             }
-                            candidates.extend(extras);
+                            for extra in extras {
+                                push_bounded(&mut candidates, extra, 64);
+                            }
                         }
                         _ => {}
                     }
@@ -1223,7 +1233,9 @@ fn parse_signing_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::SigningKey> 
                 if let Some(signing_key) = maybe_key {
                     return Some(signing_key);
                 }
-                candidates.extend(extras);
+                for extra in extras {
+                    push_bounded(&mut candidates, extra, 64);
+                }
             }
             _ => {}
         }
@@ -18956,7 +18968,7 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
                     for entry in entries {
                         match entry {
                             serde_json::Value::String(text) => {
-                                local_candidates.push(text.to_string());
+                                push_bounded(&mut local_candidates, text.to_string(), 64);
                             }
                             serde_json::Value::Array(values) => {
                                 if let Some(bytes) = parse_signature_byte_array(values) {
@@ -18969,7 +18981,9 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
                                 if let Some(bytes) = maybe_bytes {
                                     return (Some(bytes), local_candidates);
                                 }
-                                local_candidates.extend(extras);
+                                for extra in extras {
+                            push_bounded(&mut local_candidates, extra, 64);
+                        }
                             }
                             _ => {}
                         }
@@ -18983,9 +18997,9 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
                         let encoding = encoding.trim().to_ascii_lowercase();
                         let prefix = encoding_prefix_for_blob(&encoding);
                         if let Some(prefix) = prefix {
-                            local_candidates.push(format!("{prefix}:{text}"));
+                            push_bounded(&mut local_candidates, format!("{prefix}:{text}"), 64);
                         } else {
-                            local_candidates.push(text.to_string());
+                            push_bounded(&mut local_candidates, text.to_string(), 64);
                         }
                     } else {
                         local_candidates.push(text.to_string());
@@ -19006,7 +19020,7 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
                     for entry in entries {
                         match entry {
                             serde_json::Value::String(text) => {
-                                local_candidates.push(text.to_string());
+                                push_bounded(&mut local_candidates, text.to_string(), 64);
                             }
                             serde_json::Value::Array(values) => {
                                 if let Some(bytes) = parse_signature_byte_array(values) {
@@ -19019,7 +19033,9 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
                                 if let Some(bytes) = maybe_bytes {
                                     return (Some(bytes), local_candidates);
                                 }
-                                local_candidates.extend(extras);
+                                for extra in extras {
+                            push_bounded(&mut local_candidates, extra, 64);
+                        }
                             }
                             _ => {}
                         }
@@ -19033,9 +19049,9 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
                         let encoding = encoding.trim().to_ascii_lowercase();
                         let prefix = encoding_prefix_for_blob(&encoding);
                         if let Some(prefix) = prefix {
-                            local_candidates.push(format!("{prefix}:{text}"));
+                            push_bounded(&mut local_candidates, format!("{prefix}:{text}"), 64);
                         } else {
-                            local_candidates.push(text.to_string());
+                            push_bounded(&mut local_candidates, text.to_string(), 64);
                         }
                     } else {
                         local_candidates.push(text.to_string());
@@ -19056,7 +19072,7 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
                     for entry in entries {
                         match entry {
                             serde_json::Value::String(text) => {
-                                local_candidates.push(text.to_string());
+                                push_bounded(&mut local_candidates, text.to_string(), 64);
                             }
                             serde_json::Value::Array(values) => {
                                 if let Some(bytes) = parse_signature_byte_array(values) {
@@ -19069,7 +19085,9 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
                                 if let Some(bytes) = maybe_bytes {
                                     return (Some(bytes), local_candidates);
                                 }
-                                local_candidates.extend(extras);
+                                for extra in extras {
+                            push_bounded(&mut local_candidates, extra, 64);
+                        }
                             }
                             _ => {}
                         }
@@ -19083,9 +19101,9 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
                         let encoding = encoding.trim().to_ascii_lowercase();
                         let prefix = encoding_prefix_for_blob(&encoding);
                         if let Some(prefix) = prefix {
-                            local_candidates.push(format!("{prefix}:{text}"));
+                            push_bounded(&mut local_candidates, format!("{prefix}:{text}"), 64);
                         } else {
-                            local_candidates.push(text.to_string());
+                            push_bounded(&mut local_candidates, text.to_string(), 64);
                         }
                     } else {
                         local_candidates.push(text.to_string());
@@ -19102,14 +19120,14 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
         }
 
         match value {
-            serde_json::Value::String(value) => candidates.push(value),
+            serde_json::Value::String(value) => push_bounded(&mut candidates, value, 64),
             serde_json::Value::Array(values) => {
                 if let Some(bytes) = parse_signature_byte_array(&values) {
                     return bytes;
                 }
                 for entry in values {
                     match entry {
-                        serde_json::Value::String(value) => candidates.push(value),
+                        serde_json::Value::String(value) => push_bounded(&mut candidates, value, 64),
                         serde_json::Value::Array(values) => {
                             if let Some(bytes) = parse_signature_byte_array(&values) {
                                 return bytes;
@@ -19121,7 +19139,9 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
                             if let Some(bytes) = maybe_bytes {
                                 return bytes;
                             }
-                            candidates.extend(extras);
+                            for extra in extras {
+                                push_bounded(&mut candidates, extra, 64);
+                            }
                         }
                         _ => {}
                     }
@@ -19132,7 +19152,9 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
                 if let Some(bytes) = maybe_bytes {
                     return bytes;
                 }
-                candidates.extend(extras);
+                for extra in extras {
+                    push_bounded(&mut candidates, extra, 64);
+                }
                 for field in [
                     "signature",
                     "sig",
@@ -19181,7 +19203,9 @@ fn decode_signature_blob(raw: &[u8]) -> Vec<u8> {
                             if let Some(bytes) = maybe_bytes {
                                 return bytes;
                             }
-                            candidates.extend(extras);
+                            for extra in extras {
+                                push_bounded(&mut candidates, extra, 64);
+                            }
                         }
                     }
                 }
@@ -19506,7 +19530,9 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
                         if let Some(key) = maybe_key {
                             return (Some(key), local_candidates);
                         }
-                        local_candidates.extend(extras);
+                        for extra in extras {
+                            push_bounded(&mut local_candidates, extra, 64);
+                        }
                     }
                 }
             }
@@ -19520,7 +19546,7 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
                     for entry in entries {
                         match entry {
                             serde_json::Value::String(text) => {
-                                local_candidates.push(text.to_string());
+                                push_bounded(&mut local_candidates, text.to_string(), 64);
                             }
                             serde_json::Value::Array(values) => {
                                 if let Some(bytes) = parse_byte_array(values)
@@ -19535,7 +19561,9 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
                                 if let Some(key) = maybe_key {
                                     return (Some(key), local_candidates);
                                 }
-                                local_candidates.extend(extras);
+                                for extra in extras {
+                            push_bounded(&mut local_candidates, extra, 64);
+                        }
                             }
                             _ => {}
                         }
@@ -19549,9 +19577,9 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
                         let encoding = encoding.trim().to_ascii_lowercase();
                         let prefix = encoding_prefix_for_blob(&encoding);
                         if let Some(prefix) = prefix {
-                            local_candidates.push(format!("{prefix}:{text}"));
+                            push_bounded(&mut local_candidates, format!("{prefix}:{text}"), 64);
                         } else {
-                            local_candidates.push(text.to_string());
+                            push_bounded(&mut local_candidates, text.to_string(), 64);
                         }
                     } else {
                         local_candidates.push(text.to_string());
@@ -19574,7 +19602,7 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
                     for entry in entries {
                         match entry {
                             serde_json::Value::String(text) => {
-                                local_candidates.push(text.to_string());
+                                push_bounded(&mut local_candidates, text.to_string(), 64);
                             }
                             serde_json::Value::Array(values) => {
                                 if let Some(bytes) = parse_byte_array(values)
@@ -19589,7 +19617,9 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
                                 if let Some(key) = maybe_key {
                                     return (Some(key), local_candidates);
                                 }
-                                local_candidates.extend(extras);
+                                for extra in extras {
+                            push_bounded(&mut local_candidates, extra, 64);
+                        }
                             }
                             _ => {}
                         }
@@ -19603,9 +19633,9 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
                         let encoding = encoding.trim().to_ascii_lowercase();
                         let prefix = encoding_prefix_for_blob(&encoding);
                         if let Some(prefix) = prefix {
-                            local_candidates.push(format!("{prefix}:{text}"));
+                            push_bounded(&mut local_candidates, format!("{prefix}:{text}"), 64);
                         } else {
-                            local_candidates.push(text.to_string());
+                            push_bounded(&mut local_candidates, text.to_string(), 64);
                         }
                     } else {
                         local_candidates.push(text.to_string());
@@ -19628,7 +19658,7 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
                     for entry in entries {
                         match entry {
                             serde_json::Value::String(text) => {
-                                local_candidates.push(text.to_string());
+                                push_bounded(&mut local_candidates, text.to_string(), 64);
                             }
                             serde_json::Value::Array(values) => {
                                 if let Some(bytes) = parse_byte_array(values)
@@ -19643,7 +19673,9 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
                                 if let Some(key) = maybe_key {
                                     return (Some(key), local_candidates);
                                 }
-                                local_candidates.extend(extras);
+                                for extra in extras {
+                            push_bounded(&mut local_candidates, extra, 64);
+                        }
                             }
                             _ => {}
                         }
@@ -19657,9 +19689,9 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
                         let encoding = encoding.trim().to_ascii_lowercase();
                         let prefix = encoding_prefix_for_blob(&encoding);
                         if let Some(prefix) = prefix {
-                            local_candidates.push(format!("{prefix}:{text}"));
+                            push_bounded(&mut local_candidates, format!("{prefix}:{text}"), 64);
                         } else {
-                            local_candidates.push(text.to_string());
+                            push_bounded(&mut local_candidates, text.to_string(), 64);
                         }
                     } else {
                         local_candidates.push(text.to_string());
@@ -19676,7 +19708,7 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
         }
 
         match value {
-            serde_json::Value::String(value) => candidates.push(value),
+            serde_json::Value::String(value) => push_bounded(&mut candidates, value, 64),
             serde_json::Value::Array(values) => {
                 if let Some(bytes) = parse_byte_array(&values)
                     && let Some(key) = verifying_key_from_bytes(&bytes)
@@ -19685,7 +19717,7 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
                 }
                 for entry in values {
                     match entry {
-                        serde_json::Value::String(value) => candidates.push(value),
+                        serde_json::Value::String(value) => push_bounded(&mut candidates, value, 64),
                         serde_json::Value::Array(values) => {
                             if let Some(bytes) = parse_byte_array(&values)
                                 && let Some(key) = verifying_key_from_bytes(&bytes)
@@ -19698,7 +19730,9 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
                             if let Some(key) = maybe_key {
                                 return Some(key);
                             }
-                            candidates.extend(extras);
+                            for extra in extras {
+                                push_bounded(&mut candidates, extra, 64);
+                            }
                         }
                         _ => {}
                     }
@@ -19709,7 +19743,9 @@ fn parse_verifying_key_from_blob(raw: &[u8]) -> Option<ed25519_dalek::VerifyingK
                 if let Some(key) = maybe_key {
                     return Some(key);
                 }
-                candidates.extend(extras);
+                for extra in extras {
+                    push_bounded(&mut candidates, extra, 64);
+                }
             }
             _ => {}
         }
