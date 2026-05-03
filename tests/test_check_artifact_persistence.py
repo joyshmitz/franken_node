@@ -1,29 +1,39 @@
 """Unit tests for check_artifact_persistence.py verification logic."""
 
 import json
-import os
+import subprocess
+import sys
 import unittest
+from pathlib import Path
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts/check_artifact_persistence.py"
+EVIDENCE_PATH = ROOT / "artifacts/section_10_13/bd-12h8/verification_evidence.json"
+JSON_DECODER = json.JSONDecoder()
+
+
+def decode_json_object(raw: str) -> dict[str, object]:
+    parsed = JSON_DECODER.decode(raw)
+    if not isinstance(parsed, dict):
+        raise AssertionError("expected JSON object")
+    return parsed
 
 
 class TestArtifactFixtures(unittest.TestCase):
 
     def test_fixtures_exist(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-12h8/artifact_replay_fixtures.json")
-        self.assertTrue(os.path.isfile(path))
+        path = ROOT / "artifacts/section_10_13/bd-12h8/artifact_replay_fixtures.json"
+        self.assertTrue(path.is_file())
 
     def test_fixtures_valid_json(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-12h8/artifact_replay_fixtures.json")
-        with open(path) as f:
-            data = json.load(f)
+        path = ROOT / "artifacts/section_10_13/bd-12h8/artifact_replay_fixtures.json"
+        data = decode_json_object(path.read_text(encoding="utf-8"))
         self.assertIn("fixtures", data)
         self.assertGreaterEqual(len(data["fixtures"]), 6)
 
     def test_all_six_types_present(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-12h8/artifact_replay_fixtures.json")
-        with open(path) as f:
-            data = json.load(f)
+        path = ROOT / "artifacts/section_10_13/bd-12h8/artifact_replay_fixtures.json"
+        data = decode_json_object(path.read_text(encoding="utf-8"))
         types = {f["artifact_type"] for f in data["fixtures"]}
         for t in ["invoke", "response", "receipt", "approval", "revocation", "audit"]:
             self.assertIn(t, types, f"Missing artifact type {t}")
@@ -32,10 +42,9 @@ class TestArtifactFixtures(unittest.TestCase):
 class TestArtifactPersistenceImpl(unittest.TestCase):
 
     def setUp(self):
-        self.impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/artifact_persistence.rs")
-        self.assertTrue(os.path.isfile(self.impl_path))
-        with open(self.impl_path) as f:
-            self.content = f.read()
+        self.impl_path = ROOT / "crates/franken-node/src/connector/artifact_persistence.rs"
+        self.assertTrue(self.impl_path.is_file())
+        self.content = self.impl_path.read_text(encoding="utf-8")
 
     def test_has_artifact_type(self):
         self.assertIn("enum ArtifactType", self.content)
@@ -58,10 +67,9 @@ class TestArtifactPersistenceImpl(unittest.TestCase):
 class TestArtifactPersistenceSpec(unittest.TestCase):
 
     def setUp(self):
-        self.spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-12h8_contract.md")
-        self.assertTrue(os.path.isfile(self.spec_path))
-        with open(self.spec_path) as f:
-            self.content = f.read()
+        self.spec_path = ROOT / "docs/specs/section_10_13/bd-12h8_contract.md"
+        self.assertTrue(self.spec_path.is_file())
+        self.content = self.spec_path.read_text(encoding="utf-8")
 
     def test_has_invariants(self):
         for inv in ["INV-PRA-COMPLETE", "INV-PRA-DURABLE",
@@ -72,10 +80,9 @@ class TestArtifactPersistenceSpec(unittest.TestCase):
 class TestArtifactIntegration(unittest.TestCase):
 
     def setUp(self):
-        self.integ_path = os.path.join(ROOT, "tests/integration/artifact_replay_hooks.rs")
-        self.assertTrue(os.path.isfile(self.integ_path))
-        with open(self.integ_path) as f:
-            self.content = f.read()
+        self.integ_path = ROOT / "tests/integration/artifact_replay_hooks.rs"
+        self.assertTrue(self.integ_path.is_file())
+        self.content = self.integ_path.read_text(encoding="utf-8")
 
     def test_covers_complete(self):
         self.assertIn("inv_pra_complete", self.content)
@@ -88,6 +95,40 @@ class TestArtifactIntegration(unittest.TestCase):
 
     def test_covers_ordered(self):
         self.assertIn("inv_pra_ordered", self.content)
+
+
+class TestArtifactPersistenceCli(unittest.TestCase):
+
+    def test_json_mode_is_structural_and_machine_readable(self):
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        evidence = decode_json_object(result.stdout)
+        statuses = {check["id"]: check["status"] for check in evidence["checks"]}
+
+        self.assertEqual(evidence["gate"], "artifact_persistence_verification")
+        self.assertEqual(evidence["mode"], "structural")
+        self.assertEqual(statuses["PRA-TESTS"], "SKIP")
+        self.assertEqual(evidence["summary"]["skipped_checks"], 1)
+        self.assertNotIn("bd-12h8:", result.stdout)
+
+    def test_json_mode_does_not_rewrite_evidence_artifact(self):
+        before = EVIDENCE_PATH.read_text(encoding="utf-8")
+        subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        after = EVIDENCE_PATH.read_text(encoding="utf-8")
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":
