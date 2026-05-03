@@ -23541,7 +23541,7 @@ fn handle_debug_explain(args: &DebugExplainArgs) -> Result<()> {
     hasher.update((u64::try_from(canonical_for_chain.len()).unwrap_or(u64::MAX)).to_le_bytes());
     hasher.update(canonical_for_chain.as_bytes());
     let recomputed = hex::encode(hasher.finalize());
-    if recomputed == signed.chain_hash {
+    if crate::security::constant_time::ct_eq(&recomputed, &signed.chain_hash) {
         steps.push(ExplainStep::ok(
             "chain_hash",
             format!("chain_hash matches recomputed digest {recomputed}"),
