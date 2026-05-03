@@ -399,7 +399,8 @@ fn e2e_barrier_unregister_blocked_during_active_barrier() {
             .any(|entry| entry.event_code == "BARRIER_ABORTED"),
         "explicit abort should be present in transcript"
     );
-    let transcript_lines: Vec<_> = transcript.export_jsonl().lines().collect();
+    let transcript_jsonl = transcript.export_jsonl();
+    let transcript_lines: Vec<_> = transcript_jsonl.lines().collect();
     assert_eq!(transcript_lines.len(), transcript.entries.len());
     for line in transcript_lines {
         let parsed: serde_json::Value =

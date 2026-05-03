@@ -20244,7 +20244,7 @@ fn handle_verify_transparency_log(args: &VerifyTransparencyLogArgs) -> Result<i3
     let reader = BufReader::new(file);
 
     let mut entries: Vec<EvidenceEntry> = Vec::new();
-    let mut line_number = 0;
+    let mut line_number: usize = 0;
 
     for line in reader.lines() {
         line_number = line_number.saturating_add(1);
