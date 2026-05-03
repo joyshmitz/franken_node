@@ -1,10 +1,18 @@
 //! Integration fixture checks for bd-274s:
 //! deterministic Bayesian risk updates and reproducible quarantine actions.
 
+use frankenengine_node::security::adversary_graph::AdversaryPosterior;
+use frankenengine_node::security::quarantine_controller::{
+    ControlAction, QuarantineController, QuarantineControllerError, QuarantineThresholdPolicy,
+    DEFAULT_QUARANTINE_SCOPE,
+};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
 use std::fs;
+
+const VALID_EVIDENCE_HASH: &str =
+    "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 const FIXTURE_REL: &str = "artifacts/10.17/adversary_graph_state.json";
 
@@ -62,10 +70,9 @@ fn fixture_path() -> std::path::PathBuf {
 
 fn load_fixture() -> FixtureState {
     let path = fixture_path();
-    let raw = fs::read_to_string(&path)
-        .unwrap_or_else(|err| panic!("failed reading fixture `{}`: {err}", path.display()));
+    let raw = fs::read_to_string(&path).expect("failed reading bayesian risk fixture");
     serde_json::from_str::<FixtureState>(&raw)
-        .unwrap_or_else(|err| panic!("failed parsing fixture `{}` as json: {err}", path.display()))
+        .expect("failed parsing bayesian risk fixture as json")
 }
 
 fn posterior_from_beta(alpha: u64, beta: u64) -> f64 {
@@ -108,6 +115,18 @@ fn signed_evidence(principal_id: &str, decision: &str, posterior: f64, trace_id:
     format!("sha256:{}", hex::encode(digest))
 }
 
+fn controller() -> QuarantineController {
+    QuarantineController::new(QuarantineThresholdPolicy::default(), "risk-quarantine-key")
+        .expect("controller")
+}
+
+fn valid_hash(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64 && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 #[test]
 fn deterministic_posterior_updates_match_identical_inputs() {
     let a = deterministic_bayes_update(3, 4, 7, 2);
@@ -135,8 +154,8 @@ fn threshold_policy_maps_to_all_control_actions() {
     ];
 
     for (posterior, expected) in cases {
-        let actual = action_for_posterior(posterior, &thresholds)
-            .unwrap_or_else(|| panic!("expected action for posterior {posterior}"));
+        let actual =
+            action_for_posterior(posterior, &thresholds).expect("expected threshold action");
         assert_eq!(
             actual, expected,
             "threshold policy should deterministically map posterior to action"
@@ -176,7 +195,7 @@ fn fixture_actions_have_deterministic_signatures() {
 
     for action in fixture.actions {
         let expected_decision = action_for_posterior(action.posterior, &thresholds)
-            .unwrap_or_else(|| panic!("missing threshold decision for {}", action.principal_id));
+            .expect("missing threshold decision");
         assert_eq!(
             action.decision, expected_decision,
             "decision mismatch for {}",
@@ -195,6 +214,90 @@ fn fixture_actions_have_deterministic_signatures() {
             action.principal_id
         );
     }
+}
+
+#[test]
+fn quarantine_controller_rejects_placeholder_evidence_context_before_signing() {
+    let err = controller()
+        .decide_for_posterior_with_context(
+            "ext:sentinel",
+            0.91,
+            0,
+            "sha256:untracked",
+            DEFAULT_QUARANTINE_SCOPE,
+            "trace-sentinel",
+        )
+        .expect_err("placeholder evidence context must fail closed");
+
+    assert!(matches!(
+        err,
+        QuarantineControllerError::InvalidEvidenceContext {
+            evidence_count: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn quarantine_controller_convenience_path_rejects_missing_context() {
+    let controller = controller();
+
+    let err = controller
+        .decide_for_posterior("ext:context", 0.91, "trace-context")
+        .expect_err("actionable posterior without evidence context must fail closed");
+    assert!(matches!(
+        err,
+        QuarantineControllerError::InvalidEvidenceContext {
+            evidence_count: 0,
+            evidence_hash_len: 0
+        }
+    ));
+}
+
+#[test]
+fn quarantine_controller_context_path_uses_valid_hash_and_verifies() {
+    let controller = controller();
+    let decision = controller
+        .decide_for_posterior_with_context(
+            "ext:context",
+            0.91,
+            1,
+            VALID_EVIDENCE_HASH,
+            DEFAULT_QUARANTINE_SCOPE,
+            "trace-context",
+        )
+        .expect("valid evidence context")
+        .expect("actionable posterior should produce a decision");
+
+    assert_eq!(decision.action, ControlAction::Revoke);
+    assert_eq!(decision.evidence_count, 1);
+    assert!(valid_hash(&decision.evidence_hash));
+    assert_ne!(decision.evidence_hash, "sha256:untracked");
+    assert!(controller.verify_decision(&decision));
+}
+
+#[test]
+fn quarantine_controller_evaluate_rejects_invalid_evidence_hash() {
+    let posterior = AdversaryPosterior {
+        principal_id: "ext:invalid-evidence".to_string(),
+        alpha: 1,
+        beta: 1,
+        posterior: 0.91,
+        evidence_count: 1,
+        last_trace_id: "trace-invalid-evidence".to_string(),
+        evidence_hash: "sha256:untracked".to_string(),
+    };
+
+    let err = controller()
+        .evaluate(&posterior)
+        .expect_err("invalid evidence hash must fail closed");
+    assert!(matches!(
+        err,
+        QuarantineControllerError::InvalidEvidenceContext {
+            evidence_count: 1,
+            ..
+        }
+    ));
 }
 
 #[test]

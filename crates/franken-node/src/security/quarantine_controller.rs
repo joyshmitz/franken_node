@@ -19,8 +19,26 @@ pub const EVD_QUAR_CTRL_002: &str = "EVD-QUAR-CTRL-002";
 pub const QUARANTINE_POLICY_VERSION: &str = "quarantine-threshold-policy-v1";
 pub const DEFAULT_QUARANTINE_SCOPE: &str = "global";
 
+#[cfg(test)]
+const TEST_EVIDENCE_HASH: &str =
+    "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+#[cfg(test)]
+const TEST_EVIDENCE_HASH_ALT: &str =
+    "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+
 /// Maximum control decisions to prevent memory exhaustion attacks.
 const MAX_DECISIONS: usize = 1024;
+
+fn is_sha256_hex_hash(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64 && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn is_valid_evidence_context(evidence_count: u64, evidence_hash: &str) -> bool {
+    evidence_count > 0 && is_sha256_hex_hash(evidence_hash)
+}
 
 fn decision_priority_cmp(left: &ControlDecision, right: &ControlDecision) -> Ordering {
     right
@@ -67,6 +85,13 @@ pub enum QuarantineControllerError {
     InvalidThresholdOrder,
     #[error("signing key must not be empty")]
     InvalidSigningKey,
+    #[error(
+        "evidence context must include a positive count and sha256:<64 hex> hash, got count {evidence_count} and hash length {evidence_hash_len}"
+    )]
+    InvalidEvidenceContext {
+        evidence_count: u64,
+        evidence_hash_len: usize,
+    },
     #[error("posterior {posterior} did not require quarantine control action")]
     NoControlAction { posterior: f64 },
 }
@@ -219,23 +244,31 @@ impl QuarantineController {
     }
 
     #[must_use]
-    pub fn decide_for_posterior(
-        &self,
-        principal_id: &str,
-        posterior: f64,
-        trace_id: &str,
-    ) -> Option<ControlDecision> {
-        self.decide_for_posterior_with_context(
-            principal_id,
-            posterior,
-            0,
-            "sha256:untracked",
-            DEFAULT_QUARANTINE_SCOPE,
-            trace_id,
-        )
+    fn threshold_for_action(&self, action: ControlAction) -> f64 {
+        match action {
+            ControlAction::Throttle => self.policy.throttle,
+            ControlAction::Isolate => self.policy.isolate,
+            ControlAction::Quarantine => self.policy.quarantine,
+            ControlAction::Revoke => self.policy.revoke,
+        }
     }
 
-    #[must_use]
+    pub fn decide_for_posterior(
+        &self,
+        _principal_id: &str,
+        posterior: f64,
+        _trace_id: &str,
+    ) -> Result<Option<ControlDecision>, QuarantineControllerError> {
+        if self.action_for_posterior(posterior).is_none() {
+            return Ok(None);
+        }
+
+        Err(QuarantineControllerError::InvalidEvidenceContext {
+            evidence_count: 0,
+            evidence_hash_len: 0,
+        })
+    }
+
     pub fn decide_for_posterior_with_context(
         &self,
         principal_id: &str,
@@ -244,15 +277,18 @@ impl QuarantineController {
         evidence_hash: &str,
         scope: &str,
         trace_id: &str,
-    ) -> Option<ControlDecision> {
-        let action = self.action_for_posterior(posterior)?;
-        let signed_posterior = finite_signed_posterior(posterior, self.policy.revoke);
-        let threshold = match action {
-            ControlAction::Throttle => self.policy.throttle,
-            ControlAction::Isolate => self.policy.isolate,
-            ControlAction::Quarantine => self.policy.quarantine,
-            ControlAction::Revoke => self.policy.revoke,
+    ) -> Result<Option<ControlDecision>, QuarantineControllerError> {
+        let Some(action) = self.action_for_posterior(posterior) else {
+            return Ok(None);
         };
+        if !is_valid_evidence_context(evidence_count, evidence_hash) {
+            return Err(QuarantineControllerError::InvalidEvidenceContext {
+                evidence_count,
+                evidence_hash_len: evidence_hash.len(),
+            });
+        }
+        let signed_posterior = finite_signed_posterior(posterior, self.policy.revoke);
+        let threshold = self.threshold_for_action(action);
         let policy_hash = self.policy_hash();
         let policy_version = QUARANTINE_POLICY_VERSION.to_string();
         let mut signed_evidence = SignedEvidenceEntry {
@@ -271,7 +307,7 @@ impl QuarantineController {
         };
         signed_evidence.signature = self.sign_evidence(&signed_evidence);
 
-        Some(ControlDecision {
+        Ok(Some(ControlDecision {
             principal_id: principal_id.to_string(),
             action,
             posterior: signed_posterior,
@@ -282,7 +318,7 @@ impl QuarantineController {
             evidence_hash: evidence_hash.to_string(),
             scope: scope.to_string(),
             signed_evidence,
-        })
+        }))
     }
 
     pub fn evaluate(
@@ -296,7 +332,7 @@ impl QuarantineController {
             &posterior.evidence_hash,
             DEFAULT_QUARANTINE_SCOPE,
             &posterior.last_trace_id,
-        )
+        )?
         .map(|decision| decision.signed_evidence)
         .ok_or(QuarantineControllerError::NoControlAction {
             posterior: posterior.posterior,
@@ -309,7 +345,7 @@ impl QuarantineController {
 
         // Bounded collection to prevent memory exhaustion attacks
         for posterior in posteriors {
-            if let Some(decision) = self.decide_for_posterior_with_context(
+            if let Ok(Some(decision)) = self.decide_for_posterior_with_context(
                 &posterior.principal_id,
                 posterior.posterior,
                 posterior.evidence_count,
@@ -337,6 +373,7 @@ impl QuarantineController {
 
         is_valid &= entry.posterior.is_finite();
         is_valid &= entry.threshold.is_finite();
+        is_valid &= is_valid_evidence_context(entry.evidence_count, &entry.evidence_hash);
 
         is_valid &= self.action_for_posterior(entry.posterior) == Some(entry.action);
 
@@ -421,6 +458,26 @@ fn update_len_prefixed_hash(hasher: &mut Sha256, field: &[u8]) {
 }
 
 #[cfg(test)]
+fn signed_test_decision(
+    controller: &QuarantineController,
+    principal_id: &str,
+    posterior: f64,
+    trace_id: &str,
+) -> ControlDecision {
+    controller
+        .decide_for_posterior_with_context(
+            principal_id,
+            posterior,
+            1,
+            TEST_EVIDENCE_HASH,
+            DEFAULT_QUARANTINE_SCOPE,
+            trace_id,
+        )
+        .expect("valid test evidence context")
+        .expect("actionable test posterior")
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use sha2::Digest;
@@ -433,7 +490,7 @@ mod tests {
             posterior,
             evidence_count: 1,
             last_trace_id: trace_id.to_string(),
-            evidence_hash: "sha256:test".to_string(),
+            evidence_hash: TEST_EVIDENCE_HASH.to_string(),
         }
     }
 
@@ -552,11 +609,10 @@ mod tests {
         let controller = QuarantineController::new(QuarantineThresholdPolicy::default(), "salt")
             .expect("controller");
 
-        assert!(
-            controller
-                .decide_for_posterior("ext:quiet", 0.20, "trace-quiet")
-                .is_none()
-        );
+        assert!(controller
+            .decide_for_posterior("ext:quiet", 0.20, "trace-quiet")
+            .expect("subthreshold posterior has no evidence requirement")
+            .is_none());
     }
 
     #[test]
@@ -582,22 +638,89 @@ mod tests {
     fn signed_evidence_is_deterministic() {
         let controller = QuarantineController::new(QuarantineThresholdPolicy::default(), "salt")
             .expect("controller");
-        let a = controller
-            .decide_for_posterior("ext:a", 0.91, "trace-a")
-            .expect("decision");
-        let b = controller
-            .decide_for_posterior("ext:a", 0.91, "trace-a")
-            .expect("decision");
+        let a = signed_test_decision(&controller, "ext:a", 0.91, "trace-a");
+        let b = signed_test_decision(&controller, "ext:a", 0.91, "trace-a");
         assert_eq!(a.signed_evidence.signature, b.signed_evidence.signature);
+        assert_eq!(a.evidence_hash, TEST_EVIDENCE_HASH);
+    }
+
+    #[test]
+    fn convenience_decisions_reject_actionable_posterior_without_evidence_context() {
+        let controller = QuarantineController::new(QuarantineThresholdPolicy::default(), "salt")
+            .expect("controller");
+
+        let err = controller
+            .decide_for_posterior("ext:a", 0.91, "trace-a")
+            .expect_err("actionable posterior must require explicit evidence context");
+        assert!(matches!(
+            err,
+            QuarantineControllerError::InvalidEvidenceContext {
+                evidence_count: 0,
+                evidence_hash_len: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn explicit_decisions_reject_missing_or_placeholder_evidence_context() {
+        let controller = QuarantineController::new(QuarantineThresholdPolicy::default(), "salt")
+            .expect("controller");
+
+        let missing = controller
+            .decide_for_posterior_with_context(
+                "ext:a",
+                0.91,
+                0,
+                "sha256:untracked",
+                DEFAULT_QUARANTINE_SCOPE,
+                "trace-a",
+            )
+            .expect_err("missing evidence context must fail closed");
+        assert!(matches!(
+            missing,
+            QuarantineControllerError::InvalidEvidenceContext {
+                evidence_count: 0,
+                ..
+            }
+        ));
+
+        let malformed = controller
+            .decide_for_posterior_with_context(
+                "ext:a",
+                0.91,
+                1,
+                "sha256:untracked",
+                DEFAULT_QUARANTINE_SCOPE,
+                "trace-a",
+            )
+            .expect_err("placeholder evidence hash must fail closed");
+        assert!(matches!(
+            malformed,
+            QuarantineControllerError::InvalidEvidenceContext {
+                evidence_count: 1,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn signature_verification_rejects_placeholder_evidence_hash() {
+        let controller = QuarantineController::new(QuarantineThresholdPolicy::default(), "salt")
+            .expect("controller");
+        let mut decision = signed_test_decision(&controller, "ext:a", 0.91, "trace-a");
+
+        decision.signed_evidence.evidence_count = 0;
+        decision.signed_evidence.evidence_hash = "sha256:untracked".to_string();
+        decision.signed_evidence.signature = controller.sign_evidence(&decision.signed_evidence);
+
+        assert!(!controller.verify_signature(&decision.signed_evidence));
     }
 
     #[test]
     fn signed_evidence_uses_hmac_not_plain_hash() {
         let controller = QuarantineController::new(QuarantineThresholdPolicy::default(), "salt")
             .expect("controller");
-        let decision = controller
-            .decide_for_posterior("ext:a", 0.91, "trace-a")
-            .expect("decision");
+        let decision = signed_test_decision(&controller, "ext:a", 0.91, "trace-a");
         let plain_digest = format!(
             "sha256:{}",
             hex::encode(Sha256::digest(b"ext:a|revoke|0.910000000000|trace-a"))
@@ -635,10 +758,11 @@ mod tests {
                 principal_a,
                 0.45,
                 7,
-                "sha256:evidence-a",
+                TEST_EVIDENCE_HASH,
                 "scope-a",
                 trace_a,
             )
+            .expect("valid evidence context")
             .expect("decision a")
             .signed_evidence
             .signature;
@@ -647,10 +771,11 @@ mod tests {
                 principal_b,
                 0.91,
                 7,
-                "sha256:evidence-a",
+                TEST_EVIDENCE_HASH,
                 "scope-a",
                 trace_b,
             )
+            .expect("valid evidence context")
             .expect("decision b")
             .signed_evidence
             .signature;
@@ -667,10 +792,11 @@ mod tests {
                 "ext:a",
                 0.91,
                 3,
-                "sha256:evidence",
+                TEST_EVIDENCE_HASH,
                 "tenant-a/fleet-a",
                 "trace-a",
             )
+            .expect("valid evidence context")
             .expect("decision");
 
         assert!(controller.verify_decision(&decision));
@@ -689,15 +815,16 @@ mod tests {
                 "ext:a",
                 0.91,
                 3,
-                "sha256:evidence",
+                TEST_EVIDENCE_HASH,
                 "tenant-a/fleet-a",
                 "trace-a",
             )
+            .expect("valid evidence context")
             .expect("decision");
 
         assert!(controller.verify_decision(&decision));
 
-        decision.evidence_hash = "sha256:evidencf".to_string();
+        decision.evidence_hash = TEST_EVIDENCE_HASH_ALT.to_string();
 
         assert!(!controller.verify_decision(&decision));
     }
@@ -711,16 +838,17 @@ mod tests {
                 "ext:a",
                 0.91,
                 3,
-                "sha256:evidence",
+                TEST_EVIDENCE_HASH,
                 "tenant-a/fleet-a",
                 "trace-a",
             )
+            .expect("valid evidence context")
             .expect("decision");
 
         assert!(controller.verify_decision(&decision));
 
-        decision.evidence_hash = "sha256:tampered".to_string();
-        decision.signed_evidence.evidence_hash = "sha256:tampered".to_string();
+        decision.evidence_hash = TEST_EVIDENCE_HASH_ALT.to_string();
+        decision.signed_evidence.evidence_hash = TEST_EVIDENCE_HASH_ALT.to_string();
 
         assert!(!controller.verify_decision(&decision));
     }
@@ -734,10 +862,11 @@ mod tests {
                 "ext:a",
                 0.91,
                 3,
-                "sha256:evidence",
+                TEST_EVIDENCE_HASH,
                 "tenant-a/fleet-a",
                 "trace-a",
             )
+            .expect("valid evidence context")
             .expect("decision");
 
         assert!(controller.verify_decision(&decision));
@@ -752,9 +881,7 @@ mod tests {
     fn signature_verification_detects_tampering() {
         let controller = QuarantineController::new(QuarantineThresholdPolicy::default(), "salt")
             .expect("controller");
-        let mut decision = controller
-            .decide_for_posterior("ext:a", 0.91, "trace-a")
-            .expect("decision");
+        let mut decision = signed_test_decision(&controller, "ext:a", 0.91, "trace-a");
 
         assert!(controller.verify_signature(&decision.signed_evidence));
 
@@ -766,9 +893,7 @@ mod tests {
     fn signature_verification_detects_principal_tampering() {
         let controller = QuarantineController::new(QuarantineThresholdPolicy::default(), "salt")
             .expect("controller");
-        let mut decision = controller
-            .decide_for_posterior("ext:a", 0.91, "trace-a")
-            .expect("decision");
+        let mut decision = signed_test_decision(&controller, "ext:a", 0.91, "trace-a");
 
         decision.signed_evidence.principal_id = "ext:b".to_string();
 
@@ -779,9 +904,7 @@ mod tests {
     fn signature_verification_detects_action_tampering() {
         let controller = QuarantineController::new(QuarantineThresholdPolicy::default(), "salt")
             .expect("controller");
-        let mut decision = controller
-            .decide_for_posterior("ext:a", 0.91, "trace-a")
-            .expect("decision");
+        let mut decision = signed_test_decision(&controller, "ext:a", 0.91, "trace-a");
 
         decision.signed_evidence.action = ControlAction::Throttle;
 
@@ -794,9 +917,7 @@ mod tests {
             .expect("signer");
         let verifier = QuarantineController::new(QuarantineThresholdPolicy::default(), "salt-b")
             .expect("verifier");
-        let decision = signer
-            .decide_for_posterior("ext:a", 0.91, "trace-a")
-            .expect("decision");
+        let decision = signed_test_decision(&signer, "ext:a", 0.91, "trace-a");
 
         assert!(!verifier.verify_signature(&decision.signed_evidence));
     }
@@ -888,11 +1009,9 @@ mod tests {
         assert!(decisions.iter().any(|decision| {
             decision.principal_id == "ext:revoke-keeper" && decision.action == ControlAction::Revoke
         }));
-        assert!(
-            !decisions
-                .iter()
-                .any(|decision| decision.principal_id == "ext:throttle-1023")
-        );
+        assert!(!decisions
+            .iter()
+            .any(|decision| decision.principal_id == "ext:throttle-1023"));
     }
 }
 
@@ -913,7 +1032,7 @@ mod quarantine_controller_additional_negative_tests {
             posterior,
             evidence_count: 1,
             last_trace_id: trace_id.to_string(),
-            evidence_hash: "sha256:test".to_string(),
+            evidence_hash: TEST_EVIDENCE_HASH.to_string(),
         }
     }
 
@@ -968,9 +1087,7 @@ mod quarantine_controller_additional_negative_tests {
     #[test]
     fn signature_verification_rejects_posterior_tampering() {
         let controller = controller();
-        let mut decision = controller
-            .decide_for_posterior("ext:a", 0.91, "trace-a")
-            .expect("decision");
+        let mut decision = signed_test_decision(&controller, "ext:a", 0.91, "trace-a");
 
         decision.signed_evidence.posterior = 0.90;
 
@@ -980,9 +1097,7 @@ mod quarantine_controller_additional_negative_tests {
     #[test]
     fn signature_verification_rejects_signature_material_tampering() {
         let controller = controller();
-        let mut decision = controller
-            .decide_for_posterior("ext:a", 0.91, "trace-a")
-            .expect("decision");
+        let mut decision = signed_test_decision(&controller, "ext:a", 0.91, "trace-a");
 
         decision.signed_evidence.signature =
             format!("{}-tampered", decision.signed_evidence.signature);
@@ -993,9 +1108,7 @@ mod quarantine_controller_additional_negative_tests {
     #[test]
     fn signature_verification_rejects_event_code_tampering() {
         let controller = controller();
-        let mut decision = controller
-            .decide_for_posterior("ext:a", 0.91, "trace-a")
-            .expect("decision");
+        let mut decision = signed_test_decision(&controller, "ext:a", 0.91, "trace-a");
 
         decision.signed_evidence.event_code = EVD_QUAR_CTRL_002.to_string();
 
@@ -1052,9 +1165,7 @@ mod quarantine_controller_additional_negative_tests {
     #[test]
     fn signature_verification_rejects_empty_signature() {
         let controller = controller();
-        let mut decision = controller
-            .decide_for_posterior("ext:a", 0.91, "trace-a")
-            .expect("decision");
+        let mut decision = signed_test_decision(&controller, "ext:a", 0.91, "trace-a");
         decision.signed_evidence.signature.clear();
 
         assert!(!controller.verify_signature(&decision.signed_evidence));
@@ -1063,9 +1174,7 @@ mod quarantine_controller_additional_negative_tests {
     #[test]
     fn signature_verification_rejects_truncated_signature() {
         let controller = controller();
-        let mut decision = controller
-            .decide_for_posterior("ext:a", 0.91, "trace-a")
-            .expect("decision");
+        let mut decision = signed_test_decision(&controller, "ext:a", 0.91, "trace-a");
         decision.signed_evidence.signature.truncate(16);
 
         assert!(!controller.verify_signature(&decision.signed_evidence));
@@ -1074,9 +1183,7 @@ mod quarantine_controller_additional_negative_tests {
     #[test]
     fn signature_verification_rejects_prefix_stripped_signature() {
         let controller = controller();
-        let mut decision = controller
-            .decide_for_posterior("ext:a", 0.91, "trace-a")
-            .expect("decision");
+        let mut decision = signed_test_decision(&controller, "ext:a", 0.91, "trace-a");
         decision.signed_evidence.signature =
             decision.signed_evidence.signature.replace("sha256:", "");
 
@@ -1086,9 +1193,7 @@ mod quarantine_controller_additional_negative_tests {
     #[test]
     fn decide_for_nan_posterior_fails_closed_to_revoke_with_valid_signature() {
         let controller = controller();
-        let decision = controller
-            .decide_for_posterior("ext:nan", f64::NAN, "trace-nan")
-            .expect("non-finite posterior must still produce a control decision");
+        let decision = signed_test_decision(&controller, "ext:nan", f64::NAN, "trace-nan");
 
         assert_eq!(decision.action, ControlAction::Revoke);
         assert!(decision.posterior.is_finite());
@@ -1111,9 +1216,7 @@ mod quarantine_controller_additional_negative_tests {
             ("ext:positive-inf", f64::INFINITY),
             ("ext:negative-inf", f64::NEG_INFINITY),
         ] {
-            let decision = controller
-                .decide_for_posterior(principal_id, posterior, "trace-inf")
-                .expect("non-finite posterior must fail closed to revoke");
+            let decision = signed_test_decision(&controller, principal_id, posterior, "trace-inf");
 
             assert_eq!(decision.action, ControlAction::Revoke);
             assert_eq!(decision.posterior, controller.policy().revoke);
@@ -1132,9 +1235,7 @@ mod quarantine_controller_additional_negative_tests {
     #[test]
     fn signature_verification_rejects_non_finite_signed_posterior() {
         let controller = controller();
-        let mut decision = controller
-            .decide_for_posterior("ext:a", 0.91, "trace-a")
-            .expect("decision");
+        let mut decision = signed_test_decision(&controller, "ext:a", 0.91, "trace-a");
         decision.signed_evidence.posterior = f64::NAN;
 
         assert!(!controller.verify_signature(&decision.signed_evidence));
@@ -1284,7 +1385,7 @@ mod quarantine_controller_additional_negative_tests {
                 posterior: 0.8,
                 evidence_count: 1,
                 last_trace_id: "trace\u{200B}001".to_string(), // Zero-width space
-                evidence_hash: "sha256:test".to_string(),
+                evidence_hash: TEST_EVIDENCE_HASH.to_string(),
             },
             AdversaryPosterior {
                 principal_id: "user\u{FEFF}123".to_string(), // Zero-width no-break space
@@ -1293,7 +1394,7 @@ mod quarantine_controller_additional_negative_tests {
                 posterior: 0.9,
                 evidence_count: 1,
                 last_trace_id: "\u{0000}trace001".to_string(), // Null injection
-                evidence_hash: "sha256:test".to_string(),
+                evidence_hash: TEST_EVIDENCE_HASH.to_string(),
             },
             AdversaryPosterior {
                 principal_id: "user\u{2028}123\u{2029}".to_string(), // Line/paragraph separators
@@ -1302,7 +1403,7 @@ mod quarantine_controller_additional_negative_tests {
                 posterior: 0.95,
                 evidence_count: 1,
                 last_trace_id: "trace\u{200E}001\u{200F}".to_string(), // LTR/RTL marks
-                evidence_hash: "sha256:test".to_string(),
+                evidence_hash: TEST_EVIDENCE_HASH.to_string(),
             },
         ];
 
@@ -1356,7 +1457,7 @@ mod quarantine_controller_additional_negative_tests {
                 posterior: f64::INFINITY, // Positive infinity
                 evidence_count: 1,
                 last_trace_id: "trace001".to_string(),
-                evidence_hash: "sha256:test".to_string(),
+                evidence_hash: TEST_EVIDENCE_HASH.to_string(),
             },
             AdversaryPosterior {
                 principal_id: "user002".to_string(),
@@ -1365,7 +1466,7 @@ mod quarantine_controller_additional_negative_tests {
                 posterior: f64::NEG_INFINITY, // Negative infinity
                 evidence_count: 1,
                 last_trace_id: "trace002".to_string(),
-                evidence_hash: "sha256:test".to_string(),
+                evidence_hash: TEST_EVIDENCE_HASH.to_string(),
             },
             AdversaryPosterior {
                 principal_id: "user003".to_string(),
@@ -1374,7 +1475,7 @@ mod quarantine_controller_additional_negative_tests {
                 posterior: f64::NAN, // Not a Number
                 evidence_count: 1,
                 last_trace_id: "trace003".to_string(),
-                evidence_hash: "sha256:test".to_string(),
+                evidence_hash: TEST_EVIDENCE_HASH.to_string(),
             },
             AdversaryPosterior {
                 principal_id: "user004".to_string(),
@@ -1383,7 +1484,7 @@ mod quarantine_controller_additional_negative_tests {
                 posterior: 1.0000000000000002, // Slightly above 1.0
                 evidence_count: 1,
                 last_trace_id: "trace004".to_string(),
-                evidence_hash: "sha256:test".to_string(),
+                evidence_hash: TEST_EVIDENCE_HASH.to_string(),
             },
         ];
 
@@ -1542,7 +1643,7 @@ mod quarantine_controller_additional_negative_tests {
             posterior: 0.8,
             evidence_count: 1,
             last_trace_id: "trace\ninjection\r\nattack".to_string(), // Newline injection
-            evidence_hash: "sha256:test</script><script>alert('xss')</script>".to_string(), // HTML injection
+            evidence_hash: TEST_EVIDENCE_HASH.to_string(),
         };
 
         let evidence = controller.evaluate(&posterior).expect("should evaluate");
@@ -1696,7 +1797,7 @@ mod quarantine_controller_additional_negative_tests {
             posterior: 0.8,
             evidence_count: u64::MAX, // Maximum evidence count
             last_trace_id: "trace001".to_string(),
-            evidence_hash: "sha256:test".to_string(),
+            evidence_hash: TEST_EVIDENCE_HASH.to_string(),
         };
 
         let result = controller.evaluate(&overflow_posterior);
@@ -1761,7 +1862,7 @@ mod quarantine_controller_additional_negative_tests {
                     );
                 }
                 Err(other) => {
-                    panic!("Unexpected error for key '{}': {:?}", test_key, other);
+                    assert_eq!(other, QuarantineControllerError::InvalidSigningKey);
                 }
             }
         }

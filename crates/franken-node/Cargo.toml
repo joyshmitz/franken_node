@@ -533,6 +533,10 @@ name = "observability_witness_metamorphic"
 path = "tests/observability_witness_metamorphic.rs"
 
 [[test]]
+name = "bayesian_risk_quarantine"
+path = "tests/bayesian_risk_quarantine.rs"
+
+[[test]]
 name = "fleet_quarantine_metamorphic"
 path = "tests/fleet_quarantine_metamorphic.rs"
 required-features = ["test-support"]

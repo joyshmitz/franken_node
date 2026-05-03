@@ -7,11 +7,34 @@ use frankenengine_node::observability::witness_ref::{
     WitnessKind, WitnessValidationError, WitnessValidator,
 };
 use frankenengine_node::security::quarantine_controller::{
-    ControlAction, QuarantineController, QuarantineThresholdPolicy,
+    ControlAction, ControlDecision, QuarantineController, QuarantineThresholdPolicy,
+    DEFAULT_QUARANTINE_SCOPE,
 };
+
+const VALID_EVIDENCE_HASH: &str =
+    "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 fn quarantine_controller() -> QuarantineController {
     QuarantineController::new(QuarantineThresholdPolicy::default(), "salt").expect("controller")
+}
+
+fn quarantine_decision(
+    controller: &QuarantineController,
+    principal_id: &str,
+    posterior: f64,
+    trace_id: &str,
+) -> ControlDecision {
+    controller
+        .decide_for_posterior_with_context(
+            principal_id,
+            posterior,
+            1,
+            VALID_EVIDENCE_HASH,
+            DEFAULT_QUARANTINE_SCOPE,
+            trace_id,
+        )
+        .expect("valid evidence context")
+        .expect("non-finite posterior should fail closed to revoke")
 }
 
 #[test]
@@ -115,9 +138,7 @@ fn observability_adversarial_regressions_high_impact_missing_witness_is_typed() 
 #[test]
 fn quarantine_controller_clamps_nan_posterior_before_signing() {
     let controller = quarantine_controller();
-    let decision = controller
-        .decide_for_posterior("ext:nan", f64::NAN, "trace-nan")
-        .expect("non-finite posterior should fail closed to revoke");
+    let decision = quarantine_decision(&controller, "ext:nan", f64::NAN, "trace-nan");
 
     assert_eq!(decision.action, ControlAction::Revoke);
     assert_eq!(decision.posterior, controller.policy().revoke);
@@ -142,9 +163,7 @@ fn quarantine_controller_clamps_infinite_posteriors_before_signing() {
         ("ext:positive-limit", f64::INFINITY),
         ("ext:negative-limit", f64::NEG_INFINITY),
     ] {
-        let decision = controller
-            .decide_for_posterior(principal_id, posterior, "trace-boundary")
-            .expect("non-finite posterior should fail closed to revoke");
+        let decision = quarantine_decision(&controller, principal_id, posterior, "trace-boundary");
 
         assert_eq!(decision.action, ControlAction::Revoke);
         assert_eq!(decision.posterior, controller.policy().revoke);
