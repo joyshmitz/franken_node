@@ -52,7 +52,7 @@ use crate::security::{
     constant_time,
     crypto::{Ed25519Verifier, SignatureVerifier},
 };
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use hex;
 use sha2::{Digest, Sha256};
 use std::convert::TryInto;
@@ -869,6 +869,7 @@ impl LedgerCapacity {
 /// Type alias for configuration-style usage.
 pub type LedgerConfig = LedgerCapacity;
 
+#[cfg(test)]
 fn format_ledger_init_event(capacity: &LedgerCapacity) -> String {
     format!(
         "{}: evidence ledger initialized: max_entries={}, max_bytes={}",
@@ -878,6 +879,7 @@ fn format_ledger_init_event(capacity: &LedgerCapacity) -> String {
     )
 }
 
+#[cfg(test)]
 fn format_ledger_zero_capacity_event(entry: &EvidenceEntry) -> String {
     format!(
         "{}: append rejected because max_entries=0, epoch={}",
@@ -886,6 +888,7 @@ fn format_ledger_zero_capacity_event(entry: &EvidenceEntry) -> String {
     )
 }
 
+#[cfg(test)]
 fn format_ledger_entry_too_large_event(
     entry_size: usize,
     max_bytes: usize,
@@ -900,6 +903,7 @@ fn format_ledger_entry_too_large_event(
     )
 }
 
+#[cfg(test)]
 fn format_ledger_append_event(id: EntryId, entry: &EvidenceEntry, entry_size: usize) -> String {
     format!(
         "{}: entry={}, decision={}, epoch={}, size={}",
@@ -911,6 +915,7 @@ fn format_ledger_append_event(id: EntryId, entry: &EvidenceEntry, entry_size: us
     )
 }
 
+#[cfg(test)]
 fn format_ledger_eviction_event(
     evicted_id: EntryId,
     evicted_entry: &EvidenceEntry,
@@ -926,6 +931,7 @@ fn format_ledger_eviction_event(
     )
 }
 
+#[cfg(test)]
 fn format_ledger_spill_event(id: EntryId, bytes: usize) -> String {
     format!(
         "{}: spill wrote entry={}, bytes={}",
@@ -935,8 +941,124 @@ fn format_ledger_spill_event(id: EntryId, bytes: usize) -> String {
     )
 }
 
+#[cfg(test)]
 fn format_ledger_lock_poison_fail_closed_event() -> &'static str {
     "EVD-LEDGER-005: evidence ledger lock poisoned; refusing shared access"
+}
+
+fn emit_ledger_init_event(capacity: &LedgerCapacity) {
+    tracing::info!(
+        event_code = event_codes::LEDGER_CAPACITY_WARN,
+        max_entries = capacity.max_entries,
+        max_bytes = capacity.max_bytes,
+        "evidence ledger initialized"
+    );
+}
+
+fn emit_ledger_zero_capacity_event(entry: &EvidenceEntry) {
+    tracing::warn!(
+        event_code = event_codes::LEDGER_CAPACITY_WARN,
+        epoch = entry.epoch_id,
+        "append rejected because max_entries=0"
+    );
+}
+
+fn emit_ledger_entry_too_large_event(entry_size: usize, max_bytes: usize, epoch_id: u64) {
+    tracing::warn!(
+        event_code = event_codes::LEDGER_CAPACITY_WARN,
+        entry_size,
+        max_bytes,
+        epoch = epoch_id,
+        "entry exceeds evidence ledger max_bytes"
+    );
+}
+
+fn emit_ledger_append_event(id: EntryId, entry: &EvidenceEntry, entry_size: usize) {
+    tracing::debug!(
+        event_code = event_codes::LEDGER_APPEND,
+        entry = %id,
+        decision = entry.decision_id.as_str(),
+        epoch = entry.epoch_id,
+        size = entry_size,
+        "evidence ledger append"
+    );
+}
+
+fn emit_ledger_eviction_event(
+    evicted_id: EntryId,
+    evicted_entry: &EvidenceEntry,
+    evicted_size: usize,
+) {
+    tracing::debug!(
+        event_code = event_codes::LEDGER_EVICTION,
+        entry = %evicted_id,
+        decision = evicted_entry.decision_id.as_str(),
+        epoch = evicted_entry.epoch_id,
+        freed_bytes = evicted_size,
+        "evidence ledger eviction"
+    );
+}
+
+fn emit_ledger_spill_event(id: EntryId, bytes: usize) {
+    tracing::debug!(
+        event_code = event_codes::LEDGER_SPILL,
+        entry = %id,
+        bytes,
+        "evidence ledger spill write"
+    );
+}
+
+fn emit_ledger_lock_poison_fail_closed_event() {
+    tracing::error!(
+        event_code = event_codes::LEDGER_LOCK_POISON_RECOVERED,
+        "evidence ledger lock poisoned; refusing shared access"
+    );
+}
+
+fn emit_disk_monitoring_error(path: &Path, error: &str) {
+    tracing::warn!(
+        path = %path.display(),
+        error,
+        "evidence ledger disk monitoring error"
+    );
+}
+
+fn emit_ledger_circuit_breaker_opened() {
+    tracing::warn!(
+        event_code = event_codes::LEDGER_CIRCUIT_BREAKER_OPEN,
+        mode = "memory_only",
+        "evidence ledger circuit breaker opened"
+    );
+}
+
+fn emit_ledger_circuit_breaker_closed() {
+    tracing::info!(
+        event_code = event_codes::LEDGER_CIRCUIT_BREAKER_CLOSED,
+        "evidence ledger circuit breaker closed"
+    );
+}
+
+fn emit_ledger_spill_skipped(id: EntryId) {
+    tracing::warn!(
+        event_code = event_codes::LEDGER_CIRCUIT_BREAKER_OPEN,
+        entry = %id,
+        mode = "memory_only",
+        "evidence ledger spill write skipped"
+    );
+}
+
+fn emit_ledger_emergency_halt_activated() {
+    tracing::warn!(
+        event_code = event_codes::LEDGER_EMERGENCY_HALT,
+        "evidence ledger emergency halt activated; spill writes disabled"
+    );
+}
+
+fn emit_ledger_emergency_halt_cleared() {
+    tracing::info!(
+        event_code = event_codes::LEDGER_EMERGENCY_HALT,
+        "evidence ledger emergency halt cleared"
+    );
 }
 
 // ── EvidenceLedger ──────────────────────────────────────────────────
@@ -993,7 +1115,7 @@ impl EvidenceLedger {
         mut entry: EvidenceEntry,
     ) -> Result<(EvidenceEntry, usize, EntryHash, Option<ReplaySignature>), LedgerError> {
         if self.capacity.max_entries == 0 {
-            eprintln!("{}", format_ledger_zero_capacity_event(&entry));
+            emit_ledger_zero_capacity_event(&entry);
             return Err(LedgerError::ZeroEntryCapacity);
         }
 
@@ -1061,10 +1183,7 @@ impl EvidenceLedger {
         };
 
         if entry_size > self.capacity.max_bytes {
-            eprintln!(
-                "{}",
-                format_ledger_entry_too_large_event(entry_size, self.capacity.max_bytes, epoch_id,)
-            );
+            emit_ledger_entry_too_large_event(entry_size, self.capacity.max_bytes, epoch_id);
             return Err(LedgerError::EntryTooLarge {
                 entry_size,
                 max_bytes: self.capacity.max_bytes,
@@ -1139,7 +1258,7 @@ impl EvidenceLedger {
             self.remember_seen_signature(entry.timestamp_ms, signature);
         }
 
-        eprintln!("{}", format_ledger_append_event(id, &entry, entry_size));
+        emit_ledger_append_event(id, &entry, entry_size);
 
         self.last_entry_hash = Some(entry_hash);
 
@@ -1190,7 +1309,7 @@ impl EvidenceLedger {
         capacity: LedgerCapacity,
         verifying_key: Option<VerifyingKey>,
     ) -> Self {
-        eprintln!("{}", format_ledger_init_event(&capacity));
+        emit_ledger_init_event(&capacity);
         Self {
             capacity,
             entries: VecDeque::new(),
@@ -1384,10 +1503,7 @@ impl EvidenceLedger {
             self.current_bytes = self.current_bytes.saturating_sub(evicted_size);
             self.total_evicted = self.total_evicted.saturating_add(1);
 
-            eprintln!(
-                "{}",
-                format_ledger_eviction_event(evicted_id, &evicted_entry, evicted_size)
-            );
+            emit_ledger_eviction_event(evicted_id, &evicted_entry, evicted_size);
         }
     }
 
@@ -1625,7 +1741,7 @@ impl SharedEvidenceLedger {
 
     fn mark_poisoned(&self) {
         if !self.poisoned.swap(true, Ordering::Relaxed) {
-            eprintln!("{}", format_ledger_lock_poison_fail_closed_event());
+            emit_ledger_lock_poison_fail_closed_event();
         }
     }
 
@@ -1740,11 +1856,7 @@ impl CircuitBreakerState {
             Ok(_) => Ok(false),
             Err(e) => {
                 // On monitoring error, stay conservative but don't fail
-                eprintln!(
-                    "WARN: disk monitoring error for {}: {}",
-                    monitor_path.display(),
-                    e
-                );
+                emit_disk_monitoring_error(monitor_path, e.as_str());
                 Ok(false)
             }
         }
@@ -1977,17 +2089,11 @@ impl LabSpillMode {
         if should_open && !was_open {
             // Circuit breaker opening - log event and switch to memory-only mode
             self.circuit_breaker.is_open = true;
-            eprintln!(
-                "{}: circuit breaker opened, switching to memory-only mode",
-                event_codes::LEDGER_CIRCUIT_BREAKER_OPEN
-            );
+            emit_ledger_circuit_breaker_opened();
         } else if !should_open && was_open {
             // Circuit breaker closing - resume spill writes
             self.circuit_breaker.is_open = false;
-            eprintln!(
-                "{}: circuit breaker closed, resuming spill writes",
-                event_codes::LEDGER_CIRCUIT_BREAKER_CLOSED
-            );
+            emit_ledger_circuit_breaker_closed();
         }
 
         // Only attempt spill write if circuit breaker is closed
@@ -1996,18 +2102,14 @@ impl LabSpillMode {
             let id =
                 self.ledger
                     .append_prevalidated(entry, entry_size, entry_hash, replay_signature);
-            eprintln!("{}", format_ledger_spill_event(id, json_bytes));
+            emit_ledger_spill_event(id, json_bytes);
             Ok(id)
         } else {
             // Circuit breaker open - memory-only mode
             let id =
                 self.ledger
                     .append_prevalidated(entry, entry_size, entry_hash, replay_signature);
-            eprintln!(
-                "{}: spill write skipped for entry={}, circuit breaker open (memory-only mode)",
-                event_codes::LEDGER_CIRCUIT_BREAKER_OPEN,
-                id
-            );
+            emit_ledger_spill_skipped(id);
             Ok(id)
         }
     }
@@ -2020,10 +2122,7 @@ impl LabSpillMode {
         if !self.circuit_breaker.emergency_halt {
             self.circuit_breaker.emergency_halt = true;
             self.circuit_breaker.is_open = true;
-            eprintln!(
-                "{}: admin emergency halt activated - spill writes disabled",
-                event_codes::LEDGER_EMERGENCY_HALT
-            );
+            emit_ledger_emergency_halt_activated();
         }
     }
 
@@ -2032,10 +2131,7 @@ impl LabSpillMode {
         if self.circuit_breaker.emergency_halt {
             self.circuit_breaker.emergency_halt = false;
             // Note: circuit breaker state will be re-evaluated on next append()
-            eprintln!(
-                "{}: admin emergency halt cleared - spill writes will resume if disk space available",
-                event_codes::LEDGER_EMERGENCY_HALT
-            );
+            emit_ledger_emergency_halt_cleared();
         }
     }
 
@@ -2228,7 +2324,9 @@ mod tests {
 
     impl Write for PanicOnWriteWriter {
         fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
-            panic!("spill writer should not be called for oversized entry");
+            Err(io::Error::other(
+                "spill writer should not be called for oversized entry",
+            ))
         }
 
         fn flush(&mut self) -> io::Result<()> {
@@ -2545,10 +2643,10 @@ mod tests {
         let big_entry = make_entry_with_payload("DEC-BIG", 1, 500);
         let result = ledger.append(big_entry);
         assert!(result.is_err());
-        match result.unwrap_err() {
-            LedgerError::EntryTooLarge { .. } => {}
-            other => unreachable!("expected EntryTooLarge, got: {other}"),
-        }
+        assert!(
+            matches!(result, Err(LedgerError::EntryTooLarge { .. })),
+            "expected EntryTooLarge, got: {result:?}"
+        );
     }
 
     #[test]
@@ -3445,7 +3543,7 @@ mod tests {
                 .inner
                 .write()
                 .expect("write lock acquired for poison test");
-            panic!("intentional poison");
+            assert!(false, "intentional poison");
         });
         assert!(join.join().is_err(), "poisoning thread should panic");
 
@@ -5889,7 +5987,7 @@ mod tests {
                             }
                             thread_results.push(("rapid_snapshots", true));
                         }
-                        _ => unreachable!(),
+                        _ => thread_results.push(("unexpected_operation", false)),
                     }
                 }
 
@@ -6169,14 +6267,14 @@ mod tests {
         let result = ledger.append(entry);
         assert!(result.is_err(), "Unsigned entry should be rejected");
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(
-                reason.contains("invalid hex signature"),
-                "Should fail on invalid hex"
-            );
-        } else {
-            panic!("Should return SignatureInvalid error");
-        }
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
+            assert!(false, "Should return SignatureInvalid error");
+            return;
+        };
+        assert!(
+            reason.contains("invalid hex signature"),
+            "Should fail on invalid hex"
+        );
 
         assert_eq!(ledger.len(), 0);
     }
@@ -6200,14 +6298,14 @@ mod tests {
         let result = ledger.append(entry);
         assert!(result.is_err(), "Tampered signature should be rejected");
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(
-                reason.contains("signature verification failed"),
-                "Should fail signature verification"
-            );
-        } else {
-            panic!("Should return SignatureInvalid error");
-        }
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
+            assert!(false, "Should return SignatureInvalid error");
+            return;
+        };
+        assert!(
+            reason.contains("signature verification failed"),
+            "Should fail signature verification"
+        );
 
         assert_eq!(ledger.len(), 0);
     }
@@ -6230,16 +6328,16 @@ mod tests {
         let result2 = ledger.append(entry1.clone());
         assert!(result2.is_err(), "Replay attack should be rejected");
 
-        if let Err(LedgerError::ReplayAttack {
+        let Err(LedgerError::ReplayAttack {
             timestamp_ms,
             signature,
         }) = result2
-        {
-            assert_eq!(timestamp_ms, entry1.timestamp_ms);
-            assert_eq!(signature, entry1.signature);
-        } else {
-            panic!("Should return ReplayAttack error");
-        }
+        else {
+            assert!(false, "Should return ReplayAttack error");
+            return;
+        };
+        assert_eq!(timestamp_ms, entry1.timestamp_ms);
+        assert_eq!(signature, entry1.signature);
 
         assert_eq!(ledger.len(), 1, "Ledger should still have only one entry");
     }
@@ -6497,11 +6595,11 @@ mod tests {
             "Entry signed with wrong key should be rejected"
         );
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(reason.contains("signature verification failed"));
-        } else {
-            panic!("Should return SignatureInvalid error");
-        }
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
+            assert!(false, "Should return SignatureInvalid error");
+            return;
+        };
+        assert!(reason.contains("signature verification failed"));
     }
 
     // ── Signature Hex Decode DoS Regression Tests ──────────────────
@@ -6542,16 +6640,19 @@ mod tests {
         let result = ledger.append(entry);
         assert!(result.is_err(), "129-char signature should be rejected");
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
             assert!(
-                reason.contains("signature hex too long"),
-                "Should mention length cap"
+                false,
+                "Should return SignatureInvalid error for oversized signature"
             );
-            assert!(reason.contains("129"), "Should mention actual length");
-            assert!(reason.contains("256"), "Should mention max length");
-        } else {
-            panic!("Should return SignatureInvalid error for oversized signature");
-        }
+            return;
+        };
+        assert!(
+            reason.contains("signature hex too long"),
+            "Should mention length cap"
+        );
+        assert!(reason.contains("129"), "Should mention actual length");
+        assert!(reason.contains("256"), "Should mention max length");
     }
 
     #[test]
@@ -6574,15 +6675,18 @@ mod tests {
             "Should fail quickly without attempting decode"
         );
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
             assert!(
-                reason.contains("signature hex too long"),
-                "Should mention length cap"
+                false,
+                "Should return SignatureInvalid error for oversized signature"
             );
-            assert!(reason.contains("1000000"), "Should mention actual length");
-        } else {
-            panic!("Should return SignatureInvalid error for oversized signature");
-        }
+            return;
+        };
+        assert!(
+            reason.contains("signature hex too long"),
+            "Should mention length cap"
+        );
+        assert!(reason.contains("1000000"), "Should mention actual length");
     }
 
     #[test]
@@ -6597,14 +6701,17 @@ mod tests {
         let result = ledger.append(entry);
         assert!(result.is_err(), "Empty signature should be rejected");
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
             assert!(
-                reason.contains("signature cannot be empty"),
-                "Should mention empty signature"
+                false,
+                "Should return SignatureInvalid error for empty signature"
             );
-        } else {
-            panic!("Should return SignatureInvalid error for empty signature");
-        }
+            return;
+        };
+        assert!(
+            reason.contains("signature cannot be empty"),
+            "Should mention empty signature"
+        );
     }
 
     #[test]
@@ -6625,15 +6732,15 @@ mod tests {
             "256-char invalid signature should be rejected"
         );
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(
-                !reason.contains("signature hex too long"),
-                "Should NOT mention length cap for 256 chars"
-            );
-            // Should fail on signature verification instead
-        } else {
-            panic!("Should return SignatureInvalid error");
-        }
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
+            assert!(false, "Should return SignatureInvalid error");
+            return;
+        };
+        assert!(
+            !reason.contains("signature hex too long"),
+            "Should NOT mention length cap for 256 chars"
+        );
+        // Should fail on signature verification instead
     }
 
     #[test]
@@ -6650,15 +6757,15 @@ mod tests {
         let result = ledger.append(entry);
         assert!(result.is_err(), "257-char signature should be rejected");
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(
-                reason.contains("signature hex too long"),
-                "Should mention length cap for 257 chars"
-            );
-            assert!(reason.contains("257"), "Should mention actual length");
-        } else {
-            panic!("Should return SignatureInvalid error");
-        }
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
+            assert!(false, "Should return SignatureInvalid error");
+            return;
+        };
+        assert!(
+            reason.contains("signature hex too long"),
+            "Should mention length cap for 257 chars"
+        );
+        assert!(reason.contains("257"), "Should mention actual length");
     }
 
     // ── Constant-Time Replay Detection Regression Tests ────────────
@@ -6859,11 +6966,11 @@ mod tests {
         let result = ledger.append(entry);
         assert!(result.is_err(), "Tampered first byte should be rejected");
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(reason.contains("signature verification failed"));
-        } else {
-            panic!("Should return SignatureInvalid error");
-        }
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
+            assert!(false, "Should return SignatureInvalid error");
+            return;
+        };
+        assert!(reason.contains("signature verification failed"));
     }
 
     #[test]
@@ -6883,11 +6990,11 @@ mod tests {
         let result = ledger.append(entry);
         assert!(result.is_err(), "Tampered middle byte should be rejected");
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(reason.contains("signature verification failed"));
-        } else {
-            panic!("Should return SignatureInvalid error");
-        }
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
+            assert!(false, "Should return SignatureInvalid error");
+            return;
+        };
+        assert!(reason.contains("signature verification failed"));
     }
 
     #[test]
@@ -6908,11 +7015,11 @@ mod tests {
         let result = ledger.append(entry);
         assert!(result.is_err(), "Tampered last byte should be rejected");
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(reason.contains("signature verification failed"));
-        } else {
-            panic!("Should return SignatureInvalid error");
-        }
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
+            assert!(false, "Should return SignatureInvalid error");
+            return;
+        };
+        assert!(reason.contains("signature verification failed"));
     }
 
     #[test]
@@ -6930,11 +7037,11 @@ mod tests {
         let result = ledger.append(entry);
         assert!(result.is_err(), "Tampered timestamp should be rejected");
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(reason.contains("signature verification failed"));
-        } else {
-            panic!("Should return SignatureInvalid error");
-        }
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
+            assert!(false, "Should return SignatureInvalid error");
+            return;
+        };
+        assert!(reason.contains("signature verification failed"));
     }
 
     #[test]
@@ -6952,11 +7059,11 @@ mod tests {
         let result = ledger.append(entry);
         assert!(result.is_err(), "Tampered payload should be rejected");
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(reason.contains("signature verification failed"));
-        } else {
-            panic!("Should return SignatureInvalid error");
-        }
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
+            assert!(false, "Should return SignatureInvalid error");
+            return;
+        };
+        assert!(reason.contains("signature verification failed"));
     }
 
     #[test]
@@ -6974,11 +7081,11 @@ mod tests {
         let result = ledger.append(entry);
         assert!(result.is_err(), "Tampered decision ID should be rejected");
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(reason.contains("signature verification failed"));
-        } else {
-            panic!("Should return SignatureInvalid error");
-        }
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
+            assert!(false, "Should return SignatureInvalid error");
+            return;
+        };
+        assert!(reason.contains("signature verification failed"));
     }
 
     #[test]
@@ -6994,11 +7101,14 @@ mod tests {
         let result = ledger.append(entry);
         assert!(result.is_err(), "Invalid hex should be rejected");
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(reason.contains("invalid hex") || reason.contains("Invalid character"));
-        } else {
-            panic!("Should return SignatureInvalid error for invalid hex");
-        }
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
+            assert!(
+                false,
+                "Should return SignatureInvalid error for invalid hex"
+            );
+            return;
+        };
+        assert!(reason.contains("invalid hex") || reason.contains("Invalid character"));
     }
 
     #[test]
@@ -7017,11 +7127,11 @@ mod tests {
             "Invalid Ed25519 signature should be rejected"
         );
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(reason.contains("signature verification failed"));
-        } else {
-            panic!("Should return SignatureInvalid error");
-        }
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
+            assert!(false, "Should return SignatureInvalid error");
+            return;
+        };
+        assert!(reason.contains("signature verification failed"));
     }
 
     #[test]
@@ -7040,11 +7150,11 @@ mod tests {
             "Uppercase signature hex should be rejected"
         );
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(reason.contains("canonical lowercase hex"));
-        } else {
-            panic!("Should return SignatureInvalid error");
-        }
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
+            assert!(false, "Should return SignatureInvalid error");
+            return;
+        };
+        assert!(reason.contains("canonical lowercase hex"));
     }
 
     #[test]
@@ -7060,15 +7170,18 @@ mod tests {
         let result = ledger.append(entry);
         assert!(result.is_err(), "Odd-length hex should be rejected");
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
             assert!(
-                reason.contains("invalid hex")
-                    || reason.contains("Odd number")
-                    || reason.contains("Invalid length")
+                false,
+                "Should return SignatureInvalid error for odd-length hex"
             );
-        } else {
-            panic!("Should return SignatureInvalid error for odd-length hex");
-        }
+            return;
+        };
+        assert!(
+            reason.contains("invalid hex")
+                || reason.contains("Odd number")
+                || reason.contains("Invalid length")
+        );
     }
 
     #[test]
@@ -7102,14 +7215,10 @@ mod tests {
         let result2 = ledger.append(entry);
         assert!(result2.is_err(), "Replay attack should be rejected");
 
-        if let Err(LedgerError::ReplayAttackDetected { .. }) = result2 {
-            // Expected error type
-        } else {
-            panic!(
-                "Should return ReplayAttackDetected error, got: {:?}",
-                result2
-            );
-        }
+        assert!(
+            matches!(result2, Err(LedgerError::ReplayAttackDetected { .. })),
+            "Should return ReplayAttackDetected error, got: {result2:?}"
+        );
     }
 
     #[test]
@@ -7130,11 +7239,11 @@ mod tests {
             "Wrong verifying key should reject signature"
         );
 
-        if let Err(LedgerError::SignatureInvalid { reason }) = result {
-            assert!(reason.contains("signature verification failed"));
-        } else {
-            panic!("Should return SignatureInvalid error");
-        }
+        let Err(LedgerError::SignatureInvalid { reason }) = result else {
+            assert!(false, "Should return SignatureInvalid error");
+            return;
+        };
+        assert!(reason.contains("signature verification failed"));
     }
 
     #[test]
@@ -7151,11 +7260,10 @@ mod tests {
         let result = ledger.append(entry);
         assert!(result.is_err(), "Oversized entry should be rejected");
 
-        if let Err(LedgerError::CapacityExhausted) = result {
-            // Expected for oversized entry
-        } else {
-            panic!("Should return CapacityExhausted error for oversized entry");
-        }
+        assert!(
+            matches!(result, Err(LedgerError::CapacityExhausted)),
+            "Should return CapacityExhausted error for oversized entry, got: {result:?}"
+        );
     }
 
     #[test]
@@ -7225,11 +7333,10 @@ mod tests {
             "Exact replay should be detected and rejected"
         );
 
-        if let Err(LedgerError::DuplicateSignature { .. }) = replay_result {
-            // Expected - replay detected
-        } else {
-            panic!("Should detect replay attack with matching timestamp and signature");
-        }
+        assert!(
+            matches!(replay_result, Err(LedgerError::DuplicateSignature { .. })),
+            "Should detect replay attack with matching timestamp and signature, got: {replay_result:?}"
+        );
     }
 
     #[test]
