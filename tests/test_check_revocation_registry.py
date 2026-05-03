@@ -1,29 +1,39 @@
 """Unit tests for check_revocation_registry.py verification logic."""
 
 import json
-import os
+import subprocess
+import sys
 import unittest
+from pathlib import Path
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts/check_revocation_registry.py"
+EVIDENCE_PATH = ROOT / "artifacts/section_10_13/bd-y7lu/verification_evidence.json"
+JSON_DECODER = json.JSONDecoder()
+
+
+def decode_json_object(raw: str) -> dict[str, object]:
+    parsed = JSON_DECODER.decode(raw)
+    if not isinstance(parsed, dict):
+        raise AssertionError("expected JSON object")
+    return parsed
 
 
 class TestRevocationFixtures(unittest.TestCase):
 
     def test_fixture_exists(self):
-        path = os.path.join(ROOT, "fixtures/revocation/registry_scenarios.json")
-        self.assertTrue(os.path.isfile(path))
+        path = ROOT / "fixtures/revocation/registry_scenarios.json"
+        self.assertTrue(path.is_file())
 
     def test_fixture_has_cases(self):
-        path = os.path.join(ROOT, "fixtures/revocation/registry_scenarios.json")
-        with open(path) as f:
-            data = json.load(f)
+        path = ROOT / "fixtures/revocation/registry_scenarios.json"
+        data = decode_json_object(path.read_text(encoding="utf-8"))
         self.assertIn("cases", data)
         self.assertGreaterEqual(len(data["cases"]), 4)
 
     def test_fixture_has_stale_case(self):
-        path = os.path.join(ROOT, "fixtures/revocation/registry_scenarios.json")
-        with open(path) as f:
-            data = json.load(f)
+        path = ROOT / "fixtures/revocation/registry_scenarios.json"
+        data = decode_json_object(path.read_text(encoding="utf-8"))
         stale = [c for c in data["cases"] if c.get("expected_error_code") == "REV_STALE_HEAD"]
         self.assertGreater(len(stale), 0)
 
@@ -31,20 +41,18 @@ class TestRevocationFixtures(unittest.TestCase):
 class TestRevocationHistory(unittest.TestCase):
 
     def test_history_exists(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-y7lu/revocation_head_history.json")
-        self.assertTrue(os.path.isfile(path))
+        path = ROOT / "artifacts/section_10_13/bd-y7lu/revocation_head_history.json"
+        self.assertTrue(path.is_file())
 
     def test_history_valid(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-y7lu/revocation_head_history.json")
-        with open(path) as f:
-            data = json.load(f)
+        path = ROOT / "artifacts/section_10_13/bd-y7lu/revocation_head_history.json"
+        data = decode_json_object(path.read_text(encoding="utf-8"))
         self.assertIn("zones", data)
         self.assertGreaterEqual(len(data["zones"]), 2)
 
     def test_history_has_stale_rejections(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-y7lu/revocation_head_history.json")
-        with open(path) as f:
-            data = json.load(f)
+        path = ROOT / "artifacts/section_10_13/bd-y7lu/revocation_head_history.json"
+        data = decode_json_object(path.read_text(encoding="utf-8"))
         self.assertIn("stale_rejections", data)
         self.assertGreater(len(data["stale_rejections"]), 0)
 
@@ -52,10 +60,9 @@ class TestRevocationHistory(unittest.TestCase):
 class TestRevocationImplementation(unittest.TestCase):
 
     def setUp(self):
-        self.impl_path = os.path.join(ROOT, "crates/franken-node/src/supply_chain/revocation_registry.rs")
-        self.assertTrue(os.path.isfile(self.impl_path))
-        with open(self.impl_path) as f:
-            self.content = f.read()
+        self.impl_path = ROOT / "crates/franken-node/src/supply_chain/revocation_registry.rs"
+        self.assertTrue(self.impl_path.is_file())
+        self.content = self.impl_path.read_text(encoding="utf-8")
 
     def test_has_revocation_head(self):
         self.assertIn("struct RevocationHead", self.content)
@@ -86,10 +93,9 @@ class TestRevocationImplementation(unittest.TestCase):
 class TestRevocationSpec(unittest.TestCase):
 
     def setUp(self):
-        self.spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-y7lu_contract.md")
-        self.assertTrue(os.path.isfile(self.spec_path))
-        with open(self.spec_path) as f:
-            self.content = f.read()
+        self.spec_path = ROOT / "docs/specs/section_10_13/bd-y7lu_contract.md"
+        self.assertTrue(self.spec_path.is_file())
+        self.content = self.spec_path.read_text(encoding="utf-8")
 
     def test_has_invariants(self):
         for inv in ["INV-REV-MONOTONIC", "INV-REV-STALE-REJECT",
@@ -104,10 +110,9 @@ class TestRevocationSpec(unittest.TestCase):
 class TestRevocationConformanceTests(unittest.TestCase):
 
     def setUp(self):
-        self.conf_path = os.path.join(ROOT, "tests/conformance/revocation_head_monotonicity.rs")
-        self.assertTrue(os.path.isfile(self.conf_path))
-        with open(self.conf_path) as f:
-            self.content = f.read()
+        self.conf_path = ROOT / "tests/conformance/revocation_head_monotonicity.rs"
+        self.assertTrue(self.conf_path.is_file())
+        self.content = self.conf_path.read_text(encoding="utf-8")
 
     def test_covers_monotonic(self):
         self.assertIn("inv_rev_monotonic", self.content)
@@ -120,6 +125,40 @@ class TestRevocationConformanceTests(unittest.TestCase):
 
     def test_covers_isolated(self):
         self.assertIn("inv_rev_zone_isolated", self.content)
+
+
+class TestRevocationCli(unittest.TestCase):
+
+    def test_json_mode_is_structural_and_machine_readable(self):
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        evidence = decode_json_object(result.stdout)
+        statuses = {check["id"]: check["status"] for check in evidence["checks"]}
+
+        self.assertEqual(evidence["gate"], "revocation_registry_verification")
+        self.assertEqual(evidence["mode"], "structural")
+        self.assertEqual(statuses["RR-TESTS"], "SKIP")
+        self.assertEqual(evidence["summary"]["skipped_checks"], 1)
+        self.assertNotIn("bd-y7lu:", result.stdout)
+
+    def test_json_mode_does_not_rewrite_evidence_artifact(self):
+        before = EVIDENCE_PATH.read_text(encoding="utf-8")
+        subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        after = EVIDENCE_PATH.read_text(encoding="utf-8")
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":
