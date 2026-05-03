@@ -1,28 +1,37 @@
 """Unit tests for check_retention_policy.py verification logic."""
 
 import json
-import os
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts/check_retention_policy.py"
+MATRIX_PATH = ROOT / "artifacts/section_10_13/bd-1p2b/retention_policy_matrix.json"
+EVIDENCE_PATH = ROOT / "artifacts/section_10_13/bd-1p2b/verification_evidence.json"
+JSON_DECODER = json.JSONDecoder()
+
+
+def decode_json_object(raw: str) -> dict[str, object]:
+    parsed = JSON_DECODER.decode(raw)
+    if not isinstance(parsed, dict):
+        raise AssertionError("expected JSON object")
+    return parsed
 
 
 class TestRetentionMatrix(unittest.TestCase):
 
     def test_matrix_exists(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-1p2b/retention_policy_matrix.json")
-        self.assertTrue(os.path.isfile(path))
+        self.assertTrue(MATRIX_PATH.is_file())
 
     def test_matrix_valid_json(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-1p2b/retention_policy_matrix.json")
-        data = json.JSONDecoder().decode(Path(path).read_text(encoding="utf-8"))
+        data = decode_json_object(MATRIX_PATH.read_text(encoding="utf-8"))
         self.assertIn("matrix", data)
         self.assertGreaterEqual(len(data["matrix"]), 5)
 
     def test_has_both_classes(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-1p2b/retention_policy_matrix.json")
-        data = json.JSONDecoder().decode(Path(path).read_text(encoding="utf-8"))
+        data = decode_json_object(MATRIX_PATH.read_text(encoding="utf-8"))
         classes = {e["retention_class"] for e in data["matrix"]}
         self.assertIn("required", classes)
         self.assertIn("ephemeral", classes)
@@ -31,9 +40,9 @@ class TestRetentionMatrix(unittest.TestCase):
 class TestRetentionPolicyImpl(unittest.TestCase):
 
     def setUp(self):
-        self.impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/retention_policy.rs")
-        self.assertTrue(os.path.isfile(self.impl_path))
-        self.content = Path(self.impl_path).read_text(encoding="utf-8")
+        self.impl_path = ROOT / "crates/franken-node/src/connector/retention_policy.rs"
+        self.assertTrue(self.impl_path.is_file())
+        self.content = self.impl_path.read_text(encoding="utf-8")
 
     def test_has_retention_class(self):
         self.assertIn("enum RetentionClass", self.content)
@@ -56,9 +65,9 @@ class TestRetentionPolicyImpl(unittest.TestCase):
 class TestRetentionPolicySpec(unittest.TestCase):
 
     def setUp(self):
-        self.spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-1p2b_contract.md")
-        self.assertTrue(os.path.isfile(self.spec_path))
-        self.content = Path(self.spec_path).read_text(encoding="utf-8")
+        self.spec_path = ROOT / "docs/specs/section_10_13/bd-1p2b_contract.md"
+        self.assertTrue(self.spec_path.is_file())
+        self.content = self.spec_path.read_text(encoding="utf-8")
 
     def test_has_invariants(self):
         for inv in ["INV-CPR-CLASSIFIED", "INV-CPR-REQUIRED-DURABLE",
@@ -69,9 +78,9 @@ class TestRetentionPolicySpec(unittest.TestCase):
 class TestRetentionIntegration(unittest.TestCase):
 
     def setUp(self):
-        self.integ_path = os.path.join(ROOT, "tests/integration/retention_class_enforcement.rs")
-        self.assertTrue(os.path.isfile(self.integ_path))
-        self.content = Path(self.integ_path).read_text(encoding="utf-8")
+        self.integ_path = ROOT / "tests/integration/retention_class_enforcement.rs"
+        self.assertTrue(self.integ_path.is_file())
+        self.content = self.integ_path.read_text(encoding="utf-8")
 
     def test_covers_classified(self):
         self.assertIn("inv_cpr_classified", self.content)
@@ -89,16 +98,44 @@ class TestRetentionIntegration(unittest.TestCase):
 class TestRetentionChecker(unittest.TestCase):
 
     def setUp(self):
-        self.check_path = os.path.join(ROOT, "scripts/check_retention_policy.py")
-        self.assertTrue(os.path.isfile(self.check_path))
-        self.content = Path(self.check_path).read_text(encoding="utf-8")
+        self.assertTrue(SCRIPT.is_file())
+        self.content = SCRIPT.read_text(encoding="utf-8")
 
-    def test_checker_clears_accumulated_checks(self):
-        self.assertIn("CHECKS.clear()", self.content)
-
-    def test_checker_uses_rch_exec_not_local_cargo(self):
-        self.assertIn('"rch", "exec", "--", "cargo"', self.content)
+    def test_checker_uses_explicit_rch_full_proof(self):
+        for token in ['"rch"', '"exec"', '"--"', '"cargo"', '"connector::retention_policy"']:
+            self.assertIn(token, self.content)
         self.assertIn("check=False", self.content)
+
+    def test_json_mode_is_structural_and_machine_readable(self):
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        evidence = decode_json_object(result.stdout)
+        statuses = {check["id"]: check["status"] for check in evidence["checks"]}
+
+        self.assertEqual(evidence["gate"], "retention_policy_verification")
+        self.assertEqual(evidence["mode"], "structural")
+        self.assertEqual(statuses["CPR-TESTS"], "SKIP")
+        self.assertEqual(evidence["summary"]["skipped_checks"], 1)
+        self.assertNotIn("bd-1p2b:", result.stdout)
+
+    def test_json_mode_does_not_rewrite_evidence_artifact(self):
+        before = EVIDENCE_PATH.read_text(encoding="utf-8")
+        subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        after = EVIDENCE_PATH.read_text(encoding="utf-8")
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":
