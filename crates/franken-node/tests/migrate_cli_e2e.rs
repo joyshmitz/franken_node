@@ -544,6 +544,10 @@ fn migrate_rewrite_apply_emits_rollback_plan_and_updates_manifest() {
     assert!(stdout.contains("mode: apply"));
     assert!(stdout.contains("rewrites_planned=2"));
     assert!(stdout.contains("rewrites_applied=2"));
+    assert!(
+        serde_json::from_str::<serde_json::Value>(&stdout).is_err(),
+        "human migrate rewrite output must not parse as JSON"
+    );
     golden::assert_scrubbed_golden("migrate/rewrite_apply_stdout", &stdout);
     log_phase(
         "migrate_rewrite_apply_emits_rollback_plan_and_updates_manifest",
@@ -714,6 +718,10 @@ fn migrate_rewrite_apply_json_keeps_rollback_artifact_separate() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("migration rollback artifact written:"));
+    assert!(
+        !String::from_utf8_lossy(&output.stdout).contains("migration rollback artifact written:"),
+        "rollback artifact status must stay on stderr and out of JSON stdout"
+    );
     assert!(
         !stderr.contains("\"schema_version\""),
         "rollback JSON must not be mixed into stderr"
