@@ -1,31 +1,46 @@
 """Unit tests for check_transparency_verifier.py verification logic."""
 
 import json
-import os
+import subprocess
+import sys
 import unittest
+from pathlib import Path
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts/check_transparency_verifier.py"
+EVIDENCE_PATH = ROOT / "artifacts/section_10_13/bd-1z9s/verification_evidence.json"
+JSON_DECODER = json.JSONDecoder()
+
+
+def decode_json_object(raw: str) -> dict[str, object]:
+    parsed = JSON_DECODER.decode(raw)
+    if not isinstance(parsed, dict):
+        raise AssertionError("expected JSON object")
+    return parsed
+
+
+def has_expected_verified(case: dict[str, object], expected: bool) -> bool:
+    value = case.get("expected_verified")
+    return isinstance(value, bool) and value == expected
 
 
 class TestTransparencyFixtures(unittest.TestCase):
 
     def test_fixture_exists(self):
-        path = os.path.join(ROOT, "fixtures/transparency_log/inclusion_proof_scenarios.json")
-        self.assertTrue(os.path.isfile(path))
+        path = ROOT / "fixtures/transparency_log/inclusion_proof_scenarios.json"
+        self.assertTrue(path.is_file())
 
     def test_fixture_has_cases(self):
-        path = os.path.join(ROOT, "fixtures/transparency_log/inclusion_proof_scenarios.json")
-        with open(path) as f:
-            data = json.load(f)
+        path = ROOT / "fixtures/transparency_log/inclusion_proof_scenarios.json"
+        data = decode_json_object(path.read_text(encoding="utf-8"))
         self.assertIn("cases", data)
         self.assertGreaterEqual(len(data["cases"]), 4)
 
     def test_fixture_has_pass_and_fail(self):
-        path = os.path.join(ROOT, "fixtures/transparency_log/inclusion_proof_scenarios.json")
-        with open(path) as f:
-            data = json.load(f)
-        verified = [c for c in data["cases"] if c.get("expected_verified") is True]
-        rejected = [c for c in data["cases"] if c.get("expected_verified") is False]
+        path = ROOT / "fixtures/transparency_log/inclusion_proof_scenarios.json"
+        data = decode_json_object(path.read_text(encoding="utf-8"))
+        verified = [case for case in data["cases"] if has_expected_verified(case, True)]
+        rejected = [case for case in data["cases"] if has_expected_verified(case, False)]
         self.assertGreater(len(verified), 0)
         self.assertGreater(len(rejected), 0)
 
@@ -33,29 +48,26 @@ class TestTransparencyFixtures(unittest.TestCase):
 class TestTransparencyReceipts(unittest.TestCase):
 
     def test_receipts_exist(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-1z9s/transparency_proof_receipts.json")
-        self.assertTrue(os.path.isfile(path))
+        path = ROOT / "artifacts/section_10_13/bd-1z9s/transparency_proof_receipts.json"
+        self.assertTrue(path.is_file())
 
     def test_receipts_valid(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-1z9s/transparency_proof_receipts.json")
-        with open(path) as f:
-            data = json.load(f)
+        path = ROOT / "artifacts/section_10_13/bd-1z9s/transparency_proof_receipts.json"
+        data = decode_json_object(path.read_text(encoding="utf-8"))
         self.assertIn("receipts", data)
         self.assertGreaterEqual(len(data["receipts"]), 2)
 
     def test_receipts_have_both_outcomes(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-1z9s/transparency_proof_receipts.json")
-        with open(path) as f:
-            data = json.load(f)
+        path = ROOT / "artifacts/section_10_13/bd-1z9s/transparency_proof_receipts.json"
+        data = decode_json_object(path.read_text(encoding="utf-8"))
         verified = [r for r in data["receipts"] if r["verified"]]
         rejected = [r for r in data["receipts"] if not r["verified"]]
         self.assertGreater(len(verified), 0)
         self.assertGreater(len(rejected), 0)
 
     def test_receipts_have_trace_ids(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-1z9s/transparency_proof_receipts.json")
-        with open(path) as f:
-            data = json.load(f)
+        path = ROOT / "artifacts/section_10_13/bd-1z9s/transparency_proof_receipts.json"
+        data = decode_json_object(path.read_text(encoding="utf-8"))
         for r in data["receipts"]:
             self.assertIn("trace_id", r)
 
@@ -63,10 +75,9 @@ class TestTransparencyReceipts(unittest.TestCase):
 class TestTransparencyImplementation(unittest.TestCase):
 
     def setUp(self):
-        self.impl_path = os.path.join(ROOT, "crates/franken-node/src/supply_chain/transparency_verifier.rs")
-        self.assertTrue(os.path.isfile(self.impl_path))
-        with open(self.impl_path) as f:
-            self.content = f.read()
+        self.impl_path = ROOT / "crates/franken-node/src/supply_chain/transparency_verifier.rs"
+        self.assertTrue(self.impl_path.is_file())
+        self.content = self.impl_path.read_text(encoding="utf-8")
 
     def test_has_log_root(self):
         self.assertIn("struct LogRoot", self.content)
@@ -99,10 +110,9 @@ class TestTransparencyImplementation(unittest.TestCase):
 class TestTransparencySpec(unittest.TestCase):
 
     def setUp(self):
-        self.spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-1z9s_contract.md")
-        self.assertTrue(os.path.isfile(self.spec_path))
-        with open(self.spec_path) as f:
-            self.content = f.read()
+        self.spec_path = ROOT / "docs/specs/section_10_13/bd-1z9s_contract.md"
+        self.assertTrue(self.spec_path.is_file())
+        self.content = self.spec_path.read_text(encoding="utf-8")
 
     def test_has_invariants(self):
         for inv in ["INV-TLOG-REQUIRED", "INV-TLOG-VERIFY",
@@ -116,6 +126,40 @@ class TestTransparencySpec(unittest.TestCase):
 
     def test_has_proof_failure_type(self):
         self.assertIn("ProofFailure", self.content)
+
+
+class TestTransparencyCli(unittest.TestCase):
+
+    def test_json_mode_is_structural_and_machine_readable(self):
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        evidence = decode_json_object(result.stdout)
+        statuses = {check["id"]: check["status"] for check in evidence["checks"]}
+
+        self.assertEqual(evidence["gate"], "transparency_verifier_verification")
+        self.assertEqual(evidence["mode"], "structural")
+        self.assertEqual(statuses["TL-TESTS"], "SKIP")
+        self.assertEqual(evidence["summary"]["skipped_checks"], 1)
+        self.assertNotIn("bd-1z9s:", result.stdout)
+
+    def test_json_mode_does_not_rewrite_evidence_artifact(self):
+        before = EVIDENCE_PATH.read_text(encoding="utf-8")
+        subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        after = EVIDENCE_PATH.read_text(encoding="utf-8")
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":
