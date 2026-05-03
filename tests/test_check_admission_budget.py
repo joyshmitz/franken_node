@@ -1,29 +1,37 @@
 """Unit tests for check_admission_budget.py verification logic."""
 
 import json
-import os
+import subprocess
+import sys
 import unittest
+from pathlib import Path
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts/check_admission_budget.py"
+REPORT_PATH = ROOT / "artifacts/section_10_13/bd-2k74/admission_budget_violation_report.json"
+EVIDENCE_PATH = ROOT / "artifacts/section_10_13/bd-2k74/verification_evidence.json"
+JSON_DECODER = json.JSONDecoder()
+
+
+def decode_json_object(raw: str) -> dict[str, object]:
+    parsed = JSON_DECODER.decode(raw)
+    if not isinstance(parsed, dict):
+        raise AssertionError("expected JSON object")
+    return parsed
 
 
 class TestAdmissionBudgetReport(unittest.TestCase):
 
     def test_report_exists(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-2k74/admission_budget_violation_report.json")
-        self.assertTrue(os.path.isfile(path))
+        self.assertTrue(REPORT_PATH.is_file())
 
     def test_report_valid_json(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-2k74/admission_budget_violation_report.json")
-        with open(path) as f:
-            data = json.load(f)
+        data = decode_json_object(REPORT_PATH.read_text(encoding="utf-8"))
         self.assertIn("scenarios", data)
         self.assertGreaterEqual(len(data["scenarios"]), 3)
 
     def test_report_has_violation_scenario(self):
-        path = os.path.join(ROOT, "artifacts/section_10_13/bd-2k74/admission_budget_violation_report.json")
-        with open(path) as f:
-            data = json.load(f)
+        data = decode_json_object(REPORT_PATH.read_text(encoding="utf-8"))
         verdicts = [s.get("verdict") for s in data["scenarios"]]
         self.assertIn("REJECT", verdicts)
 
@@ -31,10 +39,9 @@ class TestAdmissionBudgetReport(unittest.TestCase):
 class TestAdmissionBudgetImpl(unittest.TestCase):
 
     def setUp(self):
-        self.impl_path = os.path.join(ROOT, "crates/franken-node/src/connector/admission_budget.rs")
-        self.assertTrue(os.path.isfile(self.impl_path))
-        with open(self.impl_path) as f:
-            self.content = f.read()
+        self.impl_path = ROOT / "crates/franken-node/src/connector/admission_budget.rs"
+        self.assertTrue(self.impl_path.is_file())
+        self.content = self.impl_path.read_text(encoding="utf-8")
 
     def test_has_admission_budget(self):
         self.assertIn("struct AdmissionBudget", self.content)
@@ -70,10 +77,9 @@ class TestAdmissionBudgetImpl(unittest.TestCase):
 class TestAdmissionBudgetSpec(unittest.TestCase):
 
     def setUp(self):
-        self.spec_path = os.path.join(ROOT, "docs/specs/section_10_13/bd-2k74_contract.md")
-        self.assertTrue(os.path.isfile(self.spec_path))
-        with open(self.spec_path) as f:
-            self.content = f.read()
+        self.spec_path = ROOT / "docs/specs/section_10_13/bd-2k74_contract.md"
+        self.assertTrue(self.spec_path.is_file())
+        self.content = self.spec_path.read_text(encoding="utf-8")
 
     def test_has_invariants(self):
         for inv in ["INV-PAB-ENFORCED", "INV-PAB-BOUNDED",
@@ -89,10 +95,9 @@ class TestAdmissionBudgetSpec(unittest.TestCase):
 class TestAdmissionBudgetIntegration(unittest.TestCase):
 
     def setUp(self):
-        self.integ_path = os.path.join(ROOT, "tests/integration/admission_budget_enforcement.rs")
-        self.assertTrue(os.path.isfile(self.integ_path))
-        with open(self.integ_path) as f:
-            self.content = f.read()
+        self.integ_path = ROOT / "tests/integration/admission_budget_enforcement.rs"
+        self.assertTrue(self.integ_path.is_file())
+        self.content = self.integ_path.read_text(encoding="utf-8")
 
     def test_covers_enforced(self):
         self.assertIn("inv_pab_enforced", self.content)
@@ -105,6 +110,40 @@ class TestAdmissionBudgetIntegration(unittest.TestCase):
 
     def test_covers_deterministic(self):
         self.assertIn("inv_pab_deterministic", self.content)
+
+
+class TestAdmissionBudgetCheckerCli(unittest.TestCase):
+
+    def test_json_mode_is_structural_and_machine_readable(self):
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        evidence = decode_json_object(result.stdout)
+        statuses = {check["id"]: check["status"] for check in evidence["checks"]}
+
+        self.assertEqual(evidence["gate"], "admission_budget_verification")
+        self.assertEqual(evidence["mode"], "structural")
+        self.assertEqual(statuses["PAB-TESTS"], "SKIP")
+        self.assertEqual(evidence["summary"]["skipped_checks"], 1)
+        self.assertNotIn("bd-2k74:", result.stdout)
+
+    def test_json_mode_does_not_rewrite_evidence_artifact(self):
+        before = EVIDENCE_PATH.read_text(encoding="utf-8")
+        subprocess.run(
+            [sys.executable, str(SCRIPT), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        after = EVIDENCE_PATH.read_text(encoding="utf-8")
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":
