@@ -198,11 +198,11 @@ Every module includes inline `#[cfg(test)]` unit tests alongside the implementat
 - Edge cases (empty input, max values, boundary conditions)
 - Error conditions
 
-The checked-in integration and end-to-end style coverage lives primarily in `crates/franken-node/tests/*.rs`, with additional Python/report gate tooling under `scripts/` and contract artifacts under `artifacts/` / `docs/`.
+The checked-in integration and end-to-end style coverage lives in both `crates/franken-node/tests/*.rs` and the workspace-root `tests/` tree, including `tests/integration/`, `tests/conformance/`, `tests/contract/`, `tests/e2e/`, `tests/golden/`, `tests/security/`, and `tests/perf/`. Many crate-local test files are `#[path]` shims or `include!` wrappers over root test sources, and some `crates/franken-node/Cargo.toml` `[[test]]` entries point directly at `../../tests/...` paths. Moving or renaming files under root `tests/` requires updating the matching crate-local shim or Cargo `[[test]]` path at the same time.
 
 ### Unit Tests
 
-This repository is extremely test-heavy. There are thousands of Rust `#[test]` cases across inline module tests plus the standalone integration/conformance suite under `crates/franken-node/tests/`.
+This repository is extremely test-heavy. There are thousands of Rust `#[test]` cases across inline module tests plus standalone integration/conformance suites under both `crates/franken-node/tests/` and the workspace-root `tests/` tree.
 
 ```bash
 # Run all tests
@@ -267,6 +267,7 @@ This repository is `franken_node`, a product-layer Rust workspace over sibling `
 | `crates/franken-security-macros/` | Internal proc-macro crate consumed by `crates/franken-node` |
 | `sdk/verifier/src/lib.rs` | Small public verifier SDK crate |
 | `crates/franken-node/tests/` | Broad integration, conformance, and CLI/e2e-style coverage |
+| `tests/` | Workspace-root integration, conformance, contract, e2e, golden, fixture, security, and perf test sources wired into crate tests |
 | `docs/specs/`, `artifacts/`, `scripts/` | Product contracts, evidence, and gate/orchestration helpers |
 
 ### Architectural Shape
