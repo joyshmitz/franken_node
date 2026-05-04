@@ -16,7 +16,7 @@ use frankenengine_node::api::fleet_quarantine::{
 use frankenengine_node::api::middleware::{AuthIdentity, AuthMethod, TraceContext};
 use frankenengine_node::control_plane::fleet_transport::{
     FileFleetTransport, FleetAction as PersistedFleetAction, FleetActionRecord, FleetTargetKind,
-    FleetTransport, NodeHealth, NodeStatus,
+    FleetTransport, FleetTransportError, NodeHealth, NodeStatus,
 };
 use serde_json::{Value, json};
 use tempfile::tempdir;
@@ -137,6 +137,7 @@ fn active_incidents_from_actions(actions: &[FleetActionRecord]) -> BTreeSet<Stri
             PersistedFleetAction::Release { incident_id, .. } => {
                 active_incidents.remove(incident_id);
             }
+            PersistedFleetAction::Revoke { .. } => {}
             PersistedFleetAction::PolicyUpdate { .. } => {}
         }
     }
@@ -149,6 +150,37 @@ fn action_log_line_count(transport: &FileFleetTransport) -> usize {
         .lines()
         .filter(|line| !line.trim().is_empty())
         .count()
+}
+
+#[test]
+fn fleet_transport_rejects_oversized_action_log_line_before_parsing() {
+    let tempdir = tempdir().expect("tempdir");
+    let state_root = tempdir.path().join("fleet-state");
+    let mut transport = FileFleetTransport::new(&state_root);
+    transport
+        .initialize()
+        .expect("initialize real fleet transport");
+
+    fs::write(transport.layout().actions_path(), vec![b'A'; 8 * 1024])
+        .expect("write oversized action log line");
+
+    let error = transport
+        .list_actions()
+        .expect_err("oversized action log line should be rejected");
+    let rendered = error.to_string();
+
+    assert!(matches!(
+        error,
+        FleetTransportError::SerializationError { .. }
+    ));
+    assert!(
+        rendered.contains("JSONL line 1"),
+        "error should name offending line: {rendered}"
+    );
+    assert!(
+        rendered.contains("exceeds"),
+        "error should report the bounded-line rejection: {rendered}"
+    );
 }
 
 fn log_current_state(
@@ -502,10 +534,10 @@ fn quarantine_handler_reports_internal_error_for_broken_transport_persistence() 
     )
     .expect_err("broken transport must map to internal API failure");
 
-    match err {
-        ApiError::Internal { detail, .. } => assert!(detail.contains(FLEET_INTERNAL)),
-        other => panic!("unexpected error: {other:?}"),
-    }
+    assert!(
+        matches!(&err, ApiError::Internal { detail, .. } if detail.contains(FLEET_INTERNAL)),
+        "broken transport should map to internal API failure: {err:?}"
+    );
 
     reset_shared_fleet_control_manager_for_tests();
 }

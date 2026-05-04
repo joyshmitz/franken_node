@@ -8,7 +8,7 @@ use std::sync::{Arc, MutexGuard};
 use std::{
     collections::BTreeSet,
     fs::{self, File, OpenOptions, TryLockError},
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
     thread,
@@ -25,7 +25,9 @@ use crate::{
 };
 
 #[cfg(feature = "control-plane")]
-use crate::api::fleet_quarantine::{RevocationScope, RevocationSeverity};
+use crate::api::fleet_quarantine::RevocationScope;
+#[cfg(test)]
+use crate::api::fleet_quarantine::RevocationSeverity;
 use chrono::{DateTime, Utc};
 use ed25519_dalek::Signer;
 use rand::Rng;
@@ -48,6 +50,7 @@ const MAX_NODE_ID_LEN: usize = 128;
 const MAX_ZONE_ID_LEN: usize = 128;
 const MAX_ACTION_ID_LEN: usize = 128;
 const MAX_ACTION_RECORD_BYTES: usize = 2_048;
+const MAX_ACTION_RECORD_LINE_BYTES: usize = MAX_ACTION_RECORD_BYTES * 2;
 const ACTION_LOG_COMPACTION_THRESHOLD_BYTES: u64 = 10 * 1024 * 1024;
 const ACTION_LOG_RETENTION_DAYS: i64 = 30;
 const LOCK_RETRY_BACKOFF_MILLIS: [u64; 5] = timeouts::FLEET_LOCK_RETRY_BACKOFF_MILLIS;
@@ -1741,24 +1744,26 @@ where
     T: for<'de> Deserialize<'de>,
 {
     let mut records = Vec::new();
-    let reader = BufReader::new(file);
-    for (index, line) in reader.lines().enumerate() {
-        let line = line.map_err(|err| {
-            FleetTransportError::io(format!(
-                "failed reading JSONL line {} from {}: {err}",
-                index + 1,
-                path.display()
-            ))
-        })?;
+    let mut reader = BufReader::new(file);
+    let mut line = Vec::new();
+    let mut line_number = 0usize;
 
-        if line.trim().is_empty() {
+    loop {
+        line.clear();
+        let bytes_read = read_bounded_jsonl_line(&mut reader, path, line_number + 1, &mut line)?;
+        if bytes_read == 0 {
+            break;
+        }
+        line_number = line_number.saturating_add(1);
+
+        if line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
 
-        let record = serde_json::from_str(&line).map_err(|err| {
+        let record = serde_json::from_slice(&line).map_err(|err| {
             FleetTransportError::serialization(format!(
                 "failed parsing JSONL line {} from {}: {err}",
-                index + 1,
+                line_number,
                 path.display()
             ))
         })?;
@@ -1773,16 +1778,40 @@ where
     Ok(records)
 }
 
+fn read_bounded_jsonl_line<R: BufRead>(
+    reader: &mut R,
+    path: &Path,
+    line_number: usize,
+    line: &mut Vec<u8>,
+) -> Result<usize, FleetTransportError> {
+    let limit = u64::try_from(MAX_ACTION_RECORD_LINE_BYTES.saturating_add(1)).unwrap_or(u64::MAX);
+    let bytes_read = reader.take(limit).read_until(b'\n', line).map_err(|err| {
+        FleetTransportError::io(format!(
+            "failed reading JSONL line {} from {}: {err}",
+            line_number,
+            path.display()
+        ))
+    })?;
+    if bytes_read > MAX_ACTION_RECORD_LINE_BYTES {
+        return Err(FleetTransportError::serialization(format!(
+            "JSONL line {} in {} exceeds {MAX_ACTION_RECORD_LINE_BYTES} bytes",
+            line_number,
+            path.display()
+        )));
+    }
+    Ok(bytes_read)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         ACTION_LOG_RETENTION_DAYS, FLEET_NODE_DIR, FLEET_SHARED_STATE_SCHEMA, FileFleetTransport,
         FleetAction, FleetActionRecord, FleetSharedState, FleetTargetKind, FleetTransport,
         FleetTransportError, FleetTransportLayout, MAX_ACTION_LOG_ENTRIES, MAX_ACTION_RECORD_BYTES,
-        MAX_NODE_ID_LEN, MAX_NODES_CAP, NodeHealth, NodeStatus, TempFileGuard,
-        canonical_fleet_convergence_receipt_payload, fleet_convergence_receipt_verdict,
-        lock_retry_base_backoffs, parse_jsonl_records, push_bounded,
-        sign_fleet_convergence_receipt_payload, validate_node_id, validate_zone_id,
+        MAX_ACTION_RECORD_LINE_BYTES, MAX_NODE_ID_LEN, MAX_NODES_CAP, NodeHealth, NodeStatus,
+        TempFileGuard, canonical_fleet_convergence_receipt_payload,
+        fleet_convergence_receipt_verdict, lock_retry_base_backoffs, parse_jsonl_records,
+        push_bounded, sign_fleet_convergence_receipt_payload, validate_node_id, validate_zone_id,
         wait_until_fleet_converged_or_timeout,
     };
     use chrono::{DateTime, Utc};
@@ -2222,6 +2251,7 @@ mod tests {
         let actions = transport.list_actions().expect("list actions");
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0].action_id, "fleet-action-revoke-valid");
+        assert!(matches!(&actions[0].action, FleetAction::Revoke { .. }));
         if let FleetAction::Revoke {
             extension_id,
             scope,
@@ -2229,8 +2259,6 @@ mod tests {
         {
             assert_eq!(extension_id, "ext-malicious");
             assert_eq!(scope.zone_id, "prod");
-        } else {
-            panic!("Expected Revoke action");
         }
     }
 
@@ -2384,6 +2412,30 @@ mod tests {
             error,
             FleetTransportError::SerializationError { .. }
         ));
+    }
+
+    #[test]
+    fn list_actions_rejects_oversized_jsonl_line_before_parsing() {
+        let tempdir = tempdir().expect("tempdir");
+        let root = tempdir.path().join("fleet-state");
+        let mut transport = FileFleetTransport::new(&root);
+        transport.initialize().expect("initialize");
+        fs::write(
+            transport.layout().actions_path(),
+            vec![b'A'; MAX_ACTION_RECORD_LINE_BYTES.saturating_add(1)],
+        )
+        .expect("write oversized action log line");
+
+        let error = transport
+            .list_actions()
+            .expect_err("oversized action log line should be rejected");
+
+        assert!(matches!(
+            error,
+            FleetTransportError::SerializationError { .. }
+        ));
+        assert!(error.to_string().contains("JSONL line 1"));
+        assert!(error.to_string().contains("exceeds"));
     }
 
     #[test]
