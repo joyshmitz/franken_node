@@ -416,6 +416,54 @@ fn e2e_transparency_inclusion_real_pipeline_full_coverage() {
 }
 
 #[test]
+fn e2e_transparency_inclusion_rejects_overlong_audit_path() {
+    let h = Harness::new("e2e_transparency_inclusion_rejects_overlong_audit_path");
+    let (root, proofs) = build_balanced_proofs(&[
+        "sha256:art-alpha",
+        "sha256:art-bravo",
+        "sha256:art-charlie",
+        "sha256:art-delta",
+    ]);
+    let policy = pinned_policy(&root, 4);
+    let mut bad_proof = proofs[0].clone();
+    bad_proof.audit_path = vec![
+        proofs[1].leaf_hash.clone(),
+        proofs[2].leaf_hash.clone(),
+        proofs[3].leaf_hash.clone(),
+    ];
+
+    let receipt = verify_inclusion(
+        &policy,
+        Some(&bad_proof),
+        &bad_proof.leaf_hash,
+        "conn-real-1",
+        "art-real-1",
+        "trace-overlong-path",
+        "2026-04-26T22:00:11Z",
+    );
+
+    assert!(!receipt.verified);
+    assert!(!receipt.log_root_matched);
+    assert!(!receipt.proof_valid);
+    if let Some(ProofFailure::PathInvalid { expected, .. }) = receipt.failure_reason.as_ref() {
+        assert!(expected.contains("audit_path_len <="));
+        h.log_phase(
+            "overlong_path_rejected",
+            true,
+            json!({"expected": expected}),
+        );
+    } else {
+        assert!(
+            matches!(
+                receipt.failure_reason.as_ref(),
+                Some(ProofFailure::PathInvalid { .. })
+            ),
+            "expected PathInvalid for overlong audit path"
+        );
+    }
+}
+
+#[test]
 fn e2e_transparency_inclusion_single_leaf_tree_round_trip() {
     let h = Harness::new("e2e_transparency_inclusion_single_leaf_tree_round_trip");
 

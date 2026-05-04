@@ -11,6 +11,7 @@ use std::fmt;
 use crate::security::constant_time;
 
 const RESERVED_ARTIFACT_ID: &str = "<unknown>";
+const MAX_AUDIT_PATH_ENTRIES: usize = crate::capacity_defaults::base::SMALL;
 
 // ── Hash helper ─────────────────────────────────────────────────────
 
@@ -161,6 +162,16 @@ pub fn recompute_root(proof: &InclusionProof) -> String {
     current
 }
 
+fn audit_path_len_limit(tree_size: u64) -> usize {
+    if tree_size <= 1 {
+        return 0;
+    }
+
+    let tree_bound =
+        usize::try_from(u64::BITS - (tree_size - 1).leading_zeros()).unwrap_or(usize::MAX);
+    tree_bound.min(MAX_AUDIT_PATH_ENTRIES)
+}
+
 /// Verify an inclusion proof against a policy.
 pub fn verify_inclusion(
     policy: &TransparencyPolicy,
@@ -241,6 +252,27 @@ pub fn verify_inclusion(
                     proof.leaf_index, proof.tree_size
                 ),
                 expected: "0 <= leaf_index < tree_size".into(),
+            }),
+            trace_id: trace_id.into(),
+            timestamp: timestamp.into(),
+        };
+    }
+
+    let audit_path_limit = audit_path_len_limit(proof.tree_size);
+    if proof.audit_path.len() > audit_path_limit {
+        return ProofReceipt {
+            connector_id: connector_id.into(),
+            artifact_id: artifact_id.into(),
+            verified: false,
+            log_root_matched: false,
+            proof_valid: false,
+            failure_reason: Some(ProofFailure::PathInvalid {
+                computed: format!(
+                    "audit_path_len={}, tree_size={}",
+                    proof.audit_path.len(),
+                    proof.tree_size
+                ),
+                expected: format!("audit_path_len <= {audit_path_limit}"),
             }),
             trace_id: trace_id.into(),
             timestamp: timestamp.into(),
@@ -464,8 +496,8 @@ fn build_test_tree(leaves: &[&str]) -> (String, Vec<InclusionProof>) {
 mod tests {
     use super::{
         InclusionProof, LogRoot, ProofFailure, ProofReceipt, TransparencyError, TransparencyPolicy,
-        build_test_tree, hash_pair, leaf_hash, recompute_root, verify_inclusion,
-        verify_inclusion_proof,
+        audit_path_len_limit, build_test_tree, hash_pair, leaf_hash, recompute_root,
+        verify_inclusion, verify_inclusion_proof,
     };
 
     fn test_policy(root: &str, tree_size: u64) -> TransparencyPolicy {
@@ -801,6 +833,34 @@ mod tests {
         assert!(matches!(
             receipt.failure_reason,
             Some(ProofFailure::PathInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn overlong_audit_path_rejected_before_root_recompute() {
+        let (root, proofs) = build_test_tree(&["a", "b"]);
+        let policy = test_policy(&root, proofs[0].tree_size);
+        let mut bad_proof = proofs[0].clone();
+        let limit = audit_path_len_limit(bad_proof.tree_size);
+        bad_proof.audit_path = vec![proofs[1].leaf_hash.clone(); limit.saturating_add(1)];
+
+        let receipt = verify_inclusion(
+            &policy,
+            Some(&bad_proof),
+            &bad_proof.leaf_hash,
+            "conn-1",
+            "artifact-1",
+            "overlong-audit-path",
+            "ts",
+        );
+
+        assert!(!receipt.verified);
+        assert!(!receipt.log_root_matched);
+        assert!(!receipt.proof_valid);
+        assert!(matches!(
+            receipt.failure_reason,
+            Some(ProofFailure::PathInvalid { ref expected, .. })
+                if expected.contains("audit_path_len <=")
         ));
     }
 
