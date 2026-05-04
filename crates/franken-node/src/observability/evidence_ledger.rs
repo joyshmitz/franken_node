@@ -1668,7 +1668,16 @@ impl SharedEvidenceLedger {
     /// assert_eq!(ledger.len(), 1);
     /// ```
     pub fn len(&self) -> usize {
-        self.snapshot().entries.len()
+        if self.is_poisoned() {
+            return 0;
+        }
+        match self.inner.read() {
+            Ok(ledger) => ledger.len(),
+            Err(_) => {
+                self.mark_poisoned();
+                0
+            }
+        }
     }
 
     /// Return whether the shared ledger has no retained entries.
@@ -1682,7 +1691,16 @@ impl SharedEvidenceLedger {
     /// assert!(ledger.is_empty());
     /// ```
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        if self.is_poisoned() {
+            return true;
+        }
+        match self.inner.read() {
+            Ok(ledger) => ledger.is_empty(),
+            Err(_) => {
+                self.mark_poisoned();
+                true
+            }
+        }
     }
 
     /// Clone the current shared ledger state into an exportable snapshot.
@@ -2295,6 +2313,12 @@ mod tests {
     use std::io;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
+
+    fn measure_elapsed<T>(operation: impl FnOnce() -> T) -> (T, std::time::Duration) {
+        let started_at = std::time::Instant::now();
+        let output = operation();
+        (output, started_at.elapsed())
+    }
 
     struct FailingWriteWriter;
 
@@ -3502,6 +3526,28 @@ mod tests {
             .expect("should succeed");
         assert_eq!(shared.len(), 1);
         assert!(!shared.is_empty());
+    }
+
+    #[test]
+    fn shared_ledger_len_and_empty_track_retained_entries_without_snapshot() {
+        let shared = SharedEvidenceLedger::new(LedgerCapacity::new(2, 100_000));
+        assert_eq!(shared.len(), 0);
+        assert!(shared.is_empty());
+
+        shared
+            .append(make_entry("DEC-001", 1))
+            .expect("first append should succeed");
+        shared
+            .append(make_entry("DEC-002", 2))
+            .expect("second append should succeed");
+        shared
+            .append(make_entry("DEC-003", 3))
+            .expect("third append should evict oldest entry");
+
+        assert_eq!(shared.len(), 2);
+        assert!(!shared.is_empty());
+        assert_eq!(shared.metrics().retained_entries, 2);
+        assert_eq!(shared.snapshot().entries.len(), 2);
     }
 
     #[test]
@@ -6665,9 +6711,7 @@ mod tests {
         // Create a 1MB hex string (would be 512KB when decoded)
         entry.signature = "a".repeat(1_000_000);
 
-        let start = std::time::Instant::now();
-        let result = ledger.append(entry);
-        let elapsed = start.elapsed();
+        let (result, elapsed) = measure_elapsed(|| ledger.append(entry));
 
         assert!(result.is_err(), "Large signature should be rejected");
         assert!(
@@ -6772,8 +6816,6 @@ mod tests {
 
     #[test]
     fn test_replay_detection_timing_regression_identical_signatures() {
-        use std::time::Instant;
-
         let (signing_key, verifying_key) = test_keys();
         let capacity = LedgerCapacity::new(100, 100_000);
         let mut ledger = EvidenceLedger::with_verifying_key(capacity, verifying_key);
@@ -6786,9 +6828,8 @@ mod tests {
             .expect("Known entry should succeed");
 
         // Time comparison with identical signature (replay attack)
-        let start_identical = Instant::now();
-        let is_replay_identical = ledger.is_replay_attack_ct(1000, &known_entry.signature);
-        let time_identical = start_identical.elapsed();
+        let (is_replay_identical, time_identical) =
+            measure_elapsed(|| ledger.is_replay_attack_ct(1000, &known_entry.signature));
 
         assert!(
             is_replay_identical,
@@ -6797,9 +6838,8 @@ mod tests {
 
         // Time comparison with different signature (not a replay)
         let different_signature = "ff".repeat(64); // Different signature
-        let start_different = Instant::now();
-        let is_replay_different = ledger.is_replay_attack_ct(1000, &different_signature);
-        let time_different = start_different.elapsed();
+        let (is_replay_different, time_different) =
+            measure_elapsed(|| ledger.is_replay_attack_ct(1000, &different_signature));
 
         assert!(
             !is_replay_different,

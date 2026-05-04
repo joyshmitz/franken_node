@@ -356,6 +356,24 @@ fn shared_observability_ledger_serves_parallel_read_snapshots() {
 }
 
 #[test]
+fn shared_observability_ledger_len_and_is_empty_follow_retained_count() {
+    let ledger = SharedEvidenceLedger::new(LedgerCapacity::new(2, 100_000));
+    assert_eq!(ledger.len(), 0);
+    assert!(ledger.is_empty());
+
+    for idx in 0..3 {
+        ledger
+            .append(misleading_size_entry(&format!("shared-len-{idx}"), 0))
+            .expect("append should succeed");
+    }
+
+    assert_eq!(ledger.len(), 2);
+    assert!(!ledger.is_empty());
+    assert_eq!(ledger.metrics().retained_entries, 2);
+    assert_eq!(ledger.snapshot().entries.len(), 2);
+}
+
+#[test]
 fn witness_strict_locator_accepts_safe_relative_paths() {
     let safe_locators = [
         "replay-001.jsonl",
