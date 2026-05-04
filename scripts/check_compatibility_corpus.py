@@ -53,6 +53,8 @@ def _rel(path: Path) -> str:
 def _load_json_object(path: Path) -> tuple[dict[str, object] | None, str]:
     try:
         data = json.JSONDecoder().decode(_read(path))
+    except UnicodeError as exc:
+        return None, f"invalid UTF-8 in {_rel(path)}: {exc}"
     except json.JSONDecodeError as exc:
         return None, f"invalid JSON: {exc}"
     except OSError as exc:

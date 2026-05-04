@@ -51,6 +51,19 @@ def checks_with_corpus(path: Path) -> list[dict[str, object]]:
         mod.CORPUS = original
 
 
+def checks_with_schema(path: Path) -> list[dict[str, object]]:
+    original = mod.SCHEMA
+    mod.SCHEMA = path
+    try:
+        return mod._checks()
+    finally:
+        mod.SCHEMA = original
+
+
+def check_named(results: list[dict[str, object]], name: str) -> dict[str, object]:
+    return next(result for result in results if result["check"] == name)
+
+
 class TestSelfTest(unittest.TestCase):
     def test_self_test(self):
         self.assertTrue(mod.self_test())
@@ -89,9 +102,7 @@ class TestMissingFixtureFieldFails(unittest.TestCase):
             bad_corpus.write_text(json.dumps(corpus_data), encoding="utf-8")
 
             results = checks_with_corpus(bad_corpus)
-            required_check = next(
-                result for result in results if result["check"] == "fixtures_required_fields"
-            )
+            required_check = check_named(results, "fixtures_required_fields")
             self.assertFalse(required_check["passed"], "Should fail when a required field is missing")
 
 
@@ -106,10 +117,32 @@ class TestInvalidBandFails(unittest.TestCase):
             bad_corpus.write_text(json.dumps(corpus_data), encoding="utf-8")
 
             results = checks_with_corpus(bad_corpus)
-            band_check = next(
-                result for result in results if result["check"] == "valid_bands"
-            )
+            band_check = check_named(results, "valid_bands")
             self.assertFalse(band_check["passed"], "Should fail when band is not in valid set")
+
+
+class TestInvalidUtf8FailsClosed(unittest.TestCase):
+    def test_invalid_utf8_schema_reports_failed_check(self):
+        """Invalid UTF-8 in the schema is reported as a failed check."""
+        with tempfile.TemporaryDirectory(prefix="compat-schema-") as temp_dir:
+            bad_schema = Path(temp_dir) / "fixture_metadata_schema.json"
+            bad_schema.write_bytes(b'{"$schema": "\xff"}')
+
+            results = checks_with_schema(bad_schema)
+            schema_check = check_named(results, "schema_valid_json")
+            self.assertFalse(schema_check["passed"])
+            self.assertIn("invalid UTF-8", schema_check["detail"])
+
+    def test_invalid_utf8_corpus_reports_failed_check(self):
+        """Invalid UTF-8 in the corpus is reported as a failed check."""
+        with tempfile.TemporaryDirectory(prefix="compat-corpus-") as temp_dir:
+            bad_corpus = Path(temp_dir) / "corpus_manifest.json"
+            bad_corpus.write_bytes(b'{"fixtures": ["\xff"]}')
+
+            results = checks_with_corpus(bad_corpus)
+            corpus_check = check_named(results, "corpus_valid_json")
+            self.assertFalse(corpus_check["passed"])
+            self.assertIn("invalid UTF-8", corpus_check["detail"])
 
 
 if __name__ == "__main__":
