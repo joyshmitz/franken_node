@@ -6,6 +6,8 @@ import sys
 import unittest
 from pathlib import Path
 
+from scripts import check_telemetry_namespace
+
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts/check_telemetry_namespace.py"
 CATALOG_PATH = ROOT / "artifacts/section_10_13/bd-1ugy/telemetry_schema_catalog.json"
@@ -97,35 +99,43 @@ class TestTelemetryIntegration(unittest.TestCase):
 
 class TestTelemetryCli(unittest.TestCase):
 
-    def test_json_mode_is_structural_and_machine_readable(self):
+    def test_json_mode_requests_full_proof_by_default(self):
+        args = check_telemetry_namespace.parse_args(["--json"])
+
+        self.assertTrue(check_telemetry_namespace.should_run_rust_tests(args))
+
+    def test_structural_json_mode_is_partial_and_machine_readable(self):
         result = subprocess.run(
-            [sys.executable, str(SCRIPT), "--json"],
+            [sys.executable, str(SCRIPT), "--json", "--structural-only"],
             cwd=ROOT,
             capture_output=True,
             text=True,
             timeout=30,
-            check=True,
+            check=False,
         )
         evidence = decode_json_object(result.stdout)
         statuses = {check["id"]: check["status"] for check in evidence["checks"]}
 
         self.assertEqual(evidence["gate"], "telemetry_namespace_verification")
         self.assertEqual(evidence["mode"], "structural")
+        self.assertEqual(evidence["verdict"], "PARTIAL")
         self.assertEqual(statuses["TNS-TESTS"], "SKIP")
         self.assertEqual(evidence["summary"]["skipped_checks"], 1)
+        self.assertEqual(result.returncode, 1)
         self.assertNotIn("bd-1ugy:", result.stdout)
 
     def test_json_mode_does_not_rewrite_evidence_artifact(self):
         before = EVIDENCE_PATH.read_text(encoding="utf-8")
-        subprocess.run(
-            [sys.executable, str(SCRIPT), "--json"],
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--json", "--structural-only"],
             cwd=ROOT,
             capture_output=True,
             text=True,
             timeout=30,
-            check=True,
+            check=False,
         )
         after = EVIDENCE_PATH.read_text(encoding="utf-8")
+        self.assertEqual(result.returncode, 1)
         self.assertEqual(before, after)
 
 

@@ -6,6 +6,8 @@ import sys
 import unittest
 from pathlib import Path
 
+from scripts import check_crash_loop_detector
+
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts/check_crash_loop_detector.py"
 EVIDENCE_PATH = ROOT / "artifacts/section_10_13/bd-2yc4/verification_evidence.json"
@@ -150,35 +152,43 @@ class TestCrashLoopIntegrationTests(unittest.TestCase):
 
 class TestCrashLoopCli(unittest.TestCase):
 
-    def test_json_mode_is_structural_and_machine_readable(self):
+    def test_json_mode_requests_full_proof_by_default(self):
+        args = check_crash_loop_detector.parse_args(["--json"])
+
+        self.assertTrue(check_crash_loop_detector.should_run_rust_tests(args))
+
+    def test_structural_json_mode_is_partial_and_machine_readable(self):
         result = subprocess.run(
-            [sys.executable, str(SCRIPT), "--json"],
+            [sys.executable, str(SCRIPT), "--json", "--structural-only"],
             cwd=ROOT,
             capture_output=True,
             text=True,
             timeout=30,
-            check=True,
+            check=False,
         )
         evidence = decode_json_object(result.stdout)
         statuses = {check["id"]: check["status"] for check in evidence["checks"]}
 
         self.assertEqual(evidence["gate"], "crash_loop_detector_verification")
         self.assertEqual(evidence["mode"], "structural")
+        self.assertEqual(evidence["verdict"], "PARTIAL")
         self.assertEqual(statuses["CLD-TESTS"], "SKIP")
         self.assertEqual(evidence["summary"]["skipped_checks"], 1)
+        self.assertEqual(result.returncode, 1)
         self.assertNotIn("bd-2yc4:", result.stdout)
 
     def test_json_mode_does_not_rewrite_evidence_artifact(self):
         before = EVIDENCE_PATH.read_text(encoding="utf-8")
-        subprocess.run(
-            [sys.executable, str(SCRIPT), "--json"],
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--json", "--structural-only"],
             cwd=ROOT,
             capture_output=True,
             text=True,
             timeout=30,
-            check=True,
+            check=False,
         )
         after = EVIDENCE_PATH.read_text(encoding="utf-8")
+        self.assertEqual(result.returncode, 1)
         self.assertEqual(before, after)
 
 
