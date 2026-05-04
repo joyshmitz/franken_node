@@ -210,13 +210,12 @@ fn run_bench_with_forced_scenario_failure() -> std::process::Output {
         .expect("failed to run franken-node bench run with forced scenario failure")
 }
 
-fn run_bench_to_nonexistent_output() -> std::process::Output {
+fn run_bench_with_traversal_output() -> std::process::Output {
     let temp_dir = TempDir::new().expect("create temp dir");
-    let nonexistent_path = temp_dir.path().join("nonexistent").join("output.json");
 
     let mut command = Command::cargo_bin("franken-node").expect("franken-node binary");
     command
-        .current_dir(repo_root())
+        .current_dir(temp_dir.path())
         .env("FRANKEN_NODE_BENCH_CPU", "deterministic-test-cpu")
         .env("FRANKEN_NODE_BENCH_MEMORY_MB", "32768")
         .env("FRANKEN_NODE_BENCH_TIMESTAMP_UTC", "2026-02-21T00:00:00Z")
@@ -227,10 +226,10 @@ fn run_bench_to_nonexistent_output() -> std::process::Output {
             "secure-extension-heavy",
             "--fixture-mode",
             "--output",
-            nonexistent_path.to_str().unwrap(),
+            "../bench-output.json",
         ])
         .output()
-        .expect("failed to run franken-node bench run with nonexistent output")
+        .expect("failed to run franken-node bench run with traversal output")
 }
 
 fn assert_structured_error_response(stderr: &[u8]) -> Value {
@@ -328,26 +327,24 @@ fn bench_run_forced_scenario_failure_returns_structured_error() {
 }
 
 #[test]
-fn bench_run_nonexistent_output_path_fails_gracefully() {
-    let output = run_bench_to_nonexistent_output();
+fn bench_run_traversal_output_path_fails_at_cli_boundary() {
+    let output = run_bench_with_traversal_output();
 
     // Must fail with nonzero exit code
     assert!(
         !output.status.success(),
-        "nonexistent output path must fail with nonzero exit code"
+        "traversal output path must fail with nonzero exit code"
     );
 
     // Validate error information in stderr
     let error_info = assert_structured_error_response(&output.stderr);
     let stderr_content = error_info["stderr_content"].as_str().unwrap_or("");
 
-    // Should mention the path/file issue
     assert!(
-        stderr_content.contains("path")
-            || stderr_content.contains("file")
-            || stderr_content.contains("directory")
-            || stderr_content.contains("output"),
-        "error message should reference path/file issue: {}",
+        stderr_content.contains("Invalid content path")
+            || stderr_content.contains("path traversal")
+            || stderr_content.contains("invalid value"),
+        "error message should reference CLI path validation: {}",
         stderr_content
     );
 }
@@ -359,7 +356,7 @@ fn bench_run_successful_execution_logs_expected_events() {
 
     let mut command = Command::cargo_bin("franken-node").expect("franken-node binary");
     let output = command
-        .current_dir(repo_root())
+        .current_dir(temp_dir.path())
         .env("FRANKEN_NODE_BENCH_CPU", "deterministic-test-cpu")
         .env("FRANKEN_NODE_BENCH_MEMORY_MB", "32768")
         .env("FRANKEN_NODE_BENCH_TIMESTAMP_UTC", "2026-02-21T00:00:00Z")
@@ -370,7 +367,7 @@ fn bench_run_successful_execution_logs_expected_events() {
             "secure-extension-heavy",
             "--fixture-mode",
             "--output",
-            output_path.to_str().unwrap(),
+            "bench_output.json",
         ])
         .output()
         .expect("failed to run franken-node bench run with output file");
@@ -418,16 +415,15 @@ fn bench_run_successful_execution_logs_expected_events() {
     // Validate report structure matches expected schema
     assert_eq!(file_report["suite_version"], "1.0.0");
     assert_eq!(file_report["scoring_formula_version"], "sf-v1");
-    let output_path_string = output_path.display().to_string();
     assert_eq!(
         file_report["evidence_path"].as_str(),
-        Some(output_path_string.as_str())
+        Some("bench_output.json")
     );
     assert!(
         file_report["events"].as_array().is_some_and(|events| {
             events
                 .iter()
-                .all(|event| event["evidence_path"].as_str() == Some(output_path_string.as_str()))
+                .all(|event| event["evidence_path"].as_str() == Some("bench_output.json"))
         }),
         "file-backed bench report events must include output evidence_path: {file_report}"
     );

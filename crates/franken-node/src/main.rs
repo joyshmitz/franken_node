@@ -161,8 +161,9 @@ use frankenengine_node::{
     tools::{
         self,
         benchmark_suite::{
+            BenchmarkEvidenceMode, SuiteConfig as BenchmarkSuiteConfig,
             render_human_summary as benchmark_suite_render_human_summary,
-            run_default_suite_for_cli as benchmark_suite_run_default_suite_for_cli,
+            run_default_suite_with_config_and_mode as benchmark_suite_run_default_suite_with_config_and_mode,
             to_canonical_json as benchmark_suite_to_json,
         },
         counterfactual_replay::{
@@ -5828,13 +5829,25 @@ fn handle_migrate_report(args: &MigrateReportArgs) -> Result<()> {
 }
 
 fn handle_bench_run(args: &cli::BenchRunArgs) -> Result<()> {
-    let report =
-        benchmark_suite_run_default_suite_for_cli(args.scenario.as_deref(), args.fixture_mode)
-            .map_err(|err| anyhow::anyhow!("benchmark suite run failed: {err}"))?;
+    let mut config = BenchmarkSuiteConfig::for_cli();
+    if let Some(output) = &args.output {
+        config.evidence_path = Some(output.display().to_string());
+    }
+    let evidence_mode = if args.fixture_mode {
+        BenchmarkEvidenceMode::FixtureOnly
+    } else {
+        BenchmarkEvidenceMode::Measured
+    };
+    let report = benchmark_suite_run_default_suite_with_config_and_mode(
+        config,
+        args.scenario.as_deref(),
+        evidence_mode,
+    )
+    .map_err(|err| anyhow::anyhow!("benchmark suite run failed: {err}"))?;
     let rendered =
         benchmark_suite_to_json(&report).context("failed serializing benchmark suite report")?;
     if let Some(output) = &args.output {
-        std::fs::write(output, &rendered).with_context(|| {
+        write_bytes_atomically(output, rendered.as_bytes()).with_context(|| {
             format!(
                 "failed writing benchmark suite report to {}",
                 output.display()

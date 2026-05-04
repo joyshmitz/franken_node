@@ -1321,7 +1321,7 @@ pub struct BenchRunArgs {
     #[arg(long)]
     pub fixture_mode: bool,
     /// Write the benchmark JSON report to a file in addition to stdout.
-    #[arg(long)]
+    #[arg(long, value_parser = parse_safe_content_pathbuf)]
     pub output: Option<PathBuf>,
 }
 
@@ -1524,6 +1524,20 @@ mod parser_contract_extra_tests {
 
     fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
         Cli::try_parse_from(args)
+    }
+
+    #[test]
+    fn bench_run_output_rejects_unsafe_content_paths() {
+        for unsafe_path in [
+            "../bench-report.json",
+            "/tmp/bench-report.json",
+            "bench\0report.json",
+            "reports\\bench.json",
+        ] {
+            let err = parse(&["franken-node", "bench", "run", "--output", unsafe_path])
+                .expect_err("unsafe bench output paths must be rejected by clap parsing");
+            assert_eq!(err.kind(), ErrorKind::ValueValidation);
+        }
     }
 
     #[test]
