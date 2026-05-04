@@ -17,6 +17,7 @@ use crate::security::constant_time;
 
 /// Maximum leaf hashes before oldest-first eviction.
 const MAX_LEAF_HASHES: usize = 4096;
+const MAX_AUDIT_PATH_ENTRIES: usize = 64;
 
 /// Safe conversion from usize to u64 with overflow protection.
 fn len_to_u64(len: usize) -> u64 {
@@ -26,6 +27,16 @@ fn len_to_u64(len: usize) -> u64 {
 /// Safe conversion from u64 to usize with overflow protection.
 fn u64_to_usize(val: u64) -> usize {
     usize::try_from(val).unwrap_or(usize::MAX)
+}
+
+fn audit_path_len_limit(tree_size: u64) -> usize {
+    if tree_size <= 1 {
+        return 0;
+    }
+
+    let tree_bound =
+        usize::try_from(u64::BITS - (tree_size - 1).leading_zeros()).unwrap_or(usize::MAX);
+    tree_bound.min(MAX_AUDIT_PATH_ENTRIES)
 }
 
 /// Canonical hash string type used by proof APIs.
@@ -342,6 +353,18 @@ pub fn verify_inclusion(
         return Err(ProofError::SequenceOutOfRange {
             sequence: proof.leaf_index,
             tree_size: proof.tree_size,
+        });
+    }
+
+    let audit_path_limit = audit_path_len_limit(proof.tree_size);
+    if proof.audit_path.len() > audit_path_limit {
+        return Err(ProofError::InvalidProof {
+            reason: format!(
+                "audit_path_len={} exceeds limit={} for tree_size={}",
+                proof.audit_path.len(),
+                audit_path_limit,
+                proof.tree_size
+            ),
         });
     }
 
@@ -731,9 +754,10 @@ fn sha256_hex(input: &[u8]) -> Hash {
 mod tests {
     use super::{
         InclusionProof, MAX_LEAF_HASHES, MmrCheckpoint, MmrRoot, PrefixProof, ProofError,
-        hash_pair_legacy, marker_leaf_hash, merkle_audit_path, merkle_audit_path_legacy,
-        merkle_root_from_leaf_hashes, merkle_root_from_leaf_hashes_legacy, mmr_inclusion_proof,
-        mmr_prefix_proof, raw_hash_from_lower_hex, verify_inclusion, verify_prefix,
+        audit_path_len_limit, hash_pair_legacy, marker_leaf_hash, merkle_audit_path,
+        merkle_audit_path_legacy, merkle_root_from_leaf_hashes,
+        merkle_root_from_leaf_hashes_legacy, mmr_inclusion_proof, mmr_prefix_proof,
+        raw_hash_from_lower_hex, verify_inclusion, verify_prefix,
     };
     use crate::control_plane::marker_stream::MarkerEventType;
     use crate::control_plane::marker_stream::MarkerStream;
@@ -1370,17 +1394,13 @@ mod tests {
             root_hash: marker_leaf_hash("root"),
         };
 
-        // Verification should handle massive audit paths without excessive memory usage
-        let result = verify_inclusion(&proof, &root, &"test".to_string());
+        let err = verify_inclusion(&proof, &root, &"test".to_string())
+            .expect_err("overlong audit path must fail closed before hashing");
 
-        // Should either succeed efficiently or fail gracefully
-        match result {
-            Ok(_) => {} // Acceptable if verification logic handles it
-            Err(err) => {
-                // Should have proper error handling, not OOM
-                assert!(!err.code().is_empty());
-            }
-        }
+        assert_eq!(err.code(), "MMR_INVALID_PROOF");
+        assert_eq!(audit_path_len_limit(proof.tree_size), 0);
+        assert!(matches!(err, ProofError::InvalidProof { ref reason }
+            if reason.contains("audit_path_len=10000") && reason.contains("limit=0")));
 
         // Memory should be released after verification
         drop(proof);

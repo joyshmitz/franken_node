@@ -30,8 +30,8 @@ use std::time::Instant;
 
 use frankenengine_node::control_plane::marker_stream::{MarkerEventType, MarkerStream};
 use frankenengine_node::control_plane::mmr_proofs::{
-    MmrCheckpoint, ProofError, marker_leaf_hash, mmr_inclusion_proof, mmr_prefix_proof,
-    verify_inclusion, verify_prefix,
+    InclusionProof, MmrCheckpoint, MmrRoot, ProofError, marker_leaf_hash, mmr_inclusion_proof,
+    mmr_prefix_proof, verify_inclusion, verify_prefix,
 };
 use serde_json::json;
 use tracing::{error, info};
@@ -210,6 +210,40 @@ fn e2e_mmr_inclusion_proof_negative_paths() {
     assert!(matches!(err, ProofError::InvalidProof { .. }));
     assert_eq!(err.code(), "MMR_INVALID_PROOF");
     h.log_phase("size_mismatch", true, json!({}));
+}
+
+#[test]
+fn e2e_mmr_inclusion_rejects_overlong_audit_path() {
+    let h = Harness::new("e2e_mmr_inclusion_rejects_overlong_audit_path");
+
+    let stream = build_real_stream(1);
+    let mut ckpt = MmrCheckpoint::enabled();
+    let root = ckpt.rebuild_from_stream(&stream).expect("rebuild");
+    let marker_hash = stream.get(0).expect("marker").marker_hash.clone();
+    let proof = InclusionProof {
+        leaf_index: 0,
+        tree_size: root.tree_size,
+        leaf_hash: marker_leaf_hash(&marker_hash),
+        audit_path: vec![marker_leaf_hash("extra-sibling")],
+    };
+    let root = MmrRoot {
+        tree_size: root.tree_size,
+        root_hash: root.root_hash,
+    };
+
+    let err =
+        verify_inclusion(&proof, &root, &marker_hash).expect_err("overlong path rejected early");
+    assert_eq!(err.code(), "MMR_INVALID_PROOF");
+    assert!(matches!(err, ProofError::InvalidProof { .. }));
+    if let ProofError::InvalidProof { reason } = &err {
+        assert!(reason.contains("audit_path_len=1"));
+        assert!(reason.contains("limit=0"));
+        h.log_phase(
+            "overlong_path_rejected",
+            true,
+            json!({"code": err.code(), "reason": reason}),
+        );
+    }
 }
 
 #[test]
