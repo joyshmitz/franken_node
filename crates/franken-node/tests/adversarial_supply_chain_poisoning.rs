@@ -10,6 +10,14 @@ use frankenengine_node::{
             RegistryResult, SignedExtensionRegistry, VersionEntry,
             canonical_registration_manifest_bytes, event_codes,
         },
+        manifest::{
+            AttestationRef, BehavioralProfile, CertificationLevel, MANIFEST_SCHEMA_VERSION,
+            MAX_DECLARED_NETWORK_ZONES, MAX_MANIFEST_ATTESTATION_CHAIN_ENTRIES,
+            MAX_MANIFEST_CAPABILITIES, MAX_MANIFEST_FIELD_BYTES, MAX_REPRODUCIBILITY_MARKERS,
+            ManifestSchemaError, ManifestSignature, PackageIdentity, ProvenanceEnvelope, RiskTier,
+            SignatureScheme, SignedExtensionManifest, ThresholdSignaturePolicy, TrustMetadata,
+            validate_signed_manifest,
+        },
         provenance::{
             self as prov, AttestationEnvelopeFormat, AttestationLink, ChainLinkRole,
             ProvenanceAttestation, VerificationPolicy,
@@ -125,6 +133,61 @@ fn valid_request(name: &str, signing_key: &SigningKey, now_epoch: u64) -> Regist
     }
 }
 
+fn manifest_cap(name: &str) -> frankenengine_extension_host::Capability {
+    serde_json::from_value(serde_json::json!(name)).expect("manifest capability should parse")
+}
+
+fn valid_signed_manifest() -> SignedExtensionManifest {
+    SignedExtensionManifest {
+        schema_version: MANIFEST_SCHEMA_VERSION.to_string(),
+        package: PackageIdentity {
+            name: "adversarial-extension".to_string(),
+            version: "1.2.3".to_string(),
+            publisher: "publisher@example.com".to_string(),
+            author: "author@example.com".to_string(),
+        },
+        entrypoint: "dist/main.js".to_string(),
+        capabilities: vec![manifest_cap("fs_read"), manifest_cap("net_client")],
+        behavioral_profile: BehavioralProfile {
+            risk_tier: RiskTier::Medium,
+            summary: "Adversarial supply-chain manifest fixture".to_string(),
+            declared_network_zones: vec!["prod-us-east".to_string()],
+        },
+        minimum_runtime_version: "0.1.0".to_string(),
+        provenance: ProvenanceEnvelope {
+            build_system: "github-actions".to_string(),
+            source_repository: "https://example.com/acme/extensions".to_string(),
+            source_revision: "abcdef1234567890".to_string(),
+            reproducibility_markers: vec!["reproducible-build=true".to_string()],
+            attestation_chain: vec![AttestationRef {
+                id: "att-01".to_string(),
+                attestation_type: "slsa".to_string(),
+                digest: "sha256:0123456789abcdef".to_string(),
+            }],
+        },
+        trust: TrustMetadata {
+            certification_level: CertificationLevel::Verified,
+            revocation_status_pointer: "revocation://extensions/adversarial".to_string(),
+            trust_card_reference: "trust-card://adversarial@1.2.3".to_string(),
+        },
+        signature: ManifestSignature {
+            scheme: SignatureScheme::ThresholdEd25519,
+            publisher_key_id: "key-publisher-01".to_string(),
+            signature: "QUJDREU=".to_string(),
+            threshold: Some(ThresholdSignaturePolicy {
+                threshold: 2,
+                total_signers: 3,
+                signer_key_ids: vec![
+                    "key-a".to_string(),
+                    "key-b".to_string(),
+                    "key-c".to_string(),
+                ],
+            }),
+            signed_at: SIGNED_AT.to_string(),
+        },
+    }
+}
+
 fn assert_fail_closed(
     registry: &SignedExtensionRegistry,
     result: &RegistryResult,
@@ -171,6 +234,19 @@ fn assert_rejected_before_admission(
         .expect("pre-admission rejection must emit an audit record");
     assert_eq!(audit.event_code, expected_code);
     assert_eq!(audit.details["field"], expected_field);
+}
+
+fn assert_manifest_collection_too_large(
+    error: ManifestSchemaError,
+    expected_field: &str,
+    expected_max: usize,
+) {
+    assert_eq!(error.code(), "EMS_COLLECTION_TOO_LARGE");
+    assert!(matches!(
+        error,
+        ManifestSchemaError::CollectionTooLarge { ref field, max, .. }
+            if field == expected_field && max == expected_max
+    ));
 }
 
 #[test]
@@ -230,6 +306,93 @@ fn adversarial_supply_chain_rejects_oversized_manifest_before_admission() {
         "manifest_bytes",
     );
     assert!(result.detail.contains("Manifest bytes too large"));
+}
+
+#[test]
+fn adversarial_signed_manifest_rejects_oversized_provenance_vectors_before_projection() {
+    let mut manifest = valid_signed_manifest();
+    manifest.provenance.attestation_chain = vec![
+        AttestationRef {
+            id: "att-oversized".to_string(),
+            attestation_type: "slsa".to_string(),
+            digest: "sha256:0123456789abcdef".to_string(),
+        };
+        MAX_MANIFEST_ATTESTATION_CHAIN_ENTRIES + 1
+    ];
+
+    let error = validate_signed_manifest(&manifest)
+        .expect_err("oversized attestation chain must fail closed");
+
+    assert_manifest_collection_too_large(
+        error,
+        "provenance.attestation_chain",
+        MAX_MANIFEST_ATTESTATION_CHAIN_ENTRIES,
+    );
+
+    let mut manifest = valid_signed_manifest();
+    manifest.provenance.reproducibility_markers = (0..=MAX_REPRODUCIBILITY_MARKERS)
+        .map(|idx| format!("marker-{idx}"))
+        .collect();
+
+    let error = validate_signed_manifest(&manifest)
+        .expect_err("oversized reproducibility markers must fail closed");
+
+    assert_manifest_collection_too_large(
+        error,
+        "provenance.reproducibility_markers",
+        MAX_REPRODUCIBILITY_MARKERS,
+    );
+}
+
+#[test]
+fn adversarial_signed_manifest_rejects_oversized_profile_and_capability_vectors() {
+    let mut manifest = valid_signed_manifest();
+    manifest.behavioral_profile.declared_network_zones = (0..=MAX_DECLARED_NETWORK_ZONES)
+        .map(|idx| format!("zone-{idx}"))
+        .collect();
+
+    let error = validate_signed_manifest(&manifest).expect_err("oversized zones must fail closed");
+
+    assert_manifest_collection_too_large(
+        error,
+        "behavioral_profile.declared_network_zones",
+        MAX_DECLARED_NETWORK_ZONES,
+    );
+
+    let mut manifest = valid_signed_manifest();
+    manifest.capabilities = vec![manifest_cap("fs_read"); MAX_MANIFEST_CAPABILITIES + 1];
+
+    let error =
+        validate_signed_manifest(&manifest).expect_err("oversized capabilities must fail closed");
+
+    assert_manifest_collection_too_large(error, "capabilities", MAX_MANIFEST_CAPABILITIES);
+}
+
+#[test]
+fn adversarial_signed_manifest_rejects_control_chars_and_huge_vector_fields() {
+    let mut manifest = valid_signed_manifest();
+    manifest.behavioral_profile.declared_network_zones = vec!["prod\nshadow".to_string()];
+
+    let error = validate_signed_manifest(&manifest).expect_err("control chars must fail closed");
+
+    assert_eq!(error.code(), "EMS_INVALID_FIELD");
+    assert!(matches!(
+        error,
+        ManifestSchemaError::InvalidField { ref field, .. }
+            if field == "behavioral_profile.declared_network_zones[0]"
+    ));
+
+    let mut manifest = valid_signed_manifest();
+    manifest.provenance.reproducibility_markers = vec!["m".repeat(MAX_MANIFEST_FIELD_BYTES + 1)];
+
+    let error = validate_signed_manifest(&manifest).expect_err("huge marker must fail closed");
+
+    assert_eq!(error.code(), "EMS_INVALID_FIELD");
+    assert!(matches!(
+        error,
+        ManifestSchemaError::InvalidField { ref field, .. }
+            if field == "provenance.reproducibility_markers[0]"
+    ));
 }
 
 #[test]

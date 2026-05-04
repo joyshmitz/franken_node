@@ -19,17 +19,21 @@ use frankenengine_extension_host::{
 use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
-use crate::capacity_defaults::aliases::MAX_CHAIN_ENTRIES;
-#[cfg(test)]
 use crate::push_bounded;
 
-/// Maximum capabilities per manifest to prevent memory exhaustion.
-#[cfg(test)]
-const MAX_CAPABILITIES: usize = 1024;
-
 pub const MANIFEST_SCHEMA_VERSION: &str = "1.0";
+pub const MAX_MANIFEST_CAPABILITIES: usize = crate::capacity_defaults::base::SMALL;
+pub const MAX_DECLARED_NETWORK_ZONES: usize = crate::capacity_defaults::base::SMALL;
+pub const MAX_REPRODUCIBILITY_MARKERS: usize = crate::capacity_defaults::base::SMALL;
+pub const MAX_MANIFEST_ATTESTATION_CHAIN_ENTRIES: usize = crate::capacity_defaults::base::SMALL;
+pub const MAX_MANIFEST_FIELD_BYTES: usize = crate::capacity_defaults::base::MEDIUM;
 const ED25519_SIGNATURE_BYTES: usize = 64;
 const THRESHOLD_SIGNATURE_ENVELOPE_OVERHEAD_BYTES: usize = 1024;
+
+#[cfg(test)]
+const MAX_CAPABILITIES: usize = MAX_MANIFEST_CAPABILITIES;
+#[cfg(test)]
+const MAX_CHAIN_ENTRIES: usize = MAX_MANIFEST_ATTESTATION_CHAIN_ENTRIES;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignedExtensionManifest {
@@ -251,22 +255,42 @@ pub fn validate_signed_manifest(
     if manifest.capabilities.is_empty() {
         return Err(ManifestSchemaError::EmptyCapabilities);
     }
+    ensure_collection_len(
+        &manifest.capabilities,
+        "capabilities",
+        MAX_MANIFEST_CAPABILITIES,
+    )?;
     ensure_capabilities_unique(&manifest.capabilities)?;
+    ensure_manifest_text_collection(
+        &manifest.behavioral_profile.declared_network_zones,
+        "behavioral_profile.declared_network_zones",
+        MAX_DECLARED_NETWORK_ZONES,
+    )?;
+    ensure_manifest_text_collection(
+        &manifest.provenance.reproducibility_markers,
+        "provenance.reproducibility_markers",
+        MAX_REPRODUCIBILITY_MARKERS,
+    )?;
 
     if manifest.provenance.attestation_chain.is_empty() {
         return Err(ManifestSchemaError::MissingAttestationChain);
     }
+    ensure_collection_len(
+        &manifest.provenance.attestation_chain,
+        "provenance.attestation_chain",
+        MAX_MANIFEST_ATTESTATION_CHAIN_ENTRIES,
+    )?;
 
     for (idx, attestation) in manifest.provenance.attestation_chain.iter().enumerate() {
-        ensure_non_empty(
+        ensure_manifest_text(
             &attestation.id,
             &format!("provenance.attestation_chain[{idx}].id"),
         )?;
-        ensure_non_empty(
+        ensure_manifest_text(
             &attestation.attestation_type,
             &format!("provenance.attestation_chain[{idx}].attestation_type"),
         )?;
-        ensure_non_empty(
+        ensure_manifest_text(
             &attestation.digest,
             &format!("provenance.attestation_chain[{idx}].digest"),
         )?;
@@ -302,6 +326,51 @@ fn ensure_capabilities_unique(capabilities: &[Capability]) -> Result<(), Manifes
         if !seen.insert(*capability) {
             return Err(ManifestSchemaError::DuplicateCapability(*capability));
         }
+    }
+    Ok(())
+}
+
+fn ensure_collection_len<T>(
+    values: &[T],
+    field: &str,
+    max: usize,
+) -> Result<(), ManifestSchemaError> {
+    let actual = values.len();
+    if actual > max {
+        return Err(ManifestSchemaError::CollectionTooLarge {
+            field: field.to_string(),
+            max,
+            actual,
+        });
+    }
+    Ok(())
+}
+
+fn ensure_manifest_text_collection(
+    values: &[String],
+    field: &str,
+    max: usize,
+) -> Result<(), ManifestSchemaError> {
+    ensure_collection_len(values, field, max)?;
+    for (idx, value) in values.iter().enumerate() {
+        ensure_manifest_text(value, &format!("{field}[{idx}]"))?;
+    }
+    Ok(())
+}
+
+fn ensure_manifest_text(value: &str, field: &str) -> Result<(), ManifestSchemaError> {
+    ensure_non_empty(value, field)?;
+    if value.len() > MAX_MANIFEST_FIELD_BYTES {
+        return Err(ManifestSchemaError::InvalidField {
+            field: field.to_string(),
+            reason: format!("field exceeds {MAX_MANIFEST_FIELD_BYTES} bytes"),
+        });
+    }
+    if value.chars().any(char::is_control) {
+        return Err(ManifestSchemaError::InvalidField {
+            field: field.to_string(),
+            reason: "field must not contain control characters".to_string(),
+        });
     }
     Ok(())
 }
@@ -446,15 +515,37 @@ fn looks_like_base64(value: &str) -> bool {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ManifestSchemaError {
-    InvalidSchemaVersion { expected: String, actual: String },
-    MissingField { field: String },
+    InvalidSchemaVersion {
+        expected: String,
+        actual: String,
+    },
+    MissingField {
+        field: String,
+    },
     EmptyCapabilities,
     DuplicateCapability(Capability),
     MissingAttestationChain,
-    SignatureMalformed { reason: String },
-    InvalidThresholdConfiguration { reason: String },
-    EntrypointPathTraversal { reason: String },
-    EngineManifestProjection { reason: String },
+    CollectionTooLarge {
+        field: String,
+        max: usize,
+        actual: usize,
+    },
+    InvalidField {
+        field: String,
+        reason: String,
+    },
+    SignatureMalformed {
+        reason: String,
+    },
+    InvalidThresholdConfiguration {
+        reason: String,
+    },
+    EntrypointPathTraversal {
+        reason: String,
+    },
+    EngineManifestProjection {
+        reason: String,
+    },
     EngineManifestRejected(ManifestValidationError),
 }
 
@@ -467,6 +558,8 @@ impl ManifestSchemaError {
             Self::EmptyCapabilities => "EMS_EMPTY_CAPABILITIES",
             Self::DuplicateCapability(_) => "EMS_DUPLICATE_CAPABILITY",
             Self::MissingAttestationChain => "EMS_MISSING_ATTESTATION_CHAIN",
+            Self::CollectionTooLarge { .. } => "EMS_COLLECTION_TOO_LARGE",
+            Self::InvalidField { .. } => "EMS_INVALID_FIELD",
             Self::SignatureMalformed { .. } => "EMS_SIGNATURE_MALFORMED",
             Self::EntrypointPathTraversal { .. } => "EMS_ENTRYPOINT_PATH_TRAVERSAL",
             Self::InvalidThresholdConfiguration { .. } => "EMS_THRESHOLD_INVALID",
@@ -506,6 +599,15 @@ impl fmt::Display for ManifestSchemaError {
                     f,
                     "EMS_MISSING_ATTESTATION_CHAIN: provenance.attestation_chain must not be empty"
                 )
+            }
+            Self::CollectionTooLarge { field, max, actual } => {
+                write!(
+                    f,
+                    "EMS_COLLECTION_TOO_LARGE: {field} has {actual} entries, max {max}"
+                )
+            }
+            Self::InvalidField { field, reason } => {
+                write!(f, "EMS_INVALID_FIELD: {field}: {reason}")
             }
             Self::SignatureMalformed { reason } => {
                 write!(f, "EMS_SIGNATURE_MALFORMED: {reason}")
