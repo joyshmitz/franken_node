@@ -52,6 +52,8 @@ const RESERVED_ARTIFACT_ID: &str = "<unknown>";
 const DEFAULT_MAX_CLAIMS_PER_REQUEST: usize = 1000;
 const DEFAULT_MAX_CAPSULE_COUNT: usize = 1000;
 const DEFAULT_MAX_CHAIN_DEPTH: usize = 64;
+const CLAIM_TOTAL_BYTES_PER_COUNT_UNIT: usize = 1024;
+const CLAIM_BYTES_PER_CLAIM_LIMIT: usize = 4096;
 const CAPSULE_BYTES_PER_COUNT_UNIT: usize = 1024;
 
 /// Security posture marker for this cryptographic verifier SDK surface.
@@ -288,6 +290,55 @@ fn validate_capacity_limit(name: &str, limit: usize) -> Result<usize, SdkError> 
     Ok(limit)
 }
 
+fn claims_byte_budget(max_claims_per_request: usize) -> usize {
+    max_claims_per_request.saturating_mul(CLAIM_TOTAL_BYTES_PER_COUNT_UNIT)
+}
+
+fn claims_byte_size(claims: &[String]) -> usize {
+    claims
+        .iter()
+        .fold(0usize, |total, claim| total.saturating_add(claim.len()))
+}
+
+fn max_claim_byte_size(claims: &[String]) -> usize {
+    claims.iter().map(String::len).max().unwrap_or(0)
+}
+
+struct ClaimCapacitySnapshot {
+    artifact_hash_len: usize,
+    claim_count: usize,
+    max_claim_count: usize,
+    claims_size_bytes: usize,
+    max_claims_bytes: usize,
+    max_claim_size_bytes: usize,
+    max_claim_bytes: usize,
+}
+
+fn artifact_claim_capacity_binding_hash(
+    artifact_id: &str,
+    snapshot: &ClaimCapacitySnapshot,
+) -> String {
+    let artifact_hash_len = snapshot.artifact_hash_len.to_string();
+    let claim_count = snapshot.claim_count.to_string();
+    let max_claim_count = snapshot.max_claim_count.to_string();
+    let claims_size_bytes = snapshot.claims_size_bytes.to_string();
+    let max_claims_bytes = snapshot.max_claims_bytes.to_string();
+    let max_claim_size_bytes = snapshot.max_claim_size_bytes.to_string();
+    let max_claim_bytes = snapshot.max_claim_bytes.to_string();
+
+    deterministic_hash_fields(&[
+        "artifact_claim_capacity_exceeded",
+        artifact_id,
+        &artifact_hash_len,
+        &claim_count,
+        &max_claim_count,
+        &claims_size_bytes,
+        &max_claims_bytes,
+        &max_claim_size_bytes,
+        &max_claim_bytes,
+    ])
+}
+
 fn capsule_component_count(capsule: &super::replay_capsule::ReplayCapsule) -> usize {
     let input_metadata_count = capsule.inputs.iter().fold(0usize, |count, input| {
         count.saturating_add(input.metadata.len())
@@ -387,6 +438,9 @@ impl VerifierSdk {
         &self,
         request: &VerificationRequest,
     ) -> Result<VerificationReport, SdkError> {
+        let max_claims_per_request =
+            validate_capacity_limit("max_claims_per_request", self.config.max_claims_per_request)?;
+
         let artifact_id = request.artifact_id.trim();
         if artifact_id.is_empty() {
             return Err(SdkError::InvalidArtifact(
@@ -411,7 +465,6 @@ impl VerifierSdk {
         }
 
         let mut evidence = Vec::new();
-        let mut overall_pass = true;
 
         // Check artifact_id
         evidence.push(EvidenceEntry {
@@ -446,50 +499,103 @@ impl VerifierSdk {
         });
 
         // Claims capacity check to prevent unbounded growth DoS
-        let claims_within_capacity = request.claims.len() <= self.config.max_claims_per_request;
+        let claim_count = request.claims.len();
+        let claims_within_capacity = claim_count <= max_claims_per_request;
+        let max_claims_bytes = claims_byte_budget(max_claims_per_request);
+        let claims_size_bytes = claims_byte_size(&request.claims);
+        let claims_bytes_within_capacity = claims_size_bytes <= max_claims_bytes;
+        let max_claim_size_bytes = max_claim_byte_size(&request.claims);
+        let claims_per_claim_bytes_within_capacity =
+            max_claim_size_bytes <= CLAIM_BYTES_PER_CLAIM_LIMIT;
         evidence.push(EvidenceEntry {
             check_name: "claims_capacity_check".to_string(),
             passed: claims_within_capacity,
             detail: if claims_within_capacity {
                 format!(
                     "{} claims within limit of {}",
-                    request.claims.len(),
-                    self.config.max_claims_per_request
+                    claim_count, max_claims_per_request
                 )
             } else {
                 format!(
                     "{} claims exceeds limit of {}",
-                    request.claims.len(),
-                    self.config.max_claims_per_request
+                    claim_count, max_claims_per_request
+                )
+            },
+        });
+        evidence.push(EvidenceEntry {
+            check_name: "claims_total_byte_capacity_check".to_string(),
+            passed: claims_bytes_within_capacity,
+            detail: if claims_bytes_within_capacity {
+                format!("{claims_size_bytes} claim bytes within limit of {max_claims_bytes}")
+            } else {
+                format!("{claims_size_bytes} claim bytes exceeds limit of {max_claims_bytes}")
+            },
+        });
+        evidence.push(EvidenceEntry {
+            check_name: "claims_per_claim_byte_capacity_check".to_string(),
+            passed: claims_per_claim_bytes_within_capacity,
+            detail: if claims_per_claim_bytes_within_capacity {
+                format!(
+                    "largest claim is {max_claim_size_bytes} bytes within limit of {CLAIM_BYTES_PER_CLAIM_LIMIT}"
+                )
+            } else {
+                format!(
+                    "largest claim is {max_claim_size_bytes} bytes and exceeds limit of {CLAIM_BYTES_PER_CLAIM_LIMIT}"
                 )
             },
         });
 
-        // Early failure if too many claims to prevent DoS
-        if !claims_within_capacity {
-            overall_pass = false;
-        }
-
-        // Per-claim checks (only if within capacity limits)
-        if claims_within_capacity {
-            for (i, claim) in request.claims.iter().enumerate() {
-                let ok = !claim.is_empty();
-                evidence.push(EvidenceEntry {
-                    check_name: format!("claim_{i}_non_empty"),
-                    passed: ok,
-                    detail: if ok {
-                        format!("claim[{i}] present")
-                    } else {
-                        format!("claim[{i}] is empty")
-                    },
-                });
-            }
-        } else {
-            // If too many claims, add a single summary entry instead of processing all
+        if !claims_within_capacity
+            || !claims_bytes_within_capacity
+            || !claims_per_claim_bytes_within_capacity
+        {
             evidence.push(EvidenceEntry {
                 check_name: "claims_skipped_due_to_capacity".to_string(),
                 passed: false,
-                detail: "Per-claim validation skipped due to excessive claims count".to_string(),
+                detail:
+                    "Per-claim validation and binding hash skipped due to excessive claim capacity"
+                        .to_string(),
+            });
+
+            let failures: Vec<String> = evidence
+                .iter()
+                .filter(|entry| !entry.passed)
+                .map(|entry| entry.check_name.clone())
+                .collect();
+            let capacity_snapshot = ClaimCapacitySnapshot {
+                artifact_hash_len: request.artifact_hash.len(),
+                claim_count,
+                max_claim_count: max_claims_per_request,
+                claims_size_bytes,
+                max_claims_bytes,
+                max_claim_size_bytes,
+                max_claim_bytes: CLAIM_BYTES_PER_CLAIM_LIMIT,
+            };
+            let binding_hash =
+                artifact_claim_capacity_binding_hash(artifact_id, &capacity_snapshot);
+
+            return Ok(VerificationReport {
+                request_id: format!("vreq-{}", &deterministic_hash(artifact_id)[..24]),
+                verdict: VerifyVerdict::Fail(failures),
+                evidence,
+                trace_id: format!("vtrc-{}", &binding_hash[..24]),
+                schema_tag: SCHEMA_TAG.to_string(),
+                api_version: API_VERSION.to_string(),
+                verifier_identity: self.config.verifier_identity.clone(),
+                binding_hash,
+            });
+        }
+
+        for (i, claim) in request.claims.iter().enumerate() {
+            let ok = !claim.is_empty();
+            evidence.push(EvidenceEntry {
+                check_name: format!("claim_{i}_non_empty"),
+                passed: ok,
+                detail: if ok {
+                    format!("claim[{i}] present")
+                } else {
+                    format!("claim[{i}] is empty")
+                },
             });
         }
 
@@ -510,7 +616,7 @@ impl VerifierSdk {
             },
         });
 
-        let all_pass = overall_pass && evidence.iter().all(|e| e.passed);
+        let all_pass = evidence.iter().all(|e| e.passed);
         let failures: Vec<String> = evidence
             .iter()
             .filter(|e| !e.passed)
@@ -972,6 +1078,18 @@ mod tests {
         })
     }
 
+    fn sdk_with_claim_count(max_claims_per_request: usize) -> VerifierSdk {
+        VerifierSdk::new(VerifierConfig {
+            verifier_identity: "verifier://claim-capacity-test".to_string(),
+            require_hash_match: true,
+            strict_claims: true,
+            max_claims_per_request,
+            max_capsule_count: DEFAULT_MAX_CAPSULE_COUNT,
+            max_chain_depth: DEFAULT_MAX_CHAIN_DEPTH,
+            extensions: BTreeMap::new(),
+        })
+    }
+
     fn valid_request() -> VerificationRequest {
         let artifact_id = "artifact-001".to_string();
         let artifact_hash = deterministic_hash(&artifact_id);
@@ -1016,6 +1134,30 @@ mod tests {
             .filter(|entry| !entry.passed)
             .map(|entry| entry.check_name.as_str())
             .collect()
+    }
+
+    fn assert_claim_capacity_failed_before_binding(
+        report: &VerificationReport,
+        expected_failure: &str,
+    ) {
+        assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
+        let failures = failed_checks(report);
+        assert!(failures.contains(&expected_failure));
+        assert!(failures.contains(&"claims_skipped_due_to_capacity"));
+        assert!(
+            !report
+                .evidence
+                .iter()
+                .any(|entry| entry.check_name.starts_with("claim_")),
+            "per-claim validation must not run after claim capacity fails"
+        );
+        assert!(
+            !report
+                .evidence
+                .iter()
+                .any(|entry| entry.check_name == "hash_match"),
+            "hash_match must not run after claim capacity fails"
+        );
     }
 
     fn assert_capsule_byte_capacity_failed_before_replay(report: &VerificationReport) {
@@ -1109,7 +1251,7 @@ mod tests {
         let sdk = test_sdk();
         let req = valid_request();
         let report = sdk.verify_artifact(&req).expect("should verify");
-        assert_eq!(report.evidence.len(), 6);
+        assert_eq!(report.evidence.len(), 9);
         let names: Vec<&str> = report
             .evidence
             .iter()
@@ -1118,6 +1260,9 @@ mod tests {
         assert!(names.contains(&"artifact_id_present"));
         assert!(names.contains(&"artifact_hash_format"));
         assert!(names.contains(&"claims_valid"));
+        assert!(names.contains(&"claims_capacity_check"));
+        assert!(names.contains(&"claims_total_byte_capacity_check"));
+        assert!(names.contains(&"claims_per_claim_byte_capacity_check"));
         assert!(names.contains(&"hash_match"));
     }
 
@@ -1295,6 +1440,73 @@ mod tests {
         assert!(matches!(report.verdict, VerifyVerdict::Fail(_)));
         assert!(failures.contains(&"claims_valid"));
         assert!(failures.contains(&"claim_1_non_empty"));
+    }
+
+    #[test]
+    fn test_verify_artifact_rejects_oversized_single_claim_before_binding_hash() {
+        let sdk = sdk_with_claim_count(10);
+        let artifact_id = "art-oversized-single-claim".to_string();
+        let req = VerificationRequest {
+            artifact_hash: deterministic_hash(&artifact_id),
+            artifact_id,
+            claims: vec!["x".repeat(CLAIM_BYTES_PER_CLAIM_LIMIT + 1)],
+        };
+        let regular_binding_hash = artifact_binding_hash(&req);
+
+        let report = sdk.verify_artifact(&req).expect("should fail closed");
+
+        assert_claim_capacity_failed_before_binding(
+            &report,
+            "claims_per_claim_byte_capacity_check",
+        );
+        assert_ne!(
+            report.binding_hash, regular_binding_hash,
+            "capacity failure must not hash the oversized claim into the regular binding hash"
+        );
+        let count_capacity = report
+            .evidence
+            .iter()
+            .find(|entry| entry.check_name == "claims_capacity_check")
+            .expect("claim count capacity evidence should be present");
+        assert!(count_capacity.passed);
+        let total_capacity = report
+            .evidence
+            .iter()
+            .find(|entry| entry.check_name == "claims_total_byte_capacity_check")
+            .expect("claim total byte capacity evidence should be present");
+        assert!(total_capacity.passed);
+    }
+
+    #[test]
+    fn test_verify_artifact_rejects_total_claim_bytes_before_binding_hash() {
+        let sdk = sdk_with_claim_count(4);
+        let artifact_id = "art-oversized-total-claims".to_string();
+        let req = VerificationRequest {
+            artifact_hash: deterministic_hash(&artifact_id),
+            artifact_id,
+            claims: vec!["a".repeat(3000), "b".repeat(3000)],
+        };
+        let regular_binding_hash = artifact_binding_hash(&req);
+
+        let report = sdk.verify_artifact(&req).expect("should fail closed");
+
+        assert_claim_capacity_failed_before_binding(&report, "claims_total_byte_capacity_check");
+        assert_ne!(
+            report.binding_hash, regular_binding_hash,
+            "capacity failure must not hash oversized total claim bytes into the regular binding hash"
+        );
+        let count_capacity = report
+            .evidence
+            .iter()
+            .find(|entry| entry.check_name == "claims_capacity_check")
+            .expect("claim count capacity evidence should be present");
+        assert!(count_capacity.passed);
+        let per_claim_capacity = report
+            .evidence
+            .iter()
+            .find(|entry| entry.check_name == "claims_per_claim_byte_capacity_check")
+            .expect("per-claim byte capacity evidence should be present");
+        assert!(per_claim_capacity.passed);
     }
 
     // ── verify_artifact: determinism ────────────────────────────────

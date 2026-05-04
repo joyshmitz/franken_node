@@ -20,7 +20,8 @@ use frankenengine_node::sdk::{
         create_capsule as create_node_capsule,
     },
     verifier_sdk::{
-        VerificationReport as NodeVerificationReport, VerifierConfig as NodeVerifierConfig,
+        VerificationReport as NodeVerificationReport,
+        VerificationRequest as NodeVerificationRequest, VerifierConfig as NodeVerifierConfig,
         VerifierSdk as NodeVerifierSdk, VerifyVerdict as NodeVerifyVerdict,
     },
 };
@@ -37,6 +38,10 @@ const TRANSPARENCY_ENTRY_FIXTURE: &str =
     include_str!("../../../sdk/verifier/tests/fixtures/public_api/transparency_entry.json");
 #[cfg(feature = "verifier-tools")]
 const NODE_CAPSULE_BYTES_PER_COUNT_UNIT: usize = 1024;
+#[cfg(feature = "verifier-tools")]
+const NODE_CLAIM_TOTAL_BYTES_PER_COUNT_UNIT: usize = 1024;
+#[cfg(feature = "verifier-tools")]
+const NODE_CLAIM_BYTES_PER_CLAIM_LIMIT: usize = 4096;
 
 fn reference_signing_key() -> SigningKey {
     SigningKey::from_bytes(&[7_u8; 32])
@@ -114,6 +119,19 @@ fn node_verifier_sdk_with_capsule_count(max_capsule_count: usize) -> NodeVerifie
 }
 
 #[cfg(feature = "verifier-tools")]
+fn node_verifier_sdk_with_claim_count(max_claims_per_request: usize) -> NodeVerifierSdk {
+    NodeVerifierSdk::new(NodeVerifierConfig {
+        verifier_identity: "verifier://node-sdk-claim-capacity-test".to_string(),
+        require_hash_match: true,
+        strict_claims: true,
+        max_claims_per_request,
+        max_capsule_count: 1000,
+        max_chain_depth: 64,
+        extensions: BTreeMap::new(),
+    })
+}
+
+#[cfg(feature = "verifier-tools")]
 fn reference_node_capsule() -> frankenengine_node::sdk::replay_capsule::ReplayCapsule {
     let inputs = vec![
         NodeCapsuleInput {
@@ -158,6 +176,36 @@ fn assert_node_capsule_byte_capacity_failed_before_replay(report: &NodeVerificat
             .iter()
             .any(|entry| entry.check_name == "replay_deterministic_match"),
         "node verifier SDK must not replay an oversized capsule"
+    );
+}
+
+#[cfg(feature = "verifier-tools")]
+fn assert_node_claim_capacity_failed_before_binding(
+    report: &NodeVerificationReport,
+    expected_failure: &str,
+) {
+    assert!(matches!(report.verdict, NodeVerifyVerdict::Fail(_)));
+    let failed = report
+        .evidence
+        .iter()
+        .filter(|entry| !entry.passed)
+        .map(|entry| entry.check_name.as_str())
+        .collect::<Vec<_>>();
+    assert!(failed.contains(&expected_failure));
+    assert!(failed.contains(&"claims_skipped_due_to_capacity"));
+    assert!(
+        !report
+            .evidence
+            .iter()
+            .any(|entry| entry.check_name.starts_with("claim_")),
+        "node verifier SDK must not run per-claim checks after claim capacity fails"
+    );
+    assert!(
+        !report
+            .evidence
+            .iter()
+            .any(|entry| entry.check_name == "hash_match"),
+        "node verifier SDK must not run hash_match after claim capacity fails"
     );
 }
 
@@ -304,6 +352,91 @@ fn node_verifier_sdk_rejects_oversized_capsule_bytes_before_replay() {
         .expect("oversized metadata should produce a fail-closed report");
 
     assert_node_capsule_byte_capacity_failed_before_replay(&report);
+}
+
+#[cfg(feature = "verifier-tools")]
+#[test]
+fn node_verifier_sdk_rejects_oversized_claim_bytes_before_binding() {
+    let sdk = node_verifier_sdk_with_claim_count(10);
+    let artifact_id = "node-oversized-single-claim".to_string();
+    let request = NodeVerificationRequest {
+        artifact_hash: {
+            let mut hasher = sha2::Sha256::new();
+            hasher.update(b"verifier_sdk_v1:");
+            hasher.update(
+                u64::try_from(artifact_id.len())
+                    .unwrap_or(u64::MAX)
+                    .to_le_bytes(),
+            );
+            hasher.update(artifact_id.as_bytes());
+            hex::encode(hasher.finalize())
+        },
+        artifact_id,
+        claims: vec!["x".repeat(NODE_CLAIM_BYTES_PER_CLAIM_LIMIT + 1)],
+    };
+
+    let report = sdk
+        .verify_artifact(&request)
+        .expect("oversized claim should produce a fail-closed report");
+
+    assert_node_claim_capacity_failed_before_binding(
+        &report,
+        "claims_per_claim_byte_capacity_check",
+    );
+    let count_capacity = report
+        .evidence
+        .iter()
+        .find(|entry| entry.check_name == "claims_capacity_check")
+        .expect("claim count capacity evidence should be present");
+    assert!(count_capacity.passed);
+    let total_capacity = report
+        .evidence
+        .iter()
+        .find(|entry| entry.check_name == "claims_total_byte_capacity_check")
+        .expect("total claim byte capacity evidence should be present");
+    assert!(total_capacity.passed);
+
+    let sdk = node_verifier_sdk_with_claim_count(4);
+    let artifact_id = "node-oversized-total-claims".to_string();
+    let request = NodeVerificationRequest {
+        artifact_hash: {
+            let mut hasher = sha2::Sha256::new();
+            hasher.update(b"verifier_sdk_v1:");
+            hasher.update(
+                u64::try_from(artifact_id.len())
+                    .unwrap_or(u64::MAX)
+                    .to_le_bytes(),
+            );
+            hasher.update(artifact_id.as_bytes());
+            hex::encode(hasher.finalize())
+        },
+        artifact_id,
+        claims: vec!["a".repeat(3000), "b".repeat(3000)],
+    };
+
+    let report = sdk
+        .verify_artifact(&request)
+        .expect("oversized claim set should produce a fail-closed report");
+
+    assert_node_claim_capacity_failed_before_binding(&report, "claims_total_byte_capacity_check");
+    let per_claim_capacity = report
+        .evidence
+        .iter()
+        .find(|entry| entry.check_name == "claims_per_claim_byte_capacity_check")
+        .expect("per-claim byte capacity evidence should be present");
+    assert!(per_claim_capacity.passed);
+    let expected_total_limit = NODE_CLAIM_TOTAL_BYTES_PER_COUNT_UNIT * 4;
+    let total_capacity = report
+        .evidence
+        .iter()
+        .find(|entry| entry.check_name == "claims_total_byte_capacity_check")
+        .expect("total claim byte capacity evidence should be present");
+    assert!(
+        total_capacity
+            .detail
+            .contains(&format!("limit of {expected_total_limit}")),
+        "total capacity evidence should expose the bounded byte limit"
+    );
 }
 
 #[test]
