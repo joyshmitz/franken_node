@@ -76,6 +76,7 @@ pub mod error_codes {
     pub const ERR_BARRIER_EPOCH_MISMATCH: &str = "ERR_BARRIER_EPOCH_MISMATCH";
     pub const ERR_BARRIER_EPOCH_OVERFLOW: &str = "ERR_BARRIER_EPOCH_OVERFLOW";
     pub const ERR_BARRIER_ID_OVERFLOW: &str = "ERR_BARRIER_ID_OVERFLOW";
+    pub const ERR_BARRIER_INVALID_CONFIG: &str = "ERR_BARRIER_INVALID_CONFIG";
     pub const ERR_BARRIER_ABORT_CONFIRMATION_REQUIRED: &str =
         "ERR_BARRIER_ABORT_CONFIRMATION_REQUIRED";
 }
@@ -203,6 +204,8 @@ pub enum BarrierError {
     EpochOverflow { current: u64 },
     /// Barrier ID counter cannot allocate another distinct barrier ID.
     BarrierIdOverflow { current_counter: u64 },
+    /// Barrier configuration is invalid.
+    InvalidConfig { detail: String },
     /// Safety-first mode requires abort confirmations from all participants.
     /// This prevents split-brain but may block if participants are unreachable.
     AbortConfirmationRequired {
@@ -236,6 +239,7 @@ impl BarrierError {
             Self::EpochMismatch { .. } => error_codes::ERR_BARRIER_EPOCH_MISMATCH,
             Self::EpochOverflow { .. } => error_codes::ERR_BARRIER_EPOCH_OVERFLOW,
             Self::BarrierIdOverflow { .. } => error_codes::ERR_BARRIER_ID_OVERFLOW,
+            Self::InvalidConfig { .. } => error_codes::ERR_BARRIER_INVALID_CONFIG,
             Self::NotAllAcked { .. } => error_codes::ERR_BARRIER_NOT_ALL_ACKED,
             Self::AbortConfirmationRequired { .. } => {
                 error_codes::ERR_BARRIER_ABORT_CONFIRMATION_REQUIRED
@@ -343,6 +347,9 @@ impl fmt::Display for BarrierError {
                     current_counter
                 )
             }
+            Self::InvalidConfig { detail } => {
+                write!(f, "{}: {}", self.code(), detail)
+            }
             Self::NotAllAcked { missing } => {
                 write!(
                     f,
@@ -413,9 +420,38 @@ impl BarrierConfig {
 
     /// Get the abort warning timestamp threshold.
     pub fn abort_warning_time(&self, start_time: u64) -> u64 {
-        let warning_duration =
-            (self.global_timeout_ms as f64 * self.abort_warning_threshold) as u64;
-        start_time.saturating_add(warning_duration)
+        start_time.saturating_add(self.abort_warning_duration_ms())
+    }
+
+    fn abort_warning_duration_ms(&self) -> u64 {
+        if self.validate_abort_warning_threshold().is_err() {
+            return self.global_timeout_ms;
+        }
+        if self.abort_warning_threshold <= 0.0 {
+            return 0;
+        }
+        if self.abort_warning_threshold >= 1.0 {
+            return self.global_timeout_ms;
+        }
+
+        Self::floor_fraction_of_u64(self.global_timeout_ms, self.abort_warning_threshold)
+    }
+
+    fn abort_warning_percent(&self) -> u32 {
+        if self.validate_abort_warning_threshold().is_err() {
+            return 100;
+        }
+        if self.abort_warning_threshold <= 0.0 {
+            return 0;
+        }
+        if self.abort_warning_threshold >= 1.0 {
+            return 100;
+        }
+
+        (0..=100)
+            .rev()
+            .find(|percent| f64::from(*percent) <= self.abort_warning_threshold * 100.0)
+            .unwrap_or(0)
     }
 
     /// Get the effective drain timeout for a participant.
@@ -443,7 +479,37 @@ impl BarrierConfig {
                 return Err(format!("timeout for participant {} must be > 0", pid));
             }
         }
+        self.validate_abort_warning_threshold()?;
         Ok(())
+    }
+
+    fn validate_abort_warning_threshold(&self) -> Result<(), String> {
+        if !self.abort_warning_threshold.is_finite() {
+            return Err("abort_warning_threshold must be finite".into());
+        }
+        if !(0.0..=1.0).contains(&self.abort_warning_threshold) {
+            return Err("abort_warning_threshold must be between 0.0 and 1.0 inclusive".into());
+        }
+        Ok(())
+    }
+
+    fn floor_fraction_of_u64(value: u64, fraction: f64) -> u64 {
+        debug_assert!(fraction.is_finite());
+        debug_assert!(fraction > 0.0);
+        debug_assert!(fraction < 1.0);
+
+        let target = value as f64 * fraction;
+        let mut low = 0_u64;
+        let mut high = value;
+        while low < high {
+            let mid = low + ((high - low) / 2) + 1;
+            if (mid as f64) <= target {
+                low = mid;
+            } else {
+                high = mid - 1;
+            }
+        }
+        low
     }
 }
 
@@ -649,6 +715,10 @@ impl EpochTransitionBarrier {
         timestamp_ms: u64,
         trace_id: &str,
     ) -> Result<&BarrierInstance, BarrierError> {
+        self.config
+            .validate()
+            .map_err(|detail| BarrierError::InvalidConfig { detail })?;
+
         // INV-BARRIER-SERIALIZED: reject concurrent barriers
         if self.is_barrier_active() {
             return Err(BarrierError::ConcurrentBarrier {
@@ -813,7 +883,7 @@ impl EpochTransitionBarrier {
                         "abort warning sent to {} missing participants at {}ms ({}% of timeout)",
                         missing.len(),
                         elapsed,
-                        (self.config.abort_warning_threshold * 100.0) as u32
+                        self.config.abort_warning_percent()
                     ),
                     timestamp_ms,
                     trace_id,
@@ -1507,6 +1577,53 @@ mod tests {
     }
 
     #[test]
+    fn config_validation_rejects_invalid_abort_warning_threshold() {
+        for threshold in [
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            -f64::EPSILON,
+            1.0 + f64::EPSILON,
+        ] {
+            let mut cfg = BarrierConfig::default();
+            cfg.abort_warning_threshold = threshold;
+            assert!(
+                cfg.validate().is_err(),
+                "invalid threshold {threshold:?} should fail closed"
+            );
+        }
+    }
+
+    #[test]
+    fn config_validation_accepts_abort_warning_threshold_boundaries() {
+        let mut cfg = BarrierConfig::new(10_000, 1_000);
+
+        cfg.abort_warning_threshold = 0.0;
+        assert!(cfg.validate().is_ok());
+        assert_eq!(cfg.abort_warning_time(500), 500);
+        assert_eq!(cfg.abort_warning_percent(), 0);
+
+        cfg.abort_warning_threshold = 1.0;
+        assert!(cfg.validate().is_ok());
+        assert_eq!(cfg.abort_warning_time(500), 10_500);
+        assert_eq!(cfg.abort_warning_percent(), 100);
+    }
+
+    #[test]
+    fn invalid_abort_warning_threshold_rejects_barrier_proposal() {
+        let mut cfg = BarrierConfig::new(10_000, 1_000);
+        cfg.abort_warning_threshold = f64::NAN;
+        let mut barrier = EpochTransitionBarrier::new(cfg);
+        barrier.register_participant("svc-0");
+
+        let err = barrier
+            .propose(1, 2, 100, "trace-invalid-threshold")
+            .expect_err("invalid config rejected before barrier proposal");
+
+        assert_eq!(err.code(), error_codes::ERR_BARRIER_INVALID_CONFIG);
+    }
+
+    #[test]
     fn config_participant_timeout_override() {
         let mut cfg = BarrierConfig::default();
         cfg.participant_timeouts
@@ -1695,6 +1812,9 @@ mod tests {
             BarrierError::EpochOverflow { current: u64::MAX },
             BarrierError::BarrierIdOverflow {
                 current_counter: u64::MAX,
+            },
+            BarrierError::InvalidConfig {
+                detail: "bad config".into(),
             },
         ];
         for e in &errors {

@@ -35,7 +35,7 @@ use std::time::Instant;
 
 use frankenengine_node::control_plane::epoch_transition_barrier::{
     AbortReason, BarrierCommitOutcome, BarrierConfig, BarrierError, BarrierPhase, DrainAck,
-    EpochTransitionBarrier,
+    EpochTransitionBarrier, error_codes,
 };
 use serde_json::json;
 use tracing::{error, info};
@@ -110,6 +110,48 @@ fn build_barrier(global_timeout_ms: u64, drain_timeout_ms: u64) -> EpochTransiti
 }
 
 #[test]
+fn e2e_barrier_config_rejects_non_finite_abort_warning_threshold() {
+    let h = Harness::new("e2e_barrier_config_rejects_non_finite_abort_warning_threshold");
+
+    for threshold in [
+        f64::NAN,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        -f64::EPSILON,
+        1.0 + f64::EPSILON,
+    ] {
+        let mut cfg = BarrierConfig::new(10_000, 1_000);
+        cfg.abort_warning_threshold = threshold;
+        assert!(
+            cfg.validate().is_err(),
+            "invalid threshold {threshold:?} should fail closed"
+        );
+    }
+    h.log_phase("invalid_thresholds_rejected", true, json!({}));
+
+    let mut boundary_cfg = BarrierConfig::new(10_000, 1_000);
+    boundary_cfg.abort_warning_threshold = 0.0;
+    assert!(boundary_cfg.validate().is_ok());
+    assert_eq!(boundary_cfg.abort_warning_time(500), 500);
+    boundary_cfg.abort_warning_threshold = 1.0;
+    assert!(boundary_cfg.validate().is_ok());
+    assert_eq!(boundary_cfg.abort_warning_time(500), 10_500);
+    h.log_phase("threshold_boundaries_accepted", true, json!({}));
+
+    let mut invalid_cfg = BarrierConfig::new(10_000, 1_000);
+    invalid_cfg.abort_warning_threshold = f64::NAN;
+    let mut barrier = EpochTransitionBarrier::new(invalid_cfg);
+    barrier.register_participant("node-A");
+    let err = barrier
+        .propose(0, 1, 1_000, "trace-invalid-threshold")
+        .expect_err("invalid config rejected before barrier proposal");
+
+    assert!(matches!(err, BarrierError::InvalidConfig { .. }));
+    assert_eq!(err.code(), error_codes::ERR_BARRIER_INVALID_CONFIG);
+    h.log_phase("invalid_config_proposal_rejected", true, json!({}));
+}
+
+#[test]
 fn e2e_barrier_happy_path_commit_with_all_acks() {
     let h = Harness::new("e2e_barrier_happy_path_commit_with_all_acks");
 
@@ -138,12 +180,13 @@ fn e2e_barrier_happy_path_commit_with_all_acks() {
     let err = barrier
         .try_commit(1_100, "trace-early-commit")
         .expect_err("not all acked");
-    match err {
-        BarrierError::NotAllAcked { missing } => {
-            assert_eq!(missing.len(), 3);
-            h.log_phase("not_all_acked", true, json!({"missing": missing.len()}));
-        }
-        other => panic!("expected NotAllAcked, got {other:?}"),
+    assert!(
+        matches!(err, BarrierError::NotAllAcked { .. }),
+        "expected NotAllAcked, got {err:?}"
+    );
+    if let BarrierError::NotAllAcked { missing } = err {
+        assert_eq!(missing.len(), 3);
+        h.log_phase("not_all_acked", true, json!({"missing": missing.len()}));
     }
 
     // Send all 3 ACKs.
@@ -199,23 +242,27 @@ fn e2e_barrier_timeout_auto_aborts() {
     let outcome = barrier
         .try_commit(1_200, "trace-late-commit")
         .expect("commit returns Aborted");
-    match outcome {
-        BarrierCommitOutcome::Aborted {
-            current_epoch,
-            reason,
-        } => {
-            assert_eq!(current_epoch, 0, "INV-BARRIER-ABORT-SAFE: epoch unchanged");
-            match reason {
-                AbortReason::Timeout {
-                    missing_participants,
-                } => {
-                    assert_eq!(missing_participants, vec!["node-B".to_string()]);
-                    h.log_phase("timeout_auto_aborted", true, json!({"missing": "node-B"}));
-                }
-                other => panic!("expected Timeout reason, got {other:?}"),
-            }
+    assert!(
+        matches!(outcome, BarrierCommitOutcome::Aborted { .. }),
+        "expected Aborted, got {outcome:?}"
+    );
+    if let BarrierCommitOutcome::Aborted {
+        current_epoch,
+        reason,
+    } = outcome
+    {
+        assert_eq!(current_epoch, 0, "INV-BARRIER-ABORT-SAFE: epoch unchanged");
+        assert!(
+            matches!(reason, AbortReason::Timeout { .. }),
+            "expected Timeout reason, got {reason:?}"
+        );
+        if let AbortReason::Timeout {
+            missing_participants,
+        } = reason
+        {
+            assert_eq!(missing_participants, vec!["node-B".to_string()]);
+            h.log_phase("timeout_auto_aborted", true, json!({"missing": "node-B"}));
         }
-        other => panic!("expected Aborted, got {other:?}"),
     }
 
     let active = barrier.active_barrier().expect("active still references");
@@ -323,6 +370,10 @@ fn e2e_barrier_drain_failure_aborts() {
     assert_eq!(current, 3, "INV-BARRIER-ABORT-SAFE: epoch unchanged");
     let active = barrier.active_barrier().expect("active");
     assert_eq!(active.phase, BarrierPhase::Aborted);
+    assert!(
+        matches!(active.abort_reason, Some(AbortReason::DrainFailed { .. })),
+        "expected DrainFailed abort reason"
+    );
     if let Some(AbortReason::DrainFailed {
         participant_id,
         detail,
@@ -331,8 +382,6 @@ fn e2e_barrier_drain_failure_aborts() {
         assert_eq!(participant_id, "node-B");
         assert_eq!(detail, "disk full");
         h.log_phase("drain_failed_abort", true, json!({"participant": "node-B"}));
-    } else {
-        panic!("expected DrainFailed abort reason");
     }
     assert_eq!(barrier.completed_barrier_count(), 1);
 }
