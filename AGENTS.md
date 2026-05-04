@@ -90,8 +90,23 @@ We only use **Cargo** in this project, NEVER any other package manager.
 | `tracing` + `tracing-subscriber` | Structured logging and diagnostics |
 | `subtle` | Constant-time comparisons in security-sensitive paths |
 | `tempfile` | Temp artifact handling in tests and validation paths |
-| `frankenengine-engine` + `frankenengine-extension-host` | Sibling engine/runtime crates from `../franken_engine` |
 | `franken-security-macros` | Internal proc-macro helpers consumed by `frankenengine-node` |
+| `tree-sitter` + `tree-sitter-javascript` | JavaScript/TypeScript parsing for migration audit and lockstep/conformance surfaces |
+| `fs2` | Advisory file locking for persistence and filesystem coordination paths |
+| `arbitrary` + `proptest` | Fuzz/property-style input generation and invariant testing |
+| `lazy_static` | Process-wide registries and shared singleton state used by legacy surfaces |
+| `frankenengine-engine` + `frankenengine-extension-host` | Sibling engine/runtime crates from `../franken_engine` |
+
+### Key Dev-Dependencies
+
+| Crate | Purpose |
+|-------|---------|
+| `fsqlite` | Local SQLite-backed storage adapter and conformance test coverage |
+| `fastapi-rust` | API route and server-surface integration tests |
+| `sqlmodel` + `sqlmodel-core` + `sqlmodel-schema` | SQL model/schema interop and storage contract tests |
+| `loom` | Concurrency interleaving tests for runtime/control-plane primitives |
+| `criterion` | Benchmark harnesses and performance evidence generation |
+| `insta` | Snapshot/golden JSON assertions |
 
 ### Release Profile
 
