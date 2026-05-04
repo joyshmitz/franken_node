@@ -28,6 +28,7 @@ source: crates/franken-node/tests/cli_subcommand_goldens.rs
   "evidence_path": null,
   "sample_policy": {
     "min_measured_samples": 3,
+    "max_raw_samples_per_scenario": 4096,
     "total_sample_count": 5,
     "total_warmup_count": 2
   },

@@ -635,6 +635,7 @@ mod benchmark_suite_edge_cases {
             evidence_path: Some("artifacts/benchmark-suite/test-report.json".to_string()),
             sample_policy: BenchmarkSamplePolicy {
                 min_measured_samples: 3,
+                max_raw_samples_per_scenario: MAX_RAW_BENCHMARK_SAMPLES,
                 total_sample_count,
                 total_warmup_count: 0,
             },

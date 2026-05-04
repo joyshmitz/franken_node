@@ -94,6 +94,10 @@ fn assert_signed_benchmark_report(bytes: &[u8]) -> Value {
         "variance must be finite in signed report: {report}"
     );
     assert_eq!(report["sample_policy"]["min_measured_samples"], 3);
+    assert_eq!(
+        report["sample_policy"]["max_raw_samples_per_scenario"],
+        4096
+    );
     assert_eq!(report["sample_policy"]["total_sample_count"], 5);
     assert_eq!(report["sample_policy"]["total_warmup_count"], 2);
 
@@ -169,6 +173,10 @@ fn bench_run_default_path_emits_measured_evidence() {
         "measured report must carry raw samples: {report}"
     );
     assert_eq!(report["sample_policy"]["min_measured_samples"], 3);
+    assert_eq!(
+        report["sample_policy"]["max_raw_samples_per_scenario"],
+        4096
+    );
     assert!(
         report["events"]
             .as_array()

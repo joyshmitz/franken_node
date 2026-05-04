@@ -62,6 +62,8 @@ pub const MAX_VARIANCE_PCT: f64 = 5.0;
 pub const DEFAULT_REGRESSION_THRESHOLD_PCT: f64 = 10.0;
 const DETERMINISTIC_JITTER_RATIO: f64 = 0.02;
 const MIN_MEASURED_SAMPLES: usize = 3;
+/// Maximum raw benchmark samples accepted, retained, or emitted per scenario.
+pub const MAX_RAW_BENCHMARK_SAMPLES: usize = 4096;
 
 // ---------------------------------------------------------------------------
 // Benchmark dimension enum
@@ -373,6 +375,7 @@ impl BenchmarkSecurityControls {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BenchmarkSamplePolicy {
     pub min_measured_samples: usize,
+    pub max_raw_samples_per_scenario: usize,
     pub total_sample_count: usize,
     pub total_warmup_count: u32,
 }
@@ -463,6 +466,11 @@ pub enum BenchRunError {
         required: usize,
         actual: usize,
     },
+    TooManySamples {
+        scenario: String,
+        max: usize,
+        actual: usize,
+    },
     NonFiniteMeasurement {
         scenario: String,
     },
@@ -503,6 +511,14 @@ impl fmt::Display for BenchRunError {
             } => write!(
                 f,
                 "scenario `{scenario}` requires at least {required} measured samples, got {actual}"
+            ),
+            Self::TooManySamples {
+                scenario,
+                max,
+                actual,
+            } => write!(
+                f,
+                "scenario `{scenario}` accepts at most {max} raw benchmark samples, got {actual}"
             ),
             Self::NonFiniteMeasurement { scenario } => {
                 write!(f, "scenario `{scenario}` contains a non-finite measurement")
@@ -641,6 +657,7 @@ fn validate_measurements(
             scenario: scenario.name.clone(),
         });
     }
+    validate_sample_count(&scenario.name, raw_measurements.len())?;
     if raw_measurements.iter().any(|value| !value.is_finite()) {
         return Err(BenchRunError::NonFiniteMeasurement {
             scenario: scenario.name.clone(),
@@ -653,12 +670,27 @@ fn validate_sample_values(
     scenario: &ScenarioDefinition,
     raw_samples: &[RawMeasurement],
 ) -> Result<Vec<f64>, BenchRunError> {
-    let values = raw_samples
-        .iter()
-        .map(|sample| sample.value)
-        .collect::<Vec<_>>();
+    if raw_samples.is_empty() {
+        return Err(BenchRunError::EmptyMeasurements {
+            scenario: scenario.name.clone(),
+        });
+    }
+    validate_sample_count(&scenario.name, raw_samples.len())?;
+    let mut values = Vec::with_capacity(raw_samples.len());
+    values.extend(raw_samples.iter().map(|sample| sample.value));
     validate_measurements(scenario, &values)?;
     Ok(values)
+}
+
+fn validate_sample_count(scenario: &str, actual: usize) -> Result<(), BenchRunError> {
+    if actual > MAX_RAW_BENCHMARK_SAMPLES {
+        return Err(BenchRunError::TooManySamples {
+            scenario: scenario.to_string(),
+            max: MAX_RAW_BENCHMARK_SAMPLES,
+            actual,
+        });
+    }
+    Ok(())
 }
 
 fn validate_report(report: &BenchmarkReport) -> Result<(), BenchRunError> {
@@ -687,10 +719,25 @@ fn validate_report(report: &BenchmarkReport) -> Result<(), BenchRunError> {
             ),
         });
     }
+    if report.sample_policy.max_raw_samples_per_scenario > MAX_RAW_BENCHMARK_SAMPLES {
+        return Err(BenchRunError::NonFiniteReportValue {
+            detail: format!(
+                "sample_policy.max_raw_samples_per_scenario={} exceeds supported maximum={MAX_RAW_BENCHMARK_SAMPLES}",
+                report.sample_policy.max_raw_samples_per_scenario
+            ),
+        });
+    }
     for scenario in &report.scenarios {
         if scenario.raw_samples.is_empty() {
             return Err(BenchRunError::EmptyMeasurements {
                 scenario: scenario.name.clone(),
+            });
+        }
+        if scenario.raw_samples.len() > report.sample_policy.max_raw_samples_per_scenario {
+            return Err(BenchRunError::TooManySamples {
+                scenario: scenario.name.clone(),
+                max: report.sample_policy.max_raw_samples_per_scenario,
+                actual: scenario.raw_samples.len(),
             });
         }
         if report.evidence_mode == BenchmarkEvidenceMode::Measured
@@ -1141,17 +1188,15 @@ impl BenchmarkSuite {
         scenario: &ScenarioDefinition,
         raw_measurements: &[f64],
     ) -> Result<ScenarioResult, BenchRunError> {
-        let samples = raw_measurements
-            .iter()
-            .enumerate()
-            .map(|(index, value)| {
-                RawMeasurement::provided(
-                    u32::try_from(index).unwrap_or(u32::MAX),
-                    *value,
-                    &self.config.timestamp_utc,
-                )
-            })
-            .collect::<Vec<_>>();
+        validate_sample_count(&scenario.name, raw_measurements.len())?;
+        let mut samples = Vec::with_capacity(raw_measurements.len());
+        samples.extend(raw_measurements.iter().enumerate().map(|(index, value)| {
+            RawMeasurement::provided(
+                u32::try_from(index).unwrap_or(u32::MAX),
+                *value,
+                &self.config.timestamp_utc,
+            )
+        }));
         self.execute_scenario_samples(scenario, &samples)
     }
 
@@ -1246,23 +1291,19 @@ impl BenchmarkSuite {
         &mut self,
         measurements: &std::collections::BTreeMap<String, Vec<f64>>,
     ) -> Result<BenchmarkReport, BenchRunError> {
-        let sample_sets = measurements
-            .iter()
-            .map(|(scenario, values)| {
-                let samples = values
-                    .iter()
-                    .enumerate()
-                    .map(|(index, value)| {
-                        RawMeasurement::provided(
-                            u32::try_from(index).unwrap_or(u32::MAX),
-                            *value,
-                            &self.config.timestamp_utc,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                (scenario.clone(), samples)
-            })
-            .collect::<BTreeMap<_, _>>();
+        let mut sample_sets = BTreeMap::new();
+        for (scenario, values) in measurements {
+            validate_sample_count(scenario, values.len())?;
+            let mut samples = Vec::with_capacity(values.len());
+            samples.extend(values.iter().enumerate().map(|(index, value)| {
+                RawMeasurement::provided(
+                    u32::try_from(index).unwrap_or(u32::MAX),
+                    *value,
+                    &self.config.timestamp_utc,
+                )
+            }));
+            sample_sets.insert(scenario.clone(), samples);
+        }
         self.run_samples(
             &sample_sets,
             BenchmarkEvidenceMode::Measured,
@@ -1314,6 +1355,7 @@ impl BenchmarkSuite {
 
         let sample_policy = BenchmarkSamplePolicy {
             min_measured_samples: MIN_MEASURED_SAMPLES,
+            max_raw_samples_per_scenario: MAX_RAW_BENCHMARK_SAMPLES,
             total_sample_count: results.iter().map(|result| result.raw_samples.len()).sum(),
             total_warmup_count: self
                 .scenarios
@@ -1545,6 +1587,7 @@ fn measured_samples_for_scenario(
             actual: scenario.iterations as usize,
         });
     }
+    validate_sample_count(&scenario.name, scenario.iterations as usize)?;
 
     if std::env::var("FRANKEN_NODE_BENCH_FAIL_SCENARIO")
         .ok()
@@ -1560,7 +1603,7 @@ fn measured_samples_for_scenario(
     let total_iterations = scenario
         .iterations
         .saturating_add(scenario.warmup_iterations);
-    let mut samples = Vec::new();
+    let mut samples = Vec::with_capacity(scenario.iterations as usize);
     for iteration in 0..total_iterations {
         let started_at_utc = chrono::Utc::now().to_rfc3339();
         let value = execute_measured_workload(scenario, iteration)?;
@@ -1818,10 +1861,11 @@ pub fn render_human_summary(report: &BenchmarkReport) -> String {
             report.evidence_mode, report.profile, report.security_controls.fixture_mode
         ),
         format!(
-            "trace_id={} evidence_path={} samples={} warmups={}",
+            "trace_id={} evidence_path={} samples={} max_per_scenario={} warmups={}",
             report.trace_id,
             report.evidence_path.as_deref().unwrap_or("stdout"),
             report.sample_policy.total_sample_count,
+            report.sample_policy.max_raw_samples_per_scenario,
             report.sample_policy.total_warmup_count
         ),
     ];
@@ -1859,6 +1903,7 @@ mod tests {
     fn fixture_sample_policy(total_sample_count: usize) -> BenchmarkSamplePolicy {
         BenchmarkSamplePolicy {
             min_measured_samples: MIN_MEASURED_SAMPLES,
+            max_raw_samples_per_scenario: MAX_RAW_BENCHMARK_SAMPLES,
             total_sample_count,
             total_warmup_count: 0,
         }
@@ -2518,6 +2563,143 @@ mod tests {
             .run(&measurements)
             .expect_err("empty measurement sets must fail closed");
         assert!(matches!(err, BenchRunError::EmptyMeasurements { .. }));
+    }
+
+    #[test]
+    fn test_execute_scenario_rejects_oversized_measurements_before_collecting() {
+        let config = SuiteConfig::with_defaults();
+        let mut suite = BenchmarkSuite::new(config);
+        let scenario = ScenarioDefinition {
+            dimension: BenchmarkDimension::PerformanceUnderHardening,
+            name: "test_scenario".to_string(),
+            unit: "ms".to_string(),
+            iterations: 2,
+            warmup_iterations: 0,
+            sandbox_required: true,
+            scoring: ScoringConfig::lower_is_better(1.0, 10.0),
+        };
+        let measurements = vec![1.0; MAX_RAW_BENCHMARK_SAMPLES + 1];
+
+        let err = suite
+            .execute_scenario(&scenario, &measurements)
+            .expect_err("oversized raw measurements must fail closed");
+
+        assert!(matches!(
+            err,
+            BenchRunError::TooManySamples {
+                scenario,
+                max: MAX_RAW_BENCHMARK_SAMPLES,
+                actual
+            } if scenario == "test_scenario" && actual == MAX_RAW_BENCHMARK_SAMPLES + 1
+        ));
+        assert!(suite.events().is_empty());
+    }
+
+    #[test]
+    fn test_execute_scenario_samples_rejects_oversized_raw_samples_before_events() {
+        let config = SuiteConfig::with_defaults();
+        let mut suite = BenchmarkSuite::new(config);
+        let scenario = ScenarioDefinition {
+            dimension: BenchmarkDimension::PerformanceUnderHardening,
+            name: "test_scenario".to_string(),
+            unit: "ms".to_string(),
+            iterations: 2,
+            warmup_iterations: 0,
+            sandbox_required: true,
+            scoring: ScoringConfig::lower_is_better(1.0, 10.0),
+        };
+        let samples = (0..=MAX_RAW_BENCHMARK_SAMPLES)
+            .map(|index| {
+                RawMeasurement::provided(
+                    u32::try_from(index).unwrap_or(u32::MAX),
+                    1.0,
+                    "2026-02-21T00:00:00Z",
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let err = suite
+            .execute_scenario_samples(&scenario, &samples)
+            .expect_err("oversized raw samples must fail closed");
+
+        assert!(matches!(
+            err,
+            BenchRunError::TooManySamples {
+                scenario,
+                max: MAX_RAW_BENCHMARK_SAMPLES,
+                actual
+            } if scenario == "test_scenario" && actual == MAX_RAW_BENCHMARK_SAMPLES + 1
+        ));
+        assert!(
+            !suite
+                .events()
+                .iter()
+                .any(|event| event.code == BS_MEASUREMENT_RECORDED)
+        );
+    }
+
+    #[test]
+    fn test_report_validation_rejects_raw_samples_above_declared_policy() {
+        let mut report = BenchmarkReport {
+            suite_version: SUITE_VERSION.to_string(),
+            scoring_formula_version: SCORING_FORMULA_VERSION.to_string(),
+            timestamp_utc: "2026-02-21T00:00:00Z".to_string(),
+            hardware_profile: HardwareProfile {
+                cpu: "test".to_string(),
+                memory_mb: 8192,
+                os: "linux".to_string(),
+            },
+            runtime_versions: RuntimeVersions {
+                franken_node: "0.1.0".to_string(),
+                node: None,
+                bun: None,
+            },
+            evidence_mode: BenchmarkEvidenceMode::FixtureOnly,
+            profile: "strict".to_string(),
+            security_controls: BenchmarkSecurityControls::fixture_only(),
+            git_revision: Some("test-git-revision".to_string()),
+            trace_id: "benchmark-suite-test-trace".to_string(),
+            evidence_path: Some("artifacts/benchmark-suite/test-report.json".to_string()),
+            sample_policy: BenchmarkSamplePolicy {
+                min_measured_samples: MIN_MEASURED_SAMPLES,
+                max_raw_samples_per_scenario: 1,
+                total_sample_count: 2,
+                total_warmup_count: 0,
+            },
+            events: Vec::new(),
+            scenarios: vec![ScenarioResult {
+                dimension: BenchmarkDimension::PerformanceUnderHardening,
+                name: "cold_start_latency".to_string(),
+                raw_value: 125.0,
+                unit: "ms".to_string(),
+                raw_samples: vec![
+                    RawMeasurement::fixture(0, 125.0, "2026-02-21T00:00:00Z"),
+                    RawMeasurement::fixture(1, 126.0, "2026-02-21T00:00:00Z"),
+                ],
+                confidence_interval: ConfidenceInterval {
+                    lower: 123.0,
+                    upper: 127.0,
+                },
+                score: 94,
+                iterations: 2,
+                variance_pct: 1.1,
+            }],
+            aggregate_score: 94,
+            provenance_hash: String::new(),
+        };
+        report.provenance_hash = report.compute_provenance_hash();
+
+        let err = to_canonical_json(&report)
+            .expect_err("report samples above the declared policy cap must fail closed");
+
+        assert!(matches!(
+            err,
+            BenchRunError::TooManySamples {
+                scenario,
+                max: 1,
+                actual: 2
+            } if scenario == "cold_start_latency"
+        ));
     }
 
     #[test]
