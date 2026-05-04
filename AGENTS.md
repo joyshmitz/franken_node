@@ -23,6 +23,7 @@ If I tell you to do something, even if it goes against what follows below, YOU M
 This repository is **franken_node** (trust-native runtime platform), not the standalone `dcg` codebase.
 
 - **Workspace layout:** Root `Cargo.toml` is a workspace manifest.
+- **Workspace members:** `crates/franken-node/`, `crates/franken-security-macros/`, and `sdk/verifier/`.
 - **Primary crate path:** `crates/franken-node/`
 - **Main Rust sources:** `crates/franken-node/src/`
 - **Primary binary entrypoint:** `crates/franken-node/src/main.rs`
@@ -90,6 +91,7 @@ We only use **Cargo** in this project, NEVER any other package manager.
 | `subtle` | Constant-time comparisons in security-sensitive paths |
 | `tempfile` | Temp artifact handling in tests and validation paths |
 | `frankenengine-engine` + `frankenengine-extension-host` | Sibling engine/runtime crates from `../franken_engine` |
+| `franken-security-macros` | Internal proc-macro helpers consumed by `frankenengine-node` |
 
 ### Release Profile
 
@@ -242,11 +244,12 @@ This repository is `franken_node`, a product-layer Rust workspace over sibling `
 
 | Path | Purpose |
 |------|---------|
-| `Cargo.toml` | Workspace manifest for `crates/franken-node` and `sdk/verifier` |
+| `Cargo.toml` | Workspace manifest for `crates/franken-node`, `crates/franken-security-macros`, and `sdk/verifier` |
 | `crates/franken-node/src/main.rs` | Primary binary entrypoint and CLI dispatch |
 | `crates/franken-node/src/lib.rs` | Primary library exports and feature-gated module surface |
 | `crates/franken-node/src/cli.rs` | Command-line contract and subcommand definitions |
 | `crates/franken-node/src/config.rs` | Config discovery, profile selection, and CLI override resolution |
+| `crates/franken-security-macros/` | Internal proc-macro crate consumed by `crates/franken-node` |
 | `sdk/verifier/src/lib.rs` | Small public verifier SDK crate |
 | `crates/franken-node/tests/` | Broad integration, conformance, and CLI/e2e-style coverage |
 | `docs/specs/`, `artifacts/`, `scripts/` | Product contracts, evidence, and gate/orchestration helpers |
