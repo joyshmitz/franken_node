@@ -13,7 +13,8 @@
 //! - **INV-ABT-EXPIRY**: Expired tokens are rejected regardless of chain validity.
 //! - **INV-ABT-REPLAY**: Nonce uniqueness is enforced within an epoch.
 
-use serde::{Deserialize, Serialize};
+use serde::de::{self, DeserializeSeed, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -48,6 +49,8 @@ pub const ERR_ABT_TOKEN_EXPIRED: &str = "ERR_ABT_TOKEN_EXPIRED";
 pub const ERR_ABT_REPLAY_DETECTED: &str = "ERR_ABT_REPLAY_DETECTED";
 /// Token signature is missing, malformed, signed by an untrusted issuer, or invalid.
 pub const ERR_ABT_SIGNATURE_INVALID: &str = "ERR_ABT_SIGNATURE_INVALID";
+/// Token or token chain exceeds bounded-input limits.
+pub const ERR_ABT_TOKEN_TOO_LARGE: &str = "ERR_ABT_TOKEN_TOO_LARGE";
 
 // ---------------------------------------------------------------------------
 // Invariant tags
@@ -61,6 +64,22 @@ pub const INV_ABT_AUDIENCE: &str = "INV-ABT-AUDIENCE";
 pub const INV_ABT_EXPIRY: &str = "INV-ABT-EXPIRY";
 /// INV-ABT-REPLAY: Nonce uniqueness is enforced within an epoch.
 pub const INV_ABT_REPLAY: &str = "INV-ABT-REPLAY";
+
+// ---------------------------------------------------------------------------
+// Input bounds
+// ---------------------------------------------------------------------------
+
+/// Maximum token string field size before hashing/signature verification.
+pub const MAX_TOKEN_FIELD_BYTES: usize = crate::capacity_defaults::base::MEDIUM;
+/// Maximum audience entries accepted by one token.
+pub const MAX_AUDIENCES_PER_TOKEN: usize = crate::capacity_defaults::base::SMALL;
+/// Maximum canonical signature preimage bytes accepted by verifier paths.
+pub const MAX_TOKEN_PREIMAGE_BYTES: usize = crate::capacity_defaults::base::LARGE;
+/// Maximum serialized Ed25519 signature text including the optional prefix.
+pub const MAX_TOKEN_SIGNATURE_BYTES: usize = "ed25519:".len() + (64 * 2);
+/// Maximum tokens in a chain. `max_delegation_depth` is `u8`, so 256 covers the
+/// largest valid root-plus-delegates chain while bounding serialized input.
+pub const MAX_TOKENS: usize = crate::capacity_defaults::base::SMALL;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -138,10 +157,13 @@ impl std::fmt::Display for ActionScope {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AudienceBoundToken {
     /// Unique identifier for this token.
+    #[serde(deserialize_with = "deserialize_bounded_token_id")]
     pub token_id: TokenId,
     /// Identity of the entity that issued this token.
+    #[serde(deserialize_with = "deserialize_bounded_token_field")]
     pub issuer: String,
     /// List of intended recipient service identifiers.
+    #[serde(deserialize_with = "deserialize_bounded_audience")]
     pub audience: Vec<String>,
     /// Granted action scopes (strictly attenuated on delegation).
     pub capabilities: BTreeSet<ActionScope>,
@@ -150,10 +172,13 @@ pub struct AudienceBoundToken {
     /// UTC timestamp (ms) after which the token is invalid.
     pub expires_at: u64,
     /// Unique nonce for replay detection within an epoch.
+    #[serde(deserialize_with = "deserialize_bounded_token_field")]
     pub nonce: String,
     /// Hash of the parent token (None for root tokens).
+    #[serde(deserialize_with = "deserialize_bounded_optional_token_field")]
     pub parent_token_hash: Option<String>,
     /// Signature over the canonical preimage.
+    #[serde(deserialize_with = "deserialize_bounded_signature_field")]
     pub signature: String,
     /// Maximum number of further delegations (0 = no further delegation).
     pub max_delegation_depth: u8,
@@ -165,7 +190,11 @@ impl AudienceBoundToken {
     /// The signature intentionally excludes the `signature` field and binds
     /// every other field with domain-separated, length-prefixed framing.
     pub fn signature_preimage(&self) -> Vec<u8> {
-        let mut preimage = Vec::new();
+        let capacity = self
+            .signature_preimage_len()
+            .unwrap_or(MAX_TOKEN_PREIMAGE_BYTES)
+            .min(MAX_TOKEN_PREIMAGE_BYTES);
+        let mut preimage = Vec::with_capacity(capacity);
         preimage.extend_from_slice(b"audience_bound_token_signature_v1:");
         append_len_prefixed_str(&mut preimage, self.token_id.as_str());
         append_len_prefixed_str(&mut preimage, &self.issuer);
@@ -189,6 +218,61 @@ impl AudienceBoundToken {
         }
         preimage.push(self.max_delegation_depth);
         preimage
+    }
+
+    /// Build the canonical preimage only after bounded-input validation.
+    pub fn checked_signature_preimage(&self) -> Result<Vec<u8>, TokenError> {
+        self.validate_shape()?;
+        Ok(self.signature_preimage())
+    }
+
+    /// Validate field and collection sizes before hashing or signature work.
+    pub fn validate_shape(&self) -> Result<(), TokenError> {
+        validate_non_empty_bounded_str("token_id", self.token_id.as_str(), MAX_TOKEN_FIELD_BYTES)?;
+        validate_non_empty_bounded_str("issuer", &self.issuer, MAX_TOKEN_FIELD_BYTES)?;
+        validate_collection_len("audience", self.audience.len(), MAX_AUDIENCES_PER_TOKEN)?;
+        for audience in &self.audience {
+            validate_non_empty_bounded_str("audience entry", audience, MAX_TOKEN_FIELD_BYTES)?;
+        }
+        validate_non_empty_bounded_str("nonce", &self.nonce, MAX_TOKEN_FIELD_BYTES)?;
+        if let Some(parent_hash) = &self.parent_token_hash {
+            validate_non_empty_bounded_str(
+                "parent_token_hash",
+                parent_hash,
+                MAX_TOKEN_FIELD_BYTES,
+            )?;
+        }
+        validate_bounded_str(
+            "signature",
+            &self.signature,
+            MAX_TOKEN_SIGNATURE_BYTES,
+            true,
+        )?;
+        self.signature_preimage_len()?;
+        Ok(())
+    }
+
+    fn signature_preimage_len(&self) -> Result<usize, TokenError> {
+        let mut len = b"audience_bound_token_signature_v1:".len();
+        add_len_prefixed_str_budget(&mut len, "token_id", self.token_id.as_str())?;
+        add_len_prefixed_str_budget(&mut len, "issuer", &self.issuer)?;
+        add_budget(&mut len, "audience count", 8)?;
+        for audience in &self.audience {
+            add_len_prefixed_str_budget(&mut len, "audience entry", audience)?;
+        }
+        add_budget(&mut len, "capability count", 8)?;
+        for capability in &self.capabilities {
+            add_len_prefixed_str_budget(&mut len, "capability", capability.label())?;
+        }
+        add_budget(&mut len, "issued_at", 8)?;
+        add_budget(&mut len, "expires_at", 8)?;
+        add_len_prefixed_str_budget(&mut len, "nonce", &self.nonce)?;
+        add_budget(&mut len, "parent_token_hash tag", 1)?;
+        if let Some(parent_hash) = &self.parent_token_hash {
+            add_len_prefixed_str_budget(&mut len, "parent_token_hash", parent_hash)?;
+        }
+        add_budget(&mut len, "max_delegation_depth", 1)?;
+        Ok(len)
     }
 
     /// Compute the SHA-256 hash of this token for chain integrity.
@@ -245,6 +329,338 @@ impl AudienceBoundToken {
             .iter()
             .fold(false, |acc, a| acc | constant_time::ct_eq(a, service_id))
     }
+}
+
+fn validate_non_empty_bounded_str(
+    field: &str,
+    value: &str,
+    max_bytes: usize,
+) -> Result<(), TokenError> {
+    validate_bounded_str(field, value, max_bytes, false)
+}
+
+fn validate_bounded_str(
+    field: &str,
+    value: &str,
+    max_bytes: usize,
+    allow_empty: bool,
+) -> Result<(), TokenError> {
+    if !allow_empty && value.is_empty() {
+        return Err(TokenError::token_too_large(format!(
+            "{field} must not be empty"
+        )));
+    }
+    if value.len() > max_bytes {
+        return Err(TokenError::token_too_large(format!(
+            "{field} has {} bytes, cap is {max_bytes}",
+            value.len()
+        )));
+    }
+    Ok(())
+}
+
+fn validate_collection_len(field: &str, len: usize, cap: usize) -> Result<(), TokenError> {
+    if len > cap {
+        return Err(TokenError::token_too_large(format!(
+            "{field} has {len} entries, cap is {cap}"
+        )));
+    }
+    Ok(())
+}
+
+fn add_budget(total: &mut usize, field: &str, amount: usize) -> Result<(), TokenError> {
+    *total = total.checked_add(amount).ok_or_else(|| {
+        TokenError::token_too_large(format!("{field} length overflows preimage budget"))
+    })?;
+    if *total > MAX_TOKEN_PREIMAGE_BYTES {
+        return Err(TokenError::token_too_large(format!(
+            "{field} pushes signature preimage to {} bytes, cap is {MAX_TOKEN_PREIMAGE_BYTES}",
+            *total
+        )));
+    }
+    Ok(())
+}
+
+fn add_len_prefixed_str_budget(
+    total: &mut usize,
+    field: &str,
+    value: &str,
+) -> Result<(), TokenError> {
+    add_budget(total, field, 8)?;
+    add_budget(total, field, value.len())
+}
+
+struct BoundedStringVisitor {
+    field: &'static str,
+    max_bytes: usize,
+    allow_empty: bool,
+}
+
+impl BoundedStringVisitor {
+    fn validate<E>(self, value: &str) -> Result<String, E>
+    where
+        E: de::Error,
+    {
+        if !self.allow_empty && value.is_empty() {
+            return Err(E::custom(format!("{} must not be empty", self.field)));
+        }
+        if value.len() > self.max_bytes {
+            return Err(E::custom(format!(
+                "{} has {} bytes, cap is {}",
+                self.field,
+                value.len(),
+                self.max_bytes
+            )));
+        }
+        Ok(value.to_string())
+    }
+}
+
+impl<'de> Visitor<'de> for BoundedStringVisitor {
+    type Value = String;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "a string of at most {} bytes for {}",
+            self.max_bytes, self.field
+        )
+    }
+
+    fn visit_borrowed_str<E>(self, value: &'de str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        self.validate(value)
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        self.validate(value)
+    }
+
+    fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        if !self.allow_empty && value.is_empty() {
+            return Err(E::custom(format!("{} must not be empty", self.field)));
+        }
+        if value.len() > self.max_bytes {
+            return Err(E::custom(format!(
+                "{} has {} bytes, cap is {}",
+                self.field,
+                value.len(),
+                self.max_bytes
+            )));
+        }
+        Ok(value)
+    }
+}
+
+struct BoundedStringSeed {
+    field: &'static str,
+    max_bytes: usize,
+    allow_empty: bool,
+}
+
+impl<'de> DeserializeSeed<'de> for BoundedStringSeed {
+    type Value = String;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(BoundedStringVisitor {
+            field: self.field,
+            max_bytes: self.max_bytes,
+            allow_empty: self.allow_empty,
+        })
+    }
+}
+
+fn deserialize_bounded_string_with<'de, D>(
+    deserializer: D,
+    field: &'static str,
+    max_bytes: usize,
+    allow_empty: bool,
+) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    BoundedStringSeed {
+        field,
+        max_bytes,
+        allow_empty,
+    }
+    .deserialize(deserializer)
+}
+
+fn deserialize_bounded_token_field<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_bounded_string_with(deserializer, "token field", MAX_TOKEN_FIELD_BYTES, false)
+}
+
+fn deserialize_bounded_signature_field<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_bounded_string_with(deserializer, "signature", MAX_TOKEN_SIGNATURE_BYTES, true)
+}
+
+fn deserialize_bounded_token_id<'de, D>(deserializer: D) -> Result<TokenId, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_bounded_string_with(deserializer, "token_id", MAX_TOKEN_FIELD_BYTES, false)
+        .map(TokenId)
+}
+
+fn deserialize_bounded_optional_token_field<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct OptionalBoundedStringVisitor;
+
+    impl<'de> Visitor<'de> for OptionalBoundedStringVisitor {
+        type Value = Option<String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                formatter,
+                "null or a parent_token_hash of at most {MAX_TOKEN_FIELD_BYTES} bytes"
+            )
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            BoundedStringSeed {
+                field: "parent_token_hash",
+                max_bytes: MAX_TOKEN_FIELD_BYTES,
+                allow_empty: false,
+            }
+            .deserialize(deserializer)
+            .map(Some)
+        }
+    }
+
+    deserializer.deserialize_option(OptionalBoundedStringVisitor)
+}
+
+struct BoundedAudienceVisitor;
+
+impl<'de> Visitor<'de> for BoundedAudienceVisitor {
+    type Value = Vec<String>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "up to {MAX_AUDIENCES_PER_TOKEN} bounded audience entries"
+        )
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        if let Some(size_hint) = seq.size_hint() {
+            if size_hint > MAX_AUDIENCES_PER_TOKEN {
+                return Err(de::Error::custom(format!(
+                    "audience has {size_hint} entries, cap is {MAX_AUDIENCES_PER_TOKEN}"
+                )));
+            }
+        }
+
+        let capacity = seq.size_hint().unwrap_or(0).min(MAX_AUDIENCES_PER_TOKEN);
+        let mut audience = Vec::with_capacity(capacity);
+        while let Some(entry) = seq.next_element_seed(BoundedStringSeed {
+            field: "audience entry",
+            max_bytes: MAX_TOKEN_FIELD_BYTES,
+            allow_empty: false,
+        })? {
+            if audience.len() >= MAX_AUDIENCES_PER_TOKEN {
+                return Err(de::Error::custom(format!(
+                    "audience has more than {MAX_AUDIENCES_PER_TOKEN} entries"
+                )));
+            }
+            audience.push(entry);
+        }
+        Ok(audience)
+    }
+}
+
+fn deserialize_bounded_audience<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_seq(BoundedAudienceVisitor)
+}
+
+struct BoundedTokenVecVisitor;
+
+impl<'de> Visitor<'de> for BoundedTokenVecVisitor {
+    type Value = Vec<AudienceBoundToken>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "up to {MAX_TOKENS} audience-bound tokens")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        if let Some(size_hint) = seq.size_hint() {
+            if size_hint > MAX_TOKENS {
+                return Err(de::Error::custom(format!(
+                    "token chain has {size_hint} tokens, cap is {MAX_TOKENS}"
+                )));
+            }
+        }
+
+        let capacity = seq.size_hint().unwrap_or(0).min(MAX_TOKENS);
+        let mut tokens = Vec::with_capacity(capacity);
+        while let Some(token) = seq.next_element::<AudienceBoundToken>()? {
+            if tokens.len() >= MAX_TOKENS {
+                return Err(de::Error::custom(format!(
+                    "token chain has more than {MAX_TOKENS} tokens"
+                )));
+            }
+            token.validate_shape().map_err(de::Error::custom)?;
+            tokens.push(token);
+        }
+        Ok(tokens)
+    }
+}
+
+fn deserialize_bounded_token_vec<'de, D>(
+    deserializer: D,
+) -> Result<Vec<AudienceBoundToken>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_seq(BoundedTokenVecVisitor)
 }
 
 fn len_to_u64(len: usize) -> u64 {
@@ -314,6 +730,10 @@ impl TokenError {
             format!("Token '{}' signature invalid: {}", token_id, detail.into()),
         )
     }
+
+    pub fn token_too_large(detail: impl Into<String>) -> Self {
+        Self::new(ERR_ABT_TOKEN_TOO_LARGE, detail)
+    }
 }
 
 impl std::fmt::Display for TokenError {
@@ -355,18 +775,18 @@ impl<'de> Deserialize<'de> for TokenChain {
     {
         #[derive(Deserialize)]
         struct RawTokenChain {
+            #[serde(deserialize_with = "deserialize_bounded_token_vec")]
             tokens: Vec<AudienceBoundToken>,
         }
 
-        let raw = RawTokenChain::deserialize(deserializer)?;
-        if raw.tokens.is_empty() {
+        let mut tokens = RawTokenChain::deserialize(deserializer)?.tokens.into_iter();
+        let Some(root) = tokens.next() else {
             return Err(serde::de::Error::custom("token chain cannot be empty"));
-        }
+        };
 
-        let mut chain = TokenChain::new(raw.tokens[0].clone())
-            .map_err(|e| serde::de::Error::custom(e.message))?;
+        let mut chain = TokenChain::new(root).map_err(|e| serde::de::Error::custom(e.message))?;
 
-        for token in raw.tokens.into_iter().skip(1) {
+        for token in tokens {
             chain
                 .append(token)
                 .map_err(|e| serde::de::Error::custom(e.message))?;
@@ -379,6 +799,7 @@ impl<'de> Deserialize<'de> for TokenChain {
 impl TokenChain {
     /// Create a new chain starting from a root token.
     pub fn new(root: AudienceBoundToken) -> Result<Self, TokenError> {
+        root.validate_shape()?;
         if !root.is_root() {
             return Err(TokenError::new(
                 ERR_ABT_ATTENUATION_VIOLATION,
@@ -402,6 +823,8 @@ impl TokenChain {
                 "cannot append to an empty token chain".to_string(),
             )
         })?;
+        parent.validate_shape()?;
+        token.validate_shape()?;
 
         // Check parent_token_hash links to parent.
         let parent_hash = parent.hash();
@@ -465,7 +888,12 @@ impl TokenChain {
             ));
         }
 
-        let root = &self.tokens[0];
+        let root = self.tokens.first().ok_or_else(|| {
+            TokenError::new(
+                ERR_ABT_ATTENUATION_VIOLATION,
+                "cannot compute chain depth limit for an empty token chain",
+            )
+        })?;
         let max_chain_len = usize::from(root.max_delegation_depth).saturating_add(1);
         if self.tokens.len() >= max_chain_len {
             return Err(TokenError::new(
@@ -540,7 +968,6 @@ impl TokenChain {
 
 use crate::capacity_defaults::aliases::MAX_EVENTS;
 use crate::push_bounded;
-const MAX_TOKENS: usize = 4096;
 /// Maximum nonces tracked per epoch before oldest-first eviction.
 /// Without this cap, an adversary controlling token creation could exhaust
 /// memory by verifying many unique-nonce tokens over a long epoch.
@@ -627,6 +1054,7 @@ impl TokenValidator {
     }
 
     fn verify_token_signature(&self, token: &AudienceBoundToken) -> Result<(), TokenError> {
+        let preimage = token.checked_signature_preimage()?;
         let verifying_key = self.trusted_issuer_keys.get(&token.issuer).ok_or_else(|| {
             TokenError::signature_invalid(
                 &token.token_id,
@@ -648,7 +1076,7 @@ impl TokenValidator {
             )
         })?;
         verifying_key
-            .verify(&token.signature_preimage(), &signature)
+            .verify(&preimage, &signature)
             .map_err(|error| {
                 TokenError::signature_invalid(
                     &token.token_id,
@@ -744,6 +1172,23 @@ impl TokenValidator {
 
         // Check all tokens for expiry.
         for (i, token) in tokens.iter().enumerate() {
+            if let Err(err) = token.validate_shape() {
+                self.tokens_rejected = self.tokens_rejected.saturating_add(1);
+                push_bounded(
+                    &mut self.events,
+                    TokenEvent {
+                        event_code: ABT_004.to_string(),
+                        token_id: token.token_id.as_str().to_string(),
+                        trace_id: trace_id.to_string(),
+                        epoch_id: self.epoch_id,
+                        action_id: format!("verify-shape-{}", i),
+                        detail: err.message.clone(),
+                        timestamp_ms: now_ms,
+                    },
+                    MAX_EVENTS,
+                );
+                return Err(err);
+            }
             if token.is_expired(now_ms) {
                 self.tokens_rejected = self.tokens_rejected.saturating_add(1);
                 let err = TokenError::token_expired(&token.token_id);
@@ -835,9 +1280,12 @@ impl TokenValidator {
         }
 
         // Verify chain hash integrity.
-        for i in 1..tokens.len() {
-            let parent_hash = tokens[i - 1].hash();
-            match &tokens[i].parent_token_hash {
+        for (offset, pair) in tokens.windows(2).enumerate() {
+            let [parent, token] = pair else {
+                continue;
+            };
+            let parent_hash = parent.hash();
+            match &token.parent_token_hash {
                 Some(h) if constant_time::ct_eq(h, &parent_hash) => {}
                 _ => {
                     self.tokens_rejected = self.tokens_rejected.saturating_add(1);
@@ -845,7 +1293,7 @@ impl TokenValidator {
                         ERR_ABT_ATTENUATION_VIOLATION,
                         format!(
                             "Chain integrity violation at position {}: parent_token_hash mismatch",
-                            i
+                            offset + 1
                         ),
                     ));
                 }
@@ -1019,8 +1467,8 @@ mod tests {
 
     use super::{
         ActionScope, AudienceBoundToken, ERR_ABT_ATTENUATION_VIOLATION, ERR_ABT_AUDIENCE_MISMATCH,
-        ERR_ABT_REPLAY_DETECTED, ERR_ABT_SIGNATURE_INVALID, ERR_ABT_TOKEN_EXPIRED, TokenChain,
-        TokenError, TokenId, TokenValidator, len_to_u64,
+        ERR_ABT_REPLAY_DETECTED, ERR_ABT_SIGNATURE_INVALID, ERR_ABT_TOKEN_EXPIRED,
+        ERR_ABT_TOKEN_TOO_LARGE, TokenChain, TokenError, TokenId, TokenValidator, len_to_u64,
     };
     use std::collections::BTreeSet;
 
@@ -1816,6 +2264,7 @@ mod tests {
         assert!(!ERR_ABT_TOKEN_EXPIRED.is_empty());
         assert!(!ERR_ABT_REPLAY_DETECTED.is_empty());
         assert!(!ERR_ABT_SIGNATURE_INVALID.is_empty());
+        assert!(!ERR_ABT_TOKEN_TOO_LARGE.is_empty());
     }
 
     // -- Invariant tags defined --

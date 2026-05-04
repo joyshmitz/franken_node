@@ -35,8 +35,9 @@ use std::time::Instant;
 use ed25519_dalek::{Signer, SigningKey};
 use frankenengine_node::control_plane::audience_token::{
     ActionScope, AudienceBoundToken, ERR_ABT_ATTENUATION_VIOLATION, ERR_ABT_AUDIENCE_MISMATCH,
-    ERR_ABT_REPLAY_DETECTED, ERR_ABT_SIGNATURE_INVALID, ERR_ABT_TOKEN_EXPIRED, TokenChain, TokenId,
-    TokenValidator,
+    ERR_ABT_REPLAY_DETECTED, ERR_ABT_SIGNATURE_INVALID, ERR_ABT_TOKEN_EXPIRED,
+    ERR_ABT_TOKEN_TOO_LARGE, MAX_AUDIENCES_PER_TOKEN, MAX_TOKEN_FIELD_BYTES,
+    MAX_TOKEN_SIGNATURE_BYTES, MAX_TOKENS, TokenChain, TokenId, TokenValidator,
 };
 use serde_json::json;
 use tracing::{error, info};
@@ -424,8 +425,9 @@ fn e2e_audience_token_signature_tampering_rejected() {
     );
     // Flip the last hex char of the signature.
     let mut sig: Vec<char> = tok.signature.chars().collect();
-    let last = sig.len() - 1;
-    sig[last] = if sig[last] == '0' { '1' } else { '0' };
+    if let Some(last) = sig.last_mut() {
+        *last = if *last == '0' { '1' } else { '0' };
+    }
     tok.signature = sig.into_iter().collect();
 
     let chain = TokenChain::new(tok).unwrap();
@@ -456,4 +458,114 @@ fn e2e_audience_token_signature_tampering_rejected() {
         .expect_err("untrusted issuer rejected");
     assert_eq!(err.code, ERR_ABT_SIGNATURE_INVALID);
     h.log_phase("untrusted_issuer_rejected", true, json!({}));
+}
+
+#[test]
+fn e2e_audience_token_rejects_oversized_fields_before_preimage_work() {
+    let h = Harness::new("e2e_audience_token_rejects_oversized_fields_before_preimage_work");
+
+    let key = signing_key();
+    let mut oversized_audience = make_signed_token(
+        &key,
+        "tk-oversized-audience",
+        ISSUER,
+        vec!["svc-Z".to_string()],
+        caps(&[ActionScope::Migrate]),
+        1_000_000_000_000,
+        1_000_000_900_000,
+        "nonce-oversized-audience",
+        None,
+        0,
+    );
+    oversized_audience
+        .audience
+        .push("x".repeat(MAX_TOKEN_FIELD_BYTES + 1));
+
+    let err = oversized_audience
+        .checked_signature_preimage()
+        .expect_err("oversized audience entry must fail before preimage allocation");
+    assert_eq!(err.code, ERR_ABT_TOKEN_TOO_LARGE);
+
+    let err = TokenChain::new(oversized_audience)
+        .expect_err("oversized token must fail before entering a chain");
+    assert_eq!(err.code, ERR_ABT_TOKEN_TOO_LARGE);
+    h.log_phase(
+        "oversized_audience_rejected",
+        true,
+        json!({"code": err.code}),
+    );
+
+    let mut oversized_signature = make_signed_token(
+        &key,
+        "tk-oversized-signature",
+        ISSUER,
+        vec!["svc-Z".to_string()],
+        caps(&[ActionScope::Migrate]),
+        1_000_000_000_000,
+        1_000_000_900_000,
+        "nonce-oversized-signature",
+        None,
+        0,
+    );
+    oversized_signature.signature = "a".repeat(MAX_TOKEN_SIGNATURE_BYTES + 1);
+
+    let err = TokenChain::new(oversized_signature)
+        .expect_err("oversized signature text must fail before hex decode");
+    assert_eq!(err.code, ERR_ABT_TOKEN_TOO_LARGE);
+    h.log_phase(
+        "oversized_signature_rejected",
+        true,
+        json!({"code": err.code}),
+    );
+}
+
+#[test]
+fn e2e_audience_token_deserialization_is_bounded() {
+    let h = Harness::new("e2e_audience_token_deserialization_is_bounded");
+
+    let key = signing_key();
+    let token = make_signed_token(
+        &key,
+        "tk-deser-bound",
+        ISSUER,
+        vec!["svc-Z".to_string()],
+        caps(&[ActionScope::Migrate]),
+        1_000_000_000_000,
+        1_000_000_900_000,
+        "nonce-deser-bound",
+        None,
+        0,
+    );
+
+    let mut token_value = serde_json::to_value(&token).expect("token serializes");
+    token_value
+        .as_object_mut()
+        .expect("token value is an object")
+        .insert(
+            "audience".to_string(),
+            serde_json::Value::Array(
+                (0..=MAX_AUDIENCES_PER_TOKEN)
+                    .map(|idx| serde_json::Value::String(format!("svc-{idx}")))
+                    .collect(),
+            ),
+        );
+
+    let err = serde_json::from_value::<AudienceBoundToken>(token_value)
+        .expect_err("oversized audience vector must fail during token deserialization");
+    assert!(
+        err.to_string().contains("audience"),
+        "unexpected error: {err}"
+    );
+    h.log_phase("oversized_audience_deserialize_rejected", true, json!({}));
+
+    let token_value = serde_json::to_value(&token).expect("token serializes");
+    let err = serde_json::from_value::<TokenChain>(json!({
+        "tokens": vec![token_value; MAX_TOKENS + 1],
+    }))
+    .expect_err("oversized chain must fail during bounded sequence deserialization");
+    assert!(
+        err.to_string().contains("token chain"),
+        "unexpected error: {err}"
+    );
+    h.log_phase("oversized_chain_deserialize_rejected", true, json!({}));
 }
